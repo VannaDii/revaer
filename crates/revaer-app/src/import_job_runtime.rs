@@ -22,6 +22,7 @@ use tracing::{info, warn};
 const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_IDENTIFIER_LEN: usize = 256;
 const API_NOT_CONFIGURED_DETAIL: &str = "prowlarr_api_runtime_not_configured";
+const API_CONFIG_MISSING_DETAIL: &str = "prowlarr_api_runtime_config_missing";
 const BACKUP_RESULT_DETAIL: &str = "backup snapshot staged; secret binding reconciliation required";
 
 pub(crate) struct ImportJobRuntime {
@@ -130,11 +131,33 @@ impl ImportJobRuntime {
     }
 
     async fn process_api_job(&self, job: &ClaimedImportJobRow) -> Result<(), DataError> {
+        let prowlarr_url = parse_config_value(job.config_detail.as_deref(), "prowlarr_url");
+        let secret_public_id = parse_config_value(job.config_detail.as_deref(), "secret_public_id");
+
+        if prowlarr_url.is_none() || secret_public_id.is_none() {
+            import_job_worker_record_result(
+                self.config.pool(),
+                &ImportJobWorkerResultInput {
+                    import_job_public_id: job.import_job_public_id,
+                    prowlarr_identifier: "prowlarr-api",
+                    status: "imported_test_failed",
+                    detail: Some(API_CONFIG_MISSING_DETAIL),
+                    resolved_is_enabled: None,
+                    resolved_priority: None,
+                    missing_secret_fields: 0,
+                },
+            )
+            .await?;
+
+            return self.mark_failed(job, Some(API_CONFIG_MISSING_DETAIL)).await;
+        }
+
+        let identifier = prowlarr_identifier_from_url(prowlarr_url.unwrap_or("prowlarr-api"));
         import_job_worker_record_result(
             self.config.pool(),
             &ImportJobWorkerResultInput {
                 import_job_public_id: job.import_job_public_id,
-                prowlarr_identifier: "prowlarr-api",
+                prowlarr_identifier: &identifier,
                 status: "imported_test_failed",
                 detail: Some(API_NOT_CONFIGURED_DETAIL),
                 resolved_is_enabled: None,
@@ -184,6 +207,29 @@ fn truncated_identifier(input: &str) -> String {
     trimmed.chars().take(MAX_IDENTIFIER_LEN).collect()
 }
 
+fn prowlarr_identifier_from_url(input: &str) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return "prowlarr-api".to_string();
+    }
+    let without_scheme = trimmed
+        .split_once("://")
+        .map_or(trimmed, |(_, remainder)| remainder);
+    let no_path = without_scheme
+        .split_once('/')
+        .map_or(without_scheme, |(value, _)| value);
+    let no_query = no_path.split_once('?').map_or(no_path, |(value, _)| value);
+    let host = no_query
+        .split_once('#')
+        .map_or(no_query, |(value, _)| value);
+    let candidate = host.trim();
+    if candidate.is_empty() {
+        "prowlarr-api".to_string()
+    } else {
+        truncated_identifier(candidate)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,5 +249,14 @@ mod tests {
         assert_eq!(truncated_identifier("  "), "backup");
         let long = "a".repeat(MAX_IDENTIFIER_LEN + 100);
         assert_eq!(truncated_identifier(&long).len(), MAX_IDENTIFIER_LEN);
+    }
+
+    #[test]
+    fn prowlarr_identifier_from_url_prefers_host_segment() {
+        assert_eq!(
+            prowlarr_identifier_from_url("https://prowlarr.example.test:9696/api?x=1"),
+            "prowlarr.example.test:9696"
+        );
+        assert_eq!(prowlarr_identifier_from_url(""), "prowlarr-api");
     }
 }

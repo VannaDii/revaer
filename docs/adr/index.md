@@ -327,3 +327,4 @@
 -   [313](313-trivy-sarif-category-and-ghcr-token-alignment.md) – Trivy SARIF category and GHCR token alignment
 -   [314](314-artifacthub-verification-and-official-readiness.md) – Artifact Hub verification and official readiness
 -   [315](315-indexer-import-job-runtime-worker.md) – Indexer import job runtime worker
+-   [316](316-import-runtime-gap-closure-followup.md) – Import runtime gap-closure follow-up
