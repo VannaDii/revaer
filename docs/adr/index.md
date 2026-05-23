@@ -326,3 +326,4 @@
 -   [312](312-artifacthub-oci-repository-alignment.md) – Artifact Hub OCI repository alignment
 -   [313](313-trivy-sarif-category-and-ghcr-token-alignment.md) – Trivy SARIF category and GHCR token alignment
 -   [314](314-artifacthub-verification-and-official-readiness.md) – Artifact Hub verification and official readiness
+-   [315](315-indexer-import-job-runtime-worker.md) – Indexer import job runtime worker

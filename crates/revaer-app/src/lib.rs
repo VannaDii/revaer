@@ -24,6 +24,8 @@ pub mod bootstrap;
 pub mod engine_config;
 /// Application-wide error types.
 pub mod error;
+/// In-process import-job runtime wiring.
+pub mod import_job_runtime;
 /// In-process indexer maintenance runtime wiring.
 pub mod indexer_runtime;
 /// Indexer service wiring for API facade.

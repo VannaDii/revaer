@@ -6,6 +6,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use crate::error::{AppError, AppResult};
+use crate::import_job_runtime::ImportJobRuntime;
 use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
 use revaer_api::TorrentHandles;
@@ -298,6 +299,8 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     let api = build_api_server(&config, &events, torrent_handles, telemetry.clone())?;
     let indexer_runtime_task =
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
+    let import_job_runtime_task =
+        ImportJobRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
     info!(addr = %addr, "Launching API listener");
 
     let serve_result = api.serve(addr).await;
@@ -307,6 +310,12 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     }
     if let Err(err) = indexer_runtime_task.await {
         warn!(error = %err, "indexer runtime task join failed");
+    }
+    if !import_job_runtime_task.is_finished() {
+        import_job_runtime_task.abort();
+    }
+    if let Err(err) = import_job_runtime_task.await {
+        warn!(error = %err, "import job runtime task join failed");
     }
 
     #[cfg(feature = "libtorrent")]

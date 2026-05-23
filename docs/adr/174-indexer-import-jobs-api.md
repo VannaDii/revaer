@@ -12,7 +12,7 @@
   - Alternatives considered: defer API surface until full import pipeline; rejected to keep parity with checklist and procs.
 - Consequences:
   - Positive outcomes: import job endpoints are now reachable, documented, and covered in E2E.
-  - Risks or trade-offs: run endpoints currently validate inputs and return errors without a worker path; full import pipeline still pending.
+  - Risks or trade-offs: runtime worker support now finalizes jobs deterministically, but full live importer execution for all import kinds remains incremental.
 - Follow-up:
   - Implement background import execution and UI flows for import job monitoring.
   - Extend CLI support once import pipeline is ready.

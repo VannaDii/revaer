@@ -316,3 +316,47 @@ async fn import_job_results_surface_preserved_configuration_snapshot() -> anyhow
     assert_eq!(result.tag_keys, vec![tag_alpha_key, tag_beta_key]);
     Ok(())
 }
+
+#[tokio::test]
+async fn import_job_worker_claims_running_job_and_marks_terminal() -> anyhow::Result<()> {
+    let Ok(test_db) = setup_db().await else {
+        return Ok(());
+    };
+
+    let pool = test_db.pool();
+    let actor = Uuid::parse_str(SYSTEM_USER_PUBLIC_ID)?;
+    let job_id = import_job_create(pool, actor, "prowlarr_backup", Some(false), None, None).await?;
+    import_job_run_prowlarr_backup(pool, job_id, "snapshot-ref").await?;
+
+    let claimed = import_job_worker_claim_next(pool)
+        .await?
+        .expect("worker should claim running job");
+    assert_eq!(claimed.import_job_public_id, job_id);
+    assert_eq!(claimed.source, "prowlarr_backup");
+    assert!(!claimed.is_dry_run);
+    assert_eq!(
+        claimed.config_detail.as_deref(),
+        Some("backup_blob_ref=snapshot-ref")
+    );
+
+    import_job_worker_record_result(
+        pool,
+        &ImportJobWorkerResultInput {
+            import_job_public_id: job_id,
+            prowlarr_identifier: "snapshot-ref",
+            status: "imported_needs_secret",
+            detail: Some("worker result"),
+            resolved_is_enabled: Some(false),
+            resolved_priority: Some(50),
+            missing_secret_fields: 1,
+        },
+    )
+    .await?;
+    import_job_worker_mark_terminal(pool, job_id, "completed", None).await?;
+
+    let status = import_job_get_status(pool, job_id).await?;
+    assert_eq!(status.status, "completed");
+    assert_eq!(status.result_total, 1);
+    assert_eq!(status.result_imported_needs_secret, 1);
+    Ok(())
+}
