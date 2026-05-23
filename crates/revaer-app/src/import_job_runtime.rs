@@ -8,6 +8,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use revaer_api::app::indexers::IndexerFacade;
+use revaer_api::models::IndexerBackupSnapshot;
 use revaer_config::ConfigService;
 use revaer_data::DataError;
 use revaer_data::indexers::import_jobs::{
@@ -18,12 +20,18 @@ use revaer_telemetry::Metrics;
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
+use uuid::Uuid;
+
+use crate::indexers::IndexerService;
 
 const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_IDENTIFIER_LEN: usize = 256;
 const API_NOT_CONFIGURED_DETAIL: &str = "prowlarr_api_runtime_not_configured";
 const API_CONFIG_MISSING_DETAIL: &str = "prowlarr_api_runtime_config_missing";
 const BACKUP_RESULT_DETAIL: &str = "backup snapshot staged; secret binding reconciliation required";
+const BACKUP_INLINE_PREFIX: &str = "inline-json:";
+const BACKUP_INLINE_INVALID_DETAIL: &str = "backup_snapshot_inline_json_invalid";
+const BACKUP_RESTORE_FAILED_DETAIL: &str = "backup_snapshot_restore_failed";
 
 pub(crate) struct ImportJobRuntime {
     config: Arc<ConfigService>,
@@ -107,6 +115,30 @@ impl ImportJobRuntime {
             .trim();
         let identifier = truncated_identifier(backup_ref);
 
+        if let Some(snapshot) = parse_inline_backup_snapshot(backup_ref) {
+            return self
+                .apply_inline_backup_snapshot(job, &identifier, snapshot)
+                .await;
+        }
+        if backup_ref.starts_with(BACKUP_INLINE_PREFIX) {
+            import_job_worker_record_result(
+                self.config.pool(),
+                &ImportJobWorkerResultInput {
+                    import_job_public_id: job.import_job_public_id,
+                    prowlarr_identifier: &identifier,
+                    status: "imported_test_failed",
+                    detail: Some(BACKUP_INLINE_INVALID_DETAIL),
+                    resolved_is_enabled: None,
+                    resolved_priority: None,
+                    missing_secret_fields: 0,
+                },
+            )
+            .await?;
+            return self
+                .mark_failed(job, Some(BACKUP_INLINE_INVALID_DETAIL))
+                .await;
+        }
+
         import_job_worker_record_result(
             self.config.pool(),
             &ImportJobWorkerResultInput {
@@ -117,6 +149,65 @@ impl ImportJobRuntime {
                 resolved_is_enabled: Some(false),
                 resolved_priority: Some(50),
                 missing_secret_fields: 1,
+            },
+        )
+        .await?;
+
+        import_job_worker_mark_terminal(
+            self.config.pool(),
+            job.import_job_public_id,
+            "completed",
+            None,
+        )
+        .await
+    }
+
+    async fn apply_inline_backup_snapshot(
+        &self,
+        job: &ClaimedImportJobRow,
+        identifier: &str,
+        snapshot: IndexerBackupSnapshot,
+    ) -> Result<(), DataError> {
+        let service = IndexerService::new(Arc::clone(&self.config), self.telemetry.clone());
+        let restore = service.indexer_backup_restore(Uuid::nil(), &snapshot).await;
+        let restore = match restore {
+            Ok(value) => value,
+            Err(error) => {
+                import_job_worker_record_result(
+                    self.config.pool(),
+                    &ImportJobWorkerResultInput {
+                        import_job_public_id: job.import_job_public_id,
+                        prowlarr_identifier: identifier,
+                        status: "imported_test_failed",
+                        detail: Some(BACKUP_RESTORE_FAILED_DETAIL),
+                        resolved_is_enabled: None,
+                        resolved_priority: None,
+                        missing_secret_fields: 0,
+                    },
+                )
+                .await?;
+                return self.mark_failed(job, error.code()).await;
+            }
+        };
+
+        let missing_secret_fields =
+            i32::try_from(restore.unresolved_secret_bindings.len()).unwrap_or(i32::MAX);
+        let status = if missing_secret_fields == 0 {
+            "imported_ready"
+        } else {
+            "imported_needs_secret"
+        };
+
+        import_job_worker_record_result(
+            self.config.pool(),
+            &ImportJobWorkerResultInput {
+                import_job_public_id: job.import_job_public_id,
+                prowlarr_identifier: identifier,
+                status,
+                detail: Some("backup snapshot applied from inline payload"),
+                resolved_is_enabled: None,
+                resolved_priority: None,
+                missing_secret_fields,
             },
         )
         .await?;
@@ -230,6 +321,11 @@ fn prowlarr_identifier_from_url(input: &str) -> String {
     }
 }
 
+fn parse_inline_backup_snapshot(input: &str) -> Option<IndexerBackupSnapshot> {
+    let payload = input.strip_prefix(BACKUP_INLINE_PREFIX)?;
+    serde_json::from_str::<IndexerBackupSnapshot>(payload).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +354,21 @@ mod tests {
             "prowlarr.example.test:9696"
         );
         assert_eq!(prowlarr_identifier_from_url(""), "prowlarr-api");
+    }
+
+    #[test]
+    fn parse_inline_backup_snapshot_reads_prefixed_json() {
+        let payload = r#"{"version":"1","exported_at":"2026-01-01T00:00:00Z","tags":[],"rate_limit_policies":[],"routing_policies":[],"indexer_instances":[],"secrets":[]}"#;
+        let prefixed = format!("{BACKUP_INLINE_PREFIX}{payload}");
+        let snapshot =
+            parse_inline_backup_snapshot(&prefixed).expect("inline payload should decode snapshot");
+        assert_eq!(snapshot.version, "1");
+        assert!(snapshot.tags.is_empty());
+    }
+
+    #[test]
+    fn parse_inline_backup_snapshot_rejects_invalid_payload() {
+        assert!(parse_inline_backup_snapshot("backup").is_none());
+        assert!(parse_inline_backup_snapshot("inline-json:{bad}").is_none());
     }
 }
