@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "searchindex-e8ae6a5c.js";
+            window.path_to_searchindex_js = "searchindex-91894d1b.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-0de91650.js"></script>
+        <script src="toc-1e490410.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -1608,6 +1608,7 @@ just test-native
 <li><a href="#trivy-sarif-category-and-ghcr-token-alignment">313</a> – Trivy SARIF category and GHCR token alignment</li>
 <li><a href="#artifact-hub-verification-and-official-readiness">314</a> – Artifact Hub verification and official readiness</li>
 <li><a href="#indexer-import-job-runtime-worker">315</a> – Indexer import job runtime worker</li>
+<li><a href="#import-runtime-gap-closure-follow-up">316</a> – Import runtime gap-closure follow-up</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 ADR="" Title="" id=""><a class="header" href="#"></a></h1>
@@ -20121,6 +20122,92 @@ if limits are too strict.</li>
 <li>Reviewed <code>AGENTS.md</code>, <code>.github/instructions/rust.instructions.md</code>, and <code>.github/instructions/revaer-data.instructions.md</code> for this scope.</li>
 <li>No policy contradictions found in this implementation.</li>
 <li>Removed stale status framing by updating ADR 174 to reflect worker-path availability and explicit remaining <code>prowlarr_api</code> limitation.</li>
+</ul>
+</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="import-runtime-gap-closure-follow-up"><a class="header" href="#import-runtime-gap-closure-follow-up">Import runtime gap-closure follow-up</a></h1>
+<ul>
+<li>Status: Accepted</li>
+<li>Date: 2026-05-23</li>
+<li>Context:
+<ul>
+<li>The import job runtime worker landed, but two gaps remained:
+<ul>
+<li><code>prowlarr_api</code> runtime handling used a single placeholder identifier and error reason without validating the persisted run configuration snapshot.</li>
+<li><code>ERD_INDEXERS_CHECKLIST.md</code> still marked the in-process scheduler item unchecked even though scheduler/runtime wiring had already shipped.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Decision:
+<ul>
+<li>Tighten <code>ImportJobRuntime</code> <code>prowlarr_api</code> processing by validating required config snapshot keys (<code>prowlarr_url</code>, <code>secret_public_id</code>) before result recording.</li>
+<li>Derive deterministic <code>prowlarr_identifier</code> from configured Prowlarr host/path prefix instead of a fixed placeholder string.</li>
+<li>Keep live external API execution explicitly out of scope for this pass and continue failing closed with stable runtime detail codes.</li>
+<li>Reconcile checklist truth by marking the in-process scheduler/worker item complete and annotating remaining runtime-executor sub-gaps explicitly.</li>
+</ul>
+</li>
+<li>Consequences:
+<ul>
+<li>Positive outcomes:
+<ul>
+<li>Runtime output is more actionable and deterministic for operators reviewing import results.</li>
+<li>Checklist status now matches shipped scheduler behavior while preserving open runtime executor work as unchecked.</li>
+</ul>
+</li>
+<li>Risks or trade-offs:
+<ul>
+<li><code>prowlarr_api</code> still does not execute live remote imports; this change improves correctness/traceability but does not complete end-to-end payload ingestion.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Follow-up:
+<ul>
+<li>Add live outbound import execution for <code>prowlarr_api</code>, including secret decryption/runtime adapter wiring and result materialization.</li>
+<li>Add acceptance tests that validate runtime result identifiers and error details from real run configurations.</li>
+</ul>
+</li>
+</ul>
+<h2 id="task-record-96"><a class="header" href="#task-record-96">Task record</a></h2>
+<ul>
+<li>Motivation:
+<ul>
+<li>Close immediate runtime and status-tracking gaps without overstating completion of the broader live import executor scope.</li>
+</ul>
+</li>
+<li>Design notes:
+<ul>
+<li>Configuration parsing stays deterministic and local to runtime worker input; no new dependencies added.</li>
+<li>Identifier derivation uses bounded truncation to preserve column limits and panic-free behavior.</li>
+</ul>
+</li>
+<li>Test coverage summary:
+<ul>
+<li>Added pure unit coverage for URL-to-identifier derivation helper behavior.</li>
+<li>Full validation remains <code>just ci</code> and <code>just ui-e2e</code> per repo policy.</li>
+</ul>
+</li>
+<li>Observability updates:
+<ul>
+<li>Runtime failure details now distinguish missing runtime config from not-yet-implemented live executor behavior.</li>
+</ul>
+</li>
+<li>Risk &amp; rollback plan:
+<ul>
+<li>Rollback by reverting <code>import_job_runtime.rs</code> helper/branch logic and checklist/ADR documentation updates.</li>
+</ul>
+</li>
+<li>Dependency rationale:
+<ul>
+<li>No new crates introduced; reused existing runtime and helper patterns.</li>
+</ul>
+</li>
+<li>Stale-policy check:
+<ul>
+<li>Reviewed <code>AGENTS.md</code>, <code>.github/instructions/rust.instructions.md</code>, and <code>.github/instructions/revaer-data.instructions.md</code>.</li>
+<li>No instruction contradictions found; removed checklist drift by aligning shipped scheduler status with actual implementation.</li>
 </ul>
 </li>
 </ul>

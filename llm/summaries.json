@@ -2934,6 +2934,15 @@
     "href": "/adr/315-indexer-import-job-runtime-worker/"
   },
   {
+    "id": "adr/316-import-runtime-gap-closure-followup",
+    "title": "Import runtime gap-closure follow-up",
+    "summary": "Status: Accepted Date: 2026-05-23 Context: The import job runtime worker landed, but two gaps remained: prowlarr_api runtime handling used a single placeholder identifier and error reason without validating the persisted run configuration snapshot. ERD_INDEXERS_CHECKLIST.md still marked the in-process scheduler item unchecked even though scheduler/runtime wiring had already shipped. Decision: Tighten ImportJobRuntime prowlarr_api processing by validating required config snapshot keys (prowlarr_url, secret_public_id) before result recording. Derive deterministic prowlarr_identifier from configured Prowlarr host/path prefix instead of a fixed placeholder string. Keep live external API execution explicitly out of scope for this pass and continue failing closed with stable runtime detail codes. Reconcile",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/316-import-runtime-gap-closure-followup/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",

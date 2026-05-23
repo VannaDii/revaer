@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-05-23T18:21:55.157207330+00:00",
+  "generated": "2026-05-23T21:00:46.591524470+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -2935,6 +2935,15 @@
         "task-record"
       ],
       "href": "/adr/315-indexer-import-job-runtime-worker/"
+    },
+    {
+      "id": "adr/316-import-runtime-gap-closure-followup",
+      "title": "Import runtime gap-closure follow-up",
+      "summary": "Status: Accepted Date: 2026-05-23 Context: The import job runtime worker landed, but two gaps remained: prowlarr_api runtime handling used a single placeholder identifier and error reason without validating the persisted run configuration snapshot. ERD_INDEXERS_CHECKLIST.md still marked the in-process scheduler item unchecked even though scheduler/runtime wiring had already shipped. Decision: Tighten ImportJobRuntime prowlarr_api processing by validating required config snapshot keys (prowlarr_url, secret_public_id) before result recording. Derive deterministic prowlarr_identifier from configured Prowlarr host/path prefix instead of a fixed placeholder string. Keep live external API execution explicitly out of scope for this pass and continue failing closed with stable runtime detail codes. Reconcile",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/316-import-runtime-gap-closure-followup/"
     },
     {
       "id": "adr/index",
