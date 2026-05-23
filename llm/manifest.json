@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-04-21T03:43:47.369257840+00:00",
+  "generated": "2026-05-23T18:21:55.157207330+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -1697,7 +1697,7 @@
     {
       "id": "adr/174-indexer-import-jobs-api",
       "title": "Indexer import jobs API surface",
-      "summary": "Status: Accepted Date: 2026-01-31 Context: Need REST coverage for indexer import jobs (create/run/status/results) to satisfy ERD indexer checklist. Must preserve stored-procedure boundaries, stable errors, and testable handlers with E2E coverage. Decision: Add import job request/response models and handler wiring for create/run/status/results endpoints. Extend app facade mapping for import job error translation and results/status projection. Update OpenAPI and Playwright API coverage for new endpoints. Alternatives considered: defer API surface until full import pipeline; rejected to keep parity with checklist and procs. Consequences: Positive outcomes: import job endpoints are now reachable, documented, and covered in E2E. Risks or trade-offs: run endpoints currently",
+      "summary": "Status: Accepted Date: 2026-01-31 Context: Need REST coverage for indexer import jobs (create/run/status/results) to satisfy ERD indexer checklist. Must preserve stored-procedure boundaries, stable errors, and testable handlers with E2E coverage. Decision: Add import job request/response models and handler wiring for create/run/status/results endpoints. Extend app facade mapping for import job error translation and results/status projection. Update OpenAPI and Playwright API coverage for new endpoints. Alternatives considered: defer API surface until full import pipeline; rejected to keep parity with checklist and procs. Consequences: Positive outcomes: import job endpoints are now reachable, documented, and covered in E2E. Risks or trade-offs: runtime worker support",
       "tags": [
         "task-record"
       ],
@@ -2926,6 +2926,15 @@
         "task-record"
       ],
       "href": "/adr/314-artifacthub-verification-and-official-readiness/"
+    },
+    {
+      "id": "adr/315-indexer-import-job-runtime-worker",
+      "title": "Indexer import job runtime worker",
+      "summary": "Status: Accepted Date: 2026-05-23 Context: Import job API/CLI surfaces existed, but running jobs could remain in running status with no runtime worker finalizing results. Revaer policy requires runtime data access through stored procedures and deterministic, panic-free background execution. Decision: Add worker stored procedures for claim, result recording, and terminal state transitions in migration 0122_import_job_runtime_worker.sql. Add ImportJobRuntime in revaer-app and wire it into bootstrap lifecycle start/stop alongside the indexer runtime. Implement deterministic runtime handling for supported import kinds: prowlarr_backup: parse backup reference details, record a deterministic result code, and mark completed. prowlarr_api: record deterministic not-configured failure and mark failed until live",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/315-indexer-import-job-runtime-worker/"
     },
     {
       "id": "adr/index",
