@@ -80,6 +80,17 @@ pub struct JobPreflightReport {
     pub capacity_report: WorkspaceCapacityReport,
 }
 
+/// Deterministic structured preflight failure payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobPreflightFailureReport {
+    /// Stage where preflight failed.
+    pub failed_stage: &'static str,
+    /// Machine-readable failure code.
+    pub error_code: &'static str,
+    /// Stage timeline projected from the failure.
+    pub timeline: Vec<PreflightStageRecord>,
+}
+
 /// Deterministic stage record for preflight explainability.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreflightStageRecord {
@@ -204,6 +215,16 @@ pub fn preflight_timeline_for_error(error: &JobPreflightError) -> Vec<PreflightS
         });
     }
     timeline
+}
+
+/// Build deterministic failure report details from a preflight error.
+#[must_use]
+pub fn preflight_failure_report(error: &JobPreflightError) -> JobPreflightFailureReport {
+    JobPreflightFailureReport {
+        failed_stage: preflight_failed_stage(error),
+        error_code: preflight_error_code(error),
+        timeline: preflight_timeline_for_error(error),
+    }
 }
 
 /// Build a deterministic plan and estimate workspace usage.
@@ -405,8 +426,9 @@ mod tests {
         BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob, PreflightStageRecord,
         build_job_execution_steps, build_job_execution_steps_with_capabilities,
         build_preflight_report, ensure_execution_capacity, plan_job, plan_job_from_inspect,
-        preflight_error_code, preflight_failed_stage, preflight_success_timeline,
-        preflight_timeline_for_error, require_valid_capability_snapshot, summarize_planned_job,
+        preflight_error_code, preflight_failed_stage, preflight_failure_report,
+        preflight_success_timeline, preflight_timeline_for_error,
+        require_valid_capability_snapshot, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
     use crate::inspect::{InspectAdapter, InspectError};
@@ -859,5 +881,20 @@ mod tests {
         assert_eq!(timeline[4].stage, "summarize");
         assert!(timeline.iter().all(|row| row.ok));
         assert!(timeline.iter().all(|row| row.code.is_none()));
+    }
+
+    #[test]
+    fn preflight_failure_report_projects_stage_code_and_timeline() {
+        let err = JobPreflightError::Build(BuildArgsError::UnsupportedCodec("libx265"));
+        let report = preflight_failure_report(&err);
+        assert_eq!(report.failed_stage, "build_steps");
+        assert_eq!(report.error_code, "preflight_build_unsupported_codec");
+        assert_eq!(report.timeline.len(), 4);
+        assert!(report.timeline[0].ok);
+        assert!(!report.timeline[3].ok);
+        assert_eq!(
+            report.timeline[3].code,
+            Some("preflight_build_unsupported_codec")
+        );
     }
 }
