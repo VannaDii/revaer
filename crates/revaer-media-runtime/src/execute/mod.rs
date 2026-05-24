@@ -113,13 +113,13 @@ pub fn build_execution_steps_with_capabilities(
     for operation in operations {
         match operation.kind {
             OperationKind::AudioTranscode => {
-                if !capabilities.codecs.iter().any(|codec| codec == "aac") {
+                if !capabilities_has_codec(capabilities, "aac") {
                     return Err(BuildArgsError::UnsupportedCodec("aac"));
                 }
             }
             OperationKind::VideoTranscode => {
                 // ffmpeg codec-list commonly exposes encoder as `libx265`.
-                if !capabilities.codecs.iter().any(|codec| codec == "libx265") {
+                if !capabilities_has_codec(capabilities, "libx265") {
                     return Err(BuildArgsError::UnsupportedCodec("libx265"));
                 }
             }
@@ -127,6 +127,13 @@ pub fn build_execution_steps_with_capabilities(
         }
     }
     build_execution_steps(input_path, output_path, operations)
+}
+
+fn capabilities_has_codec(capabilities: &CapabilitySnapshot, required: &str) -> bool {
+    capabilities
+        .codecs
+        .iter()
+        .any(|codec| codec.trim().eq_ignore_ascii_case(required))
 }
 
 #[cfg(test)]
@@ -205,6 +212,22 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["aac".to_string()],
+        };
+        let steps =
+            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
+        assert!(steps.is_ok());
+    }
+
+    #[test]
+    fn capability_checked_execution_accepts_trimmed_case_insensitive_codec_names() {
+        let op = PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["  LIBX265  ".to_string()],
         };
         let steps =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);

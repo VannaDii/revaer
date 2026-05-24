@@ -357,3 +357,4 @@
     -   [325: Media transcoding capability-gated execution steps slice 8](adr/325-media-transcoding-capability-gated-execution-steps-slice-8.md)
     -   [326: Media transcoding planned job summary slice 4](adr/326-media-transcoding-planned-job-summary-slice-4.md)
     -   [327: Media transcoding preflight report runtime slice 8/12](adr/327-media-transcoding-preflight-report-runtime-slice-8-12.md)
+    -   [328: Media transcoding codec capability normalization slice 8](adr/328-media-transcoding-codec-capability-normalization-slice-8.md)
