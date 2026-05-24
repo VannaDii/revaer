@@ -167,6 +167,15 @@ const PREFLIGHT_STAGE_ORDER: [&str; 5] = [
     "summarize",
 ];
 
+/// Build deterministic stage records for a successful preflight run.
+#[must_use]
+pub fn preflight_success_timeline() -> Vec<PreflightStageRecord> {
+    PREFLIGHT_STAGE_ORDER
+        .iter()
+        .map(|stage| PreflightStageRecord { stage, ok: true })
+        .collect()
+}
+
 /// Build a deterministic stage timeline for a failed preflight result.
 #[must_use]
 pub fn preflight_timeline_for_error(error: &JobPreflightError) -> Vec<PreflightStageRecord> {
@@ -325,28 +334,7 @@ pub fn build_preflight_report(
         capabilities,
     )?;
     let summary = summarize_planned_job(&planned);
-    let timeline = vec![
-        PreflightStageRecord {
-            stage: "inspect_plan",
-            ok: true,
-        },
-        PreflightStageRecord {
-            stage: "capability_ready",
-            ok: true,
-        },
-        PreflightStageRecord {
-            stage: "workspace_capacity",
-            ok: true,
-        },
-        PreflightStageRecord {
-            stage: "build_steps",
-            ok: true,
-        },
-        PreflightStageRecord {
-            stage: "summarize",
-            ok: true,
-        },
-    ];
+    let timeline = preflight_success_timeline();
     Ok(JobPreflightReport {
         planned,
         summary,
@@ -402,8 +390,8 @@ mod tests {
         BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob, PreflightStageRecord,
         build_job_execution_steps, build_job_execution_steps_with_capabilities,
         build_preflight_report, ensure_execution_capacity, plan_job, plan_job_from_inspect,
-        preflight_error_code, preflight_failed_stage, preflight_timeline_for_error,
-        require_valid_capability_snapshot, summarize_planned_job,
+        preflight_error_code, preflight_failed_stage, preflight_success_timeline,
+        preflight_timeline_for_error, require_valid_capability_snapshot, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
     use crate::inspect::{InspectAdapter, InspectError};
@@ -838,5 +826,14 @@ mod tests {
         assert!(timeline[1].ok);
         assert_eq!(timeline[2].stage, "workspace_capacity");
         assert!(!timeline[2].ok);
+    }
+
+    #[test]
+    fn preflight_success_timeline_marks_all_stages_successful() {
+        let timeline = preflight_success_timeline();
+        assert_eq!(timeline.len(), 5);
+        assert_eq!(timeline[0].stage, "inspect_plan");
+        assert_eq!(timeline[4].stage, "summarize");
+        assert!(timeline.iter().all(|row| row.ok));
     }
 }
