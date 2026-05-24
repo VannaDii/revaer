@@ -2804,6 +2804,7 @@ dependencies = [
  "revaer-events",
  "revaer-fsops",
  "revaer-media-core",
+ "revaer-media-runtime",
  "revaer-runtime",
  "revaer-telemetry",
  "revaer-test-support",
