@@ -342,3 +342,4 @@
 -   [328](328-media-transcoding-codec-capability-normalization-slice-8.md) – Media transcoding codec capability normalization slice 8
 -   [329](329-media-transcoding-workspace-capacity-report-slice-12.md) – Media transcoding workspace capacity report slice 12
 -   [330](330-media-transcoding-preflight-timeline-records-slice-4-8.md) – Media transcoding preflight timeline records slice 4/8
+-   [331](331-media-transcoding-preflight-error-classification-slice-4-8.md) – Media transcoding preflight error classification slice 4/8

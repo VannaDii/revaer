@@ -118,6 +118,45 @@ pub enum JobPreflightError {
     Build(#[from] BuildArgsError),
 }
 
+/// Deterministic machine-readable error code for preflight failures.
+#[must_use]
+pub fn preflight_error_code(error: &JobPreflightError) -> &'static str {
+    match error {
+        JobPreflightError::Inspect(_) => "preflight_inspect_failed",
+        JobPreflightError::Plan(_) => "preflight_plan_failed",
+        JobPreflightError::Capability(_) => "preflight_capability_failed",
+        JobPreflightError::Workspace(WorkspaceError::InvalidPolicy) => {
+            "preflight_workspace_invalid_policy"
+        }
+        JobPreflightError::Workspace(WorkspaceError::InsufficientReserve) => {
+            "preflight_workspace_insufficient_reserve"
+        }
+        JobPreflightError::Workspace(WorkspaceError::InsufficientCapacity) => {
+            "preflight_workspace_insufficient_capacity"
+        }
+        JobPreflightError::Workspace(WorkspaceError::ExceedsMaxWorkspace) => {
+            "preflight_workspace_exceeds_max"
+        }
+        JobPreflightError::Build(BuildArgsError::MissingStreamId) => {
+            "preflight_build_missing_stream_id"
+        }
+        JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
+            "preflight_build_unsupported_codec"
+        }
+    }
+}
+
+/// Deterministic stage label for preflight failures.
+#[must_use]
+pub fn preflight_failed_stage(error: &JobPreflightError) -> &'static str {
+    match error {
+        JobPreflightError::Inspect(_) | JobPreflightError::Plan(_) => "inspect_plan",
+        JobPreflightError::Capability(_) => "capability_ready",
+        JobPreflightError::Workspace(_) => "workspace_capacity",
+        JobPreflightError::Build(_) => "build_steps",
+    }
+}
+
 /// Build a deterministic plan and estimate workspace usage.
 ///
 /// # Errors
@@ -335,7 +374,8 @@ mod tests {
         BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob, PreflightStageRecord,
         build_job_execution_steps, build_job_execution_steps_with_capabilities,
         build_preflight_report, ensure_execution_capacity, plan_job, plan_job_from_inspect,
-        require_valid_capability_snapshot, summarize_planned_job,
+        preflight_error_code, preflight_failed_stage, require_valid_capability_snapshot,
+        summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
     use crate::inspect::{InspectAdapter, InspectError};
@@ -738,5 +778,22 @@ mod tests {
         };
         assert_eq!(record.stage, "build_steps");
         assert!(record.ok);
+    }
+
+    #[test]
+    fn preflight_error_classification_is_deterministic() {
+        let err = JobPreflightError::Workspace(WorkspaceError::ExceedsMaxWorkspace);
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_workspace_exceeds_max"
+        );
+        assert_eq!(preflight_failed_stage(&err), "workspace_capacity");
+
+        let err = JobPreflightError::Build(BuildArgsError::UnsupportedCodec("libx265"));
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_unsupported_codec"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
     }
 }
