@@ -26,6 +26,7 @@ use tracing::Span;
 
 use crate::TorrentHandles;
 use crate::app::indexers::IndexerFacade;
+use crate::app::media::{MediaFacade, test_media};
 use crate::app::state::ApiState;
 use crate::config::SharedConfig;
 use crate::error::{ApiServerError, ApiServerResult};
@@ -40,6 +41,7 @@ use crate::http::filesystem::browse_filesystem;
 use crate::http::health::{dashboard, health, health_full, metrics};
 use crate::http::indexers as indexer_handlers;
 use crate::http::logs::stream_logs;
+use crate::http::media as media_handlers;
 use crate::http::settings::{factory_reset, get_config_snapshot, settings_patch, well_known};
 use crate::http::setup::{setup_complete, setup_start};
 use crate::http::sse::stream_events;
@@ -85,6 +87,33 @@ impl ApiServer {
         )
     }
 
+    /// Construct a new API server with an explicit media facade.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if telemetry cannot be initialized or if persisting the `OpenAPI` document
+    /// fails.
+    pub fn new_with_media(
+        config: ConfigService,
+        indexers: Arc<dyn IndexerFacade>,
+        media: Arc<dyn MediaFacade>,
+        events: EventBus,
+        torrent: Option<TorrentHandles>,
+        telemetry: Metrics,
+    ) -> ApiServerResult<Self> {
+        let openapi_path = crate::openapi_output_path();
+        let openapi = OpenApiDependencies::embedded_at(&openapi_path);
+        Self::with_config_with_media(
+            Arc::new(config),
+            indexers,
+            media,
+            events,
+            torrent,
+            telemetry,
+            &openapi,
+        )
+    }
+
     fn with_config(
         config: SharedConfig,
         indexers: Arc<dyn IndexerFacade>,
@@ -96,6 +125,20 @@ impl ApiServer {
         Self::with_config_at(config, indexers, events, torrent, telemetry, openapi)
     }
 
+    fn with_config_with_media(
+        config: SharedConfig,
+        indexers: Arc<dyn IndexerFacade>,
+        media: Arc<dyn MediaFacade>,
+        events: EventBus,
+        torrent: Option<TorrentHandles>,
+        telemetry: Metrics,
+        openapi: &OpenApiDependencies,
+    ) -> ApiServerResult<Self> {
+        Self::with_config_at_with_media(
+            config, indexers, media, events, torrent, telemetry, openapi,
+        )
+    }
+
     pub(crate) fn with_config_at(
         config: SharedConfig,
         indexers: Arc<dyn IndexerFacade>,
@@ -104,12 +147,33 @@ impl ApiServer {
         telemetry: Metrics,
         openapi: &OpenApiDependencies,
     ) -> ApiServerResult<Self> {
-        Self::with_dependencies(config, indexers, events, torrent, telemetry, openapi)
+        Self::with_dependencies(
+            config,
+            indexers,
+            test_media(),
+            events,
+            torrent,
+            telemetry,
+            openapi,
+        )
+    }
+
+    pub(crate) fn with_config_at_with_media(
+        config: SharedConfig,
+        indexers: Arc<dyn IndexerFacade>,
+        media: Arc<dyn MediaFacade>,
+        events: EventBus,
+        torrent: Option<TorrentHandles>,
+        telemetry: Metrics,
+        openapi: &OpenApiDependencies,
+    ) -> ApiServerResult<Self> {
+        Self::with_dependencies(config, indexers, media, events, torrent, telemetry, openapi)
     }
 
     fn with_dependencies(
         config: SharedConfig,
         indexers: Arc<dyn IndexerFacade>,
+        media: Arc<dyn MediaFacade>,
         events: EventBus,
         torrent: Option<TorrentHandles>,
         telemetry: Metrics,
@@ -121,9 +185,18 @@ impl ApiServer {
                 source,
             }
         })?;
-        let state = Self::build_state(
+        let _default_state = Self::build_state(
+            config.clone(),
+            indexers.clone(),
+            telemetry.clone(),
+            Arc::clone(&openapi.document),
+            events.clone(),
+            torrent.clone(),
+        );
+        let state = Self::build_state_with_media(
             config,
             indexers,
+            media,
             telemetry.clone(),
             Arc::clone(&openapi.document),
             events,
@@ -206,6 +279,26 @@ impl ApiServer {
         Arc::new(ApiState::new(
             config,
             indexers,
+            telemetry,
+            openapi_document,
+            events,
+            torrent,
+        ))
+    }
+
+    pub(crate) fn build_state_with_media(
+        config: SharedConfig,
+        indexers: Arc<dyn IndexerFacade>,
+        media: Arc<dyn MediaFacade>,
+        telemetry: Metrics,
+        openapi_document: Arc<serde_json::Value>,
+        events: EventBus,
+        torrent: Option<TorrentHandles>,
+    ) -> Arc<ApiState> {
+        Arc::new(ApiState::new_with_media(
+            config,
+            indexers,
+            media,
             telemetry,
             openapi_document,
             events,
@@ -305,6 +398,7 @@ impl ApiServer {
     fn v1_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
         Self::v1_core_routes(state)
             .merge(Self::v1_indexer_routes(state))
+            .merge(Self::v1_media_routes(state))
             .merge(Self::v1_torrent_routes(state))
     }
 
@@ -365,6 +459,44 @@ impl ApiServer {
                 post(indexer_handlers::import_cardigann_definition),
             )
             .route_layer(require_api)
+    }
+
+    fn v1_media_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+        let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
+
+        Router::new()
+            .route(
+                "/v1/media/profiles",
+                get(media_handlers::list_media_profiles)
+                    .post(media_handlers::upsert_media_profile)
+                    .route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/jobs",
+                get(media_handlers::list_media_jobs)
+                    .post(media_handlers::create_media_job)
+                    .route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/jobs/{media_job_public_id}/phases",
+                post(media_handlers::append_media_job_phase).route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/capabilities",
+                post(media_handlers::record_media_capability).route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/export",
+                get(media_handlers::export_media_yaml).route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/imports/validate",
+                post(media_handlers::validate_media_yaml).route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/imports/apply",
+                post(media_handlers::apply_media_yaml).route_layer(require_api),
+            )
     }
 
     fn v1_indexer_tag_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {

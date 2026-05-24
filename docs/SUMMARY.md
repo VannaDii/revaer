@@ -346,3 +346,8 @@
     -   [314: Artifact Hub verification and official readiness](adr/314-artifacthub-verification-and-official-readiness.md)
     -   [315: Indexer import job runtime worker](adr/315-indexer-import-job-runtime-worker.md)
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
+    -   [317: Media transcoding foundation slice 1](adr/317-media-transcoding-foundation-slice-1.md)
+    -   [318: Media transcoding persistence foundation slice 6](adr/318-media-transcoding-persistence-foundation-slice-6.md)
+    -   [319: Media transcoding runtime facade slice 8 foundation](adr/319-media-transcoding-runtime-facade-slice-8-foundation.md)
+    -   [320: Media transcoding API surface foundation slice 10](adr/320-media-transcoding-api-surface-foundation-slice-10.md)
+    -   [321: Media transcoding YAML import and export foundation slice 7](adr/321-media-transcoding-yaml-import-export-foundation-slice-7.md)

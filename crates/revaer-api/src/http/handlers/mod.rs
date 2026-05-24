@@ -11,6 +11,7 @@ pub mod filesystem;
 pub mod health;
 pub mod indexers;
 pub mod logs;
+pub mod media;
 pub mod settings;
 pub mod setup;
 pub mod sse;

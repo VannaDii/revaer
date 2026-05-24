@@ -274,6 +274,176 @@ pub struct TagListResponse {
     pub tags: Vec<TagListItemResponse>,
 }
 
+/// Request payload for creating or updating a media profile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileUpsertRequest {
+    /// Stable profile key.
+    pub profile_key: String,
+    /// Source root path.
+    pub source_root: String,
+    /// Output root path.
+    pub output_root: String,
+    /// Dry-run policy.
+    pub dry_run_only: bool,
+    /// Retention in days.
+    pub retention_days: i32,
+}
+
+/// Media profile row response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileResponse {
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Stable profile key.
+    pub profile_key: String,
+    /// Source root path.
+    pub source_root: String,
+    /// Output root path.
+    pub output_root: String,
+    /// Dry-run policy.
+    pub dry_run_only: bool,
+    /// Retention in days.
+    pub retention_days: i32,
+    /// Updated timestamp.
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Media profile list response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileListResponse {
+    /// Active profiles.
+    pub profiles: Vec<MediaProfileResponse>,
+}
+
+/// Request payload for creating a media job.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCreateRequest {
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Source path.
+    pub source_path: String,
+    /// Output path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    /// Dry-run flag.
+    pub dry_run: bool,
+}
+
+/// Request payload for appending a media job phase.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPhaseAppendRequest {
+    /// Phase order index.
+    pub phase_index: i32,
+    /// Phase name.
+    pub phase_name: String,
+    /// Phase status text.
+    pub phase_status: String,
+    /// Optional details.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details_text: Option<String>,
+}
+
+/// Media job response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobResponse {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+    /// Source path.
+    pub source_path: String,
+    /// Output path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    /// Status text.
+    pub status: String,
+    /// Dry-run flag.
+    pub dry_run: bool,
+    /// Queued timestamp.
+    pub queued_at: DateTime<Utc>,
+    /// Started timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<DateTime<Utc>>,
+    /// Completed timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime<Utc>>,
+    /// Last error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
+/// Media job create response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCreateResponse {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+}
+
+/// Media jobs list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobListResponse {
+    /// Media jobs.
+    pub jobs: Vec<MediaJobResponse>,
+}
+
+/// Request payload for recording one media capability snapshot row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityRecordRequest {
+    /// ffmpeg version.
+    pub ffmpeg_version: String,
+    /// ffprobe version.
+    pub ffprobe_version: String,
+    /// Codec name.
+    pub codec_name: String,
+    /// Encode support.
+    pub encode_supported: bool,
+    /// Decode support.
+    pub decode_supported: bool,
+}
+
+/// Response payload for a capability snapshot write.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityRecordResponse {
+    /// Snapshot numeric identifier.
+    pub media_capability_snapshot_id: i64,
+}
+
+/// YAML export response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlExportResponse {
+    /// Version marker.
+    pub version: String,
+    /// Serialized YAML payload.
+    pub yaml_payload: String,
+}
+
+/// YAML validate/apply request payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlImportRequest {
+    /// Serialized YAML payload.
+    pub yaml_payload: String,
+}
+
+/// YAML validation response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlValidationResponse {
+    /// Schema version from the payload.
+    pub version: String,
+    /// Whether validation passed.
+    pub valid: bool,
+    /// Validation issue codes.
+    pub issues: Vec<String>,
+    /// Parsed profile count.
+    pub profile_count: usize,
+}
+
+/// YAML apply response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlApplyResponse {
+    /// Whether dry-run was forced for imported profiles.
+    pub forced_dry_run: bool,
+    /// Imported profile ids.
+    pub media_profile_public_ids: Vec<Uuid>,
+}
+
 /// Health notification hook creation request payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IndexerHealthNotificationHookCreateRequest {
