@@ -174,6 +174,17 @@ pub struct MediaCapabilitySnapshotResponse {
     pub observed_at: DateTime<Utc>,
 }
 
+/// Media capability readiness response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaCapabilityReadinessResponse {
+    /// Whether media execution can proceed.
+    pub ready: bool,
+    /// Reason code when not ready.
+    pub reason: Option<String>,
+    /// Latest snapshot when available.
+    pub snapshot: Option<MediaCapabilitySnapshotResponse>,
+}
+
 /// Media service error kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaServiceErrorKind {
@@ -289,6 +300,11 @@ pub trait MediaFacade: Send + Sync {
         &self,
     ) -> Result<Option<MediaCapabilitySnapshotResponse>, MediaServiceError>;
 
+    /// Read current capability readiness.
+    async fn media_capability_readiness(
+        &self,
+    ) -> Result<MediaCapabilityReadinessResponse, MediaServiceError>;
+
     /// Export active media profiles as versioned YAML.
     async fn media_yaml_export(&self) -> Result<String, MediaServiceError>;
 
@@ -355,6 +371,16 @@ impl MediaFacade for NoopMedia {
         &self,
     ) -> Result<Option<MediaCapabilitySnapshotResponse>, MediaServiceError> {
         Ok(None)
+    }
+
+    async fn media_capability_readiness(
+        &self,
+    ) -> Result<MediaCapabilityReadinessResponse, MediaServiceError> {
+        Ok(MediaCapabilityReadinessResponse {
+            ready: false,
+            reason: Some("media_capability_snapshot_missing".to_string()),
+            snapshot: None,
+        })
     }
 
     async fn media_yaml_export(&self) -> Result<String, MediaServiceError> {

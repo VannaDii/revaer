@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use revaer_api::app::media::{
+    MediaCapabilityReadinessResponse as AppMediaCapabilityReadinessResponse,
     MediaCapabilityRecordParams,
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
     MediaJobCreateParams, MediaJobPhaseAppendParams, MediaJobResponse, MediaProfileResponse,
@@ -173,6 +174,29 @@ impl MediaFacade for MediaService {
                 })
             })
             .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_capability_readiness(
+        &self,
+    ) -> Result<AppMediaCapabilityReadinessResponse, MediaServiceError> {
+        let snapshot = self.media_capability_latest().await?;
+        let (ready, reason) = match snapshot.as_ref() {
+            None => (false, Some("media_capability_snapshot_missing".to_string())),
+            Some(item)
+                if item.ffmpeg_version.trim().is_empty()
+                    || item.ffprobe_version.trim().is_empty()
+                    || item.codec_name.trim().is_empty() =>
+            {
+                (false, Some("media_capability_snapshot_invalid".to_string()))
+            }
+            Some(_) => (true, None),
+        };
+
+        Ok(AppMediaCapabilityReadinessResponse {
+            ready,
+            reason,
+            snapshot,
+        })
     }
 
     async fn media_yaml_export(&self) -> Result<String, MediaServiceError> {

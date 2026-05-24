@@ -244,9 +244,9 @@ pub(crate) async fn latest_media_capability(
 pub(crate) async fn media_capability_readiness(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<MediaCapabilityReadinessResponse>, ApiError> {
-    let snapshot = state
+    let readiness = state
         .media
-        .media_capability_latest()
+        .media_capability_readiness()
         .await
         .map_err(|err| {
             map_media_error(
@@ -254,7 +254,10 @@ pub(crate) async fn media_capability_readiness(
                 MEDIA_CAPABILITY_READINESS_FAILED,
                 &err,
             )
-        })?
+        })?;
+
+    let snapshot = readiness
+        .snapshot
         .map(|row| MediaCapabilitySnapshotResponse {
             media_capability_snapshot_id: row.media_capability_snapshot_id,
             ffmpeg_version: row.ffmpeg_version,
@@ -265,21 +268,9 @@ pub(crate) async fn media_capability_readiness(
             observed_at: row.observed_at,
         });
 
-    let (ready, reason) = match snapshot.as_ref() {
-        None => (false, Some("media_capability_snapshot_missing".to_string())),
-        Some(item)
-            if item.ffmpeg_version.trim().is_empty()
-                || item.ffprobe_version.trim().is_empty()
-                || item.codec_name.trim().is_empty() =>
-        {
-            (false, Some("media_capability_snapshot_invalid".to_string()))
-        }
-        Some(_) => (true, None),
-    };
-
     Ok(Json(MediaCapabilityReadinessResponse {
-        ready,
-        reason,
+        ready: readiness.ready,
+        reason: readiness.reason,
         snapshot,
     }))
 }
