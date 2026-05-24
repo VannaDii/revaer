@@ -16,7 +16,7 @@ use revaer_events::EventBus;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
 use tracing::{error, info, warn};
 
-use revaer_media_runtime::capabilities::UnavailableCapabilityDetector;
+use revaer_media_runtime::capabilities::{FfmpegCapabilityDetector, SystemCapabilityProbeExecutor};
 use revaer_runtime::RuntimeStore;
 use revaer_runtime::media::MediaStore;
 
@@ -381,7 +381,11 @@ fn build_api_server(
     ));
     let media = Arc::new(MediaService::new(
         MediaStore::new(config.pool().clone()),
-        Arc::new(UnavailableCapabilityDetector),
+        Arc::new(FfmpegCapabilityDetector::new(
+            Arc::new(SystemCapabilityProbeExecutor),
+            "ffmpeg",
+            "ffprobe",
+        )),
     ));
     revaer_api::ApiServer::new_with_media(
         config.clone(),

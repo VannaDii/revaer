@@ -384,6 +384,10 @@ fn map_detect_error(error: CapabilityDetectError) -> MediaServiceError {
             MediaServiceError::new(MediaServiceErrorKind::Storage)
                 .with_code("media_capability_refresh_unavailable")
         }
+        CapabilityDetectError::CommandFailed(_) | CapabilityDetectError::OutputMalformed(_) => {
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+                .with_code("media_capability_refresh_failed")
+        }
     }
 }
 
