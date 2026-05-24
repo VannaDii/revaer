@@ -7,6 +7,7 @@ use revaer_api::app::media::{
     MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
 };
 use revaer_data::DataError;
+use revaer_data::media::capabilities::CapabilitySnapshotRow;
 use revaer_data::media::capabilities::RecordCapabilitySnapshotInput;
 use revaer_data::media::jobs::CreateMediaJobInput;
 use revaer_data::media::profiles::UpsertMediaProfileInput;
@@ -72,6 +73,15 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaJobCreateParams<'_>,
     ) -> Result<Uuid, MediaServiceError> {
+        if !params.dry_run {
+            let latest = self
+                .store
+                .latest_capability()
+                .await
+                .map_err(|err| map_data_error(&err))?;
+            ensure_execution_capability_snapshot(latest.as_ref())?;
+        }
+
         self.store
             .create_job(&CreateMediaJobInput {
                 actor_public_id: params.actor_user_public_id,
@@ -298,4 +308,70 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
     }
 
     service_error
+}
+
+fn ensure_execution_capability_snapshot(
+    snapshot: Option<&CapabilitySnapshotRow>,
+) -> Result<(), MediaServiceError> {
+    let Some(snapshot) = snapshot else {
+        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_capability_snapshot_missing"));
+    };
+
+    let valid = !snapshot.ffmpeg_version.trim().is_empty()
+        && !snapshot.ffprobe_version.trim().is_empty()
+        && !snapshot.codec_name.trim().is_empty();
+    if !valid {
+        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_capability_snapshot_invalid"));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_execution_capability_snapshot;
+    use revaer_data::media::capabilities::CapabilitySnapshotRow;
+
+    #[test]
+    fn reject_missing_capability_snapshot() {
+        let result = ensure_execution_capability_snapshot(None);
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_capability_snapshot_missing".to_string())
+        );
+    }
+
+    #[test]
+    fn reject_invalid_capability_snapshot() {
+        let row = CapabilitySnapshotRow {
+            media_capability_snapshot_id: 1,
+            ffmpeg_version: "".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codec_name: "h264".to_string(),
+            encode_supported: true,
+            decode_supported: true,
+            observed_at: chrono::Utc::now(),
+        };
+        let result = ensure_execution_capability_snapshot(Some(&row));
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_capability_snapshot_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn accept_valid_capability_snapshot() {
+        let row = CapabilitySnapshotRow {
+            media_capability_snapshot_id: 1,
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codec_name: "h264".to_string(),
+            encode_supported: true,
+            decode_supported: true,
+            observed_at: chrono::Utc::now(),
+        };
+        assert!(ensure_execution_capability_snapshot(Some(&row)).is_ok());
+    }
 }
