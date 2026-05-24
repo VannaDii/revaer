@@ -340,3 +340,4 @@
 -   [326](326-media-transcoding-planned-job-summary-slice-4.md) – Media transcoding planned job summary slice 4
 -   [327](327-media-transcoding-preflight-report-runtime-slice-8-12.md) – Media transcoding preflight report runtime slice 8/12
 -   [328](328-media-transcoding-codec-capability-normalization-slice-8.md) – Media transcoding codec capability normalization slice 8
+-   [329](329-media-transcoding-workspace-capacity-report-slice-12.md) – Media transcoding workspace capacity report slice 12
