@@ -21,6 +21,7 @@ revaer-torrent-core = { path = "../revaer-torrent-core" }
 revaer-torrent-libt = { path = "../revaer-torrent-libt", default-features = false }
 revaer-events = { path = "../revaer-events" }
 revaer-media-core = { path = "../revaer-media-core" }
+revaer-media-runtime = { path = "../revaer-media-runtime" }
 revaer-runtime = { path = "../revaer-runtime" }
 revaer-data = { path = "../revaer-data" }
 uuid.workspace = true

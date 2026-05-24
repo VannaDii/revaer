@@ -406,6 +406,13 @@ pub struct MediaCapabilityRecordResponse {
     pub media_capability_snapshot_id: i64,
 }
 
+/// Response payload for a capability refresh operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityRefreshResponse {
+    /// Snapshot numeric identifier.
+    pub media_capability_snapshot_id: i64,
+}
+
 /// Latest media capability snapshot payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaCapabilitySnapshotResponse {

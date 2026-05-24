@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use revaer_api::app::media::{
     MediaCapabilityReadinessResponse as AppMediaCapabilityReadinessResponse,
-    MediaCapabilityRecordParams,
+    MediaCapabilityRecordParams, MediaCapabilityRefreshParams,
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
     MediaJobCreateParams, MediaJobPhaseAppendParams, MediaJobResponse, MediaProfileResponse,
     MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind, MediaYamlApplyResult,
@@ -15,21 +15,24 @@ use revaer_data::media::capabilities::RecordCapabilitySnapshotInput;
 use revaer_data::media::jobs::CreateMediaJobInput;
 use revaer_data::media::profiles::UpsertMediaProfileInput;
 use revaer_media_core::compile::{MediaProfile, validate_profiles};
+use revaer_media_runtime::capabilities::{CapabilityDetectError, CapabilityDetector};
 use revaer_runtime::media::MediaStore;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Production media facade backed by `revaer-runtime` media store.
 #[derive(Clone)]
 pub(crate) struct MediaService {
     store: MediaStore,
+    detector: Arc<dyn CapabilityDetector>,
 }
 
 impl MediaService {
     /// Construct media service from runtime media store.
     #[must_use]
-    pub(crate) const fn new(store: MediaStore) -> Self {
-        Self { store }
+    pub(crate) fn new(store: MediaStore, detector: Arc<dyn CapabilityDetector>) -> Self {
+        Self { store, detector }
     }
 }
 
@@ -151,6 +154,25 @@ impl MediaFacade for MediaService {
                 codec_name: params.codec_name,
                 encode_supported: params.encode_supported,
                 decode_supported: params.decode_supported,
+            })
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_capability_refresh(
+        &self,
+        params: MediaCapabilityRefreshParams,
+    ) -> Result<i64, MediaServiceError> {
+        let snapshot = self.detector.detect().map_err(map_detect_error)?;
+
+        self.store
+            .record_capability(&RecordCapabilitySnapshotInput {
+                actor_public_id: params.actor_user_public_id,
+                ffmpeg_version: &snapshot.ffmpeg_version,
+                ffprobe_version: &snapshot.ffprobe_version,
+                codec_name: snapshot.codecs.first().map_or("", String::as_str),
+                encode_supported: true,
+                decode_supported: true,
             })
             .await
             .map_err(|err| map_data_error(&err))
@@ -354,6 +376,15 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
     }
 
     service_error
+}
+
+fn map_detect_error(error: CapabilityDetectError) -> MediaServiceError {
+    match error {
+        CapabilityDetectError::Unavailable => {
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+                .with_code("media_capability_refresh_unavailable")
+        }
+    }
 }
 
 fn ensure_execution_capability_snapshot(

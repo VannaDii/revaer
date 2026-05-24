@@ -76,6 +76,13 @@ pub struct MediaCapabilityRecordParams<'a> {
     pub decode_supported: bool,
 }
 
+/// Refresh capability snapshot parameters.
+#[derive(Debug, Clone)]
+pub struct MediaCapabilityRefreshParams {
+    /// Actor performing the operation.
+    pub actor_user_public_id: Uuid,
+}
+
 /// Profile row used in YAML import/export payloads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaYamlProfile {
@@ -295,6 +302,12 @@ pub trait MediaFacade: Send + Sync {
         params: MediaCapabilityRecordParams<'_>,
     ) -> Result<i64, MediaServiceError>;
 
+    /// Refresh capability snapshot from runtime detector.
+    async fn media_capability_refresh(
+        &self,
+        params: MediaCapabilityRefreshParams,
+    ) -> Result<i64, MediaServiceError>;
+
     /// Read latest capability snapshot row when available.
     async fn media_capability_latest(
         &self,
@@ -363,6 +376,13 @@ impl MediaFacade for NoopMedia {
     async fn media_capability_record(
         &self,
         _params: MediaCapabilityRecordParams<'_>,
+    ) -> Result<i64, MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
+    async fn media_capability_refresh(
+        &self,
+        _params: MediaCapabilityRefreshParams,
     ) -> Result<i64, MediaServiceError> {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }

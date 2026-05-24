@@ -16,6 +16,7 @@ use revaer_events::EventBus;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
 use tracing::{error, info, warn};
 
+use revaer_media_runtime::capabilities::UnavailableCapabilityDetector;
 use revaer_runtime::RuntimeStore;
 use revaer_runtime::media::MediaStore;
 
@@ -378,7 +379,10 @@ fn build_api_server(
         Arc::new(config.clone()),
         telemetry.clone(),
     ));
-    let media = Arc::new(MediaService::new(MediaStore::new(config.pool().clone())));
+    let media = Arc::new(MediaService::new(
+        MediaStore::new(config.pool().clone()),
+        Arc::new(UnavailableCapabilityDetector),
+    ));
     revaer_api::ApiServer::new_with_media(
         config.clone(),
         indexers,

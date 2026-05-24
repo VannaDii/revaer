@@ -11,19 +11,19 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::media::{
-    MediaCapabilityRecordParams, MediaJobCreateParams, MediaJobPhaseAppendParams,
-    MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
+    MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCreateParams,
+    MediaJobPhaseAppendParams, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
 use crate::http::handlers::indexers::SYSTEM_ACTOR_PUBLIC_ID;
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse, MediaCapabilityRecordRequest,
-    MediaCapabilityRecordResponse, MediaCapabilitySnapshotResponse, MediaJobCreateRequest,
-    MediaJobCreateResponse, MediaJobListResponse, MediaJobPhaseAppendRequest, MediaJobResponse,
-    MediaProfileListResponse, MediaProfileResponse, MediaProfileUpsertRequest,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlValidationResponse,
+    MediaCapabilityRecordResponse, MediaCapabilityRefreshResponse, MediaCapabilitySnapshotResponse,
+    MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
+    MediaJobPhaseAppendRequest, MediaJobResponse, MediaProfileListResponse, MediaProfileResponse,
+    MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
+    MediaYamlImportRequest, MediaYamlValidationResponse,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -34,6 +34,7 @@ const MEDIA_JOB_PHASE_APPEND_FAILED: &str = "failed to append media job phase";
 const MEDIA_CAPABILITY_RECORD_FAILED: &str = "failed to record media capability snapshot";
 const MEDIA_CAPABILITY_LATEST_FAILED: &str = "failed to load latest media capability snapshot";
 const MEDIA_CAPABILITY_READINESS_FAILED: &str = "failed to determine media capability readiness";
+const MEDIA_CAPABILITY_REFRESH_FAILED: &str = "failed to refresh media capability snapshot";
 const MEDIA_YAML_EXPORT_FAILED: &str = "failed to export media yaml";
 const MEDIA_YAML_VALIDATE_FAILED: &str = "failed to validate media yaml";
 const MEDIA_YAML_APPLY_FAILED: &str = "failed to apply media yaml";
@@ -209,6 +210,31 @@ pub(crate) async fn record_media_capability(
     Ok((
         StatusCode::CREATED,
         Json(MediaCapabilityRecordResponse {
+            media_capability_snapshot_id,
+        }),
+    ))
+}
+
+pub(crate) async fn refresh_media_capability(
+    State(state): State<Arc<ApiState>>,
+) -> Result<(StatusCode, Json<MediaCapabilityRefreshResponse>), ApiError> {
+    let media_capability_snapshot_id = state
+        .media
+        .media_capability_refresh(MediaCapabilityRefreshParams {
+            actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
+        })
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_capability_refresh",
+                MEDIA_CAPABILITY_REFRESH_FAILED,
+                &err,
+            )
+        })?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(MediaCapabilityRefreshResponse {
             media_capability_snapshot_id,
         }),
     ))
@@ -421,6 +447,18 @@ mod tests {
         let err = create_media_job(State(state), Json(request))
             .await
             .expect_err("noop media facade should fail writes");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn refresh_media_capability_maps_noop_storage_failure_to_internal() -> anyhow::Result<()>
+    {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let err = refresh_media_capability(State(state))
+            .await
+            .expect_err("noop media facade should fail refresh");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         Ok(())
