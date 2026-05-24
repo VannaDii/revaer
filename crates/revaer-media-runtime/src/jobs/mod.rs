@@ -142,6 +142,15 @@ impl JobPreflightEvaluation {
             Self::Failed(report) => Some(report.error_code),
         }
     }
+
+    /// Borrow the stage timeline for both ready and failed outcomes.
+    #[must_use]
+    pub fn timeline(&self) -> &[PreflightStageRecord] {
+        match self {
+            Self::Ready(report) => &report.timeline,
+            Self::Failed(report) => &report.timeline,
+        }
+    }
 }
 
 /// Deterministic stage record for preflight explainability.
@@ -1065,5 +1074,7 @@ mod tests {
         assert_eq!(ready.error_code(), None);
         assert_eq!(failed.failed_stage(), Some("capability_ready"));
         assert_eq!(failed.error_code(), Some("preflight_capability_failed"));
+        assert_eq!(ready.timeline().len(), 0);
+        assert_eq!(failed.timeline().len(), 0);
     }
 }
