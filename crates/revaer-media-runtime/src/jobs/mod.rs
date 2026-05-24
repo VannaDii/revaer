@@ -100,6 +100,14 @@ pub enum JobPreflightEvaluation {
     Failed(JobPreflightFailureReport),
 }
 
+impl JobPreflightEvaluation {
+    /// Returns true when preflight evaluation is ready for execution.
+    #[must_use]
+    pub const fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready(_))
+    }
+}
+
 /// Deterministic stage record for preflight explainability.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreflightStageRecord {
@@ -459,12 +467,13 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 #[cfg(test)]
 mod tests {
     use super::{
-        BuildArgsError, JobPreflightError, JobPreflightEvaluation, JobPreflightRequest,
-        PlannedJob, PreflightStageRecord, build_job_execution_steps,
+        BuildArgsError, JobPreflightError, JobPreflightEvaluation, JobPreflightFailureReport,
+        JobPreflightReport, JobPreflightRequest, PlannedJob, PreflightStageRecord,
+        build_job_execution_steps,
         build_job_execution_steps_with_capabilities, build_preflight_report,
         ensure_execution_capacity, evaluate_preflight, plan_job, plan_job_from_inspect,
-        preflight_error_code, preflight_failed_stage,
-        preflight_failure_report, preflight_success_timeline, preflight_timeline_for_error,
+        preflight_error_code, preflight_failed_stage, preflight_failure_report,
+        preflight_success_timeline, preflight_timeline_for_error,
         require_valid_capability_snapshot, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
@@ -980,5 +989,38 @@ mod tests {
         };
         assert_eq!(failure.failed_stage, "capability_ready");
         assert_eq!(failure.error_code, "preflight_capability_failed");
+    }
+
+    #[test]
+    fn preflight_evaluation_ready_flag_is_deterministic() {
+        let ready = JobPreflightEvaluation::Ready(JobPreflightReport {
+            planned: PlannedJob {
+                operations: Vec::new(),
+                estimated_workspace_bytes: 0,
+            },
+            summary: super::PlannedJobSummary {
+                total_operations: 0,
+                remux_operations: 0,
+                audio_transcode_operations: 0,
+                video_transcode_operations: 0,
+                explanations: Vec::new(),
+            },
+            steps: Vec::new(),
+            timeline: Vec::new(),
+            capacity_report: crate::workspace::WorkspaceCapacityReport {
+                accepted: true,
+                reason: None,
+                available_after_reserve_bytes: 0,
+                required_workspace_bytes: 0,
+            },
+        });
+        assert!(ready.is_ready());
+
+        let failed = JobPreflightEvaluation::Failed(JobPreflightFailureReport {
+            failed_stage: "capability_ready",
+            error_code: "preflight_capability_failed",
+            timeline: Vec::new(),
+        });
+        assert!(!failed.is_ready());
     }
 }
