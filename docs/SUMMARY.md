@@ -366,3 +366,4 @@
     -   [334: Media transcoding preflight success timeline builder slice 4/8](adr/334-media-transcoding-preflight-success-timeline-builder-slice-4-8.md)
     -   [335: Media transcoding preflight stage-code enrichment slice 4/8](adr/335-media-transcoding-preflight-stage-code-enrichment-slice-4-8.md)
     -   [336: Media transcoding preflight failure report helper slice 4/8](adr/336-media-transcoding-preflight-failure-report-helper-slice-4-8.md)
+    -   [337: Media transcoding preflight evaluation outcome API slice 4/8](adr/337-media-transcoding-preflight-evaluation-outcome-api-slice-4-8.md)

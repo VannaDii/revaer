@@ -91,6 +91,15 @@ pub struct JobPreflightFailureReport {
     pub timeline: Vec<PreflightStageRecord>,
 }
 
+/// Deterministic preflight evaluation outcome.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JobPreflightEvaluation {
+    /// Successful preflight report.
+    Ready(JobPreflightReport),
+    /// Failed preflight report with structured diagnostics.
+    Failed(JobPreflightFailureReport),
+}
+
 /// Deterministic stage record for preflight explainability.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreflightStageRecord {
@@ -380,6 +389,33 @@ pub fn build_preflight_report(
     })
 }
 
+/// Evaluate preflight and always return a structured outcome payload.
+#[must_use]
+pub fn evaluate_preflight(
+    inspector: &dyn InspectAdapter,
+    source_path: &str,
+    output_path: &str,
+    desired: &DesiredGraph,
+    source_file_bytes: u64,
+    capabilities: &CapabilitySnapshot,
+    workspace_policy: &WorkspacePolicy,
+    free_bytes: u64,
+) -> JobPreflightEvaluation {
+    match build_preflight_report(
+        inspector,
+        source_path,
+        output_path,
+        desired,
+        source_file_bytes,
+        capabilities,
+        workspace_policy,
+        free_bytes,
+    ) {
+        Ok(report) => JobPreflightEvaluation::Ready(report),
+        Err(error) => JobPreflightEvaluation::Failed(preflight_failure_report(&error)),
+    }
+}
+
 /// Ensure media execution can proceed with a valid capability snapshot.
 ///
 /// # Errors
@@ -423,11 +459,12 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 #[cfg(test)]
 mod tests {
     use super::{
-        BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob, PreflightStageRecord,
-        build_job_execution_steps, build_job_execution_steps_with_capabilities,
-        build_preflight_report, ensure_execution_capacity, plan_job, plan_job_from_inspect,
-        preflight_error_code, preflight_failed_stage, preflight_failure_report,
-        preflight_success_timeline, preflight_timeline_for_error,
+        BuildArgsError, JobPreflightError, JobPreflightEvaluation, JobPreflightRequest,
+        PlannedJob, PreflightStageRecord, build_job_execution_steps,
+        build_job_execution_steps_with_capabilities, build_preflight_report,
+        ensure_execution_capacity, evaluate_preflight, plan_job, plan_job_from_inspect,
+        preflight_error_code, preflight_failed_stage,
+        preflight_failure_report, preflight_success_timeline, preflight_timeline_for_error,
         require_valid_capability_snapshot, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
@@ -896,5 +933,52 @@ mod tests {
             report.timeline[3].code,
             Some("preflight_build_unsupported_codec")
         );
+    }
+
+    #[test]
+    fn evaluate_preflight_returns_structured_failed_outcome() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                streams: vec![MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                }],
+            }),
+            error: None,
+        };
+        let invalid_capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: Vec::new(),
+        };
+        let policy = WorkspacePolicy {
+            max_bytes: 100_000,
+            reserve_bytes: 1_000,
+        };
+
+        let outcome = evaluate_preflight(
+            &inspector,
+            "/input/movie.mkv",
+            "/output/movie.mkv",
+            &desired,
+            4_000,
+            &invalid_capabilities,
+            &policy,
+            20_000,
+        );
+        let JobPreflightEvaluation::Failed(failure) = outcome else {
+            panic!("expected failed preflight outcome");
+        };
+        assert_eq!(failure.failed_stage, "capability_ready");
+        assert_eq!(failure.error_code, "preflight_capability_failed");
     }
 }
