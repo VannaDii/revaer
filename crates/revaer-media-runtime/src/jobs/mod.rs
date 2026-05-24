@@ -87,6 +87,8 @@ pub struct PreflightStageRecord {
     pub stage: &'static str,
     /// Whether this stage succeeded.
     pub ok: bool,
+    /// Optional machine-readable stage code.
+    pub code: Option<&'static str>,
 }
 
 /// Preflight request inputs.
@@ -172,7 +174,11 @@ const PREFLIGHT_STAGE_ORDER: [&str; 5] = [
 pub fn preflight_success_timeline() -> Vec<PreflightStageRecord> {
     PREFLIGHT_STAGE_ORDER
         .iter()
-        .map(|stage| PreflightStageRecord { stage, ok: true })
+        .map(|stage| PreflightStageRecord {
+            stage,
+            ok: true,
+            code: None,
+        })
         .collect()
 }
 
@@ -180,13 +186,22 @@ pub fn preflight_success_timeline() -> Vec<PreflightStageRecord> {
 #[must_use]
 pub fn preflight_timeline_for_error(error: &JobPreflightError) -> Vec<PreflightStageRecord> {
     let failed_stage = preflight_failed_stage(error);
+    let failed_code = preflight_error_code(error);
     let mut timeline = Vec::new();
     for stage in PREFLIGHT_STAGE_ORDER {
         if stage == failed_stage {
-            timeline.push(PreflightStageRecord { stage, ok: false });
+            timeline.push(PreflightStageRecord {
+                stage,
+                ok: false,
+                code: Some(failed_code),
+            });
             break;
         }
-        timeline.push(PreflightStageRecord { stage, ok: true });
+        timeline.push(PreflightStageRecord {
+            stage,
+            ok: true,
+            code: None,
+        });
     }
     timeline
 }
@@ -793,9 +808,11 @@ mod tests {
         let record = PreflightStageRecord {
             stage: "build_steps",
             ok: true,
+            code: None,
         };
         assert_eq!(record.stage, "build_steps");
         assert!(record.ok);
+        assert_eq!(record.code, None);
     }
 
     #[test]
@@ -822,10 +839,16 @@ mod tests {
         assert_eq!(timeline.len(), 3);
         assert_eq!(timeline[0].stage, "inspect_plan");
         assert!(timeline[0].ok);
+        assert_eq!(timeline[0].code, None);
         assert_eq!(timeline[1].stage, "capability_ready");
         assert!(timeline[1].ok);
+        assert_eq!(timeline[1].code, None);
         assert_eq!(timeline[2].stage, "workspace_capacity");
         assert!(!timeline[2].ok);
+        assert_eq!(
+            timeline[2].code,
+            Some("preflight_workspace_insufficient_capacity")
+        );
     }
 
     #[test]
@@ -835,5 +858,6 @@ mod tests {
         assert_eq!(timeline[0].stage, "inspect_plan");
         assert_eq!(timeline[4].stage, "summarize");
         assert!(timeline.iter().all(|row| row.ok));
+        assert!(timeline.iter().all(|row| row.code.is_none()));
     }
 }
