@@ -359,3 +359,4 @@
     -   [327: Media transcoding preflight report runtime slice 8/12](adr/327-media-transcoding-preflight-report-runtime-slice-8-12.md)
     -   [328: Media transcoding codec capability normalization slice 8](adr/328-media-transcoding-codec-capability-normalization-slice-8.md)
     -   [329: Media transcoding workspace capacity report slice 12](adr/329-media-transcoding-workspace-capacity-report-slice-12.md)
+    -   [330: Media transcoding preflight timeline records slice 4/8](adr/330-media-transcoding-preflight-timeline-records-slice-4-8.md)

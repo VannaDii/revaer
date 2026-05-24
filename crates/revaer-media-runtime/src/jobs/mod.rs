@@ -74,6 +74,17 @@ pub struct JobPreflightReport {
     pub summary: PlannedJobSummary,
     /// Deterministic execution steps validated against capabilities.
     pub steps: Vec<ExecutionStep>,
+    /// Stage-by-stage deterministic preflight timeline.
+    pub timeline: Vec<PreflightStageRecord>,
+}
+
+/// Deterministic stage record for preflight explainability.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreflightStageRecord {
+    /// Stage identifier.
+    pub stage: &'static str,
+    /// Whether this stage succeeded.
+    pub ok: bool,
 }
 
 /// Preflight request inputs.
@@ -248,10 +259,33 @@ pub fn build_preflight_report(
         capabilities,
     )?;
     let summary = summarize_planned_job(&planned);
+    let timeline = vec![
+        PreflightStageRecord {
+            stage: "inspect_plan",
+            ok: true,
+        },
+        PreflightStageRecord {
+            stage: "capability_ready",
+            ok: true,
+        },
+        PreflightStageRecord {
+            stage: "workspace_capacity",
+            ok: true,
+        },
+        PreflightStageRecord {
+            stage: "build_steps",
+            ok: true,
+        },
+        PreflightStageRecord {
+            stage: "summarize",
+            ok: true,
+        },
+    ];
     Ok(JobPreflightReport {
         planned,
         summary,
         steps,
+        timeline,
     })
 }
 
@@ -298,7 +332,7 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 #[cfg(test)]
 mod tests {
     use super::{
-        BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob,
+        BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob, PreflightStageRecord,
         build_job_execution_steps, build_job_execution_steps_with_capabilities,
         build_preflight_report, ensure_execution_capacity, plan_job, plan_job_from_inspect,
         require_valid_capability_snapshot, summarize_planned_job,
@@ -642,6 +676,9 @@ mod tests {
         assert!(!report.planned.operations.is_empty());
         assert!(!report.summary.explanations.is_empty());
         assert!(!report.steps.is_empty());
+        assert_eq!(report.timeline.len(), 5);
+        assert_eq!(report.timeline[0].stage, "inspect_plan");
+        assert!(report.timeline.iter().all(|item| item.ok));
     }
 
     #[test]
@@ -691,5 +728,15 @@ mod tests {
                 "media capability snapshot is invalid"
             ))
         ));
+    }
+
+    #[test]
+    fn preflight_stage_record_shape_is_stable() {
+        let record = PreflightStageRecord {
+            stage: "build_steps",
+            ok: true,
+        };
+        assert_eq!(record.stage, "build_steps");
+        assert!(record.ok);
     }
 }
