@@ -6,6 +6,7 @@ use revaer_media_core::plan::{PlannedOperation, generate_plan};
 use revaer_media_core::verify::verify_plan;
 use serde::{Deserialize, Serialize};
 
+use crate::execute::{BuildArgsError, ExecutionStep, build_execution_steps};
 use crate::workspace::WorkspacePolicy;
 
 /// Execution phase for a media job.
@@ -83,6 +84,19 @@ pub fn ensure_execution_capacity(
     policy.ensure_capacity(free_bytes, planned.estimated_workspace_bytes)
 }
 
+/// Build deterministic execution steps from planned job output.
+///
+/// # Errors
+///
+/// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
+pub fn build_job_execution_steps(
+    input_path: &str,
+    output_path: &str,
+    planned: &PlannedJob,
+) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    build_execution_steps(input_path, output_path, &planned.operations)
+}
+
 fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperation]) -> u64 {
     // Conservative fixed multipliers for current foundation implementation.
     let mut max_multiplier_num: u64 = 1;
@@ -108,7 +122,9 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 
 #[cfg(test)]
 mod tests {
-    use super::{JobPreflightRequest, ensure_execution_capacity, plan_job};
+    use super::{
+        JobPreflightRequest, build_job_execution_steps, ensure_execution_capacity, plan_job,
+    };
     use crate::workspace::{WorkspaceError, WorkspacePolicy};
     use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 
@@ -198,5 +214,48 @@ mod tests {
             ensure_execution_capacity(&policy, 20_000, &planned),
             Err(WorkspaceError::InsufficientCapacity)
         );
+    }
+
+    #[test]
+    fn build_job_execution_steps_adds_verify_step() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 1,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 1,
+                kind: StreamKind::Video,
+                codec: "hevc".to_string(),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let planned_result = plan_job(&JobPreflightRequest {
+            source,
+            desired,
+            source_file_bytes: 2_000,
+        });
+        assert!(planned_result.is_ok());
+        let Ok(planned) = planned_result else {
+            return;
+        };
+
+        let steps_result =
+            build_job_execution_steps("/input/movie.mkv", "/output/movie.mkv", &planned);
+        assert!(steps_result.is_ok());
+        let Ok(steps) = steps_result else {
+            return;
+        };
+        assert!(!steps.is_empty());
     }
 }
