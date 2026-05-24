@@ -13,7 +13,7 @@ use crate::execute::{
     BuildArgsError, ExecutionStep, build_execution_steps, build_execution_steps_with_capabilities,
 };
 use crate::inspect::{InspectAdapter, InspectError};
-use crate::workspace::{WorkspaceError, WorkspacePolicy};
+use crate::workspace::{WorkspaceCapacityReport, WorkspaceError, WorkspacePolicy};
 
 /// Execution phase for a media job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,6 +76,8 @@ pub struct JobPreflightReport {
     pub steps: Vec<ExecutionStep>,
     /// Stage-by-stage deterministic preflight timeline.
     pub timeline: Vec<PreflightStageRecord>,
+    /// Structured workspace capacity decision used during preflight.
+    pub capacity_report: WorkspaceCapacityReport,
 }
 
 /// Deterministic stage record for preflight explainability.
@@ -313,6 +315,8 @@ pub fn build_preflight_report(
 ) -> Result<JobPreflightReport, JobPreflightError> {
     let planned = plan_job_from_inspect(inspector, source_path, desired, source_file_bytes)?;
     require_valid_capability_snapshot(Some(capabilities)).map_err(JobPreflightError::Capability)?;
+    let capacity_report =
+        workspace_policy.evaluate_capacity(free_bytes, planned.estimated_workspace_bytes);
     ensure_execution_capacity(workspace_policy, free_bytes, &planned)?;
     let steps = build_job_execution_steps_with_capabilities(
         source_path,
@@ -348,6 +352,7 @@ pub fn build_preflight_report(
         summary,
         steps,
         timeline,
+        capacity_report,
     })
 }
 
@@ -742,6 +747,8 @@ mod tests {
         assert_eq!(report.timeline.len(), 5);
         assert_eq!(report.timeline[0].stage, "inspect_plan");
         assert!(report.timeline.iter().all(|item| item.ok));
+        assert!(report.capacity_report.accepted);
+        assert_eq!(report.capacity_report.reason, None);
     }
 
     #[test]
