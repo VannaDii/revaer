@@ -351,3 +351,4 @@
     -   [319: Media transcoding runtime facade slice 8 foundation](adr/319-media-transcoding-runtime-facade-slice-8-foundation.md)
     -   [320: Media transcoding API surface foundation slice 10](adr/320-media-transcoding-api-surface-foundation-slice-10.md)
     -   [321: Media transcoding YAML import and export foundation slice 7](adr/321-media-transcoding-yaml-import-export-foundation-slice-7.md)
+    -   [322: Media transcoding ffprobe inspection adapter slice 8](adr/322-media-transcoding-ffprobe-inspection-adapter-slice-8.md)
