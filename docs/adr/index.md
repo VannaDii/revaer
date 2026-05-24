@@ -334,3 +334,4 @@
 -   [320](320-media-transcoding-api-surface-foundation-slice-10.md) – Media transcoding API surface foundation slice 10
 -   [321](321-media-transcoding-yaml-import-export-foundation-slice-7.md) – Media transcoding YAML import and export foundation slice 7
 -   [322](322-media-transcoding-ffprobe-inspection-adapter-slice-8.md) – Media transcoding ffprobe inspection adapter slice 8
+-   [323](323-media-transcoding-inspect-to-plan-preflight-slice-8.md) – Media transcoding inspect-to-plan preflight slice 8

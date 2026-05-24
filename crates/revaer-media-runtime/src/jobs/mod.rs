@@ -5,9 +5,11 @@ use revaer_media_core::model::{DesiredGraph, MediaGraph};
 use revaer_media_core::plan::{PlannedOperation, generate_plan};
 use revaer_media_core::verify::verify_plan;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::capabilities::CapabilitySnapshot;
 use crate::execute::{BuildArgsError, ExecutionStep, build_execution_steps};
+use crate::inspect::{InspectAdapter, InspectError};
 use crate::workspace::WorkspacePolicy;
 
 /// Execution phase for a media job.
@@ -56,18 +58,58 @@ pub struct JobPreflightRequest {
     pub source_file_bytes: u64,
 }
 
+/// Preflight failure when inspection/planning cannot complete.
+#[derive(Debug, Error)]
+pub enum JobPreflightError {
+    /// Source inspection failed.
+    #[error(transparent)]
+    Inspect(#[from] InspectError),
+    /// Planning verification failed.
+    #[error("plan verification failed: {0}")]
+    Plan(&'static str),
+}
+
 /// Build a deterministic plan and estimate workspace usage.
 ///
 /// # Errors
 ///
 /// Returns an error when generated operations fail semantic verification.
 pub fn plan_job(request: &JobPreflightRequest) -> Result<PlannedJob, &'static str> {
-    let diff = diff_graphs(&request.source, &request.desired);
+    plan_job_from_source_graph(&request.desired, request.source_file_bytes, &request.source)
+}
+
+/// Inspect source media, then build deterministic plan output.
+///
+/// # Errors
+///
+/// Returns [`JobPreflightError::Inspect`] when source inspection fails and
+/// [`JobPreflightError::Plan`] when generated operations fail semantic verification.
+pub fn plan_job_from_inspect(
+    inspector: &dyn InspectAdapter,
+    source_path: &str,
+    desired: &DesiredGraph,
+    source_file_bytes: u64,
+) -> Result<PlannedJob, JobPreflightError> {
+    let source = inspector.inspect(source_path)?;
+    plan_job_from_source_graph(desired, source_file_bytes, &source).map_err(JobPreflightError::Plan)
+}
+
+/// Build a deterministic plan from already-inspected source graph.
+///
+/// # Errors
+///
+/// Returns an error when generated operations fail semantic verification.
+pub fn plan_job_from_source_graph(
+    desired: &DesiredGraph,
+    source_file_bytes: u64,
+    source: &MediaGraph,
+) -> Result<PlannedJob, &'static str> {
+    let diff = diff_graphs(source, desired);
     let operations = generate_plan(&diff);
     verify_plan(&operations)?;
 
     Ok(PlannedJob {
-        estimated_workspace_bytes: estimate_workspace_bytes(request.source_file_bytes, &operations),
+        estimated_workspace_bytes: estimate_workspace_bytes(source_file_bytes, &operations),
         operations,
     })
 }
@@ -141,10 +183,12 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 #[cfg(test)]
 mod tests {
     use super::{
-        JobPreflightRequest, build_job_execution_steps, ensure_execution_capacity, plan_job,
+        JobPreflightError, JobPreflightRequest, build_job_execution_steps,
+        ensure_execution_capacity, plan_job, plan_job_from_inspect,
         require_valid_capability_snapshot,
     };
     use crate::capabilities::CapabilitySnapshot;
+    use crate::inspect::{InspectAdapter, InspectError};
     use crate::workspace::{WorkspaceError, WorkspacePolicy};
     use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 
@@ -174,9 +218,9 @@ mod tests {
         };
 
         let planned_result = plan_job(&JobPreflightRequest {
-            source,
             desired,
             source_file_bytes: 1_000,
+            source,
         });
         assert!(
             planned_result.is_ok(),
@@ -214,9 +258,9 @@ mod tests {
             }],
         };
         let planned_result = plan_job(&JobPreflightRequest {
-            source,
             desired,
             source_file_bytes: 10_000,
+            source,
         });
         assert!(
             planned_result.is_ok(),
@@ -261,9 +305,9 @@ mod tests {
             }],
         };
         let planned_result = plan_job(&JobPreflightRequest {
-            source,
             desired,
             source_file_bytes: 2_000,
+            source,
         });
         assert!(planned_result.is_ok());
         let Ok(planned) = planned_result else {
@@ -305,5 +349,72 @@ mod tests {
             codecs: vec!["h264".to_string()],
         };
         assert!(require_valid_capability_snapshot(Some(&valid)).is_ok());
+    }
+
+    struct StubInspectAdapter {
+        graph: Option<MediaGraph>,
+        error: Option<InspectError>,
+    }
+
+    impl InspectAdapter for StubInspectAdapter {
+        fn inspect(&self, _source_path: &str) -> Result<MediaGraph, InspectError> {
+            if let Some(err) = &self.error {
+                return Err(InspectError::Adapter(err.to_string()));
+            }
+            self.graph
+                .clone()
+                .ok_or_else(|| InspectError::Adapter("missing graph".to_string()))
+        }
+    }
+
+    #[test]
+    fn plan_job_from_inspect_uses_inspected_graph() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 1,
+                kind: StreamKind::Video,
+                codec: "hevc".to_string(),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                streams: vec![MediaStream {
+                    stream_id: 1,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                }],
+            }),
+            error: None,
+        };
+
+        let planned = plan_job_from_inspect(&inspector, "/input/movie.mkv", &desired, 5_000);
+        assert!(planned.is_ok());
+        let Ok(planned) = planned else {
+            return;
+        };
+        assert!(!planned.operations.is_empty());
+    }
+
+    #[test]
+    fn plan_job_from_inspect_propagates_inspect_error() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let inspector = StubInspectAdapter {
+            graph: None,
+            error: Some(InspectError::Adapter("probe failed".to_string())),
+        };
+
+        let err = plan_job_from_inspect(&inspector, "/input/movie.mkv", &desired, 5_000).err();
+        assert!(matches!(err, Some(JobPreflightError::Inspect(_))));
     }
 }
