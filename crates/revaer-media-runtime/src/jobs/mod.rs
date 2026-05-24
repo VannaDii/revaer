@@ -1,8 +1,9 @@
 //! Media job status models.
 
 use revaer_media_core::diff::diff_graphs;
+use revaer_media_core::explain::{Explanation, explain_plan};
 use revaer_media_core::model::{DesiredGraph, MediaGraph};
-use revaer_media_core::plan::{PlannedOperation, generate_plan};
+use revaer_media_core::plan::{OperationKind, PlannedOperation, generate_plan};
 use revaer_media_core::verify::verify_plan;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -47,6 +48,21 @@ pub struct PlannedJob {
     pub operations: Vec<PlannedOperation>,
     /// Estimated temporary workspace usage in bytes.
     pub estimated_workspace_bytes: u64,
+}
+
+/// Deterministic summary for planned operations and explainability rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedJobSummary {
+    /// Total planned operation count.
+    pub total_operations: usize,
+    /// Count of remux operations.
+    pub remux_operations: usize,
+    /// Count of audio transcode operations.
+    pub audio_transcode_operations: usize,
+    /// Count of video transcode operations.
+    pub video_transcode_operations: usize,
+    /// Deterministic operation explanations.
+    pub explanations: Vec<Explanation>,
 }
 
 /// Preflight request inputs.
@@ -162,6 +178,30 @@ pub fn build_job_execution_steps_with_capabilities(
     )
 }
 
+/// Build a deterministic summary of planned operations.
+#[must_use]
+pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
+    let mut remux_operations = 0_usize;
+    let mut audio_transcode_operations = 0_usize;
+    let mut video_transcode_operations = 0_usize;
+
+    for operation in &planned.operations {
+        match operation.kind {
+            OperationKind::Remux => remux_operations += 1,
+            OperationKind::AudioTranscode => audio_transcode_operations += 1,
+            OperationKind::VideoTranscode => video_transcode_operations += 1,
+        }
+    }
+
+    PlannedJobSummary {
+        total_operations: planned.operations.len(),
+        remux_operations,
+        audio_transcode_operations,
+        video_transcode_operations,
+        explanations: explain_plan(&planned.operations),
+    }
+}
+
 /// Ensure media execution can proceed with a valid capability snapshot.
 ///
 /// # Errors
@@ -206,9 +246,9 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 mod tests {
     use super::{
         BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob,
-        build_job_execution_steps,
-        build_job_execution_steps_with_capabilities, ensure_execution_capacity, plan_job,
-        plan_job_from_inspect, require_valid_capability_snapshot,
+        build_job_execution_steps, build_job_execution_steps_with_capabilities,
+        ensure_execution_capacity, plan_job, plan_job_from_inspect,
+        require_valid_capability_snapshot, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
     use crate::inspect::{InspectAdapter, InspectError};
@@ -465,5 +505,33 @@ mod tests {
 
         let err = plan_job_from_inspect(&inspector, "/input/movie.mkv", &desired, 5_000).err();
         assert!(matches!(err, Some(JobPreflightError::Inspect(_))));
+    }
+
+    #[test]
+    fn summarize_planned_job_counts_kinds_and_includes_explanations() {
+        let planned = PlannedJob {
+            operations: vec![
+                PlannedOperation {
+                    kind: revaer_media_core::plan::OperationKind::Remux,
+                    stream_id: None,
+                },
+                PlannedOperation {
+                    kind: revaer_media_core::plan::OperationKind::AudioTranscode,
+                    stream_id: Some(1),
+                },
+                PlannedOperation {
+                    kind: revaer_media_core::plan::OperationKind::VideoTranscode,
+                    stream_id: Some(0),
+                },
+            ],
+            estimated_workspace_bytes: 123,
+        };
+
+        let summary = summarize_planned_job(&planned);
+        assert_eq!(summary.total_operations, 3);
+        assert_eq!(summary.remux_operations, 1);
+        assert_eq!(summary.audio_transcode_operations, 1);
+        assert_eq!(summary.video_transcode_operations, 1);
+        assert_eq!(summary.explanations.len(), 3);
     }
 }
