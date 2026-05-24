@@ -157,6 +157,29 @@ pub fn preflight_failed_stage(error: &JobPreflightError) -> &'static str {
     }
 }
 
+const PREFLIGHT_STAGE_ORDER: [&str; 5] = [
+    "inspect_plan",
+    "capability_ready",
+    "workspace_capacity",
+    "build_steps",
+    "summarize",
+];
+
+/// Build a deterministic stage timeline for a failed preflight result.
+#[must_use]
+pub fn preflight_timeline_for_error(error: &JobPreflightError) -> Vec<PreflightStageRecord> {
+    let failed_stage = preflight_failed_stage(error);
+    let mut timeline = Vec::new();
+    for stage in PREFLIGHT_STAGE_ORDER {
+        if stage == failed_stage {
+            timeline.push(PreflightStageRecord { stage, ok: false });
+            break;
+        }
+        timeline.push(PreflightStageRecord { stage, ok: true });
+    }
+    timeline
+}
+
 /// Build a deterministic plan and estimate workspace usage.
 ///
 /// # Errors
@@ -374,8 +397,8 @@ mod tests {
         BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob, PreflightStageRecord,
         build_job_execution_steps, build_job_execution_steps_with_capabilities,
         build_preflight_report, ensure_execution_capacity, plan_job, plan_job_from_inspect,
-        preflight_error_code, preflight_failed_stage, require_valid_capability_snapshot,
-        summarize_planned_job,
+        preflight_error_code, preflight_failed_stage, preflight_timeline_for_error,
+        require_valid_capability_snapshot, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
     use crate::inspect::{InspectAdapter, InspectError};
@@ -795,5 +818,18 @@ mod tests {
             "preflight_build_unsupported_codec"
         );
         assert_eq!(preflight_failed_stage(&err), "build_steps");
+    }
+
+    #[test]
+    fn preflight_timeline_for_error_marks_prior_stages_successful() {
+        let err = JobPreflightError::Workspace(WorkspaceError::InsufficientCapacity);
+        let timeline = preflight_timeline_for_error(&err);
+        assert_eq!(timeline.len(), 3);
+        assert_eq!(timeline[0].stage, "inspect_plan");
+        assert!(timeline[0].ok);
+        assert_eq!(timeline[1].stage, "capability_ready");
+        assert!(timeline[1].ok);
+        assert_eq!(timeline[2].stage, "workspace_capacity");
+        assert!(!timeline[2].ok);
     }
 }
