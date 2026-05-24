@@ -124,6 +124,24 @@ impl JobPreflightEvaluation {
             Self::Failed(report) => Some(report),
         }
     }
+
+    /// Return the failed stage when preflight evaluation failed.
+    #[must_use]
+    pub const fn failed_stage(&self) -> Option<&'static str> {
+        match self {
+            Self::Ready(_) => None,
+            Self::Failed(report) => Some(report.failed_stage),
+        }
+    }
+
+    /// Return the machine-readable error code when preflight evaluation failed.
+    #[must_use]
+    pub const fn error_code(&self) -> Option<&'static str> {
+        match self {
+            Self::Ready(_) => None,
+            Self::Failed(report) => Some(report.error_code),
+        }
+    }
 }
 
 /// Deterministic stage record for preflight explainability.
@@ -1043,5 +1061,9 @@ mod tests {
         assert!(failed.as_failed().is_some());
         assert!(ready.as_ready().is_some());
         assert!(ready.as_failed().is_none());
+        assert_eq!(ready.failed_stage(), None);
+        assert_eq!(ready.error_code(), None);
+        assert_eq!(failed.failed_stage(), Some("capability_ready"));
+        assert_eq!(failed.error_code(), Some("preflight_capability_failed"));
     }
 }

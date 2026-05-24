@@ -369,3 +369,4 @@
     -   [337: Media transcoding preflight evaluation outcome API slice 4/8](adr/337-media-transcoding-preflight-evaluation-outcome-api-slice-4-8.md)
     -   [338: Media transcoding preflight evaluation ready helper slice 4/8](adr/338-media-transcoding-preflight-evaluation-ready-helper-slice-4-8.md)
     -   [339: Media transcoding preflight evaluation accessors slice 4/8](adr/339-media-transcoding-preflight-evaluation-accessors-slice-4-8.md)
+    -   [340: Media transcoding preflight evaluation failure accessors slice 4/8](adr/340-media-transcoding-preflight-evaluation-failure-accessors-slice-4-8.md)
