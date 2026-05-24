@@ -336,3 +336,4 @@
 -   [322](322-media-transcoding-ffprobe-inspection-adapter-slice-8.md) – Media transcoding ffprobe inspection adapter slice 8
 -   [323](323-media-transcoding-inspect-to-plan-preflight-slice-8.md) – Media transcoding inspect-to-plan preflight slice 8
 -   [324](324-media-transcoding-workspace-max-enforcement-slice-12.md) – Media transcoding workspace max enforcement slice 12
+-   [325](325-media-transcoding-capability-gated-execution-steps-slice-8.md) – Media transcoding capability-gated execution steps slice 8

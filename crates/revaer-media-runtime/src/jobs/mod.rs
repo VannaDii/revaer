@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::capabilities::CapabilitySnapshot;
-use crate::execute::{BuildArgsError, ExecutionStep, build_execution_steps};
+use crate::execute::{
+    BuildArgsError, ExecutionStep, build_execution_steps, build_execution_steps_with_capabilities,
+};
 use crate::inspect::{InspectAdapter, InspectError};
 use crate::workspace::WorkspacePolicy;
 
@@ -140,6 +142,26 @@ pub fn build_job_execution_steps(
     build_execution_steps(input_path, output_path, &planned.operations)
 }
 
+/// Build deterministic execution steps from planned job output, validating required codecs.
+///
+/// # Errors
+///
+/// Returns [`BuildArgsError::UnsupportedCodec`] when required transcode codec support is missing.
+/// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
+pub fn build_job_execution_steps_with_capabilities(
+    input_path: &str,
+    output_path: &str,
+    planned: &PlannedJob,
+    capabilities: &CapabilitySnapshot,
+) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    build_execution_steps_with_capabilities(
+        input_path,
+        output_path,
+        &planned.operations,
+        capabilities,
+    )
+}
+
 /// Ensure media execution can proceed with a valid capability snapshot.
 ///
 /// # Errors
@@ -183,14 +205,16 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 #[cfg(test)]
 mod tests {
     use super::{
-        JobPreflightError, JobPreflightRequest, build_job_execution_steps,
-        ensure_execution_capacity, plan_job, plan_job_from_inspect,
-        require_valid_capability_snapshot,
+        BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob,
+        build_job_execution_steps,
+        build_job_execution_steps_with_capabilities, ensure_execution_capacity, plan_job,
+        plan_job_from_inspect, require_valid_capability_snapshot,
     };
     use crate::capabilities::CapabilitySnapshot;
     use crate::inspect::{InspectAdapter, InspectError};
     use crate::workspace::{WorkspaceError, WorkspacePolicy};
     use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
+    use revaer_media_core::plan::PlannedOperation;
 
     #[test]
     fn plan_job_builds_operations_and_estimate() {
@@ -349,6 +373,31 @@ mod tests {
             codecs: vec!["h264".to_string()],
         };
         assert!(require_valid_capability_snapshot(Some(&valid)).is_ok());
+    }
+
+    #[test]
+    fn build_job_execution_steps_with_capabilities_rejects_unsupported_codec() {
+        let planned = PlannedJob {
+            operations: vec![PlannedOperation {
+                kind: revaer_media_core::plan::OperationKind::VideoTranscode,
+                stream_id: Some(0),
+            }],
+            estimated_workspace_bytes: 100,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        assert_eq!(
+            build_job_execution_steps_with_capabilities(
+                "/input/movie.mkv",
+                "/output/movie.mkv",
+                &planned,
+                &capabilities
+            ),
+            Err(BuildArgsError::UnsupportedCodec("libx265"))
+        );
     }
 
     struct StubInspectAdapter {

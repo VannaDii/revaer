@@ -1,5 +1,6 @@
 //! Command argument builders.
 
+use crate::capabilities::CapabilitySnapshot;
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use thiserror::Error;
 
@@ -9,6 +10,9 @@ pub enum BuildArgsError {
     /// Stream id required but absent.
     #[error("stream id required for transcode operation")]
     MissingStreamId,
+    /// Required codec is not supported by runtime capabilities.
+    #[error("required codec is not supported: {0}")]
+    UnsupportedCodec(&'static str),
 }
 
 /// Deterministic execution step for runtime orchestration.
@@ -94,9 +98,44 @@ pub fn build_execution_steps(
     Ok(steps)
 }
 
+/// Build deterministic execution steps and validate required transcode codecs against capabilities.
+///
+/// # Errors
+///
+/// Returns [`BuildArgsError::UnsupportedCodec`] when a required transcode codec is unavailable.
+/// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
+pub fn build_execution_steps_with_capabilities(
+    input_path: &str,
+    output_path: &str,
+    operations: &[PlannedOperation],
+    capabilities: &CapabilitySnapshot,
+) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    for operation in operations {
+        match operation.kind {
+            OperationKind::AudioTranscode => {
+                if !capabilities.codecs.iter().any(|codec| codec == "aac") {
+                    return Err(BuildArgsError::UnsupportedCodec("aac"));
+                }
+            }
+            OperationKind::VideoTranscode => {
+                // ffmpeg codec-list commonly exposes encoder as `libx265`.
+                if !capabilities.codecs.iter().any(|codec| codec == "libx265") {
+                    return Err(BuildArgsError::UnsupportedCodec("libx265"));
+                }
+            }
+            OperationKind::Remux => {}
+        }
+    }
+    build_execution_steps(input_path, output_path, operations)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{BuildArgsError, ExecutionStep, build_execution_steps, build_ffmpeg_argv};
+    use super::{
+        BuildArgsError, ExecutionStep, build_execution_steps,
+        build_execution_steps_with_capabilities, build_ffmpeg_argv,
+    };
+    use crate::capabilities::CapabilitySnapshot;
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
 
     #[test]
@@ -137,5 +176,38 @@ mod tests {
         assert_eq!(steps.len(), 2);
         assert!(matches!(steps[0], ExecutionStep::Command { .. }));
         assert!(matches!(steps[1], ExecutionStep::VerifyOutput { .. }));
+    }
+
+    #[test]
+    fn capability_checked_execution_rejects_missing_required_codec() {
+        let op = PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        assert_eq!(
+            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities),
+            Err(BuildArgsError::UnsupportedCodec("libx265"))
+        );
+    }
+
+    #[test]
+    fn capability_checked_execution_accepts_supported_transcode_codec() {
+        let op = PlannedOperation {
+            kind: OperationKind::AudioTranscode,
+            stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["aac".to_string()],
+        };
+        let steps =
+            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
+        assert!(steps.is_ok());
     }
 }
