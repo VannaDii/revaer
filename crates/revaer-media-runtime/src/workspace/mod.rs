@@ -23,6 +23,9 @@ pub enum WorkspaceError {
     /// Free bytes cannot hold required workspace bytes above reserve.
     #[error("insufficient free disk for estimated workspace demand")]
     InsufficientCapacity,
+    /// Required workspace demand exceeds configured workspace max.
+    #[error("required workspace demand exceeds configured workspace max")]
+    ExceedsMaxWorkspace,
 }
 
 impl WorkspacePolicy {
@@ -59,12 +62,16 @@ impl WorkspacePolicy {
     /// Returns [`WorkspaceError::InvalidPolicy`] when policy values conflict.
     /// Returns [`WorkspaceError::InsufficientReserve`] when free bytes are below reserve.
     /// Returns [`WorkspaceError::InsufficientCapacity`] when demand cannot fit above reserve.
+    /// Returns [`WorkspaceError::ExceedsMaxWorkspace`] when demand exceeds configured max.
     pub fn ensure_capacity(
         &self,
         free_bytes: u64,
         required_workspace_bytes: u64,
     ) -> Result<(), WorkspaceError> {
         self.ensure_reserve(free_bytes)?;
+        if required_workspace_bytes > self.max_bytes {
+            return Err(WorkspaceError::ExceedsMaxWorkspace);
+        }
         let available_after_reserve = free_bytes - self.reserve_bytes;
         if required_workspace_bytes > available_after_reserve {
             return Err(WorkspaceError::InsufficientCapacity);
@@ -108,5 +115,17 @@ mod tests {
             reserve_bytes: 4_000,
         };
         assert!(policy.ensure_capacity(8_000, 4_000).is_ok());
+    }
+
+    #[test]
+    fn capacity_check_rejects_when_required_exceeds_workspace_max() {
+        let policy = WorkspacePolicy {
+            max_bytes: 6_000,
+            reserve_bytes: 1_000,
+        };
+        assert_eq!(
+            policy.ensure_capacity(20_000, 6_001),
+            Err(WorkspaceError::ExceedsMaxWorkspace)
+        );
     }
 }
