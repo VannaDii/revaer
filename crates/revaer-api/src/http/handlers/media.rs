@@ -18,11 +18,11 @@ use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
 use crate::http::handlers::indexers::SYSTEM_ACTOR_PUBLIC_ID;
 use crate::models::{
-    MediaCapabilityRecordRequest, MediaCapabilityRecordResponse, MediaJobCreateRequest,
-    MediaJobCreateResponse, MediaJobListResponse, MediaJobPhaseAppendRequest, MediaJobResponse,
-    MediaProfileListResponse, MediaProfileResponse, MediaProfileUpsertRequest,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlValidationResponse,
+    MediaCapabilityLatestResponse, MediaCapabilityRecordRequest, MediaCapabilityRecordResponse,
+    MediaCapabilitySnapshotResponse, MediaJobCreateRequest, MediaJobCreateResponse,
+    MediaJobListResponse, MediaJobPhaseAppendRequest, MediaJobResponse, MediaProfileListResponse,
+    MediaProfileResponse, MediaProfileUpsertRequest, MediaYamlApplyResponse,
+    MediaYamlExportResponse, MediaYamlImportRequest, MediaYamlValidationResponse,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -31,6 +31,7 @@ const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
 const MEDIA_JOB_PHASE_APPEND_FAILED: &str = "failed to append media job phase";
 const MEDIA_CAPABILITY_RECORD_FAILED: &str = "failed to record media capability snapshot";
+const MEDIA_CAPABILITY_LATEST_FAILED: &str = "failed to load latest media capability snapshot";
 const MEDIA_YAML_EXPORT_FAILED: &str = "failed to export media yaml";
 const MEDIA_YAML_VALIDATE_FAILED: &str = "failed to validate media yaml";
 const MEDIA_YAML_APPLY_FAILED: &str = "failed to apply media yaml";
@@ -211,6 +212,33 @@ pub(crate) async fn record_media_capability(
     ))
 }
 
+pub(crate) async fn latest_media_capability(
+    State(state): State<Arc<ApiState>>,
+) -> Result<Json<MediaCapabilityLatestResponse>, ApiError> {
+    let snapshot = state
+        .media
+        .media_capability_latest()
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_capability_latest",
+                MEDIA_CAPABILITY_LATEST_FAILED,
+                &err,
+            )
+        })?
+        .map(|row| MediaCapabilitySnapshotResponse {
+            media_capability_snapshot_id: row.media_capability_snapshot_id,
+            ffmpeg_version: row.ffmpeg_version,
+            ffprobe_version: row.ffprobe_version,
+            codec_name: row.codec_name,
+            encode_supported: row.encode_supported,
+            decode_supported: row.decode_supported,
+            observed_at: row.observed_at,
+        });
+
+    Ok(Json(MediaCapabilityLatestResponse { snapshot }))
+}
+
 pub(crate) async fn export_media_yaml(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<MediaYamlExportResponse>, ApiError> {
@@ -359,6 +387,15 @@ mod tests {
             .expect_err("noop media facade should fail writes");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn latest_media_capability_returns_empty_snapshot_with_default_facade()
+    -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let Json(response) = latest_media_capability(State(state)).await?;
+        assert!(response.snapshot.is_none());
         Ok(())
     }
 

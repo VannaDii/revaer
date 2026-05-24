@@ -2,9 +2,11 @@
 
 use async_trait::async_trait;
 use revaer_api::app::media::{
-    MediaCapabilityRecordParams, MediaFacade, MediaJobCreateParams, MediaJobPhaseAppendParams,
-    MediaJobResponse, MediaProfileResponse, MediaProfileUpsertParams, MediaServiceError,
-    MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
+    MediaCapabilityRecordParams,
+    MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
+    MediaJobCreateParams, MediaJobPhaseAppendParams, MediaJobResponse, MediaProfileResponse,
+    MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind, MediaYamlApplyResult,
+    MediaYamlProfile, MediaYamlValidationResult,
 };
 use revaer_data::DataError;
 use revaer_data::media::capabilities::CapabilitySnapshotRow;
@@ -150,6 +152,26 @@ impl MediaFacade for MediaService {
                 decode_supported: params.decode_supported,
             })
             .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_capability_latest(
+        &self,
+    ) -> Result<Option<AppMediaCapabilitySnapshotResponse>, MediaServiceError> {
+        self.store
+            .latest_capability()
+            .await
+            .map(|row_opt| {
+                row_opt.map(|row| AppMediaCapabilitySnapshotResponse {
+                    media_capability_snapshot_id: row.media_capability_snapshot_id,
+                    ffmpeg_version: row.ffmpeg_version,
+                    ffprobe_version: row.ffprobe_version,
+                    codec_name: row.codec_name,
+                    encode_supported: row.encode_supported,
+                    decode_supported: row.decode_supported,
+                    observed_at: row.observed_at,
+                })
+            })
             .map_err(|err| map_data_error(&err))
     }
 

@@ -406,6 +406,33 @@ pub struct MediaCapabilityRecordResponse {
     pub media_capability_snapshot_id: i64,
 }
 
+/// Latest media capability snapshot payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilitySnapshotResponse {
+    /// Snapshot numeric identifier.
+    pub media_capability_snapshot_id: i64,
+    /// ffmpeg version.
+    pub ffmpeg_version: String,
+    /// ffprobe version.
+    pub ffprobe_version: String,
+    /// Codec name.
+    pub codec_name: String,
+    /// Encode support.
+    pub encode_supported: bool,
+    /// Decode support.
+    pub decode_supported: bool,
+    /// Observation timestamp.
+    pub observed_at: DateTime<Utc>,
+}
+
+/// Latest media capability read response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityLatestResponse {
+    /// Latest snapshot when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<MediaCapabilitySnapshotResponse>,
+}
+
 /// YAML export response payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaYamlExportResponse {

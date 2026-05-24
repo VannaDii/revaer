@@ -483,7 +483,9 @@ impl ApiServer {
             )
             .route(
                 "/v1/media/capabilities",
-                post(media_handlers::record_media_capability).route_layer(require_api.clone()),
+                get(media_handlers::latest_media_capability)
+                    .post(media_handlers::record_media_capability)
+                    .route_layer(require_api.clone()),
             )
             .route(
                 "/v1/media/export",

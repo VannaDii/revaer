@@ -155,6 +155,25 @@ pub struct MediaJobResponse {
     pub last_error: Option<String>,
 }
 
+/// Media capability snapshot response row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaCapabilitySnapshotResponse {
+    /// Snapshot id.
+    pub media_capability_snapshot_id: i64,
+    /// ffmpeg version.
+    pub ffmpeg_version: String,
+    /// ffprobe version.
+    pub ffprobe_version: String,
+    /// codec name.
+    pub codec_name: String,
+    /// encode support.
+    pub encode_supported: bool,
+    /// decode support.
+    pub decode_supported: bool,
+    /// observed timestamp.
+    pub observed_at: DateTime<Utc>,
+}
+
 /// Media service error kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaServiceErrorKind {
@@ -265,6 +284,11 @@ pub trait MediaFacade: Send + Sync {
         params: MediaCapabilityRecordParams<'_>,
     ) -> Result<i64, MediaServiceError>;
 
+    /// Read latest capability snapshot row when available.
+    async fn media_capability_latest(
+        &self,
+    ) -> Result<Option<MediaCapabilitySnapshotResponse>, MediaServiceError>;
+
     /// Export active media profiles as versioned YAML.
     async fn media_yaml_export(&self) -> Result<String, MediaServiceError>;
 
@@ -325,6 +349,12 @@ impl MediaFacade for NoopMedia {
         _params: MediaCapabilityRecordParams<'_>,
     ) -> Result<i64, MediaServiceError> {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
+    async fn media_capability_latest(
+        &self,
+    ) -> Result<Option<MediaCapabilitySnapshotResponse>, MediaServiceError> {
+        Ok(None)
     }
 
     async fn media_yaml_export(&self) -> Result<String, MediaServiceError> {
