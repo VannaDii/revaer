@@ -338,3 +338,4 @@
 -   [324](324-media-transcoding-workspace-max-enforcement-slice-12.md) – Media transcoding workspace max enforcement slice 12
 -   [325](325-media-transcoding-capability-gated-execution-steps-slice-8.md) – Media transcoding capability-gated execution steps slice 8
 -   [326](326-media-transcoding-planned-job-summary-slice-4.md) – Media transcoding planned job summary slice 4
+-   [327](327-media-transcoding-preflight-report-runtime-slice-8-12.md) – Media transcoding preflight report runtime slice 8/12

@@ -13,7 +13,7 @@ use crate::execute::{
     BuildArgsError, ExecutionStep, build_execution_steps, build_execution_steps_with_capabilities,
 };
 use crate::inspect::{InspectAdapter, InspectError};
-use crate::workspace::WorkspacePolicy;
+use crate::workspace::{WorkspaceError, WorkspacePolicy};
 
 /// Execution phase for a media job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +65,17 @@ pub struct PlannedJobSummary {
     pub explanations: Vec<Explanation>,
 }
 
+/// Deterministic preflight report for one planned media job.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobPreflightReport {
+    /// Planned job operations and workspace estimate.
+    pub planned: PlannedJob,
+    /// Structured operation summary and explanations.
+    pub summary: PlannedJobSummary,
+    /// Deterministic execution steps validated against capabilities.
+    pub steps: Vec<ExecutionStep>,
+}
+
 /// Preflight request inputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobPreflightRequest {
@@ -85,6 +96,15 @@ pub enum JobPreflightError {
     /// Planning verification failed.
     #[error("plan verification failed: {0}")]
     Plan(&'static str),
+    /// Capability snapshot failed readiness checks.
+    #[error("capability preflight failed: {0}")]
+    Capability(&'static str),
+    /// Workspace reserve or capacity check failed.
+    #[error(transparent)]
+    Workspace(#[from] WorkspaceError),
+    /// Execution-step construction failed.
+    #[error(transparent)]
+    Build(#[from] BuildArgsError),
 }
 
 /// Build a deterministic plan and estimate workspace usage.
@@ -202,6 +222,39 @@ pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
     }
 }
 
+/// Build a deterministic end-to-end preflight report.
+///
+/// # Errors
+///
+/// Returns [`JobPreflightError`] when inspection, plan verification, capability checks,
+/// workspace checks, or step construction fails.
+pub fn build_preflight_report(
+    inspector: &dyn InspectAdapter,
+    source_path: &str,
+    output_path: &str,
+    desired: &DesiredGraph,
+    source_file_bytes: u64,
+    capabilities: &CapabilitySnapshot,
+    workspace_policy: &WorkspacePolicy,
+    free_bytes: u64,
+) -> Result<JobPreflightReport, JobPreflightError> {
+    let planned = plan_job_from_inspect(inspector, source_path, desired, source_file_bytes)?;
+    require_valid_capability_snapshot(Some(capabilities)).map_err(JobPreflightError::Capability)?;
+    ensure_execution_capacity(workspace_policy, free_bytes, &planned)?;
+    let steps = build_job_execution_steps_with_capabilities(
+        source_path,
+        output_path,
+        &planned,
+        capabilities,
+    )?;
+    let summary = summarize_planned_job(&planned);
+    Ok(JobPreflightReport {
+        planned,
+        summary,
+        steps,
+    })
+}
+
 /// Ensure media execution can proceed with a valid capability snapshot.
 ///
 /// # Errors
@@ -247,7 +300,7 @@ mod tests {
     use super::{
         BuildArgsError, JobPreflightError, JobPreflightRequest, PlannedJob,
         build_job_execution_steps, build_job_execution_steps_with_capabilities,
-        ensure_execution_capacity, plan_job, plan_job_from_inspect,
+        build_preflight_report, ensure_execution_capacity, plan_job, plan_job_from_inspect,
         require_valid_capability_snapshot, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
@@ -533,5 +586,110 @@ mod tests {
         assert_eq!(summary.audio_transcode_operations, 1);
         assert_eq!(summary.video_transcode_operations, 1);
         assert_eq!(summary.explanations.len(), 3);
+    }
+
+    #[test]
+    fn build_preflight_report_returns_summary_and_steps() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 1,
+                kind: StreamKind::Video,
+                codec: "hevc".to_string(),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                streams: vec![MediaStream {
+                    stream_id: 1,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                }],
+            }),
+            error: None,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["libx265".to_string()],
+        };
+        let policy = WorkspacePolicy {
+            max_bytes: 100_000,
+            reserve_bytes: 1_000,
+        };
+
+        let report = build_preflight_report(
+            &inspector,
+            "/input/movie.mkv",
+            "/output/movie.mkv",
+            &desired,
+            4_000,
+            &capabilities,
+            &policy,
+            20_000,
+        );
+        assert!(report.is_ok());
+        let Ok(report) = report else {
+            return;
+        };
+        assert!(!report.planned.operations.is_empty());
+        assert!(!report.summary.explanations.is_empty());
+        assert!(!report.steps.is_empty());
+    }
+
+    #[test]
+    fn build_preflight_report_rejects_invalid_capabilities() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                streams: vec![MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                }],
+            }),
+            error: None,
+        };
+        let invalid_capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: Vec::new(),
+        };
+        let policy = WorkspacePolicy {
+            max_bytes: 100_000,
+            reserve_bytes: 1_000,
+        };
+
+        let err = build_preflight_report(
+            &inspector,
+            "/input/movie.mkv",
+            "/output/movie.mkv",
+            &desired,
+            4_000,
+            &invalid_capabilities,
+            &policy,
+            20_000,
+        )
+        .err();
+        assert!(matches!(
+            err,
+            Some(JobPreflightError::Capability(
+                "media capability snapshot is invalid"
+            ))
+        ));
     }
 }
