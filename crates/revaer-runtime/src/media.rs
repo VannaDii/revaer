@@ -5,7 +5,10 @@
 //! - Expose strongly typed methods for media profiles, jobs, and capabilities.
 
 use revaer_data::DataResult;
-use revaer_data::media::capabilities::{RecordCapabilitySnapshotInput, record_capability_snapshot};
+use revaer_data::media::capabilities::{
+    CapabilitySnapshotRow, RecordCapabilitySnapshotInput, latest_capability_snapshot,
+    record_capability_snapshot,
+};
 use revaer_data::media::jobs::{
     CreateMediaJobInput, MediaJobRow, append_media_job_phase, create_media_job, list_media_jobs,
 };
@@ -108,6 +111,15 @@ impl MediaStore {
         input: &RecordCapabilitySnapshotInput<'_>,
     ) -> DataResult<i64> {
         record_capability_snapshot(&self.pool, input).await
+    }
+
+    /// Load latest capability snapshot, if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying query fails.
+    pub async fn latest_capability(&self) -> DataResult<Option<CapabilitySnapshotRow>> {
+        latest_capability_snapshot(&self.pool).await
     }
 }
 
@@ -228,6 +240,8 @@ mod tests {
             })
             .await?;
         assert!(snapshot_id > 0);
+        let latest = store.latest_capability().await?;
+        assert!(latest.is_some());
 
         Ok(())
     }

@@ -6,6 +6,7 @@ use revaer_media_core::plan::{PlannedOperation, generate_plan};
 use revaer_media_core::verify::verify_plan;
 use serde::{Deserialize, Serialize};
 
+use crate::capabilities::CapabilitySnapshot;
 use crate::execute::{BuildArgsError, ExecutionStep, build_execution_steps};
 use crate::workspace::WorkspacePolicy;
 
@@ -97,6 +98,23 @@ pub fn build_job_execution_steps(
     build_execution_steps(input_path, output_path, &planned.operations)
 }
 
+/// Ensure media execution can proceed with a valid capability snapshot.
+///
+/// # Errors
+///
+/// Returns an error when no capability snapshot is available or when snapshot data is invalid.
+pub fn require_valid_capability_snapshot(
+    snapshot: Option<&CapabilitySnapshot>,
+) -> Result<(), &'static str> {
+    let Some(snapshot) = snapshot else {
+        return Err("media capability snapshot is missing");
+    };
+    if !snapshot.is_valid() {
+        return Err("media capability snapshot is invalid");
+    }
+    Ok(())
+}
+
 fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperation]) -> u64 {
     // Conservative fixed multipliers for current foundation implementation.
     let mut max_multiplier_num: u64 = 1;
@@ -124,7 +142,9 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 mod tests {
     use super::{
         JobPreflightRequest, build_job_execution_steps, ensure_execution_capacity, plan_job,
+        require_valid_capability_snapshot,
     };
+    use crate::capabilities::CapabilitySnapshot;
     use crate::workspace::{WorkspaceError, WorkspacePolicy};
     use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 
@@ -257,5 +277,33 @@ mod tests {
             return;
         };
         assert!(!steps.is_empty());
+    }
+
+    #[test]
+    fn require_capability_snapshot_rejects_missing_or_invalid_state() {
+        assert_eq!(
+            require_valid_capability_snapshot(None),
+            Err("media capability snapshot is missing")
+        );
+
+        let invalid = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: Vec::new(),
+        };
+        assert_eq!(
+            require_valid_capability_snapshot(Some(&invalid)),
+            Err("media capability snapshot is invalid")
+        );
+    }
+
+    #[test]
+    fn require_capability_snapshot_accepts_valid_snapshot() {
+        let valid = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        assert!(require_valid_capability_snapshot(Some(&valid)).is_ok());
     }
 }
