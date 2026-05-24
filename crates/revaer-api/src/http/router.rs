@@ -488,6 +488,10 @@ impl ApiServer {
                     .route_layer(require_api.clone()),
             )
             .route(
+                "/v1/media/capabilities/readiness",
+                get(media_handlers::media_capability_readiness).route_layer(require_api.clone()),
+            )
+            .route(
                 "/v1/media/export",
                 get(media_handlers::export_media_yaml).route_layer(require_api.clone()),
             )

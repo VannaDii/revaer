@@ -433,6 +433,19 @@ pub struct MediaCapabilityLatestResponse {
     pub snapshot: Option<MediaCapabilitySnapshotResponse>,
 }
 
+/// Media capability readiness response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityReadinessResponse {
+    /// Whether media execution is currently ready.
+    pub ready: bool,
+    /// Readiness reason code when not ready.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Latest snapshot when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<MediaCapabilitySnapshotResponse>,
+}
+
 /// YAML export response payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaYamlExportResponse {
