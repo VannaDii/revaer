@@ -332,6 +332,8 @@ fn trim_and_filter_empty(value: Option<&str>) -> Option<&str> {
 mod tests {
     use super::*;
     use crate::http::handlers::indexers::test_support::{RecordingIndexers, indexer_test_state};
+    use crate::models::ProblemDetails;
+    use axum::body::to_bytes;
     use axum::response::IntoResponse;
 
     #[tokio::test]
@@ -357,6 +359,42 @@ mod tests {
             .expect_err("noop media facade should fail writes");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn map_media_error_preserves_capability_snapshot_missing_code() -> anyhow::Result<()> {
+        let err = MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_capability_snapshot_missing");
+        let api_error = map_media_error("media_job_create", MEDIA_JOB_CREATE_FAILED, &err);
+        let response = api_error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = to_bytes(response.into_body(), 64 * 1024).await?;
+        let problem: ProblemDetails = serde_json::from_slice(&body)?;
+        let context = problem.context.unwrap_or_default();
+        assert!(
+            context.iter().any(|item| item.name == "error_code"
+                && item.value == "media_capability_snapshot_missing")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn map_media_error_preserves_capability_snapshot_invalid_code() -> anyhow::Result<()> {
+        let err = MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_capability_snapshot_invalid");
+        let api_error = map_media_error("media_job_create", MEDIA_JOB_CREATE_FAILED, &err);
+        let response = api_error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body = to_bytes(response.into_body(), 64 * 1024).await?;
+        let problem: ProblemDetails = serde_json::from_slice(&body)?;
+        let context = problem.context.unwrap_or_default();
+        assert!(
+            context.iter().any(|item| item.name == "error_code"
+                && item.value == "media_capability_snapshot_invalid")
+        );
         Ok(())
     }
 }
