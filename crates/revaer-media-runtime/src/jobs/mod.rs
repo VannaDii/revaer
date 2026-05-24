@@ -106,6 +106,24 @@ impl JobPreflightEvaluation {
     pub const fn is_ready(&self) -> bool {
         matches!(self, Self::Ready(_))
     }
+
+    /// Borrow the ready report when preflight evaluation succeeded.
+    #[must_use]
+    pub const fn as_ready(&self) -> Option<&JobPreflightReport> {
+        match self {
+            Self::Ready(report) => Some(report),
+            Self::Failed(_) => None,
+        }
+    }
+
+    /// Borrow the failed report when preflight evaluation failed.
+    #[must_use]
+    pub const fn as_failed(&self) -> Option<&JobPreflightFailureReport> {
+        match self {
+            Self::Ready(_) => None,
+            Self::Failed(report) => Some(report),
+        }
+    }
 }
 
 /// Deterministic stage record for preflight explainability.
@@ -469,11 +487,10 @@ mod tests {
     use super::{
         BuildArgsError, JobPreflightError, JobPreflightEvaluation, JobPreflightFailureReport,
         JobPreflightReport, JobPreflightRequest, PlannedJob, PreflightStageRecord,
-        build_job_execution_steps,
-        build_job_execution_steps_with_capabilities, build_preflight_report,
-        ensure_execution_capacity, evaluate_preflight, plan_job, plan_job_from_inspect,
-        preflight_error_code, preflight_failed_stage, preflight_failure_report,
-        preflight_success_timeline, preflight_timeline_for_error,
+        build_job_execution_steps, build_job_execution_steps_with_capabilities,
+        build_preflight_report, ensure_execution_capacity, evaluate_preflight, plan_job,
+        plan_job_from_inspect, preflight_error_code, preflight_failed_stage,
+        preflight_failure_report, preflight_success_timeline, preflight_timeline_for_error,
         require_valid_capability_snapshot, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
@@ -1022,5 +1039,9 @@ mod tests {
             timeline: Vec::new(),
         });
         assert!(!failed.is_ready());
+        assert!(failed.as_ready().is_none());
+        assert!(failed.as_failed().is_some());
+        assert!(ready.as_ready().is_some());
+        assert!(ready.as_failed().is_none());
     }
 }
