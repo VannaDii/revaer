@@ -4,7 +4,7 @@ use crate::error::{Result, try_op};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const MEDIA_PROFILE_UPSERT_V1: &str = "SELECT media_profile_upsert_v1($1, $2, $3, $4, $5, $6)";
+const MEDIA_PROFILE_UPSERT_V1: &str = "SELECT media_profile_upsert_v1(actor_public_id_input => $1, profile_key_input => $2, source_root_input => $3, output_root_input => $4, dry_run_only_input => $5, retention_days_input => $6)";
 const MEDIA_PROFILE_LIST_V1: &str = "SELECT media_profile_public_id, profile_key, source_root, output_root, dry_run_only, retention_days, updated_at FROM media_profile_list_v1()";
 
 /// Input payload for media profile upsert.

@@ -57,7 +57,7 @@ pub fn validate_profile(profile: &MediaProfile) -> Result<(), ValidationError> {
 
     let source = normalize_path(&profile.source_root);
     let output = normalize_path(&profile.output_root);
-    if source.starts_with(&output) || output.starts_with(&source) {
+    if paths_overlap(&source, &output) {
         return Err(ValidationError::OverlappingRoots);
     }
 
@@ -83,7 +83,7 @@ pub fn validate_profiles(profiles: &[MediaProfile]) -> Result<(), ValidationErro
 
         let source = normalize_path(&profile.source_root);
         for other in &seen_roots {
-            if source.starts_with(other) || other.starts_with(&source) {
+            if paths_overlap(&source, other) {
                 return Err(ValidationError::OverlappingProfileRoots);
             }
         }
@@ -99,6 +99,16 @@ fn normalize_path(path: &str) -> String {
         normalized.pop();
     }
     normalized
+}
+
+fn paths_overlap(left: &str, right: &str) -> bool {
+    left == right
+        || left
+            .strip_prefix(right)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+        || right
+            .strip_prefix(left)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 #[cfg(test)]
@@ -176,5 +186,24 @@ mod tests {
             validate_profiles(&profiles),
             Err(ValidationError::OverlappingProfileRoots)
         );
+    }
+
+    #[test]
+    fn accept_sibling_paths_with_shared_prefix() {
+        let profiles = vec![
+            MediaProfile {
+                key: "tv".to_string(),
+                source_root: "/input/tv".to_string(),
+                output_root: "/output/tv".to_string(),
+                dry_run_only: true,
+            },
+            MediaProfile {
+                key: "tv2".to_string(),
+                source_root: "/input/tv2".to_string(),
+                output_root: "/output/tv2".to_string(),
+                dry_run_only: true,
+            },
+        ];
+        assert!(validate_profiles(&profiles).is_ok());
     }
 }

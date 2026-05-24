@@ -185,14 +185,6 @@ impl ApiServer {
                 source,
             }
         })?;
-        let _default_state = Self::build_state(
-            config.clone(),
-            indexers.clone(),
-            telemetry.clone(),
-            Arc::clone(&openapi.document),
-            events.clone(),
-            torrent.clone(),
-        );
         let state = Self::build_state_with_media(
             config,
             indexers,
@@ -268,6 +260,7 @@ impl ApiServer {
         Ok(Self { router })
     }
 
+    #[cfg(test)]
     pub(crate) fn build_state(
         config: SharedConfig,
         indexers: Arc<dyn IndexerFacade>,

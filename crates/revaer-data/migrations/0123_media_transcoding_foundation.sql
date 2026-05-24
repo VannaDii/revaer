@@ -142,7 +142,9 @@ BEGIN
             USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
     END IF;
 
-    IF lower(btrim(source_root_input)) = lower(btrim(output_root_input)) THEN
+    IF lower(btrim(source_root_input)) = lower(btrim(output_root_input))
+       OR lower(btrim(source_root_input)) LIKE lower(btrim(output_root_input)) || '/%'
+       OR lower(btrim(output_root_input)) LIKE lower(btrim(source_root_input)) || '/%' THEN
         RAISE EXCEPTION 'profile roots overlap'
             USING ERRCODE = 'P0001', DETAIL = 'media_profile_roots_overlap';
     END IF;
@@ -355,6 +357,32 @@ BEGIN
 
     RETURN snapshot_id_out;
 END;
+$$;
+
+CREATE OR REPLACE FUNCTION media_capability_snapshot_latest_v1()
+RETURNS TABLE (
+    media_capability_snapshot_id BIGINT,
+    ffmpeg_version TEXT,
+    ffprobe_version TEXT,
+    codec_name TEXT,
+    encode_supported BOOLEAN,
+    decode_supported BOOLEAN,
+    observed_at TIMESTAMPTZ
+)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT
+        mcs.media_capability_snapshot_id,
+        mcs.ffmpeg_version,
+        mcs.ffprobe_version,
+        mcs.codec_name,
+        mcs.encode_supported,
+        mcs.decode_supported,
+        mcs.observed_at
+    FROM media_capability_snapshot mcs
+    ORDER BY mcs.observed_at DESC, mcs.media_capability_snapshot_id DESC
+    LIMIT 1;
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_list_v1(

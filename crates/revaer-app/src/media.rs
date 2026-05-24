@@ -164,6 +164,10 @@ impl MediaFacade for MediaService {
         params: MediaCapabilityRefreshParams,
     ) -> Result<i64, MediaServiceError> {
         let snapshot = self.detector.detect().map_err(map_detect_error)?;
+        if !snapshot.is_valid() {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_capability_refresh_invalid"));
+        }
 
         self.store
             .record_capability(&RecordCapabilitySnapshotInput {
@@ -322,6 +326,9 @@ fn validate_yaml_bundle(bundle: &MediaYamlBundle) -> Vec<String> {
 
     let mut profiles = Vec::with_capacity(bundle.profiles.len());
     for profile in &bundle.profiles {
+        if !(1..=3650).contains(&profile.retention_days) {
+            issues.push("media_yaml_profile_retention_days_out_of_bounds".to_string());
+        }
         profiles.push(MediaProfile {
             key: profile.profile_key.clone(),
             source_root: profile.source_root.clone(),

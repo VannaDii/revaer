@@ -84,9 +84,9 @@ impl FfprobeInspectAdapter {
 
 impl InspectAdapter for FfprobeInspectAdapter {
     fn inspect(&self, source_path: &str) -> Result<MediaGraph, InspectError> {
-        const ARGS_PREFIX: [&str; 7] = ["-v", "error", "-show_streams", "-of", "json", "-i", ""];
+        const ARGS_PREFIX: [&str; 6] = ["-v", "error", "-show_streams", "-of", "json", ""];
         let mut args = ARGS_PREFIX;
-        args[6] = source_path;
+        args[5] = source_path;
         let output = self.executor.run(&self.ffprobe_bin, &args)?;
         let parsed: FfprobeOutput = serde_json::from_str(&output)
             .map_err(|err| InspectError::OutputMalformed(err.to_string()))?;
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_builds_expected_argv_and_maps_streams() {
-        let key = "ffprobe -v error -show_streams -of json -i /input/movie.mkv".to_string();
+        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
         let mut outputs = HashMap::new();
         outputs.insert(
             key.clone(),
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_rejects_malformed_json() {
-        let key = "ffprobe -v error -show_streams -of json -i /input/movie.mkv".to_string();
+        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
         let mut outputs = HashMap::new();
         outputs.insert(key, "{not-json".to_string());
         let adapter = FfprobeInspectAdapter::new(

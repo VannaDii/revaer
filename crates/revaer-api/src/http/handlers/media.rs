@@ -48,6 +48,10 @@ const FFMPEG_VERSION_REQUIRED: &str = "ffmpeg_version is required";
 const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
 const CODEC_NAME_REQUIRED: &str = "codec_name is required";
 const YAML_PAYLOAD_REQUIRED: &str = "yaml_payload is required";
+const MEDIA_STATUS_INVALID: &str =
+    "status must be one of: queued, running, verifying, completed, failed, cancelled";
+const PHASE_STATUS_INVALID: &str =
+    "phase_status must be one of: queued, running, verifying, completed, failed, cancelled";
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct MediaJobsQuery {
@@ -136,7 +140,10 @@ pub(crate) async fn list_media_jobs(
     State(state): State<Arc<ApiState>>,
     Query(query): Query<MediaJobsQuery>,
 ) -> Result<Json<MediaJobListResponse>, ApiError> {
-    let status = trim_and_filter_empty(query.status.as_deref());
+    let status = parse_media_status_optional(
+        trim_and_filter_empty(query.status.as_deref()),
+        MEDIA_STATUS_INVALID,
+    )?;
     let jobs = state
         .media
         .media_job_list(query.media_profile_public_id, status)
@@ -156,6 +163,7 @@ pub(crate) async fn append_media_job_phase(
 ) -> Result<StatusCode, ApiError> {
     let phase_name = normalize_required_str_field(&request.phase_name, PHASE_NAME_REQUIRED)?;
     let phase_status = normalize_required_str_field(&request.phase_status, PHASE_STATUS_REQUIRED)?;
+    let phase_status = parse_media_status_required(phase_status, PHASE_STATUS_INVALID)?;
 
     state
         .media
@@ -416,6 +424,34 @@ fn trim_and_filter_empty(value: Option<&str>) -> Option<&str> {
             Some(trimmed)
         }
     })
+}
+
+fn parse_media_status_required<'a>(
+    value: &'a str,
+    detail: &'static str,
+) -> Result<&'a str, ApiError> {
+    if is_supported_media_status(value) {
+        Ok(value)
+    } else {
+        Err(ApiError::bad_request(detail))
+    }
+}
+
+fn parse_media_status_optional<'a>(
+    value: Option<&'a str>,
+    detail: &'static str,
+) -> Result<Option<&'a str>, ApiError> {
+    match value {
+        Some(text) => parse_media_status_required(text, detail).map(Some),
+        None => Ok(None),
+    }
+}
+
+fn is_supported_media_status(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "queued" | "running" | "verifying" | "completed" | "failed" | "cancelled"
+    )
 }
 
 #[cfg(test)]

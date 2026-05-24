@@ -4,9 +4,8 @@ use crate::error::{Result, try_op};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const MEDIA_CAPABILITY_SNAPSHOT_RECORD_V1: &str =
-    "SELECT media_capability_snapshot_record_v1($1, $2, $3, $4, $5, $6)";
-const MEDIA_CAPABILITY_SNAPSHOT_LATEST_V1: &str = "SELECT media_capability_snapshot_id, ffmpeg_version, ffprobe_version, codec_name, encode_supported, decode_supported, observed_at FROM media_capability_snapshot ORDER BY observed_at DESC, media_capability_snapshot_id DESC LIMIT 1";
+const MEDIA_CAPABILITY_SNAPSHOT_RECORD_V1: &str = "SELECT media_capability_snapshot_record_v1(actor_public_id_input => $1, ffmpeg_version_input => $2, ffprobe_version_input => $3, codec_name_input => $4, encode_supported_input => $5, decode_supported_input => $6)";
+const MEDIA_CAPABILITY_SNAPSHOT_LATEST_V1: &str = "SELECT media_capability_snapshot_id, ffmpeg_version, ffprobe_version, codec_name, encode_supported, decode_supported, observed_at FROM media_capability_snapshot_latest_v1()";
 
 /// Capability snapshot insert payload.
 #[derive(Debug, Clone, PartialEq, Eq)]

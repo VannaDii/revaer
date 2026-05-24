@@ -371,3 +371,4 @@
     -   [339: Media transcoding preflight evaluation accessors slice 4/8](adr/339-media-transcoding-preflight-evaluation-accessors-slice-4-8.md)
     -   [340: Media transcoding preflight evaluation failure accessors slice 4/8](adr/340-media-transcoding-preflight-evaluation-failure-accessors-slice-4-8.md)
     -   [341: Media transcoding preflight evaluation timeline accessor slice 4/8](adr/341-media-transcoding-preflight-evaluation-timeline-accessor-slice-4-8.md)
+    -   [342: Media PR feedback alignment pass](adr/342-media-pr-feedback-alignment-pass.md)

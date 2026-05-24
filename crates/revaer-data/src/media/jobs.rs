@@ -4,9 +4,9 @@ use crate::error::{Result, try_op};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-const MEDIA_JOB_CREATE_V1: &str = "SELECT media_job_create_v1($1, $2, $3, $4, $5)";
-const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1($1, $2, $3, $4, $5)";
-const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1($1, $2::media_job_status)";
+const MEDIA_JOB_CREATE_V1: &str = "SELECT media_job_create_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, dry_run_input => $5)";
+const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1(media_job_public_id_input => $1, phase_index_input => $2, phase_name_input => $3, phase_status_input => $4, details_text_input => $5)";
+const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 
 /// Create media job payload.
 #[derive(Debug, Clone, PartialEq, Eq)]

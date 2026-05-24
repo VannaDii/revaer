@@ -16,7 +16,9 @@ use uuid::Uuid;
 
 use crate::TorrentHandles;
 use crate::app::indexers::IndexerFacade;
-use crate::app::media::{MediaFacade, test_media};
+use crate::app::media::MediaFacade;
+#[cfg(test)]
+use crate::app::media::test_media;
 use crate::config::ConfigFacade;
 use crate::http::rate_limit::{RateLimitError, RateLimitSnapshot, RateLimiter};
 use crate::http::torrents::TorrentMetadata;
@@ -422,6 +424,7 @@ const DASHBOARD_TORRENTS_COMPONENT: &str = "dashboard_torrents";
 const DASHBOARD_DISK_COMPONENT: &str = "dashboard_disk";
 
 impl ApiState {
+    #[cfg(test)]
     pub(crate) fn new(
         config: Arc<dyn ConfigFacade>,
         indexers: Arc<dyn IndexerFacade>,
