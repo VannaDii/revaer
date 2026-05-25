@@ -197,7 +197,29 @@ pub enum JobPreflightError {
     Build(#[from] BuildArgsError),
     /// Backup path could not be resolved from configured backup root and source path.
     #[error("backup preflight failed: {0}")]
-    BackupPath(&'static str),
+    BackupPath(BackupPathError),
+}
+
+/// Deterministic backup-path validation errors for preflight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupPathError {
+    /// Backup root was configured but source path has no file name.
+    SourceFileNameMissing,
+    /// Backup path resolves to source path.
+    MatchesSourcePath,
+    /// Backup path resolves to output path.
+    MatchesOutputPath,
+}
+
+impl std::fmt::Display for BackupPathError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::SourceFileNameMissing => "configured backup root requires a source file name",
+            Self::MatchesSourcePath => "backup path must not match source path",
+            Self::MatchesOutputPath => "backup path must not match output path",
+        };
+        formatter.write_str(message)
+    }
 }
 
 /// Inputs required to build/evaluate a preflight report.
@@ -344,7 +366,15 @@ pub const fn preflight_error_code(error: &JobPreflightError) -> &'static str {
         JobPreflightError::Build(BuildArgsError::CompositionRequired) => {
             "preflight_build_composition_required"
         }
-        JobPreflightError::BackupPath(_) => "preflight_backup_path_invalid",
+        JobPreflightError::BackupPath(BackupPathError::SourceFileNameMissing) => {
+            "preflight_backup_path_source_filename_missing"
+        }
+        JobPreflightError::BackupPath(BackupPathError::MatchesSourcePath) => {
+            "preflight_backup_path_matches_source"
+        }
+        JobPreflightError::BackupPath(BackupPathError::MatchesOutputPath) => {
+            "preflight_backup_path_matches_output"
+        }
     }
 }
 
@@ -625,18 +655,18 @@ pub fn build_preflight_report_from_template(
     if backup_root_configured {
         let Some(backup_path) = resolved_backup_path.as_deref() else {
             return Err(JobPreflightError::BackupPath(
-                "configured backup root requires a source file name",
+                BackupPathError::SourceFileNameMissing,
             ));
         };
 
         if backup_path == template.source_path {
             return Err(JobPreflightError::BackupPath(
-                "backup path must not match source path",
+                BackupPathError::MatchesSourcePath,
             ));
         }
         if backup_path == template.output_path {
             return Err(JobPreflightError::BackupPath(
-                "backup path must not match output path",
+                BackupPathError::MatchesOutputPath,
             ));
         }
     }
@@ -700,7 +730,7 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 #[cfg(test)]
 mod tests {
     use super::{
-        BuildArgsError, ExecutionStep, JobPreflightError, JobPreflightEvaluation,
+        BackupPathError, BuildArgsError, ExecutionStep, JobPreflightError, JobPreflightEvaluation,
         JobPreflightFailureReport, JobPreflightReport, JobPreflightRequest,
         OwnedPreflightBuildInput, PlannedJob, PreflightBuildInput, PreflightBuildTemplate,
         PreflightPolicyInput,
@@ -1511,7 +1541,10 @@ mod tests {
         let JobPreflightEvaluation::Failed(report) = outcome else {
             panic!("expected failed preflight outcome");
         };
-        assert_eq!(report.error_code, "preflight_backup_path_invalid");
+        assert_eq!(
+            report.error_code,
+            "preflight_backup_path_source_filename_missing"
+        );
         assert_eq!(report.failed_stage, "build_steps");
     }
 
@@ -1553,7 +1586,12 @@ mod tests {
                 backup_root: Some("/backup/media"),
             },
         );
-        assert!(matches!(result, Err(JobPreflightError::BackupPath(_))));
+        assert!(matches!(
+            result,
+            Err(JobPreflightError::BackupPath(
+                BackupPathError::SourceFileNameMissing
+            ))
+        ));
     }
 
     #[test]
@@ -1593,7 +1631,12 @@ mod tests {
                 backup_root: Some("/input"),
             },
         );
-        assert!(matches!(result, Err(JobPreflightError::BackupPath(_))));
+        assert!(matches!(
+            result,
+            Err(JobPreflightError::BackupPath(
+                BackupPathError::MatchesSourcePath
+            ))
+        ));
     }
 
     #[test]
@@ -1633,6 +1676,11 @@ mod tests {
                 backup_root: Some("/backup"),
             },
         );
-        assert!(matches!(result, Err(JobPreflightError::BackupPath(_))));
+        assert!(matches!(
+            result,
+            Err(JobPreflightError::BackupPath(
+                BackupPathError::MatchesOutputPath
+            ))
+        ));
     }
 }
