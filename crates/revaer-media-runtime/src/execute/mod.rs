@@ -99,32 +99,19 @@ pub fn build_execution_steps(
     output_path: &str,
     operations: &[PlannedOperation],
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    let mut steps = Vec::with_capacity(2);
-    if !operations.is_empty() {
-        let mut argv = vec![
-            "-i".to_string(),
-            input_path.to_string(),
-            "-map".to_string(),
-            "0".to_string(),
-            "-c".to_string(),
-            "copy".to_string(),
-        ];
-        for operation in operations {
-            match operation.kind {
-                OperationKind::Remux => {}
-                OperationKind::AudioTranscode => {
-                    let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
-                    argv.push(format!("-c:{stream_id}"));
-                    argv.push("aac".to_string());
-                }
-                OperationKind::VideoTranscode => {
-                    let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
-                    argv.push(format!("-c:{stream_id}"));
-                    argv.push("libx265".to_string());
-                }
-            }
-        }
-        argv.push(output_path.to_string());
+    let mut steps = Vec::with_capacity(operations.len() + 1);
+    for (index, operation) in operations.iter().enumerate() {
+        let stage_input = if index == 0 {
+            input_path.to_string()
+        } else {
+            build_intermediate_output_path(output_path, index - 1)
+        };
+        let stage_output = if index + 1 == operations.len() {
+            output_path.to_string()
+        } else {
+            build_intermediate_output_path(output_path, index)
+        };
+        let argv = build_ffmpeg_argv(&stage_input, &stage_output, operation)?;
         steps.push(ExecutionStep::Command {
             bin: "ffmpeg".to_string(),
             argv,
@@ -205,6 +192,14 @@ fn capabilities_has_codec(capabilities: &CapabilitySnapshot, required: &str) -> 
         .codecs
         .iter()
         .any(|codec| codec.trim().eq_ignore_ascii_case(required))
+}
+
+fn build_intermediate_output_path(output_path: &str, step_index: usize) -> String {
+    format!("{output_path}.stage{step_index}.tmp.mkv")
+}
+
+fn build_intermediate_output_path(output_path: &str, step_index: usize) -> String {
+    format!("{output_path}.stage{step_index}.tmp.mkv")
 }
 
 #[cfg(test)]
@@ -323,7 +318,8 @@ mod tests {
     }
 
     #[test]
-    fn compose_multi_operation_execution_into_single_command() {
+<<<<<<< HEAD
+    fn multi_operation_execution_is_composed_deterministically() {
         let operations = [
             PlannedOperation {
                 kind: OperationKind::Remux,
@@ -343,13 +339,56 @@ mod tests {
         let Ok(steps) = result else {
             return;
         };
-        assert_eq!(steps.len(), 2);
-        let Some(ExecutionStep::Command { argv, .. }) = steps.first() else {
-            panic!("expected command step");
+        assert_eq!(steps.len(), 4);
+        let ExecutionStep::Command { argv: first, .. } = &steps[0] else {
+            panic!("expected first command step");
         };
-        assert!(argv.windows(2).any(|pair| pair == ["-c", "copy"]));
-        assert!(argv.windows(2).any(|pair| pair == ["-c:1", "aac"]));
-        assert!(argv.windows(2).any(|pair| pair == ["-c:0", "libx265"]));
+        let ExecutionStep::Command { argv: second, .. } = &steps[1] else {
+            panic!("expected second command step");
+        };
+        let ExecutionStep::Command { argv: third, .. } = &steps[2] else {
+            panic!("expected third command step");
+        };
+        assert_eq!(
+            first,
+            &vec![
+                "-i",
+                "/in.mkv",
+                "-map",
+                "0",
+                "-c",
+                "copy",
+                "/out.mkv.stage0.tmp.mkv",
+            ]
+        );
+        assert_eq!(
+            second,
+            &vec![
+                "-i",
+                "/out.mkv.stage0.tmp.mkv",
+                "-map",
+                "0",
+                "-c",
+                "copy",
+                "-c:1",
+                "aac",
+                "/out.mkv.stage1.tmp.mkv",
+            ]
+        );
+        assert_eq!(
+            third,
+            &vec![
+                "-i",
+                "/out.mkv.stage1.tmp.mkv",
+                "-map",
+                "0",
+                "-c",
+                "copy",
+                "-c:0",
+                "libx265",
+                "/out.mkv",
+            ]
+        );
     }
 
     #[test]
