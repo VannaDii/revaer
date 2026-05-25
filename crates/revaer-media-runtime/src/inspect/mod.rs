@@ -197,6 +197,9 @@ fn dispositions_from_raw(raw: Option<FfprobeDisposition>) -> Vec<String> {
     if raw.hearing_impaired == Some(1) {
         dispositions.push("hearing_impaired".to_string());
     }
+    if raw.visual_impaired == Some(1) {
+        dispositions.push("visual_impaired".to_string());
+    }
     dispositions
 }
 
@@ -219,6 +222,7 @@ struct FfprobeDisposition {
     default: Option<u8>,
     forced: Option<u8>,
     hearing_impaired: Option<u8>,
+    visual_impaired: Option<u8>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -316,14 +320,14 @@ mod tests {
                         "index": 0,
                         "codec_type": "video",
                         "codec_name": "h264",
-                        "disposition": {"default": 1, "forced": 0, "hearing_impaired": 0},
+                        "disposition": {"default": 1, "forced": 0, "hearing_impaired": 0, "visual_impaired": 0},
                         "tags": {"language": "eng", "title": " Main Video "}
                     },
                     {
                         "index": 1,
                         "codec_type": "subtitle",
                         "codec_name": "subrip",
-                        "disposition": {"default": 0, "forced": 1, "hearing_impaired": 1},
+                        "disposition": {"default": 0, "forced": 1, "hearing_impaired": 1, "visual_impaired": 1},
                         "tags": {"language": "spa"}
                     }
                 ]
@@ -348,7 +352,11 @@ mod tests {
         assert_eq!(graph.streams[1].kind, StreamKind::Subtitle);
         assert_eq!(
             graph.streams[1].dispositions,
-            vec!["forced".to_string(), "hearing_impaired".to_string()]
+            vec![
+                "forced".to_string(),
+                "hearing_impaired".to_string(),
+                "visual_impaired".to_string(),
+            ]
         );
 
         executor
