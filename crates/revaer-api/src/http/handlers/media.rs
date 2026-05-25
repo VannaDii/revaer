@@ -48,6 +48,7 @@ const FFMPEG_VERSION_REQUIRED: &str = "ffmpeg_version is required";
 const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
 const CODEC_NAME_REQUIRED: &str = "codec_name is required";
 const YAML_PAYLOAD_REQUIRED: &str = "yaml_payload is required";
+const RETENTION_DAYS_INVALID: &str = "retention_days must be between 1 and 3650";
 const MEDIA_STATUS_INVALID: &str =
     "status must be one of: queued, running, verifying, completed, failed, cancelled";
 const PHASE_STATUS_INVALID: &str =
@@ -66,6 +67,7 @@ pub(crate) async fn upsert_media_profile(
     let profile_key = normalize_required_str_field(&request.profile_key, PROFILE_KEY_REQUIRED)?;
     let source_root = normalize_required_str_field(&request.source_root, SOURCE_ROOT_REQUIRED)?;
     let output_root = normalize_required_str_field(&request.output_root, OUTPUT_ROOT_REQUIRED)?;
+    validate_retention_days(request.retention_days)?;
 
     let profile_id = state
         .media
@@ -426,6 +428,14 @@ fn trim_and_filter_empty(value: Option<&str>) -> Option<&str> {
     })
 }
 
+fn validate_retention_days(value: i32) -> Result<(), ApiError> {
+    if (1..=3650).contains(&value) {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request(RETENTION_DAYS_INVALID))
+    }
+}
+
 fn parse_media_status_required(value: &str, detail: &'static str) -> Result<String, ApiError> {
     let normalized = value.trim().to_ascii_lowercase();
     if is_supported_media_status(&normalized) {
@@ -574,5 +584,17 @@ mod tests {
             return;
         };
         assert_eq!(status.as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn validate_retention_days_rejects_out_of_bounds_values() {
+        assert!(validate_retention_days(0).is_err());
+        assert!(validate_retention_days(3651).is_err());
+    }
+
+    #[test]
+    fn validate_retention_days_accepts_in_bounds_values() {
+        assert!(validate_retention_days(1).is_ok());
+        assert!(validate_retention_days(3650).is_ok());
     }
 }
