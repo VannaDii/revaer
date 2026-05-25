@@ -383,3 +383,4 @@
     -   [351: Media preflight backup-path subcodes slice 14](adr/351-media-preflight-backup-path-subcodes-slice-14.md)
     -   [352: Media preflight backup subcode test locks slice 14](adr/352-media-preflight-backup-subcode-test-locks-slice-14.md)
     -   [353: Media preflight template backup-conflict evaluation tests slice 14](adr/353-media-preflight-template-backup-conflict-evaluation-tests-slice-14.md)
+    -   [354: Media preflight failure error-detail field slice 14](adr/354-media-preflight-failure-error-detail-field-slice-14.md)

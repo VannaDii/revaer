@@ -89,6 +89,8 @@ pub struct JobPreflightFailureReport {
     pub failed_stage: &'static str,
     /// Machine-readable failure code.
     pub error_code: &'static str,
+    /// Deterministic human-readable detail.
+    pub error_detail: &'static str,
     /// Stage timeline projected from the failure.
     pub timeline: Vec<PreflightStageRecord>,
 }
@@ -378,6 +380,46 @@ pub const fn preflight_error_code(error: &JobPreflightError) -> &'static str {
     }
 }
 
+/// Deterministic human-readable detail for preflight failures.
+#[must_use]
+pub const fn preflight_error_detail(error: &JobPreflightError) -> &'static str {
+    match error {
+        JobPreflightError::Inspect(_) => "source inspection failed",
+        JobPreflightError::Plan(_) => "plan verification failed",
+        JobPreflightError::Capability(_) => "capability snapshot is missing or invalid",
+        JobPreflightError::Workspace(WorkspaceError::InvalidPolicy) => {
+            "workspace policy is invalid"
+        }
+        JobPreflightError::Workspace(WorkspaceError::InsufficientReserve) => {
+            "free disk is below workspace reserve"
+        }
+        JobPreflightError::Workspace(WorkspaceError::InsufficientCapacity) => {
+            "free disk cannot satisfy workspace demand above reserve"
+        }
+        JobPreflightError::Workspace(WorkspaceError::ExceedsMaxWorkspace) => {
+            "workspace demand exceeds configured max"
+        }
+        JobPreflightError::Build(BuildArgsError::MissingStreamId) => {
+            "stream-scoped operation is missing stream id"
+        }
+        JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
+            "required transcode codec is unavailable"
+        }
+        JobPreflightError::Build(BuildArgsError::CompositionRequired) => {
+            "operation composition support is required"
+        }
+        JobPreflightError::BackupPath(BackupPathError::SourceFileNameMissing) => {
+            "configured backup root requires a source file name"
+        }
+        JobPreflightError::BackupPath(BackupPathError::MatchesSourcePath) => {
+            "backup path must not match source path"
+        }
+        JobPreflightError::BackupPath(BackupPathError::MatchesOutputPath) => {
+            "backup path must not match output path"
+        }
+    }
+}
+
 /// Deterministic stage label for preflight failures.
 #[must_use]
 pub const fn preflight_failed_stage(error: &JobPreflightError) -> &'static str {
@@ -440,6 +482,7 @@ pub fn preflight_failure_report(error: &JobPreflightError) -> JobPreflightFailur
     JobPreflightFailureReport {
         failed_stage: preflight_failed_stage(error),
         error_code: preflight_error_code(error),
+        error_detail: preflight_error_detail(error),
         timeline: preflight_timeline_for_error(error),
     }
 }
@@ -741,7 +784,8 @@ mod tests {
         build_preflight_report,
         ensure_execution_capacity, evaluate_preflight, evaluate_preflight_from_template, plan_job,
         plan_job_from_inspect,
-        preflight_error_code, preflight_failed_stage, preflight_failure_report,
+        preflight_error_code, preflight_error_detail, preflight_failed_stage,
+        preflight_failure_report,
         preflight_success_timeline, preflight_timeline_for_error, resolve_backup_path,
         require_valid_capability_snapshot, summarize_planned_job,
     };
@@ -1253,6 +1297,7 @@ mod tests {
         let report = preflight_failure_report(&err);
         assert_eq!(report.failed_stage, "build_steps");
         assert_eq!(report.error_code, "preflight_build_unsupported_codec");
+        assert_eq!(report.error_detail, "required transcode codec is unavailable");
         assert_eq!(report.timeline.len(), 4);
         assert!(report.timeline[0].ok);
         assert!(!report.timeline[3].ok);
@@ -1340,6 +1385,7 @@ mod tests {
         let failed = JobPreflightEvaluation::Failed(JobPreflightFailureReport {
             failed_stage: "capability_ready",
             error_code: "preflight_capability_failed",
+            error_detail: "capability snapshot is missing or invalid",
             timeline: Vec::new(),
         });
         assert!(!failed.is_ready());
@@ -1801,12 +1847,35 @@ mod tests {
         ));
         assert_eq!(report.failed_stage, "build_steps");
         assert_eq!(report.error_code, "preflight_backup_path_matches_output");
+        assert_eq!(report.error_detail, "backup path must not match output path");
         assert_eq!(report.timeline.len(), 4);
         assert!(report.timeline[0].ok);
         assert!(!report.timeline[3].ok);
         assert_eq!(
             report.timeline[3].code,
             Some("preflight_backup_path_matches_output")
+        );
+    }
+
+    #[test]
+    fn preflight_error_detail_maps_backup_path_variants_deterministically() {
+        assert_eq!(
+            preflight_error_detail(&JobPreflightError::BackupPath(
+                BackupPathError::SourceFileNameMissing
+            )),
+            "configured backup root requires a source file name"
+        );
+        assert_eq!(
+            preflight_error_detail(&JobPreflightError::BackupPath(
+                BackupPathError::MatchesSourcePath
+            )),
+            "backup path must not match source path"
+        );
+        assert_eq!(
+            preflight_error_detail(&JobPreflightError::BackupPath(
+                BackupPathError::MatchesOutputPath
+            )),
+            "backup path must not match output path"
         );
     }
 }
