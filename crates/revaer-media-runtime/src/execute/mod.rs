@@ -56,7 +56,12 @@ pub fn build_ffmpeg_argv(
     output_path: &str,
     operation: &PlannedOperation,
 ) -> Result<Vec<String>, BuildArgsError> {
-    let mut args = vec!["-i".to_string(), input_path.to_string()];
+    let mut args = vec![
+        "-nostdin".to_string(),
+        "-y".to_string(),
+        "-i".to_string(),
+        input_path.to_string(),
+    ];
 
     match operation.kind {
         OperationKind::Remux => {
@@ -350,6 +355,8 @@ mod tests {
         assert_eq!(
             first,
             &vec![
+                "-nostdin",
+                "-y",
                 "-i",
                 "/in.mkv",
                 "-map",
@@ -362,6 +369,8 @@ mod tests {
         assert_eq!(
             second,
             &vec![
+                "-nostdin",
+                "-y",
                 "-i",
                 "/out.mkv.stage0.tmp.mkv",
                 "-map",
@@ -376,6 +385,8 @@ mod tests {
         assert_eq!(
             third,
             &vec![
+                "-nostdin",
+                "-y",
                 "-i",
                 "/out.mkv.stage1.tmp.mkv",
                 "-map",

@@ -98,6 +98,9 @@ fn normalize_path(path: &str) -> String {
     while normalized.ends_with('/') {
         normalized.pop();
     }
+    if normalized.is_empty() && path.trim().starts_with('/') {
+        return "/".to_string();
+    }
     normalized
 }
 
@@ -205,5 +208,16 @@ mod tests {
             },
         ];
         assert!(validate_profiles(&profiles).is_ok());
+    }
+
+    #[test]
+    fn preserve_root_path_during_normalization() {
+        let profile = MediaProfile {
+            key: "root".to_string(),
+            source_root: "/".to_string(),
+            output_root: "/output".to_string(),
+            dry_run_only: true,
+        };
+        assert!(validate_profile(&profile).is_ok());
     }
 }

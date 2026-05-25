@@ -28,13 +28,13 @@ pub struct MediaStore {
 impl MediaStore {
     /// Construct a media store facade from a connection pool.
     #[must_use]
-    pub const fn new(pool: PgPool) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
     /// Access underlying connection pool.
     #[must_use]
-    pub const fn pool(&self) -> &PgPool {
+    pub fn pool(&self) -> &PgPool {
         &self.pool
     }
 

@@ -37,17 +37,14 @@ pub fn generate_plan(diff: &GraphDiff) -> Vec<PlannedOperation> {
     }
 
     for stream in &diff.recoded_streams {
-        let kind = match stream.kind {
-            StreamKind::Audio => OperationKind::AudioTranscode,
-            StreamKind::Video => OperationKind::VideoTranscode,
+        let (kind, stream_id) = match stream.kind {
+            StreamKind::Audio => (OperationKind::AudioTranscode, Some(stream.stream_id)),
+            StreamKind::Video => (OperationKind::VideoTranscode, Some(stream.stream_id)),
             StreamKind::Subtitle | StreamKind::Attachment | StreamKind::Chapter => {
-                OperationKind::Remux
+                (OperationKind::Remux, None)
             }
         };
-        operations.push(PlannedOperation {
-            kind,
-            stream_id: Some(stream.stream_id),
-        });
+        operations.push(PlannedOperation { kind, stream_id });
     }
 
     if !diff.removed_streams.is_empty() {
