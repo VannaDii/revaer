@@ -616,15 +616,29 @@ pub fn build_preflight_report_from_template(
     template: PreflightBuildTemplate<'_>,
     policy_input: PreflightPolicyInput<'_>,
 ) -> Result<JobPreflightReport, JobPreflightError> {
-    if policy_input
+    let backup_root_configured = policy_input
         .backup_root
         .map(str::trim)
-        .is_some_and(|value| !value.is_empty())
-        && resolve_backup_path(policy_input.backup_root, template.source_path).is_none()
-    {
-        return Err(JobPreflightError::BackupPath(
-            "configured backup root requires a source file name",
-        ));
+        .is_some_and(|value| !value.is_empty());
+    let resolved_backup_path = resolve_backup_path(policy_input.backup_root, template.source_path);
+
+    if backup_root_configured {
+        let Some(backup_path) = resolved_backup_path.as_deref() else {
+            return Err(JobPreflightError::BackupPath(
+                "configured backup root requires a source file name",
+            ));
+        };
+
+        if backup_path == template.source_path {
+            return Err(JobPreflightError::BackupPath(
+                "backup path must not match source path",
+            ));
+        }
+        if backup_path == template.output_path {
+            return Err(JobPreflightError::BackupPath(
+                "backup path must not match output path",
+            ));
+        }
     }
     let input = build_preflight_input(template, policy_input);
     build_preflight_report(inspector, input.as_borrowed())
@@ -1537,6 +1551,86 @@ mod tests {
             },
             PreflightPolicyInput {
                 backup_root: Some("/backup/media"),
+            },
+        );
+        assert!(matches!(result, Err(JobPreflightError::BackupPath(_))));
+    }
+
+    #[test]
+    fn build_preflight_report_from_template_rejects_backup_path_equal_to_source() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                streams: Vec::new(),
+            }),
+            error: None,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let workspace_policy = WorkspacePolicy {
+            max_bytes: 1_000_000,
+            reserve_bytes: 10_000,
+        };
+        let result = build_preflight_report_from_template(
+            &inspector,
+            PreflightBuildTemplate {
+                source_path: "/input/movie.mkv",
+                output_path: "/output/movie.mkv",
+                desired: &desired,
+                source_file_bytes: 50_000,
+                capabilities: &capabilities,
+                workspace_policy: &workspace_policy,
+                free_bytes: 500_000,
+            },
+            PreflightPolicyInput {
+                backup_root: Some("/input"),
+            },
+        );
+        assert!(matches!(result, Err(JobPreflightError::BackupPath(_))));
+    }
+
+    #[test]
+    fn build_preflight_report_from_template_rejects_backup_path_equal_to_output() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                streams: Vec::new(),
+            }),
+            error: None,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let workspace_policy = WorkspacePolicy {
+            max_bytes: 1_000_000,
+            reserve_bytes: 10_000,
+        };
+        let result = build_preflight_report_from_template(
+            &inspector,
+            PreflightBuildTemplate {
+                source_path: "/input/movie.mkv",
+                output_path: "/backup/movie.mkv",
+                desired: &desired,
+                source_file_bytes: 50_000,
+                capabilities: &capabilities,
+                workspace_policy: &workspace_policy,
+                free_bytes: 500_000,
+            },
+            PreflightPolicyInput {
+                backup_root: Some("/backup"),
             },
         );
         assert!(matches!(result, Err(JobPreflightError::BackupPath(_))));
