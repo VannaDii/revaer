@@ -187,8 +187,8 @@ pub fn build_execution_steps_with_capabilities(
                 }
             }
             OperationKind::VideoTranscode => {
-                // ffmpeg codec-list commonly exposes encoder as `libx265`.
-                if !capabilities_has_encoder(capabilities, "libx265") {
+                // Different ffmpeg builds may expose either encoder or codec identifiers.
+                if !capabilities_has_any_encoder(capabilities, &["libx265", "hevc", "h265"]) {
                     return Err(BuildArgsError::UnsupportedCodec("libx265"));
                 }
             }
@@ -214,8 +214,27 @@ fn capabilities_has_encoder(capabilities: &CapabilitySnapshot, required: &str) -
     })
 }
 
+fn capabilities_has_any_encoder(capabilities: &CapabilitySnapshot, required: &[&str]) -> bool {
+    required
+        .iter()
+        .copied()
+        .any(|item| capabilities_has_encoder(capabilities, item))
+}
+
 fn build_intermediate_output_path(output_path: &str, step_index: usize) -> String {
-    format!("{output_path}.stage{step_index}.tmp.mkv")
+    let filename_start = output_path
+        .rfind('/')
+        .map_or(0_usize, |index| index.saturating_add(1));
+    let filename = &output_path[filename_start..];
+    let Some(dot_index) = filename.rfind('.') else {
+        return format!("{output_path}.stage{step_index}.tmp");
+    };
+    let extension = &filename[dot_index + 1..];
+    if extension.is_empty() {
+        return format!("{output_path}.stage{step_index}.tmp");
+    }
+    let stem_path = &output_path[..filename_start + dot_index];
+    format!("{stem_path}.stage{step_index}.tmp.{extension}")
 }
 
 #[cfg(test)]
@@ -378,7 +397,7 @@ mod tests {
                 "0",
                 "-c",
                 "copy",
-                "/out.mkv.stage0.tmp.mkv",
+                "/out.stage0.tmp.mkv",
             ]
         );
         assert_eq!(
@@ -387,14 +406,14 @@ mod tests {
                 "-nostdin",
                 "-y",
                 "-i",
-                "/out.mkv.stage0.tmp.mkv",
+                "/out.stage0.tmp.mkv",
                 "-map",
                 "0",
                 "-c",
                 "copy",
                 "-c:1",
                 "aac",
-                "/out.mkv.stage1.tmp.mkv",
+                "/out.stage1.tmp.mkv",
             ]
         );
         assert_eq!(
@@ -403,7 +422,7 @@ mod tests {
                 "-nostdin",
                 "-y",
                 "-i",
-                "/out.mkv.stage1.tmp.mkv",
+                "/out.stage1.tmp.mkv",
                 "-map",
                 "0",
                 "-c",
@@ -497,5 +516,52 @@ mod tests {
         let result =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn capability_checked_execution_accepts_hevc_codec_alias_for_encoder() {
+        let op = PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["hevc".to_string()],
+            codec_capabilities: vec![CodecCapability {
+                codec_name: "hevc".to_string(),
+                decode_supported: true,
+                encode_supported: true,
+            }],
+        };
+        let result =
+            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn intermediate_outputs_preserve_requested_extension() {
+        let operations = [
+            PlannedOperation {
+                kind: OperationKind::Remux,
+                stream_id: None,
+            },
+            PlannedOperation {
+                kind: OperationKind::AudioTranscode,
+                stream_id: Some(1),
+            },
+        ];
+        let result = build_execution_steps("/in.mkv", "/out.mp4", &operations);
+        assert!(result.is_ok());
+        let Ok(steps) = result else {
+            return;
+        };
+        let ExecutionStep::Command { argv: first, .. } = &steps[0] else {
+            return;
+        };
+        assert_eq!(
+            first.last().map(String::as_str),
+            Some("/out.stage0.tmp.mp4")
+        );
     }
 }
