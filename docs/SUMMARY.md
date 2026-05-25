@@ -381,3 +381,4 @@
     -   [349: Media preflight backup-path validation slice 14](adr/349-media-preflight-backup-path-validation-slice-14.md)
     -   [350: Media preflight backup-path conflict guards slice 14](adr/350-media-preflight-backup-path-conflict-guards-slice-14.md)
     -   [351: Media preflight backup-path subcodes slice 14](adr/351-media-preflight-backup-path-subcodes-slice-14.md)
+    -   [352: Media preflight backup subcode test locks slice 14](adr/352-media-preflight-backup-subcode-test-locks-slice-14.md)

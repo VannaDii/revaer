@@ -1683,4 +1683,42 @@ mod tests {
             ))
         ));
     }
+
+    #[test]
+    fn preflight_error_code_maps_backup_path_variants_deterministically() {
+        assert_eq!(
+            preflight_error_code(&JobPreflightError::BackupPath(
+                BackupPathError::SourceFileNameMissing
+            )),
+            "preflight_backup_path_source_filename_missing"
+        );
+        assert_eq!(
+            preflight_error_code(&JobPreflightError::BackupPath(
+                BackupPathError::MatchesSourcePath
+            )),
+            "preflight_backup_path_matches_source"
+        );
+        assert_eq!(
+            preflight_error_code(&JobPreflightError::BackupPath(
+                BackupPathError::MatchesOutputPath
+            )),
+            "preflight_backup_path_matches_output"
+        );
+    }
+
+    #[test]
+    fn preflight_failure_report_projects_backup_path_subcode_on_build_stage() {
+        let report = preflight_failure_report(&JobPreflightError::BackupPath(
+            BackupPathError::MatchesOutputPath,
+        ));
+        assert_eq!(report.failed_stage, "build_steps");
+        assert_eq!(report.error_code, "preflight_backup_path_matches_output");
+        assert_eq!(report.timeline.len(), 4);
+        assert!(report.timeline[0].ok);
+        assert!(!report.timeline[3].ok);
+        assert_eq!(
+            report.timeline[3].code,
+            Some("preflight_backup_path_matches_output")
+        );
+    }
 }
