@@ -208,6 +208,10 @@ mod tests {
                     || message.contains("container")
                     || message.contains("connection refused")
                     || message.contains("test database url is required")
+                    || message.contains("in recovery mode")
+                    || message.contains("starting up")
+                    || message.contains("not yet accepting connections")
+                    || message.contains("failed to create database")
                 {
                     eprintln!("skipping media store test: {err}");
                     return Ok(());
