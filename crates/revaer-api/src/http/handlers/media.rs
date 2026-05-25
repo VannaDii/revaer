@@ -11,8 +11,9 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::media::{
-    MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCreateParams,
-    MediaJobPhaseAppendParams, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
+    MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCancelParams,
+    MediaJobCreateParams, MediaJobPhaseAppendParams, MediaProfileUpsertParams, MediaServiceError,
+    MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -32,6 +33,7 @@ const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
 const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
 const MEDIA_JOB_PHASE_APPEND_FAILED: &str = "failed to append media job phase";
+const MEDIA_JOB_CANCEL_FAILED: &str = "failed to cancel media job";
 const MEDIA_CAPABILITY_RECORD_FAILED: &str = "failed to record media capability snapshot";
 const MEDIA_CAPABILITY_LATEST_FAILED: &str = "failed to load latest media capability snapshot";
 const MEDIA_CAPABILITY_READINESS_FAILED: &str = "failed to determine media capability readiness";
@@ -216,6 +218,20 @@ pub(crate) async fn append_media_job_phase(
             )
         })?;
 
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn cancel_media_job(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    state
+        .media
+        .media_job_cancel(MediaJobCancelParams {
+            media_job_public_id,
+        })
+        .await
+        .map_err(|err| map_media_error("media_job_cancel", MEDIA_JOB_CANCEL_FAILED, &err))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -619,6 +635,17 @@ mod tests {
             .expect_err("invalid phase status should fail validation");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cancel_media_job_maps_noop_storage_failure_to_internal() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let err = cancel_media_job(State(state), Path(Uuid::new_v4()))
+            .await
+            .expect_err("noop media facade should fail cancellation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         Ok(())
     }
 

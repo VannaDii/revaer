@@ -20,6 +20,7 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_capability_snapshot_record_v1",
     "media_job_list_v1",
     "media_job_get_v1",
+    "media_job_cancel_v1",
 ];
 const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
 
@@ -53,11 +54,12 @@ pub(crate) async fn setup_media_db(label: &str) -> anyhow::Result<MediaTestDb> {
     migrator.set_ignore_missing(true);
     migrator.run(&pool).await?;
 
-    let system_user_public_id =
-        sqlx::query_scalar::<_, Uuid>("SELECT user_public_id FROM app_user WHERE user_public_id = $1")
-            .bind(SYSTEM_USER_PUBLIC_ID)
-            .fetch_one(&pool)
-            .await?;
+    let system_user_public_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT user_public_id FROM app_user WHERE user_public_id = $1",
+    )
+    .bind(SYSTEM_USER_PUBLIC_ID)
+    .fetch_one(&pool)
+    .await?;
 
     Ok(MediaTestDb {
         _db: postgres,

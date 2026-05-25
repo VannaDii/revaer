@@ -59,6 +59,13 @@ pub struct MediaJobPhaseAppendParams<'a> {
     pub details_text: Option<&'a str>,
 }
 
+/// Cancel media job parameters.
+#[derive(Debug, Clone, Copy)]
+pub struct MediaJobCancelParams {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+}
+
 /// Record capability snapshot parameters.
 #[derive(Debug, Clone)]
 pub struct MediaCapabilityRecordParams<'a> {
@@ -302,6 +309,10 @@ pub trait MediaFacade: Send + Sync {
         params: MediaJobPhaseAppendParams<'_>,
     ) -> Result<(), MediaServiceError>;
 
+    /// Cancel one media job.
+    async fn media_job_cancel(&self, params: MediaJobCancelParams)
+    -> Result<(), MediaServiceError>;
+
     /// Record capability snapshot row.
     async fn media_capability_record(
         &self,
@@ -382,6 +393,13 @@ impl MediaFacade for NoopMedia {
     async fn media_job_phase_append(
         &self,
         _params: MediaJobPhaseAppendParams<'_>,
+    ) -> Result<(), MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
+    async fn media_job_cancel(
+        &self,
+        _params: MediaJobCancelParams,
     ) -> Result<(), MediaServiceError> {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }

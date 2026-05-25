@@ -8,6 +8,7 @@ const MEDIA_JOB_CREATE_V1: &str = "SELECT media_job_create_v1(actor_public_id_in
 const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1(media_job_public_id_input => $1, phase_index_input => $2, phase_name_input => $3, phase_status_input => $4, details_text_input => $5)";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_CANCEL_V1: &str = "SELECT media_job_cancel_v1(media_job_public_id_input => $1)";
 
 /// Create media job payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,7 +114,10 @@ pub async fn list_media_jobs(
 /// # Errors
 ///
 /// Returns an error when stored-procedure execution fails.
-pub async fn get_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result<Option<MediaJobRow>> {
+pub async fn get_media_job(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Option<MediaJobRow>> {
     sqlx::query_as::<_, MediaJobRow>(MEDIA_JOB_GET_V1)
         .bind(media_job_public_id)
         .fetch_optional(pool)
@@ -121,11 +125,25 @@ pub async fn get_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result<O
         .map_err(try_op("media job get"))
 }
 
+/// Cancel one media job by public id.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn cancel_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result<()> {
+    sqlx::query(MEDIA_JOB_CANCEL_V1)
+        .bind(media_job_public_id)
+        .execute(pool)
+        .await
+        .map_err(try_op("media job cancel"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        CreateMediaJobInput, append_media_job_phase, create_media_job, get_media_job,
-        list_media_jobs,
+        CreateMediaJobInput, append_media_job_phase, cancel_media_job, create_media_job,
+        get_media_job, list_media_jobs,
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::setup_media_db;
@@ -183,6 +201,14 @@ mod tests {
             return Ok(());
         };
         assert_eq!(job.media_job_public_id, job_id);
+
+        cancel_media_job(db.pool(), job_id).await?;
+        let job = get_media_job(db.pool(), job_id).await?;
+        assert!(job.is_some());
+        let Some(job) = job else {
+            return Ok(());
+        };
+        assert_eq!(job.status_text, "cancelled");
         Ok(())
     }
 }
