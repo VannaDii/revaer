@@ -641,7 +641,7 @@ mod tests {
             Some("media_capability_refresh_failed")
         );
         assert_eq!(
-            map_detect_error(&CapabilityDetectError::OutputMalformed("x")).code(),
+            map_detect_error(&CapabilityDetectError::OutputMalformed("x".to_string())).code(),
             Some("media_capability_refresh_failed")
         );
     }

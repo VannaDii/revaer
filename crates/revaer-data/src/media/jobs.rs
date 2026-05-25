@@ -320,16 +320,13 @@ mod tests {
         let append = append_media_job_phase(&pool, job_id, 0, "plan", "queued", None).await;
         assert!(append.is_err());
 
-        let list = list_media_jobs(&pool, Some(profile_id), Some("queued")).await;
+        let list = list_media_jobs(&pool, profile_id, Some("queued")).await;
         assert!(list.is_err());
 
         let get = get_media_job(&pool, job_id).await;
         assert!(get.is_err());
 
-        let cancel = cancel_media_job(&pool, job_id).await;
-        assert!(cancel.is_err());
-
-        let retry = retry_media_job(&pool, job_id).await;
-        assert!(retry.is_err());
+        let operations = list_media_job_operations(&pool, job_id).await;
+        assert!(operations.is_err());
     }
 }

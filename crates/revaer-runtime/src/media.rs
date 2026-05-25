@@ -29,13 +29,13 @@ pub struct MediaStore {
 impl MediaStore {
     /// Construct a media store facade from a connection pool.
     #[must_use]
-    pub fn new(pool: PgPool) -> Self {
+    pub const fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
     /// Access underlying connection pool.
     #[must_use]
-    pub fn pool(&self) -> &PgPool {
+    pub const fn pool(&self) -> &PgPool {
         &self.pool
     }
 
@@ -331,8 +331,6 @@ mod tests {
                 .is_err()
         );
         assert!(store.list_profiles().await.is_err());
-        assert!(store.get_profile(profile_id).await.is_err());
-
         assert!(
             store
                 .create_job(&CreateMediaJobInput {
@@ -351,15 +349,9 @@ mod tests {
                 .await
                 .is_err()
         );
-        assert!(
-            store
-                .list_jobs(Some(profile_id), Some("queued"))
-                .await
-                .is_err()
-        );
+        assert!(store.list_jobs(profile_id, Some("queued")).await.is_err());
         assert!(store.get_job(job_id).await.is_err());
-        assert!(store.cancel_job(job_id).await.is_err());
-        assert!(store.retry_job(job_id).await.is_err());
+        assert!(store.list_job_operations(job_id).await.is_err());
 
         assert!(
             store
