@@ -146,7 +146,7 @@ pub(crate) async fn list_media_jobs(
     )?;
     let jobs = state
         .media
-        .media_job_list(query.media_profile_public_id, status)
+        .media_job_list(query.media_profile_public_id, status.as_deref())
         .await
         .map_err(|err| map_media_error("media_job_list", MEDIA_JOB_LIST_FAILED, &err))?
         .into_iter()
@@ -171,7 +171,7 @@ pub(crate) async fn append_media_job_phase(
             media_job_public_id,
             phase_index: request.phase_index,
             phase_name,
-            phase_status,
+            phase_status: phase_status.as_str(),
             details_text: trim_and_filter_empty(request.details_text.as_deref()),
         })
         .await
@@ -426,25 +426,22 @@ fn trim_and_filter_empty(value: Option<&str>) -> Option<&str> {
     })
 }
 
-fn parse_media_status_required<'a>(
-    value: &'a str,
-    detail: &'static str,
-) -> Result<&'a str, ApiError> {
-    if is_supported_media_status(value) {
-        Ok(value)
+fn parse_media_status_required(value: &str, detail: &'static str) -> Result<String, ApiError> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if is_supported_media_status(&normalized) {
+        Ok(normalized)
     } else {
         Err(ApiError::bad_request(detail))
     }
 }
 
-fn parse_media_status_optional<'a>(
-    value: Option<&'a str>,
+fn parse_media_status_optional(
+    value: Option<&str>,
     detail: &'static str,
-) -> Result<Option<&'a str>, ApiError> {
-    match value {
-        Some(text) => parse_media_status_required(text, detail).map(Some),
-        None => Ok(None),
-    }
+) -> Result<Option<String>, ApiError> {
+    value.map_or(Ok(None), |text| {
+        parse_media_status_required(text, detail).map(Some)
+    })
 }
 
 fn is_supported_media_status(value: &str) -> bool {
@@ -557,5 +554,25 @@ mod tests {
                 && item.value == "media_capability_snapshot_invalid")
         );
         Ok(())
+    }
+
+    #[test]
+    fn parse_media_status_required_normalizes_case_and_whitespace() {
+        let value = parse_media_status_required("  QUEUED  ", MEDIA_STATUS_INVALID);
+        assert!(value.is_ok());
+        let Ok(status) = value else {
+            return;
+        };
+        assert_eq!(status, "queued");
+    }
+
+    #[test]
+    fn parse_media_status_optional_normalizes_when_present() {
+        let value = parse_media_status_optional(Some("  COMPLETED "), MEDIA_STATUS_INVALID);
+        assert!(value.is_ok());
+        let Ok(status) = value else {
+            return;
+        };
+        assert_eq!(status.as_deref(), Some("completed"));
     }
 }
