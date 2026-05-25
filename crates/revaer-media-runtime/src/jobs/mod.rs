@@ -59,6 +59,10 @@ pub struct PlannedJobSummary {
     pub total_operations: usize,
     /// Count of remux operations.
     pub remux_operations: usize,
+    /// Count of metadata rewrite operations.
+    pub metadata_rewrite_operations: usize,
+    /// Count of disposition rewrite operations.
+    pub disposition_rewrite_operations: usize,
     /// Count of audio transcode operations.
     pub audio_transcode_operations: usize,
     /// Count of video transcode operations.
@@ -677,14 +681,16 @@ pub fn build_job_execution_steps_with_replacement(
 #[must_use]
 pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
     let mut remux_operations = 0_usize;
+    let mut metadata_rewrite_operations = 0_usize;
+    let mut disposition_rewrite_operations = 0_usize;
     let mut audio_transcode_operations = 0_usize;
     let mut video_transcode_operations = 0_usize;
 
     for operation in &planned.operations {
         match operation.kind {
-            OperationKind::Remux
-            | OperationKind::MetadataRewrite
-            | OperationKind::DispositionRewrite => remux_operations += 1,
+            OperationKind::Remux => remux_operations += 1,
+            OperationKind::MetadataRewrite => metadata_rewrite_operations += 1,
+            OperationKind::DispositionRewrite => disposition_rewrite_operations += 1,
             OperationKind::AudioTranscode => audio_transcode_operations += 1,
             OperationKind::VideoTranscode => video_transcode_operations += 1,
         }
@@ -693,6 +699,8 @@ pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
     PlannedJobSummary {
         total_operations: planned.operations.len(),
         remux_operations,
+        metadata_rewrite_operations,
+        disposition_rewrite_operations,
         audio_transcode_operations,
         video_transcode_operations,
         explanations: explain_plan(&planned.operations),
@@ -1162,6 +1170,14 @@ mod tests {
                     stream_id: None,
                 },
                 PlannedOperation {
+                    kind: revaer_media_core::plan::OperationKind::MetadataRewrite,
+                    stream_id: None,
+                },
+                PlannedOperation {
+                    kind: revaer_media_core::plan::OperationKind::DispositionRewrite,
+                    stream_id: Some(2),
+                },
+                PlannedOperation {
                     kind: revaer_media_core::plan::OperationKind::AudioTranscode,
                     stream_id: Some(1),
                 },
@@ -1174,11 +1190,13 @@ mod tests {
         };
 
         let summary = summarize_planned_job(&planned);
-        assert_eq!(summary.total_operations, 3);
+        assert_eq!(summary.total_operations, 5);
         assert_eq!(summary.remux_operations, 1);
+        assert_eq!(summary.metadata_rewrite_operations, 1);
+        assert_eq!(summary.disposition_rewrite_operations, 1);
         assert_eq!(summary.audio_transcode_operations, 1);
         assert_eq!(summary.video_transcode_operations, 1);
-        assert_eq!(summary.explanations.len(), 3);
+        assert_eq!(summary.explanations.len(), 5);
     }
 
     #[test]
@@ -1442,6 +1460,8 @@ mod tests {
             summary: super::PlannedJobSummary {
                 total_operations: 0,
                 remux_operations: 0,
+                metadata_rewrite_operations: 0,
+                disposition_rewrite_operations: 0,
                 audio_transcode_operations: 0,
                 video_transcode_operations: 0,
                 explanations: Vec::new(),
@@ -1516,6 +1536,8 @@ mod tests {
             summary: super::PlannedJobSummary {
                 total_operations: 0,
                 remux_operations: 0,
+                metadata_rewrite_operations: 0,
+                disposition_rewrite_operations: 0,
                 audio_transcode_operations: 0,
                 video_transcode_operations: 0,
                 explanations: Vec::new(),
