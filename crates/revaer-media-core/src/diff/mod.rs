@@ -1,6 +1,15 @@
 //! Media graph diffing.
 
-use crate::model::{DesiredGraph, MediaGraph};
+use crate::model::{DesiredGraph, MediaGraph, StreamKind};
+
+/// Stream requiring codec-level recode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecodedStream {
+    /// Stream id in source container.
+    pub stream_id: u32,
+    /// Source stream kind used for operation planning.
+    pub kind: StreamKind,
+}
 
 /// Diff result for graph comparison.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8,7 +17,7 @@ pub struct GraphDiff {
     /// Stream ids present in source but absent in desired output.
     pub removed_streams: Vec<u32>,
     /// Stream ids whose codecs differ.
-    pub recoded_streams: Vec<u32>,
+    pub recoded_streams: Vec<RecodedStream>,
 }
 
 /// Compare source and desired graphs.
@@ -23,7 +32,10 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
             .iter()
             .find(|candidate| candidate.stream_id == stream.stream_id)
         {
-            Some(target) if target.codec != stream.codec => recoded_streams.push(stream.stream_id),
+            Some(target) if target.codec != stream.codec => recoded_streams.push(RecodedStream {
+                stream_id: stream.stream_id,
+                kind: stream.kind,
+            }),
             Some(_) => {}
             None => removed_streams.push(stream.stream_id),
         }
@@ -37,7 +49,7 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
 
 #[cfg(test)]
 mod tests {
-    use super::diff_graphs;
+    use super::{RecodedStream, diff_graphs};
     use crate::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 
     #[test]
@@ -77,6 +89,12 @@ mod tests {
 
         let diff = diff_graphs(&source, &desired);
         assert_eq!(diff.removed_streams, vec![1]);
-        assert_eq!(diff.recoded_streams, vec![0]);
+        assert_eq!(
+            diff.recoded_streams,
+            vec![RecodedStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+            }]
+        );
     }
 }

@@ -42,31 +42,28 @@ pub fn build_ffmpeg_argv(
     output_path: &str,
     operation: &PlannedOperation,
 ) -> Result<Vec<String>, BuildArgsError> {
-    let mut args = vec![
-        "-i".to_string(),
-        input_path.to_string(),
-        "-map".to_string(),
-        "0".to_string(),
-    ];
+    let mut args = vec!["-i".to_string(), input_path.to_string()];
 
     match operation.kind {
         OperationKind::Remux => {
+            args.push("-map".to_string());
+            args.push("0".to_string());
             args.push("-c".to_string());
             args.push("copy".to_string());
         }
         OperationKind::AudioTranscode => {
             let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
-            args.push("-c:a".to_string());
+            args.push("-map".to_string());
+            args.push(format!("0:{stream_id}"));
+            args.push("-c:0".to_string());
             args.push("aac".to_string());
-            args.push("-metadata:s:a".to_string());
-            args.push(format!("index={stream_id}"));
         }
         OperationKind::VideoTranscode => {
             let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
-            args.push("-c:v".to_string());
+            args.push("-map".to_string());
+            args.push(format!("0:{stream_id}"));
+            args.push("-c:0".to_string());
             args.push("libx265".to_string());
-            args.push("-metadata:s:v".to_string());
-            args.push(format!("index={stream_id}"));
         }
     }
 
@@ -167,6 +164,21 @@ mod tests {
         assert!(args_result.is_ok());
         let args = args_result.ok().unwrap_or_default();
         assert!(args.iter().any(|item| item == "copy"));
+    }
+
+    #[test]
+    fn transcode_targets_only_selected_input_stream() {
+        let op = PlannedOperation {
+            kind: OperationKind::AudioTranscode,
+            stream_id: Some(3),
+        };
+        let args_result = build_ffmpeg_argv("/in.mkv", "/out.mkv", &op);
+        assert!(args_result.is_ok());
+        let Ok(args) = args_result else {
+            return;
+        };
+        assert!(args.windows(2).any(|pair| pair == ["-map", "0:3"]));
+        assert!(args.windows(2).any(|pair| pair == ["-c:0", "aac"]));
     }
 
     #[test]
