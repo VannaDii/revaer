@@ -18,6 +18,12 @@ pub enum BuildArgsError {
     EmptyOperations,
 }
 
+const DEFAULT_VIDEO_ENCODER: &str = "libx265";
+const VIDEO_ENCODER_FALLBACKS: &[&str] =
+    &["libx265", "hevc_nvenc", "hevc_qsv", "hevc_vaapi", "hevc", "h265"];
+const VIDEO_TRANSCODE_PRESET: &str = "medium";
+const VIDEO_TRANSCODE_CRF: &str = "22";
+
 /// Deterministic execution step for runtime orchestration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecutionStep {
@@ -58,6 +64,15 @@ pub fn build_ffmpeg_argv(
     input_path: &str,
     output_path: &str,
     operation: &PlannedOperation,
+) -> Result<Vec<String>, BuildArgsError> {
+    build_ffmpeg_argv_with_video_encoder(input_path, output_path, operation, DEFAULT_VIDEO_ENCODER)
+}
+
+fn build_ffmpeg_argv_with_video_encoder(
+    input_path: &str,
+    output_path: &str,
+    operation: &PlannedOperation,
+    video_encoder: &str,
 ) -> Result<Vec<String>, BuildArgsError> {
     let mut args = vec![
         "-nostdin".to_string(),
@@ -106,7 +121,11 @@ pub fn build_ffmpeg_argv(
             args.push("-c".to_string());
             args.push("copy".to_string());
             args.push(format!("-c:{stream_id}"));
-            args.push("libx265".to_string());
+            args.push(video_encoder.to_string());
+            args.push("-preset".to_string());
+            args.push(VIDEO_TRANSCODE_PRESET.to_string());
+            args.push("-crf".to_string());
+            args.push(VIDEO_TRANSCODE_CRF.to_string());
         }
     }
 
@@ -196,6 +215,7 @@ pub fn build_execution_steps_with_capabilities(
     operations: &[PlannedOperation],
     capabilities: &CapabilitySnapshot,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    let selected_video_encoder = select_video_encoder(capabilities);
     for operation in operations {
         match operation.kind {
             OperationKind::AudioTranscode => {
@@ -204,9 +224,8 @@ pub fn build_execution_steps_with_capabilities(
                 }
             }
             OperationKind::VideoTranscode => {
-                // Different ffmpeg builds may expose either encoder or codec identifiers.
-                if !capabilities_has_any_encoder(capabilities, &["libx265", "hevc", "h265"]) {
-                    return Err(BuildArgsError::UnsupportedCodec("libx265"));
+                if selected_video_encoder.is_none() {
+                    return Err(BuildArgsError::UnsupportedCodec(DEFAULT_VIDEO_ENCODER));
                 }
             }
             OperationKind::Remux
@@ -214,7 +233,38 @@ pub fn build_execution_steps_with_capabilities(
             | OperationKind::DispositionRewrite => {}
         }
     }
-    build_execution_steps(input_path, output_path, operations)
+    if operations.is_empty() {
+        return Err(BuildArgsError::EmptyOperations);
+    }
+
+    let video_encoder = selected_video_encoder.unwrap_or(DEFAULT_VIDEO_ENCODER);
+    let mut steps = Vec::with_capacity(operations.len() + 1);
+    for (index, operation) in operations.iter().enumerate() {
+        let stage_input = if index == 0 {
+            input_path.to_string()
+        } else {
+            build_intermediate_output_path(output_path, index - 1)
+        };
+        let stage_output = if index + 1 == operations.len() {
+            output_path.to_string()
+        } else {
+            build_intermediate_output_path(output_path, index)
+        };
+        let argv = build_ffmpeg_argv_with_video_encoder(
+            &stage_input,
+            &stage_output,
+            operation,
+            video_encoder,
+        )?;
+        steps.push(ExecutionStep::Command {
+            bin: "ffmpeg".to_string(),
+            argv,
+        });
+    }
+    steps.push(ExecutionStep::VerifyOutput {
+        output_path: output_path.to_string(),
+    });
+    Ok(steps)
 }
 
 fn capabilities_has_codec(capabilities: &CapabilitySnapshot, required: &str) -> bool {
@@ -228,11 +278,11 @@ fn capabilities_has_encoder(capabilities: &CapabilitySnapshot, required: &str) -
     capabilities_has_codec(capabilities, required)
 }
 
-fn capabilities_has_any_encoder(capabilities: &CapabilitySnapshot, required: &[&str]) -> bool {
-    required
+fn select_video_encoder(capabilities: &CapabilitySnapshot) -> Option<&'static str> {
+    VIDEO_ENCODER_FALLBACKS
         .iter()
         .copied()
-        .any(|item| capabilities_has_encoder(capabilities, item))
+        .find(|candidate| capabilities_has_encoder(capabilities, candidate))
 }
 
 fn build_intermediate_output_path(output_path: &str, step_index: usize) -> String {
@@ -379,6 +429,21 @@ mod tests {
     }
 
     #[test]
+    fn video_transcode_applies_quality_guard_flags() {
+        let op = PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+        };
+        let args_result = build_ffmpeg_argv("/in.mkv", "/out.mkv", &op);
+        assert!(args_result.is_ok());
+        let Ok(args) = args_result else {
+            return;
+        };
+        assert!(args.windows(2).any(|pair| pair == ["-preset", "medium"]));
+        assert!(args.windows(2).any(|pair| pair == ["-crf", "22"]));
+    }
+
+    #[test]
     fn capability_checked_execution_accepts_trimmed_case_insensitive_codec_names() {
         let op = PlannedOperation {
             kind: OperationKind::VideoTranscode,
@@ -468,6 +533,10 @@ mod tests {
                 "copy",
                 "-c:0",
                 "libx265",
+                "-preset",
+                "medium",
+                "-crf",
+                "22",
                 "/out.mkv",
             ]
         );
@@ -514,6 +583,39 @@ mod tests {
     }
 
     #[test]
+    fn capability_checked_execution_rejects_missing_audio_codec() {
+        let op = PlannedOperation {
+            kind: OperationKind::AudioTranscode,
+            stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        assert_eq!(
+            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities),
+            Err(BuildArgsError::UnsupportedCodec("aac"))
+        );
+    }
+
+    #[test]
+    fn capability_checked_execution_accepts_explicit_encoder_support() {
+        let op = PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["libx265".to_string()],
+        };
+        let result =
+            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn capability_checked_execution_accepts_hevc_codec_alias_for_encoder() {
         let op = PlannedOperation {
             kind: OperationKind::VideoTranscode,
@@ -527,6 +629,29 @@ mod tests {
         let result =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn capability_checked_execution_prefers_hardware_encoder_fallback() {
+        let op = PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["hevc_nvenc".to_string()],
+        };
+        let result =
+            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
+        assert!(result.is_ok());
+        let Ok(steps) = result else {
+            return;
+        };
+        let Some(ExecutionStep::Command { argv, .. }) = steps.first() else {
+            return;
+        };
+        assert!(argv.iter().any(|item| item == "hevc_nvenc"));
     }
 
     #[test]
