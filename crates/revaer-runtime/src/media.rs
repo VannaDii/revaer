@@ -14,7 +14,8 @@ use revaer_data::media::jobs::{
     get_media_job, list_media_jobs, retry_media_job,
 };
 use revaer_data::media::profiles::{
-    MediaProfileRow, UpsertMediaProfileInput, list_media_profiles, upsert_media_profile,
+    MediaProfileRow, UpsertMediaProfileInput, get_media_profile, list_media_profiles,
+    upsert_media_profile,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -54,6 +55,18 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn list_profiles(&self) -> DataResult<Vec<MediaProfileRow>> {
         list_media_profiles(&self.pool).await
+    }
+
+    /// Load one media profile by public id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn get_profile(
+        &self,
+        media_profile_public_id: Uuid,
+    ) -> DataResult<Option<MediaProfileRow>> {
+        get_media_profile(&self.pool, media_profile_public_id).await
     }
 
     /// Create a media job.

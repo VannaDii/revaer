@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 const MEDIA_PROFILE_UPSERT_V1: &str = "SELECT media_profile_upsert_v1(actor_public_id_input => $1, profile_key_input => $2, source_root_input => $3, output_root_input => $4, dry_run_only_input => $5, retention_days_input => $6)";
 const MEDIA_PROFILE_LIST_V1: &str = "SELECT media_profile_public_id, profile_key, source_root, output_root, dry_run_only, retention_days, updated_at FROM media_profile_list_v1()";
+const MEDIA_PROFILE_GET_V1: &str = "SELECT media_profile_public_id, profile_key, source_root, output_root, dry_run_only, retention_days, updated_at FROM media_profile_get_v1(media_profile_public_id_input => $1)";
 
 /// Input payload for media profile upsert.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,10 +92,26 @@ pub async fn list_media_profiles(pool: &PgPool) -> Result<Vec<MediaProfileRow>> 
         .map_err(try_op("media profile list"))
 }
 
+/// Get one media profile by public id.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn get_media_profile(
+    pool: &PgPool,
+    media_profile_public_id: Uuid,
+) -> Result<Option<MediaProfileRow>> {
+    sqlx::query_as::<_, MediaProfileRow>(MEDIA_PROFILE_GET_V1)
+        .bind(media_profile_public_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(try_op("media profile get"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        UpsertMediaProfileInput, list_media_profiles, upsert_media_profile,
+        UpsertMediaProfileInput, get_media_profile, list_media_profiles, upsert_media_profile,
         upsert_media_profile_with_executor,
     };
     use crate::DataError;
@@ -127,6 +144,8 @@ mod tests {
             rows.iter()
                 .any(|item| item.media_profile_public_id == profile_id)
         );
+        let profile = get_media_profile(db.pool(), profile_id).await?;
+        assert!(profile.is_some());
         Ok(())
     }
 

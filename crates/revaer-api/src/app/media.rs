@@ -291,6 +291,12 @@ pub trait MediaFacade: Send + Sync {
     /// List active profiles.
     async fn media_profile_list(&self) -> Result<Vec<MediaProfileResponse>, MediaServiceError>;
 
+    /// Read one media profile by public id.
+    async fn media_profile_get(
+        &self,
+        media_profile_public_id: Uuid,
+    ) -> Result<Option<MediaProfileResponse>, MediaServiceError>;
+
     /// Create media job.
     async fn media_job_create(
         &self,
@@ -376,6 +382,13 @@ impl MediaFacade for NoopMedia {
 
     async fn media_profile_list(&self) -> Result<Vec<MediaProfileResponse>, MediaServiceError> {
         Ok(Vec::new())
+    }
+
+    async fn media_profile_get(
+        &self,
+        _media_profile_public_id: Uuid,
+    ) -> Result<Option<MediaProfileResponse>, MediaServiceError> {
+        Ok(None)
     }
 
     async fn media_job_create(

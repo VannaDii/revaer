@@ -76,6 +76,27 @@ impl MediaFacade for MediaService {
             .map_err(|err| map_data_error(&err))
     }
 
+    async fn media_profile_get(
+        &self,
+        media_profile_public_id: Uuid,
+    ) -> Result<Option<MediaProfileResponse>, MediaServiceError> {
+        self.store
+            .get_profile(media_profile_public_id)
+            .await
+            .map(|row_opt| {
+                row_opt.map(|row| MediaProfileResponse {
+                    media_profile_public_id: row.media_profile_public_id,
+                    profile_key: row.profile_key,
+                    source_root: row.source_root,
+                    output_root: row.output_root,
+                    dry_run_only: row.dry_run_only,
+                    retention_days: row.retention_days,
+                    updated_at: row.updated_at,
+                })
+            })
+            .map_err(|err| map_data_error(&err))
+    }
+
     async fn media_job_create(
         &self,
         params: MediaJobCreateParams<'_>,

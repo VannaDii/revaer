@@ -126,11 +126,9 @@ pub(crate) async fn get_media_profile(
 ) -> Result<Json<MediaProfileResponse>, ApiError> {
     let profile = state
         .media
-        .media_profile_list()
+        .media_profile_get(media_profile_public_id)
         .await
-        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
-        .into_iter()
-        .find(|item| item.media_profile_public_id == media_profile_public_id)
+        .map_err(|err| map_media_error("media_profile_get", MEDIA_PROFILE_LIST_FAILED, &err))?
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
 
     Ok(Json(map_profile(profile)))
@@ -142,7 +140,7 @@ pub(crate) async fn validate_media_profile(
 ) -> Result<StatusCode, ApiError> {
     let profile = state
         .media
-        .media_profile_list()
+        .media_profile_get(media_profile_public_id)
         .await
         .map_err(|err| {
             map_media_error(
@@ -151,8 +149,6 @@ pub(crate) async fn validate_media_profile(
                 &err,
             )
         })?
-        .into_iter()
-        .find(|item| item.media_profile_public_id == media_profile_public_id)
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
     validate_media_profile_semantics(&profile)?;
     Ok(StatusCode::NO_CONTENT)
@@ -211,11 +207,9 @@ pub(crate) async fn patch_media_profile(
 ) -> Result<Json<MediaProfileResponse>, ApiError> {
     let existing = state
         .media
-        .media_profile_list()
+        .media_profile_get(media_profile_public_id)
         .await
-        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
-        .into_iter()
-        .find(|item| item.media_profile_public_id == media_profile_public_id)
+        .map_err(|err| map_media_error("media_profile_get", MEDIA_PROFILE_LIST_FAILED, &err))?
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
     let source_root = resolve_patch_str_field(
         request.source_root.as_deref(),
