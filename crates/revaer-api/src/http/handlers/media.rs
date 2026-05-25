@@ -31,6 +31,7 @@ const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
 const MEDIA_PROFILE_LIST_FAILED: &str = "failed to list media profiles";
 const MEDIA_PROFILE_NOT_FOUND: &str = "media profile not found";
 const MEDIA_PROFILE_VALIDATE_FAILED: &str = "failed to validate media profile";
+const MEDIA_PROFILE_INVALID: &str = "media profile validation failed";
 const MEDIA_PROFILE_PATCH_FAILED: &str = "failed to update media profile";
 const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
@@ -138,7 +139,7 @@ pub(crate) async fn validate_media_profile(
     State(state): State<Arc<ApiState>>,
     Path(media_profile_public_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    let exists = state
+    let profile = state
         .media
         .media_profile_list()
         .await
@@ -150,11 +151,64 @@ pub(crate) async fn validate_media_profile(
             )
         })?
         .into_iter()
-        .any(|item| item.media_profile_public_id == media_profile_public_id);
-    if !exists {
-        return Err(ApiError::not_found(MEDIA_PROFILE_NOT_FOUND));
-    }
+        .find(|item| item.media_profile_public_id == media_profile_public_id)
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
+    validate_media_profile_semantics(&profile)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn validate_media_profile_semantics(
+    profile: &crate::app::media::MediaProfileResponse,
+) -> Result<(), ApiError> {
+    if profile.profile_key.trim().is_empty() {
+        return Err(
+            ApiError::bad_request(MEDIA_PROFILE_INVALID)
+                .with_context_field("error_code", "media_profile_key_missing"),
+        );
+    }
+    if profile.source_root.trim().is_empty() {
+        return Err(
+            ApiError::bad_request(MEDIA_PROFILE_INVALID)
+                .with_context_field("error_code", "media_profile_source_root_missing"),
+        );
+    }
+    if profile.output_root.trim().is_empty() {
+        return Err(
+            ApiError::bad_request(MEDIA_PROFILE_INVALID)
+                .with_context_field("error_code", "media_profile_output_root_missing"),
+        );
+    }
+
+    let source = normalize_media_path(&profile.source_root);
+    let output = normalize_media_path(&profile.output_root);
+    if media_paths_overlap(&source, &output) {
+        return Err(
+            ApiError::bad_request(MEDIA_PROFILE_INVALID)
+                .with_context_field("error_code", "media_profile_roots_overlap"),
+        );
+    }
+    Ok(())
+}
+
+fn normalize_media_path(path: &str) -> String {
+    let mut normalized = path.trim().to_string();
+    while normalized.ends_with('/') {
+        normalized.pop();
+    }
+    if normalized.is_empty() && path.trim().starts_with('/') {
+        return "/".to_string();
+    }
+    normalized
+}
+
+fn media_paths_overlap(left: &str, right: &str) -> bool {
+    left == right
+        || left
+            .strip_prefix(right)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+        || right
+            .strip_prefix(left)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 pub(crate) async fn patch_media_profile(
@@ -665,6 +719,36 @@ mod tests {
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         Ok(())
+    }
+
+    #[test]
+    fn validate_media_profile_semantics_rejects_overlapping_roots() {
+        let profile = crate::app::media::MediaProfileResponse {
+            media_profile_public_id: Uuid::new_v4(),
+            profile_key: "tv".to_string(),
+            source_root: "/media/tv".to_string(),
+            output_root: "/media/tv/out".to_string(),
+            dry_run_only: true,
+            retention_days: 30,
+            updated_at: chrono::Utc::now(),
+        };
+        let err = validate_media_profile_semantics(&profile)
+            .expect_err("overlapping roots should fail semantic validation");
+        assert_eq!(err.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn validate_media_profile_semantics_accepts_disjoint_roots() {
+        let profile = crate::app::media::MediaProfileResponse {
+            media_profile_public_id: Uuid::new_v4(),
+            profile_key: "tv".to_string(),
+            source_root: "/input/tv".to_string(),
+            output_root: "/output/tv".to_string(),
+            dry_run_only: true,
+            retention_days: 30,
+            updated_at: chrono::Utc::now(),
+        };
+        assert!(validate_media_profile_semantics(&profile).is_ok());
     }
 
     #[tokio::test]
