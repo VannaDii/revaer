@@ -161,31 +161,23 @@ fn validate_media_profile_semantics(
     profile: &crate::app::media::MediaProfileResponse,
 ) -> Result<(), ApiError> {
     if profile.profile_key.trim().is_empty() {
-        return Err(
-            ApiError::bad_request(MEDIA_PROFILE_INVALID)
-                .with_context_field("error_code", "media_profile_key_missing"),
-        );
+        return Err(ApiError::bad_request(MEDIA_PROFILE_INVALID)
+            .with_context_field("error_code", "media_profile_key_missing"));
     }
     if profile.source_root.trim().is_empty() {
-        return Err(
-            ApiError::bad_request(MEDIA_PROFILE_INVALID)
-                .with_context_field("error_code", "media_profile_source_root_missing"),
-        );
+        return Err(ApiError::bad_request(MEDIA_PROFILE_INVALID)
+            .with_context_field("error_code", "media_profile_source_root_missing"));
     }
     if profile.output_root.trim().is_empty() {
-        return Err(
-            ApiError::bad_request(MEDIA_PROFILE_INVALID)
-                .with_context_field("error_code", "media_profile_output_root_missing"),
-        );
+        return Err(ApiError::bad_request(MEDIA_PROFILE_INVALID)
+            .with_context_field("error_code", "media_profile_output_root_missing"));
     }
 
     let source = normalize_media_path(&profile.source_root);
     let output = normalize_media_path(&profile.output_root);
     if media_paths_overlap(&source, &output) {
-        return Err(
-            ApiError::bad_request(MEDIA_PROFILE_INVALID)
-                .with_context_field("error_code", "media_profile_roots_overlap"),
-        );
+        return Err(ApiError::bad_request(MEDIA_PROFILE_INVALID)
+            .with_context_field("error_code", "media_profile_roots_overlap"));
     }
     Ok(())
 }

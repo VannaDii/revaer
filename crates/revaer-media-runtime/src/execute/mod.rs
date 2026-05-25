@@ -482,12 +482,8 @@ mod tests {
                 encode_supported: true,
             }],
         };
-        let result = build_execution_steps_with_capabilities(
-            "/in.mkv",
-            "/out.mkv",
-            &[op],
-            &capabilities,
-        );
+        let result =
+            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
         assert!(result.is_ok());
     }
 }
