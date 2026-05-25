@@ -198,10 +198,6 @@ fn build_intermediate_output_path(output_path: &str, step_index: usize) -> Strin
     format!("{output_path}.stage{step_index}.tmp.mkv")
 }
 
-fn build_intermediate_output_path(output_path: &str, step_index: usize) -> String {
-    format!("{output_path}.stage{step_index}.tmp.mkv")
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -318,7 +314,6 @@ mod tests {
     }
 
     #[test]
-<<<<<<< HEAD
     fn multi_operation_execution_is_composed_deterministically() {
         let operations = [
             PlannedOperation {
