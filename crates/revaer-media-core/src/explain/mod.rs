@@ -24,7 +24,7 @@ pub fn explain_plan(operations: &[PlannedOperation]) -> Vec<Explanation> {
         .collect()
 }
 
-fn operation_kind_code(kind: OperationKind) -> &'static str {
+const fn operation_kind_code(kind: OperationKind) -> &'static str {
     match kind {
         OperationKind::Remux => "remux",
         OperationKind::AudioTranscode => "audio_transcode",
@@ -33,10 +33,7 @@ fn operation_kind_code(kind: OperationKind) -> &'static str {
 }
 
 fn stream_id_code(stream_id: Option<u32>) -> String {
-    match stream_id {
-        Some(value) => value.to_string(),
-        None => "none".to_string(),
-    }
+    stream_id.map_or_else(|| "none".to_string(), |value| value.to_string())
 }
 
 #[cfg(test)]
