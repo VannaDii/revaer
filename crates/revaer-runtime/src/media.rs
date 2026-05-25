@@ -96,7 +96,7 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn list_jobs(
         &self,
-        media_profile_public_id: Uuid,
+        media_profile_public_id: Option<Uuid>,
         status_text: Option<&str>,
     ) -> DataResult<Vec<MediaJobRow>> {
         list_media_jobs(&self.pool, media_profile_public_id, status_text).await
@@ -231,7 +231,7 @@ mod tests {
             .append_job_phase(job_id, 0, "planning", "queued", Some("scheduled"))
             .await?;
 
-        let jobs = store.list_jobs(profile_id, Some("queued")).await?;
+        let jobs = store.list_jobs(Some(profile_id), Some("queued")).await?;
         assert!(jobs.iter().any(|job| job.media_job_public_id == job_id));
 
         let snapshot_id = store

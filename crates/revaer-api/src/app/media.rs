@@ -300,7 +300,7 @@ pub trait MediaFacade: Send + Sync {
     /// List media jobs for profile.
     async fn media_job_list(
         &self,
-        media_profile_public_id: Uuid,
+        media_profile_public_id: Option<Uuid>,
         status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError>;
 
@@ -387,7 +387,7 @@ impl MediaFacade for NoopMedia {
 
     async fn media_job_list(
         &self,
-        _media_profile_public_id: Uuid,
+        _media_profile_public_id: Option<Uuid>,
         _status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError> {
         Ok(Vec::new())

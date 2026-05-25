@@ -99,7 +99,7 @@ pub async fn append_media_job_phase(
 /// Returns an error when stored-procedure execution fails.
 pub async fn list_media_jobs(
     pool: &PgPool,
-    media_profile_public_id: Uuid,
+    media_profile_public_id: Option<Uuid>,
     status_text: Option<&str>,
 ) -> Result<Vec<MediaJobRow>> {
     sqlx::query_as::<_, MediaJobRow>(MEDIA_JOB_LIST_V1)
@@ -207,7 +207,7 @@ mod tests {
         )
         .await?;
 
-        let rows = list_media_jobs(db.pool(), profile_id, Some("queued")).await?;
+        let rows = list_media_jobs(db.pool(), Some(profile_id), Some("queued")).await?;
         assert!(rows.iter().any(|item| item.media_job_public_id == job_id));
 
         let job = get_media_job(db.pool(), job_id).await?;

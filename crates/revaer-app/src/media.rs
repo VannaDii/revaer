@@ -103,7 +103,7 @@ impl MediaFacade for MediaService {
 
     async fn media_job_list(
         &self,
-        media_profile_public_id: Uuid,
+        media_profile_public_id: Option<Uuid>,
         status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError> {
         self.store

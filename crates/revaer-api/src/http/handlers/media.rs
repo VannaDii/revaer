@@ -63,7 +63,7 @@ const PHASE_STATUS_INVALID: &str =
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct MediaJobsQuery {
-    media_profile_public_id: Uuid,
+    media_profile_public_id: Option<Uuid>,
     status: Option<String>,
 }
 
@@ -143,7 +143,11 @@ pub(crate) async fn validate_media_profile(
         .media_profile_list()
         .await
         .map_err(|err| {
-            map_media_error("media_profile_validate", MEDIA_PROFILE_VALIDATE_FAILED, &err)
+            map_media_error(
+                "media_profile_validate",
+                MEDIA_PROFILE_VALIDATE_FAILED,
+                &err,
+            )
         })?
         .into_iter()
         .any(|item| item.media_profile_public_id == media_profile_public_id);
@@ -705,7 +709,7 @@ mod tests {
     async fn list_media_jobs_rejects_invalid_status_filter() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let query = MediaJobsQuery {
-            media_profile_public_id: Uuid::new_v4(),
+            media_profile_public_id: Some(Uuid::new_v4()),
             status: Some("INVALID".to_string()),
         };
 
