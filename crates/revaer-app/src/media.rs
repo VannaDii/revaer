@@ -613,7 +613,10 @@ mod tests {
             error_code: None,
             error_detail: Some("media_job_retry_invalid_status".to_string()),
         };
-        assert_eq!(map_data_error(&conflict).kind(), MediaServiceErrorKind::Conflict);
+        assert_eq!(
+            map_data_error(&conflict).kind(),
+            MediaServiceErrorKind::Conflict
+        );
 
         let invalid = DataError::JobFailed {
             operation: "job",
@@ -621,7 +624,10 @@ mod tests {
             error_code: None,
             error_detail: Some("media_profile_roots_overlap".to_string()),
         };
-        assert_eq!(map_data_error(&invalid).kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            map_data_error(&invalid).kind(),
+            MediaServiceErrorKind::Invalid
+        );
     }
 
     #[test]

@@ -351,7 +351,12 @@ mod tests {
                 .await
                 .is_err()
         );
-        assert!(store.list_jobs(Some(profile_id), Some("queued")).await.is_err());
+        assert!(
+            store
+                .list_jobs(Some(profile_id), Some("queued"))
+                .await
+                .is_err()
+        );
         assert!(store.get_job(job_id).await.is_err());
         assert!(store.cancel_job(job_id).await.is_err());
         assert!(store.retry_job(job_id).await.is_err());
