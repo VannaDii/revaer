@@ -164,6 +164,18 @@ impl JobPreflightEvaluation {
             .and_then(|record| record.code)
     }
 
+    /// Return the final timeline stage for ready or failed preflight outcomes.
+    #[must_use]
+    pub fn final_stage(&self) -> Option<&'static str> {
+        self.timeline().last().map(|record| record.stage)
+    }
+
+    /// Return the final timeline stage code for ready or failed preflight outcomes.
+    #[must_use]
+    pub fn final_stage_code(&self) -> Option<&'static str> {
+        self.timeline().last().and_then(|record| record.code)
+    }
+
     /// Borrow the stage timeline for both ready and failed outcomes.
     #[must_use]
     pub fn timeline(&self) -> &[PreflightStageRecord] {
@@ -1452,6 +1464,8 @@ mod tests {
         assert_eq!(ready.error_code(), None);
         assert_eq!(ready.error_detail(), None);
         assert_eq!(ready.failed_stage_code(), None);
+        assert_eq!(ready.final_stage(), None);
+        assert_eq!(ready.final_stage_code(), None);
         assert!(failed.planned().is_none());
         assert!(failed.summary().is_none());
         assert!(failed.steps().is_none());
@@ -1466,8 +1480,71 @@ mod tests {
             failed.failed_stage_code(),
             Some("preflight_capability_failed")
         );
+        assert_eq!(failed.final_stage(), Some("capability_ready"));
+        assert_eq!(failed.final_stage_code(), Some("preflight_capability_failed"));
         assert_eq!(ready.timeline().len(), 0);
         assert_eq!(failed.timeline().len(), 1);
+    }
+
+    #[test]
+    fn preflight_evaluation_final_stage_accessors_follow_timeline_tail() {
+        let ready = JobPreflightEvaluation::Ready(JobPreflightReport {
+            planned: PlannedJob {
+                operations: Vec::new(),
+                estimated_workspace_bytes: 0,
+            },
+            summary: super::PlannedJobSummary {
+                total_operations: 0,
+                remux_operations: 0,
+                audio_transcode_operations: 0,
+                video_transcode_operations: 0,
+                explanations: Vec::new(),
+            },
+            steps: Vec::new(),
+            timeline: vec![
+                PreflightStageRecord {
+                    stage: "inspect_source",
+                    ok: true,
+                    code: None,
+                },
+                PreflightStageRecord {
+                    stage: "ready",
+                    ok: true,
+                    code: None,
+                },
+            ],
+            capacity_report: crate::workspace::WorkspaceCapacityReport {
+                accepted: true,
+                reason: None,
+                available_after_reserve_bytes: 0,
+                required_workspace_bytes: 0,
+            },
+        });
+        assert_eq!(ready.final_stage(), Some("ready"));
+        assert_eq!(ready.final_stage_code(), None);
+
+        let failed = JobPreflightEvaluation::Failed(JobPreflightFailureReport {
+            failed_stage: "build_steps",
+            error_code: "preflight_build_missing_stream_id",
+            error_detail: "stream-scoped operation is missing stream id",
+            timeline: vec![
+                PreflightStageRecord {
+                    stage: "inspect_source",
+                    ok: true,
+                    code: None,
+                },
+                PreflightStageRecord {
+                    stage: "build_steps",
+                    ok: false,
+                    code: Some("preflight_build_missing_stream_id"),
+                },
+            ],
+        });
+        assert_eq!(failed.final_stage(), Some("build_steps"));
+        assert_eq!(
+            failed.final_stage_code(),
+            Some("preflight_build_missing_stream_id")
+        );
     }
 
     #[test]
