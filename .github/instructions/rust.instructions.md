@@ -1,5 +1,5 @@
 ---
-applyTo: "**"
+applyTo: "**/*.rs"
 ---
 
 `AGENTS.md` is the root contract. This file specializes Rust guidance only; if any rule here appears to conflict with `AGENTS.md`, follow `AGENTS.md` and treat this file as a stricter Rust-specific interpretation.

@@ -177,13 +177,7 @@ mod tests {
     use uuid::Uuid;
 
     async fn test_store() -> anyhow::Result<(TestDatabase, MediaStore)> {
-        let postgres = match start_postgres() {
-            Ok(db) => db,
-            Err(err) => {
-                eprintln!("skipping media store test: {err}");
-                return Err(anyhow::anyhow!("media store test skipped"));
-            }
-        };
+        let postgres = start_postgres()?;
 
         let pool = PgPoolOptions::new()
             .max_connections(5)
@@ -206,8 +200,20 @@ mod tests {
 
     #[tokio::test]
     async fn media_store_round_trips_profiles_jobs_and_capabilities() -> anyhow::Result<()> {
-        let Ok((postgres, store)) = test_store().await else {
-            return Ok(());
+        let (postgres, store) = match test_store().await {
+            Ok(value) => value,
+            Err(err) => {
+                let message = err.to_string().to_ascii_lowercase();
+                if message.contains("docker")
+                    || message.contains("container")
+                    || message.contains("connection refused")
+                    || message.contains("test database url is required")
+                {
+                    eprintln!("skipping media store test: {err}");
+                    return Ok(());
+                }
+                return Err(err);
+            }
         };
         let _keep_db_alive = postgres;
         let actor = system_actor(store.pool()).await?;
