@@ -33,6 +33,7 @@ applyTo: "**"
 - `just test`, `just test-features-min`, `just test-native`, `just db-migrate`, `just cov`, and `just validate` now default `REVAER_TEST_DATABASE_URL` to the Postgres maintenance database at `postgres://revaer:revaer@localhost:5432/postgres`. `just db-start` also retries transient Postgres recovery/startup/not-yet-accepting-connection errors around `sqlx migrate run` and `sqlx database reset` before treating the database as mismatched. Keep recipes and docs aligned with that admin-connection workflow when test database bootstrapping changes.
 - `just cov` records coverage once with `cargo llvm-cov --workspace --all-features --no-report`, then enforces the 90% per-package line threshold with `cargo llvm-cov report --package ...` against that shared workspace dataset. Keep the coverage gate workspace-sourced so library crates receive credit for lines exercised by downstream crates and integration tests.
 - `just udeps` pins `cargo-udeps` to a Rust-1.91-compatible release (`0.1.57`) and upgrades only when the installed tool is below that minimum. Keep that pin aligned with the workspace toolchain to avoid CI installer breakage from upstream MSRV bumps.
+- `just sqlx-install` pins `sqlx-cli` to a Rust-1.91-compatible release (`0.8.6`) and force-reinstalls when the local binary drifts. Keep the pin aligned with the workspace toolchain and migration recipes to avoid CI breakage from upstream MSRV bumps.
 
 # Documentation
 

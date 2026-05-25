@@ -83,8 +83,17 @@ udeps:
     fi
 
 sqlx-install:
-    if ! command -v sqlx >/dev/null 2>&1; then \
-        cargo install sqlx-cli --no-default-features --features postgres; \
+    required_sqlx_version="0.8.6"; \
+    install_sqlx() { \
+        cargo install sqlx-cli --locked --force --version "${required_sqlx_version}" --no-default-features --features postgres; \
+    }; \
+    if command -v sqlx >/dev/null 2>&1; then \
+        installed_version="$(sqlx --version | awk '{print $2}')"; \
+        if [ "$installed_version" != "$required_sqlx_version" ]; then \
+            install_sqlx; \
+        fi; \
+    else \
+        install_sqlx; \
     fi
 
 db-migrate: sqlx-install
