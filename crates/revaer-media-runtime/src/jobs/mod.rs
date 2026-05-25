@@ -374,9 +374,6 @@ pub const fn preflight_error_code(error: &JobPreflightError) -> &'static str {
         JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
             "preflight_build_unsupported_codec"
         }
-        JobPreflightError::Build(BuildArgsError::CompositionRequired) => {
-            "preflight_build_composition_required"
-        }
         JobPreflightError::BackupPath(BackupPathError::SourceFileNameMissing) => {
             "preflight_backup_path_source_filename_missing"
         }
@@ -413,9 +410,6 @@ pub const fn preflight_error_detail(error: &JobPreflightError) -> &'static str {
         }
         JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
             "required transcode codec is unavailable"
-        }
-        JobPreflightError::Build(BuildArgsError::CompositionRequired) => {
-            "operation composition support is required"
         }
         JobPreflightError::BackupPath(BackupPathError::SourceFileNameMissing) => {
             "configured backup root requires a source file name"
@@ -593,7 +587,6 @@ pub fn build_job_execution_steps_with_capabilities(
 ///
 /// Returns [`BuildArgsError::UnsupportedCodec`] when required transcode codec support is missing.
 /// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
-/// Returns [`BuildArgsError::CompositionRequired`] when composition planning is required.
 pub fn build_job_execution_steps_with_replacement(
     source_path: &str,
     output_path: &str,

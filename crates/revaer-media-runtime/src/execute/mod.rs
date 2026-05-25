@@ -13,9 +13,6 @@ pub enum BuildArgsError {
     /// Required codec is not supported by runtime capabilities.
     #[error("required codec is not supported: {0}")]
     UnsupportedCodec(&'static str),
-    /// Multiple operations require explicit composition support.
-    #[error("multiple operations require composition planning before execution")]
-    CompositionRequired,
 }
 
 /// Deterministic execution step for runtime orchestration.
@@ -102,12 +99,32 @@ pub fn build_execution_steps(
     output_path: &str,
     operations: &[PlannedOperation],
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    if operations.len() > 1 {
-        return Err(BuildArgsError::CompositionRequired);
-    }
-    let mut steps = Vec::with_capacity(operations.len() + 1);
-    for operation in operations {
-        let argv = build_ffmpeg_argv(input_path, output_path, operation)?;
+    let mut steps = Vec::with_capacity(2);
+    if !operations.is_empty() {
+        let mut argv = vec![
+            "-i".to_string(),
+            input_path.to_string(),
+            "-map".to_string(),
+            "0".to_string(),
+            "-c".to_string(),
+            "copy".to_string(),
+        ];
+        for operation in operations {
+            match operation.kind {
+                OperationKind::Remux => {}
+                OperationKind::AudioTranscode => {
+                    let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
+                    argv.push(format!("-c:{stream_id}"));
+                    argv.push("aac".to_string());
+                }
+                OperationKind::VideoTranscode => {
+                    let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
+                    argv.push(format!("-c:{stream_id}"));
+                    argv.push("libx265".to_string());
+                }
+            }
+        }
+        argv.push(output_path.to_string());
         steps.push(ExecutionStep::Command {
             bin: "ffmpeg".to_string(),
             argv,
@@ -125,7 +142,6 @@ pub fn build_execution_steps(
 ///
 /// Returns [`BuildArgsError::UnsupportedCodec`] when a required transcode codec is unavailable.
 /// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
-/// Returns [`BuildArgsError::CompositionRequired`] when more than one operation is present.
 pub fn build_execution_steps_with_replacement(
     source_path: &str,
     output_path: &str,
@@ -307,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn reject_multi_operation_execution_until_composition_is_supported() {
+    fn compose_multi_operation_execution_into_single_command() {
         let operations = [
             PlannedOperation {
                 kind: OperationKind::Remux,
@@ -317,11 +333,23 @@ mod tests {
                 kind: OperationKind::AudioTranscode,
                 stream_id: Some(1),
             },
+            PlannedOperation {
+                kind: OperationKind::VideoTranscode,
+                stream_id: Some(0),
+            },
         ];
-        assert_eq!(
-            build_execution_steps("/in.mkv", "/out.mkv", &operations),
-            Err(BuildArgsError::CompositionRequired)
-        );
+        let result = build_execution_steps("/in.mkv", "/out.mkv", &operations);
+        assert!(result.is_ok());
+        let Ok(steps) = result else {
+            return;
+        };
+        assert_eq!(steps.len(), 2);
+        let Some(ExecutionStep::Command { argv, .. }) = steps.first() else {
+            panic!("expected command step");
+        };
+        assert!(argv.windows(2).any(|pair| pair == ["-c", "copy"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-c:1", "aac"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-c:0", "libx265"]));
     }
 
     #[test]
