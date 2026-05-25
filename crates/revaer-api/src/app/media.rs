@@ -290,6 +290,12 @@ pub trait MediaFacade: Send + Sync {
         status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError>;
 
+    /// Read one media job by public id.
+    async fn media_job_get(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Option<MediaJobResponse>, MediaServiceError>;
+
     /// Append media job phase.
     async fn media_job_phase_append(
         &self,
@@ -364,6 +370,13 @@ impl MediaFacade for NoopMedia {
         _status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError> {
         Ok(Vec::new())
+    }
+
+    async fn media_job_get(
+        &self,
+        _media_job_public_id: Uuid,
+    ) -> Result<Option<MediaJobResponse>, MediaServiceError> {
+        Ok(None)
     }
 
     async fn media_job_phase_append(

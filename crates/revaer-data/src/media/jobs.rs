@@ -7,6 +7,7 @@ use uuid::Uuid;
 const MEDIA_JOB_CREATE_V1: &str = "SELECT media_job_create_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, dry_run_input => $5)";
 const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1(media_job_public_id_input => $1, phase_index_input => $2, phase_name_input => $3, phase_status_input => $4, details_text_input => $5)";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
+const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
 
 /// Create media job payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,9 +108,25 @@ pub async fn list_media_jobs(
         .map_err(try_op("media job list"))
 }
 
+/// Get one media job by public id.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn get_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result<Option<MediaJobRow>> {
+    sqlx::query_as::<_, MediaJobRow>(MEDIA_JOB_GET_V1)
+        .bind(media_job_public_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(try_op("media job get"))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CreateMediaJobInput, append_media_job_phase, create_media_job, list_media_jobs};
+    use super::{
+        CreateMediaJobInput, append_media_job_phase, create_media_job, get_media_job,
+        list_media_jobs,
+    };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::setup_media_db;
 
@@ -159,6 +176,13 @@ mod tests {
 
         let rows = list_media_jobs(db.pool(), profile_id, Some("queued")).await?;
         assert!(rows.iter().any(|item| item.media_job_public_id == job_id));
+
+        let job = get_media_job(db.pool(), job_id).await?;
+        assert!(job.is_some());
+        let Some(job) = job else {
+            return Ok(());
+        };
+        assert_eq!(job.media_job_public_id, job_id);
         Ok(())
     }
 }

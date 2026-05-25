@@ -127,6 +127,29 @@ impl MediaFacade for MediaService {
             .map_err(|err| map_data_error(&err))
     }
 
+    async fn media_job_get(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Option<MediaJobResponse>, MediaServiceError> {
+        self.store
+            .get_job(media_job_public_id)
+            .await
+            .map(|row_opt| {
+                row_opt.map(|row| MediaJobResponse {
+                    media_job_public_id: row.media_job_public_id,
+                    source_path: row.source_path,
+                    output_path: row.output_path,
+                    status: row.status_text,
+                    dry_run: row.dry_run,
+                    queued_at: row.queued_at,
+                    started_at: row.started_at,
+                    completed_at: row.completed_at,
+                    last_error: row.last_error,
+                })
+            })
+            .map_err(|err| map_data_error(&err))
+    }
+
     async fn media_job_phase_append(
         &self,
         params: MediaJobPhaseAppendParams<'_>,

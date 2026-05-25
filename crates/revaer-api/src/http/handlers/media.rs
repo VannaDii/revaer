@@ -30,6 +30,7 @@ const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
 const MEDIA_PROFILE_LIST_FAILED: &str = "failed to list media profiles";
 const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
+const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
 const MEDIA_JOB_PHASE_APPEND_FAILED: &str = "failed to append media job phase";
 const MEDIA_CAPABILITY_RECORD_FAILED: &str = "failed to record media capability snapshot";
 const MEDIA_CAPABILITY_LATEST_FAILED: &str = "failed to load latest media capability snapshot";
@@ -172,6 +173,20 @@ pub(crate) async fn list_media_jobs(
         .collect();
 
     Ok(Json(MediaJobListResponse { jobs }))
+}
+
+pub(crate) async fn get_media_job(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<Json<MediaJobResponse>, ApiError> {
+    let job = state
+        .media
+        .media_job_get(media_job_public_id)
+        .await
+        .map_err(|err| map_media_error("media_job_get", MEDIA_JOB_GET_FAILED, &err))?
+        .ok_or_else(|| ApiError::not_found(MEDIA_JOB_GET_FAILED))?;
+
+    Ok(Json(map_job(job)))
 }
 
 pub(crate) async fn append_media_job_phase(
@@ -574,6 +589,18 @@ mod tests {
             .expect_err("invalid status should fail validation");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn get_media_job_returns_not_found_with_default_facade() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+
+        let err = get_media_job(State(state), Path(Uuid::new_v4()))
+            .await
+            .expect_err("default facade should not contain requested job");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
         Ok(())
     }
 
