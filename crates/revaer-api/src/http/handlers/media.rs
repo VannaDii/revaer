@@ -534,6 +534,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_media_jobs_rejects_invalid_status_filter() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let query = MediaJobsQuery {
+            media_profile_public_id: Uuid::new_v4(),
+            status: Some("INVALID".to_string()),
+        };
+
+        let err = list_media_jobs(State(state), Query(query))
+            .await
+            .expect_err("invalid status should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_media_job_phase_rejects_invalid_phase_status() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobPhaseAppendRequest {
+            phase_index: 0,
+            phase_name: "planning".to_string(),
+            phase_status: "INVALID".to_string(),
+            details_text: None,
+        };
+
+        let err = append_media_job_phase(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("invalid phase status should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn refresh_media_capability_maps_noop_storage_failure_to_internal() -> anyhow::Result<()>
     {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
