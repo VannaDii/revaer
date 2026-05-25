@@ -428,6 +428,6 @@ impl MediaFacade for NoopMedia {
     }
 }
 
-pub(crate) fn test_media() -> std::sync::Arc<dyn MediaFacade> {
+pub(crate) fn noop_media() -> std::sync::Arc<dyn MediaFacade> {
     std::sync::Arc::new(NoopMedia)
 }

@@ -26,7 +26,7 @@ use tracing::Span;
 
 use crate::TorrentHandles;
 use crate::app::indexers::IndexerFacade;
-use crate::app::media::{MediaFacade, test_media};
+use crate::app::media::{MediaFacade, noop_media};
 use crate::app::state::ApiState;
 use crate::config::SharedConfig;
 use crate::error::{ApiServerError, ApiServerResult};
@@ -150,7 +150,7 @@ impl ApiServer {
         Self::with_dependencies(
             config,
             indexers,
-            test_media(),
+            noop_media(),
             events,
             torrent,
             telemetry,

@@ -18,7 +18,7 @@ use crate::TorrentHandles;
 use crate::app::indexers::IndexerFacade;
 use crate::app::media::MediaFacade;
 #[cfg(test)]
-use crate::app::media::test_media;
+use crate::app::media::noop_media;
 use crate::config::ConfigFacade;
 use crate::http::rate_limit::{RateLimitError, RateLimitSnapshot, RateLimiter};
 use crate::http::torrents::TorrentMetadata;
@@ -436,7 +436,7 @@ impl ApiState {
         Self::new_with_media(
             config,
             indexers,
-            test_media(),
+            noop_media(),
             telemetry,
             openapi_document,
             events,
