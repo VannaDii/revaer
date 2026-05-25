@@ -84,9 +84,7 @@ impl FfprobeInspectAdapter {
 
 impl InspectAdapter for FfprobeInspectAdapter {
     fn inspect(&self, source_path: &str) -> Result<MediaGraph, InspectError> {
-        const ARGS_PREFIX: [&str; 6] = ["-v", "error", "-show_streams", "-of", "json", ""];
-        let mut args = ARGS_PREFIX;
-        args[5] = source_path;
+        let args = ["-v", "error", "-show_streams", "-of", "json", source_path];
         let output = self.executor.run(&self.ffprobe_bin, &args)?;
         let parsed: FfprobeOutput = serde_json::from_str(&output)
             .map_err(|err| InspectError::OutputMalformed(err.to_string()))?;

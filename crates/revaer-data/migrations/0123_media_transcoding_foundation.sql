@@ -127,6 +127,7 @@ CREATE OR REPLACE FUNCTION media_profile_upsert_v1(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     actor_id BIGINT;
@@ -216,6 +217,7 @@ CREATE OR REPLACE FUNCTION media_job_create_v1(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     actor_id BIGINT;
@@ -274,6 +276,7 @@ CREATE OR REPLACE FUNCTION media_job_phase_append_v1(
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     job_id BIGINT;
@@ -321,6 +324,7 @@ CREATE OR REPLACE FUNCTION media_capability_snapshot_record_v1(
 RETURNS BIGINT
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     actor_id BIGINT;

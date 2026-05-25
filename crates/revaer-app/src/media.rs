@@ -13,11 +13,12 @@ use revaer_data::DataError;
 use revaer_data::media::capabilities::CapabilitySnapshotRow;
 use revaer_data::media::capabilities::RecordCapabilitySnapshotInput;
 use revaer_data::media::jobs::CreateMediaJobInput;
-use revaer_data::media::profiles::UpsertMediaProfileInput;
+use revaer_data::media::profiles::{UpsertMediaProfileInput, upsert_media_profile_with_executor};
 use revaer_media_core::compile::{MediaProfile, validate_profiles};
 use revaer_media_runtime::capabilities::{CapabilityDetectError, CapabilityDetector};
 use revaer_runtime::media::MediaStore;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -172,17 +173,32 @@ impl MediaFacade for MediaService {
                 .with_code("media_capability_refresh_invalid"));
         }
 
-        self.store
-            .record_capability(&RecordCapabilitySnapshotInput {
-                actor_public_id: params.actor_user_public_id,
-                ffmpeg_version: &snapshot.ffmpeg_version,
-                ffprobe_version: &snapshot.ffprobe_version,
-                codec_name: snapshot.codecs.first().map_or("", String::as_str),
-                encode_supported: true,
-                decode_supported: true,
-            })
-            .await
-            .map_err(|err| map_data_error(&err))
+        let mut seen = BTreeSet::new();
+        let mut last_snapshot_id = None;
+        for codec in &snapshot.codecs {
+            let normalized = codec.trim().to_ascii_lowercase();
+            if normalized.is_empty() || !seen.insert(normalized.clone()) {
+                continue;
+            }
+            let snapshot_id = self
+                .store
+                .record_capability(&RecordCapabilitySnapshotInput {
+                    actor_public_id: params.actor_user_public_id,
+                    ffmpeg_version: &snapshot.ffmpeg_version,
+                    ffprobe_version: &snapshot.ffprobe_version,
+                    codec_name: &normalized,
+                    encode_supported: true,
+                    decode_supported: true,
+                })
+                .await
+                .map_err(|err| map_data_error(&err))?;
+            last_snapshot_id = Some(snapshot_id);
+        }
+
+        last_snapshot_id.ok_or_else(|| {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_capability_refresh_invalid")
+        })
     }
 
     async fn media_capability_latest(
@@ -278,20 +294,32 @@ impl MediaFacade for MediaService {
                 .with_code("media_yaml_validation_failed"));
         }
 
+        let mut transaction = self.store.pool().begin().await.map_err(|_| {
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+                .with_code("media_yaml_apply_transaction_start_failed")
+        })?;
+
         let mut media_profile_public_ids = Vec::with_capacity(validation.profiles.len());
         for profile in validation.profiles {
-            let profile_id = self
-                .media_profile_upsert(MediaProfileUpsertParams {
-                    actor_user_public_id,
+            let profile_id = upsert_media_profile_with_executor(
+                &mut *transaction,
+                &UpsertMediaProfileInput {
+                    actor_public_id: actor_user_public_id,
                     profile_key: &profile.profile_key,
                     source_root: &profile.source_root,
                     output_root: &profile.output_root,
                     dry_run_only: true,
                     retention_days: profile.retention_days,
-                })
-                .await?;
+                },
+            )
+            .await
+            .map_err(|err| map_data_error(&err))?;
             media_profile_public_ids.push(profile_id);
         }
+        transaction.commit().await.map_err(|_| {
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+                .with_code("media_yaml_apply_transaction_commit_failed")
+        })?;
 
         Ok(MediaYamlApplyResult {
             forced_dry_run: true,

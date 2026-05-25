@@ -1,7 +1,7 @@
 //! Stored-procedure access for media profile management.
 
 use crate::error::{Result, try_op};
-use sqlx::PgPool;
+use sqlx::{Executor, PgPool, Postgres};
 use uuid::Uuid;
 
 const MEDIA_PROFILE_UPSERT_V1: &str = "SELECT media_profile_upsert_v1(actor_public_id_input => $1, profile_key_input => $2, source_root_input => $3, output_root_input => $4, dry_run_only_input => $5, retention_days_input => $6)";
@@ -52,6 +52,21 @@ pub async fn upsert_media_profile(
     pool: &PgPool,
     input: &UpsertMediaProfileInput<'_>,
 ) -> Result<Uuid> {
+    upsert_media_profile_with_executor(pool, input).await
+}
+
+/// Create or update a media profile using a caller-provided SQL executor.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn upsert_media_profile_with_executor<'e, E>(
+    executor: E,
+    input: &UpsertMediaProfileInput<'_>,
+) -> Result<Uuid>
+where
+    E: Executor<'e, Database = Postgres>,
+{
     sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPSERT_V1)
         .bind(input.actor_public_id)
         .bind(input.profile_key)
@@ -59,7 +74,7 @@ pub async fn upsert_media_profile(
         .bind(input.output_root)
         .bind(input.dry_run_only)
         .bind(input.retention_days)
-        .fetch_one(pool)
+        .fetch_one(executor)
         .await
         .map_err(try_op("media profile upsert"))
 }
@@ -78,7 +93,10 @@ pub async fn list_media_profiles(pool: &PgPool) -> Result<Vec<MediaProfileRow>> 
 
 #[cfg(test)]
 mod tests {
-    use super::{UpsertMediaProfileInput, list_media_profiles, upsert_media_profile};
+    use super::{
+        UpsertMediaProfileInput, list_media_profiles, upsert_media_profile,
+        upsert_media_profile_with_executor,
+    };
     use crate::DataError;
     use crate::media::schema_tests::setup_media_db;
 
@@ -138,6 +156,43 @@ mod tests {
         assert!(matches!(err, DataError::QueryFailed { .. }));
         assert_eq!(err.database_detail(), Some("media_profile_roots_overlap"));
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn upsert_profile_with_executor_accepts_transaction_executor() -> anyhow::Result<()> {
+        let db = match setup_media_db("upsert_profile_with_executor_accepts_transaction_executor")
+            .await
+        {
+            Ok(db) => db,
+            Err(err) => {
+                eprintln!(
+                    "skipping upsert_profile_with_executor_accepts_transaction_executor: {err}"
+                );
+                return Ok(());
+            }
+        };
+
+        let mut transaction = db.pool().begin().await?;
+        let profile_id = upsert_media_profile_with_executor(
+            &mut *transaction,
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "tv-tx-executor",
+                source_root: "/input/tv",
+                output_root: "/output/tv",
+                dry_run_only: true,
+                retention_days: 30,
+            },
+        )
+        .await?;
+        transaction.commit().await?;
+
+        let rows = list_media_profiles(db.pool()).await?;
+        assert!(
+            rows.iter()
+                .any(|item| item.media_profile_public_id == profile_id)
+        );
         Ok(())
     }
 }
