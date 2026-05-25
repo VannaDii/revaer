@@ -156,6 +156,14 @@ impl JobPreflightEvaluation {
         }
     }
 
+    /// Return the machine-readable code for the failed stage when preflight evaluation failed.
+    #[must_use]
+    pub fn failed_stage_code(&self) -> Option<&'static str> {
+        self.as_failed()
+            .and_then(|report| report.timeline.last())
+            .and_then(|record| record.code)
+    }
+
     /// Borrow the stage timeline for both ready and failed outcomes.
     #[must_use]
     pub fn timeline(&self) -> &[PreflightStageRecord] {
@@ -1425,7 +1433,11 @@ mod tests {
             failed_stage: "capability_ready",
             error_code: "preflight_capability_failed",
             error_detail: "capability snapshot is missing or invalid",
-            timeline: Vec::new(),
+            timeline: vec![PreflightStageRecord {
+                stage: "capability_ready",
+                ok: false,
+                code: Some("preflight_capability_failed"),
+            }],
         });
         assert!(!failed.is_ready());
         assert!(failed.as_ready().is_none());
@@ -1439,6 +1451,7 @@ mod tests {
         assert_eq!(ready.failed_stage(), None);
         assert_eq!(ready.error_code(), None);
         assert_eq!(ready.error_detail(), None);
+        assert_eq!(ready.failed_stage_code(), None);
         assert!(failed.planned().is_none());
         assert!(failed.summary().is_none());
         assert!(failed.steps().is_none());
@@ -1449,8 +1462,12 @@ mod tests {
             failed.error_detail(),
             Some("capability snapshot is missing or invalid")
         );
+        assert_eq!(
+            failed.failed_stage_code(),
+            Some("preflight_capability_failed")
+        );
         assert_eq!(ready.timeline().len(), 0);
-        assert_eq!(failed.timeline().len(), 0);
+        assert_eq!(failed.timeline().len(), 1);
     }
 
     #[test]
