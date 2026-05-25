@@ -35,6 +35,7 @@ pub use openapi::{openapi_document, openapi_output_path};
 mod tests {
     use super::*;
     use crate::app::indexers::test_indexers;
+    use crate::app::media::noop_media;
     use crate::app::state::ApiState;
     use crate::config::{ConfigFacade, SharedConfig};
     use crate::http::auth::{AuthContext, ClientIp, map_config_error};
@@ -1199,6 +1200,7 @@ mod tests {
         let state = ApiServer::build_state(
             config,
             test_indexers(),
+            noop_media(),
             telemetry,
             Arc::new(json!({ "openapi": "stub" })),
             EventBus::with_capacity(8),
@@ -1242,8 +1244,15 @@ mod tests {
                 }),
             )
         };
-        let server =
-            ApiServer::with_config_at(config, test_indexers(), events, None, telemetry, &openapi)?;
+        let server = ApiServer::with_config_at(
+            config,
+            test_indexers(),
+            noop_media(),
+            events,
+            None,
+            telemetry,
+            &openapi,
+        )?;
 
         let request = Request::builder()
             .uri("/health")

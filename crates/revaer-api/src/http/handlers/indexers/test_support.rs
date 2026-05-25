@@ -16,6 +16,7 @@ use crate::app::indexers::{
     TorznabAccessErrorKind, TorznabCategory, TorznabInstanceAuth, TorznabInstanceCredentials,
     TorznabInstanceServiceError,
 };
+use crate::app::media::{MediaFacade, noop_media};
 use crate::app::state::ApiState;
 use crate::config::ConfigFacade;
 use crate::http::errors::ApiError;
@@ -2345,10 +2346,18 @@ impl IndexerFacade for RecordingIndexers {
 pub(crate) fn indexer_test_state(
     indexers: Arc<dyn IndexerFacade>,
 ) -> Result<Arc<ApiState>, ApiError> {
+    indexer_test_state_with_media(indexers, noop_media())
+}
+
+pub(crate) fn indexer_test_state_with_media(
+    indexers: Arc<dyn IndexerFacade>,
+    media: Arc<dyn MediaFacade>,
+) -> Result<Arc<ApiState>, ApiError> {
     let telemetry = Metrics::new().map_err(|_| ApiError::internal("metrics init failed"))?;
-    Ok(Arc::new(ApiState::new(
+    Ok(Arc::new(ApiState::new_with_media(
         Arc::new(StubConfig),
         indexers,
+        media,
         telemetry,
         Arc::new(json!({})),
         EventBus::with_capacity(4),
