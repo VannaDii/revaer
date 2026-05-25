@@ -147,6 +147,15 @@ impl JobPreflightEvaluation {
         }
     }
 
+    /// Return the deterministic human-readable error detail when preflight evaluation failed.
+    #[must_use]
+    pub const fn error_detail(&self) -> Option<&'static str> {
+        match self {
+            Self::Ready(_) => None,
+            Self::Failed(report) => Some(report.error_detail),
+        }
+    }
+
     /// Borrow the stage timeline for both ready and failed outcomes.
     #[must_use]
     pub fn timeline(&self) -> &[PreflightStageRecord] {
@@ -1395,8 +1404,13 @@ mod tests {
         assert!(ready.as_failed().is_none());
         assert_eq!(ready.failed_stage(), None);
         assert_eq!(ready.error_code(), None);
+        assert_eq!(ready.error_detail(), None);
         assert_eq!(failed.failed_stage(), Some("capability_ready"));
         assert_eq!(failed.error_code(), Some("preflight_capability_failed"));
+        assert_eq!(
+            failed.error_detail(),
+            Some("capability snapshot is missing or invalid")
+        );
         assert_eq!(ready.timeline().len(), 0);
         assert_eq!(failed.timeline().len(), 0);
     }
