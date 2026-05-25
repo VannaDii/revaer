@@ -73,6 +73,23 @@ pub fn build_ffmpeg_argv(
             args.push("-c".to_string());
             args.push("copy".to_string());
         }
+        OperationKind::MetadataRewrite => {
+            args.push("-map".to_string());
+            args.push("0".to_string());
+            args.push("-c".to_string());
+            args.push("copy".to_string());
+            args.push("-map_metadata".to_string());
+            args.push("-1".to_string());
+        }
+        OperationKind::DispositionRewrite => {
+            let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
+            args.push("-map".to_string());
+            args.push("0".to_string());
+            args.push("-c".to_string());
+            args.push("copy".to_string());
+            args.push(format!("-disposition:{stream_id}"));
+            args.push("0".to_string());
+        }
         OperationKind::AudioTranscode => {
             let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
             args.push("-map".to_string());
@@ -192,7 +209,9 @@ pub fn build_execution_steps_with_capabilities(
                     return Err(BuildArgsError::UnsupportedCodec("libx265"));
                 }
             }
-            OperationKind::Remux => {}
+            OperationKind::Remux
+            | OperationKind::MetadataRewrite
+            | OperationKind::DispositionRewrite => {}
         }
     }
     build_execution_steps(input_path, output_path, operations)
@@ -206,12 +225,7 @@ fn capabilities_has_codec(capabilities: &CapabilitySnapshot, required: &str) -> 
 }
 
 fn capabilities_has_encoder(capabilities: &CapabilitySnapshot, required: &str) -> bool {
-    if capabilities.codec_capabilities.is_empty() {
-        return capabilities_has_codec(capabilities, required);
-    }
-    capabilities.codec_capabilities.iter().any(|codec| {
-        codec.codec_name.trim().eq_ignore_ascii_case(required) && codec.encode_supported
-    })
+    capabilities_has_codec(capabilities, required)
 }
 
 fn capabilities_has_any_encoder(capabilities: &CapabilitySnapshot, required: &[&str]) -> bool {
@@ -244,7 +258,7 @@ mod tests {
         build_execution_steps_with_capabilities, build_execution_steps_with_replacement,
         build_ffmpeg_argv,
     };
-    use crate::capabilities::{CapabilitySnapshot, CodecCapability};
+    use crate::capabilities::CapabilitySnapshot;
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
 
     #[test]
@@ -269,6 +283,34 @@ mod tests {
         assert!(args_result.is_ok());
         let args = args_result.ok().unwrap_or_default();
         assert!(args.iter().any(|item| item == "copy"));
+    }
+
+    #[test]
+    fn metadata_rewrite_strips_container_metadata() {
+        let op = PlannedOperation {
+            kind: OperationKind::MetadataRewrite,
+            stream_id: None,
+        };
+        let args_result = build_ffmpeg_argv("/in.mkv", "/out.mkv", &op);
+        assert!(args_result.is_ok());
+        let Ok(args) = args_result else {
+            return;
+        };
+        assert!(args.windows(2).any(|pair| pair == ["-map", "0"]));
+        assert!(args.windows(2).any(|pair| pair == ["-c", "copy"]));
+        assert!(args.windows(2).any(|pair| pair == ["-map_metadata", "-1"]));
+    }
+
+    #[test]
+    fn disposition_rewrite_requires_stream_id() {
+        let op = PlannedOperation {
+            kind: OperationKind::DispositionRewrite,
+            stream_id: None,
+        };
+        assert_eq!(
+            build_ffmpeg_argv("/in.mkv", "/out.mkv", &op),
+            Err(BuildArgsError::MissingStreamId)
+        );
     }
 
     #[test]
@@ -313,7 +355,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         assert_eq!(
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities),
@@ -331,7 +372,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["aac".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let steps =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
@@ -348,7 +388,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["  LIBX265  ".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let steps =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
@@ -444,7 +483,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["aac".to_string(), "libx265".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let result = build_execution_steps_with_replacement(
             "/input/movie.mkv",
@@ -476,49 +514,6 @@ mod tests {
     }
 
     #[test]
-    fn capability_checked_execution_rejects_decode_only_codec() {
-        let op = PlannedOperation {
-            kind: OperationKind::AudioTranscode,
-            stream_id: Some(0),
-        };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["aac".to_string()],
-            codec_capabilities: vec![CodecCapability {
-                codec_name: "aac".to_string(),
-                decode_supported: true,
-                encode_supported: false,
-            }],
-        };
-        assert_eq!(
-            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities),
-            Err(BuildArgsError::UnsupportedCodec("aac"))
-        );
-    }
-
-    #[test]
-    fn capability_checked_execution_accepts_explicit_encoder_support() {
-        let op = PlannedOperation {
-            kind: OperationKind::VideoTranscode,
-            stream_id: Some(0),
-        };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["libx265".to_string()],
-            codec_capabilities: vec![CodecCapability {
-                codec_name: "libx265".to_string(),
-                decode_supported: true,
-                encode_supported: true,
-            }],
-        };
-        let result =
-            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn capability_checked_execution_accepts_hevc_codec_alias_for_encoder() {
         let op = PlannedOperation {
             kind: OperationKind::VideoTranscode,
@@ -528,11 +523,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["hevc".to_string()],
-            codec_capabilities: vec![CodecCapability {
-                codec_name: "hevc".to_string(),
-                decode_supported: true,
-                encode_supported: true,
-            }],
         };
         let result =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);

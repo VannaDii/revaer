@@ -682,7 +682,9 @@ pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
 
     for operation in &planned.operations {
         match operation.kind {
-            OperationKind::Remux => remux_operations += 1,
+            OperationKind::Remux
+            | OperationKind::MetadataRewrite
+            | OperationKind::DispositionRewrite => remux_operations += 1,
             OperationKind::AudioTranscode => audio_transcode_operations += 1,
             OperationKind::VideoTranscode => video_transcode_operations += 1,
         }
@@ -826,7 +828,9 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 
     for op in operations {
         let candidate = match op.kind {
-            revaer_media_core::plan::OperationKind::Remux => (6_u64, 5_u64), // 1.2x
+            revaer_media_core::plan::OperationKind::Remux
+            | revaer_media_core::plan::OperationKind::MetadataRewrite
+            | revaer_media_core::plan::OperationKind::DispositionRewrite => (6_u64, 5_u64), // 1.2x
             revaer_media_core::plan::OperationKind::AudioTranscode => (3_u64, 2_u64), // 1.5x
             revaer_media_core::plan::OperationKind::VideoTranscode => (5_u64, 2_u64), // 2.5x
         };
@@ -1005,7 +1009,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: Vec::new(),
-            codec_capabilities: Vec::new(),
         };
         assert_eq!(
             require_valid_capability_snapshot(Some(&invalid)),
@@ -1019,7 +1022,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         assert!(require_valid_capability_snapshot(Some(&valid)).is_ok());
     }
@@ -1037,7 +1039,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         assert_eq!(
             build_job_execution_steps_with_capabilities(
@@ -1063,7 +1064,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let steps_result = build_job_execution_steps_with_replacement(
             "/input/movie.mkv",
@@ -1212,7 +1212,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["libx265".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let policy = WorkspacePolicy {
             max_bytes: 100_000,
@@ -1278,7 +1277,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: Vec::new(),
-            codec_capabilities: Vec::new(),
         };
         let policy = WorkspacePolicy {
             max_bytes: 100_000,
@@ -1408,7 +1406,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: Vec::new(),
-            codec_capabilities: Vec::new(),
         };
         let policy = WorkspacePolicy {
             max_bytes: 100_000,
@@ -1595,7 +1592,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
@@ -1632,7 +1628,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
@@ -1684,7 +1679,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
@@ -1736,7 +1730,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
@@ -1785,7 +1778,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
@@ -1830,7 +1822,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
@@ -1875,7 +1866,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
@@ -1922,7 +1912,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
@@ -1968,7 +1957,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
-            codec_capabilities: Vec::new(),
         };
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,

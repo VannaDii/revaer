@@ -27,6 +27,8 @@ pub fn explain_plan(operations: &[PlannedOperation]) -> Vec<Explanation> {
 const fn operation_kind_code(kind: OperationKind) -> &'static str {
     match kind {
         OperationKind::Remux => "remux",
+        OperationKind::MetadataRewrite => "metadata_rewrite",
+        OperationKind::DispositionRewrite => "disposition_rewrite",
         OperationKind::AudioTranscode => "audio_transcode",
         OperationKind::VideoTranscode => "video_transcode",
     }

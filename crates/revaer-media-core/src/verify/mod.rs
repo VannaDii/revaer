@@ -7,17 +7,19 @@ use crate::plan::{OperationKind, PlannedOperation};
 /// # Errors
 ///
 /// Returns an error string when the operation list is empty or when a
-/// transcode operation is missing its stream id.
+/// stream-scoped operation is missing its stream id.
 pub fn verify_plan(operations: &[PlannedOperation]) -> Result<(), &'static str> {
     if operations.is_empty() {
         return Err("plan must contain at least one operation");
     }
 
     if operations.iter().any(|item| {
-        (item.kind == OperationKind::AudioTranscode || item.kind == OperationKind::VideoTranscode)
+        (item.kind == OperationKind::AudioTranscode
+            || item.kind == OperationKind::VideoTranscode
+            || item.kind == OperationKind::DispositionRewrite)
             && item.stream_id.is_none()
     }) {
-        return Err("stream-scoped transcode operation is missing stream id");
+        return Err("stream-scoped operation is missing stream id");
     }
 
     Ok(())

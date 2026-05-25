@@ -8,6 +8,10 @@ use crate::model::StreamKind;
 pub enum OperationKind {
     /// Container-level remux only.
     Remux,
+    /// Container-level metadata rewrite.
+    MetadataRewrite,
+    /// Stream-level disposition rewrite.
+    DispositionRewrite,
     /// Audio stream transcode.
     AudioTranscode,
     /// Video stream transcode.
