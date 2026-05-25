@@ -1549,6 +1549,94 @@ mod tests {
     }
 
     #[test]
+    fn evaluate_preflight_from_template_rejects_backup_path_matching_source() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                streams: Vec::new(),
+            }),
+            error: None,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let workspace_policy = WorkspacePolicy {
+            max_bytes: 1_000_000,
+            reserve_bytes: 10_000,
+        };
+        let outcome = evaluate_preflight_from_template(
+            &inspector,
+            PreflightBuildTemplate {
+                source_path: "/input/movie.mkv",
+                output_path: "/output/movie.mkv",
+                desired: &desired,
+                source_file_bytes: 50_000,
+                capabilities: &capabilities,
+                workspace_policy: &workspace_policy,
+                free_bytes: 500_000,
+            },
+            PreflightPolicyInput {
+                backup_root: Some("/input"),
+            },
+        );
+        let JobPreflightEvaluation::Failed(report) = outcome else {
+            panic!("expected failed preflight outcome");
+        };
+        assert_eq!(report.error_code, "preflight_backup_path_matches_source");
+        assert_eq!(report.failed_stage, "build_steps");
+    }
+
+    #[test]
+    fn evaluate_preflight_from_template_rejects_backup_path_matching_output() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                streams: Vec::new(),
+            }),
+            error: None,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let workspace_policy = WorkspacePolicy {
+            max_bytes: 1_000_000,
+            reserve_bytes: 10_000,
+        };
+        let outcome = evaluate_preflight_from_template(
+            &inspector,
+            PreflightBuildTemplate {
+                source_path: "/input/movie.mkv",
+                output_path: "/backup/movie.mkv",
+                desired: &desired,
+                source_file_bytes: 50_000,
+                capabilities: &capabilities,
+                workspace_policy: &workspace_policy,
+                free_bytes: 500_000,
+            },
+            PreflightPolicyInput {
+                backup_root: Some("/backup"),
+            },
+        );
+        let JobPreflightEvaluation::Failed(report) = outcome else {
+            panic!("expected failed preflight outcome");
+        };
+        assert_eq!(report.error_code, "preflight_backup_path_matches_output");
+        assert_eq!(report.failed_stage, "build_steps");
+    }
+
+    #[test]
     fn build_preflight_report_from_template_returns_backup_path_error() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
