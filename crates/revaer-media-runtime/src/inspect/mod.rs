@@ -41,6 +41,7 @@ pub trait InspectProbeExecutor: Send + Sync {
     /// # Errors
     ///
     /// Returns [`InspectError::ProbeFailed`] when command execution fails or exits non-zero.
+    /// Returns [`InspectError::OutputMalformed`] when stdout is not valid UTF-8.
     fn run(&self, bin: &str, args: &[&str]) -> Result<String, InspectError>;
 }
 
@@ -63,7 +64,8 @@ impl InspectProbeExecutor for SystemInspectProbeExecutor {
             };
             return Err(InspectError::ProbeFailed(message));
         }
-        String::from_utf8(output.stdout).map_err(|err| InspectError::ProbeFailed(err.to_string()))
+        String::from_utf8(output.stdout)
+            .map_err(|err| InspectError::OutputMalformed(err.to_string()))
     }
 }
 

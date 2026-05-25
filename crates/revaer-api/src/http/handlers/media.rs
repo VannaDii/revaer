@@ -11,8 +11,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::media::{
-    MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCancelParams,
-    MediaJobCreateParams, MediaJobPhaseAppendParams, MediaJobRetryParams, MediaProfileUpsertParams,
+    MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCreateParams,
+    MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaProfileUpsertParams,
     MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
@@ -22,24 +22,20 @@ use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse, MediaCapabilityRecordRequest,
     MediaCapabilityRecordResponse, MediaCapabilityRefreshResponse, MediaCapabilitySnapshotResponse,
     MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
-    MediaJobPhaseAppendRequest, MediaJobResponse, MediaProfileListResponse,
-    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
+    MediaJobOperationAppendRequest, MediaJobOperationListResponse, MediaJobPhaseAppendRequest,
+    MediaJobResponse, MediaProfileListResponse, MediaProfileResponse, MediaProfileUpsertRequest,
     MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
     MediaYamlValidationResponse,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
 const MEDIA_PROFILE_LIST_FAILED: &str = "failed to list media profiles";
-const MEDIA_PROFILE_NOT_FOUND: &str = "media profile not found";
-const MEDIA_PROFILE_VALIDATE_FAILED: &str = "failed to validate media profile";
-const MEDIA_PROFILE_INVALID: &str = "media profile validation failed";
-const MEDIA_PROFILE_PATCH_FAILED: &str = "failed to update media profile";
 const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
 const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
 const MEDIA_JOB_PHASE_APPEND_FAILED: &str = "failed to append media job phase";
-const MEDIA_JOB_CANCEL_FAILED: &str = "failed to cancel media job";
-const MEDIA_JOB_RETRY_FAILED: &str = "failed to retry media job";
+const MEDIA_JOB_OPERATION_APPEND_FAILED: &str = "failed to append media job operation";
+const MEDIA_JOB_OPERATION_LIST_FAILED: &str = "failed to list media job operations";
 const MEDIA_CAPABILITY_RECORD_FAILED: &str = "failed to record media capability snapshot";
 const MEDIA_CAPABILITY_LATEST_FAILED: &str = "failed to load latest media capability snapshot";
 const MEDIA_CAPABILITY_READINESS_FAILED: &str = "failed to determine media capability readiness";
@@ -53,6 +49,8 @@ const OUTPUT_ROOT_REQUIRED: &str = "output_root is required";
 const SOURCE_PATH_REQUIRED: &str = "source_path is required";
 const PHASE_NAME_REQUIRED: &str = "phase_name is required";
 const PHASE_STATUS_REQUIRED: &str = "phase_status is required";
+const OPERATION_KIND_REQUIRED: &str = "operation_kind is required";
+const COMMAND_BIN_REQUIRED: &str = "command_bin is required";
 const FFMPEG_VERSION_REQUIRED: &str = "ffmpeg_version is required";
 const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
 const CODEC_NAME_REQUIRED: &str = "codec_name is required";
@@ -65,7 +63,7 @@ const PHASE_STATUS_INVALID: &str =
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct MediaJobsQuery {
-    media_profile_public_id: Option<Uuid>,
+    media_profile_public_id: Uuid,
     status: Option<String>,
 }
 
@@ -126,126 +124,12 @@ pub(crate) async fn get_media_profile(
 ) -> Result<Json<MediaProfileResponse>, ApiError> {
     let profile = state
         .media
-        .media_profile_get(media_profile_public_id)
-        .await
-        .map_err(|err| map_media_error("media_profile_get", MEDIA_PROFILE_LIST_FAILED, &err))?
-        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
-
-    Ok(Json(map_profile(profile)))
-}
-
-pub(crate) async fn validate_media_profile(
-    State(state): State<Arc<ApiState>>,
-    Path(media_profile_public_id): Path<Uuid>,
-) -> Result<StatusCode, ApiError> {
-    let profile = state
-        .media
-        .media_profile_get(media_profile_public_id)
-        .await
-        .map_err(|err| {
-            map_media_error(
-                "media_profile_validate",
-                MEDIA_PROFILE_VALIDATE_FAILED,
-                &err,
-            )
-        })?
-        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
-    validate_media_profile_semantics(&profile)?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-fn validate_media_profile_semantics(
-    profile: &crate::app::media::MediaProfileResponse,
-) -> Result<(), ApiError> {
-    if profile.profile_key.trim().is_empty() {
-        return Err(ApiError::bad_request(MEDIA_PROFILE_INVALID)
-            .with_context_field("error_code", "media_profile_key_missing"));
-    }
-    if profile.source_root.trim().is_empty() {
-        return Err(ApiError::bad_request(MEDIA_PROFILE_INVALID)
-            .with_context_field("error_code", "media_profile_source_root_missing"));
-    }
-    if profile.output_root.trim().is_empty() {
-        return Err(ApiError::bad_request(MEDIA_PROFILE_INVALID)
-            .with_context_field("error_code", "media_profile_output_root_missing"));
-    }
-
-    let source = normalize_media_path(&profile.source_root);
-    let output = normalize_media_path(&profile.output_root);
-    if media_paths_overlap(&source, &output) {
-        return Err(ApiError::bad_request(MEDIA_PROFILE_INVALID)
-            .with_context_field("error_code", "media_profile_roots_overlap"));
-    }
-    Ok(())
-}
-
-fn normalize_media_path(path: &str) -> String {
-    let mut normalized = path.trim().to_string();
-    while normalized.ends_with('/') {
-        normalized.pop();
-    }
-    if normalized.is_empty() && path.trim().starts_with('/') {
-        return "/".to_string();
-    }
-    normalized
-}
-
-fn media_paths_overlap(left: &str, right: &str) -> bool {
-    left == right
-        || left
-            .strip_prefix(right)
-            .is_some_and(|suffix| suffix.starts_with('/'))
-        || right
-            .strip_prefix(left)
-            .is_some_and(|suffix| suffix.starts_with('/'))
-}
-
-pub(crate) async fn patch_media_profile(
-    State(state): State<Arc<ApiState>>,
-    Path(media_profile_public_id): Path<Uuid>,
-    Json(request): Json<MediaProfilePatchRequest>,
-) -> Result<Json<MediaProfileResponse>, ApiError> {
-    let existing = state
-        .media
-        .media_profile_get(media_profile_public_id)
-        .await
-        .map_err(|err| map_media_error("media_profile_get", MEDIA_PROFILE_LIST_FAILED, &err))?
-        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
-    let source_root = resolve_patch_str_field(
-        request.source_root.as_deref(),
-        &existing.source_root,
-        SOURCE_ROOT_REQUIRED,
-    )?;
-    let output_root = resolve_patch_str_field(
-        request.output_root.as_deref(),
-        &existing.output_root,
-        OUTPUT_ROOT_REQUIRED,
-    )?;
-    let dry_run_only = request.dry_run_only.unwrap_or(existing.dry_run_only);
-    let retention_days = request.retention_days.unwrap_or(existing.retention_days);
-    validate_retention_days(retention_days)?;
-
-    let profile_id = state
-        .media
-        .media_profile_upsert(MediaProfileUpsertParams {
-            actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
-            profile_key: &existing.profile_key,
-            source_root,
-            output_root,
-            dry_run_only,
-            retention_days,
-        })
-        .await
-        .map_err(|err| map_media_error("media_profile_patch", MEDIA_PROFILE_PATCH_FAILED, &err))?;
-
-    let profile = state
-        .media
         .media_profile_list()
         .await
         .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
         .into_iter()
-        .find(|item| item.media_profile_public_id == profile_id)
-        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
+        .find(|item| item.media_profile_public_id == media_profile_public_id)
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_LIST_FAILED))?;
 
     Ok(Json(map_profile(profile)))
 }
@@ -341,32 +225,74 @@ pub(crate) async fn append_media_job_phase(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub(crate) async fn cancel_media_job(
+pub(crate) async fn append_media_job_operation(
     State(state): State<Arc<ApiState>>,
     Path(media_job_public_id): Path<Uuid>,
+    Json(request): Json<MediaJobOperationAppendRequest>,
 ) -> Result<StatusCode, ApiError> {
+    let operation_kind =
+        normalize_required_str_field(&request.operation_kind, OPERATION_KIND_REQUIRED)?;
+    let command_bin = normalize_required_str_field(&request.command_bin, COMMAND_BIN_REQUIRED)?;
+
     state
         .media
-        .media_job_cancel(MediaJobCancelParams {
+        .media_job_operation_append(MediaJobOperationAppendParams {
             media_job_public_id,
+            operation_index: request.operation_index,
+            operation_kind,
+            stream_id: request.stream_id,
+            command_bin,
+            args: [
+                trim_and_filter_empty(request.arg_1.as_deref()),
+                trim_and_filter_empty(request.arg_2.as_deref()),
+                trim_and_filter_empty(request.arg_3.as_deref()),
+                trim_and_filter_empty(request.arg_4.as_deref()),
+                trim_and_filter_empty(request.arg_5.as_deref()),
+            ],
         })
         .await
-        .map_err(|err| map_media_error("media_job_cancel", MEDIA_JOB_CANCEL_FAILED, &err))?;
+        .map_err(|err| {
+            map_media_error(
+                "media_job_operation_append",
+                MEDIA_JOB_OPERATION_APPEND_FAILED,
+                &err,
+            )
+        })?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub(crate) async fn retry_media_job(
+pub(crate) async fn list_media_job_operations(
     State(state): State<Arc<ApiState>>,
     Path(media_job_public_id): Path<Uuid>,
-) -> Result<StatusCode, ApiError> {
-    state
+) -> Result<Json<MediaJobOperationListResponse>, ApiError> {
+    let operations = state
         .media
-        .media_job_retry(MediaJobRetryParams {
-            media_job_public_id,
-        })
+        .media_job_operation_list(media_job_public_id)
         .await
-        .map_err(|err| map_media_error("media_job_retry", MEDIA_JOB_RETRY_FAILED, &err))?;
-    Ok(StatusCode::NO_CONTENT)
+        .map_err(|err| {
+            map_media_error(
+                "media_job_operation_list",
+                MEDIA_JOB_OPERATION_LIST_FAILED,
+                &err,
+            )
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobOperationResponse {
+            operation_index: item.operation_index,
+            operation_kind: item.operation_kind,
+            stream_id: item.stream_id,
+            command_bin: item.command_bin,
+            arg_1: item.arg_1,
+            arg_2: item.arg_2,
+            arg_3: item.arg_3,
+            arg_4: item.arg_4,
+            arg_5: item.arg_5,
+            created_at: item.created_at,
+        })
+        .collect();
+
+    Ok(Json(MediaJobOperationListResponse { operations }))
 }
 
 pub(crate) async fn record_media_capability(
@@ -617,16 +543,6 @@ fn validate_retention_days(value: i32) -> Result<(), ApiError> {
     }
 }
 
-fn resolve_patch_str_field<'a>(
-    incoming: Option<&'a str>,
-    existing: &'a str,
-    required_message: &'static str,
-) -> Result<&'a str, ApiError> {
-    incoming.map_or(Ok(existing), |value| {
-        normalize_required_str_field(value, required_message)
-    })
-}
-
 fn parse_media_status_required(value: &str, detail: &'static str) -> Result<String, ApiError> {
     let normalized = value.trim().to_ascii_lowercase();
     if is_supported_media_status(&normalized) {
@@ -699,80 +615,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_media_profile_returns_not_found_with_default_facade() -> anyhow::Result<()> {
-        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let err = validate_media_profile(State(state), Path(Uuid::new_v4()))
-            .await
-            .expect_err("default facade should not contain requested profile");
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn patch_media_profile_returns_not_found_with_default_facade() -> anyhow::Result<()> {
-        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let request = MediaProfilePatchRequest {
-            source_root: Some("/input/tv".to_string()),
-            output_root: Some("/output/tv".to_string()),
-            dry_run_only: Some(true),
-            retention_days: Some(30),
-        };
-        let err = patch_media_profile(State(state), Path(Uuid::new_v4()), Json(request))
-            .await
-            .expect_err("default facade should not contain requested profile");
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        Ok(())
-    }
-
-    #[test]
-    fn validate_media_profile_semantics_rejects_overlapping_roots() {
-        let profile = crate::app::media::MediaProfileResponse {
-            media_profile_public_id: Uuid::new_v4(),
-            profile_key: "tv".to_string(),
-            source_root: "/media/tv".to_string(),
-            output_root: "/media/tv/out".to_string(),
-            dry_run_only: true,
-            retention_days: 30,
-            updated_at: chrono::Utc::now(),
-        };
-        let err = validate_media_profile_semantics(&profile)
-            .expect_err("overlapping roots should fail semantic validation");
-        assert_eq!(err.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[test]
-    fn validate_media_profile_semantics_accepts_disjoint_roots() {
-        let profile = crate::app::media::MediaProfileResponse {
-            media_profile_public_id: Uuid::new_v4(),
-            profile_key: "tv".to_string(),
-            source_root: "/input/tv".to_string(),
-            output_root: "/output/tv".to_string(),
-            dry_run_only: true,
-            retention_days: 30,
-            updated_at: chrono::Utc::now(),
-        };
-        assert!(validate_media_profile_semantics(&profile).is_ok());
-    }
-
-    #[test]
-    fn resolve_patch_str_field_uses_existing_when_missing() {
-        let result = resolve_patch_str_field(None, "/input/tv", SOURCE_ROOT_REQUIRED);
-        assert!(result.is_ok());
-        let Ok(value) = result else {
-            return;
-        };
-        assert_eq!(value, "/input/tv");
-    }
-
-    #[test]
-    fn resolve_patch_str_field_rejects_blank_override() {
-        let result = resolve_patch_str_field(Some("   "), "/input/tv", SOURCE_ROOT_REQUIRED);
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
     async fn upsert_media_profile_rejects_retention_days_below_minimum() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let request = MediaProfileUpsertRequest {
@@ -814,7 +656,7 @@ mod tests {
     async fn list_media_jobs_rejects_invalid_status_filter() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let query = MediaJobsQuery {
-            media_profile_public_id: Some(Uuid::new_v4()),
+            media_profile_public_id: Uuid::new_v4(),
             status: Some("INVALID".to_string()),
         };
 
@@ -857,24 +699,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancel_media_job_maps_noop_storage_failure_to_internal() -> anyhow::Result<()> {
+    async fn append_media_job_operation_rejects_missing_command_bin() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let err = cancel_media_job(State(state), Path(Uuid::new_v4()))
+        let request = MediaJobOperationAppendRequest {
+            operation_index: 0,
+            operation_kind: "remux".to_string(),
+            stream_id: None,
+            command_bin: "   ".to_string(),
+            arg_1: None,
+            arg_2: None,
+            arg_3: None,
+            arg_4: None,
+            arg_5: None,
+        };
+
+        let err = append_media_job_operation(State(state), Path(Uuid::new_v4()), Json(request))
             .await
-            .expect_err("noop media facade should fail cancellation");
+            .expect_err("missing command bin should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_media_job_operation_maps_noop_storage_failure_to_internal() -> anyhow::Result<()>
+    {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobOperationAppendRequest {
+            operation_index: 0,
+            operation_kind: "remux".to_string(),
+            stream_id: None,
+            command_bin: "ffmpeg".to_string(),
+            arg_1: Some("-i".to_string()),
+            arg_2: Some("/input/demo.mkv".to_string()),
+            arg_3: Some("-c".to_string()),
+            arg_4: Some("copy".to_string()),
+            arg_5: None,
+        };
+
+        let err = append_media_job_operation(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("noop media facade should fail writes");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         Ok(())
     }
 
     #[tokio::test]
-    async fn retry_media_job_maps_noop_storage_failure_to_internal() -> anyhow::Result<()> {
+    async fn list_media_job_operations_returns_empty_payload_with_default_facade()
+    -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let err = retry_media_job(State(state), Path(Uuid::new_v4()))
-            .await
-            .expect_err("noop media facade should fail retry");
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let Json(response) = list_media_job_operations(State(state), Path(Uuid::new_v4())).await?;
+        assert!(response.operations.is_empty());
         Ok(())
     }
 

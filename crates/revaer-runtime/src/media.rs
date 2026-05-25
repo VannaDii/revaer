@@ -10,12 +10,12 @@ use revaer_data::media::capabilities::{
     record_capability_snapshot,
 };
 use revaer_data::media::jobs::{
-    CreateMediaJobInput, MediaJobRow, append_media_job_phase, cancel_media_job, create_media_job,
-    get_media_job, list_media_jobs, retry_media_job,
+    CreateMediaJobInput, MediaJobOperationRow, MediaJobRow, append_media_job_operation,
+    append_media_job_phase, create_media_job, get_media_job, list_media_job_operations,
+    list_media_jobs,
 };
 use revaer_data::media::profiles::{
-    MediaProfileRow, UpsertMediaProfileInput, get_media_profile, list_media_profiles,
-    upsert_media_profile,
+    MediaProfileRow, UpsertMediaProfileInput, list_media_profiles, upsert_media_profile,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -29,13 +29,13 @@ pub struct MediaStore {
 impl MediaStore {
     /// Construct a media store facade from a connection pool.
     #[must_use]
-    pub const fn new(pool: PgPool) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
     /// Access underlying connection pool.
     #[must_use]
-    pub const fn pool(&self) -> &PgPool {
+    pub fn pool(&self) -> &PgPool {
         &self.pool
     }
 
@@ -55,18 +55,6 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn list_profiles(&self) -> DataResult<Vec<MediaProfileRow>> {
         list_media_profiles(&self.pool).await
-    }
-
-    /// Load one media profile by public id.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the underlying stored-procedure call fails.
-    pub async fn get_profile(
-        &self,
-        media_profile_public_id: Uuid,
-    ) -> DataResult<Option<MediaProfileRow>> {
-        get_media_profile(&self.pool, media_profile_public_id).await
     }
 
     /// Create a media job.
@@ -102,6 +90,32 @@ impl MediaStore {
         .await
     }
 
+    /// Append a deterministic execution operation for a media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn append_job_operation(
+        &self,
+        media_job_public_id: Uuid,
+        operation_index: i32,
+        operation_kind: &str,
+        stream_id: Option<i32>,
+        command_bin: &str,
+        args: [Option<&str>; 5],
+    ) -> DataResult<()> {
+        append_media_job_operation(
+            &self.pool,
+            media_job_public_id,
+            operation_index,
+            operation_kind,
+            stream_id,
+            command_bin,
+            args,
+        )
+        .await
+    }
+
     /// List media jobs for a profile.
     ///
     /// # Errors
@@ -109,10 +123,22 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn list_jobs(
         &self,
-        media_profile_public_id: Option<Uuid>,
+        media_profile_public_id: Uuid,
         status_text: Option<&str>,
     ) -> DataResult<Vec<MediaJobRow>> {
         list_media_jobs(&self.pool, media_profile_public_id, status_text).await
+    }
+
+    /// List persisted execution operations for one media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn list_job_operations(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<MediaJobOperationRow>> {
+        list_media_job_operations(&self.pool, media_job_public_id).await
     }
 
     /// Load one media job by public id.
@@ -122,24 +148,6 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn get_job(&self, media_job_public_id: Uuid) -> DataResult<Option<MediaJobRow>> {
         get_media_job(&self.pool, media_job_public_id).await
-    }
-
-    /// Cancel one media job by public id.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the underlying stored-procedure call fails.
-    pub async fn cancel_job(&self, media_job_public_id: Uuid) -> DataResult<()> {
-        cancel_media_job(&self.pool, media_job_public_id).await
-    }
-
-    /// Retry one media job by public id.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the underlying stored-procedure call fails.
-    pub async fn retry_job(&self, media_job_public_id: Uuid) -> DataResult<()> {
-        retry_media_job(&self.pool, media_job_public_id).await
     }
 
     /// Record one capability snapshot row.
@@ -176,8 +184,24 @@ mod tests {
     use sqlx::postgres::PgPoolOptions;
     use uuid::Uuid;
 
-    async fn test_store() -> anyhow::Result<(TestDatabase, MediaStore)> {
-        let postgres = start_postgres()?;
+    async fn test_store() -> anyhow::Result<Option<(TestDatabase, MediaStore)>> {
+        let postgres = match start_postgres() {
+            Ok(db) => db,
+            Err(err) => {
+                let message = err.to_string();
+                if message.contains("docker daemon is not available")
+                    || message.contains("docker command not found")
+                    || message.contains("could not map host port")
+                    || message.contains("database system is in recovery mode")
+                    || message.contains("database system is starting up")
+                    || message.contains("not yet accepting connections")
+                {
+                    eprintln!("skipping media store test: {err}");
+                    return Ok(None);
+                }
+                return Err(err);
+            }
+        };
 
         let pool = PgPoolOptions::new()
             .max_connections(5)
@@ -188,7 +212,7 @@ mod tests {
         migrator.set_ignore_missing(true);
         migrator.run(&pool).await?;
 
-        Ok((postgres, MediaStore::new(pool)))
+        Ok(Some((postgres, MediaStore::new(pool))))
     }
 
     async fn system_actor(pool: &sqlx::PgPool) -> anyhow::Result<Uuid> {
@@ -200,24 +224,8 @@ mod tests {
 
     #[tokio::test]
     async fn media_store_round_trips_profiles_jobs_and_capabilities() -> anyhow::Result<()> {
-        let (postgres, store) = match test_store().await {
-            Ok(value) => value,
-            Err(err) => {
-                let message = err.to_string().to_ascii_lowercase();
-                if message.contains("docker")
-                    || message.contains("container")
-                    || message.contains("connection refused")
-                    || message.contains("test database url is required")
-                    || message.contains("in recovery mode")
-                    || message.contains("starting up")
-                    || message.contains("not yet accepting connections")
-                    || message.contains("failed to create database")
-                {
-                    eprintln!("skipping media store test: {err}");
-                    return Ok(());
-                }
-                return Err(err);
-            }
+        let Some((postgres, store)) = test_store().await? else {
+            return Ok(());
         };
         let _keep_db_alive = postgres;
         let actor = system_actor(store.pool()).await?;
@@ -253,9 +261,28 @@ mod tests {
         store
             .append_job_phase(job_id, 0, "planning", "queued", Some("scheduled"))
             .await?;
+        store
+            .append_job_operation(
+                job_id,
+                0,
+                "remux",
+                None,
+                "ffmpeg",
+                [
+                    Some("-i"),
+                    Some("/input/tv/show.mkv"),
+                    Some("-c"),
+                    Some("copy"),
+                    None,
+                ],
+            )
+            .await?;
 
-        let jobs = store.list_jobs(Some(profile_id), Some("queued")).await?;
+        let jobs = store.list_jobs(profile_id, Some("queued")).await?;
         assert!(jobs.iter().any(|job| job.media_job_public_id == job_id));
+        let operations = store.list_job_operations(job_id).await?;
+        assert_eq!(operations.len(), 1);
+        assert_eq!(operations[0].operation_kind, "remux");
 
         let snapshot_id = store
             .record_capability(&RecordCapabilitySnapshotInput {

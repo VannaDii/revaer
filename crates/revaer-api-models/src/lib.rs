@@ -360,6 +360,35 @@ pub struct MediaJobPhaseAppendRequest {
     pub details_text: Option<String>,
 }
 
+/// Request payload for appending a media job operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobOperationAppendRequest {
+    /// Operation order index.
+    pub operation_index: i32,
+    /// Operation kind.
+    pub operation_kind: String,
+    /// Optional stream id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<i32>,
+    /// Command binary.
+    pub command_bin: String,
+    /// Optional argument 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_1: Option<String>,
+    /// Optional argument 2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_2: Option<String>,
+    /// Optional argument 3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_3: Option<String>,
+    /// Optional argument 4.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_4: Option<String>,
+    /// Optional argument 5.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_5: Option<String>,
+}
+
 /// Media job response row payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobResponse {
@@ -399,6 +428,44 @@ pub struct MediaJobCreateResponse {
 pub struct MediaJobListResponse {
     /// Media jobs.
     pub jobs: Vec<MediaJobResponse>,
+}
+
+/// Media job operation response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobOperationResponse {
+    /// Operation order index.
+    pub operation_index: i32,
+    /// Operation kind.
+    pub operation_kind: String,
+    /// Optional stream id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<i32>,
+    /// Command binary.
+    pub command_bin: String,
+    /// Optional argument 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_1: Option<String>,
+    /// Optional argument 2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_2: Option<String>,
+    /// Optional argument 3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_3: Option<String>,
+    /// Optional argument 4.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_4: Option<String>,
+    /// Optional argument 5.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_5: Option<String>,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job operation list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobOperationListResponse {
+    /// Ordered operations.
+    pub operations: Vec<MediaJobOperationResponse>,
 }
 
 /// Request payload for recording one media capability snapshot row.

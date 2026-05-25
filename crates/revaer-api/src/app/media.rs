@@ -59,18 +59,21 @@ pub struct MediaJobPhaseAppendParams<'a> {
     pub details_text: Option<&'a str>,
 }
 
-/// Cancel media job parameters.
-#[derive(Debug, Clone, Copy)]
-pub struct MediaJobCancelParams {
-    /// Job public id.
+/// Append media job operation parameters.
+#[derive(Debug, Clone)]
+pub struct MediaJobOperationAppendParams<'a> {
+    /// Job id.
     pub media_job_public_id: Uuid,
-}
-
-/// Retry media job parameters.
-#[derive(Debug, Clone, Copy)]
-pub struct MediaJobRetryParams {
-    /// Job public id.
-    pub media_job_public_id: Uuid,
+    /// Ordered operation index.
+    pub operation_index: i32,
+    /// Operation kind.
+    pub operation_kind: &'a str,
+    /// Optional stream id.
+    pub stream_id: Option<i32>,
+    /// Command binary.
+    pub command_bin: &'a str,
+    /// Up to five deterministic arguments.
+    pub args: [Option<&'a str>; 5],
 }
 
 /// Record capability snapshot parameters.
@@ -174,6 +177,31 @@ pub struct MediaJobResponse {
     pub completed_at: Option<DateTime<Utc>>,
     /// Last error.
     pub last_error: Option<String>,
+}
+
+/// Media job operation response row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobOperationResponse {
+    /// Ordered operation index.
+    pub operation_index: i32,
+    /// Operation kind.
+    pub operation_kind: String,
+    /// Optional stream id.
+    pub stream_id: Option<i32>,
+    /// Command binary.
+    pub command_bin: String,
+    /// Optional argument 1.
+    pub arg_1: Option<String>,
+    /// Optional argument 2.
+    pub arg_2: Option<String>,
+    /// Optional argument 3.
+    pub arg_3: Option<String>,
+    /// Optional argument 4.
+    pub arg_4: Option<String>,
+    /// Optional argument 5.
+    pub arg_5: Option<String>,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
 }
 
 /// Media capability snapshot response row.
@@ -291,12 +319,6 @@ pub trait MediaFacade: Send + Sync {
     /// List active profiles.
     async fn media_profile_list(&self) -> Result<Vec<MediaProfileResponse>, MediaServiceError>;
 
-    /// Read one media profile by public id.
-    async fn media_profile_get(
-        &self,
-        media_profile_public_id: Uuid,
-    ) -> Result<Option<MediaProfileResponse>, MediaServiceError>;
-
     /// Create media job.
     async fn media_job_create(
         &self,
@@ -306,7 +328,7 @@ pub trait MediaFacade: Send + Sync {
     /// List media jobs for profile.
     async fn media_job_list(
         &self,
-        media_profile_public_id: Option<Uuid>,
+        media_profile_public_id: Uuid,
         status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError>;
 
@@ -322,12 +344,17 @@ pub trait MediaFacade: Send + Sync {
         params: MediaJobPhaseAppendParams<'_>,
     ) -> Result<(), MediaServiceError>;
 
-    /// Cancel one media job.
-    async fn media_job_cancel(&self, params: MediaJobCancelParams)
-    -> Result<(), MediaServiceError>;
+    /// Append media job operation.
+    async fn media_job_operation_append(
+        &self,
+        params: MediaJobOperationAppendParams<'_>,
+    ) -> Result<(), MediaServiceError>;
 
-    /// Retry one media job.
-    async fn media_job_retry(&self, params: MediaJobRetryParams) -> Result<(), MediaServiceError>;
+    /// List persisted media job operations.
+    async fn media_job_operation_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobOperationResponse>, MediaServiceError>;
 
     /// Record capability snapshot row.
     async fn media_capability_record(
@@ -384,13 +411,6 @@ impl MediaFacade for NoopMedia {
         Ok(Vec::new())
     }
 
-    async fn media_profile_get(
-        &self,
-        _media_profile_public_id: Uuid,
-    ) -> Result<Option<MediaProfileResponse>, MediaServiceError> {
-        Ok(None)
-    }
-
     async fn media_job_create(
         &self,
         _params: MediaJobCreateParams<'_>,
@@ -400,7 +420,7 @@ impl MediaFacade for NoopMedia {
 
     async fn media_job_list(
         &self,
-        _media_profile_public_id: Option<Uuid>,
+        _media_profile_public_id: Uuid,
         _status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError> {
         Ok(Vec::new())
@@ -420,15 +440,18 @@ impl MediaFacade for NoopMedia {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 
-    async fn media_job_cancel(
+    async fn media_job_operation_append(
         &self,
-        _params: MediaJobCancelParams,
+        _params: MediaJobOperationAppendParams<'_>,
     ) -> Result<(), MediaServiceError> {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 
-    async fn media_job_retry(&self, _params: MediaJobRetryParams) -> Result<(), MediaServiceError> {
-        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    async fn media_job_operation_list(
+        &self,
+        _media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobOperationResponse>, MediaServiceError> {
+        Ok(Vec::new())
     }
 
     async fn media_capability_record(

@@ -447,13 +447,7 @@ impl ApiServer {
             )
             .route(
                 "/v1/media/profiles/{media_profile_public_id}",
-                get(media_handlers::get_media_profile)
-                    .patch(media_handlers::patch_media_profile)
-                    .route_layer(require_api.clone()),
-            )
-            .route(
-                "/v1/media/profiles/{media_profile_public_id}/validate",
-                post(media_handlers::validate_media_profile).route_layer(require_api.clone()),
+                get(media_handlers::get_media_profile).route_layer(require_api.clone()),
             )
             .route(
                 "/v1/media/jobs",
@@ -470,12 +464,10 @@ impl ApiServer {
                 post(media_handlers::append_media_job_phase).route_layer(require_api.clone()),
             )
             .route(
-                "/v1/media/jobs/{media_job_public_id}/cancel",
-                post(media_handlers::cancel_media_job).route_layer(require_api.clone()),
-            )
-            .route(
-                "/v1/media/jobs/{media_job_public_id}/retry",
-                post(media_handlers::retry_media_job).route_layer(require_api.clone()),
+                "/v1/media/jobs/{media_job_public_id}/operations",
+                get(media_handlers::list_media_job_operations)
+                    .post(media_handlers::append_media_job_operation)
+                    .route_layer(require_api.clone()),
             )
             .route(
                 "/v1/media/capabilities",

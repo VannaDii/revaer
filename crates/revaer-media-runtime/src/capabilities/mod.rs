@@ -14,19 +14,6 @@ pub struct CapabilitySnapshot {
     pub ffprobe_version: String,
     /// Available codec names.
     pub codecs: Vec<String>,
-    /// Per-codec decode/encode support flags.
-    pub codec_capabilities: Vec<CodecCapability>,
-}
-
-/// Runtime capability flags for one codec entry.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct CodecCapability {
-    /// Codec name.
-    pub codec_name: String,
-    /// Whether decode is supported.
-    pub decode_supported: bool,
-    /// Whether encode is supported.
-    pub encode_supported: bool,
 }
 
 impl CapabilitySnapshot {
@@ -50,7 +37,7 @@ pub enum CapabilityDetectError {
     CommandFailed(String),
     /// Probe output could not be parsed.
     #[error("capability probe output malformed: {0}")]
-    OutputMalformed(&'static str),
+    OutputMalformed(String),
 }
 
 /// Capability detector interface.
@@ -80,6 +67,7 @@ pub trait CapabilityProbeExecutor: Send + Sync {
     /// # Errors
     ///
     /// Returns [`CapabilityDetectError::CommandFailed`] when command invocation fails.
+    /// Returns [`CapabilityDetectError::OutputMalformed`] when stdout is not valid UTF-8.
     fn run(&self, program: &str, args: &[&str]) -> Result<String, CapabilityDetectError>;
 }
 
@@ -100,7 +88,7 @@ impl CapabilityProbeExecutor for SystemCapabilityProbeExecutor {
             )));
         }
         String::from_utf8(output.stdout)
-            .map_err(|err| CapabilityDetectError::CommandFailed(err.to_string()))
+            .map_err(|err| CapabilityDetectError::OutputMalformed(err.to_string()))
     }
 }
 
@@ -133,28 +121,23 @@ impl CapabilityDetector for FfmpegCapabilityDetector {
         let ffprobe_version_output = self.executor.run(&self.ffprobe_bin, &["-version"])?;
         let codecs_output = self.executor.run(&self.ffmpeg_bin, &["-codecs"])?;
 
-        let ffmpeg_version = parse_version_line(&ffmpeg_version_output).ok_or(
-            CapabilityDetectError::OutputMalformed("missing ffmpeg version line"),
-        )?;
-        let ffprobe_version = parse_version_line(&ffprobe_version_output).ok_or(
-            CapabilityDetectError::OutputMalformed("missing ffprobe version line"),
-        )?;
-        let codec_capabilities = parse_codecs(&codecs_output);
-        if codec_capabilities.is_empty() {
+        let ffmpeg_version = parse_version_line(&ffmpeg_version_output).ok_or_else(|| {
+            CapabilityDetectError::OutputMalformed("missing ffmpeg version line".to_string())
+        })?;
+        let ffprobe_version = parse_version_line(&ffprobe_version_output).ok_or_else(|| {
+            CapabilityDetectError::OutputMalformed("missing ffprobe version line".to_string())
+        })?;
+        let codecs = parse_codecs(&codecs_output);
+        if codecs.is_empty() {
             return Err(CapabilityDetectError::OutputMalformed(
-                "no codecs parsed from ffmpeg -codecs",
+                "no codecs parsed from ffmpeg -codecs".to_string(),
             ));
         }
-        let codecs = codec_capabilities
-            .iter()
-            .map(|item| item.codec_name.clone())
-            .collect();
 
         Ok(CapabilitySnapshot {
             ffmpeg_version,
             ffprobe_version,
             codecs,
-            codec_capabilities,
         })
     }
 }
@@ -169,7 +152,7 @@ fn parse_version_line(output: &str) -> Option<String> {
     })
 }
 
-fn parse_codecs(output: &str) -> Vec<CodecCapability> {
+fn parse_codecs(output: &str) -> Vec<String> {
     let mut codecs = BTreeSet::new();
     for line in output.lines() {
         if !line.starts_with(' ') {
@@ -186,13 +169,7 @@ fn parse_codecs(output: &str) -> Vec<CodecCapability> {
         let Some(codec_name) = tokens.next() else {
             continue;
         };
-        let decode_supported = flags.starts_with('D');
-        let encode_supported = flags.chars().nth(1) == Some('E');
-        codecs.insert(CodecCapability {
-            codec_name: codec_name.to_string(),
-            decode_supported,
-            encode_supported,
-        });
+        codecs.insert(codec_name.to_string());
     }
     codecs.into_iter().collect()
 }
@@ -201,7 +178,7 @@ fn parse_codecs(output: &str) -> Vec<CodecCapability> {
 mod tests {
     use super::{
         CapabilityDetectError, CapabilityDetector, CapabilityProbeExecutor, CapabilitySnapshot,
-        CodecCapability, FfmpegCapabilityDetector, UnavailableCapabilityDetector,
+        FfmpegCapabilityDetector, UnavailableCapabilityDetector,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -215,11 +192,6 @@ mod tests {
                 ffmpeg_version: "7.0".to_string(),
                 ffprobe_version: "7.0".to_string(),
                 codecs: vec!["h264".to_string()],
-                codec_capabilities: vec![CodecCapability {
-                    codec_name: "h264".to_string(),
-                    decode_supported: true,
-                    encode_supported: true,
-                }],
             })
         }
     }
@@ -230,7 +202,6 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: Vec::new(),
-            codec_capabilities: Vec::new(),
         };
         assert!(!snapshot.is_valid());
     }
@@ -295,21 +266,6 @@ mod tests {
         assert_eq!(
             snapshot.codecs,
             vec!["h264".to_string(), "hevc".to_string()]
-        );
-        assert_eq!(
-            snapshot.codec_capabilities,
-            vec![
-                CodecCapability {
-                    codec_name: "h264".to_string(),
-                    decode_supported: true,
-                    encode_supported: true
-                },
-                CodecCapability {
-                    codec_name: "hevc".to_string(),
-                    decode_supported: true,
-                    encode_supported: true
-                }
-            ]
         );
     }
 }

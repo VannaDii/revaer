@@ -5,9 +5,10 @@ use revaer_api::app::media::{
     MediaCapabilityReadinessResponse as AppMediaCapabilityReadinessResponse,
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams,
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
-    MediaJobCancelParams, MediaJobCreateParams, MediaJobPhaseAppendParams, MediaJobResponse,
-    MediaJobRetryParams, MediaProfileResponse, MediaProfileUpsertParams, MediaServiceError,
-    MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
+    MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobOperationResponse,
+    MediaJobPhaseAppendParams, MediaJobResponse, MediaProfileResponse, MediaProfileUpsertParams,
+    MediaServiceError, MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlProfile,
+    MediaYamlValidationResult,
 };
 use revaer_data::DataError;
 use revaer_data::media::capabilities::CapabilitySnapshotRow;
@@ -76,27 +77,6 @@ impl MediaFacade for MediaService {
             .map_err(|err| map_data_error(&err))
     }
 
-    async fn media_profile_get(
-        &self,
-        media_profile_public_id: Uuid,
-    ) -> Result<Option<MediaProfileResponse>, MediaServiceError> {
-        self.store
-            .get_profile(media_profile_public_id)
-            .await
-            .map(|row_opt| {
-                row_opt.map(|row| MediaProfileResponse {
-                    media_profile_public_id: row.media_profile_public_id,
-                    profile_key: row.profile_key,
-                    source_root: row.source_root,
-                    output_root: row.output_root,
-                    dry_run_only: row.dry_run_only,
-                    retention_days: row.retention_days,
-                    updated_at: row.updated_at,
-                })
-            })
-            .map_err(|err| map_data_error(&err))
-    }
-
     async fn media_job_create(
         &self,
         params: MediaJobCreateParams<'_>,
@@ -124,7 +104,7 @@ impl MediaFacade for MediaService {
 
     async fn media_job_list(
         &self,
-        media_profile_public_id: Option<Uuid>,
+        media_profile_public_id: Uuid,
         status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError> {
         self.store
@@ -187,20 +167,46 @@ impl MediaFacade for MediaService {
             .map_err(|err| map_data_error(&err))
     }
 
-    async fn media_job_cancel(
+    async fn media_job_operation_append(
         &self,
-        params: MediaJobCancelParams,
+        params: MediaJobOperationAppendParams<'_>,
     ) -> Result<(), MediaServiceError> {
         self.store
-            .cancel_job(params.media_job_public_id)
+            .append_job_operation(
+                params.media_job_public_id,
+                params.operation_index,
+                params.operation_kind,
+                params.stream_id,
+                params.command_bin,
+                params.args,
+            )
             .await
             .map_err(|err| map_data_error(&err))
     }
 
-    async fn media_job_retry(&self, params: MediaJobRetryParams) -> Result<(), MediaServiceError> {
+    async fn media_job_operation_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobOperationResponse>, MediaServiceError> {
         self.store
-            .retry_job(params.media_job_public_id)
+            .list_job_operations(media_job_public_id)
             .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| MediaJobOperationResponse {
+                        operation_index: row.operation_index,
+                        operation_kind: row.operation_kind,
+                        stream_id: row.stream_id,
+                        command_bin: row.command_bin,
+                        arg_1: row.arg_1,
+                        arg_2: row.arg_2,
+                        arg_3: row.arg_3,
+                        arg_4: row.arg_4,
+                        arg_5: row.arg_5,
+                        created_at: row.created_at,
+                    })
+                    .collect()
+            })
             .map_err(|err| map_data_error(&err))
     }
 
@@ -225,13 +231,9 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaCapabilityRefreshParams,
     ) -> Result<i64, MediaServiceError> {
-        let detector = Arc::clone(&self.detector);
-        let snapshot = tokio::task::spawn_blocking(move || detector.detect())
-            .await
-            .map_err(|_| {
-                MediaServiceError::new(MediaServiceErrorKind::Storage)
-                    .with_code("media_capability_refresh_join_failed")
-            })?
+        let snapshot = self
+            .detector
+            .detect()
             .map_err(|error| map_detect_error(&error))?;
         if !snapshot.is_valid() {
             return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
@@ -240,46 +242,24 @@ impl MediaFacade for MediaService {
 
         let mut seen = BTreeSet::new();
         let mut last_snapshot_id = None;
-        if snapshot.codec_capabilities.is_empty() {
-            for codec in &snapshot.codecs {
-                let normalized = codec.trim().to_ascii_lowercase();
-                if normalized.is_empty() || !seen.insert(normalized.clone()) {
-                    continue;
-                }
-                let snapshot_id = self
-                    .store
-                    .record_capability(&RecordCapabilitySnapshotInput {
-                        actor_public_id: params.actor_user_public_id,
-                        ffmpeg_version: &snapshot.ffmpeg_version,
-                        ffprobe_version: &snapshot.ffprobe_version,
-                        codec_name: &normalized,
-                        encode_supported: false,
-                        decode_supported: true,
-                    })
-                    .await
-                    .map_err(|err| map_data_error(&err))?;
-                last_snapshot_id = Some(snapshot_id);
+        for codec in &snapshot.codecs {
+            let normalized = codec.trim().to_ascii_lowercase();
+            if normalized.is_empty() || !seen.insert(normalized.clone()) {
+                continue;
             }
-        } else {
-            for codec in &snapshot.codec_capabilities {
-                let normalized = codec.codec_name.trim().to_ascii_lowercase();
-                if normalized.is_empty() || !seen.insert(normalized.clone()) {
-                    continue;
-                }
-                let snapshot_id = self
-                    .store
-                    .record_capability(&RecordCapabilitySnapshotInput {
-                        actor_public_id: params.actor_user_public_id,
-                        ffmpeg_version: &snapshot.ffmpeg_version,
-                        ffprobe_version: &snapshot.ffprobe_version,
-                        codec_name: &normalized,
-                        encode_supported: codec.encode_supported,
-                        decode_supported: codec.decode_supported,
-                    })
-                    .await
-                    .map_err(|err| map_data_error(&err))?;
-                last_snapshot_id = Some(snapshot_id);
-            }
+            let snapshot_id = self
+                .store
+                .record_capability(&RecordCapabilitySnapshotInput {
+                    actor_public_id: params.actor_user_public_id,
+                    ffmpeg_version: &snapshot.ffmpeg_version,
+                    ffprobe_version: &snapshot.ffprobe_version,
+                    codec_name: &normalized,
+                    encode_supported: true,
+                    decode_supported: true,
+                })
+                .await
+                .map_err(|err| map_data_error(&err))?;
+            last_snapshot_id = Some(snapshot_id);
         }
 
         last_snapshot_id.ok_or_else(|| {
@@ -487,9 +467,6 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
     let kind = match detail.as_deref() {
         Some("app_user_not_found" | "media_profile_not_found" | "media_job_not_found") => {
             MediaServiceErrorKind::NotFound
-        }
-        Some("media_job_cancel_invalid_status" | "media_job_retry_invalid_status") => {
-            MediaServiceErrorKind::Conflict
         }
         Some("media_profile_roots_overlap") => MediaServiceErrorKind::Invalid,
         _ => MediaServiceErrorKind::Storage,
