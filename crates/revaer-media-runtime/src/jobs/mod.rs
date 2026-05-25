@@ -164,6 +164,42 @@ impl JobPreflightEvaluation {
             Self::Failed(report) => &report.timeline,
         }
     }
+
+    /// Borrow planned job when preflight evaluation succeeded.
+    #[must_use]
+    pub const fn planned(&self) -> Option<&PlannedJob> {
+        match self {
+            Self::Ready(report) => Some(&report.planned),
+            Self::Failed(_) => None,
+        }
+    }
+
+    /// Borrow planned job summary when preflight evaluation succeeded.
+    #[must_use]
+    pub const fn summary(&self) -> Option<&PlannedJobSummary> {
+        match self {
+            Self::Ready(report) => Some(&report.summary),
+            Self::Failed(_) => None,
+        }
+    }
+
+    /// Borrow deterministic execution steps when preflight evaluation succeeded.
+    #[must_use]
+    pub fn steps(&self) -> Option<&[ExecutionStep]> {
+        match self {
+            Self::Ready(report) => Some(&report.steps),
+            Self::Failed(_) => None,
+        }
+    }
+
+    /// Borrow workspace capacity report when preflight evaluation succeeded.
+    #[must_use]
+    pub const fn capacity_report(&self) -> Option<&WorkspaceCapacityReport> {
+        match self {
+            Self::Ready(report) => Some(&report.capacity_report),
+            Self::Failed(_) => None,
+        }
+    }
 }
 
 /// Deterministic stage record for preflight explainability.
@@ -1396,9 +1432,17 @@ mod tests {
         assert!(failed.as_failed().is_some());
         assert!(ready.as_ready().is_some());
         assert!(ready.as_failed().is_none());
+        assert!(ready.planned().is_some());
+        assert!(ready.summary().is_some());
+        assert!(ready.steps().is_some());
+        assert!(ready.capacity_report().is_some());
         assert_eq!(ready.failed_stage(), None);
         assert_eq!(ready.error_code(), None);
         assert_eq!(ready.error_detail(), None);
+        assert!(failed.planned().is_none());
+        assert!(failed.summary().is_none());
+        assert!(failed.steps().is_none());
+        assert!(failed.capacity_report().is_none());
         assert_eq!(failed.failed_stage(), Some("capability_ready"));
         assert_eq!(failed.error_code(), Some("preflight_capability_failed"));
         assert_eq!(
