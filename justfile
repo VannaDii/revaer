@@ -59,8 +59,20 @@ release-artifacts: build-release api-export
     cp docs/api/openapi.json dist/openapi.json
 
 udeps:
-    if ! command -v cargo-udeps >/dev/null 2>&1; then \
-        cargo install cargo-udeps --locked; \
+    required_udeps_version="0.1.57"; \
+    install_udeps() { \
+        cargo install cargo-udeps --locked --force --version "${required_udeps_version}"; \
+    }; \
+    version_ge() { \
+        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
+    }; \
+    if command -v cargo-udeps >/dev/null 2>&1; then \
+        installed_version="$(cargo udeps --version | awk '{print $2}')"; \
+        if ! version_ge "$installed_version" "$required_udeps_version"; then \
+            install_udeps; \
+        fi; \
+    else \
+        install_udeps; \
     fi
     if ! cargo +stable udeps --workspace --all-targets >/dev/null 2>&1; then \
         echo "cargo-udeps: stable toolchain lacks required -Z flags, retrying with nightly"; \
