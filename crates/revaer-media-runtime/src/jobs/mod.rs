@@ -1487,7 +1487,10 @@ mod tests {
             Some("preflight_capability_failed")
         );
         assert_eq!(failed.final_stage(), Some("capability_ready"));
-        assert_eq!(failed.final_stage_code(), Some("preflight_capability_failed"));
+        assert_eq!(
+            failed.final_stage_code(),
+            Some("preflight_capability_failed")
+        );
         assert!(!failed.failed_at_build_steps());
         assert_eq!(ready.timeline().len(), 0);
         assert_eq!(failed.timeline().len(), 1);
