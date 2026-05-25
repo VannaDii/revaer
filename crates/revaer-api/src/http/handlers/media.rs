@@ -47,6 +47,7 @@ const MEDIA_YAML_EXPORT_FAILED: &str = "failed to export media yaml";
 const MEDIA_YAML_VALIDATE_FAILED: &str = "failed to validate media yaml";
 const MEDIA_YAML_APPLY_FAILED: &str = "failed to apply media yaml";
 const PROFILE_KEY_REQUIRED: &str = "profile_key is required";
+const PROFILE_KEY_IMMUTABLE: &str = "profile_key must match the existing profile key";
 const SOURCE_ROOT_REQUIRED: &str = "source_root is required";
 const OUTPUT_ROOT_REQUIRED: &str = "output_root is required";
 const SOURCE_PATH_REQUIRED: &str = "source_path is required";
@@ -220,6 +221,7 @@ pub(crate) async fn patch_media_profile(
         .into_iter()
         .find(|item| item.media_profile_public_id == media_profile_public_id)
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
+    validate_patch_profile_key(&existing.profile_key, &request.profile_key)?;
 
     let profile_id = state
         .media
@@ -244,6 +246,14 @@ pub(crate) async fn patch_media_profile(
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
 
     Ok(Json(map_profile(profile)))
+}
+
+fn validate_patch_profile_key(existing: &str, incoming: &str) -> Result<(), ApiError> {
+    if existing.trim().eq_ignore_ascii_case(incoming.trim()) {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request(PROFILE_KEY_IMMUTABLE))
+    }
 }
 
 pub(crate) async fn create_media_job(
@@ -741,6 +751,18 @@ mod tests {
             updated_at: chrono::Utc::now(),
         };
         assert!(validate_media_profile_semantics(&profile).is_ok());
+    }
+
+    #[test]
+    fn validate_patch_profile_key_rejects_mismatch() {
+        let result = validate_patch_profile_key("tv-main", "movies-main");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_patch_profile_key_accepts_case_insensitive_match() {
+        let result = validate_patch_profile_key("TV-MAIN", "tv-main");
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
