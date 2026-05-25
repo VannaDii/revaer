@@ -16,9 +16,9 @@ pub fn explain_plan(operations: &[PlannedOperation]) -> Vec<Explanation> {
         .iter()
         .map(|item| Explanation {
             message: format!(
-                "selected operation: {} stream={:?}",
+                "selected operation: {} stream_id={}",
                 operation_kind_code(item.kind),
-                item.stream_id
+                stream_id_code(item.stream_id)
             ),
         })
         .collect()
@@ -29,6 +29,13 @@ fn operation_kind_code(kind: OperationKind) -> &'static str {
         OperationKind::Remux => "remux",
         OperationKind::AudioTranscode => "audio_transcode",
         OperationKind::VideoTranscode => "video_transcode",
+    }
+}
+
+fn stream_id_code(stream_id: Option<u32>) -> String {
+    match stream_id {
+        Some(value) => value.to_string(),
+        None => "none".to_string(),
     }
 }
 

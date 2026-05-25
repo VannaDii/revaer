@@ -1,6 +1,7 @@
 //! Inspection adapter interfaces.
 
 use revaer_media_core::model::{MediaGraph, MediaStream, StreamKind};
+use revaer_media_core::normalize::normalize_graph;
 use serde::Deserialize;
 use std::process::Command;
 use std::sync::Arc;
@@ -165,10 +166,11 @@ pub fn normalize_probe_graph(input: ProbeGraph) -> Result<MediaGraph, InspectErr
         });
     }
 
-    Ok(MediaGraph {
+    let graph = MediaGraph {
         source_path: input.source_path,
         streams,
-    })
+    };
+    Ok(normalize_graph(&graph))
 }
 
 fn parse_stream_kind(value: &str) -> Result<StreamKind, InspectError> {
