@@ -66,6 +66,13 @@ pub struct MediaJobCancelParams {
     pub media_job_public_id: Uuid,
 }
 
+/// Retry media job parameters.
+#[derive(Debug, Clone, Copy)]
+pub struct MediaJobRetryParams {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+}
+
 /// Record capability snapshot parameters.
 #[derive(Debug, Clone)]
 pub struct MediaCapabilityRecordParams<'a> {
@@ -313,6 +320,9 @@ pub trait MediaFacade: Send + Sync {
     async fn media_job_cancel(&self, params: MediaJobCancelParams)
     -> Result<(), MediaServiceError>;
 
+    /// Retry one media job.
+    async fn media_job_retry(&self, params: MediaJobRetryParams) -> Result<(), MediaServiceError>;
+
     /// Record capability snapshot row.
     async fn media_capability_record(
         &self,
@@ -401,6 +411,10 @@ impl MediaFacade for NoopMedia {
         &self,
         _params: MediaJobCancelParams,
     ) -> Result<(), MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
+    async fn media_job_retry(&self, _params: MediaJobRetryParams) -> Result<(), MediaServiceError> {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 

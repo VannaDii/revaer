@@ -11,7 +11,7 @@ use revaer_data::media::capabilities::{
 };
 use revaer_data::media::jobs::{
     CreateMediaJobInput, MediaJobRow, append_media_job_phase, cancel_media_job, create_media_job,
-    get_media_job, list_media_jobs,
+    get_media_job, list_media_jobs, retry_media_job,
 };
 use revaer_data::media::profiles::{
     MediaProfileRow, UpsertMediaProfileInput, list_media_profiles, upsert_media_profile,
@@ -118,6 +118,15 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn cancel_job(&self, media_job_public_id: Uuid) -> DataResult<()> {
         cancel_media_job(&self.pool, media_job_public_id).await
+    }
+
+    /// Retry one media job by public id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn retry_job(&self, media_job_public_id: Uuid) -> DataResult<()> {
+        retry_media_job(&self.pool, media_job_public_id).await
     }
 
     /// Record one capability snapshot row.

@@ -21,6 +21,7 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_job_list_v1",
     "media_job_get_v1",
     "media_job_cancel_v1",
+    "media_job_retry_v1",
 ];
 const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
 

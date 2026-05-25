@@ -6,8 +6,8 @@ use revaer_api::app::media::{
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams,
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
     MediaJobCancelParams, MediaJobCreateParams, MediaJobPhaseAppendParams, MediaJobResponse,
-    MediaProfileResponse, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
-    MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
+    MediaJobRetryParams, MediaProfileResponse, MediaProfileUpsertParams, MediaServiceError,
+    MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
 };
 use revaer_data::DataError;
 use revaer_data::media::capabilities::CapabilitySnapshotRow;
@@ -172,6 +172,13 @@ impl MediaFacade for MediaService {
     ) -> Result<(), MediaServiceError> {
         self.store
             .cancel_job(params.media_job_public_id)
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_retry(&self, params: MediaJobRetryParams) -> Result<(), MediaServiceError> {
+        self.store
+            .retry_job(params.media_job_public_id)
             .await
             .map_err(|err| map_data_error(&err))
     }
@@ -434,7 +441,9 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
         Some("app_user_not_found" | "media_profile_not_found" | "media_job_not_found") => {
             MediaServiceErrorKind::NotFound
         }
-        Some("media_job_cancel_invalid_status") => MediaServiceErrorKind::Conflict,
+        Some("media_job_cancel_invalid_status" | "media_job_retry_invalid_status") => {
+            MediaServiceErrorKind::Conflict
+        }
         Some("media_profile_roots_overlap") => MediaServiceErrorKind::Invalid,
         _ => MediaServiceErrorKind::Storage,
     };
