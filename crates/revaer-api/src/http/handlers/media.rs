@@ -496,6 +496,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn upsert_media_profile_rejects_retention_days_below_minimum() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaProfileUpsertRequest {
+            profile_key: "tv".to_string(),
+            source_root: "/input/tv".to_string(),
+            output_root: "/output/tv".to_string(),
+            dry_run_only: true,
+            retention_days: 0,
+        };
+
+        let err = upsert_media_profile(State(state), Json(request))
+            .await
+            .expect_err("invalid retention should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn upsert_media_profile_rejects_retention_days_above_maximum() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaProfileUpsertRequest {
+            profile_key: "tv".to_string(),
+            source_root: "/input/tv".to_string(),
+            output_root: "/output/tv".to_string(),
+            dry_run_only: true,
+            retention_days: 3651,
+        };
+
+        let err = upsert_media_profile(State(state), Json(request))
+            .await
+            .expect_err("invalid retention should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn refresh_media_capability_maps_noop_storage_failure_to_internal() -> anyhow::Result<()>
     {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
