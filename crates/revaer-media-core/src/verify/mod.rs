@@ -16,7 +16,8 @@ pub fn verify_plan(operations: &[PlannedOperation]) -> Result<(), &'static str> 
     if operations.iter().any(|item| {
         (item.kind == OperationKind::AudioTranscode
             || item.kind == OperationKind::VideoTranscode
-            || item.kind == OperationKind::DispositionRewrite)
+            || item.kind == OperationKind::DispositionRewrite
+            || item.kind == OperationKind::LabelRewrite)
             && item.stream_id.is_none()
     }) {
         return Err("stream-scoped operation is missing stream id");

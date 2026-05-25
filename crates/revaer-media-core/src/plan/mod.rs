@@ -12,6 +12,10 @@ pub enum OperationKind {
     MetadataRewrite,
     /// Stream-level disposition rewrite.
     DispositionRewrite,
+    /// Stream-level label rewrite.
+    LabelRewrite,
+    /// Container stream ordering rewrite.
+    StreamReorder,
     /// Audio stream transcode.
     AudioTranscode,
     /// Video stream transcode.

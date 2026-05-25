@@ -29,6 +29,8 @@ const fn operation_kind_code(kind: OperationKind) -> &'static str {
         OperationKind::Remux => "remux",
         OperationKind::MetadataRewrite => "metadata_rewrite",
         OperationKind::DispositionRewrite => "disposition_rewrite",
+        OperationKind::LabelRewrite => "label_rewrite",
+        OperationKind::StreamReorder => "stream_reorder",
         OperationKind::AudioTranscode => "audio_transcode",
         OperationKind::VideoTranscode => "video_transcode",
     }

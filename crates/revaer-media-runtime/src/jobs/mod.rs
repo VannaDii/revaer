@@ -63,6 +63,10 @@ pub struct PlannedJobSummary {
     pub metadata_rewrite_operations: usize,
     /// Count of disposition rewrite operations.
     pub disposition_rewrite_operations: usize,
+    /// Count of label rewrite operations.
+    pub label_rewrite_operations: usize,
+    /// Count of stream reorder operations.
+    pub stream_reorder_operations: usize,
     /// Count of audio transcode operations.
     pub audio_transcode_operations: usize,
     /// Count of video transcode operations.
@@ -683,6 +687,8 @@ pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
     let mut remux_operations = 0_usize;
     let mut metadata_rewrite_operations = 0_usize;
     let mut disposition_rewrite_operations = 0_usize;
+    let mut label_rewrite_operations = 0_usize;
+    let mut stream_reorder_operations = 0_usize;
     let mut audio_transcode_operations = 0_usize;
     let mut video_transcode_operations = 0_usize;
 
@@ -691,6 +697,8 @@ pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
             OperationKind::Remux => remux_operations += 1,
             OperationKind::MetadataRewrite => metadata_rewrite_operations += 1,
             OperationKind::DispositionRewrite => disposition_rewrite_operations += 1,
+            OperationKind::LabelRewrite => label_rewrite_operations += 1,
+            OperationKind::StreamReorder => stream_reorder_operations += 1,
             OperationKind::AudioTranscode => audio_transcode_operations += 1,
             OperationKind::VideoTranscode => video_transcode_operations += 1,
         }
@@ -701,6 +709,8 @@ pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
         remux_operations,
         metadata_rewrite_operations,
         disposition_rewrite_operations,
+        label_rewrite_operations,
+        stream_reorder_operations,
         audio_transcode_operations,
         video_transcode_operations,
         explanations: explain_plan(&planned.operations),
@@ -838,7 +848,9 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
         let candidate = match op.kind {
             revaer_media_core::plan::OperationKind::Remux
             | revaer_media_core::plan::OperationKind::MetadataRewrite
-            | revaer_media_core::plan::OperationKind::DispositionRewrite => (6_u64, 5_u64), // 1.2x
+            | revaer_media_core::plan::OperationKind::DispositionRewrite
+            | revaer_media_core::plan::OperationKind::LabelRewrite
+            | revaer_media_core::plan::OperationKind::StreamReorder => (6_u64, 5_u64), // 1.2x
             revaer_media_core::plan::OperationKind::AudioTranscode => (3_u64, 2_u64), // 1.5x
             revaer_media_core::plan::OperationKind::VideoTranscode => (5_u64, 2_u64), // 2.5x
         };
@@ -1178,6 +1190,14 @@ mod tests {
                     stream_id: Some(2),
                 },
                 PlannedOperation {
+                    kind: revaer_media_core::plan::OperationKind::LabelRewrite,
+                    stream_id: Some(2),
+                },
+                PlannedOperation {
+                    kind: revaer_media_core::plan::OperationKind::StreamReorder,
+                    stream_id: None,
+                },
+                PlannedOperation {
                     kind: revaer_media_core::plan::OperationKind::AudioTranscode,
                     stream_id: Some(1),
                 },
@@ -1190,13 +1210,15 @@ mod tests {
         };
 
         let summary = summarize_planned_job(&planned);
-        assert_eq!(summary.total_operations, 5);
+        assert_eq!(summary.total_operations, 7);
         assert_eq!(summary.remux_operations, 1);
         assert_eq!(summary.metadata_rewrite_operations, 1);
         assert_eq!(summary.disposition_rewrite_operations, 1);
+        assert_eq!(summary.label_rewrite_operations, 1);
+        assert_eq!(summary.stream_reorder_operations, 1);
         assert_eq!(summary.audio_transcode_operations, 1);
         assert_eq!(summary.video_transcode_operations, 1);
-        assert_eq!(summary.explanations.len(), 5);
+        assert_eq!(summary.explanations.len(), 7);
     }
 
     #[test]
@@ -1462,6 +1484,8 @@ mod tests {
                 remux_operations: 0,
                 metadata_rewrite_operations: 0,
                 disposition_rewrite_operations: 0,
+                label_rewrite_operations: 0,
+                stream_reorder_operations: 0,
                 audio_transcode_operations: 0,
                 video_transcode_operations: 0,
                 explanations: Vec::new(),
@@ -1538,6 +1562,8 @@ mod tests {
                 remux_operations: 0,
                 metadata_rewrite_operations: 0,
                 disposition_rewrite_operations: 0,
+                label_rewrite_operations: 0,
+                stream_reorder_operations: 0,
                 audio_transcode_operations: 0,
                 video_transcode_operations: 0,
                 explanations: Vec::new(),
