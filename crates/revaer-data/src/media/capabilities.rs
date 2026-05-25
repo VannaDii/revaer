@@ -82,6 +82,17 @@ mod tests {
         RecordCapabilitySnapshotInput, latest_capability_snapshot, record_capability_snapshot,
     };
     use crate::media::schema_tests::setup_media_db;
+    use sqlx::postgres::PgPoolOptions;
+    use uuid::Uuid;
+
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://revaer:revaer@127.0.0.1:9/revaer")
+            .expect("lazy pool");
+        pool.close().await;
+        pool
+    }
 
     #[tokio::test]
     async fn record_capability_snapshot_row() -> anyhow::Result<()> {
@@ -114,5 +125,26 @@ mod tests {
             assert_eq!(row.ffmpeg_version, "7.0");
         }
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn capability_queries_surface_query_errors_without_database() {
+        let pool = closed_pool().await;
+        let record = record_capability_snapshot(
+            &pool,
+            &RecordCapabilitySnapshotInput {
+                actor_public_id: Uuid::new_v4(),
+                ffmpeg_version: "7.1",
+                ffprobe_version: "7.1",
+                codec_name: "av1",
+                encode_supported: true,
+                decode_supported: true,
+            },
+        )
+        .await;
+        assert!(record.is_err());
+
+        let latest = latest_capability_snapshot(&pool).await;
+        assert!(latest.is_err());
     }
 }

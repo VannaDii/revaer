@@ -116,6 +116,17 @@ mod tests {
     };
     use crate::DataError;
     use crate::media::schema_tests::setup_media_db;
+    use sqlx::postgres::PgPoolOptions;
+    use uuid::Uuid;
+
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://revaer:revaer@127.0.0.1:9/revaer")
+            .expect("lazy pool");
+        pool.close().await;
+        pool
+    }
 
     #[tokio::test]
     async fn upsert_and_list_media_profile() -> anyhow::Result<()> {
@@ -213,5 +224,32 @@ mod tests {
                 .any(|item| item.media_profile_public_id == profile_id)
         );
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_profile_queries_surface_query_errors_without_database() {
+        let pool = closed_pool().await;
+        let profile_id = Uuid::new_v4();
+        let actor_id = Uuid::new_v4();
+        let input = UpsertMediaProfileInput {
+            actor_public_id: actor_id,
+            profile_key: "movies-main",
+            source_root: "/input/movies",
+            output_root: "/output/movies",
+            dry_run_only: true,
+            retention_days: 14,
+        };
+
+        let upsert = upsert_media_profile(&pool, &input).await;
+        assert!(upsert.is_err());
+
+        let list = list_media_profiles(&pool).await;
+        assert!(list.is_err());
+
+        let get = get_media_profile(&pool, profile_id).await;
+        assert!(get.is_err());
+
+        let upsert_with_executor = upsert_media_profile_with_executor(&pool, &input).await;
+        assert!(upsert_with_executor.is_err());
     }
 }

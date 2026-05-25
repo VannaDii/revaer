@@ -517,8 +517,14 @@ fn ensure_execution_capability_snapshot(
 
 #[cfg(test)]
 mod tests {
-    use super::ensure_execution_capability_snapshot;
+    use super::{
+        ensure_execution_capability_snapshot, map_data_error, map_detect_error, parse_yaml_bundle,
+        validate_yaml_bundle,
+    };
+    use revaer_api::app::media::MediaServiceErrorKind;
+    use revaer_data::DataError;
     use revaer_data::media::capabilities::CapabilitySnapshotRow;
+    use revaer_media_runtime::capabilities::CapabilityDetectError;
 
     #[test]
     fn reject_missing_capability_snapshot() {
@@ -559,5 +565,78 @@ mod tests {
             observed_at: chrono::Utc::now(),
         };
         assert!(ensure_execution_capability_snapshot(Some(&row)).is_ok());
+    }
+
+    #[test]
+    fn parse_yaml_bundle_rejects_empty_and_invalid_payloads() {
+        let empty = parse_yaml_bundle(" \n\t ");
+        assert_eq!(
+            empty.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_yaml_payload_missing".to_string())
+        );
+
+        let invalid = parse_yaml_bundle("profiles: [");
+        assert_eq!(
+            invalid.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_yaml_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_yaml_bundle_reports_version_shape_and_profile_errors() {
+        let bundle = parse_yaml_bundle(
+            "version: revaer.media.v2\nprofiles:\n  - profile_key: tv\n    source_root: /data\n    output_root: /data\n    dry_run_only: false\n    retention_days: 0\n",
+        )
+        .expect("bundle");
+        let issues = validate_yaml_bundle(&bundle);
+        assert!(issues.contains(&"media_yaml_version_unsupported".to_string()));
+        assert!(issues.contains(&"media_yaml_profile_retention_days_out_of_bounds".to_string()));
+        assert!(issues.contains(&"media_yaml_profile_roots_overlap".to_string()));
+    }
+
+    #[test]
+    fn map_data_error_projects_expected_kind_and_codes() {
+        let not_found = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: Some("P0001".to_string()),
+            error_detail: Some("media_job_not_found".to_string()),
+        };
+        let mapped = map_data_error(&not_found);
+        assert_eq!(mapped.kind(), MediaServiceErrorKind::NotFound);
+        assert_eq!(mapped.code(), Some("media_job_not_found"));
+        assert_eq!(mapped.sqlstate(), Some("P0001"));
+
+        let conflict = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: None,
+            error_detail: Some("media_job_retry_invalid_status".to_string()),
+        };
+        assert_eq!(map_data_error(&conflict).kind(), MediaServiceErrorKind::Conflict);
+
+        let invalid = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: None,
+            error_detail: Some("media_profile_roots_overlap".to_string()),
+        };
+        assert_eq!(map_data_error(&invalid).kind(), MediaServiceErrorKind::Invalid);
+    }
+
+    #[test]
+    fn map_detect_error_projects_expected_codes() {
+        assert_eq!(
+            map_detect_error(&CapabilityDetectError::Unavailable).code(),
+            Some("media_capability_refresh_unavailable")
+        );
+        assert_eq!(
+            map_detect_error(&CapabilityDetectError::CommandFailed("x".to_string())).code(),
+            Some("media_capability_refresh_failed")
+        );
+        assert_eq!(
+            map_detect_error(&CapabilityDetectError::OutputMalformed("x")).code(),
+            Some("media_capability_refresh_failed")
+        );
     }
 }

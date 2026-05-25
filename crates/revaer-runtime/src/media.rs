@@ -215,6 +215,15 @@ mod tests {
         Ok(Some((postgres, MediaStore::new(pool))))
     }
 
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://revaer:revaer@127.0.0.1:9/revaer")
+            .expect("lazy pool");
+        pool.close().await;
+        pool
+    }
+
     async fn system_actor(pool: &sqlx::PgPool) -> anyhow::Result<Uuid> {
         let email = format!("media-runtime-{}@example.invalid", Uuid::new_v4());
         let user_public_id = app_user_create(pool, &email, "Media Runtime").await?;
@@ -299,5 +308,67 @@ mod tests {
         assert!(latest.is_some());
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_store_methods_surface_query_errors_without_database() {
+        let store = MediaStore::new(closed_pool().await);
+        let actor_id = Uuid::new_v4();
+        let profile_id = Uuid::new_v4();
+        let job_id = Uuid::new_v4();
+
+        assert!(
+            store
+                .upsert_profile(&UpsertMediaProfileInput {
+                    actor_public_id: actor_id,
+                    profile_key: "movies-main",
+                    source_root: "/input/movies",
+                    output_root: "/output/movies",
+                    dry_run_only: true,
+                    retention_days: 30,
+                })
+                .await
+                .is_err()
+        );
+        assert!(store.list_profiles().await.is_err());
+        assert!(store.get_profile(profile_id).await.is_err());
+
+        assert!(
+            store
+                .create_job(&CreateMediaJobInput {
+                    actor_public_id: actor_id,
+                    media_profile_public_id: profile_id,
+                    source_path: "/input/movies/file.mkv",
+                    output_path: None,
+                    dry_run: true,
+                })
+                .await
+                .is_err()
+        );
+        assert!(
+            store
+                .append_job_phase(job_id, 0, "plan", "queued", None)
+                .await
+                .is_err()
+        );
+        assert!(store.list_jobs(Some(profile_id), Some("queued")).await.is_err());
+        assert!(store.get_job(job_id).await.is_err());
+        assert!(store.cancel_job(job_id).await.is_err());
+        assert!(store.retry_job(job_id).await.is_err());
+
+        assert!(
+            store
+                .record_capability(&RecordCapabilitySnapshotInput {
+                    actor_public_id: actor_id,
+                    ffmpeg_version: "7.1",
+                    ffprobe_version: "7.1",
+                    codec_name: "h264",
+                    encode_supported: true,
+                    decode_supported: true,
+                })
+                .await
+                .is_err()
+        );
+        assert!(store.latest_capability().await.is_err());
     }
 }

@@ -206,6 +206,17 @@ mod tests {
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::setup_media_db;
+    use sqlx::postgres::PgPoolOptions;
+    use uuid::Uuid;
+
+    async fn closed_pool() -> sqlx::PgPool {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://revaer:revaer@127.0.0.1:9/revaer")
+            .expect("lazy pool");
+        pool.close().await;
+        pool
+    }
 
     #[tokio::test]
     async fn create_and_list_media_job() -> anyhow::Result<()> {
@@ -284,5 +295,41 @@ mod tests {
         assert_eq!(operations[0].operation_kind, "remux");
         assert_eq!(operations[0].command_bin, "ffmpeg");
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_queries_surface_query_errors_without_database() {
+        let pool = closed_pool().await;
+        let profile_id = Uuid::new_v4();
+        let job_id = Uuid::new_v4();
+        let actor_id = Uuid::new_v4();
+
+        let create = create_media_job(
+            &pool,
+            &CreateMediaJobInput {
+                actor_public_id: actor_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/movie.mkv",
+                output_path: None,
+                dry_run: true,
+            },
+        )
+        .await;
+        assert!(create.is_err());
+
+        let append = append_media_job_phase(&pool, job_id, 0, "plan", "queued", None).await;
+        assert!(append.is_err());
+
+        let list = list_media_jobs(&pool, Some(profile_id), Some("queued")).await;
+        assert!(list.is_err());
+
+        let get = get_media_job(&pool, job_id).await;
+        assert!(get.is_err());
+
+        let cancel = cancel_media_job(&pool, job_id).await;
+        assert!(cancel.is_err());
+
+        let retry = retry_media_job(&pool, job_id).await;
+        assert!(retry.is_err());
     }
 }
