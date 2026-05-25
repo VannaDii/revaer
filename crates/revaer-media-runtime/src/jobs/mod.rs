@@ -176,6 +176,12 @@ impl JobPreflightEvaluation {
         self.timeline().last().and_then(|record| record.code)
     }
 
+    /// Return true when preflight failed at the build-steps stage.
+    #[must_use]
+    pub fn failed_at_build_steps(&self) -> bool {
+        matches!(self.failed_stage(), Some("build_steps"))
+    }
+
     /// Borrow the stage timeline for both ready and failed outcomes.
     #[must_use]
     pub fn timeline(&self) -> &[PreflightStageRecord] {
@@ -1482,6 +1488,7 @@ mod tests {
         );
         assert_eq!(failed.final_stage(), Some("capability_ready"));
         assert_eq!(failed.final_stage_code(), Some("preflight_capability_failed"));
+        assert!(!failed.failed_at_build_steps());
         assert_eq!(ready.timeline().len(), 0);
         assert_eq!(failed.timeline().len(), 1);
     }
@@ -1545,6 +1552,7 @@ mod tests {
             failed.final_stage_code(),
             Some("preflight_build_missing_stream_id")
         );
+        assert!(failed.failed_at_build_steps());
     }
 
     #[test]
