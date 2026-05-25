@@ -52,12 +52,11 @@ pub(crate) async fn setup_media_db(label: &str) -> anyhow::Result<MediaTestDb> {
     migrator.set_ignore_missing(true);
     migrator.run(&pool).await?;
 
-    let system_user_public_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT user_public_id FROM app_user WHERE user_public_id = $1",
-    )
-    .bind(SYSTEM_USER_PUBLIC_ID)
-    .fetch_one(&pool)
-    .await?;
+    let system_user_public_id =
+        sqlx::query_scalar::<_, Uuid>("SELECT user_public_id FROM app_user WHERE user_public_id = $1")
+            .bind(SYSTEM_USER_PUBLIC_ID)
+            .fetch_one(&pool)
+            .await?;
 
     Ok(MediaTestDb {
         _db: postgres,

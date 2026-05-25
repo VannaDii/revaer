@@ -260,25 +260,6 @@ impl ApiServer {
         Ok(Self { router })
     }
 
-    #[cfg(all(test, feature = "compat-qb"))]
-    pub(crate) fn build_state(
-        config: SharedConfig,
-        indexers: Arc<dyn IndexerFacade>,
-        telemetry: Metrics,
-        openapi_document: Arc<serde_json::Value>,
-        events: EventBus,
-        torrent: Option<TorrentHandles>,
-    ) -> Arc<ApiState> {
-        Arc::new(ApiState::new(
-            config,
-            indexers,
-            telemetry,
-            openapi_document,
-            events,
-            torrent,
-        ))
-    }
-
     pub(crate) fn build_state_with_media(
         config: SharedConfig,
         indexers: Arc<dyn IndexerFacade>,

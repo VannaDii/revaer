@@ -409,10 +409,11 @@ mod tests {
             return;
         };
         assert!(matches!(steps[0], ExecutionStep::BackupSource { .. }));
-        assert!(steps.iter().any(|step| matches!(
-            step,
-            ExecutionStep::VerifyOutput { .. }
-        )));
+        assert!(
+            steps
+                .iter()
+                .any(|step| matches!(step, ExecutionStep::VerifyOutput { .. }))
+        );
         assert!(matches!(
             steps.last(),
             Some(ExecutionStep::AtomicReplace { .. })

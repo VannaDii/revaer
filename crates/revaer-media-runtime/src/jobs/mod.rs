@@ -321,7 +321,9 @@ impl<'a> OwnedPreflightBuildInput<'a> {
 /// Resolve deterministic backup output path from optional backup root and source path.
 #[must_use]
 pub fn resolve_backup_path(backup_root: Option<&str>, source_path: &str) -> Option<String> {
-    let root = backup_root.map(str::trim).filter(|value| !value.is_empty())?;
+    let root = backup_root
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
     let file_name = Path::new(source_path)
         .file_name()
         .and_then(|value| value.to_str())
@@ -778,18 +780,14 @@ mod tests {
         BackupPathError, BuildArgsError, ExecutionStep, JobPreflightError, JobPreflightEvaluation,
         JobPreflightFailureReport, JobPreflightReport, JobPreflightRequest,
         OwnedPreflightBuildInput, PlannedJob, PreflightBuildInput, PreflightBuildTemplate,
-        PreflightPolicyInput,
-        PreflightStageRecord, build_job_execution_steps,
-        build_preflight_input,
-        build_preflight_report_from_template,
+        PreflightPolicyInput, PreflightStageRecord, build_job_execution_steps,
         build_job_execution_steps_with_capabilities, build_job_execution_steps_with_replacement,
-        build_preflight_report,
+        build_preflight_input, build_preflight_report, build_preflight_report_from_template,
         ensure_execution_capacity, evaluate_preflight, evaluate_preflight_from_template, plan_job,
-        plan_job_from_inspect,
-        preflight_error_code, preflight_error_detail, preflight_failed_stage,
-        preflight_failure_report,
-        preflight_success_timeline, preflight_timeline_for_error, resolve_backup_path,
-        require_valid_capability_snapshot, summarize_planned_job,
+        plan_job_from_inspect, preflight_error_code, preflight_error_detail,
+        preflight_failed_stage, preflight_failure_report, preflight_success_timeline,
+        preflight_timeline_for_error, require_valid_capability_snapshot, resolve_backup_path,
+        summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
     use crate::inspect::{InspectAdapter, InspectError};
@@ -1299,7 +1297,10 @@ mod tests {
         let report = preflight_failure_report(&err);
         assert_eq!(report.failed_stage, "build_steps");
         assert_eq!(report.error_code, "preflight_build_unsupported_codec");
-        assert_eq!(report.error_detail, "required transcode codec is unavailable");
+        assert_eq!(
+            report.error_detail,
+            "required transcode codec is unavailable"
+        );
         assert_eq!(report.timeline.len(), 4);
         assert!(report.timeline[0].ok);
         assert!(!report.timeline[3].ok);
@@ -1854,7 +1855,10 @@ mod tests {
         ));
         assert_eq!(report.failed_stage, "build_steps");
         assert_eq!(report.error_code, "preflight_backup_path_matches_output");
-        assert_eq!(report.error_detail, "backup path must not match output path");
+        assert_eq!(
+            report.error_detail,
+            "backup path must not match output path"
+        );
         assert_eq!(report.timeline.len(), 4);
         assert!(report.timeline[0].ok);
         assert!(!report.timeline[3].ok);

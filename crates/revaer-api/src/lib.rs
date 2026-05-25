@@ -1197,7 +1197,7 @@ mod tests {
     async fn api_state_tracks_health_and_sessions() -> Result<()> {
         let config: SharedConfig = Arc::new(MockConfig::new()?);
         let telemetry = Metrics::new().map_err(|_| anyhow!("metrics init"))?;
-        let state = ApiServer::build_state(
+        let state = ApiServer::build_state_with_media(
             config,
             test_indexers(),
             noop_media(),
@@ -1244,7 +1244,7 @@ mod tests {
                 }),
             )
         };
-        let server = ApiServer::with_config_at(
+        let server = ApiServer::with_config_at_with_media(
             config,
             test_indexers(),
             noop_media(),
