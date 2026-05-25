@@ -446,6 +446,10 @@ impl ApiServer {
                     .route_layer(require_api.clone()),
             )
             .route(
+                "/v1/media/profiles/{media_profile_public_id}",
+                get(media_handlers::get_media_profile).route_layer(require_api.clone()),
+            )
+            .route(
                 "/v1/media/jobs",
                 get(media_handlers::list_media_jobs)
                     .post(media_handlers::create_media_job)

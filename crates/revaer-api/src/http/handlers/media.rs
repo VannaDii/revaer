@@ -111,6 +111,22 @@ pub(crate) async fn list_media_profiles(
     Ok(Json(MediaProfileListResponse { profiles }))
 }
 
+pub(crate) async fn get_media_profile(
+    State(state): State<Arc<ApiState>>,
+    Path(media_profile_public_id): Path<Uuid>,
+) -> Result<Json<MediaProfileResponse>, ApiError> {
+    let profile = state
+        .media
+        .media_profile_list()
+        .await
+        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
+        .into_iter()
+        .find(|item| item.media_profile_public_id == media_profile_public_id)
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_LIST_FAILED))?;
+
+    Ok(Json(map_profile(profile)))
+}
+
 pub(crate) async fn create_media_job(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<MediaJobCreateRequest>,
@@ -492,6 +508,18 @@ mod tests {
             .expect_err("noop media facade should fail writes");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn get_media_profile_returns_not_found_with_default_facade() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+
+        let err = get_media_profile(State(state), Path(Uuid::new_v4()))
+            .await
+            .expect_err("default facade should not contain requested profile");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
         Ok(())
     }
 
