@@ -289,6 +289,23 @@ pub struct MediaProfileUpsertRequest {
     pub retention_days: i32,
 }
 
+/// Request payload for patching an existing media profile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfilePatchRequest {
+    /// Source root path override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_root: Option<String>,
+    /// Output root path override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_root: Option<String>,
+    /// Dry-run policy override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dry_run_only: Option<bool>,
+    /// Retention in days override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<i32>,
+}
+
 /// Media profile row response payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaProfileResponse {

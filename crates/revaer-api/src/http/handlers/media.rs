@@ -22,9 +22,10 @@ use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse, MediaCapabilityRecordRequest,
     MediaCapabilityRecordResponse, MediaCapabilityRefreshResponse, MediaCapabilitySnapshotResponse,
     MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
-    MediaJobPhaseAppendRequest, MediaJobResponse, MediaProfileListResponse, MediaProfileResponse,
-    MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
-    MediaYamlImportRequest, MediaYamlValidationResponse,
+    MediaJobPhaseAppendRequest, MediaJobResponse, MediaProfileListResponse,
+    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
+    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
+    MediaYamlValidationResponse,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -47,7 +48,6 @@ const MEDIA_YAML_EXPORT_FAILED: &str = "failed to export media yaml";
 const MEDIA_YAML_VALIDATE_FAILED: &str = "failed to validate media yaml";
 const MEDIA_YAML_APPLY_FAILED: &str = "failed to apply media yaml";
 const PROFILE_KEY_REQUIRED: &str = "profile_key is required";
-const PROFILE_KEY_IMMUTABLE: &str = "profile_key must match the existing profile key";
 const SOURCE_ROOT_REQUIRED: &str = "source_root is required";
 const OUTPUT_ROOT_REQUIRED: &str = "output_root is required";
 const SOURCE_PATH_REQUIRED: &str = "source_path is required";
@@ -207,12 +207,8 @@ fn media_paths_overlap(left: &str, right: &str) -> bool {
 pub(crate) async fn patch_media_profile(
     State(state): State<Arc<ApiState>>,
     Path(media_profile_public_id): Path<Uuid>,
-    Json(request): Json<MediaProfileUpsertRequest>,
+    Json(request): Json<MediaProfilePatchRequest>,
 ) -> Result<Json<MediaProfileResponse>, ApiError> {
-    let source_root = normalize_required_str_field(&request.source_root, SOURCE_ROOT_REQUIRED)?;
-    let output_root = normalize_required_str_field(&request.output_root, OUTPUT_ROOT_REQUIRED)?;
-    validate_retention_days(request.retention_days)?;
-
     let existing = state
         .media
         .media_profile_list()
@@ -221,7 +217,19 @@ pub(crate) async fn patch_media_profile(
         .into_iter()
         .find(|item| item.media_profile_public_id == media_profile_public_id)
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
-    validate_patch_profile_key(&existing.profile_key, &request.profile_key)?;
+    let source_root = resolve_patch_str_field(
+        request.source_root.as_deref(),
+        &existing.source_root,
+        SOURCE_ROOT_REQUIRED,
+    )?;
+    let output_root = resolve_patch_str_field(
+        request.output_root.as_deref(),
+        &existing.output_root,
+        OUTPUT_ROOT_REQUIRED,
+    )?;
+    let dry_run_only = request.dry_run_only.unwrap_or(existing.dry_run_only);
+    let retention_days = request.retention_days.unwrap_or(existing.retention_days);
+    validate_retention_days(retention_days)?;
 
     let profile_id = state
         .media
@@ -230,8 +238,8 @@ pub(crate) async fn patch_media_profile(
             profile_key: &existing.profile_key,
             source_root,
             output_root,
-            dry_run_only: request.dry_run_only,
-            retention_days: request.retention_days,
+            dry_run_only,
+            retention_days,
         })
         .await
         .map_err(|err| map_media_error("media_profile_patch", MEDIA_PROFILE_PATCH_FAILED, &err))?;
@@ -246,14 +254,6 @@ pub(crate) async fn patch_media_profile(
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
 
     Ok(Json(map_profile(profile)))
-}
-
-fn validate_patch_profile_key(existing: &str, incoming: &str) -> Result<(), ApiError> {
-    if existing.trim().eq_ignore_ascii_case(incoming.trim()) {
-        Ok(())
-    } else {
-        Err(ApiError::bad_request(PROFILE_KEY_IMMUTABLE))
-    }
 }
 
 pub(crate) async fn create_media_job(
@@ -623,6 +623,16 @@ fn validate_retention_days(value: i32) -> Result<(), ApiError> {
     }
 }
 
+fn resolve_patch_str_field<'a>(
+    incoming: Option<&'a str>,
+    existing: &'a str,
+    required_message: &'static str,
+) -> Result<&'a str, ApiError> {
+    incoming.map_or(Ok(existing), |value| {
+        normalize_required_str_field(value, required_message)
+    })
+}
+
 fn parse_media_status_required(value: &str, detail: &'static str) -> Result<String, ApiError> {
     let normalized = value.trim().to_ascii_lowercase();
     if is_supported_media_status(&normalized) {
@@ -708,12 +718,11 @@ mod tests {
     #[tokio::test]
     async fn patch_media_profile_returns_not_found_with_default_facade() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let request = MediaProfileUpsertRequest {
-            profile_key: "ignored-on-patch".to_string(),
-            source_root: "/input/tv".to_string(),
-            output_root: "/output/tv".to_string(),
-            dry_run_only: true,
-            retention_days: 30,
+        let request = MediaProfilePatchRequest {
+            source_root: Some("/input/tv".to_string()),
+            output_root: Some("/output/tv".to_string()),
+            dry_run_only: Some(true),
+            retention_days: Some(30),
         };
         let err = patch_media_profile(State(state), Path(Uuid::new_v4()), Json(request))
             .await
@@ -754,15 +763,19 @@ mod tests {
     }
 
     #[test]
-    fn validate_patch_profile_key_rejects_mismatch() {
-        let result = validate_patch_profile_key("tv-main", "movies-main");
-        assert!(result.is_err());
+    fn resolve_patch_str_field_uses_existing_when_missing() {
+        let result = resolve_patch_str_field(None, "/input/tv", SOURCE_ROOT_REQUIRED);
+        assert!(result.is_ok());
+        let Ok(value) = result else {
+            return;
+        };
+        assert_eq!(value, "/input/tv");
     }
 
     #[test]
-    fn validate_patch_profile_key_accepts_case_insensitive_match() {
-        let result = validate_patch_profile_key("TV-MAIN", "tv-main");
-        assert!(result.is_ok());
+    fn resolve_patch_str_field_rejects_blank_override() {
+        let result = resolve_patch_str_field(Some("   "), "/input/tv", SOURCE_ROOT_REQUIRED);
+        assert!(result.is_err());
     }
 
     #[tokio::test]
