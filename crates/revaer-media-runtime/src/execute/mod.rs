@@ -176,13 +176,13 @@ pub fn build_execution_steps_with_capabilities(
     for operation in operations {
         match operation.kind {
             OperationKind::AudioTranscode => {
-                if !capabilities_has_codec(capabilities, "aac") {
+                if !capabilities_has_encoder(capabilities, "aac") {
                     return Err(BuildArgsError::UnsupportedCodec("aac"));
                 }
             }
             OperationKind::VideoTranscode => {
                 // ffmpeg codec-list commonly exposes encoder as `libx265`.
-                if !capabilities_has_codec(capabilities, "libx265") {
+                if !capabilities_has_encoder(capabilities, "libx265") {
                     return Err(BuildArgsError::UnsupportedCodec("libx265"));
                 }
             }
@@ -199,6 +199,15 @@ fn capabilities_has_codec(capabilities: &CapabilitySnapshot, required: &str) -> 
         .any(|codec| codec.trim().eq_ignore_ascii_case(required))
 }
 
+fn capabilities_has_encoder(capabilities: &CapabilitySnapshot, required: &str) -> bool {
+    if capabilities.codec_capabilities.is_empty() {
+        return capabilities_has_codec(capabilities, required);
+    }
+    capabilities.codec_capabilities.iter().any(|codec| {
+        codec.codec_name.trim().eq_ignore_ascii_case(required) && codec.encode_supported
+    })
+}
+
 fn build_intermediate_output_path(output_path: &str, step_index: usize) -> String {
     format!("{output_path}.stage{step_index}.tmp.mkv")
 }
@@ -210,7 +219,7 @@ mod tests {
         build_execution_steps_with_capabilities, build_execution_steps_with_replacement,
         build_ffmpeg_argv,
     };
-    use crate::capabilities::CapabilitySnapshot;
+    use crate::capabilities::{CapabilitySnapshot, CodecCapability};
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
 
     #[test]
@@ -433,5 +442,52 @@ mod tests {
             steps.last(),
             Some(ExecutionStep::AtomicReplace { .. })
         ));
+    }
+
+    #[test]
+    fn capability_checked_execution_rejects_decode_only_codec() {
+        let op = PlannedOperation {
+            kind: OperationKind::AudioTranscode,
+            stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["aac".to_string()],
+            codec_capabilities: vec![CodecCapability {
+                codec_name: "aac".to_string(),
+                decode_supported: true,
+                encode_supported: false,
+            }],
+        };
+        assert_eq!(
+            build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities),
+            Err(BuildArgsError::UnsupportedCodec("aac"))
+        );
+    }
+
+    #[test]
+    fn capability_checked_execution_accepts_explicit_encoder_support() {
+        let op = PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["libx265".to_string()],
+            codec_capabilities: vec![CodecCapability {
+                codec_name: "libx265".to_string(),
+                decode_supported: true,
+                encode_supported: true,
+            }],
+        };
+        let result = build_execution_steps_with_capabilities(
+            "/in.mkv",
+            "/out.mkv",
+            &[op],
+            &capabilities,
+        );
+        assert!(result.is_ok());
     }
 }
