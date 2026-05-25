@@ -225,9 +225,13 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaCapabilityRefreshParams,
     ) -> Result<i64, MediaServiceError> {
-        let snapshot = self
-            .detector
-            .detect()
+        let detector = Arc::clone(&self.detector);
+        let snapshot = tokio::task::spawn_blocking(move || detector.detect())
+            .await
+            .map_err(|_| {
+                MediaServiceError::new(MediaServiceErrorKind::Storage)
+                    .with_code("media_capability_refresh_join_failed")
+            })?
             .map_err(|error| map_detect_error(&error))?;
         if !snapshot.is_valid() {
             return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)

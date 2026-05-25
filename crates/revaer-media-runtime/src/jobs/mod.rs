@@ -438,6 +438,9 @@ pub const fn preflight_error_code(error: &JobPreflightError) -> &'static str {
         JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
             "preflight_build_unsupported_codec"
         }
+        JobPreflightError::Build(BuildArgsError::EmptyOperations) => {
+            "preflight_build_empty_operations"
+        }
         JobPreflightError::BackupPath(BackupPathError::SourceFileNameMissing) => {
             "preflight_backup_path_source_filename_missing"
         }
@@ -474,6 +477,9 @@ pub const fn preflight_error_detail(error: &JobPreflightError) -> &'static str {
         }
         JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
             "required transcode codec is unavailable"
+        }
+        JobPreflightError::Build(BuildArgsError::EmptyOperations) => {
+            "at least one operation is required"
         }
         JobPreflightError::BackupPath(BackupPathError::SourceFileNameMissing) => {
             "configured backup root requires a source file name"

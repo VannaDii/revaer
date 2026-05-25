@@ -13,6 +13,9 @@ pub enum BuildArgsError {
     /// Required codec is not supported by runtime capabilities.
     #[error("required codec is not supported: {0}")]
     UnsupportedCodec(&'static str),
+    /// No operations were provided for execution planning.
+    #[error("at least one operation is required")]
+    EmptyOperations,
 }
 
 /// Deterministic execution step for runtime orchestration.
@@ -104,6 +107,9 @@ pub fn build_execution_steps(
     output_path: &str,
     operations: &[PlannedOperation],
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    if operations.is_empty() {
+        return Err(BuildArgsError::EmptyOperations);
+    }
     let mut steps = Vec::with_capacity(operations.len() + 1);
     for (index, operation) in operations.iter().enumerate() {
         let stage_input = if index == 0 {
@@ -442,6 +448,12 @@ mod tests {
             steps.last(),
             Some(ExecutionStep::AtomicReplace { .. })
         ));
+    }
+
+    #[test]
+    fn empty_operation_list_is_rejected() {
+        let result = build_execution_steps("/in.mkv", "/out.mkv", &[]);
+        assert_eq!(result, Err(BuildArgsError::EmptyOperations));
     }
 
     #[test]
