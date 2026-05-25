@@ -19,8 +19,14 @@ pub enum BuildArgsError {
 }
 
 const DEFAULT_VIDEO_ENCODER: &str = "libx265";
-const VIDEO_ENCODER_FALLBACKS: &[&str] =
-    &["libx265", "hevc_nvenc", "hevc_qsv", "hevc_vaapi", "hevc", "h265"];
+const VIDEO_ENCODER_FALLBACKS: &[&str] = &[
+    "libx265",
+    "hevc_nvenc",
+    "hevc_qsv",
+    "hevc_vaapi",
+    "hevc",
+    "h265",
+];
 const VIDEO_TRANSCODE_PRESET: &str = "medium";
 const VIDEO_TRANSCODE_CRF: &str = "22";
 
