@@ -31,6 +31,7 @@ const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
 const MEDIA_PROFILE_LIST_FAILED: &str = "failed to list media profiles";
 const MEDIA_PROFILE_NOT_FOUND: &str = "media profile not found";
 const MEDIA_PROFILE_VALIDATE_FAILED: &str = "failed to validate media profile";
+const MEDIA_PROFILE_PATCH_FAILED: &str = "failed to update media profile";
 const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
 const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
@@ -150,6 +151,49 @@ pub(crate) async fn validate_media_profile(
         return Err(ApiError::not_found(MEDIA_PROFILE_NOT_FOUND));
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn patch_media_profile(
+    State(state): State<Arc<ApiState>>,
+    Path(media_profile_public_id): Path<Uuid>,
+    Json(request): Json<MediaProfileUpsertRequest>,
+) -> Result<Json<MediaProfileResponse>, ApiError> {
+    let source_root = normalize_required_str_field(&request.source_root, SOURCE_ROOT_REQUIRED)?;
+    let output_root = normalize_required_str_field(&request.output_root, OUTPUT_ROOT_REQUIRED)?;
+    validate_retention_days(request.retention_days)?;
+
+    let existing = state
+        .media
+        .media_profile_list()
+        .await
+        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
+        .into_iter()
+        .find(|item| item.media_profile_public_id == media_profile_public_id)
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
+
+    let profile_id = state
+        .media
+        .media_profile_upsert(MediaProfileUpsertParams {
+            actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
+            profile_key: &existing.profile_key,
+            source_root,
+            output_root,
+            dry_run_only: request.dry_run_only,
+            retention_days: request.retention_days,
+        })
+        .await
+        .map_err(|err| map_media_error("media_profile_patch", MEDIA_PROFILE_PATCH_FAILED, &err))?;
+
+    let profile = state
+        .media
+        .media_profile_list()
+        .await
+        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
+        .into_iter()
+        .find(|item| item.media_profile_public_id == profile_id)
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
+
+    Ok(Json(map_profile(profile)))
 }
 
 pub(crate) async fn create_media_job(
@@ -594,6 +638,24 @@ mod tests {
     async fn validate_media_profile_returns_not_found_with_default_facade() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let err = validate_media_profile(State(state), Path(Uuid::new_v4()))
+            .await
+            .expect_err("default facade should not contain requested profile");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn patch_media_profile_returns_not_found_with_default_facade() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaProfileUpsertRequest {
+            profile_key: "ignored-on-patch".to_string(),
+            source_root: "/input/tv".to_string(),
+            output_root: "/output/tv".to_string(),
+            dry_run_only: true,
+            retention_days: 30,
+        };
+        let err = patch_media_profile(State(state), Path(Uuid::new_v4()), Json(request))
             .await
             .expect_err("default facade should not contain requested profile");
         let response = err.into_response();

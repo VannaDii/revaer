@@ -447,7 +447,9 @@ impl ApiServer {
             )
             .route(
                 "/v1/media/profiles/{media_profile_public_id}",
-                get(media_handlers::get_media_profile).route_layer(require_api.clone()),
+                get(media_handlers::get_media_profile)
+                    .patch(media_handlers::patch_media_profile)
+                    .route_layer(require_api.clone()),
             )
             .route(
                 "/v1/media/profiles/{media_profile_public_id}/validate",
