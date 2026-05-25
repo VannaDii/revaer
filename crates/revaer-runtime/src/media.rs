@@ -126,6 +126,7 @@ impl MediaStore {
 #[cfg(test)]
 mod tests {
     use super::MediaStore;
+    use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::RecordCapabilitySnapshotInput;
     use revaer_data::media::jobs::CreateMediaJobInput;
     use revaer_data::media::profiles::UpsertMediaProfileInput;
@@ -156,34 +157,10 @@ mod tests {
     }
 
     async fn system_actor(pool: &sqlx::PgPool) -> anyhow::Result<Uuid> {
-        if let Some(existing) =
-            sqlx::query_scalar::<_, Uuid>("SELECT user_public_id FROM app_user LIMIT 1")
-                .fetch_optional(pool)
-                .await
-                .map_err(anyhow::Error::from)?
-        {
-            return Ok(existing);
-        }
-
-        let user_public_id = Uuid::new_v4();
-        sqlx::query_scalar::<_, Uuid>(
-            "INSERT INTO app_user (
-                user_public_id,
-                email,
-                email_normalized,
-                display_name,
-                role,
-                is_email_verified
-            ) VALUES ($1, $2, $3, $4, 'owner', TRUE)
-            RETURNING user_public_id",
-        )
-        .bind(user_public_id)
-        .bind("media-runtime@example.invalid")
-        .bind("media-runtime@example.invalid")
-        .bind("Media Runtime")
-        .fetch_one(pool)
-        .await
-        .map_err(anyhow::Error::from)
+        let email = format!("media-runtime-{}@example.invalid", Uuid::new_v4());
+        let user_public_id = app_user_create(pool, &email, "Media Runtime").await?;
+        app_user_verify_email(pool, user_public_id).await?;
+        Ok(user_public_id)
     }
 
     #[tokio::test]

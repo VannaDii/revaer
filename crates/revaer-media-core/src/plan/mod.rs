@@ -50,10 +50,10 @@ pub fn generate_plan(diff: &GraphDiff) -> Vec<PlannedOperation> {
         });
     }
 
-    for stream_id in &diff.removed_streams {
+    if !diff.removed_streams.is_empty() {
         operations.push(PlannedOperation {
-            kind: OperationKind::AudioTranscode,
-            stream_id: Some(*stream_id),
+            kind: OperationKind::Remux,
+            stream_id: None,
         });
     }
 
@@ -105,5 +105,17 @@ mod tests {
         assert_eq!(operations.len(), 1);
         assert_eq!(operations[0].kind, OperationKind::VideoTranscode);
         assert_eq!(operations[0].stream_id, Some(1));
+    }
+
+    #[test]
+    fn removed_streams_yield_remux_operation() {
+        let operations = generate_plan(&GraphDiff {
+            removed_streams: vec![5],
+            recoded_streams: Vec::new(),
+        });
+
+        assert_eq!(operations.len(), 1);
+        assert_eq!(operations[0].kind, OperationKind::Remux);
+        assert_eq!(operations[0].stream_id, None);
     }
 }

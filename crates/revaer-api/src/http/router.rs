@@ -260,7 +260,7 @@ impl ApiServer {
         Ok(Self { router })
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "compat-qb"))]
     pub(crate) fn build_state(
         config: SharedConfig,
         indexers: Arc<dyn IndexerFacade>,

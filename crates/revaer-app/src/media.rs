@@ -163,7 +163,10 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaCapabilityRefreshParams,
     ) -> Result<i64, MediaServiceError> {
-        let snapshot = self.detector.detect().map_err(map_detect_error)?;
+        let snapshot = self
+            .detector
+            .detect()
+            .map_err(|error| map_detect_error(&error))?;
         if !snapshot.is_valid() {
             return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
                 .with_code("media_capability_refresh_invalid"));
@@ -385,7 +388,7 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
     service_error
 }
 
-fn map_detect_error(error: CapabilityDetectError) -> MediaServiceError {
+fn map_detect_error(error: &CapabilityDetectError) -> MediaServiceError {
     match error {
         CapabilityDetectError::Unavailable => {
             MediaServiceError::new(MediaServiceErrorKind::Storage)
@@ -435,7 +438,7 @@ mod tests {
     fn reject_invalid_capability_snapshot() {
         let row = CapabilitySnapshotRow {
             media_capability_snapshot_id: 1,
-            ffmpeg_version: "".to_string(),
+            ffmpeg_version: String::new(),
             ffprobe_version: "7.0".to_string(),
             codec_name: "h264".to_string(),
             encode_supported: true,

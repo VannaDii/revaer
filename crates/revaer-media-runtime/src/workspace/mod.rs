@@ -107,21 +107,18 @@ impl WorkspacePolicy {
 
     /// Evaluate capacity and return a structured deterministic report.
     #[must_use]
-    pub fn evaluate_capacity(
+    pub const fn evaluate_capacity(
         &self,
         free_bytes: u64,
         required_workspace_bytes: u64,
     ) -> WorkspaceCapacityReport {
-        match self.validate() {
-            Err(WorkspaceError::InvalidPolicy) => {
-                return WorkspaceCapacityReport {
-                    accepted: false,
-                    reason: Some(WorkspaceRejectionReason::InvalidPolicy),
-                    available_after_reserve_bytes: free_bytes.saturating_sub(self.reserve_bytes),
-                    required_workspace_bytes,
-                };
-            }
-            Err(_) | Ok(()) => {}
+        if self.reserve_bytes > self.max_bytes {
+            return WorkspaceCapacityReport {
+                accepted: false,
+                reason: Some(WorkspaceRejectionReason::InvalidPolicy),
+                available_after_reserve_bytes: free_bytes.saturating_sub(self.reserve_bytes),
+                required_workspace_bytes,
+            };
         }
 
         if free_bytes < self.reserve_bytes {

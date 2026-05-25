@@ -6,11 +6,13 @@ use revaer_media_core::model::{DesiredGraph, MediaGraph};
 use revaer_media_core::plan::{OperationKind, PlannedOperation, generate_plan};
 use revaer_media_core::verify::verify_plan;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use thiserror::Error;
 
 use crate::capabilities::CapabilitySnapshot;
 use crate::execute::{
     BuildArgsError, ExecutionStep, build_execution_steps, build_execution_steps_with_capabilities,
+    build_execution_steps_with_replacement,
 };
 use crate::inspect::{InspectAdapter, InspectError};
 use crate::workspace::{WorkspaceCapacityReport, WorkspaceError, WorkspacePolicy};
@@ -193,11 +195,130 @@ pub enum JobPreflightError {
     /// Execution-step construction failed.
     #[error(transparent)]
     Build(#[from] BuildArgsError),
+    /// Backup path could not be resolved from configured backup root and source path.
+    #[error("backup preflight failed: {0}")]
+    BackupPath(&'static str),
+}
+
+/// Inputs required to build/evaluate a preflight report.
+#[derive(Debug, Clone, Copy)]
+pub struct PreflightBuildInput<'a> {
+    /// Source path used for inspection.
+    pub source_path: &'a str,
+    /// Output path used for execution-step generation.
+    pub output_path: &'a str,
+    /// Optional backup path used before replacement.
+    pub backup_path: Option<&'a str>,
+    /// Desired output graph.
+    pub desired: &'a DesiredGraph,
+    /// Source file size in bytes.
+    pub source_file_bytes: u64,
+    /// Capability snapshot used to validate required codecs.
+    pub capabilities: &'a CapabilitySnapshot,
+    /// Workspace policy used for capacity checks.
+    pub workspace_policy: &'a WorkspacePolicy,
+    /// Free disk bytes available at preflight time.
+    pub free_bytes: u64,
+}
+
+/// Policy-derived inputs used to construct preflight requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreflightPolicyInput<'a> {
+    /// Optional backup root configured by policy/profile.
+    pub backup_root: Option<&'a str>,
+}
+
+/// Owned preflight input payload that can safely produce borrowed preflight view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnedPreflightBuildInput<'a> {
+    /// Source path used for inspection.
+    pub source_path: &'a str,
+    /// Output path used for execution-step generation.
+    pub output_path: &'a str,
+    /// Optional backup path used before replacement.
+    pub backup_path: Option<String>,
+    /// Desired output graph.
+    pub desired: &'a DesiredGraph,
+    /// Source file size in bytes.
+    pub source_file_bytes: u64,
+    /// Capability snapshot used to validate required codecs.
+    pub capabilities: &'a CapabilitySnapshot,
+    /// Workspace policy used for capacity checks.
+    pub workspace_policy: &'a WorkspacePolicy,
+    /// Free disk bytes available at preflight time.
+    pub free_bytes: u64,
+}
+
+/// Template fields for building owned preflight input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreflightBuildTemplate<'a> {
+    /// Source path used for inspection.
+    pub source_path: &'a str,
+    /// Output path used for execution-step generation.
+    pub output_path: &'a str,
+    /// Desired output graph.
+    pub desired: &'a DesiredGraph,
+    /// Source file size in bytes.
+    pub source_file_bytes: u64,
+    /// Capability snapshot used to validate required codecs.
+    pub capabilities: &'a CapabilitySnapshot,
+    /// Workspace policy used for capacity checks.
+    pub workspace_policy: &'a WorkspacePolicy,
+    /// Free disk bytes available at preflight time.
+    pub free_bytes: u64,
+}
+
+impl<'a> OwnedPreflightBuildInput<'a> {
+    /// Borrow as [`PreflightBuildInput`] for preflight evaluation functions.
+    #[must_use]
+    pub fn as_borrowed(&'a self) -> PreflightBuildInput<'a> {
+        PreflightBuildInput {
+            source_path: self.source_path,
+            output_path: self.output_path,
+            backup_path: self.backup_path.as_deref(),
+            desired: self.desired,
+            source_file_bytes: self.source_file_bytes,
+            capabilities: self.capabilities,
+            workspace_policy: self.workspace_policy,
+            free_bytes: self.free_bytes,
+        }
+    }
+}
+
+/// Resolve deterministic backup output path from optional backup root and source path.
+#[must_use]
+pub fn resolve_backup_path(backup_root: Option<&str>, source_path: &str) -> Option<String> {
+    let root = backup_root.map(str::trim).filter(|value| !value.is_empty())?;
+    let file_name = Path::new(source_path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    Some(format!("{root}/{file_name}"))
+}
+
+/// Build preflight input while resolving backup path from policy.
+#[must_use]
+pub fn build_preflight_input<'a>(
+    template: PreflightBuildTemplate<'a>,
+    policy_input: PreflightPolicyInput<'a>,
+) -> OwnedPreflightBuildInput<'a> {
+    let backup_path = resolve_backup_path(policy_input.backup_root, template.source_path);
+    OwnedPreflightBuildInput {
+        source_path: template.source_path,
+        output_path: template.output_path,
+        backup_path,
+        desired: template.desired,
+        source_file_bytes: template.source_file_bytes,
+        capabilities: template.capabilities,
+        workspace_policy: template.workspace_policy,
+        free_bytes: template.free_bytes,
+    }
 }
 
 /// Deterministic machine-readable error code for preflight failures.
 #[must_use]
-pub fn preflight_error_code(error: &JobPreflightError) -> &'static str {
+pub const fn preflight_error_code(error: &JobPreflightError) -> &'static str {
     match error {
         JobPreflightError::Inspect(_) => "preflight_inspect_failed",
         JobPreflightError::Plan(_) => "preflight_plan_failed",
@@ -220,17 +341,21 @@ pub fn preflight_error_code(error: &JobPreflightError) -> &'static str {
         JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
             "preflight_build_unsupported_codec"
         }
+        JobPreflightError::Build(BuildArgsError::CompositionRequired) => {
+            "preflight_build_composition_required"
+        }
+        JobPreflightError::BackupPath(_) => "preflight_backup_path_invalid",
     }
 }
 
 /// Deterministic stage label for preflight failures.
 #[must_use]
-pub fn preflight_failed_stage(error: &JobPreflightError) -> &'static str {
+pub const fn preflight_failed_stage(error: &JobPreflightError) -> &'static str {
     match error {
         JobPreflightError::Inspect(_) | JobPreflightError::Plan(_) => "inspect_plan",
         JobPreflightError::Capability(_) => "capability_ready",
         JobPreflightError::Workspace(_) => "workspace_capacity",
-        JobPreflightError::Build(_) => "build_steps",
+        JobPreflightError::Build(_) | JobPreflightError::BackupPath(_) => "build_steps",
     }
 }
 
@@ -380,6 +505,29 @@ pub fn build_job_execution_steps_with_capabilities(
     )
 }
 
+/// Build deterministic execution steps with optional backup and final atomic replacement.
+///
+/// # Errors
+///
+/// Returns [`BuildArgsError::UnsupportedCodec`] when required transcode codec support is missing.
+/// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
+/// Returns [`BuildArgsError::CompositionRequired`] when composition planning is required.
+pub fn build_job_execution_steps_with_replacement(
+    source_path: &str,
+    output_path: &str,
+    planned: &PlannedJob,
+    capabilities: &CapabilitySnapshot,
+    backup_path: Option<&str>,
+) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    build_execution_steps_with_replacement(
+        source_path,
+        output_path,
+        &planned.operations,
+        capabilities,
+        backup_path,
+    )
+}
+
 /// Build a deterministic summary of planned operations.
 #[must_use]
 pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
@@ -412,24 +560,26 @@ pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
 /// workspace checks, or step construction fails.
 pub fn build_preflight_report(
     inspector: &dyn InspectAdapter,
-    source_path: &str,
-    output_path: &str,
-    desired: &DesiredGraph,
-    source_file_bytes: u64,
-    capabilities: &CapabilitySnapshot,
-    workspace_policy: &WorkspacePolicy,
-    free_bytes: u64,
+    input: PreflightBuildInput<'_>,
 ) -> Result<JobPreflightReport, JobPreflightError> {
-    let planned = plan_job_from_inspect(inspector, source_path, desired, source_file_bytes)?;
-    require_valid_capability_snapshot(Some(capabilities)).map_err(JobPreflightError::Capability)?;
-    let capacity_report =
-        workspace_policy.evaluate_capacity(free_bytes, planned.estimated_workspace_bytes);
-    ensure_execution_capacity(workspace_policy, free_bytes, &planned)?;
-    let steps = build_job_execution_steps_with_capabilities(
-        source_path,
-        output_path,
+    let planned = plan_job_from_inspect(
+        inspector,
+        input.source_path,
+        input.desired,
+        input.source_file_bytes,
+    )?;
+    require_valid_capability_snapshot(Some(input.capabilities))
+        .map_err(JobPreflightError::Capability)?;
+    let capacity_report = input
+        .workspace_policy
+        .evaluate_capacity(input.free_bytes, planned.estimated_workspace_bytes);
+    ensure_execution_capacity(input.workspace_policy, input.free_bytes, &planned)?;
+    let steps = build_job_execution_steps_with_replacement(
+        input.source_path,
+        input.output_path,
         &planned,
-        capabilities,
+        input.capabilities,
+        input.backup_path,
     )?;
     let summary = summarize_planned_job(&planned);
     let timeline = preflight_success_timeline();
@@ -446,24 +596,48 @@ pub fn build_preflight_report(
 #[must_use]
 pub fn evaluate_preflight(
     inspector: &dyn InspectAdapter,
-    source_path: &str,
-    output_path: &str,
-    desired: &DesiredGraph,
-    source_file_bytes: u64,
-    capabilities: &CapabilitySnapshot,
-    workspace_policy: &WorkspacePolicy,
-    free_bytes: u64,
+    input: PreflightBuildInput<'_>,
 ) -> JobPreflightEvaluation {
-    match build_preflight_report(
-        inspector,
-        source_path,
-        output_path,
-        desired,
-        source_file_bytes,
-        capabilities,
-        workspace_policy,
-        free_bytes,
-    ) {
+    match build_preflight_report(inspector, input) {
+        Ok(report) => JobPreflightEvaluation::Ready(report),
+        Err(error) => JobPreflightEvaluation::Failed(preflight_failure_report(&error)),
+    }
+}
+
+/// Build owned preflight input from template/policy and return a preflight report result.
+///
+/// # Errors
+///
+/// Returns [`JobPreflightError::BackupPath`] when backup path resolution fails for configured
+/// backup policy.
+/// Returns other [`JobPreflightError`] variants from preflight report construction.
+pub fn build_preflight_report_from_template(
+    inspector: &dyn InspectAdapter,
+    template: PreflightBuildTemplate<'_>,
+    policy_input: PreflightPolicyInput<'_>,
+) -> Result<JobPreflightReport, JobPreflightError> {
+    if policy_input
+        .backup_root
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty())
+        && resolve_backup_path(policy_input.backup_root, template.source_path).is_none()
+    {
+        return Err(JobPreflightError::BackupPath(
+            "configured backup root requires a source file name",
+        ));
+    }
+    let input = build_preflight_input(template, policy_input);
+    build_preflight_report(inspector, input.as_borrowed())
+}
+
+/// Build owned preflight input from template/policy and evaluate preflight.
+#[must_use]
+pub fn evaluate_preflight_from_template(
+    inspector: &dyn InspectAdapter,
+    template: PreflightBuildTemplate<'_>,
+    policy_input: PreflightPolicyInput<'_>,
+) -> JobPreflightEvaluation {
+    match build_preflight_report_from_template(inspector, template, policy_input) {
         Ok(report) => JobPreflightEvaluation::Ready(report),
         Err(error) => JobPreflightEvaluation::Failed(preflight_failure_report(&error)),
     }
@@ -512,12 +686,19 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 #[cfg(test)]
 mod tests {
     use super::{
-        BuildArgsError, JobPreflightError, JobPreflightEvaluation, JobPreflightFailureReport,
-        JobPreflightReport, JobPreflightRequest, PlannedJob, PreflightStageRecord,
-        build_job_execution_steps, build_job_execution_steps_with_capabilities,
-        build_preflight_report, ensure_execution_capacity, evaluate_preflight, plan_job,
-        plan_job_from_inspect, preflight_error_code, preflight_failed_stage,
-        preflight_failure_report, preflight_success_timeline, preflight_timeline_for_error,
+        BuildArgsError, ExecutionStep, JobPreflightError, JobPreflightEvaluation,
+        JobPreflightFailureReport, JobPreflightReport, JobPreflightRequest,
+        OwnedPreflightBuildInput, PlannedJob, PreflightBuildInput, PreflightBuildTemplate,
+        PreflightPolicyInput,
+        PreflightStageRecord, build_job_execution_steps,
+        build_preflight_input,
+        build_preflight_report_from_template,
+        build_job_execution_steps_with_capabilities, build_job_execution_steps_with_replacement,
+        build_preflight_report,
+        ensure_execution_capacity, evaluate_preflight, evaluate_preflight_from_template, plan_job,
+        plan_job_from_inspect,
+        preflight_error_code, preflight_failed_stage, preflight_failure_report,
+        preflight_success_timeline, preflight_timeline_for_error, resolve_backup_path,
         require_valid_capability_snapshot, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
@@ -710,6 +891,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn build_job_execution_steps_with_replacement_includes_backup_and_replace() {
+        let planned = PlannedJob {
+            operations: vec![PlannedOperation {
+                kind: revaer_media_core::plan::OperationKind::Remux,
+                stream_id: None,
+            }],
+            estimated_workspace_bytes: 100,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let steps_result = build_job_execution_steps_with_replacement(
+            "/input/movie.mkv",
+            "/output/movie.mkv",
+            &planned,
+            &capabilities,
+            Some("/backup/movie.mkv"),
+        );
+        assert!(steps_result.is_ok());
+        let Ok(steps) = steps_result else {
+            return;
+        };
+        assert!(matches!(
+            steps.first(),
+            Some(ExecutionStep::BackupSource { .. })
+        ));
+        assert!(matches!(
+            steps.last(),
+            Some(ExecutionStep::AtomicReplace { .. })
+        ));
+    }
+
     struct StubInspectAdapter {
         graph: Option<MediaGraph>,
         error: Option<InspectError>,
@@ -844,13 +1060,16 @@ mod tests {
 
         let report = build_preflight_report(
             &inspector,
-            "/input/movie.mkv",
-            "/output/movie.mkv",
-            &desired,
-            4_000,
-            &capabilities,
-            &policy,
-            20_000,
+            PreflightBuildInput {
+                source_path: "/input/movie.mkv",
+                output_path: "/output/movie.mkv",
+                backup_path: Some("/backup/movie.mkv"),
+                desired: &desired,
+                source_file_bytes: 4_000,
+                capabilities: &capabilities,
+                workspace_policy: &policy,
+                free_bytes: 20_000,
+            },
         );
         assert!(report.is_ok());
         let Ok(report) = report else {
@@ -859,6 +1078,14 @@ mod tests {
         assert!(!report.planned.operations.is_empty());
         assert!(!report.summary.explanations.is_empty());
         assert!(!report.steps.is_empty());
+        assert!(matches!(
+            report.steps.first(),
+            Some(ExecutionStep::BackupSource { .. })
+        ));
+        assert!(matches!(
+            report.steps.last(),
+            Some(ExecutionStep::AtomicReplace { .. })
+        ));
         assert_eq!(report.timeline.len(), 5);
         assert_eq!(report.timeline[0].stage, "inspect_plan");
         assert!(report.timeline.iter().all(|item| item.ok));
@@ -898,13 +1125,16 @@ mod tests {
 
         let err = build_preflight_report(
             &inspector,
-            "/input/movie.mkv",
-            "/output/movie.mkv",
-            &desired,
-            4_000,
-            &invalid_capabilities,
-            &policy,
-            20_000,
+            PreflightBuildInput {
+                source_path: "/input/movie.mkv",
+                output_path: "/output/movie.mkv",
+                backup_path: None,
+                desired: &desired,
+                source_file_bytes: 4_000,
+                capabilities: &invalid_capabilities,
+                workspace_policy: &policy,
+                free_bytes: 20_000,
+            },
         )
         .err();
         assert!(matches!(
@@ -1020,13 +1250,16 @@ mod tests {
 
         let outcome = evaluate_preflight(
             &inspector,
-            "/input/movie.mkv",
-            "/output/movie.mkv",
-            &desired,
-            4_000,
-            &invalid_capabilities,
-            &policy,
-            20_000,
+            PreflightBuildInput {
+                source_path: "/input/movie.mkv",
+                output_path: "/output/movie.mkv",
+                backup_path: None,
+                desired: &desired,
+                source_file_bytes: 4_000,
+                capabilities: &invalid_capabilities,
+                workspace_policy: &policy,
+                free_bytes: 20_000,
+            },
         );
         let JobPreflightEvaluation::Failed(failure) = outcome else {
             panic!("expected failed preflight outcome");
@@ -1076,5 +1309,236 @@ mod tests {
         assert_eq!(failed.error_code(), Some("preflight_capability_failed"));
         assert_eq!(ready.timeline().len(), 0);
         assert_eq!(failed.timeline().len(), 0);
+    }
+
+    #[test]
+    fn resolve_backup_path_returns_none_when_root_or_source_file_is_missing() {
+        assert_eq!(resolve_backup_path(None, "/input/movie.mkv"), None);
+        assert_eq!(resolve_backup_path(Some(""), "/input/movie.mkv"), None);
+        assert_eq!(resolve_backup_path(Some("/backup"), ""), None);
+        assert_eq!(resolve_backup_path(Some("/backup"), "/"), None);
+    }
+
+    #[test]
+    fn resolve_backup_path_joins_root_and_source_file_name() {
+        let path = resolve_backup_path(Some("/backup/media"), "/input/tv/show.s01e01.mkv");
+        assert_eq!(path.as_deref(), Some("/backup/media/show.s01e01.mkv"));
+    }
+
+    #[test]
+    fn build_preflight_input_resolves_backup_path_from_policy() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let workspace_policy = WorkspacePolicy {
+            max_bytes: 1_000_000,
+            reserve_bytes: 10_000,
+        };
+
+        let owned = build_preflight_input(
+            PreflightBuildTemplate {
+                source_path: "/input/tv/show.s01e01.mkv",
+                output_path: "/output/tv/show.s01e01.mkv",
+                desired: &desired,
+                source_file_bytes: 50_000,
+                capabilities: &capabilities,
+                workspace_policy: &workspace_policy,
+                free_bytes: 100_000,
+            },
+            PreflightPolicyInput {
+                backup_root: Some("/backup/tv"),
+            },
+        );
+        assert_eq!(
+            owned.backup_path.as_deref(),
+            Some("/backup/tv/show.s01e01.mkv")
+        );
+    }
+
+    #[test]
+    fn owned_preflight_input_as_borrowed_exposes_backup_path() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let workspace_policy = WorkspacePolicy {
+            max_bytes: 1_000_000,
+            reserve_bytes: 10_000,
+        };
+        let owned = OwnedPreflightBuildInput {
+            source_path: "/input/movie.mkv",
+            output_path: "/output/movie.mkv",
+            backup_path: Some("/backup/movie.mkv".to_string()),
+            desired: &desired,
+            source_file_bytes: 20_000,
+            capabilities: &capabilities,
+            workspace_policy: &workspace_policy,
+            free_bytes: 500_000,
+        };
+        let borrowed = owned.as_borrowed();
+        assert_eq!(borrowed.backup_path, Some("/backup/movie.mkv"));
+        assert_eq!(borrowed.source_path, "/input/movie.mkv");
+    }
+
+    #[test]
+    fn evaluate_preflight_from_template_builds_and_evaluates_ready_path() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 1,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                streams: vec![MediaStream {
+                    stream_id: 1,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                }],
+            }),
+            error: None,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let workspace_policy = WorkspacePolicy {
+            max_bytes: 1_000_000,
+            reserve_bytes: 10_000,
+        };
+
+        let outcome = evaluate_preflight_from_template(
+            &inspector,
+            PreflightBuildTemplate {
+                source_path: "/input/movie.mkv",
+                output_path: "/output/movie.mkv",
+                desired: &desired,
+                source_file_bytes: 50_000,
+                capabilities: &capabilities,
+                workspace_policy: &workspace_policy,
+                free_bytes: 500_000,
+            },
+            PreflightPolicyInput {
+                backup_root: Some("/backup/media"),
+            },
+        );
+        let JobPreflightEvaluation::Ready(report) = outcome else {
+            panic!("expected ready preflight outcome");
+        };
+        assert!(matches!(
+            report.steps.first(),
+            Some(ExecutionStep::BackupSource { .. })
+        ));
+        assert!(matches!(
+            report.steps.last(),
+            Some(ExecutionStep::AtomicReplace { .. })
+        ));
+    }
+
+    #[test]
+    fn evaluate_preflight_from_template_rejects_unresolvable_backup_path() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/".to_string(),
+                streams: Vec::new(),
+            }),
+            error: None,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let workspace_policy = WorkspacePolicy {
+            max_bytes: 1_000_000,
+            reserve_bytes: 10_000,
+        };
+
+        let outcome = evaluate_preflight_from_template(
+            &inspector,
+            PreflightBuildTemplate {
+                source_path: "/",
+                output_path: "/output/movie.mkv",
+                desired: &desired,
+                source_file_bytes: 50_000,
+                capabilities: &capabilities,
+                workspace_policy: &workspace_policy,
+                free_bytes: 500_000,
+            },
+            PreflightPolicyInput {
+                backup_root: Some("/backup/media"),
+            },
+        );
+        let JobPreflightEvaluation::Failed(report) = outcome else {
+            panic!("expected failed preflight outcome");
+        };
+        assert_eq!(report.error_code, "preflight_backup_path_invalid");
+        assert_eq!(report.failed_stage, "build_steps");
+    }
+
+    #[test]
+    fn build_preflight_report_from_template_returns_backup_path_error() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: Vec::new(),
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/".to_string(),
+                streams: Vec::new(),
+            }),
+            error: None,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+        };
+        let workspace_policy = WorkspacePolicy {
+            max_bytes: 1_000_000,
+            reserve_bytes: 10_000,
+        };
+
+        let result = build_preflight_report_from_template(
+            &inspector,
+            PreflightBuildTemplate {
+                source_path: "/",
+                output_path: "/output/movie.mkv",
+                desired: &desired,
+                source_file_bytes: 50_000,
+                capabilities: &capabilities,
+                workspace_policy: &workspace_policy,
+                free_bytes: 500_000,
+            },
+            PreflightPolicyInput {
+                backup_root: Some("/backup/media"),
+            },
+        );
+        assert!(matches!(result, Err(JobPreflightError::BackupPath(_))));
     }
 }

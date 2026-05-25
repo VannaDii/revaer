@@ -248,10 +248,12 @@ mod tests {
     impl InspectProbeExecutor for StubInspectExecutor {
         fn run(&self, bin: &str, args: &[&str]) -> Result<String, InspectError> {
             let key = format!("{bin} {}", args.join(" "));
-            let mut calls = self.calls.lock().map_err(|_| {
-                InspectError::ProbeFailed("inspect executor lock poisoned".to_string())
-            })?;
-            calls.push(key.clone());
+            self.calls
+                .lock()
+                .map_err(|_| {
+                    InspectError::ProbeFailed("inspect executor lock poisoned".to_string())
+                })?
+                .push(key.clone());
             self.outputs
                 .get(&key)
                 .cloned()
@@ -351,12 +353,11 @@ mod tests {
             vec!["forced".to_string(), "hearing_impaired".to_string()]
         );
 
-        let calls = executor.calls.lock();
-        assert!(calls.is_ok());
-        let Ok(calls) = calls else {
-            return;
-        };
-        assert_eq!(calls.as_slice(), &[key]);
+        executor
+            .calls
+            .lock()
+            .map(|calls| assert_eq!(calls.as_slice(), &[key]))
+            .expect("inspect executor calls lock poisoned");
     }
 
     #[test]

@@ -13,11 +13,21 @@ pub enum BuildArgsError {
     /// Required codec is not supported by runtime capabilities.
     #[error("required codec is not supported: {0}")]
     UnsupportedCodec(&'static str),
+    /// Multiple operations require explicit composition support.
+    #[error("multiple operations require composition planning before execution")]
+    CompositionRequired,
 }
 
 /// Deterministic execution step for runtime orchestration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecutionStep {
+    /// Backup source media before mutation.
+    BackupSource {
+        /// Original source path.
+        source_path: String,
+        /// Destination backup path.
+        backup_path: String,
+    },
     /// Command invocation and argv.
     Command {
         /// Binary to invoke.
@@ -28,6 +38,13 @@ pub enum ExecutionStep {
     /// Output verification checkpoint.
     VerifyOutput {
         /// Path to verify.
+        output_path: String,
+    },
+    /// Atomically replace original source with verified output.
+    AtomicReplace {
+        /// Original source path.
+        source_path: String,
+        /// Verified output path.
         output_path: String,
     },
 }
@@ -54,15 +71,19 @@ pub fn build_ffmpeg_argv(
         OperationKind::AudioTranscode => {
             let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
             args.push("-map".to_string());
-            args.push(format!("0:{stream_id}"));
-            args.push("-c:0".to_string());
+            args.push("0".to_string());
+            args.push("-c".to_string());
+            args.push("copy".to_string());
+            args.push(format!("-c:{stream_id}"));
             args.push("aac".to_string());
         }
         OperationKind::VideoTranscode => {
             let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
             args.push("-map".to_string());
-            args.push(format!("0:{stream_id}"));
-            args.push("-c:0".to_string());
+            args.push("0".to_string());
+            args.push("-c".to_string());
+            args.push("copy".to_string());
+            args.push(format!("-c:{stream_id}"));
             args.push("libx265".to_string());
         }
     }
@@ -81,6 +102,9 @@ pub fn build_execution_steps(
     output_path: &str,
     operations: &[PlannedOperation],
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    if operations.len() > 1 {
+        return Err(BuildArgsError::CompositionRequired);
+    }
     let mut steps = Vec::with_capacity(operations.len() + 1);
     for operation in operations {
         let argv = build_ffmpeg_argv(input_path, output_path, operation)?;
@@ -90,6 +114,40 @@ pub fn build_execution_steps(
         });
     }
     steps.push(ExecutionStep::VerifyOutput {
+        output_path: output_path.to_string(),
+    });
+    Ok(steps)
+}
+
+/// Build deterministic execution steps including optional backup and atomic replacement.
+///
+/// # Errors
+///
+/// Returns [`BuildArgsError::UnsupportedCodec`] when a required transcode codec is unavailable.
+/// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
+/// Returns [`BuildArgsError::CompositionRequired`] when more than one operation is present.
+pub fn build_execution_steps_with_replacement(
+    source_path: &str,
+    output_path: &str,
+    operations: &[PlannedOperation],
+    capabilities: &CapabilitySnapshot,
+    backup_path: Option<&str>,
+) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    let mut steps = Vec::new();
+    if let Some(path) = backup_path {
+        steps.push(ExecutionStep::BackupSource {
+            source_path: source_path.to_string(),
+            backup_path: path.to_string(),
+        });
+    }
+    steps.extend(build_execution_steps_with_capabilities(
+        source_path,
+        output_path,
+        operations,
+        capabilities,
+    )?);
+    steps.push(ExecutionStep::AtomicReplace {
+        source_path: source_path.to_string(),
         output_path: output_path.to_string(),
     });
     Ok(steps)
@@ -137,7 +195,8 @@ fn capabilities_has_codec(capabilities: &CapabilitySnapshot, required: &str) -> 
 mod tests {
     use super::{
         BuildArgsError, ExecutionStep, build_execution_steps,
-        build_execution_steps_with_capabilities, build_ffmpeg_argv,
+        build_execution_steps_with_capabilities, build_execution_steps_with_replacement,
+        build_ffmpeg_argv,
     };
     use crate::capabilities::CapabilitySnapshot;
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
@@ -177,8 +236,9 @@ mod tests {
         let Ok(args) = args_result else {
             return;
         };
-        assert!(args.windows(2).any(|pair| pair == ["-map", "0:3"]));
-        assert!(args.windows(2).any(|pair| pair == ["-c:0", "aac"]));
+        assert!(args.windows(2).any(|pair| pair == ["-map", "0"]));
+        assert!(args.windows(2).any(|pair| pair == ["-c", "copy"]));
+        assert!(args.windows(2).any(|pair| pair == ["-c:3", "aac"]));
     }
 
     #[test]
@@ -244,5 +304,56 @@ mod tests {
         let steps =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
         assert!(steps.is_ok());
+    }
+
+    #[test]
+    fn reject_multi_operation_execution_until_composition_is_supported() {
+        let operations = [
+            PlannedOperation {
+                kind: OperationKind::Remux,
+                stream_id: None,
+            },
+            PlannedOperation {
+                kind: OperationKind::AudioTranscode,
+                stream_id: Some(1),
+            },
+        ];
+        assert_eq!(
+            build_execution_steps("/in.mkv", "/out.mkv", &operations),
+            Err(BuildArgsError::CompositionRequired)
+        );
+    }
+
+    #[test]
+    fn replacement_steps_include_optional_backup_verify_and_atomic_replace() {
+        let operations = [PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+        }];
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["aac".to_string(), "libx265".to_string()],
+        };
+        let result = build_execution_steps_with_replacement(
+            "/input/movie.mkv",
+            "/workspace/output/movie.mkv",
+            &operations,
+            &capabilities,
+            Some("/backup/movie.mkv"),
+        );
+        assert!(result.is_ok());
+        let Ok(steps) = result else {
+            return;
+        };
+        assert!(matches!(steps[0], ExecutionStep::BackupSource { .. }));
+        assert!(steps.iter().any(|step| matches!(
+            step,
+            ExecutionStep::VerifyOutput { .. }
+        )));
+        assert!(matches!(
+            steps.last(),
+            Some(ExecutionStep::AtomicReplace { .. })
+        ));
     }
 }
