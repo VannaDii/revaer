@@ -1,6 +1,6 @@
 //! Plan explanation models.
 
-use crate::plan::PlannedOperation;
+use crate::plan::{OperationKind, PlannedOperation};
 
 /// Human-readable explanation record for a selected operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,11 +16,20 @@ pub fn explain_plan(operations: &[PlannedOperation]) -> Vec<Explanation> {
         .iter()
         .map(|item| Explanation {
             message: format!(
-                "selected operation: {:?} stream={:?}",
-                item.kind, item.stream_id
+                "selected operation: {} stream={:?}",
+                operation_kind_code(item.kind),
+                item.stream_id
             ),
         })
         .collect()
+}
+
+fn operation_kind_code(kind: OperationKind) -> &'static str {
+    match kind {
+        OperationKind::Remux => "remux",
+        OperationKind::AudioTranscode => "audio_transcode",
+        OperationKind::VideoTranscode => "video_transcode",
+    }
 }
 
 #[cfg(test)]

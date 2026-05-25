@@ -29,6 +29,7 @@ use crate::models::{
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
 const MEDIA_PROFILE_LIST_FAILED: &str = "failed to list media profiles";
+const MEDIA_PROFILE_NOT_FOUND: &str = "media profile not found";
 const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
 const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
@@ -126,7 +127,7 @@ pub(crate) async fn get_media_profile(
         .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
         .into_iter()
         .find(|item| item.media_profile_public_id == media_profile_public_id)
-        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_LIST_FAILED))?;
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
 
     Ok(Json(map_profile(profile)))
 }

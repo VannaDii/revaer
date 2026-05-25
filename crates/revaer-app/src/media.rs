@@ -215,24 +215,46 @@ impl MediaFacade for MediaService {
 
         let mut seen = BTreeSet::new();
         let mut last_snapshot_id = None;
-        for codec in &snapshot.codecs {
-            let normalized = codec.trim().to_ascii_lowercase();
-            if normalized.is_empty() || !seen.insert(normalized.clone()) {
-                continue;
+        if snapshot.codec_capabilities.is_empty() {
+            for codec in &snapshot.codecs {
+                let normalized = codec.trim().to_ascii_lowercase();
+                if normalized.is_empty() || !seen.insert(normalized.clone()) {
+                    continue;
+                }
+                let snapshot_id = self
+                    .store
+                    .record_capability(&RecordCapabilitySnapshotInput {
+                        actor_public_id: params.actor_user_public_id,
+                        ffmpeg_version: &snapshot.ffmpeg_version,
+                        ffprobe_version: &snapshot.ffprobe_version,
+                        codec_name: &normalized,
+                        encode_supported: false,
+                        decode_supported: true,
+                    })
+                    .await
+                    .map_err(|err| map_data_error(&err))?;
+                last_snapshot_id = Some(snapshot_id);
             }
-            let snapshot_id = self
-                .store
-                .record_capability(&RecordCapabilitySnapshotInput {
-                    actor_public_id: params.actor_user_public_id,
-                    ffmpeg_version: &snapshot.ffmpeg_version,
-                    ffprobe_version: &snapshot.ffprobe_version,
-                    codec_name: &normalized,
-                    encode_supported: true,
-                    decode_supported: true,
-                })
-                .await
-                .map_err(|err| map_data_error(&err))?;
-            last_snapshot_id = Some(snapshot_id);
+        } else {
+            for codec in &snapshot.codec_capabilities {
+                let normalized = codec.codec_name.trim().to_ascii_lowercase();
+                if normalized.is_empty() || !seen.insert(normalized.clone()) {
+                    continue;
+                }
+                let snapshot_id = self
+                    .store
+                    .record_capability(&RecordCapabilitySnapshotInput {
+                        actor_public_id: params.actor_user_public_id,
+                        ffmpeg_version: &snapshot.ffmpeg_version,
+                        ffprobe_version: &snapshot.ffprobe_version,
+                        codec_name: &normalized,
+                        encode_supported: codec.encode_supported,
+                        decode_supported: codec.decode_supported,
+                    })
+                    .await
+                    .map_err(|err| map_data_error(&err))?;
+                last_snapshot_id = Some(snapshot_id);
+            }
         }
 
         last_snapshot_id.ok_or_else(|| {

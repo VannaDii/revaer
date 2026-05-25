@@ -274,6 +274,7 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
+            codec_capabilities: Vec::new(),
         };
         assert_eq!(
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities),
@@ -291,6 +292,7 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["aac".to_string()],
+            codec_capabilities: Vec::new(),
         };
         let steps =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
@@ -307,6 +309,7 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["  LIBX265  ".to_string()],
+            codec_capabilities: Vec::new(),
         };
         let steps =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
@@ -396,6 +399,7 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["aac".to_string(), "libx265".to_string()],
+            codec_capabilities: Vec::new(),
         };
         let result = build_execution_steps_with_replacement(
             "/input/movie.mkv",

@@ -14,6 +14,19 @@ pub struct CapabilitySnapshot {
     pub ffprobe_version: String,
     /// Available codec names.
     pub codecs: Vec<String>,
+    /// Per-codec decode/encode support flags.
+    pub codec_capabilities: Vec<CodecCapability>,
+}
+
+/// Runtime capability flags for one codec entry.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct CodecCapability {
+    /// Codec name.
+    pub codec_name: String,
+    /// Whether decode is supported.
+    pub decode_supported: bool,
+    /// Whether encode is supported.
+    pub encode_supported: bool,
 }
 
 impl CapabilitySnapshot {
@@ -126,17 +139,22 @@ impl CapabilityDetector for FfmpegCapabilityDetector {
         let ffprobe_version = parse_version_line(&ffprobe_version_output).ok_or(
             CapabilityDetectError::OutputMalformed("missing ffprobe version line"),
         )?;
-        let codecs = parse_codecs(&codecs_output);
-        if codecs.is_empty() {
+        let codec_capabilities = parse_codecs(&codecs_output);
+        if codec_capabilities.is_empty() {
             return Err(CapabilityDetectError::OutputMalformed(
                 "no codecs parsed from ffmpeg -codecs",
             ));
         }
+        let codecs = codec_capabilities
+            .iter()
+            .map(|item| item.codec_name.clone())
+            .collect();
 
         Ok(CapabilitySnapshot {
             ffmpeg_version,
             ffprobe_version,
             codecs,
+            codec_capabilities,
         })
     }
 }
@@ -151,7 +169,7 @@ fn parse_version_line(output: &str) -> Option<String> {
     })
 }
 
-fn parse_codecs(output: &str) -> Vec<String> {
+fn parse_codecs(output: &str) -> Vec<CodecCapability> {
     let mut codecs = BTreeSet::new();
     for line in output.lines() {
         if !line.starts_with(' ') {
@@ -168,7 +186,13 @@ fn parse_codecs(output: &str) -> Vec<String> {
         let Some(codec_name) = tokens.next() else {
             continue;
         };
-        codecs.insert(codec_name.to_string());
+        let decode_supported = flags.starts_with('D');
+        let encode_supported = flags.chars().nth(1) == Some('E');
+        codecs.insert(CodecCapability {
+            codec_name: codec_name.to_string(),
+            decode_supported,
+            encode_supported,
+        });
     }
     codecs.into_iter().collect()
 }
@@ -177,7 +201,7 @@ fn parse_codecs(output: &str) -> Vec<String> {
 mod tests {
     use super::{
         CapabilityDetectError, CapabilityDetector, CapabilityProbeExecutor, CapabilitySnapshot,
-        FfmpegCapabilityDetector, UnavailableCapabilityDetector,
+        CodecCapability, FfmpegCapabilityDetector, UnavailableCapabilityDetector,
     };
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -191,6 +215,11 @@ mod tests {
                 ffmpeg_version: "7.0".to_string(),
                 ffprobe_version: "7.0".to_string(),
                 codecs: vec!["h264".to_string()],
+                codec_capabilities: vec![CodecCapability {
+                    codec_name: "h264".to_string(),
+                    decode_supported: true,
+                    encode_supported: true,
+                }],
             })
         }
     }
@@ -201,6 +230,7 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: Vec::new(),
+            codec_capabilities: Vec::new(),
         };
         assert!(!snapshot.is_valid());
     }
@@ -265,6 +295,21 @@ mod tests {
         assert_eq!(
             snapshot.codecs,
             vec!["h264".to_string(), "hevc".to_string()]
+        );
+        assert_eq!(
+            snapshot.codec_capabilities,
+            vec![
+                CodecCapability {
+                    codec_name: "h264".to_string(),
+                    decode_supported: true,
+                    encode_supported: true
+                },
+                CodecCapability {
+                    codec_name: "hevc".to_string(),
+                    decode_supported: true,
+                    encode_supported: true
+                }
+            ]
         );
     }
 }
