@@ -20,7 +20,7 @@
 - Motivation:
   - Continue slice 14 by closing the operation persistence/API gap needed for deterministic execution explainability.
 - Design notes:
-  - New migration `0125_media_job_operation_procs.sql` adds append/list procedures with upsert-on-index behavior.
+  - New migration `0129_media_job_operation_procs.sql` adds append/list procedures with upsert-on-index behavior.
   - `revaer-data::media::jobs` now exposes `append_media_job_operation` and `list_media_job_operations`.
   - `revaer-runtime::MediaStore` now exposes `append_job_operation` and `list_job_operations`.
   - API model and handler wiring now supports operation append/list route behavior.
