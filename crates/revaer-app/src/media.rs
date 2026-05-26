@@ -521,13 +521,36 @@ fn ensure_execution_capability_snapshot(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_execution_capability_snapshot, map_data_error, map_detect_error, parse_yaml_bundle,
-        validate_yaml_bundle,
+        MediaService, ensure_execution_capability_snapshot, map_data_error, map_detect_error,
+        parse_yaml_bundle, validate_yaml_bundle,
     };
     use revaer_api::app::media::MediaServiceErrorKind;
+    use revaer_api::app::media::{
+        MediaCapabilityRefreshParams, MediaFacade, MediaJobCreateParams,
+        MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaProfileUpsertParams,
+    };
     use revaer_data::DataError;
+    use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::CapabilitySnapshotRow;
     use revaer_media_runtime::capabilities::CapabilityDetectError;
+    use revaer_media_runtime::capabilities::CapabilityDetector;
+    use revaer_media_runtime::capabilities::CapabilitySnapshot;
+    use revaer_runtime::media::MediaStore;
+    use revaer_test_support::postgres::start_postgres;
+    use sqlx::postgres::PgPoolOptions;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    #[derive(Clone)]
+    struct StaticDetector {
+        snapshot: CapabilitySnapshot,
+    }
+
+    impl CapabilityDetector for StaticDetector {
+        fn detect(&self) -> Result<CapabilitySnapshot, CapabilityDetectError> {
+            Ok(self.snapshot.clone())
+        }
+    }
 
     #[test]
     fn reject_missing_capability_snapshot() {
@@ -647,5 +670,108 @@ mod tests {
             map_detect_error(&CapabilityDetectError::OutputMalformed("x".to_string())).code(),
             Some("media_capability_refresh_failed")
         );
+    }
+
+    #[tokio::test]
+    async fn media_service_round_trips_profile_job_yaml_and_capability_paths() -> anyhow::Result<()>
+    {
+        let Ok(postgres) = start_postgres() else {
+            return Ok(());
+        };
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(postgres.connection_string())
+            .await?;
+        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
+        migrator.set_ignore_missing(true);
+        migrator.run(&pool).await?;
+
+        let store = MediaStore::new(pool);
+        let email = format!("media-app-{}@example.invalid", Uuid::new_v4());
+        let actor_user_public_id = app_user_create(store.pool(), &email, "Media App").await?;
+        app_user_verify_email(store.pool(), actor_user_public_id).await?;
+        let service = MediaService::new(
+            store.clone(),
+            Arc::new(StaticDetector {
+                snapshot: CapabilitySnapshot {
+                    ffmpeg_version: "7.1".to_string(),
+                    ffprobe_version: "7.1".to_string(),
+                    codecs: vec!["h264".to_string(), "h264".to_string(), "  ".to_string()],
+                },
+            }),
+        );
+
+        let profile_id = service
+            .media_profile_upsert(MediaProfileUpsertParams {
+                actor_user_public_id,
+                profile_key: "app-media",
+                source_root: "/input/app-media",
+                output_root: "/output/app-media",
+                dry_run_only: true,
+                retention_days: 30,
+            })
+            .await?;
+        let profiles = service.media_profile_list().await?;
+        assert!(
+            profiles
+                .iter()
+                .any(|profile| profile.media_profile_public_id == profile_id)
+        );
+
+        let job_id = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/app-media/video.mkv",
+                output_path: Some("/output/app-media/video.mkv"),
+                dry_run: true,
+            })
+            .await?;
+        service
+            .media_job_phase_append(MediaJobPhaseAppendParams {
+                media_job_public_id: job_id,
+                phase_index: 0,
+                phase_name: "plan",
+                phase_status: "queued",
+                details_text: Some("ok"),
+            })
+            .await?;
+        service
+            .media_job_operation_append(MediaJobOperationAppendParams {
+                media_job_public_id: job_id,
+                operation_index: 0,
+                operation_kind: "remux",
+                stream_id: None,
+                command_bin: "ffmpeg",
+                args: [Some("-i"), Some("in.mkv"), Some("-c"), Some("copy"), None],
+            })
+            .await?;
+        assert!(service.media_job_get(job_id).await?.is_some());
+        assert!(
+            !service
+                .media_job_list(profile_id, Some("queued"))
+                .await?
+                .is_empty()
+        );
+        assert_eq!(service.media_job_operation_list(job_id).await?.len(), 1);
+
+        let cap_id = service
+            .media_capability_refresh(MediaCapabilityRefreshParams {
+                actor_user_public_id,
+            })
+            .await?;
+        assert!(cap_id > 0);
+        assert!(service.media_capability_latest().await?.is_some());
+        assert!(service.media_capability_readiness().await?.ready);
+
+        let yaml = service.media_yaml_export().await?;
+        let validation = service.media_yaml_validate(&yaml).await?;
+        assert!(validation.valid);
+        let applied = service
+            .media_yaml_apply(actor_user_public_id, &yaml)
+            .await?;
+        assert!(applied.forced_dry_run);
+
+        Ok(())
     }
 }

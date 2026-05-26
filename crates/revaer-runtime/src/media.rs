@@ -406,6 +406,7 @@ mod tests {
                 .is_err()
         );
         assert!(store.list_profiles().await.is_err());
+        assert!(store.get_profile(profile_id).await.is_err());
         assert!(
             store
                 .create_job(&CreateMediaJobInput {
@@ -424,9 +425,17 @@ mod tests {
                 .await
                 .is_err()
         );
+        assert!(
+            store
+                .append_job_operation(job_id, 0, "remux", None, "ffmpeg", [None; 5])
+                .await
+                .is_err()
+        );
         assert!(store.list_jobs(profile_id, Some("queued")).await.is_err());
         assert!(store.get_job(job_id).await.is_err());
         assert!(store.list_job_operations(job_id).await.is_err());
+        assert!(store.cancel_job(job_id).await.is_err());
+        assert!(store.retry_job(job_id).await.is_err());
 
         assert!(
             store
