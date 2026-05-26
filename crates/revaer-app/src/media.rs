@@ -468,6 +468,9 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
         Some("app_user_not_found" | "media_profile_not_found" | "media_job_not_found") => {
             MediaServiceErrorKind::NotFound
         }
+        Some("media_job_cancel_invalid_status" | "media_job_retry_invalid_status") => {
+            MediaServiceErrorKind::Conflict
+        }
         Some("media_profile_roots_overlap") => MediaServiceErrorKind::Invalid,
         _ => MediaServiceErrorKind::Storage,
     };

@@ -10,6 +10,8 @@ const MEDIA_JOB_OPERATION_APPEND_V1: &str = "SELECT media_job_operation_append_v
 const MEDIA_JOB_OPERATION_LIST_V1: &str = "SELECT operation_index, operation_kind, stream_id, command_bin, arg_1, arg_2, arg_3, arg_4, arg_5, created_at FROM media_job_operation_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_CANCEL_V1: &str = "SELECT media_job_cancel_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_RETRY_V1: &str = "SELECT media_job_retry_v1(media_job_public_id_input => $1)";
 
 /// Create media job payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,11 +200,40 @@ pub async fn get_media_job(
         .map_err(try_op("media job get"))
 }
 
+/// Cancel one queued/running/verifying media job.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn cancel_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result<()> {
+    sqlx::query(MEDIA_JOB_CANCEL_V1)
+        .bind(media_job_public_id)
+        .execute(pool)
+        .await
+        .map_err(try_op("media job cancel"))?;
+    Ok(())
+}
+
+/// Retry one failed/cancelled media job by requeueing it.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn retry_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result<()> {
+    sqlx::query(MEDIA_JOB_RETRY_V1)
+        .bind(media_job_public_id)
+        .execute(pool)
+        .await
+        .map_err(try_op("media job retry"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        CreateMediaJobInput, append_media_job_operation, append_media_job_phase, create_media_job,
-        get_media_job, list_media_job_operations, list_media_jobs,
+        CreateMediaJobInput, append_media_job_operation, append_media_job_phase, cancel_media_job,
+        create_media_job, get_media_job, list_media_job_operations, list_media_jobs,
+        retry_media_job,
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::setup_media_db;

@@ -11,11 +11,12 @@ use revaer_data::media::capabilities::{
 };
 use revaer_data::media::jobs::{
     CreateMediaJobInput, MediaJobOperationRow, MediaJobRow, append_media_job_operation,
-    append_media_job_phase, create_media_job, get_media_job, list_media_job_operations,
-    list_media_jobs,
+    append_media_job_phase, cancel_media_job, create_media_job, get_media_job,
+    list_media_job_operations, list_media_jobs, retry_media_job,
 };
 use revaer_data::media::profiles::{
-    MediaProfileRow, UpsertMediaProfileInput, list_media_profiles, upsert_media_profile,
+    MediaProfileRow, UpsertMediaProfileInput, get_media_profile, list_media_profiles,
+    upsert_media_profile,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -55,6 +56,18 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn list_profiles(&self) -> DataResult<Vec<MediaProfileRow>> {
         list_media_profiles(&self.pool).await
+    }
+
+    /// Get one media profile by public id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn get_profile(
+        &self,
+        media_profile_public_id: Uuid,
+    ) -> DataResult<Option<MediaProfileRow>> {
+        get_media_profile(&self.pool, media_profile_public_id).await
     }
 
     /// Create a media job.
@@ -150,6 +163,24 @@ impl MediaStore {
         get_media_job(&self.pool, media_job_public_id).await
     }
 
+    /// Cancel one media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn cancel_job(&self, media_job_public_id: Uuid) -> DataResult<()> {
+        cancel_media_job(&self.pool, media_job_public_id).await
+    }
+
+    /// Retry one media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn retry_job(&self, media_job_public_id: Uuid) -> DataResult<()> {
+        retry_media_job(&self.pool, media_job_public_id).await
+    }
+
     /// Record one capability snapshot row.
     ///
     /// # Errors
@@ -182,7 +213,19 @@ mod tests {
     use revaer_test_support::postgres::TestDatabase;
     use revaer_test_support::postgres::start_postgres;
     use sqlx::postgres::PgPoolOptions;
+    use std::time::Duration;
+    use tokio::time::sleep;
     use uuid::Uuid;
+
+    fn is_transient_postgres_startup_error(message: &str) -> bool {
+        message.contains("database system is in recovery mode")
+            || message.contains("database system is starting up")
+            || message.contains("not yet accepting connections")
+    }
+
+    fn has_transient_postgres_startup_error_text(message: &str) -> bool {
+        is_transient_postgres_startup_error(message) || message.contains("failed to create database")
+    }
 
     async fn test_store() -> anyhow::Result<Option<(TestDatabase, MediaStore)>> {
         let postgres = match start_postgres() {
@@ -192,9 +235,7 @@ mod tests {
                 if message.contains("docker daemon is not available")
                     || message.contains("docker command not found")
                     || message.contains("could not map host port")
-                    || message.contains("database system is in recovery mode")
-                    || message.contains("database system is starting up")
-                    || message.contains("not yet accepting connections")
+                    || has_transient_postgres_startup_error_text(&format!("{err:#}"))
                 {
                     eprintln!("skipping media store test: {err}");
                     return Ok(None);
@@ -203,14 +244,51 @@ mod tests {
             }
         };
 
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(postgres.connection_string())
-            .await?;
+        let mut pool = None;
+        for _ in 0..30 {
+            match PgPoolOptions::new()
+                .max_connections(5)
+                .connect(postgres.connection_string())
+                .await
+            {
+                Ok(connected_pool) => {
+                    pool = Some(connected_pool);
+                    break;
+                }
+                Err(err)
+                    if has_transient_postgres_startup_error_text(&format!("{err:#}")) =>
+                {
+                    sleep(Duration::from_secs(1)).await;
+                }
+                Err(err) => return Err(err.into()),
+            }
+        }
+        let Some(pool) = pool else {
+            eprintln!("skipping media store test: transient Postgres startup recovery timeout");
+            return Ok(None);
+        };
 
         let mut migrator = sqlx::migrate!("../revaer-data/migrations");
         migrator.set_ignore_missing(true);
-        migrator.run(&pool).await?;
+        let mut migrated = false;
+        for _ in 0..30 {
+            match migrator.run(&pool).await {
+                Ok(()) => {
+                    migrated = true;
+                    break;
+                }
+                Err(err)
+                    if has_transient_postgres_startup_error_text(&format!("{err:#}")) =>
+                {
+                    sleep(Duration::from_secs(1)).await;
+                }
+                Err(err) => return Err(err.into()),
+            }
+        }
+        if !migrated {
+            eprintln!("skipping media store test: transient Postgres migration recovery timeout");
+            return Ok(None);
+        }
 
         Ok(Some((postgres, MediaStore::new(pool))))
     }

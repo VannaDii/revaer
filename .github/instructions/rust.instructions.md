@@ -33,7 +33,7 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, this file wins fo
 
 # CI And Recipe Maintenance
 
-- `just test`, `just test-features-min`, `just test-native`, `just db-migrate`, `just cov`, and `just validate` now default `REVAER_TEST_DATABASE_URL` to the Postgres maintenance database at `postgres://revaer:revaer@localhost:5432/postgres`. `just db-start` also retries transient Postgres recovery/startup/not-yet-accepting-connection errors around `sqlx migrate run` and `sqlx database reset` before treating the database as mismatched. Keep recipes and docs aligned with that admin-connection workflow when test database bootstrapping changes.
+- `just test`, `just test-features-min`, `just test-native`, `just db-migrate`, `just cov`, and `just validate` now default `REVAER_TEST_DATABASE_URL` to the Postgres maintenance database at `postgres://revaer:revaer@localhost:5432/postgres`. `just db-start` must keep local endpoint normalization between `localhost` and `host.docker.internal`, wait for local containers to exit recovery before migrations, and retry transient Postgres recovery/startup/not-yet-accepting-connection errors around `sqlx migrate run` and `sqlx database reset` before treating the database as mismatched. Keep recipes and docs aligned with that admin-connection workflow when test database bootstrapping changes.
 - `just cov` records coverage once with `cargo llvm-cov --workspace --all-features --no-report`, then enforces the 90% per-package line threshold with `cargo llvm-cov report --package ...` against that shared workspace dataset. Keep the coverage gate workspace-sourced so library crates receive credit for lines exercised by downstream crates and integration tests.
 
 # Documentation

@@ -521,6 +521,11 @@ db-start:
         db_url="$(printf "%s" "${db_url}" | sed 's#@host\.docker\.internal\([:/]\)#@localhost\1#')"; \
         echo "Normalized local Docker database host to ${db_host}:${db_port}"; \
     fi; \
+    if [ "${db_host}" = "localhost" ] && ! python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' localhost "${db_port}" >/dev/null 2>&1 && python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' host.docker.internal "${db_port}" >/dev/null 2>&1; then \
+        db_host="host.docker.internal"; \
+        db_url="$(printf "%s" "${db_url}" | sed 's#@localhost\([:/]\)#@host.docker.internal\1#')"; \
+        echo "Normalized local Docker database host to ${db_host}:${db_port}"; \
+    fi; \
     echo "Using database URL: ${db_url}"; \
     container_name="${PG_CONTAINER:-revaer-db}"; \
     db_data_dir="${PWD}/.server_root/postgres-data"; \
@@ -581,6 +586,12 @@ db-start:
         fi; \
         sleep 1; \
     done; \
+    if [ "${external_ready}" != "1" ] && [ "${db_host}" = "localhost" ] && python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' host.docker.internal "${db_port}" >/dev/null 2>&1; then \
+        db_host="host.docker.internal"; \
+        db_url="$(printf "%s" "${db_url}" | sed 's#@localhost\([:/]\)#@host.docker.internal\1#')"; \
+        external_ready="1"; \
+        echo "Switched Postgres endpoint to ${db_host}:${db_port} after startup reachability probe"; \
+    fi; \
     if [ "${external_ready}" != "1" ]; then \
         echo "Postgres endpoint ${db_host}:${db_port} did not become reachable."; \
         exit 1; \
@@ -599,7 +610,7 @@ db-start:
         echo "Local Postgres container ${container_name} did not exit recovery in time."; \
         return 1; \
     }; \
-    if [ -n "${existing_container}" ]; then \
+    if echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
         wait_for_local_postgres_writable; \
     fi; \
     just sqlx-install; \
@@ -616,11 +627,11 @@ db-start:
             fi; \
             if printf '%s' "${output}" | grep -Eq 'the database system is (in recovery mode|starting up|not yet accepting connections)|consistent recovery state has not been yet reached'; then \
                 printf '%s\n' "${output}" >&2; \
-                if [ "${attempt}" -ge 30 ]; then \
+                if [ "${attempt}" -ge 180 ]; then \
                     echo "Postgres did not become writable in time." >&2; \
                     return 2; \
                 fi; \
-                echo "Postgres is still recovering; retrying in 1s (attempt ${attempt}/30)..."; \
+                echo "Postgres is still recovering; retrying in 1s (attempt ${attempt}/180)..."; \
                 attempt="$((attempt + 1))"; \
                 sleep 1; \
                 continue; \
