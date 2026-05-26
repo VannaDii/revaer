@@ -604,6 +604,7 @@ pub fn plan_job_from_source_graph(
     source: &MediaGraph,
 ) -> Result<PlannedJob, &'static str> {
     let diff = diff_graphs(source, desired);
+    reject_unsupported_recoded_stream_kinds(&diff)?;
     let operations = generate_plan(&diff);
     verify_plan_against_source(source, &operations)?;
 
@@ -611,6 +612,23 @@ pub fn plan_job_from_source_graph(
         estimated_workspace_bytes: estimate_workspace_bytes(source_file_bytes, &operations),
         operations,
     })
+}
+
+fn reject_unsupported_recoded_stream_kinds(
+    diff: &revaer_media_core::diff::GraphDiff,
+) -> Result<(), &'static str> {
+    for stream in &diff.recoded_streams {
+        match stream.kind {
+            revaer_media_core::model::StreamKind::Audio
+            | revaer_media_core::model::StreamKind::Video => {}
+            revaer_media_core::model::StreamKind::Subtitle
+            | revaer_media_core::model::StreamKind::Attachment
+            | revaer_media_core::model::StreamKind::Chapter => {
+                return Err("unsupported_recode_stream_kind");
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Validate workspace reserve/capacity before execution.
@@ -1016,6 +1034,40 @@ mod tests {
             return;
         };
         assert!(!steps.is_empty());
+    }
+
+    #[test]
+    fn plan_job_rejects_unsupported_recode_stream_kind() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 3,
+                kind: StreamKind::Subtitle,
+                codec: "srt".to_string(),
+                language: Some("eng".to_string()),
+                title: Some("English".to_string()),
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 3,
+                kind: StreamKind::Subtitle,
+                codec: "ass".to_string(),
+                language: Some("eng".to_string()),
+                title: Some("English".to_string()),
+                dispositions: Vec::new(),
+            }],
+        };
+
+        let result = plan_job(&JobPreflightRequest {
+            source,
+            desired,
+            source_file_bytes: 1_024,
+        });
+
+        assert_eq!(result, Err("unsupported_recode_stream_kind"));
     }
 
     #[test]
