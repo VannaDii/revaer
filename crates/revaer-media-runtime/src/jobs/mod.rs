@@ -4,7 +4,7 @@ use revaer_media_core::diff::diff_graphs;
 use revaer_media_core::explain::{Explanation, explain_plan};
 use revaer_media_core::model::{DesiredGraph, MediaGraph};
 use revaer_media_core::plan::{OperationKind, PlannedOperation, generate_plan};
-use revaer_media_core::verify::verify_plan;
+use revaer_media_core::verify::verify_plan_against_source;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
@@ -605,7 +605,7 @@ pub fn plan_job_from_source_graph(
 ) -> Result<PlannedJob, &'static str> {
     let diff = diff_graphs(source, desired);
     let operations = generate_plan(&diff);
-    verify_plan(&operations)?;
+    verify_plan_against_source(source, &operations)?;
 
     Ok(PlannedJob {
         estimated_workspace_bytes: estimate_workspace_bytes(source_file_bytes, &operations),
