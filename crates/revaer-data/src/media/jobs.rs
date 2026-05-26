@@ -231,9 +231,8 @@ pub async fn retry_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result
 #[cfg(test)]
 mod tests {
     use super::{
-        CreateMediaJobInput, append_media_job_operation, append_media_job_phase, cancel_media_job,
-        create_media_job, get_media_job, list_media_job_operations, list_media_jobs,
-        retry_media_job,
+        CreateMediaJobInput, append_media_job_operation, append_media_job_phase, create_media_job,
+        get_media_job, list_media_job_operations, list_media_jobs,
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::setup_media_db;
