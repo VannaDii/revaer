@@ -43,7 +43,11 @@ pub fn verify_plan_against_source(
         let Some(stream_id) = operation.stream_id else {
             continue;
         };
-        let Some(stream) = source.streams.iter().find(|item| item.stream_id == stream_id) else {
+        let Some(stream) = source
+            .streams
+            .iter()
+            .find(|item| item.stream_id == stream_id)
+        else {
             return Err("stream-scoped operation references unknown stream id");
         };
         match operation.kind {
