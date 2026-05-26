@@ -423,10 +423,15 @@ pub fn build_preflight_input<'a>(
 
 /// Deterministic machine-readable error code for preflight failures.
 #[must_use]
-pub const fn preflight_error_code(error: &JobPreflightError) -> &'static str {
+pub fn preflight_error_code(error: &JobPreflightError) -> &'static str {
     match error {
         JobPreflightError::Inspect(_) => "preflight_inspect_failed",
-        JobPreflightError::Plan(_) => "preflight_plan_failed",
+        JobPreflightError::Plan(plan_error) => match *plan_error {
+            "unsupported_recode_stream_kind" => {
+                "preflight_plan_unsupported_recode_stream_kind"
+            }
+            _ => "preflight_plan_failed",
+        },
         JobPreflightError::Capability(_) => "preflight_capability_failed",
         JobPreflightError::Workspace(WorkspaceError::InvalidPolicy) => {
             "preflight_workspace_invalid_policy"
@@ -463,10 +468,15 @@ pub const fn preflight_error_code(error: &JobPreflightError) -> &'static str {
 
 /// Deterministic human-readable detail for preflight failures.
 #[must_use]
-pub const fn preflight_error_detail(error: &JobPreflightError) -> &'static str {
+pub fn preflight_error_detail(error: &JobPreflightError) -> &'static str {
     match error {
         JobPreflightError::Inspect(_) => "source inspection failed",
-        JobPreflightError::Plan(_) => "plan verification failed",
+        JobPreflightError::Plan(plan_error) => match *plan_error {
+            "unsupported_recode_stream_kind" => {
+                "plan includes unsupported recode stream kind"
+            }
+            _ => "plan verification failed",
+        },
         JobPreflightError::Capability(_) => "capability snapshot is missing or invalid",
         JobPreflightError::Workspace(WorkspaceError::InvalidPolicy) => {
             "workspace policy is invalid"
@@ -1424,6 +1434,17 @@ mod tests {
             "preflight_build_unsupported_codec"
         );
         assert_eq!(preflight_failed_stage(&err), "build_steps");
+
+        let err = JobPreflightError::Plan("unsupported_recode_stream_kind");
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_plan_unsupported_recode_stream_kind"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "plan includes unsupported recode stream kind"
+        );
+        assert_eq!(preflight_failed_stage(&err), "inspect_plan");
     }
 
     #[test]
