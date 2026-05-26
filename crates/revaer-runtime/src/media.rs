@@ -224,7 +224,8 @@ mod tests {
     }
 
     fn has_transient_postgres_startup_error_text(message: &str) -> bool {
-        is_transient_postgres_startup_error(message) || message.contains("failed to create database")
+        is_transient_postgres_startup_error(message)
+            || message.contains("failed to create database")
     }
 
     async fn test_store() -> anyhow::Result<Option<(TestDatabase, MediaStore)>> {
@@ -255,9 +256,7 @@ mod tests {
                     pool = Some(connected_pool);
                     break;
                 }
-                Err(err)
-                    if has_transient_postgres_startup_error_text(&format!("{err:#}")) =>
-                {
+                Err(err) if has_transient_postgres_startup_error_text(&format!("{err:#}")) => {
                     sleep(Duration::from_secs(1)).await;
                 }
                 Err(err) => return Err(err.into()),
@@ -277,9 +276,7 @@ mod tests {
                     migrated = true;
                     break;
                 }
-                Err(err)
-                    if has_transient_postgres_startup_error_text(&format!("{err:#}")) =>
-                {
+                Err(err) if has_transient_postgres_startup_error_text(&format!("{err:#}")) => {
                     sleep(Duration::from_secs(1)).await;
                 }
                 Err(err) => return Err(err.into()),
