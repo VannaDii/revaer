@@ -50,6 +50,7 @@ const SOURCE_PATH_REQUIRED: &str = "source_path is required";
 const PHASE_NAME_REQUIRED: &str = "phase_name is required";
 const PHASE_STATUS_REQUIRED: &str = "phase_status is required";
 const OPERATION_KIND_REQUIRED: &str = "operation_kind is required";
+const OPERATION_KIND_INVALID: &str = "operation_kind is invalid";
 const COMMAND_BIN_REQUIRED: &str = "command_bin is required";
 const FFMPEG_VERSION_REQUIRED: &str = "ffmpeg_version is required";
 const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
@@ -232,6 +233,7 @@ pub(crate) async fn append_media_job_operation(
 ) -> Result<StatusCode, ApiError> {
     let operation_kind =
         normalize_required_str_field(&request.operation_kind, OPERATION_KIND_REQUIRED)?;
+    let operation_kind = parse_operation_kind_required(operation_kind, OPERATION_KIND_INVALID)?;
     let command_bin = normalize_required_str_field(&request.command_bin, COMMAND_BIN_REQUIRED)?;
 
     state
@@ -239,7 +241,7 @@ pub(crate) async fn append_media_job_operation(
         .media_job_operation_append(MediaJobOperationAppendParams {
             media_job_public_id,
             operation_index: request.operation_index,
-            operation_kind,
+            operation_kind: operation_kind.as_str(),
             stream_id: request.stream_id,
             command_bin,
             args: [
@@ -561,6 +563,28 @@ fn parse_media_status_optional(
     })
 }
 
+fn parse_operation_kind_required(value: &str, detail: &'static str) -> Result<String, ApiError> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if is_supported_operation_kind(&normalized) {
+        Ok(normalized)
+    } else {
+        Err(ApiError::bad_request(detail))
+    }
+}
+
+fn is_supported_operation_kind(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "remux"
+            | "metadata_rewrite"
+            | "disposition_rewrite"
+            | "label_rewrite"
+            | "stream_reorder"
+            | "audio_transcode"
+            | "video_transcode"
+    )
+}
+
 fn is_supported_media_status(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),
@@ -722,6 +746,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn append_media_job_operation_rejects_invalid_operation_kind() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobOperationAppendRequest {
+            operation_index: 0,
+            operation_kind: "invalid-kind".to_string(),
+            stream_id: None,
+            command_bin: "ffmpeg".to_string(),
+            arg_1: None,
+            arg_2: None,
+            arg_3: None,
+            arg_4: None,
+            arg_5: None,
+        };
+
+        let err = append_media_job_operation(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("invalid operation kind should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn append_media_job_operation_maps_noop_storage_failure_to_internal() -> anyhow::Result<()>
     {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
@@ -843,6 +890,16 @@ mod tests {
             return;
         };
         assert_eq!(status.as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn parse_operation_kind_required_normalizes_case_and_whitespace() {
+        let value = parse_operation_kind_required("  VIDEO_TRANSCODE  ", OPERATION_KIND_INVALID);
+        assert!(value.is_ok());
+        let Ok(operation_kind) = value else {
+            return;
+        };
+        assert_eq!(operation_kind, "video_transcode");
     }
 
     #[test]
