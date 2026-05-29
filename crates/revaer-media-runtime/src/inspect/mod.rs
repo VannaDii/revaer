@@ -610,6 +610,46 @@ mod tests {
     }
 
     #[test]
+    fn ffprobe_adapter_ignores_zero_dispositions() {
+        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            key,
+            r#"{
+                "streams": [
+                    {
+                        "index": 0,
+                        "codec_type": "audio",
+                        "codec_name": "aac",
+                        "disposition": {
+                            "default": 0,
+                            "forced": 0,
+                            "hearing_impaired": 0,
+                            "visual_impaired": 0
+                        }
+                    }
+                ]
+            }"#
+            .to_string(),
+        );
+        let adapter = FfprobeInspectAdapter::new(
+            Arc::new(StubInspectExecutor {
+                outputs,
+                calls: Mutex::new(Vec::new()),
+            }),
+            "ffprobe",
+        );
+
+        let graph_result = adapter.inspect("/input/movie.mkv");
+        assert!(graph_result.is_ok(), "expected inspect success");
+        let Ok(graph) = graph_result else {
+            return;
+        };
+        assert_eq!(graph.streams.len(), 1);
+        assert!(graph.streams[0].dispositions.is_empty());
+    }
+
+    #[test]
     fn system_probe_executor_maps_non_zero_exit_to_probe_failed() {
         let executor = SystemInspectProbeExecutor;
         let result = executor.run("sh", &["-c", "printf 'bad stderr' 1>&2; exit 9"]);
