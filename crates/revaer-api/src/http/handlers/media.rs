@@ -769,6 +769,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn append_media_job_operation_accepts_normalized_operation_kind() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobOperationAppendRequest {
+            operation_index: 0,
+            operation_kind: "  VIDEO_TRANSCODE ".to_string(),
+            stream_id: Some(1),
+            command_bin: "ffmpeg".to_string(),
+            arg_1: Some("-i".to_string()),
+            arg_2: Some("/input/demo.mkv".to_string()),
+            arg_3: Some("-c:1".to_string()),
+            arg_4: Some("libx265".to_string()),
+            arg_5: None,
+        };
+
+        let err = append_media_job_operation(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("noop media facade should fail writes after validation passes");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn append_media_job_operation_maps_noop_storage_failure_to_internal() -> anyhow::Result<()>
     {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
@@ -923,6 +946,12 @@ mod tests {
             return;
         };
         assert_eq!(operation_kind, "video_transcode");
+    }
+
+    #[test]
+    fn parse_operation_kind_required_rejects_unknown_value() {
+        let value = parse_operation_kind_required("unknown_kind", OPERATION_KIND_INVALID);
+        assert!(value.is_err());
     }
 
     #[test]
