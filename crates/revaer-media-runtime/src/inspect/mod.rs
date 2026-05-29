@@ -155,10 +155,8 @@ pub fn normalize_probe_graph(input: ProbeGraph) -> Result<MediaGraph, InspectErr
             stream_id: stream.stream_id,
             kind,
             codec: stream.codec.trim().to_ascii_lowercase(),
-            language: stream
-                .language
-                .map(|value| value.trim().to_ascii_lowercase()),
-            title: stream.title.map(|value| value.trim().to_string()),
+            language: stream.language.and_then(normalize_optional_language),
+            title: stream.title.and_then(normalize_optional_title),
             dispositions: stream
                 .dispositions
                 .into_iter()
@@ -184,6 +182,24 @@ fn parse_stream_kind(value: &str) -> Result<StreamKind, InspectError> {
         "attachment" => Ok(StreamKind::Attachment),
         "chapter" => Ok(StreamKind::Chapter),
         _ => Err(InspectError::InvalidStreamKind(normalized)),
+    }
+}
+
+fn normalize_optional_language(value: String) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
+
+fn normalize_optional_title(value: String) -> Option<String> {
+    let normalized = value.trim().to_string();
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
     }
 }
 
@@ -291,6 +307,29 @@ mod tests {
         assert_eq!(graph.streams[0].language.as_deref(), Some("eng"));
         assert_eq!(graph.streams[0].title.as_deref(), Some("Main"));
         assert_eq!(graph.streams[0].dispositions, vec!["default".to_string()]);
+    }
+
+    #[test]
+    fn normalize_probe_graph_drops_blank_optional_fields() {
+        let graph_result = normalize_probe_graph(ProbeGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            streams: vec![ProbeStream {
+                stream_id: 1,
+                kind: "subtitle".to_string(),
+                codec: " subrip ".to_string(),
+                language: Some("  ".to_string()),
+                title: Some("\t".to_string()),
+                dispositions: Vec::new(),
+            }],
+        });
+        assert!(graph_result.is_ok(), "expected normalization success");
+        let Ok(graph) = graph_result else {
+            return;
+        };
+
+        assert_eq!(graph.streams.len(), 1);
+        assert_eq!(graph.streams[0].language, None);
+        assert_eq!(graph.streams[0].title, None);
     }
 
     #[test]
