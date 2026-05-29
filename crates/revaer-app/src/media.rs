@@ -789,8 +789,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn media_capability_refresh_reports_join_failure_when_detector_panics(
-    ) -> anyhow::Result<()> {
+    async fn media_capability_refresh_reports_join_failure_when_detector_panics()
+    -> anyhow::Result<()> {
         let Ok(postgres) = start_postgres() else {
             return Ok(());
         };

@@ -261,7 +261,7 @@ struct FfprobeTags {
 mod tests {
     use super::{
         FfprobeInspectAdapter, InspectAdapter, InspectError, InspectProbeExecutor, ProbeGraph,
-        ProbeStream, normalize_probe_graph,
+        ProbeStream, SystemInspectProbeExecutor, normalize_probe_graph,
     };
     use revaer_media_core::model::StreamKind;
     use std::collections::HashMap;
@@ -468,6 +468,27 @@ mod tests {
         );
 
         let result = adapter.inspect("/input/movie.mkv");
+        assert!(matches!(result, Err(InspectError::OutputMalformed(_))));
+    }
+
+    #[test]
+    fn system_probe_executor_maps_non_zero_exit_to_probe_failed() {
+        let executor = SystemInspectProbeExecutor;
+        let result = executor.run("sh", &["-c", "printf 'bad stderr' 1>&2; exit 9"]);
+        assert!(matches!(
+            result,
+            Err(InspectError::ProbeFailed(message))
+            if message.contains("exited with status") && message.contains("bad stderr")
+        ));
+    }
+
+    #[test]
+    fn system_probe_executor_maps_invalid_utf8_stdout_to_output_malformed() {
+        let executor = SystemInspectProbeExecutor;
+        let result = executor.run(
+            "python3",
+            &["-c", "import sys; sys.stdout.buffer.write(b'\\xff')"],
+        );
         assert!(matches!(result, Err(InspectError::OutputMalformed(_))));
     }
 }
