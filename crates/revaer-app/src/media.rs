@@ -684,14 +684,14 @@ mod tests {
             MediaServiceErrorKind::Invalid
         );
 
-        let invalid_cast_with_conflict_detail = DataError::JobFailed {
+        let invalid_cast_overrides_conflict_detail = DataError::JobFailed {
             operation: "job",
             job_key: "job",
             error_code: Some("22P02".to_string()),
             error_detail: Some("media_job_retry_invalid_status".to_string()),
         };
         assert_eq!(
-            map_data_error(&invalid_cast_with_conflict_detail).kind(),
+            map_data_error(&invalid_cast_overrides_conflict_detail).kind(),
             MediaServiceErrorKind::Invalid
         );
     }
