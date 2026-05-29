@@ -468,7 +468,7 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
     let sqlstate = error.database_code();
     let detail = error.database_detail().map(ToOwned::to_owned);
 
-    let kind = match detail.as_deref() {
+    let detail_kind = match detail.as_deref() {
         Some("app_user_not_found" | "media_profile_not_found" | "media_job_not_found") => {
             MediaServiceErrorKind::NotFound
         }
@@ -477,6 +477,11 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
         }
         Some("media_profile_roots_overlap") => MediaServiceErrorKind::Invalid,
         _ => MediaServiceErrorKind::Storage,
+    };
+    let kind = if sqlstate.as_deref() == Some("22P02") {
+        MediaServiceErrorKind::Invalid
+    } else {
+        detail_kind
     };
 
     let mut service_error = MediaServiceError::new(kind);
@@ -665,6 +670,17 @@ mod tests {
         };
         assert_eq!(
             map_data_error(&invalid).kind(),
+            MediaServiceErrorKind::Invalid
+        );
+
+        let invalid_cast = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: Some("22P02".to_string()),
+            error_detail: None,
+        };
+        assert_eq!(
+            map_data_error(&invalid_cast).kind(),
             MediaServiceErrorKind::Invalid
         );
     }
