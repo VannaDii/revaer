@@ -381,6 +381,69 @@ mod tests {
     }
 
     #[test]
+    fn normalize_probe_graph_accepts_all_supported_stream_kinds() {
+        let graph_result = normalize_probe_graph(ProbeGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            streams: vec![
+                ProbeStream {
+                    stream_id: 0,
+                    kind: "ViDeO".to_string(),
+                    codec: "h264".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                ProbeStream {
+                    stream_id: 1,
+                    kind: "AUDIO".to_string(),
+                    codec: "aac".to_string(),
+                    language: Some("eng".to_string()),
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                ProbeStream {
+                    stream_id: 2,
+                    kind: "subtitle".to_string(),
+                    codec: "subrip".to_string(),
+                    language: Some("spa".to_string()),
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                ProbeStream {
+                    stream_id: 3,
+                    kind: "Attachment".to_string(),
+                    codec: "ttf".to_string(),
+                    language: None,
+                    title: Some("font".to_string()),
+                    dispositions: Vec::new(),
+                },
+                ProbeStream {
+                    stream_id: 4,
+                    kind: "chapter".to_string(),
+                    codec: "chapter".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+            ],
+        });
+        assert!(
+            graph_result.is_ok(),
+            "expected supported kinds to normalize"
+        );
+        let Ok(graph) = graph_result else {
+            return;
+        };
+
+        assert_eq!(graph.streams.len(), 5);
+        assert_eq!(graph.streams[0].kind, StreamKind::Video);
+        assert_eq!(graph.streams[1].kind, StreamKind::Audio);
+        assert_eq!(graph.streams[2].kind, StreamKind::Subtitle);
+        assert_eq!(graph.streams[3].kind, StreamKind::Attachment);
+        assert_eq!(graph.streams[4].kind, StreamKind::Chapter);
+    }
+
+    #[test]
     fn reject_empty_stream_codec() {
         let graph_result = normalize_probe_graph(ProbeGraph {
             source_path: "/input/movie.mkv".to_string(),
