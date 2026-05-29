@@ -472,6 +472,40 @@ mod tests {
     }
 
     #[test]
+    fn ffprobe_adapter_rejects_stream_with_missing_codec() {
+        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            key,
+            r#"{
+                "streams": [
+                    {
+                        "index": 0,
+                        "codec_type": "video",
+                        "codec_name": "   ",
+                        "disposition": {"default": 1},
+                        "tags": {"language": "eng"}
+                    }
+                ]
+            }"#
+            .to_string(),
+        );
+        let adapter = FfprobeInspectAdapter::new(
+            Arc::new(StubInspectExecutor {
+                outputs,
+                calls: Mutex::new(Vec::new()),
+            }),
+            "ffprobe",
+        );
+
+        let result = adapter.inspect("/input/movie.mkv");
+        assert_eq!(
+            result.err().map(|err| err.to_string()),
+            Some(InspectError::OutputMalformed("stream codec is missing".to_string()).to_string())
+        );
+    }
+
+    #[test]
     fn system_probe_executor_maps_non_zero_exit_to_probe_failed() {
         let executor = SystemInspectProbeExecutor;
         let result = executor.run("sh", &["-c", "printf 'bad stderr' 1>&2; exit 9"]);
