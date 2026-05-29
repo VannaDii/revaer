@@ -679,10 +679,9 @@ mod tests {
             error_code: Some("22P02".to_string()),
             error_detail: None,
         };
-        assert_eq!(
-            map_data_error(&invalid_cast).kind(),
-            MediaServiceErrorKind::Invalid
-        );
+        let mapped_invalid_cast = map_data_error(&invalid_cast);
+        assert_eq!(mapped_invalid_cast.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(mapped_invalid_cast.sqlstate(), Some("22P02"));
 
         let invalid_cast_overrides_conflict_detail = DataError::JobFailed {
             operation: "job",
