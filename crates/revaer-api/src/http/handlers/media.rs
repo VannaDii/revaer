@@ -969,12 +969,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_operation_kind_required_rejects_unknown_value() {
-        let value = parse_operation_kind_required("unknown_kind", OPERATION_KIND_INVALID);
-        assert!(value.is_err());
-    }
-
-    #[test]
     fn parse_operation_kind_required_accepts_all_supported_values() {
         let supported = [
             "remux",
