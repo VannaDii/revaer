@@ -926,6 +926,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_operation_kind_required_rejects_unknown_values() {
+        let value = parse_operation_kind_required("transcode_everything", OPERATION_KIND_INVALID);
+        let Err(error) = value else {
+            panic!("expected invalid operation kind to fail");
+        };
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
     fn parse_operation_kind_required_rejects_unknown_value() {
         let value = parse_operation_kind_required("unknown_kind", OPERATION_KIND_INVALID);
         assert!(value.is_err());
