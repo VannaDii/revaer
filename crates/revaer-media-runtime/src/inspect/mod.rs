@@ -339,6 +339,26 @@ mod tests {
     }
 
     #[test]
+    fn normalize_probe_graph_rejects_missing_codec() {
+        let graph_result = normalize_probe_graph(ProbeGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            streams: vec![ProbeStream {
+                stream_id: 2,
+                kind: "audio".to_string(),
+                codec: "   ".to_string(),
+                language: Some("eng".to_string()),
+                title: Some("Main".to_string()),
+                dispositions: Vec::new(),
+            }],
+        });
+        assert!(matches!(
+            graph_result,
+            Err(InspectError::OutputMalformed(message))
+            if message == "stream codec is missing"
+        ));
+    }
+
+    #[test]
     fn reject_unknown_stream_kind() {
         let graph_result = normalize_probe_graph(ProbeGraph {
             source_path: "/input/movie.mkv".to_string(),
