@@ -970,6 +970,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_media_status_optional_rejects_unknown_when_present() {
+        let value = parse_media_status_optional(Some("unknown"), MEDIA_STATUS_INVALID);
+        let Err(error) = value else {
+            panic!("expected invalid status to fail");
+        };
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
     fn parse_operation_kind_required_normalizes_case_and_whitespace() {
         let value = parse_operation_kind_required("  VIDEO_TRANSCODE  ", OPERATION_KIND_INVALID);
         assert!(value.is_ok());
