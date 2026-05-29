@@ -151,10 +151,16 @@ pub fn normalize_probe_graph(input: ProbeGraph) -> Result<MediaGraph, InspectErr
     let mut streams = Vec::with_capacity(input.streams.len());
     for stream in input.streams {
         let kind = parse_stream_kind(&stream.kind)?;
+        let codec = stream.codec.trim().to_ascii_lowercase();
+        if codec.is_empty() {
+            return Err(InspectError::OutputMalformed(
+                "stream codec is missing".to_string(),
+            ));
+        }
         streams.push(MediaStream {
             stream_id: stream.stream_id,
             kind,
-            codec: stream.codec.trim().to_ascii_lowercase(),
+            codec,
             language: stream.language.and_then(normalize_optional_language),
             title: stream.title.and_then(normalize_optional_title),
             dispositions: stream
@@ -348,6 +354,25 @@ mod tests {
         assert_eq!(
             graph_result.err().map(|err| err.to_string()),
             Some(InspectError::InvalidStreamKind("data".to_string()).to_string())
+        );
+    }
+
+    #[test]
+    fn reject_empty_stream_codec() {
+        let graph_result = normalize_probe_graph(ProbeGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            streams: vec![ProbeStream {
+                stream_id: 1,
+                kind: "video".to_string(),
+                codec: "   ".to_string(),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        });
+        assert_eq!(
+            graph_result.err().map(|err| err.to_string()),
+            Some(InspectError::OutputMalformed("stream codec is missing".to_string()).to_string())
         );
     }
 
