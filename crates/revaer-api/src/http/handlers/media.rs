@@ -939,6 +939,27 @@ mod tests {
     }
 
     #[test]
+    fn parse_media_status_required_accepts_all_supported_values() {
+        let supported = [
+            "queued",
+            "running",
+            "verifying",
+            "completed",
+            "failed",
+            "cancelled",
+        ];
+
+        for status in supported {
+            let value = parse_media_status_required(status, MEDIA_STATUS_INVALID);
+            assert!(value.is_ok(), "expected status {status} to be accepted");
+            let Ok(parsed) = value else {
+                continue;
+            };
+            assert_eq!(parsed, status);
+        }
+    }
+
+    #[test]
     fn parse_media_status_optional_treats_absent_value_as_none() {
         let value = parse_media_status_optional(None, MEDIA_STATUS_INVALID);
         assert!(value.is_ok());
