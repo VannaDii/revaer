@@ -693,6 +693,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_media_jobs_accepts_normalized_status_filter() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let query = MediaJobsQuery {
+            media_profile_public_id: Uuid::new_v4(),
+            status: Some("  COMPLETED ".to_string()),
+        };
+
+        let Json(response) = list_media_jobs(State(state), Query(query)).await?;
+        assert!(response.jobs.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn get_media_job_returns_not_found_with_default_facade() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
 
