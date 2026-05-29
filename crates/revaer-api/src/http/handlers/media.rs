@@ -939,6 +939,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_media_status_optional_treats_absent_value_as_none() {
+        let value = parse_media_status_optional(None, MEDIA_STATUS_INVALID);
+        assert!(value.is_ok());
+        let Ok(status) = value else {
+            return;
+        };
+        assert_eq!(status, None);
+    }
+
+    #[test]
     fn parse_operation_kind_required_normalizes_case_and_whitespace() {
         let value = parse_operation_kind_required("  VIDEO_TRANSCODE  ", OPERATION_KIND_INVALID);
         assert!(value.is_ok());
