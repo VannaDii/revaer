@@ -650,6 +650,43 @@ mod tests {
     }
 
     #[test]
+    fn ffprobe_adapter_handles_missing_tags_object() {
+        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            key,
+            r#"{
+                "streams": [
+                    {
+                        "index": 7,
+                        "codec_type": "audio",
+                        "codec_name": "aac",
+                        "disposition": {"default": 1}
+                    }
+                ]
+            }"#
+            .to_string(),
+        );
+        let adapter = FfprobeInspectAdapter::new(
+            Arc::new(StubInspectExecutor {
+                outputs,
+                calls: Mutex::new(Vec::new()),
+            }),
+            "ffprobe",
+        );
+
+        let graph_result = adapter.inspect("/input/movie.mkv");
+        assert!(graph_result.is_ok(), "expected inspect success");
+        let Ok(graph) = graph_result else {
+            return;
+        };
+        assert_eq!(graph.streams.len(), 1);
+        assert_eq!(graph.streams[0].language, None);
+        assert_eq!(graph.streams[0].title, None);
+        assert_eq!(graph.streams[0].dispositions, vec!["default".to_string()]);
+    }
+
+    #[test]
     fn ffprobe_adapter_emits_dispositions_in_stable_order() {
         let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
         let mut outputs = HashMap::new();
