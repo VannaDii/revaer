@@ -161,8 +161,11 @@ pub fn normalize_probe_graph(input: ProbeGraph) -> Result<MediaGraph, InspectErr
             stream_id: stream.stream_id,
             kind,
             codec,
-            language: stream.language.and_then(normalize_optional_language),
-            title: stream.title.and_then(normalize_optional_title),
+            language: stream
+                .language
+                .as_deref()
+                .and_then(normalize_optional_language),
+            title: stream.title.as_deref().and_then(normalize_optional_title),
             dispositions: stream
                 .dispositions
                 .into_iter()
@@ -191,7 +194,7 @@ fn parse_stream_kind(value: &str) -> Result<StreamKind, InspectError> {
     }
 }
 
-fn normalize_optional_language(value: String) -> Option<String> {
+fn normalize_optional_language(value: &str) -> Option<String> {
     let normalized = value.trim().to_ascii_lowercase();
     if normalized.is_empty() {
         None
@@ -200,7 +203,7 @@ fn normalize_optional_language(value: String) -> Option<String> {
     }
 }
 
-fn normalize_optional_title(value: String) -> Option<String> {
+fn normalize_optional_title(value: &str) -> Option<String> {
     let normalized = value.trim().to_string();
     if normalized.is_empty() {
         None
