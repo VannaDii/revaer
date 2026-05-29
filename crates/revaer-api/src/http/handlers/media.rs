@@ -793,6 +793,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn append_media_job_operation_accepts_normalized_operation_kind() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobOperationAppendRequest {
+            operation_index: 0,
+            operation_kind: "  VIDEO_TRANSCODE  ".to_string(),
+            stream_id: Some(1),
+            command_bin: "ffmpeg".to_string(),
+            arg_1: Some("-i".to_string()),
+            arg_2: Some("/input/demo.mkv".to_string()),
+            arg_3: Some("-map".to_string()),
+            arg_4: Some("0".to_string()),
+            arg_5: Some("-c:v:0".to_string()),
+        };
+
+        let err = append_media_job_operation(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("noop media facade should fail writes after validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn list_media_job_operations_returns_empty_payload_with_default_facade()
     -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
