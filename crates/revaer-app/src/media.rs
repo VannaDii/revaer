@@ -556,6 +556,15 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct PanicDetector;
+
+    impl CapabilityDetector for PanicDetector {
+        fn detect(&self) -> Result<CapabilitySnapshot, CapabilityDetectError> {
+            panic!("detector panic");
+        }
+    }
+
     #[test]
     fn reject_missing_capability_snapshot() {
         let result = ensure_execution_capability_snapshot(None);
@@ -775,6 +784,39 @@ mod tests {
             .media_yaml_apply(actor_user_public_id, &yaml)
             .await?;
         assert!(applied.forced_dry_run);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_capability_refresh_reports_join_failure_when_detector_panics(
+    ) -> anyhow::Result<()> {
+        let Ok(postgres) = start_postgres() else {
+            return Ok(());
+        };
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(postgres.connection_string())
+            .await?;
+        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
+        migrator.set_ignore_missing(true);
+        migrator.run(&pool).await?;
+
+        let store = MediaStore::new(pool);
+        let email = format!("media-app-{}@example.invalid", Uuid::new_v4());
+        let actor_user_public_id = app_user_create(store.pool(), &email, "Media App").await?;
+        app_user_verify_email(store.pool(), actor_user_public_id).await?;
+        let service = MediaService::new(store, Arc::new(PanicDetector));
+
+        let result = service
+            .media_capability_refresh(MediaCapabilityRefreshParams {
+                actor_user_public_id,
+            })
+            .await;
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_capability_refresh_join_failed".to_string())
+        );
 
         Ok(())
     }
