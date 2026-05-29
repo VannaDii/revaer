@@ -919,6 +919,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_media_status_required_rejects_unknown_values() {
+        let value = parse_media_status_required("mystery", MEDIA_STATUS_INVALID);
+        let Err(error) = value else {
+            panic!("expected invalid status to fail");
+        };
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
     fn parse_media_status_optional_normalizes_when_present() {
         let value = parse_media_status_optional(Some("  COMPLETED "), MEDIA_STATUS_INVALID);
         assert!(value.is_ok());
