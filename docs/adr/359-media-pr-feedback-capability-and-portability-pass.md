@@ -4,14 +4,16 @@
 - Date: 2026-05-30
 - Context:
   - PR feedback identified overly broad media test skips, GNU-only shell version comparison, Python-only database socket probes, imprecise capability modeling, and two stale ADR/documentation issues.
+  - Local coverage also exposed that shell-local Docker host normalization in `just db-start` did not carry into later Rust test processes.
   - Capability refresh persisted encode/decode support as always true, while execution fallback selection checked codec names instead of encoder names.
 - Decision:
   - Treat unavailable local Postgres as the only media data-test skip path and propagate migration/query failures.
   - Replace GNU `sort -V` comparisons with portable `awk` version comparison and make `db-start` TCP probes use `nc` with a Python fallback.
+  - Add a test-support fallback from loopback Postgres URLs to `host.docker.internal` so disposable database tests do not silently skip after shell-local URL normalization.
   - Add explicit codec support and encoder lists to runtime capability snapshots, persist detected encode/decode flags, and select video encoders from detected encoder names.
   - Correct stale media ADR documentation and remove the accidental placeholder ADR file.
 - Consequences:
-  - Positive outcomes: PR feedback is addressed with behavior-level fixes, capability records are more truthful, and local gates are less sensitive to GNU/Python availability.
+  - Positive outcomes: PR feedback is addressed with behavior-level fixes, capability records are more truthful, and local gates are less sensitive to GNU/Python availability or Docker loopback reachability.
   - Risks or trade-offs: capability snapshots now carry additional fields that callers must populate in tests and adapters.
 - Follow-up:
   - Continue the remaining media transcoding implementation slices after PR feedback gates are green.
@@ -25,8 +27,9 @@
   - Execution planning validates transcode encoders against encoder names, not codec names.
   - Capability refresh records the detector-provided support flags for each persisted codec row.
   - Data tests skip only when the local test Postgres bootstrap is unavailable.
+  - Shared Postgres test support tries `host.docker.internal` after loopback URLs fail, matching the `just db-start` local Docker fallback.
 - Test coverage summary:
-  - Added/updated capability parser, execution selection, app refresh, and media data test coverage.
+  - Added/updated capability parser, execution selection, app refresh, media data, and Postgres test-support coverage.
   - Re-ran targeted Rust checks/tests while developing; full `just ci` and `just ui-e2e` are required before handoff.
 - Observability updates:
   - None.
