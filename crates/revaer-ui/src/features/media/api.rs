@@ -1,14 +1,40 @@
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse,
     MediaCapabilityRefreshResponse, MediaJobListResponse, MediaProfileListResponse,
+    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
     MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
     MediaYamlValidationResponse,
 };
 use crate::services::api::ApiClient;
+use uuid::Uuid;
 
 pub(crate) async fn fetch_profiles(client: &ApiClient) -> Result<MediaProfileListResponse, String> {
     client
         .get_api("/v1/media/profiles")
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) async fn create_profile(
+    client: &ApiClient,
+    request: &MediaProfileUpsertRequest,
+) -> Result<MediaProfileResponse, String> {
+    client
+        .post_api("/v1/media/profiles", request)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) async fn patch_profile(
+    client: &ApiClient,
+    media_profile_public_id: Uuid,
+    request: &MediaProfilePatchRequest,
+) -> Result<MediaProfileResponse, String> {
+    client
+        .patch_api(
+            &format!("/v1/media/profiles/{media_profile_public_id}"),
+            request,
+        )
         .await
         .map_err(|err| err.to_string())
 }

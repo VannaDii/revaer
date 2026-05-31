@@ -1,9 +1,10 @@
 use crate::app::api::ApiCtx;
 use crate::features::media::api::{
-    apply_yaml, export_yaml, fetch_jobs, fetch_latest_capability, fetch_profiles, fetch_readiness,
-    refresh_capability, validate_yaml,
+    apply_yaml, create_profile, export_yaml, fetch_jobs, fetch_latest_capability, fetch_profiles,
+    fetch_readiness, patch_profile, refresh_capability, validate_yaml,
 };
 use crate::features::media::state::MediaViewState;
+use crate::models::{MediaProfilePatchRequest, MediaProfileUpsertRequest};
 use yew::platform::spawn_local;
 use yew::prelude::*;
 
@@ -20,6 +21,11 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
     let busy = use_state(|| false);
     let yaml_input = use_state(String::new);
     let validation_status = use_state(|| None::<String>);
+    let profile_key = use_state(String::new);
+    let source_root = use_state(String::new);
+    let output_root = use_state(String::new);
+    let retention_days = use_state(|| "30".to_string());
+    let dry_run_only = use_state(|| true);
 
     let on_refresh = {
         let api = api.clone();
@@ -191,6 +197,137 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
             });
         })
     };
+    let on_profile_key_input = {
+        let profile_key = profile_key.clone();
+        Callback::from(move |event: InputEvent| {
+            profile_key.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_source_root_input = {
+        let source_root = source_root.clone();
+        Callback::from(move |event: InputEvent| {
+            source_root.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_output_root_input = {
+        let output_root = output_root.clone();
+        Callback::from(move |event: InputEvent| {
+            output_root.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_retention_days_input = {
+        let retention_days = retention_days.clone();
+        Callback::from(move |event: InputEvent| {
+            retention_days.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_dry_run_change = {
+        let dry_run_only = dry_run_only.clone();
+        Callback::from(move |event: Event| {
+            dry_run_only.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .checked(),
+            );
+        })
+    };
+
+    let on_create_profile = {
+        let api = api.clone();
+        let profile_key = profile_key.clone();
+        let source_root = source_root.clone();
+        let output_root = output_root.clone();
+        let retention_days = retention_days.clone();
+        let dry_run_only = dry_run_only.clone();
+        let on_success_toast = props.on_success_toast.clone();
+        let on_error_toast = props.on_error_toast.clone();
+        let on_refresh = on_refresh.clone();
+        Callback::from(move |_| {
+            let Some(api) = api.clone() else {
+                on_error_toast.emit("Media API context is unavailable".to_string());
+                return;
+            };
+            let retention = (*retention_days).parse::<i32>();
+            let Ok(retention_days) = retention else {
+                on_error_toast.emit("Retention days must be a whole number".to_string());
+                return;
+            };
+            let request = MediaProfileUpsertRequest {
+                profile_key: (*profile_key).clone(),
+                source_root: (*source_root).clone(),
+                output_root: (*output_root).clone(),
+                dry_run_only: *dry_run_only,
+                retention_days,
+            };
+            let on_success_toast = on_success_toast.clone();
+            let on_error_toast = on_error_toast.clone();
+            let on_refresh = on_refresh.clone();
+            spawn_local(async move {
+                match create_profile(&api.client, &request).await {
+                    Ok(profile) => {
+                        on_success_toast.emit(format!("Created profile {}", profile.profile_key));
+                        on_refresh.emit(());
+                    }
+                    Err(error) => on_error_toast.emit(error),
+                }
+            });
+        })
+    };
+
+    let on_toggle_profile_dry_run = {
+        let api = api.clone();
+        let on_success_toast = props.on_success_toast.clone();
+        let on_error_toast = props.on_error_toast.clone();
+        let on_refresh = on_refresh.clone();
+        Callback::from(
+            move |(media_profile_public_id, dry_run_only): (uuid::Uuid, bool)| {
+                let Some(api) = api.clone() else {
+                    on_error_toast.emit("Media API context is unavailable".to_string());
+                    return;
+                };
+                let request = MediaProfilePatchRequest {
+                    source_root: None,
+                    output_root: None,
+                    dry_run_only: Some(dry_run_only),
+                    retention_days: None,
+                };
+                let on_success_toast = on_success_toast.clone();
+                let on_error_toast = on_error_toast.clone();
+                let on_refresh = on_refresh.clone();
+                spawn_local(async move {
+                    match patch_profile(&api.client, media_profile_public_id, &request).await {
+                        Ok(profile) => {
+                            let mode = if profile.dry_run_only {
+                                "dry-run"
+                            } else {
+                                "replace-enabled"
+                            };
+                            on_success_toast
+                                .emit(format!("Profile {} set to {}", profile.profile_key, mode));
+                            on_refresh.emit(());
+                        }
+                        Err(error) => on_error_toast.emit(error),
+                    }
+                });
+            },
+        )
+    };
 
     let readiness = state
         .readiness
@@ -227,8 +364,35 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                 <div class="card bg-base-100 shadow">
                     <div class="card-body gap-2">
                         <h2 class="text-lg font-semibold">{"Profiles"}</h2>
+                        <div class="grid gap-2 md:grid-cols-2" data-testid="media-profile-form">
+                            <input class="input input-bordered input-sm" placeholder="profile_key" value={(*profile_key).clone()} oninput={on_profile_key_input} />
+                            <input class="input input-bordered input-sm" placeholder="source_root" value={(*source_root).clone()} oninput={on_source_root_input} />
+                            <input class="input input-bordered input-sm" placeholder="output_root" value={(*output_root).clone()} oninput={on_output_root_input} />
+                            <input class="input input-bordered input-sm" placeholder="retention_days" value={(*retention_days).clone()} oninput={on_retention_days_input} />
+                            <label class="label cursor-pointer gap-2 justify-start">
+                                <input type="checkbox" class="checkbox checkbox-sm" checked={*dry_run_only} onchange={on_dry_run_change} />
+                                <span class="label-text">{"Dry run only"}</span>
+                            </label>
+                            <button class="btn btn-sm btn-primary" onclick={on_create_profile}>{"Create profile"}</button>
+                        </div>
                         <ul class="text-sm space-y-1">
-                            {for state.profiles.iter().map(|row| html! { <li>{format!("{} ({})", row.profile_key, if row.dry_run_only {"dry-run"} else {"replace"})}</li> })}
+                            {for state.profiles.iter().map(|row| {
+                                let on_toggle_profile_dry_run = on_toggle_profile_dry_run.clone();
+                                let media_profile_public_id = row.media_profile_public_id;
+                                let next_dry_run_only = !row.dry_run_only;
+                                html! {
+                                    <li class="flex flex-wrap items-center gap-2">
+                                        <span>{format!("{} ({})", row.profile_key, if row.dry_run_only {"dry-run"} else {"replace"})}</span>
+                                        <span class="opacity-70">{format!("src={} out={} retention={}d", row.source_root, row.output_root, row.retention_days)}</span>
+                                        <button
+                                            class="btn btn-xs"
+                                            onclick={Callback::from(move |_| on_toggle_profile_dry_run.emit((media_profile_public_id, next_dry_run_only)))}
+                                        >
+                                            {if row.dry_run_only {"Enable replace"} else {"Set dry-run"}}
+                                        </button>
+                                    </li>
+                                }
+                            })}
                         </ul>
                     </div>
                 </div>
