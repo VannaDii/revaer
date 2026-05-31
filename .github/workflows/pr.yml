@@ -218,6 +218,7 @@ jobs:
     env:
       E2E_API_BASE_URL: http://localhost:7070
       E2E_BASE_URL: http://localhost:8080
+      E2E_BROWSER_CHANNEL: chrome
       E2E_DB_ADMIN_URL: postgres://revaer:revaer@localhost:5432/postgres
       E2E_SKIP_DB_START: "1"
       REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}

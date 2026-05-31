@@ -37,4 +37,5 @@ applyTo:
 
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
 - Treat generated API clients and synchronized assets as generated artifacts; regenerate them intentionally and keep authored wrappers separate.
+- CI E2E should use an explicit browser channel such as `E2E_BROWSER_CHANNEL=chrome` when the runner already provides that browser, so shards install Playwright dependencies without downloading redundant browser bundles.
 - When UI structure, selectors, or synced assets change, update the relevant docs, tests, and instructions in the same change.

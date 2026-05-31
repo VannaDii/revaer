@@ -340,10 +340,15 @@ ui-build: sync-assets
 ui-e2e:
     cd tests && npm install
     cd tests && npm run gen:api-client
+    playwright_browsers="$(printf "%s" "${E2E_BROWSERS:-chromium}" | tr "," " ")"; \
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
-        cd tests && npx playwright install --with-deps; \
+        if [ -n "${E2E_BROWSER_CHANNEL:-}" ]; then \
+            cd tests && npx playwright install-deps ${playwright_browsers}; \
+        else \
+            cd tests && npx playwright install --with-deps ${playwright_browsers}; \
+        fi; \
     else \
-        cd tests && npx playwright install; \
+        cd tests && npx playwright install ${playwright_browsers}; \
     fi
     shard_arg=""; \
     if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \
