@@ -5,15 +5,17 @@
 - Context:
   - PR feedback identified overly broad media test skips, GNU-only shell version comparison, Python-only database socket probes, imprecise capability modeling, and two stale ADR/documentation issues.
   - Local coverage also exposed that shell-local Docker host normalization in `just db-start` did not carry into later Rust test processes.
+  - Local UI E2E exposed that Docker's default Postgres shared-memory allocation can crash migration-heavy temp database runs.
   - Capability refresh persisted encode/decode support as always true, while execution fallback selection checked codec names instead of encoder names.
 - Decision:
   - Treat unavailable local Postgres as the only media data-test skip path and propagate migration/query failures.
   - Replace GNU `sort -V` comparisons with portable `awk` version comparison and make `db-start` TCP probes use `nc` with a Python fallback.
   - Add a test-support fallback from loopback Postgres URLs to `host.docker.internal` so disposable database tests do not silently skip after shell-local URL normalization.
+  - Recreate undersized local Postgres containers and start new ones with a larger shared-memory segment.
   - Add explicit codec support and encoder lists to runtime capability snapshots, persist detected encode/decode flags, and select video encoders from detected encoder names.
   - Correct stale media ADR documentation and remove the accidental placeholder ADR file.
 - Consequences:
-  - Positive outcomes: PR feedback is addressed with behavior-level fixes, capability records are more truthful, and local gates are less sensitive to GNU/Python availability or Docker loopback reachability.
+  - Positive outcomes: PR feedback is addressed with behavior-level fixes, capability records are more truthful, and local gates are less sensitive to GNU/Python availability, Docker loopback reachability, or Docker's default shared-memory ceiling.
   - Risks or trade-offs: capability snapshots now carry additional fields that callers must populate in tests and adapters.
 - Follow-up:
   - Continue the remaining media transcoding implementation slices after PR feedback gates are green.
@@ -28,8 +30,10 @@
   - Capability refresh records the detector-provided support flags for each persisted codec row.
   - Data tests skip only when the local test Postgres bootstrap is unavailable.
   - Shared Postgres test support tries `host.docker.internal` after loopback URLs fail, matching the `just db-start` local Docker fallback.
+  - `just db-start` provisions local Postgres containers with `REVAER_DB_SHM_SIZE` and recreates named local containers whose inspected `ShmSize` is below `REVAER_DB_SHM_BYTES`.
 - Test coverage summary:
   - Added/updated capability parser, execution selection, app refresh, media data, and Postgres test-support coverage.
+  - `just ci` passed locally before the E2E shared-memory follow-up.
   - Re-ran targeted Rust checks/tests while developing; full `just ci` and `just ui-e2e` are required before handoff.
 - Observability updates:
   - None.
@@ -37,9 +41,9 @@
   - Reviewed `MEDIA_TRANSCODING.md`; this change aligns the capability-discovery slice with the plan's codec/encoder/decoder reporting requirement.
 - Stale-policy check:
   - Instruction files reviewed: `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`.
-  - Drift found: `justfile` portability expectations needed to mention Python-independent probes and non-GNU version comparison.
+  - Drift found: `justfile` portability expectations needed to mention Python-independent probes, non-GNU version comparison, and local Postgres shared-memory sizing.
   - Contradictions/stale references removed: accidental placeholder ADR `356-media-transcoding-slices.md` was removed.
 - Risk & rollback plan:
-  - Moderate risk in capability interpretation; rollback by reverting this ADR and the associated capability/Justfile/test changes.
+  - Moderate risk in capability interpretation; rollback by reverting this ADR and the associated capability/Justfile/test changes. The shared-memory change is locally scoped to Docker-backed Postgres containers and can be rolled back by removing the `REVAER_DB_SHM_*` handling.
 - Dependency rationale:
   - No new dependencies added.

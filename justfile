@@ -577,8 +577,18 @@ db-start:
     echo "Using database URL: ${db_url}"; \
     container_name="${PG_CONTAINER:-revaer-db}"; \
     db_data_dir="${REVAER_DB_DATA_DIR:-${PWD}/.server_root/postgres-data}"; \
+    db_shm_size="${REVAER_DB_SHM_SIZE:-256m}"; \
+    required_shm_bytes="${REVAER_DB_SHM_BYTES:-268435456}"; \
     mkdir -p "${db_data_dir}"; \
     existing_container="$(docker ps -aq -f name=^${container_name}$)"; \
+    if [ -n "${existing_container}" ] && echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
+        existing_shm_bytes="$(docker inspect "${container_name}" 2>/dev/null | sed -n 's/.*"ShmSize": \([0-9][0-9]*\).*/\1/p' | head -n 1)"; \
+        if [ -n "${existing_shm_bytes}" ] && [ "${existing_shm_bytes}" -lt "${required_shm_bytes}" ]; then \
+            echo "Recreating existing Postgres container (${container_name}) with shared memory ${existing_shm_bytes} below ${required_shm_bytes} bytes"; \
+            docker rm -f "${container_name}" >/dev/null; \
+            existing_container=""; \
+        fi; \
+    fi; \
     if [ -n "${existing_container}" ] && [ -z "$(docker ps -q -f name=^${container_name}$)" ]; then \
         if docker logs --tail 50 "${container_name}" 2>&1 | grep -q 'No space left on device'; then \
             echo "Recreating failed Postgres container (${container_name}) with host-backed storage"; \
@@ -613,6 +623,7 @@ db-start:
                 -e POSTGRES_USER=revaer \
                 -e POSTGRES_PASSWORD=revaer \
                 -e POSTGRES_DB=revaer \
+                --shm-size "${db_shm_size}" \
                 -p "${db_port}:5432" \
                 -v "${db_data_dir}:/var/lib/postgresql/data" \
                 postgres:16-alpine >/dev/null; \
