@@ -7,7 +7,7 @@
   - Local coverage also exposed that shell-local Docker host normalization in `just db-start` did not carry into later Rust test processes.
   - Local UI E2E exposed that Docker's default Postgres shared-memory allocation can crash migration-heavy temp database runs.
   - PR UI E2E shards use GitHub Actions Postgres service containers, so they need the same shared-memory protection as local `just db-start` containers.
-  - PR UI E2E logs showed all three shards hanging after Playwright downloaded the Chrome for Testing bundle, before global setup reached database migration or browser tests.
+  - PR UI E2E logs showed all three shards hanging after Playwright downloaded the Chrome for Testing bundle, before global setup reached database migration or browser tests. After switching to runner Chrome, UI tests reached Chromium but failed on Playwright's missing bundled ffmpeg for retained video capture.
   - Capability refresh persisted encode/decode support as always true, while execution fallback selection checked codec names instead of encoder names.
   - SonarCloud surfaced new-code findings for Rust workspace member manifests without local lockfiles, local closed-pool test URL password literals, and execution-step planning complexity.
 - Decision:
@@ -16,7 +16,7 @@
   - Add a test-support fallback from loopback Postgres URLs to `host.docker.internal` so disposable database tests do not silently skip after shell-local URL normalization.
   - Recreate undersized local Postgres containers and start new ones with a larger shared-memory segment.
   - Give GitHub Actions Postgres service containers explicit shared memory for PR, coverage, feature-matrix, UI E2E, and Sonar database gates.
-  - Run CI UI E2E against the GitHub-hosted runner's installed Chrome channel and install Playwright system dependencies without downloading a browser bundle in every shard.
+  - Run CI UI E2E against the GitHub-hosted runner's installed Chrome channel and install Playwright system dependencies without downloading a browser bundle in every shard. Disable CI E2E video capture for that path while retaining screenshots and traces.
   - Add explicit codec support and encoder lists to runtime capability snapshots, persist detected encode/decode flags, and select video encoders from detected encoder names.
   - Correct stale media ADR documentation and remove the accidental placeholder ADR file.
   - Scope Sonar's lockfile rule away from Rust workspace member manifests, remove URL-shaped password literals from closed-pool tests, and split execution-step capability validation into focused helpers.
@@ -39,7 +39,7 @@
   - Shared Postgres test support tries `host.docker.internal` after loopback URLs fail, matching the `just db-start` local Docker fallback.
   - `just db-start` provisions local Postgres containers with `REVAER_DB_SHM_SIZE` and recreates named local containers whose inspected `ShmSize` is below `REVAER_DB_SHM_BYTES`.
   - GitHub Actions Postgres service containers request explicit shared memory so migration-heavy CI jobs do not inherit Docker's 64 MiB default.
-  - CI UI E2E sets `E2E_BROWSER_CHANNEL=chrome`; the Playwright config maps Chromium projects to that channel, and `just ui-e2e` switches to `playwright install-deps` when a channel is provided.
+  - CI UI E2E sets `E2E_BROWSER_CHANNEL=chrome` and `E2E_VIDEO=off`; the Playwright config maps Chromium projects to that channel, and `just ui-e2e` switches to `playwright install-deps` when a channel is provided.
   - Sonar scope now records that crate member manifests rely on the repository-root `Cargo.lock`.
   - Closed-pool query-error tests build `PgConnectOptions` directly so they still exercise the same unavailable local socket path without embedding a URL-shaped password literal.
   - Execution planning now performs capability validation through small helper functions before building the deterministic command list.
@@ -56,6 +56,6 @@
   - Drift found: `justfile` portability expectations needed to mention Python-independent probes, non-GNU version comparison, and local Postgres shared-memory sizing. Devops guidance needed to record explicit shared-memory sizing for migration-heavy Postgres service containers and runner-provided browser channel use for PR UI E2E. Sonar guidance needed to record the repository-root lockfile model for Rust workspace member manifests.
   - Contradictions/stale references removed: accidental placeholder ADR `356-media-transcoding-slices.md` was removed.
 - Risk & rollback plan:
-  - Moderate risk in capability interpretation; rollback by reverting this ADR and the associated capability/Justfile/test changes. The shared-memory changes are scoped to Docker-backed Postgres containers and can be rolled back by removing the `REVAER_DB_SHM_*` handling and workflow service `--shm-size` options. The CI browser-channel change can be rolled back by removing `E2E_BROWSER_CHANNEL` and restoring full Playwright browser installation in `just ui-e2e`.
+  - Moderate risk in capability interpretation; rollback by reverting this ADR and the associated capability/Justfile/test changes. The shared-memory changes are scoped to Docker-backed Postgres containers and can be rolled back by removing the `REVAER_DB_SHM_*` handling and workflow service `--shm-size` options. The CI browser-channel/video change can be rolled back by removing `E2E_BROWSER_CHANNEL`/`E2E_VIDEO` and restoring full Playwright browser installation in `just ui-e2e`.
 - Dependency rationale:
   - No new dependencies added.

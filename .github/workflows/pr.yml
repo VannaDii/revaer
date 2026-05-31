@@ -221,6 +221,7 @@ jobs:
       E2E_BROWSER_CHANNEL: chrome
       E2E_DB_ADMIN_URL: postgres://revaer:revaer@localhost:5432/postgres
       E2E_SKIP_DB_START: "1"
+      E2E_VIDEO: "off"
       REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
       DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
       PLAYWRIGHT_SHARD_INDEX: ${{ matrix.shard }}
