@@ -118,6 +118,7 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+          --shm-size=256m
         ports:
           - 5432:5432
     steps:
@@ -188,6 +189,7 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+          --shm-size=256m
         ports:
           - 5432:5432
     steps:
@@ -234,6 +236,7 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+          --shm-size=256m
         ports:
           - 5432:5432
     steps:
