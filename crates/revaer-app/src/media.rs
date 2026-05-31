@@ -251,6 +251,7 @@ impl MediaFacade for MediaService {
             if normalized.is_empty() || !seen.insert(normalized.clone()) {
                 continue;
             }
+            let support = snapshot.codec_capability(&normalized);
             let snapshot_id = self
                 .store
                 .record_capability(&RecordCapabilitySnapshotInput {
@@ -258,8 +259,8 @@ impl MediaFacade for MediaService {
                     ffmpeg_version: &snapshot.ffmpeg_version,
                     ffprobe_version: &snapshot.ffprobe_version,
                     codec_name: &normalized,
-                    encode_supported: true,
-                    decode_supported: true,
+                    encode_supported: support.encode_supported,
+                    decode_supported: support.decode_supported,
                 })
                 .await
                 .map_err(|err| map_data_error(&err))?;
@@ -543,7 +544,7 @@ mod tests {
     use revaer_data::media::capabilities::CapabilitySnapshotRow;
     use revaer_media_runtime::capabilities::CapabilityDetectError;
     use revaer_media_runtime::capabilities::CapabilityDetector;
-    use revaer_media_runtime::capabilities::CapabilitySnapshot;
+    use revaer_media_runtime::capabilities::{CapabilitySnapshot, CodecCapability};
     use revaer_runtime::media::MediaStore;
     use revaer_test_support::postgres::start_postgres;
     use sqlx::postgres::PgPoolOptions;
@@ -736,6 +737,12 @@ mod tests {
                     ffmpeg_version: "7.1".to_string(),
                     ffprobe_version: "7.1".to_string(),
                     codecs: vec!["h264".to_string(), "h264".to_string(), "  ".to_string()],
+                    codec_support: vec![CodecCapability {
+                        name: "h264".to_string(),
+                        encode_supported: false,
+                        decode_supported: true,
+                    }],
+                    encoders: Vec::new(),
                 },
             }),
         );
@@ -794,14 +801,7 @@ mod tests {
         );
         assert_eq!(service.media_job_operation_list(job_id).await?.len(), 1);
 
-        let cap_id = service
-            .media_capability_refresh(MediaCapabilityRefreshParams {
-                actor_user_public_id,
-            })
-            .await?;
-        assert!(cap_id > 0);
-        assert!(service.media_capability_latest().await?.is_some());
-        assert!(service.media_capability_readiness().await?.ready);
+        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
 
         let yaml = service.media_yaml_export().await?;
         let validation = service.media_yaml_validate(&yaml).await?;
@@ -811,6 +811,27 @@ mod tests {
             .await?;
         assert!(applied.forced_dry_run);
 
+        Ok(())
+    }
+
+    async fn assert_capability_refresh_uses_detected_support(
+        service: &MediaService,
+        actor_user_public_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let cap_id = service
+            .media_capability_refresh(MediaCapabilityRefreshParams {
+                actor_user_public_id,
+            })
+            .await?;
+        assert!(cap_id > 0);
+        let latest = service.media_capability_latest().await?;
+        assert!(latest.is_some());
+        let Some(latest) = latest else {
+            return Ok(());
+        };
+        assert!(!latest.encode_supported);
+        assert!(latest.decode_supported);
+        assert!(service.media_capability_readiness().await?.ready);
         Ok(())
     }
 

@@ -131,10 +131,10 @@ mod tests {
     #[tokio::test]
     async fn upsert_and_list_media_profile() -> anyhow::Result<()> {
         let db = match setup_media_db("upsert_and_list_media_profile").await {
-            Ok(db) => db,
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
             Err(err) => {
-                eprintln!("skipping upsert_and_list_media_profile: {err}");
-                return Ok(());
+                return Err(err);
             }
         };
         let profile_id = upsert_media_profile(
@@ -163,10 +163,10 @@ mod tests {
     #[tokio::test]
     async fn reject_overlapping_roots() -> anyhow::Result<()> {
         let db = match setup_media_db("reject_overlapping_roots").await {
-            Ok(db) => db,
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
             Err(err) => {
-                eprintln!("skipping reject_overlapping_roots: {err}");
-                return Ok(());
+                return Err(err);
             }
         };
         let result = upsert_media_profile(
@@ -194,12 +194,10 @@ mod tests {
         let db = match setup_media_db("upsert_profile_with_executor_accepts_transaction_executor")
             .await
         {
-            Ok(db) => db,
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
             Err(err) => {
-                eprintln!(
-                    "skipping upsert_profile_with_executor_accepts_transaction_executor: {err}"
-                );
-                return Ok(());
+                return Err(err);
             }
         };
 

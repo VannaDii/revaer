@@ -39,6 +39,6 @@
   - Drift found: none.
   - Contradictions/stale references removed: none.
 - Risk & rollback plan:
-  - Low-to-moderate risk due new migration and API routes; rollback is reverting migration + media operation API wiring.
+  - Low-to-moderate risk due to new migration and API routes; rollback is reverting migration + media operation API wiring.
 - Dependency rationale:
   - No new dependencies added.

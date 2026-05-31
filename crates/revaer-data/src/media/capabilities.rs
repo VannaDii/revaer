@@ -97,10 +97,10 @@ mod tests {
     #[tokio::test]
     async fn record_capability_snapshot_row() -> anyhow::Result<()> {
         let db = match setup_media_db("record_capability_snapshot_row").await {
-            Ok(db) => db,
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
             Err(err) => {
-                eprintln!("skipping record_capability_snapshot_row: {err}");
-                return Ok(());
+                return Err(err);
             }
         };
         let snapshot_id = record_capability_snapshot(

@@ -251,10 +251,10 @@ mod tests {
     #[tokio::test]
     async fn create_and_list_media_job() -> anyhow::Result<()> {
         let db = match setup_media_db("create_and_list_media_job").await {
-            Ok(db) => db,
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
             Err(err) => {
-                eprintln!("skipping create_and_list_media_job: {err}");
-                return Ok(());
+                return Err(err);
             }
         };
         let profile_id = upsert_media_profile(

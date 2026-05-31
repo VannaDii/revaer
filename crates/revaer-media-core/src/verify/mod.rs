@@ -3,7 +3,7 @@
 use crate::plan::{OperationKind, PlannedOperation};
 use crate::{model::MediaGraph, model::StreamKind};
 
-/// Verify plan has at least one operation and no unknown state.
+/// Verify plan has at least one operation and required stream ids.
 ///
 /// # Errors
 ///

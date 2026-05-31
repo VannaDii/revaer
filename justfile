@@ -64,7 +64,15 @@ udeps:
         cargo install cargo-udeps --locked --force --version "${required_udeps_version}"; \
     }; \
     version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
+        awk -v actual="$1" -v required="$2" 'BEGIN { \
+            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
+            max = (ac > rc ? ac : rc); \
+            for (i = 1; i <= max; i++) { \
+                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
+                if (av > rv) exit 0; if (av < rv) exit 1; \
+            } \
+            exit 0; \
+        }'; \
     }; \
     if command -v cargo-udeps >/dev/null 2>&1; then \
         installed_version="$(cargo udeps --version | awk '{print $2}')"; \
@@ -106,7 +114,15 @@ audit:
         cargo install cargo-audit --locked --force --version "${required_audit_version}"; \
     }; \
     version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
+        awk -v actual="$1" -v required="$2" 'BEGIN { \
+            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
+            max = (ac > rc ? ac : rc); \
+            for (i = 1; i <= max; i++) { \
+                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
+                if (av > rv) exit 0; if (av < rv) exit 1; \
+            } \
+            exit 0; \
+        }'; \
     }; \
     if command -v cargo-audit >/dev/null 2>&1; then \
         installed_version="$(cargo audit -V | awk 'NR==1 {print $2}')"; \
@@ -133,7 +149,15 @@ deny:
         cargo install cargo-deny --locked --force --version "${required_deny_version}"; \
     }; \
     version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
+        awk -v actual="$1" -v required="$2" 'BEGIN { \
+            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
+            max = (ac > rc ? ac : rc); \
+            for (i = 1; i <= max; i++) { \
+                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
+                if (av > rv) exit 0; if (av < rv) exit 1; \
+            } \
+            exit 0; \
+        }'; \
     }; \
     if command -v cargo-deny >/dev/null 2>&1; then \
         installed_version="$(cargo deny --version | awk 'NR==1 {print $2}')"; \
@@ -151,7 +175,15 @@ cov:
         cargo install cargo-llvm-cov --locked --force --version "${required_llvm_cov_version}"; \
     }; \
     version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
+        awk -v actual="$1" -v required="$2" 'BEGIN { \
+            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
+            max = (ac > rc ? ac : rc); \
+            for (i = 1; i <= max; i++) { \
+                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
+                if (av > rv) exit 0; if (av < rv) exit 1; \
+            } \
+            exit 0; \
+        }'; \
     }; \
     if command -v cargo-llvm-cov >/dev/null 2>&1; then \
         installed_version="$(cargo llvm-cov --version | awk '{print $2}')"; \
@@ -516,19 +548,35 @@ db-start:
     if [ -z "${db_port}" ]; then \
         db_port="5432"; \
     fi; \
-    if [ "${db_host}" = "host.docker.internal" ] && python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' localhost "${db_port}" >/dev/null 2>&1; then \
+    probe_tcp() { \
+        probe_host="$1"; \
+        probe_port="$2"; \
+        if command -v nc >/dev/null 2>&1; then \
+            nc -z -w 1 "${probe_host}" "${probe_port}" >/dev/null 2>&1; \
+        elif command -v python3 >/dev/null 2>&1; then \
+            python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' "${probe_host}" "${probe_port}" >/dev/null 2>&1; \
+        else \
+            echo "db-start requires nc or python3 for TCP readiness probes" >&2; \
+            return 2; \
+        fi; \
+    }; \
+    if ! command -v nc >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then \
+        echo "db-start requires nc or python3 for TCP readiness probes" >&2; \
+        exit 1; \
+    fi; \
+    if [ "${db_host}" = "host.docker.internal" ] && probe_tcp localhost "${db_port}"; then \
         db_host="localhost"; \
         db_url="$(printf "%s" "${db_url}" | sed 's#@host\.docker\.internal\([:/]\)#@localhost\1#')"; \
         echo "Normalized local Docker database host to ${db_host}:${db_port}"; \
     fi; \
-    if [ "${db_host}" = "localhost" ] && ! python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' localhost "${db_port}" >/dev/null 2>&1 && python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' host.docker.internal "${db_port}" >/dev/null 2>&1; then \
+    if [ "${db_host}" = "localhost" ] && ! probe_tcp localhost "${db_port}" && probe_tcp host.docker.internal "${db_port}"; then \
         db_host="host.docker.internal"; \
         db_url="$(printf "%s" "${db_url}" | sed 's#@localhost\([:/]\)#@host.docker.internal\1#')"; \
         echo "Normalized local Docker database host to ${db_host}:${db_port}"; \
     fi; \
     echo "Using database URL: ${db_url}"; \
     container_name="${PG_CONTAINER:-revaer-db}"; \
-    db_data_dir="${PWD}/.server_root/postgres-data"; \
+    db_data_dir="${REVAER_DB_DATA_DIR:-${PWD}/.server_root/postgres-data}"; \
     mkdir -p "${db_data_dir}"; \
     existing_container="$(docker ps -aq -f name=^${container_name}$)"; \
     if [ -n "${existing_container}" ] && [ -z "$(docker ps -q -f name=^${container_name}$)" ]; then \
@@ -538,7 +586,7 @@ db-start:
             existing_container=""; \
         fi; \
     fi; \
-    if python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' "${db_host}" "${db_port}" >/dev/null 2>&1; then \
+    if probe_tcp "${db_host}" "${db_port}"; then \
         echo "Using existing Postgres endpoint ${db_host}:${db_port}"; \
     else \
         if [ -n "$existing_container" ]; then \
@@ -580,13 +628,13 @@ db-start:
     echo "Waiting for external Postgres endpoint ${db_host}:${db_port}..."; \
     external_ready="0"; \
     for _ in $(seq 1 30); do \
-        if python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' "${db_host}" "${db_port}" >/dev/null 2>&1; then \
+        if probe_tcp "${db_host}" "${db_port}"; then \
             external_ready="1"; \
             break; \
         fi; \
         sleep 1; \
     done; \
-    if [ "${external_ready}" != "1" ] && [ "${db_host}" = "localhost" ] && python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' host.docker.internal "${db_port}" >/dev/null 2>&1; then \
+    if [ "${external_ready}" != "1" ] && [ "${db_host}" = "localhost" ] && probe_tcp host.docker.internal "${db_port}"; then \
         db_host="host.docker.internal"; \
         db_url="$(printf "%s" "${db_url}" | sed 's#@localhost\([:/]\)#@host.docker.internal\1#')"; \
         external_ready="1"; \

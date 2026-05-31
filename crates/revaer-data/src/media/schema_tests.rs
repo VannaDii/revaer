@@ -41,12 +41,12 @@ impl MediaTestDb {
     }
 }
 
-pub(crate) async fn setup_media_db(label: &str) -> anyhow::Result<MediaTestDb> {
+pub(crate) async fn setup_media_db(label: &str) -> anyhow::Result<Option<MediaTestDb>> {
     let postgres = match start_postgres() {
         Ok(db) => db,
         Err(err) => {
             eprintln!("skipping {label}: {err}");
-            return Err(anyhow::anyhow!("postgres unavailable"));
+            return Ok(None);
         }
     };
 
@@ -66,21 +66,21 @@ pub(crate) async fn setup_media_db(label: &str) -> anyhow::Result<MediaTestDb> {
     .fetch_one(&pool)
     .await?;
 
-    Ok(MediaTestDb {
+    Ok(Some(MediaTestDb {
         _db: postgres,
         pool,
         system_user_public_id,
-    })
+    }))
 }
 
 #[tokio::test]
 async fn media_tables_exist() -> anyhow::Result<()> {
     let db = match setup_media_db("media_tables_exist").await {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping media_tables_exist: {err}");
+        Ok(Some(db)) => db,
+        Ok(None) => {
             return Ok(());
         }
+        Err(err) => return Err(err),
     };
 
     let rows = sqlx::query_scalar::<_, String>(
@@ -102,11 +102,11 @@ async fn media_tables_exist() -> anyhow::Result<()> {
 #[tokio::test]
 async fn media_procedures_exist() -> anyhow::Result<()> {
     let db = match setup_media_db("media_procedures_exist").await {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping media_procedures_exist: {err}");
+        Ok(Some(db)) => db,
+        Ok(None) => {
             return Ok(());
         }
+        Err(err) => return Err(err),
     };
 
     let rows = sqlx::query(

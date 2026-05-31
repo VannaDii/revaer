@@ -296,15 +296,11 @@ pub fn build_execution_steps_with_capabilities(
     Ok(steps)
 }
 
-fn capabilities_has_codec(capabilities: &CapabilitySnapshot, required: &str) -> bool {
-    capabilities
-        .codecs
-        .iter()
-        .any(|codec| codec.trim().eq_ignore_ascii_case(required))
-}
-
 fn capabilities_has_encoder(capabilities: &CapabilitySnapshot, required: &str) -> bool {
-    capabilities_has_codec(capabilities, required)
+    capabilities
+        .encoders
+        .iter()
+        .any(|encoder| encoder.trim().eq_ignore_ascii_case(required))
 }
 
 fn select_video_encoder(capabilities: &CapabilitySnapshot) -> Option<&'static str> {
@@ -463,6 +459,8 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
+            codec_support: Vec::new(),
+            encoders: Vec::new(),
         };
         assert_eq!(
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities),
@@ -471,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn capability_checked_execution_accepts_supported_transcode_codec() {
+    fn capability_checked_execution_accepts_supported_audio_encoder() {
         let op = PlannedOperation {
             kind: OperationKind::AudioTranscode,
             stream_id: Some(0),
@@ -480,6 +478,8 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["aac".to_string()],
+            codec_support: Vec::new(),
+            encoders: vec!["aac".to_string()],
         };
         let steps =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
@@ -502,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn capability_checked_execution_accepts_trimmed_case_insensitive_codec_names() {
+    fn capability_checked_execution_accepts_trimmed_case_insensitive_encoder_names() {
         let op = PlannedOperation {
             kind: OperationKind::VideoTranscode,
             stream_id: Some(0),
@@ -511,6 +511,8 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["  LIBX265  ".to_string()],
+            codec_support: Vec::new(),
+            encoders: vec!["  LIBX265  ".to_string()],
         };
         let steps =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
@@ -610,6 +612,8 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["aac".to_string(), "libx265".to_string()],
+            codec_support: Vec::new(),
+            encoders: Vec::new(),
         };
         let result = build_execution_steps_with_replacement(
             "/input/movie.mkv",
@@ -650,6 +654,8 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["h264".to_string()],
+            codec_support: Vec::new(),
+            encoders: Vec::new(),
         };
         assert_eq!(
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities),
@@ -667,6 +673,8 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["libx265".to_string()],
+            codec_support: Vec::new(),
+            encoders: vec!["libx265".to_string()],
         };
         let result =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
@@ -674,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn capability_checked_execution_accepts_hevc_codec_alias_for_encoder() {
+    fn capability_checked_execution_rejects_codec_without_encoder_support() {
         let op = PlannedOperation {
             kind: OperationKind::VideoTranscode,
             stream_id: Some(0),
@@ -683,10 +691,12 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["hevc".to_string()],
+            codec_support: Vec::new(),
+            encoders: Vec::new(),
         };
         let result =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
-        assert!(result.is_ok());
+        assert_eq!(result, Err(BuildArgsError::UnsupportedCodec("libx265")));
     }
 
     #[test]
@@ -699,6 +709,8 @@ mod tests {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
             codecs: vec!["hevc_nvenc".to_string()],
+            codec_support: Vec::new(),
+            encoders: vec!["hevc_nvenc".to_string()],
         };
         let result =
             build_execution_steps_with_capabilities("/in.mkv", "/out.mkv", &[op], &capabilities);
