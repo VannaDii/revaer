@@ -26,6 +26,11 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
     let output_root = use_state(String::new);
     let retention_days = use_state(|| "30".to_string());
     let dry_run_only = use_state(|| true);
+    let compatibility_target_key = use_state(String::new);
+    let policy_key = use_state(|| "safe_dry_run".to_string());
+    let watcher_enabled = use_state(|| false);
+    let schedule_enabled = use_state(|| false);
+    let schedule_interval_minutes = use_state(String::new);
 
     let on_refresh = {
         let api = api.clone();
@@ -247,6 +252,56 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
             );
         })
     };
+    let on_compatibility_target_input = {
+        let compatibility_target_key = compatibility_target_key.clone();
+        Callback::from(move |event: InputEvent| {
+            compatibility_target_key.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_policy_key_input = {
+        let policy_key = policy_key.clone();
+        Callback::from(move |event: InputEvent| {
+            policy_key.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_watcher_change = {
+        let watcher_enabled = watcher_enabled.clone();
+        Callback::from(move |event: Event| {
+            watcher_enabled.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .checked(),
+            );
+        })
+    };
+    let on_schedule_change = {
+        let schedule_enabled = schedule_enabled.clone();
+        Callback::from(move |event: Event| {
+            schedule_enabled.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .checked(),
+            );
+        })
+    };
+    let on_schedule_interval_input = {
+        let schedule_interval_minutes = schedule_interval_minutes.clone();
+        Callback::from(move |event: InputEvent| {
+            schedule_interval_minutes.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .value(),
+            );
+        })
+    };
 
     let on_create_profile = {
         let api = api.clone();
@@ -255,6 +310,11 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
         let output_root = output_root.clone();
         let retention_days = retention_days.clone();
         let dry_run_only = dry_run_only.clone();
+        let compatibility_target_key = compatibility_target_key.clone();
+        let policy_key = policy_key.clone();
+        let watcher_enabled = watcher_enabled.clone();
+        let schedule_enabled = schedule_enabled.clone();
+        let schedule_interval_minutes = schedule_interval_minutes.clone();
         let on_success_toast = props.on_success_toast.clone();
         let on_error_toast = props.on_error_toast.clone();
         let on_refresh = on_refresh.clone();
@@ -268,12 +328,29 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                 on_error_toast.emit("Retention days must be a whole number".to_string());
                 return;
             };
+            let schedule_interval = if schedule_interval_minutes.trim().is_empty() {
+                None
+            } else {
+                let interval = (*schedule_interval_minutes).parse::<i32>();
+                let Ok(interval) = interval else {
+                    on_error_toast.emit("Schedule interval must be a whole number".to_string());
+                    return;
+                };
+                Some(interval)
+            };
             let request = MediaProfileUpsertRequest {
                 profile_key: (*profile_key).clone(),
                 source_root: (*source_root).clone(),
                 output_root: (*output_root).clone(),
                 dry_run_only: *dry_run_only,
                 retention_days,
+                compatibility_target_key: empty_string_to_none(
+                    (*compatibility_target_key).as_str(),
+                ),
+                policy_key: (*policy_key).clone(),
+                watcher_enabled: *watcher_enabled,
+                schedule_enabled: *schedule_enabled,
+                schedule_interval_minutes: schedule_interval,
             };
             let on_success_toast = on_success_toast.clone();
             let on_error_toast = on_error_toast.clone();
@@ -306,6 +383,11 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                     output_root: None,
                     dry_run_only: Some(dry_run_only),
                     retention_days: None,
+                    compatibility_target_key: None,
+                    policy_key: None,
+                    watcher_enabled: None,
+                    schedule_enabled: None,
+                    schedule_interval_minutes: None,
                 };
                 let on_success_toast = on_success_toast.clone();
                 let on_error_toast = on_error_toast.clone();
@@ -320,6 +402,90 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                             };
                             on_success_toast
                                 .emit(format!("Profile {} set to {}", profile.profile_key, mode));
+                            on_refresh.emit(());
+                        }
+                        Err(error) => on_error_toast.emit(error),
+                    }
+                });
+            },
+        )
+    };
+
+    let on_toggle_profile_watcher = {
+        let api = api.clone();
+        let on_success_toast = props.on_success_toast.clone();
+        let on_error_toast = props.on_error_toast.clone();
+        let on_refresh = on_refresh.clone();
+        Callback::from(
+            move |(media_profile_public_id, watcher_enabled): (uuid::Uuid, bool)| {
+                let Some(api) = api.clone() else {
+                    on_error_toast.emit("Media API context is unavailable".to_string());
+                    return;
+                };
+                let request = MediaProfilePatchRequest {
+                    source_root: None,
+                    output_root: None,
+                    dry_run_only: None,
+                    retention_days: None,
+                    compatibility_target_key: None,
+                    policy_key: None,
+                    watcher_enabled: Some(watcher_enabled),
+                    schedule_enabled: None,
+                    schedule_interval_minutes: None,
+                };
+                let on_success_toast = on_success_toast.clone();
+                let on_error_toast = on_error_toast.clone();
+                let on_refresh = on_refresh.clone();
+                spawn_local(async move {
+                    match patch_profile(&api.client, media_profile_public_id, &request).await {
+                        Ok(profile) => {
+                            let mode = if profile.watcher_enabled { "on" } else { "off" };
+                            on_success_toast
+                                .emit(format!("Profile {} watcher {}", profile.profile_key, mode));
+                            on_refresh.emit(());
+                        }
+                        Err(error) => on_error_toast.emit(error),
+                    }
+                });
+            },
+        )
+    };
+
+    let on_toggle_profile_schedule = {
+        let api = api.clone();
+        let on_success_toast = props.on_success_toast.clone();
+        let on_error_toast = props.on_error_toast.clone();
+        let on_refresh = on_refresh.clone();
+        Callback::from(
+            move |(media_profile_public_id, schedule_enabled): (uuid::Uuid, bool)| {
+                let Some(api) = api.clone() else {
+                    on_error_toast.emit("Media API context is unavailable".to_string());
+                    return;
+                };
+                let request = MediaProfilePatchRequest {
+                    source_root: None,
+                    output_root: None,
+                    dry_run_only: None,
+                    retention_days: None,
+                    compatibility_target_key: None,
+                    policy_key: None,
+                    watcher_enabled: None,
+                    schedule_enabled: Some(schedule_enabled),
+                    schedule_interval_minutes: None,
+                };
+                let on_success_toast = on_success_toast.clone();
+                let on_error_toast = on_error_toast.clone();
+                let on_refresh = on_refresh.clone();
+                spawn_local(async move {
+                    match patch_profile(&api.client, media_profile_public_id, &request).await {
+                        Ok(profile) => {
+                            let mode = if profile.schedule_enabled {
+                                "on"
+                            } else {
+                                "off"
+                            };
+                            on_success_toast
+                                .emit(format!("Profile {} schedule {}", profile.profile_key, mode));
                             on_refresh.emit(());
                         }
                         Err(error) => on_error_toast.emit(error),
@@ -369,26 +535,62 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                             <input class="input input-bordered input-sm" placeholder="source_root" value={(*source_root).clone()} oninput={on_source_root_input} />
                             <input class="input input-bordered input-sm" placeholder="output_root" value={(*output_root).clone()} oninput={on_output_root_input} />
                             <input class="input input-bordered input-sm" placeholder="retention_days" value={(*retention_days).clone()} oninput={on_retention_days_input} />
+                            <input class="input input-bordered input-sm" placeholder="compatibility_target_key" value={(*compatibility_target_key).clone()} oninput={on_compatibility_target_input} />
+                            <input class="input input-bordered input-sm" placeholder="policy_key" value={(*policy_key).clone()} oninput={on_policy_key_input} />
+                            <input class="input input-bordered input-sm" placeholder="schedule_interval_minutes" value={(*schedule_interval_minutes).clone()} oninput={on_schedule_interval_input} />
                             <label class="label cursor-pointer gap-2 justify-start">
                                 <input type="checkbox" class="checkbox checkbox-sm" checked={*dry_run_only} onchange={on_dry_run_change} />
                                 <span class="label-text">{"Dry run only"}</span>
+                            </label>
+                            <label class="label cursor-pointer gap-2 justify-start">
+                                <input type="checkbox" class="checkbox checkbox-sm" checked={*watcher_enabled} onchange={on_watcher_change} />
+                                <span class="label-text">{"Enable watcher"}</span>
+                            </label>
+                            <label class="label cursor-pointer gap-2 justify-start">
+                                <input type="checkbox" class="checkbox checkbox-sm" checked={*schedule_enabled} onchange={on_schedule_change} />
+                                <span class="label-text">{"Enable schedule"}</span>
                             </label>
                             <button class="btn btn-sm btn-primary" onclick={on_create_profile}>{"Create profile"}</button>
                         </div>
                         <ul class="text-sm space-y-1">
                             {for state.profiles.iter().map(|row| {
                                 let on_toggle_profile_dry_run = on_toggle_profile_dry_run.clone();
+                                let on_toggle_profile_watcher = on_toggle_profile_watcher.clone();
+                                let on_toggle_profile_schedule = on_toggle_profile_schedule.clone();
                                 let media_profile_public_id = row.media_profile_public_id;
                                 let next_dry_run_only = !row.dry_run_only;
+                                let next_watcher_enabled = !row.watcher_enabled;
+                                let next_schedule_enabled = !row.schedule_enabled;
+                                let schedule_toggle_disabled = !row.schedule_enabled && row.schedule_interval_minutes.is_none();
                                 html! {
                                     <li class="flex flex-wrap items-center gap-2">
                                         <span>{format!("{} ({})", row.profile_key, if row.dry_run_only {"dry-run"} else {"replace"})}</span>
-                                        <span class="opacity-70">{format!("src={} out={} retention={}d", row.source_root, row.output_root, row.retention_days)}</span>
+                                        <span class="opacity-70">{format!("src={} out={} retention={}d target={} policy={} watcher={} schedule={}",
+                                            row.source_root,
+                                            row.output_root,
+                                            row.retention_days,
+                                            row.compatibility_target_key.clone().unwrap_or_else(|| "none".to_string()),
+                                            row.policy_key,
+                                            if row.watcher_enabled {"on"} else {"off"},
+                                            describe_schedule(row.schedule_enabled, row.schedule_interval_minutes))}</span>
                                         <button
                                             class="btn btn-xs"
                                             onclick={Callback::from(move |_| on_toggle_profile_dry_run.emit((media_profile_public_id, next_dry_run_only)))}
                                         >
                                             {if row.dry_run_only {"Enable replace"} else {"Set dry-run"}}
+                                        </button>
+                                        <button
+                                            class="btn btn-xs"
+                                            onclick={Callback::from(move |_| on_toggle_profile_watcher.emit((media_profile_public_id, next_watcher_enabled)))}
+                                        >
+                                            {if row.watcher_enabled {"Disable watcher"} else {"Enable watcher"}}
+                                        </button>
+                                        <button
+                                            class="btn btn-xs"
+                                            disabled={schedule_toggle_disabled}
+                                            onclick={Callback::from(move |_| on_toggle_profile_schedule.emit((media_profile_public_id, next_schedule_enabled)))}
+                                        >
+                                            {if row.schedule_enabled {"Disable schedule"} else {"Enable schedule"}}
                                         </button>
                                     </li>
                                 }
@@ -425,4 +627,22 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
             </div>
         </section>
     }
+}
+
+fn empty_string_to_none(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn describe_schedule(enabled: bool, interval: Option<i32>) -> String {
+    if !enabled {
+        return "off".to_string();
+    }
+    interval
+        .map(|minutes| format!("{minutes}m"))
+        .unwrap_or_else(|| "enabled".to_string())
 }

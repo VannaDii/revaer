@@ -27,6 +27,43 @@ pub struct MediaProfileUpsertParams<'a> {
     pub dry_run_only: bool,
     /// Retention days.
     pub retention_days: i32,
+    /// Optional compatibility target key.
+    pub compatibility_target_key: Option<&'a str>,
+    /// Operational policy key.
+    pub policy_key: &'a str,
+    /// Whether filesystem watching is enabled.
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    pub schedule_interval_minutes: Option<i32>,
+}
+
+/// Patch media profile parameters.
+#[derive(Debug, Clone)]
+pub struct MediaProfilePatchParams<'a> {
+    /// Actor performing the operation.
+    pub actor_user_public_id: Uuid,
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Source root path override.
+    pub source_root: Option<&'a str>,
+    /// Output root path override.
+    pub output_root: Option<&'a str>,
+    /// Dry-run only policy override.
+    pub dry_run_only: Option<bool>,
+    /// Retention days override.
+    pub retention_days: Option<i32>,
+    /// Optional compatibility target key override.
+    pub compatibility_target_key: Option<&'a str>,
+    /// Operational policy key override.
+    pub policy_key: Option<&'a str>,
+    /// Filesystem watcher override.
+    pub watcher_enabled: Option<bool>,
+    /// Scheduled discovery override.
+    pub schedule_enabled: Option<bool>,
+    /// Scheduled discovery interval in minutes.
+    pub schedule_interval_minutes: Option<i32>,
 }
 
 /// Create media job parameters.
@@ -113,6 +150,25 @@ pub struct MediaYamlProfile {
     pub dry_run_only: bool,
     /// Retention in days.
     pub retention_days: i32,
+    /// Optional compatibility target key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compatibility_target_key: Option<String>,
+    /// Operational policy key.
+    #[serde(default = "default_media_policy_key")]
+    pub policy_key: String,
+    /// Whether filesystem watching is enabled.
+    #[serde(default)]
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    #[serde(default)]
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_interval_minutes: Option<i32>,
+}
+
+fn default_media_policy_key() -> String {
+    "safe_dry_run".to_string()
 }
 
 /// Result of YAML validation.
@@ -152,6 +208,16 @@ pub struct MediaProfileResponse {
     pub dry_run_only: bool,
     /// Retention days.
     pub retention_days: i32,
+    /// Optional compatibility target key.
+    pub compatibility_target_key: Option<String>,
+    /// Operational policy key.
+    pub policy_key: String,
+    /// Whether filesystem watching is enabled.
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    pub schedule_interval_minutes: Option<i32>,
     /// Updated timestamp.
     pub updated_at: DateTime<Utc>,
 }
@@ -316,6 +382,12 @@ pub trait MediaFacade: Send + Sync {
         params: MediaProfileUpsertParams<'_>,
     ) -> Result<Uuid, MediaServiceError>;
 
+    /// Patch profile and return profile id.
+    async fn media_profile_patch(
+        &self,
+        params: MediaProfilePatchParams<'_>,
+    ) -> Result<Uuid, MediaServiceError>;
+
     /// List active profiles.
     async fn media_profile_list(&self) -> Result<Vec<MediaProfileResponse>, MediaServiceError>;
 
@@ -409,6 +481,13 @@ impl MediaFacade for NoopMedia {
 
     async fn media_profile_list(&self) -> Result<Vec<MediaProfileResponse>, MediaServiceError> {
         Ok(Vec::new())
+    }
+
+    async fn media_profile_patch(
+        &self,
+        _params: MediaProfilePatchParams<'_>,
+    ) -> Result<Uuid, MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 
     async fn media_job_create(

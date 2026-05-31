@@ -6,15 +6,17 @@ use revaer_api::app::media::{
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams,
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
     MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobOperationResponse,
-    MediaJobPhaseAppendParams, MediaJobResponse, MediaProfileResponse, MediaProfileUpsertParams,
-    MediaServiceError, MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlProfile,
-    MediaYamlValidationResult,
+    MediaJobPhaseAppendParams, MediaJobResponse, MediaProfilePatchParams, MediaProfileResponse,
+    MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind, MediaYamlApplyResult,
+    MediaYamlProfile, MediaYamlValidationResult,
 };
 use revaer_data::DataError;
 use revaer_data::media::capabilities::CapabilitySnapshotRow;
 use revaer_data::media::capabilities::RecordCapabilitySnapshotInput;
 use revaer_data::media::jobs::CreateMediaJobInput;
-use revaer_data::media::profiles::{UpsertMediaProfileInput, upsert_media_profile_with_executor};
+use revaer_data::media::profiles::{
+    UpdateMediaProfileInput, UpsertMediaProfileInput, upsert_media_profile_with_executor,
+};
 use revaer_media_core::compile::{MediaProfile, validate_profiles};
 use revaer_media_runtime::capabilities::{CapabilityDetectError, CapabilityDetector};
 use revaer_runtime::media::MediaStore;
@@ -52,6 +54,33 @@ impl MediaFacade for MediaService {
                 output_root: params.output_root,
                 dry_run_only: params.dry_run_only,
                 retention_days: params.retention_days,
+                compatibility_target_key: params.compatibility_target_key,
+                policy_key: params.policy_key,
+                watcher_enabled: params.watcher_enabled,
+                schedule_enabled: params.schedule_enabled,
+                schedule_interval_minutes: params.schedule_interval_minutes,
+            })
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_profile_patch(
+        &self,
+        params: MediaProfilePatchParams<'_>,
+    ) -> Result<Uuid, MediaServiceError> {
+        self.store
+            .update_profile(&UpdateMediaProfileInput {
+                actor_public_id: params.actor_user_public_id,
+                media_profile_public_id: params.media_profile_public_id,
+                source_root: params.source_root,
+                output_root: params.output_root,
+                dry_run_only: params.dry_run_only,
+                retention_days: params.retention_days,
+                compatibility_target_key: params.compatibility_target_key,
+                policy_key: params.policy_key,
+                watcher_enabled: params.watcher_enabled,
+                schedule_enabled: params.schedule_enabled,
+                schedule_interval_minutes: params.schedule_interval_minutes,
             })
             .await
             .map_err(|err| map_data_error(&err))
@@ -70,6 +99,11 @@ impl MediaFacade for MediaService {
                         output_root: row.output_root,
                         dry_run_only: row.dry_run_only,
                         retention_days: row.retention_days,
+                        compatibility_target_key: row.compatibility_target_key,
+                        policy_key: row.policy_key,
+                        watcher_enabled: row.watcher_enabled,
+                        schedule_enabled: row.schedule_enabled,
+                        schedule_interval_minutes: row.schedule_interval_minutes,
                         updated_at: row.updated_at,
                     })
                     .collect()
@@ -327,6 +361,11 @@ impl MediaFacade for MediaService {
                 output_root: profile.output_root,
                 dry_run_only: profile.dry_run_only,
                 retention_days: profile.retention_days,
+                compatibility_target_key: profile.compatibility_target_key,
+                policy_key: profile.policy_key,
+                watcher_enabled: profile.watcher_enabled,
+                schedule_enabled: profile.schedule_enabled,
+                schedule_interval_minutes: profile.schedule_interval_minutes,
             })
             .collect();
 
@@ -382,6 +421,11 @@ impl MediaFacade for MediaService {
                     output_root: &profile.output_root,
                     dry_run_only: true,
                     retention_days: profile.retention_days,
+                    compatibility_target_key: profile.compatibility_target_key.as_deref(),
+                    policy_key: &profile.policy_key,
+                    watcher_enabled: profile.watcher_enabled,
+                    schedule_enabled: profile.schedule_enabled,
+                    schedule_interval_minutes: profile.schedule_interval_minutes,
                 },
             )
             .await
@@ -755,6 +799,11 @@ mod tests {
                 output_root: "/output/app-media",
                 dry_run_only: true,
                 retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
             })
             .await?;
         let profiles = service.media_profile_list().await?;

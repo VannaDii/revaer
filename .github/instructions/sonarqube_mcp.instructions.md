@@ -29,6 +29,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - Rust workspace members share the repository-root `Cargo.lock`; keep Sonar rule `text:S8570` scoped out for `crates/**/Cargo.toml` so member manifests are not treated as independently unlocked packages.
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
 - Revaer uses Sonar as a strict merge-control signal on pull requests. Prefer PR quality-gate status and decoration over scanner-side waiting in PR workflows.
+- Sonar's PostgreSQL service container must keep its explicit shared-memory setting aligned with `.github/instructions/devops.instructions.md` and `just db-start`, because the analysis workflow runs migration-backed coverage inputs.
 - Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked.
 - New Security Hotspots on touched code must be reviewed before merge. Backlog hotspots outside touched code are tracked separately and do not automatically block unrelated work.
 

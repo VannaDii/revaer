@@ -287,6 +287,21 @@ pub struct MediaProfileUpsertRequest {
     pub dry_run_only: bool,
     /// Retention in days.
     pub retention_days: i32,
+    /// Optional compatibility target key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compatibility_target_key: Option<String>,
+    /// Operational policy key.
+    #[serde(default = "default_media_policy_key")]
+    pub policy_key: String,
+    /// Whether filesystem watching is enabled.
+    #[serde(default)]
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    #[serde(default)]
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_interval_minutes: Option<i32>,
 }
 
 /// Request payload for patching an existing media profile.
@@ -304,6 +319,21 @@ pub struct MediaProfilePatchRequest {
     /// Retention in days override.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retention_days: Option<i32>,
+    /// Compatibility target key override. Empty string clears the target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compatibility_target_key: Option<String>,
+    /// Operational policy key override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_key: Option<String>,
+    /// Filesystem watcher override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub watcher_enabled: Option<bool>,
+    /// Scheduled discovery enablement override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_enabled: Option<bool>,
+    /// Scheduled discovery interval override in minutes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_interval_minutes: Option<i32>,
 }
 
 /// Media profile row response payload.
@@ -321,8 +351,24 @@ pub struct MediaProfileResponse {
     pub dry_run_only: bool,
     /// Retention in days.
     pub retention_days: i32,
+    /// Optional compatibility target key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compatibility_target_key: Option<String>,
+    /// Operational policy key.
+    pub policy_key: String,
+    /// Whether filesystem watching is enabled.
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_interval_minutes: Option<i32>,
     /// Updated timestamp.
     pub updated_at: DateTime<Utc>,
+}
+
+fn default_media_policy_key() -> String {
+    "safe_dry_run".to_string()
 }
 
 /// Media profile list response.

@@ -1,0 +1,52 @@
+# Media profile configuration controls slice 11
+
+- Status: Accepted
+- Date: 2026-05-31
+- Context:
+  - The media UI could create profiles and toggle dry-run mode, but it did not expose target/policy compatibility settings or disabled-by-default discovery automation controls required by `MEDIA_TRANSCODING.md` slice 11.
+  - The existing UI dry-run toggle used a PATCH request, but the media profile route did not yet expose a PATCH handler.
+- Decision:
+  - Persist compatibility target key, policy key, watcher enablement, schedule enablement, and schedule interval fields on `media_profile` through a normalized migration and stored procedures.
+  - Add stored-procedure-backed profile update support and expose it through the media API PATCH route.
+  - Extend media profile API/YAML payloads and the media UI profile form/list to show and edit the new controls.
+  - Alternatives considered: storing these settings as YAML-only profile metadata was rejected because runtime media configuration must remain relational and stored-procedure-backed.
+- Consequences:
+  - Operators can configure first-release target/policy and discovery automation intent from the media page.
+  - Watchers and schedules remain disabled by default, matching the plan's safety posture.
+  - Profile rows now carry additional operator-facing configuration columns that future discovery workers and planners will consume.
+- Follow-up:
+  - Add richer compatibility target CRUD and seed target editing.
+  - Wire enabled watcher/schedule rows into discovery execution once slice 13 advances.
+
+## Task Record
+
+- Motivation:
+  - Continue `MEDIA_TRANSCODING.md` after PR feedback gates turned green by advancing slice 11 from lifecycle controls to actionable target/policy/discovery controls.
+- Design notes:
+  - Kept runtime database access behind stored procedures: `media_profile_upsert_v2`, `media_profile_update_v1`, `media_profile_list_v2`, and `media_profile_get_v2`.
+  - Stored the schedule as an enablement flag plus interval minutes so schedules can remain explicitly disabled by default while retaining an operator-entered cadence.
+  - Added API validation so enabled schedules require an interval between 1 minute and 525600 minutes.
+  - Added the missing media profile PATCH route and facade/store plumbing rather than making the UI re-upsert profiles by key.
+  - Raised Docker-backed Postgres shared memory defaults to 1 GiB after full local `just ci` showed parallel media migration tests can exhaust 256 MiB.
+- Test coverage summary:
+  - Ran `cargo check -p revaer-data -p revaer-runtime -p revaer-api-models -p revaer-api -p revaer-app -p revaer-ui`.
+  - Ran `cargo test -p revaer-api http::handlers::media::tests:: -- --nocapture`.
+  - Ran `cargo test -p revaer-app media::tests:: -- --nocapture`.
+  - Ran `cargo test -p revaer-data media::profiles::tests:: -- --nocapture` (local DB-backed cases skipped because no test database URL was configured; closed-pool coverage passed).
+  - Ran `cd tests && npx playwright test --list | rg "Media|media"`.
+  - Ran `cargo fmt --all` and `just instruction-drift` after compiler-guided cleanup.
+  - Ran full `just ci`.
+  - Ran full `just ui-e2e` with the local database endpoint reachable through `host.docker.internal` after `localhost` refused the published Docker port in this environment.
+- Observability updates:
+  - No new metrics, logs, or events; this slice adds persisted configuration that later discovery automation can surface through existing media profile APIs.
+- Status-doc validation:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/sonarqube_mcp.instructions.md`, and `MEDIA_TRANSCODING.md`.
+  - Updated ADR index and documentation summary for this task record.
+- Risk & rollback plan:
+  - Risk is migration/API payload expansion around media profiles. Roll back by reverting this ADR, migration `0130`, and the linked data/runtime/API/UI changes.
+- Dependency rationale:
+  - No new dependencies were added.
+- Stale-policy check:
+  - Instruction files reviewed: `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Drift found: Postgres shared-memory guidance needed alignment after full local DB coverage exhausted the previous 256 MiB default.
+  - Contradictions or stale references removed: updated Justfile, PR workflow, Sonar workflow, and scoped DevOps/Sonar instructions to use the 1 GiB local/CI Postgres shared-memory contract.

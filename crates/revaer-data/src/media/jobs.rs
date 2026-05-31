@@ -278,6 +278,11 @@ mod tests {
                 output_root: "/output/tv",
                 dry_run_only: true,
                 retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
             },
         )
         .await?;

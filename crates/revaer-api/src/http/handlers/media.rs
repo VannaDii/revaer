@@ -12,8 +12,8 @@ use uuid::Uuid;
 
 use crate::app::media::{
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCreateParams,
-    MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaProfileUpsertParams,
-    MediaServiceError, MediaServiceErrorKind,
+    MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaProfilePatchParams,
+    MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -23,9 +23,9 @@ use crate::models::{
     MediaCapabilityRecordResponse, MediaCapabilityRefreshResponse, MediaCapabilitySnapshotResponse,
     MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
     MediaJobOperationAppendRequest, MediaJobOperationListResponse, MediaJobPhaseAppendRequest,
-    MediaJobResponse, MediaProfileListResponse, MediaProfileResponse, MediaProfileUpsertRequest,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlValidationResponse,
+    MediaJobResponse, MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
+    MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
+    MediaYamlImportRequest, MediaYamlValidationResponse,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -57,6 +57,9 @@ const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
 const CODEC_NAME_REQUIRED: &str = "codec_name is required";
 const YAML_PAYLOAD_REQUIRED: &str = "yaml_payload is required";
 const RETENTION_DAYS_INVALID: &str = "retention_days must be between 1 and 3650";
+const SCHEDULE_INTERVAL_INVALID: &str = "schedule_interval_minutes must be between 1 and 525600";
+const SCHEDULE_INTERVAL_REQUIRED: &str =
+    "schedule_interval_minutes is required when schedule is enabled";
 const MEDIA_STATUS_INVALID: &str =
     "status must be one of: queued, running, verifying, completed, failed, cancelled";
 const PHASE_STATUS_INVALID: &str =
@@ -76,6 +79,7 @@ pub(crate) async fn upsert_media_profile(
     let source_root = normalize_required_str_field(&request.source_root, SOURCE_ROOT_REQUIRED)?;
     let output_root = normalize_required_str_field(&request.output_root, OUTPUT_ROOT_REQUIRED)?;
     validate_retention_days(request.retention_days)?;
+    validate_schedule(request.schedule_enabled, request.schedule_interval_minutes)?;
 
     let profile_id = state
         .media
@@ -86,6 +90,13 @@ pub(crate) async fn upsert_media_profile(
             output_root,
             dry_run_only: request.dry_run_only,
             retention_days: request.retention_days,
+            compatibility_target_key: trim_and_filter_empty(
+                request.compatibility_target_key.as_deref(),
+            ),
+            policy_key: request.policy_key.trim(),
+            watcher_enabled: request.watcher_enabled,
+            schedule_enabled: request.schedule_enabled,
+            schedule_interval_minutes: request.schedule_interval_minutes,
         })
         .await
         .map_err(|err| {
@@ -102,6 +113,61 @@ pub(crate) async fn upsert_media_profile(
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_UPSERT_FAILED))?;
 
     Ok((StatusCode::CREATED, Json(map_profile(profile))))
+}
+
+pub(crate) async fn patch_media_profile(
+    State(state): State<Arc<ApiState>>,
+    Path(media_profile_public_id): Path<Uuid>,
+    Json(request): Json<MediaProfilePatchRequest>,
+) -> Result<Json<MediaProfileResponse>, ApiError> {
+    if let Some(retention_days) = request.retention_days {
+        validate_retention_days(retention_days)?;
+    }
+    if let Some(interval) = request.schedule_interval_minutes {
+        validate_schedule_interval(interval)?;
+    }
+    if request.schedule_enabled == Some(true) && request.schedule_interval_minutes.is_none() {
+        let current = state
+            .media
+            .media_profile_list()
+            .await
+            .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
+            .into_iter()
+            .find(|item| item.media_profile_public_id == media_profile_public_id)
+            .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_LIST_FAILED))?;
+        if current.schedule_interval_minutes.is_none() {
+            return Err(ApiError::bad_request(SCHEDULE_INTERVAL_REQUIRED));
+        }
+    }
+
+    state
+        .media
+        .media_profile_patch(MediaProfilePatchParams {
+            actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
+            media_profile_public_id,
+            source_root: trim_and_filter_empty(request.source_root.as_deref()),
+            output_root: trim_and_filter_empty(request.output_root.as_deref()),
+            dry_run_only: request.dry_run_only,
+            retention_days: request.retention_days,
+            compatibility_target_key: request.compatibility_target_key.as_deref(),
+            policy_key: trim_and_filter_empty(request.policy_key.as_deref()),
+            watcher_enabled: request.watcher_enabled,
+            schedule_enabled: request.schedule_enabled,
+            schedule_interval_minutes: request.schedule_interval_minutes,
+        })
+        .await
+        .map_err(|err| map_media_error("media_profile_patch", MEDIA_PROFILE_UPSERT_FAILED, &err))?;
+
+    let profile = state
+        .media
+        .media_profile_list()
+        .await
+        .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
+        .into_iter()
+        .find(|item| item.media_profile_public_id == media_profile_public_id)
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_LIST_FAILED))?;
+
+    Ok(Json(map_profile(profile)))
 }
 
 pub(crate) async fn list_media_profiles(
@@ -479,6 +545,11 @@ fn map_profile(profile: crate::app::media::MediaProfileResponse) -> MediaProfile
         output_root: profile.output_root,
         dry_run_only: profile.dry_run_only,
         retention_days: profile.retention_days,
+        compatibility_target_key: profile.compatibility_target_key,
+        policy_key: profile.policy_key,
+        watcher_enabled: profile.watcher_enabled,
+        schedule_enabled: profile.schedule_enabled,
+        schedule_interval_minutes: profile.schedule_interval_minutes,
         updated_at: profile.updated_at,
     }
 }
@@ -542,6 +613,24 @@ fn validate_retention_days(value: i32) -> Result<(), ApiError> {
         Ok(())
     } else {
         Err(ApiError::bad_request(RETENTION_DAYS_INVALID))
+    }
+}
+
+fn validate_schedule(schedule_enabled: bool, interval: Option<i32>) -> Result<(), ApiError> {
+    if schedule_enabled && interval.is_none() {
+        return Err(ApiError::bad_request(SCHEDULE_INTERVAL_REQUIRED));
+    }
+    if let Some(interval) = interval {
+        validate_schedule_interval(interval)?;
+    }
+    Ok(())
+}
+
+fn validate_schedule_interval(interval: i32) -> Result<(), ApiError> {
+    if (1..=525_600).contains(&interval) {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request(SCHEDULE_INTERVAL_INVALID))
     }
 }
 
@@ -647,6 +736,11 @@ mod tests {
             output_root: "/output/tv".to_string(),
             dry_run_only: true,
             retention_days: 0,
+            compatibility_target_key: None,
+            policy_key: "safe_dry_run".to_string(),
+            watcher_enabled: false,
+            schedule_enabled: false,
+            schedule_interval_minutes: None,
         };
 
         let err = upsert_media_profile(State(state), Json(request))
@@ -666,6 +760,11 @@ mod tests {
             output_root: "/output/tv".to_string(),
             dry_run_only: true,
             retention_days: 3651,
+            compatibility_target_key: None,
+            policy_key: "safe_dry_run".to_string(),
+            watcher_enabled: false,
+            schedule_enabled: false,
+            schedule_interval_minutes: None,
         };
 
         let err = upsert_media_profile(State(state), Json(request))

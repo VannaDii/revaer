@@ -4,9 +4,10 @@ use crate::error::{Result, try_op};
 use sqlx::{Executor, PgPool, Postgres};
 use uuid::Uuid;
 
-const MEDIA_PROFILE_UPSERT_V1: &str = "SELECT media_profile_upsert_v1(actor_public_id_input => $1, profile_key_input => $2, source_root_input => $3, output_root_input => $4, dry_run_only_input => $5, retention_days_input => $6)";
-const MEDIA_PROFILE_LIST_V1: &str = "SELECT media_profile_public_id, profile_key, source_root, output_root, dry_run_only, retention_days, updated_at FROM media_profile_list_v1()";
-const MEDIA_PROFILE_GET_V1: &str = "SELECT media_profile_public_id, profile_key, source_root, output_root, dry_run_only, retention_days, updated_at FROM media_profile_get_v1(media_profile_public_id_input => $1)";
+const MEDIA_PROFILE_UPSERT_V2: &str = "SELECT media_profile_upsert_v2(actor_public_id_input => $1, profile_key_input => $2, source_root_input => $3, output_root_input => $4, dry_run_only_input => $5, retention_days_input => $6, compatibility_target_key_input => $7, policy_key_input => $8, watcher_enabled_input => $9, schedule_enabled_input => $10, schedule_interval_minutes_input => $11)";
+const MEDIA_PROFILE_UPDATE_V1: &str = "SELECT media_profile_update_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_root_input => $3, output_root_input => $4, dry_run_only_input => $5, retention_days_input => $6, compatibility_target_key_input => $7, policy_key_input => $8, watcher_enabled_input => $9, schedule_enabled_input => $10, schedule_interval_minutes_input => $11)";
+const MEDIA_PROFILE_LIST_V2: &str = "SELECT media_profile_public_id, profile_key, source_root, output_root, dry_run_only, retention_days, compatibility_target_key, policy_key, watcher_enabled, schedule_enabled, schedule_interval_minutes, updated_at FROM media_profile_list_v2()";
+const MEDIA_PROFILE_GET_V2: &str = "SELECT media_profile_public_id, profile_key, source_root, output_root, dry_run_only, retention_days, compatibility_target_key, policy_key, watcher_enabled, schedule_enabled, schedule_interval_minutes, updated_at FROM media_profile_get_v2(media_profile_public_id_input => $1)";
 
 /// Input payload for media profile upsert.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +24,43 @@ pub struct UpsertMediaProfileInput<'a> {
     pub dry_run_only: bool,
     /// Retention days.
     pub retention_days: i32,
+    /// Optional compatibility target key.
+    pub compatibility_target_key: Option<&'a str>,
+    /// Operational policy key.
+    pub policy_key: &'a str,
+    /// Whether filesystem watching is enabled.
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    pub schedule_interval_minutes: Option<i32>,
+}
+
+/// Input payload for media profile patching.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateMediaProfileInput<'a> {
+    /// Actor public id.
+    pub actor_public_id: Uuid,
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Source root path override.
+    pub source_root: Option<&'a str>,
+    /// Output root path override.
+    pub output_root: Option<&'a str>,
+    /// Dry-run-only policy override.
+    pub dry_run_only: Option<bool>,
+    /// Retention days override.
+    pub retention_days: Option<i32>,
+    /// Compatibility target key override.
+    pub compatibility_target_key: Option<&'a str>,
+    /// Operational policy key override.
+    pub policy_key: Option<&'a str>,
+    /// Filesystem watcher override.
+    pub watcher_enabled: Option<bool>,
+    /// Scheduled discovery enablement override.
+    pub schedule_enabled: Option<bool>,
+    /// Scheduled discovery interval override.
+    pub schedule_interval_minutes: Option<i32>,
 }
 
 /// Row returned by profile listing.
@@ -40,6 +78,16 @@ pub struct MediaProfileRow {
     pub dry_run_only: bool,
     /// Retention days.
     pub retention_days: i32,
+    /// Optional compatibility target key.
+    pub compatibility_target_key: Option<String>,
+    /// Operational policy key.
+    pub policy_key: String,
+    /// Whether filesystem watching is enabled.
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    pub schedule_interval_minutes: Option<i32>,
     /// Last update timestamp.
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -68,16 +116,47 @@ pub async fn upsert_media_profile_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPSERT_V1)
+    sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPSERT_V2)
         .bind(input.actor_public_id)
         .bind(input.profile_key)
         .bind(input.source_root)
         .bind(input.output_root)
         .bind(input.dry_run_only)
         .bind(input.retention_days)
+        .bind(input.compatibility_target_key)
+        .bind(input.policy_key)
+        .bind(input.watcher_enabled)
+        .bind(input.schedule_enabled)
+        .bind(input.schedule_interval_minutes)
         .fetch_one(executor)
         .await
         .map_err(try_op("media profile upsert"))
+}
+
+/// Patch a media profile by public id.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn update_media_profile(
+    pool: &PgPool,
+    input: &UpdateMediaProfileInput<'_>,
+) -> Result<Uuid> {
+    sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPDATE_V1)
+        .bind(input.actor_public_id)
+        .bind(input.media_profile_public_id)
+        .bind(input.source_root)
+        .bind(input.output_root)
+        .bind(input.dry_run_only)
+        .bind(input.retention_days)
+        .bind(input.compatibility_target_key)
+        .bind(input.policy_key)
+        .bind(input.watcher_enabled)
+        .bind(input.schedule_enabled)
+        .bind(input.schedule_interval_minutes)
+        .fetch_one(pool)
+        .await
+        .map_err(try_op("media profile update"))
 }
 
 /// List active media profiles.
@@ -86,7 +165,7 @@ where
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn list_media_profiles(pool: &PgPool) -> Result<Vec<MediaProfileRow>> {
-    sqlx::query_as::<_, MediaProfileRow>(MEDIA_PROFILE_LIST_V1)
+    sqlx::query_as::<_, MediaProfileRow>(MEDIA_PROFILE_LIST_V2)
         .fetch_all(pool)
         .await
         .map_err(try_op("media profile list"))
@@ -101,7 +180,7 @@ pub async fn get_media_profile(
     pool: &PgPool,
     media_profile_public_id: Uuid,
 ) -> Result<Option<MediaProfileRow>> {
-    sqlx::query_as::<_, MediaProfileRow>(MEDIA_PROFILE_GET_V1)
+    sqlx::query_as::<_, MediaProfileRow>(MEDIA_PROFILE_GET_V2)
         .bind(media_profile_public_id)
         .fetch_optional(pool)
         .await
@@ -158,6 +237,11 @@ mod tests {
                 output_root: "/output/tv",
                 dry_run_only: true,
                 retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
             },
         )
         .await?;
@@ -190,6 +274,11 @@ mod tests {
                 output_root: "/input/tv",
                 dry_run_only: false,
                 retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
             },
         )
         .await;
@@ -223,6 +312,11 @@ mod tests {
                 output_root: "/output/tv",
                 dry_run_only: true,
                 retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
             },
         )
         .await?;
@@ -248,6 +342,11 @@ mod tests {
             output_root: "/output/movies",
             dry_run_only: true,
             retention_days: 14,
+            compatibility_target_key: None,
+            policy_key: "safe_dry_run",
+            watcher_enabled: false,
+            schedule_enabled: false,
+            schedule_interval_minutes: None,
         };
 
         let upsert = upsert_media_profile(&pool, &input).await;

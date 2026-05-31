@@ -390,3 +390,4 @@
     -   [358: Media UI route foundation slice 11](adr/358-media-ui-route-foundation-slice-11.md)
     -   [359: Media PR feedback capability and portability pass](adr/359-media-pr-feedback-capability-and-portability-pass.md)
     -   [360: Media UI profile management slice 11](adr/360-media-ui-profile-management-slice-11.md)
+    -   [361: Media profile configuration controls slice 11](adr/361-media-profile-configuration-controls-slice-11.md)

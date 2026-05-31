@@ -15,8 +15,8 @@ use revaer_data::media::jobs::{
     list_media_job_operations, list_media_jobs, retry_media_job,
 };
 use revaer_data::media::profiles::{
-    MediaProfileRow, UpsertMediaProfileInput, get_media_profile, list_media_profiles,
-    upsert_media_profile,
+    MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput, get_media_profile,
+    list_media_profiles, update_media_profile, upsert_media_profile,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -47,6 +47,15 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn upsert_profile(&self, input: &UpsertMediaProfileInput<'_>) -> DataResult<Uuid> {
         upsert_media_profile(&self.pool, input).await
+    }
+
+    /// Patch a media profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn update_profile(&self, input: &UpdateMediaProfileInput<'_>) -> DataResult<Uuid> {
+        update_media_profile(&self.pool, input).await
     }
 
     /// List active media profiles.
@@ -334,6 +343,11 @@ mod tests {
                 output_root: "/output/tv",
                 dry_run_only: true,
                 retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
             })
             .await?;
 
@@ -413,6 +427,11 @@ mod tests {
                     output_root: "/output/movies",
                     dry_run_only: true,
                     retention_days: 30,
+                    compatibility_target_key: None,
+                    policy_key: "safe_dry_run",
+                    watcher_enabled: false,
+                    schedule_enabled: false,
+                    schedule_interval_minutes: None,
                 })
                 .await
                 .is_err()

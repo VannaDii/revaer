@@ -59,7 +59,7 @@ applyTo:
 
 - CI-only credentials may be ephemeral only when they are clearly scoped to isolated test infrastructure, such as throwaway Postgres service containers.
 - Ephemeral test credentials must never be reused as application secrets, committed runtime credentials, or user-facing examples.
-- Postgres service containers used by migration-heavy gates must request explicit shared memory aligned with local `just db-start` defaults, because Docker's default shared-memory segment is too small for these database test runs.
+- Postgres service containers used by migration-heavy gates must request explicit shared memory aligned with local `just db-start` defaults; the current default is 1 GiB because Docker's default shared-memory segment and the previous 256 MiB setting are too small for parallel database test runs.
 - Do not log secrets or secret-like values. Mask or omit them.
 - Keep Helm registry credentials (`HELM_API_KEY_ID`, `HELM_API_KEY_SECRET`) separate from chart-signing material (`HELM_GPG_PRIVATE`, `HELM_GPG_PUBLIC`). Publishing jobs may use registry credentials only when consuming an already-packaged chart artifact.
 - GHCR chart publication on GitHub-hosted runners should prefer the job-scoped `GITHUB_TOKEN` plus explicit `packages: write` over long-lived custom registry secrets. Keep `HELM_API_KEY_*` only for non-GitHub or local override paths.

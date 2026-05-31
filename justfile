@@ -582,8 +582,8 @@ db-start:
     echo "Using database URL: ${db_url}"; \
     container_name="${PG_CONTAINER:-revaer-db}"; \
     db_data_dir="${REVAER_DB_DATA_DIR:-${PWD}/.server_root/postgres-data}"; \
-    db_shm_size="${REVAER_DB_SHM_SIZE:-256m}"; \
-    required_shm_bytes="${REVAER_DB_SHM_BYTES:-268435456}"; \
+    db_shm_size="${REVAER_DB_SHM_SIZE:-1g}"; \
+    required_shm_bytes="${REVAER_DB_SHM_BYTES:-1073741824}"; \
     mkdir -p "${db_data_dir}"; \
     existing_container="$(docker ps -aq -f name=^${container_name}$)"; \
     if [ -n "${existing_container}" ] && echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \

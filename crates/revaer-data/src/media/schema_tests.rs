@@ -14,8 +14,12 @@ const EXPECTED_TABLES: &[&str] = &[
 
 const EXPECTED_PROCS: &[&str] = &[
     "media_profile_upsert_v1",
+    "media_profile_upsert_v2",
     "media_profile_list_v1",
+    "media_profile_list_v2",
     "media_profile_get_v1",
+    "media_profile_get_v2",
+    "media_profile_update_v1",
     "media_job_create_v1",
     "media_job_phase_append_v1",
     "media_job_operation_append_v1",
