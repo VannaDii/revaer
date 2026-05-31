@@ -386,3 +386,4 @@
     -   [354: Media preflight failure error-detail field slice 14](adr/354-media-preflight-failure-error-detail-field-slice-14.md)
     -   [355: Media preflight evaluation error-detail accessor slice 14](adr/355-media-preflight-evaluation-error-detail-accessor-slice-14.md)
     -   [356: Media job operation persistence and API slice 14](adr/356-media-job-operation-persistence-and-api-slice-14.md)
+    -   [357: Media UI foundation slice 11](adr/357-media-ui-foundation-slice-11.md)

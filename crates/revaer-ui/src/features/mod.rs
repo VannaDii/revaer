@@ -8,6 +8,8 @@ pub mod indexers;
 #[cfg(any(target_arch = "wasm32", test))]
 pub mod logs;
 #[cfg(any(target_arch = "wasm32", test))]
+pub mod media;
+#[cfg(any(target_arch = "wasm32", test))]
 pub mod search;
 #[cfg(any(target_arch = "wasm32", test))]
 pub mod settings;
