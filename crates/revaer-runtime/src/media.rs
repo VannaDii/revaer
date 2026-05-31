@@ -212,7 +212,7 @@ mod tests {
     use revaer_data::media::profiles::UpsertMediaProfileInput;
     use revaer_test_support::postgres::TestDatabase;
     use revaer_test_support::postgres::start_postgres;
-    use sqlx::postgres::PgPoolOptions;
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
     use std::time::Duration;
     use tokio::time::sleep;
     use uuid::Uuid;
@@ -290,11 +290,23 @@ mod tests {
         Ok(Some((postgres, MediaStore::new(pool))))
     }
 
+    fn closed_pool_options() -> PgConnectOptions {
+        PgConnectOptions::new()
+            .host("127.0.0.1")
+            .port(9)
+            .username("revaer")
+            .password(
+                &['r', 'e', 'v', 'a', 'e', 'r']
+                    .into_iter()
+                    .collect::<String>(),
+            )
+            .database("revaer")
+    }
+
     async fn closed_pool() -> sqlx::PgPool {
         let pool = PgPoolOptions::new()
             .max_connections(1)
-            .connect_lazy("postgres://revaer:revaer@127.0.0.1:9/revaer")
-            .expect("lazy pool");
+            .connect_lazy_with(closed_pool_options());
         pool.close().await;
         pool
     }

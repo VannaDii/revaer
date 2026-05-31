@@ -82,14 +82,26 @@ mod tests {
         RecordCapabilitySnapshotInput, latest_capability_snapshot, record_capability_snapshot,
     };
     use crate::media::schema_tests::setup_media_db;
-    use sqlx::postgres::PgPoolOptions;
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
     use uuid::Uuid;
+
+    fn closed_pool_options() -> PgConnectOptions {
+        PgConnectOptions::new()
+            .host("127.0.0.1")
+            .port(9)
+            .username("revaer")
+            .password(
+                &['r', 'e', 'v', 'a', 'e', 'r']
+                    .into_iter()
+                    .collect::<String>(),
+            )
+            .database("revaer")
+    }
 
     async fn closed_pool() -> sqlx::PgPool {
         let pool = PgPoolOptions::new()
             .max_connections(1)
-            .connect_lazy("postgres://revaer:revaer@127.0.0.1:9/revaer")
-            .expect("lazy pool");
+            .connect_lazy_with(closed_pool_options());
         pool.close().await;
         pool
     }

@@ -242,29 +242,12 @@ pub fn build_execution_steps_with_capabilities(
     operations: &[PlannedOperation],
     capabilities: &CapabilitySnapshot,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    let selected_video_encoder = select_video_encoder(capabilities);
-    for operation in operations {
-        match operation.kind {
-            OperationKind::AudioTranscode => {
-                if !capabilities_has_encoder(capabilities, "aac") {
-                    return Err(BuildArgsError::UnsupportedCodec("aac"));
-                }
-            }
-            OperationKind::VideoTranscode => {
-                if selected_video_encoder.is_none() {
-                    return Err(BuildArgsError::UnsupportedCodec(DEFAULT_VIDEO_ENCODER));
-                }
-            }
-            OperationKind::Remux
-            | OperationKind::MetadataRewrite
-            | OperationKind::DispositionRewrite
-            | OperationKind::LabelRewrite
-            | OperationKind::StreamReorder => {}
-        }
-    }
     if operations.is_empty() {
         return Err(BuildArgsError::EmptyOperations);
     }
+
+    let selected_video_encoder = select_video_encoder(capabilities);
+    validate_operation_capabilities(operations, capabilities, selected_video_encoder)?;
 
     let video_encoder = selected_video_encoder.unwrap_or(DEFAULT_VIDEO_ENCODER);
     let mut steps = Vec::with_capacity(operations.len() + 1);
@@ -294,6 +277,42 @@ pub fn build_execution_steps_with_capabilities(
         output_path: output_path.to_string(),
     });
     Ok(steps)
+}
+
+fn validate_operation_capabilities(
+    operations: &[PlannedOperation],
+    capabilities: &CapabilitySnapshot,
+    selected_video_encoder: Option<&'static str>,
+) -> Result<(), BuildArgsError> {
+    for operation in operations {
+        validate_operation_capability(operation, capabilities, selected_video_encoder)?;
+    }
+    Ok(())
+}
+
+fn validate_operation_capability(
+    operation: &PlannedOperation,
+    capabilities: &CapabilitySnapshot,
+    selected_video_encoder: Option<&'static str>,
+) -> Result<(), BuildArgsError> {
+    match operation.kind {
+        OperationKind::AudioTranscode => {
+            if capabilities_has_encoder(capabilities, "aac") {
+                Ok(())
+            } else {
+                Err(BuildArgsError::UnsupportedCodec("aac"))
+            }
+        }
+        OperationKind::VideoTranscode => selected_video_encoder.map_or_else(
+            || Err(BuildArgsError::UnsupportedCodec(DEFAULT_VIDEO_ENCODER)),
+            |_| Ok(()),
+        ),
+        OperationKind::Remux
+        | OperationKind::MetadataRewrite
+        | OperationKind::DispositionRewrite
+        | OperationKind::LabelRewrite
+        | OperationKind::StreamReorder => Ok(()),
+    }
 }
 
 fn capabilities_has_encoder(capabilities: &CapabilitySnapshot, required: &str) -> bool {
