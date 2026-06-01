@@ -12,8 +12,9 @@ use uuid::Uuid;
 
 use crate::app::media::{
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCreateParams,
-    MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobViolationAppendParams,
-    MediaProfilePatchParams, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
+    MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams,
+    MediaJobViolationAppendParams, MediaProfilePatchParams, MediaProfileUpsertParams,
+    MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -23,10 +24,11 @@ use crate::models::{
     MediaCapabilityRecordResponse, MediaCapabilityRefreshResponse, MediaCapabilitySnapshotResponse,
     MediaComplianceResponse, MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
     MediaJobOperationAppendRequest, MediaJobOperationListResponse, MediaJobPhaseAppendRequest,
-    MediaJobResponse, MediaJobViolationAppendRequest, MediaJobViolationListResponse,
-    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
-    MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
-    MediaYamlImportRequest, MediaYamlValidationResponse,
+    MediaJobPlanReasonAppendRequest, MediaJobPlanReasonListResponse, MediaJobResponse,
+    MediaJobViolationAppendRequest, MediaJobViolationListResponse, MediaProfileListResponse,
+    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
+    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
+    MediaYamlValidationResponse,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -41,6 +43,8 @@ const MEDIA_JOB_OPERATION_APPEND_FAILED: &str = "failed to append media job oper
 const MEDIA_JOB_OPERATION_LIST_FAILED: &str = "failed to list media job operations";
 const MEDIA_JOB_VIOLATION_APPEND_FAILED: &str = "failed to append media job violation";
 const MEDIA_JOB_VIOLATION_LIST_FAILED: &str = "failed to list media job violations";
+const MEDIA_JOB_PLAN_REASON_APPEND_FAILED: &str = "failed to append media job plan reason";
+const MEDIA_JOB_PLAN_REASON_LIST_FAILED: &str = "failed to list media job plan reasons";
 const MEDIA_CAPABILITY_RECORD_FAILED: &str = "failed to record media capability snapshot";
 const MEDIA_CAPABILITY_LATEST_FAILED: &str = "failed to load latest media capability snapshot";
 const MEDIA_CAPABILITY_READINESS_FAILED: &str = "failed to determine media capability readiness";
@@ -59,6 +63,8 @@ const OPERATION_KIND_INVALID: &str = "operation_kind is invalid";
 const VIOLATION_KIND_REQUIRED: &str = "violation_kind is required";
 const VIOLATION_SEVERITY_REQUIRED: &str = "severity is required";
 const VIOLATION_SEVERITY_INVALID: &str = "severity must be one of: low, medium, high";
+const REASON_CODE_REQUIRED: &str = "reason_code is required";
+const REASON_TEXT_REQUIRED: &str = "reason_text is required";
 const COMMAND_BIN_REQUIRED: &str = "command_bin is required";
 const FFMPEG_VERSION_REQUIRED: &str = "ffmpeg_version is required";
 const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
@@ -470,6 +476,65 @@ pub(crate) async fn list_media_job_violations(
         .collect();
 
     Ok(Json(MediaJobViolationListResponse { violations }))
+}
+
+pub(crate) async fn append_media_job_plan_reason(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+    Json(request): Json<MediaJobPlanReasonAppendRequest>,
+) -> Result<StatusCode, ApiError> {
+    let reason_code = normalize_required_str_field(&request.reason_code, REASON_CODE_REQUIRED)?;
+    let reason_text = normalize_required_str_field(&request.reason_text, REASON_TEXT_REQUIRED)?;
+
+    state
+        .media
+        .media_job_plan_reason_append(MediaJobPlanReasonAppendParams {
+            media_job_public_id,
+            reason_index: request.reason_index,
+            candidate_index: request.candidate_index,
+            selected: request.selected,
+            reason_code,
+            reason_text,
+        })
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_plan_reason_append",
+                MEDIA_JOB_PLAN_REASON_APPEND_FAILED,
+                &err,
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn list_media_job_plan_reasons(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<Json<MediaJobPlanReasonListResponse>, ApiError> {
+    let reasons = state
+        .media
+        .media_job_plan_reason_list(media_job_public_id)
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_plan_reason_list",
+                MEDIA_JOB_PLAN_REASON_LIST_FAILED,
+                &err,
+            )
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobPlanReasonResponse {
+            reason_index: item.reason_index,
+            candidate_index: item.candidate_index,
+            selected: item.selected,
+            reason_code: item.reason_code,
+            reason_text: item.reason_text,
+            created_at: item.created_at,
+        })
+        .collect();
+
+    Ok(Json(MediaJobPlanReasonListResponse { reasons }))
 }
 
 pub(crate) async fn record_media_capability(
@@ -1177,6 +1242,35 @@ mod tests {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let Json(response) = list_media_job_violations(State(state), Path(Uuid::new_v4())).await?;
         assert!(response.violations.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_media_job_plan_reason_rejects_missing_reason_code() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobPlanReasonAppendRequest {
+            reason_index: 0,
+            candidate_index: Some(0),
+            selected: true,
+            reason_code: " ".to_string(),
+            reason_text: "Selected candidate.".to_string(),
+        };
+
+        let err = append_media_job_plan_reason(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("missing reason code should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_media_job_plan_reasons_returns_empty_payload_with_default_facade()
+    -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let Json(response) =
+            list_media_job_plan_reasons(State(state), Path(Uuid::new_v4())).await?;
+        assert!(response.reasons.is_empty());
         Ok(())
     }
 

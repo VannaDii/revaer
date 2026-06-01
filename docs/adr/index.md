@@ -391,3 +391,4 @@
 -   [377](377-media-plan-reason-persistence-slice-6.md) – Media plan reason persistence slice 6
 -   [378](378-media-plan-reason-runtime-facade-slice-6.md) – Media plan reason runtime facade slice 6
 -   [379](379-media-plan-reason-app-facade-slice-6-10.md) – Media plan reason app facade slice 6/10
+-   [380](380-media-plan-reason-api-slice-10.md) – Media plan reason API slice 10

@@ -311,6 +311,33 @@ fn media_job_record_paths() -> Vec<(&'static str, Value)> {
                 ),
             ]),
         ),
+        (
+            "/v1/media/jobs/{media_job_public_id}/plan-reasons",
+            path_item([
+                (
+                    "get",
+                    media_operation(
+                        "List media job plan reasons",
+                        "200",
+                        "Media job plan reasons",
+                        Some("MediaJobPlanReasonListResponse"),
+                        None,
+                        vec![path_uuid_parameter("media_job_public_id")],
+                    ),
+                ),
+                (
+                    "post",
+                    media_operation(
+                        "Append a media job plan reason",
+                        "204",
+                        "Media job plan reason appended",
+                        None,
+                        Some("MediaJobPlanReasonAppendRequest"),
+                        vec![path_uuid_parameter("media_job_public_id")],
+                    ),
+                ),
+            ]),
+        ),
     ]
 }
 
@@ -616,6 +643,7 @@ fn media_job_schemas() -> Vec<(&'static str, Value)> {
     schemas.extend(media_job_core_schemas());
     schemas.extend(media_job_operation_schemas());
     schemas.extend(media_job_violation_schemas());
+    schemas.extend(media_job_plan_reason_schemas());
     schemas
 }
 
@@ -749,6 +777,51 @@ fn media_job_violation_schemas() -> Vec<(&'static str, Value)> {
             object_schema(
                 &["violations"],
                 [("violations", array_ref_schema("MediaJobViolationResponse"))],
+            ),
+        ),
+    ]
+}
+
+fn media_job_plan_reason_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobPlanReasonAppendRequest",
+            object_schema(
+                &["reason_index", "selected", "reason_code", "reason_text"],
+                [
+                    ("reason_index", integer_schema()),
+                    ("candidate_index", integer_schema()),
+                    ("selected", bool_schema()),
+                    ("reason_code", string_schema()),
+                    ("reason_text", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobPlanReasonResponse",
+            object_schema(
+                &[
+                    "reason_index",
+                    "selected",
+                    "reason_code",
+                    "reason_text",
+                    "created_at",
+                ],
+                [
+                    ("reason_index", integer_schema()),
+                    ("candidate_index", integer_schema()),
+                    ("selected", bool_schema()),
+                    ("reason_code", string_schema()),
+                    ("reason_text", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobPlanReasonListResponse",
+            object_schema(
+                &["reasons"],
+                [("reasons", array_ref_schema("MediaJobPlanReasonResponse"))],
             ),
         ),
     ]
@@ -1096,6 +1169,7 @@ mod tests {
             "/v1/media/jobs/{media_job_public_id}/phases",
             "/v1/media/jobs/{media_job_public_id}/operations",
             "/v1/media/jobs/{media_job_public_id}/violations",
+            "/v1/media/jobs/{media_job_public_id}/plan-reasons",
             "/v1/media/capabilities",
             "/v1/media/capabilities/readiness",
             "/v1/media/capabilities/refresh",
@@ -1133,6 +1207,9 @@ mod tests {
             "MediaJobViolationAppendRequest",
             "MediaJobViolationListResponse",
             "MediaJobViolationResponse",
+            "MediaJobPlanReasonAppendRequest",
+            "MediaJobPlanReasonListResponse",
+            "MediaJobPlanReasonResponse",
             "MediaCapabilityRecordRequest",
             "MediaCapabilityRecordResponse",
             "MediaCapabilityRefreshResponse",

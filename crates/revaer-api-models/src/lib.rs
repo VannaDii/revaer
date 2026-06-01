@@ -449,6 +449,22 @@ pub struct MediaJobViolationAppendRequest {
     pub stream_id: Option<i32>,
 }
 
+/// Request payload for appending a media job plan-reason row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPlanReasonAppendRequest {
+    /// Reason order index.
+    pub reason_index: i32,
+    /// Optional candidate index.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_index: Option<i32>,
+    /// Whether this reason describes the selected plan.
+    pub selected: bool,
+    /// Stable reason code.
+    pub reason_code: String,
+    /// Human-readable reason text.
+    pub reason_text: String,
+}
+
 /// Media job response row payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobResponse {
@@ -549,6 +565,31 @@ pub struct MediaJobViolationResponse {
 pub struct MediaJobViolationListResponse {
     /// Ordered violations.
     pub violations: Vec<MediaJobViolationResponse>,
+}
+
+/// Media job plan-reason response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPlanReasonResponse {
+    /// Reason order index.
+    pub reason_index: i32,
+    /// Optional candidate index.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_index: Option<i32>,
+    /// Whether this reason describes the selected plan.
+    pub selected: bool,
+    /// Stable reason code.
+    pub reason_code: String,
+    /// Human-readable reason text.
+    pub reason_text: String,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job plan-reason list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPlanReasonListResponse {
+    /// Ordered plan reasons.
+    pub reasons: Vec<MediaJobPlanReasonResponse>,
 }
 
 /// Request payload for recording one media capability snapshot row.

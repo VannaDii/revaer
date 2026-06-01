@@ -1000,6 +1000,77 @@
         ],
         "type": "object"
       },
+      "MediaJobPlanReasonAppendRequest": {
+        "properties": {
+          "candidate_index": {
+            "type": "integer"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "reason_index": {
+            "type": "integer"
+          },
+          "reason_text": {
+            "type": "string"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reason_index",
+          "selected",
+          "reason_code",
+          "reason_text"
+        ],
+        "type": "object"
+      },
+      "MediaJobPlanReasonListResponse": {
+        "properties": {
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobPlanReasonResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "reasons"
+        ],
+        "type": "object"
+      },
+      "MediaJobPlanReasonResponse": {
+        "properties": {
+          "candidate_index": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "reason_index": {
+            "type": "integer"
+          },
+          "reason_text": {
+            "type": "string"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reason_index",
+          "selected",
+          "reason_code",
+          "reason_text",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "MediaJobResponse": {
         "properties": {
           "completed_at": {
@@ -11404,6 +11475,213 @@
           }
         ],
         "summary": "Append a media job phase"
+      }
+    },
+    "/v1/media/jobs/{media_job_public_id}/plan-reasons": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "media_job_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaJobPlanReasonListResponse"
+                }
+              }
+            },
+            "description": "Media job plan reasons"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid media request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow unavailable"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List media job plan reasons"
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "media_job_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaJobPlanReasonAppendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Media job plan reason appended"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid media request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow unavailable"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Append a media job plan reason"
       }
     },
     "/v1/media/jobs/{media_job_public_id}/retry": {
