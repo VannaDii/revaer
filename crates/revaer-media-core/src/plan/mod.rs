@@ -31,6 +31,19 @@ pub struct PlannedOperation {
     pub stream_id: Option<u32>,
 }
 
+/// Return the deterministic planning cost for an operation kind.
+#[must_use]
+pub const fn operation_cost(kind: OperationKind) -> u32 {
+    match kind {
+        OperationKind::MetadataRewrite => 1,
+        OperationKind::DispositionRewrite | OperationKind::LabelRewrite => 2,
+        OperationKind::StreamReorder => 5,
+        OperationKind::Remux => 10,
+        OperationKind::AudioTranscode => 20,
+        OperationKind::VideoTranscode => 1000,
+    }
+}
+
 /// Generate a deterministic operation plan from a diff.
 #[must_use]
 pub fn generate_plan(diff: &GraphDiff) -> Vec<PlannedOperation> {

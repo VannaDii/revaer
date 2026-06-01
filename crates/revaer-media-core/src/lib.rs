@@ -14,11 +14,12 @@
 )]
 
 //! Pure, deterministic media domain logic.
-//! Layout: model, normalization, classification, compilation, diff, planning,
-//! verification, and explanation modules.
+//! Layout: model, normalization, classification, compilation, diff, compliance,
+//! planning, verification, and explanation modules.
 
 pub mod classify;
 pub mod compile;
+pub mod compliance;
 pub mod diff;
 pub mod explain;
 pub mod model;

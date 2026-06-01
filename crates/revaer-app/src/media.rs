@@ -629,6 +629,46 @@ mod tests {
         }
     }
 
+    async fn setup_media_service(
+        detector: Arc<dyn CapabilityDetector>,
+    ) -> anyhow::Result<Option<(MediaService, Uuid)>> {
+        let Ok(postgres) = start_postgres() else {
+            return Ok(None);
+        };
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(postgres.connection_string())
+            .await?;
+        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
+        migrator.set_ignore_missing(true);
+        migrator.run(&pool).await?;
+
+        let store = MediaStore::new(pool);
+        let email = format!("media-app-{}@example.invalid", Uuid::new_v4());
+        let actor_user_public_id = app_user_create(store.pool(), &email, "Media App").await?;
+        app_user_verify_email(store.pool(), actor_user_public_id).await?;
+        Ok(Some((
+            MediaService::new(store, detector),
+            actor_user_public_id,
+        )))
+    }
+
+    fn static_detector() -> Arc<dyn CapabilityDetector> {
+        Arc::new(StaticDetector {
+            snapshot: CapabilitySnapshot {
+                ffmpeg_version: "7.1".to_string(),
+                ffprobe_version: "7.1".to_string(),
+                codecs: vec!["h264".to_string(), "h264".to_string(), "  ".to_string()],
+                codec_support: vec![CodecCapability {
+                    name: "h264".to_string(),
+                    encode_supported: false,
+                    decode_supported: true,
+                }],
+                encoders: Vec::new(),
+            },
+        })
+    }
+
     #[test]
     fn reject_missing_capability_snapshot() {
         let result = ensure_execution_capability_snapshot(None);
@@ -773,39 +813,52 @@ mod tests {
     #[tokio::test]
     async fn media_service_round_trips_profile_job_yaml_and_capability_paths() -> anyhow::Result<()>
     {
-        let Ok(postgres) = start_postgres() else {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
             return Ok(());
         };
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(postgres.connection_string())
+
+        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+        assert_profile_is_listed(&service, profile_id).await?;
+
+        let job_id = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/app-media/video.mkv",
+                output_path: Some("/output/app-media/video.mkv"),
+                dry_run: true,
+            })
             .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
-        migrator.run(&pool).await?;
-
-        let store = MediaStore::new(pool);
-        let email = format!("media-app-{}@example.invalid", Uuid::new_v4());
-        let actor_user_public_id = app_user_create(store.pool(), &email, "Media App").await?;
-        app_user_verify_email(store.pool(), actor_user_public_id).await?;
-        let service = MediaService::new(
-            store.clone(),
-            Arc::new(StaticDetector {
-                snapshot: CapabilitySnapshot {
-                    ffmpeg_version: "7.1".to_string(),
-                    ffprobe_version: "7.1".to_string(),
-                    codecs: vec!["h264".to_string(), "h264".to_string(), "  ".to_string()],
-                    codec_support: vec![CodecCapability {
-                        name: "h264".to_string(),
-                        encode_supported: false,
-                        decode_supported: true,
-                    }],
-                    encoders: Vec::new(),
-                },
-            }),
+        append_plan_phase_and_operation(&service, job_id).await?;
+        assert!(service.media_job_get(job_id).await?.is_some());
+        assert!(
+            !service
+                .media_job_list(profile_id, Some("queued"))
+                .await?
+                .is_empty()
         );
+        assert_eq!(service.media_job_operation_list(job_id).await?.len(), 1);
+        assert_job_cancel_retry(&service, job_id).await?;
 
-        let profile_id = service
+        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
+
+        let yaml = service.media_yaml_export().await?;
+        let validation = service.media_yaml_validate(&yaml).await?;
+        assert!(validation.valid);
+        let applied = service
+            .media_yaml_apply(actor_user_public_id, &yaml)
+            .await?;
+        assert!(applied.forced_dry_run);
+
+        Ok(())
+    }
+
+    async fn upsert_app_media_profile(
+        service: &MediaService,
+        actor_user_public_id: Uuid,
+    ) -> anyhow::Result<Uuid> {
+        service
             .media_profile_upsert(MediaProfileUpsertParams {
                 actor_user_public_id,
                 profile_key: "app-media",
@@ -819,23 +872,27 @@ mod tests {
                 schedule_enabled: false,
                 schedule_interval_minutes: None,
             })
-            .await?;
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn assert_profile_is_listed(
+        service: &MediaService,
+        profile_id: Uuid,
+    ) -> anyhow::Result<()> {
         let profiles = service.media_profile_list().await?;
         assert!(
             profiles
                 .iter()
                 .any(|profile| profile.media_profile_public_id == profile_id)
         );
+        Ok(())
+    }
 
-        let job_id = service
-            .media_job_create(MediaJobCreateParams {
-                actor_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/app-media/video.mkv",
-                output_path: Some("/output/app-media/video.mkv"),
-                dry_run: true,
-            })
-            .await?;
+    async fn append_plan_phase_and_operation(
+        service: &MediaService,
+        job_id: Uuid,
+    ) -> anyhow::Result<()> {
         service
             .media_job_phase_append(MediaJobPhaseAppendParams {
                 media_job_public_id: job_id,
@@ -855,14 +912,10 @@ mod tests {
                 args: [Some("-i"), Some("in.mkv"), Some("-c"), Some("copy"), None],
             })
             .await?;
-        assert!(service.media_job_get(job_id).await?.is_some());
-        assert!(
-            !service
-                .media_job_list(profile_id, Some("queued"))
-                .await?
-                .is_empty()
-        );
-        assert_eq!(service.media_job_operation_list(job_id).await?.len(), 1);
+        Ok(())
+    }
+
+    async fn assert_job_cancel_retry(service: &MediaService, job_id: Uuid) -> anyhow::Result<()> {
         service.media_job_cancel(job_id).await?;
         let cancelled_job = service
             .media_job_get(job_id)
@@ -875,17 +928,6 @@ mod tests {
             .await?
             .ok_or_else(|| anyhow::anyhow!("retried media job missing"))?;
         assert_eq!(retried_job.status, "queued");
-
-        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
-
-        let yaml = service.media_yaml_export().await?;
-        let validation = service.media_yaml_validate(&yaml).await?;
-        assert!(validation.valid);
-        let applied = service
-            .media_yaml_apply(actor_user_public_id, &yaml)
-            .await?;
-        assert!(applied.forced_dry_run);
-
         Ok(())
     }
 
@@ -913,22 +955,11 @@ mod tests {
     #[tokio::test]
     async fn media_capability_refresh_reports_join_failure_when_detector_panics()
     -> anyhow::Result<()> {
-        let Ok(postgres) = start_postgres() else {
+        let Some((service, actor_user_public_id)) =
+            setup_media_service(Arc::new(PanicDetector)).await?
+        else {
             return Ok(());
         };
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(postgres.connection_string())
-            .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
-        migrator.run(&pool).await?;
-
-        let store = MediaStore::new(pool);
-        let email = format!("media-app-{}@example.invalid", Uuid::new_v4());
-        let actor_user_public_id = app_user_create(store.pool(), &email, "Media App").await?;
-        app_user_verify_email(store.pool(), actor_user_public_id).await?;
-        let service = MediaService::new(store, Arc::new(PanicDetector));
 
         let result = service
             .media_capability_refresh(MediaCapabilityRefreshParams {

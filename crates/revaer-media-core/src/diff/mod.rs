@@ -49,7 +49,8 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
 
 #[cfg(test)]
 mod tests {
-    use super::{RecodedStream, diff_graphs};
+    use super::{GraphDiff, RecodedStream, diff_graphs};
+    use crate::compliance::{ViolationKind, score_diff};
     use crate::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 
     #[test]
@@ -96,5 +97,49 @@ mod tests {
                 kind: StreamKind::Video,
             }]
         );
+    }
+
+    #[test]
+    fn score_diff_reports_removed_and_recoded_stream_violations() {
+        let diff = GraphDiff {
+            removed_streams: vec![3],
+            recoded_streams: vec![
+                RecodedStream {
+                    stream_id: 1,
+                    kind: StreamKind::Audio,
+                },
+                RecodedStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                },
+            ],
+        };
+
+        let report = score_diff(&diff);
+
+        assert_eq!(report.score, 40);
+        assert_eq!(
+            report
+                .violations
+                .iter()
+                .map(|item| (item.kind, item.stream_id))
+                .collect::<Vec<_>>(),
+            vec![
+                (ViolationKind::RemovedStream, Some(3)),
+                (ViolationKind::AudioCodecMismatch, Some(1)),
+                (ViolationKind::VideoCodecMismatch, Some(0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn score_diff_returns_full_score_for_empty_diff() {
+        let report = score_diff(&GraphDiff {
+            removed_streams: Vec::new(),
+            recoded_streams: Vec::new(),
+        });
+
+        assert_eq!(report.score, 100);
+        assert!(report.violations.is_empty());
     }
 }
