@@ -400,3 +400,4 @@
     -   [368: Media jobs empty-list refresh slice 11](adr/368-media-jobs-empty-list-refresh-slice-11.md)
     -   [369: Media compliance scoring and explanations slice 4](adr/369-media-compliance-scoring-explanations-slice-4.md)
     -   [370: Media planned job compliance report slice 4/8](adr/370-media-planned-job-compliance-report-slice-4-8.md)
+    -   [371: Media job violation persistence slice 6](adr/371-media-job-violation-persistence-slice-6.md)

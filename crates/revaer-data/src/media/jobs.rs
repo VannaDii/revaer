@@ -8,6 +8,8 @@ const MEDIA_JOB_CREATE_V1: &str = "SELECT media_job_create_v1(actor_public_id_in
 const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1(media_job_public_id_input => $1, phase_index_input => $2, phase_name_input => $3, phase_status_input => $4, details_text_input => $5)";
 const MEDIA_JOB_OPERATION_APPEND_V1: &str = "SELECT media_job_operation_append_v1(media_job_public_id_input => $1, operation_index_input => $2, operation_kind_input => $3, stream_id_input => $4, command_bin_input => $5, arg_1_input => $6, arg_2_input => $7, arg_3_input => $8, arg_4_input => $9, arg_5_input => $10)";
 const MEDIA_JOB_OPERATION_LIST_V1: &str = "SELECT operation_index, operation_kind, stream_id, command_bin, arg_1, arg_2, arg_3, arg_4, arg_5, created_at FROM media_job_operation_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_VIOLATION_APPEND_V1: &str = "SELECT media_job_violation_append_v1(media_job_public_id_input => $1, violation_index_input => $2, violation_kind_input => $3, severity_input => $4, stream_id_input => $5)";
+const MEDIA_JOB_VIOLATION_LIST_V1: &str = "SELECT violation_index, violation_kind, severity, stream_id, created_at FROM media_job_violation_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_CANCEL_V1: &str = "SELECT media_job_cancel_v1(media_job_public_id_input => $1)";
@@ -72,6 +74,21 @@ pub struct MediaJobOperationRow {
     pub arg_4: Option<String>,
     /// Optional argument 5.
     pub arg_5: Option<String>,
+    /// Row creation timestamp.
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Media job compliance violation row.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobViolationRow {
+    /// Violation ordering index.
+    pub violation_index: i32,
+    /// Violation kind.
+    pub violation_kind: String,
+    /// Violation severity.
+    pub severity: String,
+    /// Optional stream id for stream-scoped violations.
+    pub stream_id: Option<i32>,
     /// Row creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -150,6 +167,31 @@ pub async fn append_media_job_operation(
     Ok(())
 }
 
+/// Append or update a media job compliance violation row.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn append_media_job_violation(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+    violation_index: i32,
+    violation_kind: &str,
+    severity: &str,
+    stream_id: Option<i32>,
+) -> Result<()> {
+    sqlx::query(MEDIA_JOB_VIOLATION_APPEND_V1)
+        .bind(media_job_public_id)
+        .bind(violation_index)
+        .bind(violation_kind)
+        .bind(severity)
+        .bind(stream_id)
+        .execute(pool)
+        .await
+        .map_err(try_op("media job violation append"))?;
+    Ok(())
+}
+
 /// List media jobs for profile and optional status.
 ///
 /// # Errors
@@ -182,6 +224,22 @@ pub async fn list_media_job_operations(
         .fetch_all(pool)
         .await
         .map_err(try_op("media job operation list"))
+}
+
+/// List media job compliance violations for one job.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_violations(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Vec<MediaJobViolationRow>> {
+    sqlx::query_as::<_, MediaJobViolationRow>(MEDIA_JOB_VIOLATION_LIST_V1)
+        .bind(media_job_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job violation list"))
 }
 
 /// Get one media job by public id.
@@ -231,8 +289,9 @@ pub async fn retry_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result
 #[cfg(test)]
 mod tests {
     use super::{
-        CreateMediaJobInput, append_media_job_operation, append_media_job_phase, create_media_job,
-        get_media_job, list_media_job_operations, list_media_jobs,
+        CreateMediaJobInput, append_media_job_operation, append_media_job_phase,
+        append_media_job_violation, create_media_job, get_media_job, list_media_job_operations,
+        list_media_job_violations, list_media_jobs,
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::setup_media_db;
@@ -326,6 +385,16 @@ mod tests {
         )
         .await?;
 
+        append_media_job_violation(
+            db.pool(),
+            job_id,
+            0,
+            "video_codec_mismatch",
+            "high",
+            Some(0),
+        )
+        .await?;
+
         let rows = list_media_jobs(db.pool(), profile_id, Some("queued")).await?;
         assert!(rows.iter().any(|item| item.media_job_public_id == job_id));
 
@@ -341,6 +410,13 @@ mod tests {
         assert_eq!(operations[0].operation_index, 0);
         assert_eq!(operations[0].operation_kind, "remux");
         assert_eq!(operations[0].command_bin, "ffmpeg");
+
+        let violations = list_media_job_violations(db.pool(), job_id).await?;
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].violation_index, 0);
+        assert_eq!(violations[0].violation_kind, "video_codec_mismatch");
+        assert_eq!(violations[0].severity, "high");
+        assert_eq!(violations[0].stream_id, Some(0));
         Ok(())
     }
 
@@ -375,5 +451,12 @@ mod tests {
 
         let operations = list_media_job_operations(&pool, job_id).await;
         assert!(operations.is_err());
+
+        let append_violation =
+            append_media_job_violation(&pool, job_id, 0, "codec_mismatch", "high", Some(0)).await;
+        assert!(append_violation.is_err());
+
+        let violations = list_media_job_violations(&pool, job_id).await;
+        assert!(violations.is_err());
     }
 }

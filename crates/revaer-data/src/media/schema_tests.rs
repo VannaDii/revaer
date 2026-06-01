@@ -9,6 +9,7 @@ const EXPECTED_TABLES: &[&str] = &[
     "media_job",
     "media_job_phase",
     "media_job_operation",
+    "media_job_violation",
     "media_capability_snapshot",
 ];
 
@@ -24,6 +25,8 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_job_phase_append_v1",
     "media_job_operation_append_v1",
     "media_job_operation_list_v1",
+    "media_job_violation_append_v1",
+    "media_job_violation_list_v1",
     "media_capability_snapshot_record_v1",
     "media_capability_snapshot_latest_v1",
     "media_job_list_v1",
