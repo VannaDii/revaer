@@ -548,4 +548,46 @@ mod tests {
         assert!(rendered.contains("indexer_operation_latency_ms"));
         Ok(())
     }
+
+    #[test]
+    fn metric_constructor_helpers_report_invalid_descriptors() {
+        assert!(matches!(
+            counter("", "invalid"),
+            Err(TelemetryError::MetricsCollector { name: "", .. })
+        ));
+        assert!(matches!(
+            counter_vec("invalid_counter_vec", "invalid", &[""]),
+            Err(TelemetryError::MetricsCollector {
+                name: "invalid_counter_vec",
+                ..
+            })
+        ));
+        assert!(matches!(
+            gauge("", "invalid"),
+            Err(TelemetryError::MetricsCollector { name: "", .. })
+        ));
+        assert!(matches!(
+            histogram_vec("invalid_histogram_vec", "invalid", &[""]),
+            Err(TelemetryError::MetricsCollector {
+                name: "invalid_histogram_vec",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn collector_registration_reports_duplicate_names() -> Result<()> {
+        let registry = Registry::new();
+        let collector = counter("duplicate_counter_total", "Duplicate counter")?;
+        register_collector(&registry, "duplicate_counter_total", collector.clone())?;
+
+        assert!(matches!(
+            register_collector(&registry, "duplicate_counter_total", collector),
+            Err(TelemetryError::MetricsRegister {
+                name: "duplicate_counter_total",
+                ..
+            })
+        ));
+        Ok(())
+    }
 }

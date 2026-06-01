@@ -3,10 +3,17 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tracing::error;
 
 use crate::openapi_assets::OPENAPI_EMBEDDED_JSON;
+
+const MEDIA_DISCOVERY_SOURCE_PATHS_MAX_LEN: usize = 1024;
+const MEDIA_DISCOVERY_SOURCE_PATH_MAX_BYTES: usize = 4096;
+const STALE_MEDIA_SCHEMAS: [&str; 2] = [
+    "MediaCapabilityRecordRequest",
+    "MediaCapabilityRecordResponse",
+];
 
 type OpenApiPersistFn =
     Arc<dyn Fn(&Path, &Value) -> Result<(), revaer_telemetry::TelemetryError> + Send + Sync>;
@@ -40,12 +47,1774 @@ impl OpenApiDependencies {
 
 pub(crate) fn build_openapi_document() -> Value {
     match serde_json::from_str(OPENAPI_EMBEDDED_JSON) {
-        Ok(value) => value,
+        Ok(mut value) => {
+            add_media_openapi(&mut value);
+            value
+        }
         Err(err) => {
             error!(error = %err, "failed to parse embedded OpenAPI document");
             Value::Object(serde_json::Map::new())
         }
     }
+}
+
+fn add_media_openapi(document: &mut Value) {
+    let Some(root) = document.as_object_mut() else {
+        return;
+    };
+
+    let paths = root
+        .entry("paths")
+        .or_insert_with(|| Value::Object(Map::new()));
+    let Some(paths) = paths.as_object_mut() else {
+        return;
+    };
+    for (path, path_item) in media_paths() {
+        paths.insert(path.to_string(), path_item);
+    }
+
+    let components = root
+        .entry("components")
+        .or_insert_with(|| Value::Object(Map::new()));
+    let Some(components) = components.as_object_mut() else {
+        return;
+    };
+    let schemas = components
+        .entry("schemas")
+        .or_insert_with(|| Value::Object(Map::new()));
+    let Some(schemas) = schemas.as_object_mut() else {
+        return;
+    };
+    for name in STALE_MEDIA_SCHEMAS {
+        schemas.remove(name);
+    }
+    for (name, schema) in media_schemas() {
+        schemas.insert(name.to_string(), schema);
+    }
+}
+
+fn media_paths() -> Vec<(&'static str, Value)> {
+    let mut paths = Vec::new();
+    paths.extend(media_profile_paths());
+    paths.extend(media_discovery_paths());
+    paths.extend(media_job_paths());
+    paths.extend(media_capability_paths());
+    paths.extend(media_yaml_paths());
+    paths
+}
+
+fn media_profile_paths() -> Vec<(&'static str, Value)> {
+    let mut paths = Vec::new();
+    paths.extend(media_profile_core_paths());
+    paths.extend(media_profile_support_paths());
+    paths
+}
+
+fn media_profile_core_paths() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "/v1/media/profiles",
+            path_item([
+                (
+                    "get",
+                    media_operation(
+                        "List media profiles",
+                        "200",
+                        "Media profile collection",
+                        Some("MediaProfileListResponse"),
+                        None,
+                        Vec::new(),
+                    ),
+                ),
+                (
+                    "post",
+                    media_operation(
+                        "Create or update a media profile",
+                        "201",
+                        "Media profile saved",
+                        Some("MediaProfileResponse"),
+                        Some("MediaProfileUpsertRequest"),
+                        Vec::new(),
+                    ),
+                ),
+            ]),
+        ),
+        (
+            "/v1/media/profiles/{media_profile_public_id}",
+            path_item([
+                (
+                    "get",
+                    media_operation(
+                        "Read a media profile",
+                        "200",
+                        "Media profile",
+                        Some("MediaProfileResponse"),
+                        None,
+                        vec![path_uuid_parameter("media_profile_public_id")],
+                    ),
+                ),
+                (
+                    "patch",
+                    media_operation(
+                        "Patch a media profile",
+                        "200",
+                        "Media profile",
+                        Some("MediaProfileResponse"),
+                        Some("MediaProfilePatchRequest"),
+                        vec![path_uuid_parameter("media_profile_public_id")],
+                    ),
+                ),
+            ]),
+        ),
+    ]
+}
+
+fn media_profile_support_paths() -> Vec<(&'static str, Value)> {
+    let mut paths = vec![(
+        "/v1/media/profiles/validate",
+        path_item([(
+            "post",
+            media_operation(
+                "Validate a media profile",
+                "200",
+                "Media profile validation",
+                Some("MediaProfileValidationResponse"),
+                Some("MediaProfileUpsertRequest"),
+                Vec::new(),
+            ),
+        )]),
+    )];
+    paths.extend(media_configuration_paths());
+    paths.push((
+        "/v1/media/planning/preview",
+        path_item([(
+            "post",
+            media_operation(
+                "Preview media planning",
+                "200",
+                "Media planning preview",
+                Some("MediaPlanningPreviewResponse"),
+                Some("MediaPlanningPreviewRequest"),
+                Vec::new(),
+            ),
+        )]),
+    ));
+    paths
+}
+
+fn media_configuration_paths() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "/v1/media/compatibility-targets",
+            path_item([
+                (
+                    "get",
+                    media_operation(
+                        "List media compatibility targets",
+                        "200",
+                        "Media compatibility targets",
+                        Some("MediaCompatibilityTargetListResponse"),
+                        None,
+                        Vec::new(),
+                    ),
+                ),
+                (
+                    "post",
+                    media_operation(
+                        "Create or replace a media compatibility target",
+                        "201",
+                        "Media compatibility target",
+                        Some("MediaCompatibilityTargetResponse"),
+                        Some("MediaCompatibilityTargetUpsertRequest"),
+                        Vec::new(),
+                    ),
+                ),
+            ]),
+        ),
+        (
+            "/v1/media/policies",
+            path_item([
+                (
+                    "get",
+                    media_operation(
+                        "List media policies",
+                        "200",
+                        "Media policies",
+                        Some("MediaPolicyListResponse"),
+                        None,
+                        Vec::new(),
+                    ),
+                ),
+                (
+                    "post",
+                    media_operation(
+                        "Create or replace a media policy",
+                        "201",
+                        "Media policy",
+                        Some("MediaPolicyResponse"),
+                        Some("MediaPolicyUpsertRequest"),
+                        Vec::new(),
+                    ),
+                ),
+            ]),
+        ),
+        (
+            "/v1/media/job-retention",
+            path_item([
+                (
+                    "get",
+                    media_operation(
+                        "Read media job retention policy",
+                        "200",
+                        "Media job retention",
+                        Some("MediaJobRetentionResponse"),
+                        None,
+                        Vec::new(),
+                    ),
+                ),
+                (
+                    "patch",
+                    media_operation(
+                        "Update media job retention policy",
+                        "200",
+                        "Media job retention",
+                        Some("MediaJobRetentionResponse"),
+                        Some("MediaJobRetentionUpdateRequest"),
+                        Vec::new(),
+                    ),
+                ),
+            ]),
+        ),
+    ]
+}
+
+fn media_discovery_paths() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "/v1/media/discovery/preview",
+            path_item([(
+                "post",
+                media_operation(
+                    "Preview media discovery",
+                    "200",
+                    "Media discovery preview",
+                    Some("MediaDiscoveryPreviewResponse"),
+                    Some("MediaDiscoveryPreviewRequest"),
+                    Vec::new(),
+                ),
+            )]),
+        ),
+        (
+            "/v1/media/discovery/runs",
+            path_item([(
+                "post",
+                media_operation(
+                    "Run media discovery",
+                    "201",
+                    "Media discovery run",
+                    Some("MediaDiscoveryRunResponse"),
+                    Some("MediaDiscoveryRunRequest"),
+                    Vec::new(),
+                ),
+            )]),
+        ),
+        (
+            "/v1/media/discovery/schedules",
+            path_item([
+                (
+                    "get",
+                    media_operation(
+                        "List media discovery schedules",
+                        "200",
+                        "Media discovery schedules",
+                        Some("MediaDiscoveryScheduleListResponse"),
+                        None,
+                        Vec::new(),
+                    ),
+                ),
+                (
+                    "post",
+                    media_operation(
+                        "Run scheduled media discovery",
+                        "201",
+                        "Scheduled media discovery run",
+                        Some("MediaDiscoveryRunResponse"),
+                        Some("MediaDiscoveryRunRequest"),
+                        Vec::new(),
+                    ),
+                ),
+            ]),
+        ),
+        (
+            "/v1/media/discovery/watchers",
+            path_item([(
+                "get",
+                media_operation(
+                    "List media discovery watchers",
+                    "200",
+                    "Media discovery watchers",
+                    Some("MediaDiscoveryWatcherListResponse"),
+                    None,
+                    Vec::new(),
+                ),
+            )]),
+        ),
+    ]
+}
+
+fn media_job_paths() -> Vec<(&'static str, Value)> {
+    let mut paths = Vec::new();
+    paths.extend(media_job_core_paths());
+    paths.extend(media_job_lifecycle_paths());
+    paths.extend(media_job_record_paths());
+    paths
+}
+
+fn media_job_core_paths() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "/v1/media/jobs",
+            path_item([
+                (
+                    "get",
+                    media_operation(
+                        "List media jobs",
+                        "200",
+                        "Media job collection",
+                        Some("MediaJobListResponse"),
+                        None,
+                        vec![
+                            query_uuid_parameter("media_profile_public_id"),
+                            query_string_parameter("status"),
+                        ],
+                    ),
+                ),
+                (
+                    "post",
+                    media_operation(
+                        "Create a media job",
+                        "201",
+                        "Media job created",
+                        Some("MediaJobCreateResponse"),
+                        Some("MediaJobCreateRequest"),
+                        Vec::new(),
+                    ),
+                ),
+            ]),
+        ),
+        (
+            "/v1/media/jobs/{media_job_public_id}",
+            path_item([(
+                "get",
+                media_operation(
+                    "Read a media job",
+                    "200",
+                    "Media job",
+                    Some("MediaJobResponse"),
+                    None,
+                    vec![path_uuid_parameter("media_job_public_id")],
+                ),
+            )]),
+        ),
+    ]
+}
+
+fn media_job_lifecycle_paths() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "/v1/media/jobs/{media_job_public_id}/cancel",
+            path_item([(
+                "post",
+                media_operation(
+                    "Cancel a media job",
+                    "204",
+                    "Media job cancelled",
+                    None,
+                    None,
+                    vec![path_uuid_parameter("media_job_public_id")],
+                ),
+            )]),
+        ),
+        (
+            "/v1/media/jobs/{media_job_public_id}/retry",
+            path_item([(
+                "post",
+                media_operation(
+                    "Retry a media job",
+                    "204",
+                    "Media job retried",
+                    None,
+                    None,
+                    vec![path_uuid_parameter("media_job_public_id")],
+                ),
+            )]),
+        ),
+        (
+            "/v1/media/jobs/{media_job_public_id}/phases",
+            path_item([(
+                "post",
+                media_operation(
+                    "Append a media job phase",
+                    "204",
+                    "Media job phase appended",
+                    None,
+                    Some("MediaJobPhaseAppendRequest"),
+                    vec![path_uuid_parameter("media_job_public_id")],
+                ),
+            )]),
+        ),
+    ]
+}
+
+fn media_job_record_paths() -> Vec<(&'static str, Value)> {
+    vec![
+        media_job_record_path(
+            "/v1/media/jobs/{media_job_public_id}/operations",
+            "List media job operations",
+            "Media job operations",
+            "MediaJobOperationListResponse",
+        ),
+        media_job_record_path(
+            "/v1/media/jobs/{media_job_public_id}/violations",
+            "List media job violations",
+            "Media job violations",
+            "MediaJobViolationListResponse",
+        ),
+        media_job_record_path(
+            "/v1/media/jobs/{media_job_public_id}/plan-reasons",
+            "List media job plan reasons",
+            "Media job plan reasons",
+            "MediaJobPlanReasonListResponse",
+        ),
+        media_job_record_path(
+            "/v1/media/jobs/{media_job_public_id}/verification-checks",
+            "List media job verification checks",
+            "Media job verification checks",
+            "MediaJobVerificationCheckListResponse",
+        ),
+        media_job_record_path(
+            "/v1/media/jobs/{media_job_public_id}/artifacts",
+            "List media job artifacts",
+            "Media job artifacts",
+            "MediaJobArtifactListResponse",
+        ),
+        media_job_record_path(
+            "/v1/media/jobs/{media_job_public_id}/compact-audits",
+            "List media job compact audits",
+            "Media job compact audits",
+            "MediaJobCompactAuditListResponse",
+        ),
+    ]
+}
+
+fn media_job_record_path(
+    path: &'static str,
+    list_summary: &'static str,
+    list_description: &'static str,
+    list_schema: &'static str,
+) -> (&'static str, Value) {
+    (
+        path,
+        path_item([(
+            "get",
+            media_operation(
+                list_summary,
+                "200",
+                list_description,
+                Some(list_schema),
+                None,
+                vec![path_uuid_parameter("media_job_public_id")],
+            ),
+        )]),
+    )
+}
+
+fn media_capability_paths() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "/v1/media/capabilities",
+            path_item([(
+                "get",
+                media_operation(
+                    "Read latest media capability snapshot",
+                    "200",
+                    "Latest media capability snapshot",
+                    Some("MediaCapabilityLatestResponse"),
+                    None,
+                    Vec::new(),
+                ),
+            )]),
+        ),
+        (
+            "/v1/media/capabilities/readiness",
+            path_item([(
+                "get",
+                media_operation(
+                    "Read media capability readiness",
+                    "200",
+                    "Media capability readiness",
+                    Some("MediaCapabilityReadinessResponse"),
+                    None,
+                    Vec::new(),
+                ),
+            )]),
+        ),
+        (
+            "/v1/media/capabilities/refresh",
+            path_item([(
+                "post",
+                media_operation(
+                    "Refresh media capabilities",
+                    "201",
+                    "Media capability snapshot refreshed",
+                    Some("MediaCapabilityRefreshResponse"),
+                    None,
+                    Vec::new(),
+                ),
+            )]),
+        ),
+        (
+            "/v1/media/compliance",
+            path_item([(
+                "get",
+                media_operation(
+                    "Read media runtime compliance artifacts",
+                    "200",
+                    "Media runtime compliance artifacts",
+                    Some("MediaComplianceResponse"),
+                    None,
+                    Vec::new(),
+                ),
+            )]),
+        ),
+    ]
+}
+
+fn media_yaml_paths() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "/v1/media/export",
+            path_item([(
+                "get",
+                media_operation(
+                    "Export media profile YAML",
+                    "200",
+                    "Media YAML export",
+                    Some("MediaYamlExportResponse"),
+                    None,
+                    vec![query_bool_parameter("include_local_paths")],
+                ),
+            )]),
+        ),
+        (
+            "/v1/media/imports/validate",
+            path_item([(
+                "post",
+                media_operation(
+                    "Validate media profile YAML",
+                    "200",
+                    "Media YAML validation result",
+                    Some("MediaYamlValidationResponse"),
+                    Some("MediaYamlImportRequest"),
+                    Vec::new(),
+                ),
+            )]),
+        ),
+        (
+            "/v1/media/imports/apply",
+            path_item([(
+                "post",
+                media_operation(
+                    "Apply media profile YAML",
+                    "201",
+                    "Media YAML apply result",
+                    Some("MediaYamlApplyResponse"),
+                    Some("MediaYamlImportRequest"),
+                    Vec::new(),
+                ),
+            )]),
+        ),
+    ]
+}
+
+fn path_item<const N: usize>(operations: [(&'static str, Value); N]) -> Value {
+    let mut path_item = Map::new();
+    for (method, operation) in operations {
+        path_item.insert(method.to_string(), operation);
+    }
+    Value::Object(path_item)
+}
+
+fn media_operation(
+    summary: &'static str,
+    success_status: &'static str,
+    success_description: &'static str,
+    response_schema: Option<&'static str>,
+    request_schema: Option<&'static str>,
+    parameters: Vec<Value>,
+) -> Value {
+    let mut operation = Map::new();
+    operation.insert("summary".to_string(), Value::String(summary.to_string()));
+    operation.insert(
+        "security".to_string(),
+        serde_json::json!([{ "ApiKeyAuth": [] }]),
+    );
+    if !parameters.is_empty() {
+        operation.insert("parameters".to_string(), Value::Array(parameters));
+    }
+    if let Some(schema) = request_schema {
+        operation.insert(
+            "requestBody".to_string(),
+            serde_json::json!({
+                "required": true,
+                "content": {
+                    "application/json": {
+                        "schema": schema_ref(schema)
+                    }
+                }
+            }),
+        );
+    }
+    operation.insert(
+        "responses".to_string(),
+        media_responses(success_status, success_description, response_schema),
+    );
+    Value::Object(operation)
+}
+
+fn media_responses(
+    success_status: &'static str,
+    success_description: &'static str,
+    response_schema: Option<&'static str>,
+) -> Value {
+    let mut responses = Map::new();
+    responses.insert(
+        success_status.to_string(),
+        response(success_description, response_schema),
+    );
+    for (status, description) in [
+        ("400", "Invalid media request"),
+        ("401", "Authentication failed"),
+        ("404", "Media resource not found"),
+        ("409", "Media workflow conflict"),
+        ("429", "Rate limit exceeded"),
+        ("500", "Server error"),
+        ("503", "Media workflow unavailable"),
+    ] {
+        responses.insert(
+            status.to_string(),
+            response(description, Some("ProblemDetails")),
+        );
+    }
+    Value::Object(responses)
+}
+
+fn response(description: &'static str, schema: Option<&'static str>) -> Value {
+    schema.map_or_else(
+        || serde_json::json!({ "description": description }),
+        |schema| {
+            serde_json::json!({
+            "description": description,
+            "content": {
+                "application/json": {
+                    "schema": schema_ref(schema)
+                }
+            }
+            })
+        },
+    )
+}
+
+fn path_uuid_parameter(name: &'static str) -> Value {
+    serde_json::json!({
+        "in": "path",
+        "name": name,
+        "required": true,
+        "schema": uuid_schema()
+    })
+}
+
+fn query_uuid_parameter(name: &'static str) -> Value {
+    serde_json::json!({
+        "in": "query",
+        "name": name,
+        "schema": uuid_schema()
+    })
+}
+
+fn query_string_parameter(name: &'static str) -> Value {
+    serde_json::json!({
+        "in": "query",
+        "name": name,
+        "schema": string_schema()
+    })
+}
+
+fn query_bool_parameter(name: &'static str) -> Value {
+    serde_json::json!({
+        "in": "query",
+        "name": name,
+        "schema": bool_schema()
+    })
+}
+
+fn media_schemas() -> Vec<(&'static str, Value)> {
+    let mut schemas = Vec::new();
+    schemas.extend(media_profile_schemas());
+    schemas.extend(media_discovery_schemas());
+    schemas.extend(media_job_schemas());
+    schemas.extend(media_capability_schemas());
+    schemas.extend(media_yaml_schemas());
+    schemas
+}
+
+fn media_profile_schemas() -> Vec<(&'static str, Value)> {
+    let mut schemas = Vec::new();
+    schemas.extend(media_profile_core_schemas());
+    schemas.extend(media_profile_support_schemas());
+    schemas
+}
+
+fn media_profile_core_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaProfileUpsertRequest",
+            object_schema(
+                &[
+                    "profile_key",
+                    "source_root",
+                    "output_root",
+                    "dry_run_only",
+                    "retention_days",
+                ],
+                [
+                    ("profile_key", string_schema()),
+                    ("source_root", string_schema()),
+                    ("output_root", string_schema()),
+                    ("dry_run_only", bool_schema()),
+                    ("retention_days", integer_schema()),
+                    ("compatibility_target_key", string_schema()),
+                    ("policy_key", string_schema()),
+                    ("watcher_enabled", bool_schema()),
+                    ("schedule_enabled", bool_schema()),
+                    ("schedule_interval_minutes", integer_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaProfilePatchRequest",
+            object_schema(
+                &[],
+                [
+                    ("source_root", string_schema()),
+                    ("output_root", string_schema()),
+                    ("dry_run_only", bool_schema()),
+                    ("retention_days", integer_schema()),
+                    ("compatibility_target_key", string_schema()),
+                    ("policy_key", string_schema()),
+                    ("watcher_enabled", bool_schema()),
+                    ("schedule_enabled", bool_schema()),
+                    ("schedule_interval_minutes", integer_schema()),
+                ],
+            ),
+        ),
+        ("MediaProfileResponse", media_profile_response_schema()),
+        (
+            "MediaProfileListResponse",
+            object_schema(
+                &["profiles"],
+                [("profiles", array_ref_schema("MediaProfileResponse"))],
+            ),
+        ),
+    ]
+}
+
+fn media_profile_support_schemas() -> Vec<(&'static str, Value)> {
+    let mut schemas = vec![(
+        "MediaProfileValidationResponse",
+        object_schema(
+            &["valid", "issues"],
+            [("valid", bool_schema()), ("issues", array_string_schema())],
+        ),
+    )];
+    schemas.extend(media_configuration_schemas());
+    schemas.extend([
+        (
+            "MediaPlanningPreviewRequest",
+            object_schema(
+                &["media_profile_public_id", "source_path"],
+                [
+                    ("media_profile_public_id", uuid_schema()),
+                    ("source_path", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaPlanningPreviewResponse",
+            object_schema(
+                &["accepted", "source_path", "dry_run"],
+                [
+                    ("accepted", bool_schema()),
+                    ("source_path", string_schema()),
+                    ("output_path", string_schema()),
+                    ("reason", string_schema()),
+                    ("dry_run", bool_schema()),
+                ],
+            ),
+        ),
+    ]);
+    schemas
+}
+
+fn media_configuration_schemas() -> Vec<(&'static str, Value)> {
+    let mut schemas = media_compatibility_target_schemas();
+    schemas.extend(media_policy_profile_schemas());
+    schemas.extend(media_job_retention_schemas());
+    schemas
+}
+
+fn media_compatibility_target_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaCompatibilityTargetResponse",
+            object_schema(
+                &[
+                    "compatibility_target_key",
+                    "version",
+                    "display_name",
+                    "video_codec",
+                    "audio_codec",
+                    "subtitle_policy",
+                ],
+                [
+                    ("compatibility_target_key", string_schema()),
+                    ("version", integer_schema()),
+                    ("display_name", string_schema()),
+                    ("video_codec", string_schema()),
+                    ("audio_codec", string_schema()),
+                    ("subtitle_policy", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaCompatibilityTargetListResponse",
+            object_schema(
+                &["targets"],
+                [(
+                    "targets",
+                    array_ref_schema("MediaCompatibilityTargetResponse"),
+                )],
+            ),
+        ),
+        (
+            "MediaCompatibilityTargetUpsertRequest",
+            object_schema(
+                &[
+                    "compatibility_target_key",
+                    "version",
+                    "display_name",
+                    "video_codec",
+                    "audio_codec",
+                    "subtitle_policy",
+                ],
+                [
+                    ("compatibility_target_key", string_schema()),
+                    ("version", integer_schema()),
+                    ("display_name", string_schema()),
+                    ("video_codec", string_schema()),
+                    ("audio_codec", string_schema()),
+                    ("subtitle_policy", string_schema()),
+                ],
+            ),
+        ),
+    ]
+}
+
+fn media_policy_profile_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaPolicyResponse",
+            object_schema(
+                &["policy_key", "version", "display_name", "video_intent"],
+                [
+                    ("policy_key", string_schema()),
+                    ("version", integer_schema()),
+                    ("display_name", string_schema()),
+                    ("video_intent", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaPolicyListResponse",
+            object_schema(
+                &["policies"],
+                [("policies", array_ref_schema("MediaPolicyResponse"))],
+            ),
+        ),
+        (
+            "MediaPolicyUpsertRequest",
+            object_schema(
+                &["policy_key", "version", "display_name", "video_intent"],
+                [
+                    ("policy_key", string_schema()),
+                    ("version", integer_schema()),
+                    ("display_name", string_schema()),
+                    ("video_intent", string_schema()),
+                ],
+            ),
+        ),
+    ]
+}
+
+fn media_job_retention_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobRetentionResponse",
+            object_schema(
+                &[
+                    "completed_retention_days",
+                    "failed_diagnostic_retention_days",
+                ],
+                [
+                    ("completed_retention_days", integer_schema()),
+                    ("failed_diagnostic_retention_days", integer_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobRetentionUpdateRequest",
+            object_schema(
+                &[
+                    "completed_retention_days",
+                    "failed_diagnostic_retention_days",
+                ],
+                [
+                    ("completed_retention_days", integer_schema()),
+                    ("failed_diagnostic_retention_days", integer_schema()),
+                ],
+            ),
+        ),
+    ]
+}
+
+fn media_discovery_schemas() -> Vec<(&'static str, Value)> {
+    let mut schemas = Vec::new();
+    schemas.extend(media_discovery_preview_schemas());
+    schemas.extend(media_discovery_run_schemas());
+    schemas.extend(media_discovery_schedule_schemas());
+    schemas.extend(media_discovery_watcher_schemas());
+    schemas
+}
+
+fn media_discovery_preview_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaDiscoveryPreviewRequest",
+            object_schema(
+                &["media_profile_public_id", "source_paths"],
+                [
+                    ("media_profile_public_id", uuid_schema()),
+                    ("source_paths", media_discovery_source_paths_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaDiscoveryPreviewItemResponse",
+            object_schema(
+                &["source_path", "dry_run", "accepted"],
+                [
+                    ("source_path", string_schema()),
+                    ("output_path", string_schema()),
+                    ("dry_run", bool_schema()),
+                    ("accepted", bool_schema()),
+                    ("reason", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaDiscoveryPreviewResponse",
+            object_schema(
+                &["previews"],
+                [(
+                    "previews",
+                    array_ref_schema("MediaDiscoveryPreviewItemResponse"),
+                )],
+            ),
+        ),
+    ]
+}
+
+fn media_discovery_run_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaDiscoveryRunRequest",
+            object_schema(
+                &["media_profile_public_id", "source_paths"],
+                [
+                    ("media_profile_public_id", uuid_schema()),
+                    ("source_paths", media_discovery_source_paths_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaDiscoveryQueuedJobResponse",
+            object_schema(
+                &[
+                    "media_job_public_id",
+                    "source_path",
+                    "output_path",
+                    "dry_run",
+                ],
+                [
+                    ("media_job_public_id", uuid_schema()),
+                    ("source_path", string_schema()),
+                    ("output_path", string_schema()),
+                    ("dry_run", bool_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaDiscoverySkippedItemResponse",
+            object_schema(
+                &["source_path"],
+                [
+                    ("source_path", string_schema()),
+                    ("reason", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaDiscoveryRunResponse",
+            object_schema(
+                &["queued_jobs", "skipped"],
+                [
+                    (
+                        "queued_jobs",
+                        array_ref_schema("MediaDiscoveryQueuedJobResponse"),
+                    ),
+                    (
+                        "skipped",
+                        array_ref_schema("MediaDiscoverySkippedItemResponse"),
+                    ),
+                ],
+            ),
+        ),
+    ]
+}
+
+fn media_discovery_schedule_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaDiscoveryScheduleResponse",
+            object_schema(
+                &[
+                    "media_profile_public_id",
+                    "profile_key",
+                    "source_root",
+                    "enabled",
+                    "dry_run",
+                ],
+                [
+                    ("media_profile_public_id", uuid_schema()),
+                    ("profile_key", string_schema()),
+                    ("source_root", string_schema()),
+                    ("enabled", bool_schema()),
+                    ("interval_minutes", integer_schema()),
+                    ("dry_run", bool_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaDiscoveryScheduleListResponse",
+            object_schema(
+                &["schedules"],
+                [(
+                    "schedules",
+                    array_ref_schema("MediaDiscoveryScheduleResponse"),
+                )],
+            ),
+        ),
+    ]
+}
+
+fn media_discovery_watcher_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaDiscoveryWatcherResponse",
+            object_schema(
+                &[
+                    "media_profile_public_id",
+                    "profile_key",
+                    "source_root",
+                    "enabled",
+                    "dry_run",
+                ],
+                [
+                    ("media_profile_public_id", uuid_schema()),
+                    ("profile_key", string_schema()),
+                    ("source_root", string_schema()),
+                    ("enabled", bool_schema()),
+                    ("dry_run", bool_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaDiscoveryWatcherListResponse",
+            object_schema(
+                &["watchers"],
+                [(
+                    "watchers",
+                    array_ref_schema("MediaDiscoveryWatcherResponse"),
+                )],
+            ),
+        ),
+    ]
+}
+
+fn media_job_schemas() -> Vec<(&'static str, Value)> {
+    let mut schemas = Vec::new();
+    schemas.extend(media_job_core_schemas());
+    schemas.extend(media_job_operation_schemas());
+    schemas.extend(media_job_violation_schemas());
+    schemas.extend(media_job_plan_reason_schemas());
+    schemas.extend(media_job_verification_check_schemas());
+    schemas.extend(media_job_artifact_schemas());
+    schemas.extend(media_job_compact_audit_schemas());
+    schemas
+}
+
+fn media_job_core_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobCreateRequest",
+            object_schema(
+                &["media_profile_public_id", "source_path", "dry_run"],
+                [
+                    ("media_profile_public_id", uuid_schema()),
+                    ("source_path", string_schema()),
+                    ("output_path", string_schema()),
+                    ("dry_run", bool_schema()),
+                    ("replace_confirmation", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobCreateResponse",
+            object_schema(
+                &["media_job_public_id"],
+                [("media_job_public_id", uuid_schema())],
+            ),
+        ),
+        ("MediaJobResponse", media_job_response_schema()),
+        (
+            "MediaJobListResponse",
+            object_schema(&["jobs"], [("jobs", array_ref_schema("MediaJobResponse"))]),
+        ),
+        (
+            "MediaJobPhaseAppendRequest",
+            object_schema(
+                &["phase_index", "phase_name", "phase_status"],
+                [
+                    ("phase_index", integer_schema()),
+                    ("phase_name", string_schema()),
+                    ("phase_status", media_status_schema()),
+                    ("details_text", string_schema()),
+                ],
+            ),
+        ),
+    ]
+}
+
+fn media_job_operation_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobOperationAppendRequest",
+            object_schema(
+                &["operation_index", "operation_kind", "command_bin"],
+                [
+                    ("operation_index", integer_schema()),
+                    ("operation_kind", operation_kind_schema()),
+                    ("stream_id", integer_schema()),
+                    ("command_bin", string_schema()),
+                    ("arg_1", string_schema()),
+                    ("arg_2", string_schema()),
+                    ("arg_3", string_schema()),
+                    ("arg_4", string_schema()),
+                    ("arg_5", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobOperationResponse",
+            object_schema(
+                &[
+                    "operation_index",
+                    "operation_kind",
+                    "command_bin",
+                    "created_at",
+                ],
+                [
+                    ("operation_index", integer_schema()),
+                    ("operation_kind", operation_kind_schema()),
+                    ("stream_id", integer_schema()),
+                    ("command_bin", string_schema()),
+                    ("arg_1", string_schema()),
+                    ("arg_2", string_schema()),
+                    ("arg_3", string_schema()),
+                    ("arg_4", string_schema()),
+                    ("arg_5", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobOperationListResponse",
+            object_schema(
+                &["operations"],
+                [("operations", array_ref_schema("MediaJobOperationResponse"))],
+            ),
+        ),
+    ]
+}
+
+fn media_job_violation_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobViolationAppendRequest",
+            object_schema(
+                &["violation_index", "violation_kind", "severity"],
+                [
+                    ("violation_index", integer_schema()),
+                    ("violation_kind", string_schema()),
+                    ("severity", violation_severity_schema()),
+                    ("stream_id", integer_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobViolationResponse",
+            object_schema(
+                &[
+                    "violation_index",
+                    "violation_kind",
+                    "severity",
+                    "created_at",
+                ],
+                [
+                    ("violation_index", integer_schema()),
+                    ("violation_kind", string_schema()),
+                    ("severity", violation_severity_schema()),
+                    ("stream_id", integer_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobViolationListResponse",
+            object_schema(
+                &["violations"],
+                [("violations", array_ref_schema("MediaJobViolationResponse"))],
+            ),
+        ),
+    ]
+}
+
+fn media_job_plan_reason_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobPlanReasonAppendRequest",
+            object_schema(
+                &["reason_index", "selected", "reason_code", "reason_text"],
+                [
+                    ("reason_index", integer_schema()),
+                    ("candidate_index", integer_schema()),
+                    ("selected", bool_schema()),
+                    ("reason_code", string_schema()),
+                    ("reason_text", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobPlanReasonResponse",
+            object_schema(
+                &[
+                    "reason_index",
+                    "selected",
+                    "reason_code",
+                    "reason_text",
+                    "created_at",
+                ],
+                [
+                    ("reason_index", integer_schema()),
+                    ("candidate_index", integer_schema()),
+                    ("selected", bool_schema()),
+                    ("reason_code", string_schema()),
+                    ("reason_text", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobPlanReasonListResponse",
+            object_schema(
+                &["reasons"],
+                [("reasons", array_ref_schema("MediaJobPlanReasonResponse"))],
+            ),
+        ),
+    ]
+}
+
+fn media_job_verification_check_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobVerificationCheckAppendRequest",
+            object_schema(
+                &["check_index", "check_kind", "check_status"],
+                [
+                    ("check_index", integer_schema()),
+                    ("check_kind", string_schema()),
+                    ("check_status", verification_check_status_schema()),
+                    ("expected_value", string_schema()),
+                    ("actual_value", string_schema()),
+                    ("details_text", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobVerificationCheckResponse",
+            object_schema(
+                &["check_index", "check_kind", "check_status", "created_at"],
+                [
+                    ("check_index", integer_schema()),
+                    ("check_kind", string_schema()),
+                    ("check_status", verification_check_status_schema()),
+                    ("expected_value", string_schema()),
+                    ("actual_value", string_schema()),
+                    ("details_text", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobVerificationCheckListResponse",
+            object_schema(
+                &["checks"],
+                [(
+                    "checks",
+                    array_ref_schema("MediaJobVerificationCheckResponse"),
+                )],
+            ),
+        ),
+    ]
+}
+
+fn media_job_artifact_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobArtifactAppendRequest",
+            object_schema(
+                &["artifact_index", "artifact_kind", "artifact_path"],
+                [
+                    ("artifact_index", integer_schema()),
+                    ("artifact_kind", string_schema()),
+                    ("artifact_path", string_schema()),
+                    ("size_bytes", integer_schema()),
+                    ("content_type", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobArtifactResponse",
+            object_schema(
+                &[
+                    "artifact_index",
+                    "artifact_kind",
+                    "artifact_path",
+                    "created_at",
+                ],
+                [
+                    ("artifact_index", integer_schema()),
+                    ("artifact_kind", string_schema()),
+                    ("artifact_path", string_schema()),
+                    ("size_bytes", integer_schema()),
+                    ("content_type", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobArtifactListResponse",
+            object_schema(
+                &["artifacts"],
+                [("artifacts", array_ref_schema("MediaJobArtifactResponse"))],
+            ),
+        ),
+    ]
+}
+
+fn media_job_compact_audit_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobCompactAuditAppendRequest",
+            object_schema(
+                &["audit_index", "fact_kind", "fact_text"],
+                [
+                    ("audit_index", integer_schema()),
+                    ("fact_kind", string_schema()),
+                    ("fact_text", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobCompactAuditResponse",
+            object_schema(
+                &["audit_index", "fact_kind", "fact_text", "created_at"],
+                [
+                    ("audit_index", integer_schema()),
+                    ("fact_kind", string_schema()),
+                    ("fact_text", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobCompactAuditListResponse",
+            object_schema(
+                &["audits"],
+                [("audits", array_ref_schema("MediaJobCompactAuditResponse"))],
+            ),
+        ),
+    ]
+}
+
+fn media_capability_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaCapabilityRefreshResponse",
+            capability_id_response_schema(),
+        ),
+        (
+            "MediaCapabilityCodecResponse",
+            media_capability_codec_response_schema(),
+        ),
+        (
+            "MediaCapabilityFeatureResponse",
+            media_capability_feature_response_schema(),
+        ),
+        (
+            "MediaCapabilitySnapshotResponse",
+            media_capability_snapshot_response_schema(),
+        ),
+        (
+            "MediaCapabilityLatestResponse",
+            object_schema(
+                &[],
+                [("snapshot", schema_ref("MediaCapabilitySnapshotResponse"))],
+            ),
+        ),
+        (
+            "MediaCapabilityReadinessResponse",
+            object_schema(
+                &["ready"],
+                [
+                    ("ready", bool_schema()),
+                    ("reason", string_schema()),
+                    ("snapshot", schema_ref("MediaCapabilitySnapshotResponse")),
+                ],
+            ),
+        ),
+        (
+            "MediaComplianceResponse",
+            object_schema(
+                &[
+                    "license_mode",
+                    "source_offer_path",
+                    "third_party_notices_path",
+                    "sbom_path",
+                    "inventory_path",
+                    "exiftool_exception_path",
+                    "license_excluded_capabilities",
+                ],
+                [
+                    ("license_mode", string_schema()),
+                    ("source_offer_path", string_schema()),
+                    ("third_party_notices_path", string_schema()),
+                    ("sbom_path", string_schema()),
+                    ("inventory_path", string_schema()),
+                    ("exiftool_exception_path", string_schema()),
+                    ("license_excluded_capabilities", array_string_schema()),
+                ],
+            ),
+        ),
+    ]
+}
+
+fn media_capability_codec_response_schema() -> Value {
+    object_schema(
+        &["codec_name", "encode_supported", "decode_supported"],
+        [
+            ("codec_name", string_schema()),
+            ("encode_supported", bool_schema()),
+            ("decode_supported", bool_schema()),
+        ],
+    )
+}
+
+fn media_capability_feature_response_schema() -> Value {
+    object_schema(
+        &["feature_family", "feature_name", "supported"],
+        [
+            ("feature_family", string_schema()),
+            ("feature_name", string_schema()),
+            ("supported", bool_schema()),
+            ("detail_text", string_schema()),
+        ],
+    )
+}
+
+fn media_capability_snapshot_response_schema() -> Value {
+    object_schema(
+        &[
+            "media_capability_snapshot_id",
+            "snapshot_run_public_id",
+            "ffmpeg_version",
+            "ffprobe_version",
+            "codecs",
+            "encoders",
+            "decoders",
+            "muxers",
+            "demuxers",
+            "subtitle_support",
+            "hardware_accelerators",
+            "filesystem_utilities",
+            "utility_capabilities",
+            "license_mode",
+            "compliance_links",
+            "absent_capabilities",
+            "features",
+            "observed_at",
+        ],
+        [
+            ("media_capability_snapshot_id", integer_schema()),
+            ("snapshot_run_public_id", uuid_schema()),
+            ("ffmpeg_version", string_schema()),
+            ("ffprobe_version", string_schema()),
+            ("codecs", array_ref_schema("MediaCapabilityCodecResponse")),
+            ("encoders", array_string_schema()),
+            ("decoders", array_string_schema()),
+            ("muxers", array_string_schema()),
+            ("demuxers", array_string_schema()),
+            ("subtitle_support", array_string_schema()),
+            ("hardware_accelerators", array_string_schema()),
+            ("filesystem_utilities", array_string_schema()),
+            ("utility_capabilities", array_string_schema()),
+            ("license_mode", string_schema()),
+            ("compliance_links", array_string_schema()),
+            ("absent_capabilities", array_string_schema()),
+            (
+                "features",
+                array_ref_schema("MediaCapabilityFeatureResponse"),
+            ),
+            ("observed_at", date_time_schema()),
+        ],
+    )
+}
+
+fn media_yaml_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaYamlExportResponse",
+            object_schema(
+                &["version", "yaml_payload"],
+                [
+                    ("version", string_schema()),
+                    ("yaml_payload", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaYamlImportRequest",
+            object_schema(&["yaml_payload"], [("yaml_payload", string_schema())]),
+        ),
+        (
+            "MediaYamlValidationResponse",
+            object_schema(
+                &["version", "valid", "issues", "profile_count"],
+                [
+                    ("version", string_schema()),
+                    ("valid", bool_schema()),
+                    ("issues", array_string_schema()),
+                    ("profile_count", integer_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaYamlApplyResponse",
+            object_schema(
+                &["forced_dry_run", "media_profile_public_ids"],
+                [
+                    ("forced_dry_run", bool_schema()),
+                    ("media_profile_public_ids", array_uuid_schema()),
+                ],
+            ),
+        ),
+    ]
+}
+
+fn media_profile_response_schema() -> Value {
+    object_schema(
+        &[
+            "media_profile_public_id",
+            "profile_key",
+            "source_root",
+            "output_root",
+            "dry_run_only",
+            "retention_days",
+            "policy_key",
+            "watcher_enabled",
+            "schedule_enabled",
+            "updated_at",
+        ],
+        [
+            ("media_profile_public_id", uuid_schema()),
+            ("profile_key", string_schema()),
+            ("source_root", string_schema()),
+            ("output_root", string_schema()),
+            ("dry_run_only", bool_schema()),
+            ("retention_days", integer_schema()),
+            ("compatibility_target_key", string_schema()),
+            ("policy_key", string_schema()),
+            ("watcher_enabled", bool_schema()),
+            ("schedule_enabled", bool_schema()),
+            ("schedule_interval_minutes", integer_schema()),
+            ("updated_at", date_time_schema()),
+        ],
+    )
+}
+
+fn media_job_response_schema() -> Value {
+    object_schema(
+        &[
+            "media_job_public_id",
+            "source_path",
+            "status",
+            "dry_run",
+            "queued_at",
+        ],
+        [
+            ("media_job_public_id", uuid_schema()),
+            ("source_path", string_schema()),
+            ("output_path", string_schema()),
+            ("status", media_status_schema()),
+            ("dry_run", bool_schema()),
+            ("queued_at", date_time_schema()),
+            ("started_at", date_time_schema()),
+            ("completed_at", date_time_schema()),
+            ("last_error", string_schema()),
+        ],
+    )
+}
+
+fn capability_id_response_schema() -> Value {
+    object_schema(
+        &["media_capability_snapshot_id"],
+        [("media_capability_snapshot_id", integer_schema())],
+    )
+}
+
+fn object_schema<const N: usize>(
+    required: &[&'static str],
+    properties: [(&'static str, Value); N],
+) -> Value {
+    let mut property_map = Map::new();
+    for (name, schema) in properties {
+        property_map.insert(name.to_string(), schema);
+    }
+
+    let mut schema = Map::new();
+    schema.insert("type".to_string(), Value::String("object".to_string()));
+    schema.insert("properties".to_string(), Value::Object(property_map));
+    if !required.is_empty() {
+        schema.insert("required".to_string(), serde_json::json!(required));
+    }
+    Value::Object(schema)
+}
+
+fn schema_ref(schema: &'static str) -> Value {
+    serde_json::json!({ "$ref": format!("#/components/schemas/{schema}") })
+}
+
+fn string_schema() -> Value {
+    serde_json::json!({ "type": "string" })
+}
+
+fn uuid_schema() -> Value {
+    serde_json::json!({ "type": "string", "format": "uuid" })
+}
+
+fn date_time_schema() -> Value {
+    serde_json::json!({ "type": "string", "format": "date-time" })
+}
+
+fn bool_schema() -> Value {
+    serde_json::json!({ "type": "boolean" })
+}
+
+fn integer_schema() -> Value {
+    serde_json::json!({ "type": "integer" })
+}
+
+fn array_ref_schema(schema: &'static str) -> Value {
+    serde_json::json!({ "type": "array", "items": schema_ref(schema) })
+}
+
+fn array_string_schema() -> Value {
+    serde_json::json!({ "type": "array", "items": string_schema() })
+}
+
+fn media_discovery_source_paths_schema() -> Value {
+    serde_json::json!({
+        "type": "array",
+        "maxItems": MEDIA_DISCOVERY_SOURCE_PATHS_MAX_LEN,
+        "items": {
+            "type": "string",
+            "maxLength": MEDIA_DISCOVERY_SOURCE_PATH_MAX_BYTES
+        }
+    })
+}
+
+fn array_uuid_schema() -> Value {
+    serde_json::json!({ "type": "array", "items": uuid_schema() })
+}
+
+fn media_status_schema() -> Value {
+    serde_json::json!({
+        "type": "string",
+        "enum": ["queued", "running", "verifying", "completed", "failed", "cancelled"]
+    })
+}
+
+fn operation_kind_schema() -> Value {
+    serde_json::json!({
+        "type": "string",
+        "enum": [
+            "remux",
+            "metadata_rewrite",
+            "disposition_rewrite",
+            "label_rewrite",
+            "stream_reorder",
+            "audio_transcode",
+            "video_transcode"
+        ]
+    })
+}
+
+fn violation_severity_schema() -> Value {
+    serde_json::json!({ "type": "string", "enum": ["low", "medium", "high"] })
+}
+
+fn verification_check_status_schema() -> Value {
+    serde_json::json!({ "type": "string", "enum": ["passed", "failed", "skipped"] })
 }
 
 #[must_use]
@@ -92,6 +1861,169 @@ mod tests {
             document.is_object(),
             "embedded OpenAPI document should decode to a JSON object"
         );
+    }
+
+    #[test]
+    fn openapi_document_exports_media_routes() -> Result<(), Box<dyn std::error::Error>> {
+        let document = openapi_document();
+        let paths = document
+            .get("paths")
+            .and_then(Value::as_object)
+            .ok_or_else(|| io::Error::other("expected paths object"))?;
+
+        for route in [
+            "/v1/media/profiles",
+            "/v1/media/profiles/{media_profile_public_id}",
+            "/v1/media/profiles/validate",
+            "/v1/media/compatibility-targets",
+            "/v1/media/policies",
+            "/v1/media/job-retention",
+            "/v1/media/planning/preview",
+            "/v1/media/discovery/preview",
+            "/v1/media/discovery/runs",
+            "/v1/media/discovery/schedules",
+            "/v1/media/discovery/watchers",
+            "/v1/media/jobs",
+            "/v1/media/jobs/{media_job_public_id}",
+            "/v1/media/jobs/{media_job_public_id}/cancel",
+            "/v1/media/jobs/{media_job_public_id}/retry",
+            "/v1/media/jobs/{media_job_public_id}/phases",
+            "/v1/media/jobs/{media_job_public_id}/operations",
+            "/v1/media/jobs/{media_job_public_id}/violations",
+            "/v1/media/jobs/{media_job_public_id}/plan-reasons",
+            "/v1/media/jobs/{media_job_public_id}/verification-checks",
+            "/v1/media/jobs/{media_job_public_id}/artifacts",
+            "/v1/media/jobs/{media_job_public_id}/compact-audits",
+            "/v1/media/capabilities",
+            "/v1/media/capabilities/readiness",
+            "/v1/media/capabilities/refresh",
+            "/v1/media/compliance",
+            "/v1/media/export",
+            "/v1/media/imports/validate",
+            "/v1/media/imports/apply",
+        ] {
+            assert!(
+                paths.contains_key(route),
+                "missing media OpenAPI route {route}"
+            );
+        }
+        assert!(
+            paths
+                .get("/v1/media/discovery/schedules")
+                .and_then(Value::as_object)
+                .is_some_and(|path_item| path_item.contains_key("post")),
+            "missing media OpenAPI POST operation for scheduled discovery"
+        );
+        for (route, method) in [
+            ("/v1/media/compatibility-targets", "post"),
+            ("/v1/media/policies", "post"),
+            ("/v1/media/job-retention", "patch"),
+        ] {
+            assert!(
+                paths
+                    .get(route)
+                    .and_then(Value::as_object)
+                    .is_some_and(|path_item| path_item.contains_key(method)),
+                "missing media OpenAPI {method} operation for {route}"
+            );
+        }
+        assert!(
+            paths
+                .get("/v1/media/discovery/watchers")
+                .and_then(Value::as_object)
+                .is_some_and(|path_item| !path_item.contains_key("post")),
+            "watcher discovery should not expose a POST operation"
+        );
+        assert!(
+            paths
+                .get("/v1/media/capabilities")
+                .and_then(Value::as_object)
+                .is_some_and(|path_item| !path_item.contains_key("post")),
+            "capability snapshots should not expose a public record operation"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn openapi_document_exports_media_schemas() -> Result<(), Box<dyn std::error::Error>> {
+        let document = openapi_document();
+        let schemas = document
+            .get("components")
+            .and_then(Value::as_object)
+            .and_then(|components| components.get("schemas"))
+            .and_then(Value::as_object)
+            .ok_or_else(|| io::Error::other("expected component schemas object"))?;
+
+        for schema in [
+            "MediaProfileUpsertRequest",
+            "MediaProfilePatchRequest",
+            "MediaProfileListResponse",
+            "MediaProfileResponse",
+            "MediaProfileValidationResponse",
+            "MediaCompatibilityTargetResponse",
+            "MediaCompatibilityTargetListResponse",
+            "MediaCompatibilityTargetUpsertRequest",
+            "MediaPolicyResponse",
+            "MediaPolicyListResponse",
+            "MediaPolicyUpsertRequest",
+            "MediaJobRetentionResponse",
+            "MediaJobRetentionUpdateRequest",
+            "MediaPlanningPreviewRequest",
+            "MediaPlanningPreviewResponse",
+            "MediaDiscoveryPreviewRequest",
+            "MediaDiscoveryPreviewItemResponse",
+            "MediaDiscoveryPreviewResponse",
+            "MediaDiscoveryRunRequest",
+            "MediaDiscoveryQueuedJobResponse",
+            "MediaDiscoverySkippedItemResponse",
+            "MediaDiscoveryRunResponse",
+            "MediaDiscoveryScheduleResponse",
+            "MediaDiscoveryScheduleListResponse",
+            "MediaDiscoveryWatcherResponse",
+            "MediaDiscoveryWatcherListResponse",
+            "MediaJobCreateRequest",
+            "MediaJobCreateResponse",
+            "MediaJobListResponse",
+            "MediaJobResponse",
+            "MediaJobPhaseAppendRequest",
+            "MediaJobOperationAppendRequest",
+            "MediaJobOperationListResponse",
+            "MediaJobOperationResponse",
+            "MediaJobViolationAppendRequest",
+            "MediaJobViolationListResponse",
+            "MediaJobViolationResponse",
+            "MediaJobPlanReasonAppendRequest",
+            "MediaJobPlanReasonListResponse",
+            "MediaJobPlanReasonResponse",
+            "MediaJobVerificationCheckAppendRequest",
+            "MediaJobVerificationCheckListResponse",
+            "MediaJobVerificationCheckResponse",
+            "MediaJobArtifactAppendRequest",
+            "MediaJobArtifactListResponse",
+            "MediaJobArtifactResponse",
+            "MediaJobCompactAuditAppendRequest",
+            "MediaJobCompactAuditListResponse",
+            "MediaJobCompactAuditResponse",
+            "MediaCapabilityRefreshResponse",
+            "MediaCapabilityCodecResponse",
+            "MediaCapabilityFeatureResponse",
+            "MediaCapabilityLatestResponse",
+            "MediaCapabilityReadinessResponse",
+            "MediaCapabilitySnapshotResponse",
+            "MediaComplianceResponse",
+            "MediaYamlExportResponse",
+            "MediaYamlImportRequest",
+            "MediaYamlValidationResponse",
+            "MediaYamlApplyResponse",
+        ] {
+            assert!(
+                schemas.contains_key(schema),
+                "missing media OpenAPI schema {schema}"
+            );
+        }
+
+        Ok(())
     }
 
     #[test]

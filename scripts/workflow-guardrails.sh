@@ -107,6 +107,15 @@ run_matches="$(
 )"
 report_matches 'workflow run blocks must not interpolate ${{ inputs.* }} directly' "${run_matches}"
 
+pr_release_skip_matches="$(
+  awk '
+    $0 ~ /if: github\.ref == '\''refs\/heads\/main'\'' \|\| startsWith\(github\.ref, '\''refs\/tags\/'\''\)/ {
+      printf "%s:%d:%s\n", FILENAME, FNR, $0;
+    }
+  ' .github/workflows/pr.yml
+)"
+report_matches "PR Build Release must run on pull requests instead of using main/tag-only guards" "${pr_release_skip_matches}"
+
 if [ "${failures}" -ne 0 ]; then
   exit 1
 fi

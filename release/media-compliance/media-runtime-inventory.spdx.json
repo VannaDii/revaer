@@ -1,0 +1,417 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "revaer-media-runtime-inventory",
+  "documentNamespace": "https://github.com/VannaDii/revaer/spdx/revaer-media-runtime",
+  "creationInfo": {
+    "created": "2026-05-31T00:00:00Z",
+    "creators": [
+      "Organization: VannaDii"
+    ]
+  },
+  "packages": [
+    {
+      "name": "bento4",
+      "SPDXID": "SPDXRef-Package-bento4",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=bento4&branch=v3.23",
+      "versionInfo": "1.6.0.641-r0",
+      "licenseConcluded": "GPL-2.0-only",
+      "licenseDeclared": "GPL-2.0-only",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "9e27f875994036ca9e772be6e0eeae5b25921fa2173335cd6de506aa4a80b3be"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "ca-certificates",
+      "SPDXID": "SPDXRef-Package-ca-certificates",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=ca-certificates&branch=v3.23",
+      "versionInfo": "20260413-r0",
+      "licenseConcluded": "MPL-2.0 AND MIT",
+      "licenseDeclared": "MPL-2.0 AND MIT",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "aaad6814f5b3fe594b9a3b0451d398a51402175d3bb8ccfd9bd74776a9960e12"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "curl",
+      "SPDXID": "SPDXRef-Package-curl",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=curl&branch=v3.23",
+      "versionInfo": "8.19.0-r0",
+      "licenseConcluded": "curl",
+      "licenseDeclared": "curl",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "7b884212c16bbd89d032f28d38f0341339d0582068002cf37239631c79eb7ba1"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "exiftool",
+      "SPDXID": "SPDXRef-Package-exiftool",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=exiftool&branch=v3.23",
+      "versionInfo": "13.55-r0",
+      "licenseConcluded": "Artistic-1.0-Perl OR GPL-1.0-or-later",
+      "licenseDeclared": "Artistic-1.0-Perl OR GPL-1.0-or-later",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "30fa00aedb9a68529bf15c68be6ad0c0abc66f50909568c5067a6d45e9933727"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "ffmpeg",
+      "SPDXID": "SPDXRef-Package-ffmpeg",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=ffmpeg&branch=v3.23",
+      "versionInfo": "8.0.1-r1",
+      "licenseConcluded": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+      "licenseDeclared": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "9629e9a7f9c711604abc7e61408196aca1aa882e53afcf8802af8103413259ab"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "font-dejavu",
+      "SPDXID": "SPDXRef-Package-font-dejavu",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=font-dejavu&branch=v3.23",
+      "versionInfo": "2.37-r6",
+      "licenseConcluded": "Bitstream-Vera",
+      "licenseDeclared": "Bitstream-Vera",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "beae86dbe2fa7794f517ffaf2d4958f28859a4cb0a2157786458d119753356a5"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "fontconfig",
+      "SPDXID": "SPDXRef-Package-fontconfig",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=fontconfig&branch=v3.23",
+      "versionInfo": "2.17.1-r0",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "38e815b8f898482e3c8111ac158208ba0a6a9aa13dbef49ccc36b36df77c793e"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "gnutls",
+      "SPDXID": "SPDXRef-Package-gnutls",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=gnutls&branch=v3.23",
+      "versionInfo": "3.8.13-r0",
+      "licenseConcluded": "LGPL-2.1-or-later",
+      "licenseDeclared": "LGPL-2.1-or-later",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "fe6373105d41819118717a1512a791685f3b429193b043430b8875c935b54fb6"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "libass",
+      "SPDXID": "SPDXRef-Package-libass",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=libass&branch=v3.23",
+      "versionInfo": "0.17.4-r0",
+      "licenseConcluded": "ISC",
+      "licenseDeclared": "ISC",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "18ea2055672ad7a172c678d951351d5f411940aca32f645e33c770d67e6510e0"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "libdav1d",
+      "SPDXID": "SPDXRef-Package-libdav1d",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=libdav1d&branch=v3.23",
+      "versionInfo": "1.5.2-r0",
+      "licenseConcluded": "BSD-2-Clause",
+      "licenseDeclared": "BSD-2-Clause",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "1d2dd251af8b14a58f408e1a53543384fabac13831e1bb6cb25e7eae074f2ce5"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "libstdc++",
+      "SPDXID": "SPDXRef-Package-libstdcpp",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=libstdc%2B%2B&branch=v3.23",
+      "versionInfo": "15.2.0-r2",
+      "licenseConcluded": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+      "licenseDeclared": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "10d72e25f6fcc0f3d9fdd801c9bdaed81d6e836aa2b65b63f25d2d97f860a7d1"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "libtheora",
+      "SPDXID": "SPDXRef-Package-libtheora",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=libtheora&branch=v3.23",
+      "versionInfo": "1.2.0-r0",
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "569aa24369db6ae4e6805ce426753d5d2b25a0b8f16fe4f2e748939dceae3268"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "libtorrent-rasterbar",
+      "SPDXID": "SPDXRef-Package-libtorrent-rasterbar",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=libtorrent-rasterbar&branch=v3.23",
+      "versionInfo": "2.0.11-r0",
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "146ce534100871929fa8378fc3fde1f21fa2adc19effeb92cd17f55186475f82"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "libvorbis",
+      "SPDXID": "SPDXRef-Package-libvorbis",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=libvorbis&branch=v3.23",
+      "versionInfo": "1.3.7-r2",
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "4884c5170e290d01e648381781130ca428e1e04238781fbe7d77d71853a12b2b"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "mediainfo",
+      "SPDXID": "SPDXRef-Package-mediainfo",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=mediainfo&branch=v3.23",
+      "versionInfo": "25.09-r0",
+      "licenseConcluded": "BSD-2-Clause",
+      "licenseDeclared": "BSD-2-Clause",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "687982b64b014566f220b35d1c6c7bb02ff1ed7efe8de3c8560b72ee10425746"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "mkvtoolnix",
+      "SPDXID": "SPDXRef-Package-mkvtoolnix",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=mkvtoolnix&branch=v3.23",
+      "versionInfo": "96.0-r0",
+      "licenseConcluded": "GPL-2.0-only",
+      "licenseDeclared": "GPL-2.0-only",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "219ed4c151268cfe205972ebe6acc802bed65b7f5a8a61e01ffe7e503dc8fe7a"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "openssl",
+      "SPDXID": "SPDXRef-Package-openssl",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=openssl&branch=v3.23",
+      "versionInfo": "3.5.6-r0",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "380e2775e8286c1ff66e8dccfa09370a01f5e981f620ab4d0a8e33fc2f6873b5"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "opus",
+      "SPDXID": "SPDXRef-Package-opus",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=opus&branch=v3.23",
+      "versionInfo": "1.5.2-r1",
+      "licenseConcluded": "BSD-3-Clause",
+      "licenseDeclared": "BSD-3-Clause",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "755820af1c649f03cbee0a54238e0ce787d7941a436cd9222d110eb7a600cd11"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "x264-libs",
+      "SPDXID": "SPDXRef-Package-x264-libs",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=x264-libs&branch=v3.23",
+      "versionInfo": "0.164.3108-r1",
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "f1eef99ea412263cc9d1006bc3d0b870866b46685e9afdeff97894b6a14eecc6"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
+      "name": "x265-libs",
+      "SPDXID": "SPDXRef-Package-x265-libs",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=x265-libs&branch=v3.23",
+      "versionInfo": "4.1-r0",
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "b7e82e876f3fb861f40af71fdc3f569c9043d96fe90ec22db28156236a9264f2"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-bento4"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-ca-certificates"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-curl"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-exiftool"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-ffmpeg"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-font-dejavu"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-fontconfig"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-gnutls"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-libass"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-libdav1d"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-libstdcpp"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-libtheora"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-libtorrent-rasterbar"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-libvorbis"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-mediainfo"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-mkvtoolnix"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-openssl"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-opus"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-x264-libs"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-x265-libs"
+    }
+  ]
+}

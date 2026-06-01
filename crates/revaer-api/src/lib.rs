@@ -35,6 +35,7 @@ pub use openapi::{openapi_document, openapi_output_path};
 mod tests {
     use super::*;
     use crate::app::indexers::test_indexers;
+    use crate::app::media::noop_media;
     use crate::app::state::ApiState;
     use crate::config::{ConfigFacade, SharedConfig};
     use crate::http::auth::{AuthContext, ClientIp, map_config_error};
@@ -68,14 +69,14 @@ mod tests {
     use async_trait::async_trait;
     #[cfg(feature = "compat-qb")]
     use axum::extract::Form;
-    use axum::http::header::RETRY_AFTER;
+    use axum::http::header::{CONTENT_TYPE, RETRY_AFTER};
     #[cfg(feature = "compat-qb")]
     use axum::http::{HeaderMap, HeaderValue, header::COOKIE};
     use axum::{
         Extension, Json,
         body::Body,
         extract::{Path as AxumPath, Query, State},
-        http::{Request, StatusCode},
+        http::{Method, Request, StatusCode},
         response::IntoResponse,
     };
     use chrono::{DateTime, Duration as ChronoDuration, Utc};
@@ -1196,9 +1197,10 @@ mod tests {
     async fn api_state_tracks_health_and_sessions() -> Result<()> {
         let config: SharedConfig = Arc::new(MockConfig::new()?);
         let telemetry = Metrics::new().map_err(|_| anyhow!("metrics init"))?;
-        let state = ApiServer::build_state(
+        let state = ApiServer::build_state_with_media(
             config,
             test_indexers(),
+            noop_media(),
             telemetry,
             Arc::new(json!({ "openapi": "stub" })),
             EventBus::with_capacity(8),
@@ -1242,8 +1244,15 @@ mod tests {
                 }),
             )
         };
-        let server =
-            ApiServer::with_config_at(config, test_indexers(), events, None, telemetry, &openapi)?;
+        let server = ApiServer::with_config_at_with_media(
+            config,
+            test_indexers(),
+            noop_media(),
+            events,
+            None,
+            telemetry,
+            &openapi,
+        )?;
 
         let request = Request::builder()
             .uri("/health")
@@ -1260,6 +1269,47 @@ mod tests {
             persisted.load(Ordering::SeqCst),
             "OpenAPI persistence should be invoked"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_evidence_routes_are_read_only_over_http() -> Result<()> {
+        let config = MockConfig::new()?;
+        config.set_app_mode(AppMode::Active).await;
+        config.insert_api_key("operator", "secret").await;
+        let telemetry = Metrics::new().map_err(|_| anyhow!("metrics init"))?;
+        let events = EventBus::with_capacity(8);
+        let openapi_path = server_root()?.join("revaer-openapi-evidence-route-test.json");
+        let document = Arc::new(json!({ "openapi": "stub" }));
+        let openapi = OpenApiDependencies::new(document, openapi_path, Arc::new(|_, _| Ok(())));
+        let server = ApiServer::with_config_at_with_media(
+            config.shared(),
+            test_indexers(),
+            noop_media(),
+            events,
+            None,
+            telemetry,
+            &openapi,
+        )?;
+        let job_id = Uuid::new_v4();
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/media/jobs/{job_id}/operations"))
+            .header("x-revaer-api-key", "operator:secret")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                r#"{"operation_index":0,"operation_kind":"remux","command_bin":"ffmpeg"}"#,
+            ))
+            .map_err(|_| anyhow!("request build"))?;
+
+        let response = server
+            .router()
+            .clone()
+            .oneshot(request)
+            .await
+            .map_err(|_| anyhow!("request failed"))?;
+
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
         Ok(())
     }
 

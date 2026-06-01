@@ -1,0 +1,79 @@
+# Media transcoding foundation
+
+- Status: Accepted
+- Date: 2026-06-04
+- Context:
+  - `MEDIA_TRANSCODING.md` defines a multi-slice media transcoding rollout with strict dry-run, compliance, safety, and observability requirements.
+  - PR 31 implements the first-release media foundation across domain logic, persistence, runtime orchestration, API/CLI/UI surfaces, workflows, and review feedback closeout.
+  - Root policy requires Rust 2024, no dead code, stored-procedure runtime data access, dependency injection, deterministic panic-free production code, and a task ADR.
+- Decision:
+  - Add library-first media crates for pure planning logic and runtime adapter contracts, with app/runtime layers receiving collaborators from bootstrap wiring.
+  - Persist media profiles, jobs, operations, artifacts, compact audits, plan reasons, verification checks, violations, discovery state, and capability snapshots through stored procedures only.
+  - Expose media profile/job/discovery/capability/compliance APIs, OpenAPI schemas, CLI support, and focused UI diagnostics.
+  - Start new profiles in dry-run mode, require explicit confirmation before destructive dry-run overrides, and reject traversal or profile-root escapes with component-based absolute path validation.
+  - Add a media job runtime that claims queued jobs, heartbeats, persists phase/operation/check/audit records, branches dry-run execution, invokes injected inspection/command adapters, validates symlink-aware destructive bounds, and cleans terminal workspaces.
+  - Group capability rows by `snapshot_run_public_id` so readiness and latest-capability APIs see a complete refresh batch instead of the last inserted codec row.
+  - Keep media-runtime image publication disabled unless the reusable image workflow receives and validates a final-image compliance bundle from the built image.
+  - Run PR release-build and image verification checks without publishing artifacts when final-image compliance evidence is not available.
+- Consequences:
+  - Positive outcomes:
+    - The media subsystem has a coherent first-release foundation instead of isolated per-slice task records.
+    - Queued media jobs can now progress through deterministic dry-run and non-dry-run paths with persisted diagnostics.
+    - Review-reported traversal, dry-run creation, runtime, compliance, and capability grouping gaps are addressed with regression coverage.
+    - Image publication cannot push media runtime artifacts without final-image compliance evidence.
+    - PR checks now exercise release-build, image-build, image-scan, manifest-input, and Helm-packaging paths instead of reporting skipped jobs.
+  - Risks or trade-offs:
+    - Image publication remains intentionally unavailable until final-image compliance bundle generation is implemented.
+    - PR validation is slower because release-build and image verification jobs now run before merge.
+    - The first media worker uses conservative workspace policy defaults until release/operator configuration exposes richer disk policy.
+    - Coverage is broad and slow because `just cov` instruments the full workspace with single-threaded tests.
+- Follow-up:
+  - Generate final-image compliance bundles before re-enabling image publication callers.
+  - Add fixture-backed non-dry-run media execution coverage once representative media files are approved for tests.
+  - Extend capability batch persistence beyond codec rows when the first-release detector starts storing encoders, decoders, formats, filters, and utilities separately.
+
+## Task Record
+
+- Motivation:
+  - Implement the media transcoding foundation from `MEDIA_TRANSCODING.md`, address PR 31 review feedback, and reduce the ADR set from per-slice records to one consolidated branch record.
+- Design notes:
+  - Media domain logic remains pure and testable in the media crates; bootstrap owns concrete environment, filesystem, process, and detector construction.
+  - Runtime database access uses stored procedures for every profile, job, phase, operation, artifact, audit, plan reason, verification check, violation, discovery, and capability path.
+  - Profile root checks normalize absolute path components and reject parent traversal; destructive runtime checks additionally resolve existing ancestors to block symlink escapes.
+  - Profile creation forces `dry_run_only = true` at API and insert boundaries; later explicit updates remain the path for clearing dry-run mode.
+  - The media runtime claims jobs with lease/heartbeat procedures and records deterministic terminal status rather than leaving queued work idle.
+  - Workflow guardrails require a final-image compliance bundle path before media runtime image publication can run.
+  - PR image checks build and scan local verification images, validate manifest tag inputs, and package Helm charts unsigned without pushing GHCR images, creating manifests, signing tags, or publishing charts when the bundle is absent.
+- Test coverage summary:
+  - Added unit and integration coverage for profile validation, semantic role inference, stream ranking, codec/language aliases, graph diffing, plan generation, command argv construction, capability gating, workspace capacity, preflight evaluation, filesystem operations, backup/replacement steps, compliance scoring, discovery input bounds, and media runtime execution.
+  - Added data/API/UI/OpenAPI coverage for profile CRUD, YAML import/export, discovery preview/run flows, job create/list/cancel/retry, phase/operation/artifact/audit/plan-reason/verification/violation surfaces, capability grouping, dry-run profile creation, path traversal rejection, and worker terminal behavior.
+  - Added static workflow guardrails that fail if PR release-build validation is hidden behind main/tag-only conditions or if the PR image workflow lacks non-publishing verification steps.
+  - Before check-activation follow-up, PR checks for commit `b0b40b80` passed on 2026-06-04 with image/release jobs skipped by workflow conditions.
+  - Ran `actionlint .github/workflows/pr.yml .github/workflows/build-images.yml`; passed on 2026-06-04 after check-activation follow-up.
+  - Ran `REVAER_HELM_SIGN=0 just helm-package 0.0.0-dev.pr31.local pr-31-local`; passed on 2026-06-04 after check-activation follow-up.
+  - Ran `just ci` with isolated local Postgres on port 55434; passed on 2026-06-04 after check-activation follow-up.
+  - Ran `just ui-e2e` with isolated local Postgres on port 55434; passed 104 Playwright tests on 2026-06-04 after check-activation follow-up.
+- Observability updates:
+  - Media job runtime logs worker tick failures, per-job outcomes, failure-persistence issues, and workspace cleanup failures.
+  - Persisted media phases, operations, artifacts, compact audits, plan reasons, verification checks, violations, and diagnostics expose job progress and failure reasons through APIs and UI.
+  - Workflow guardrails surface missing final-image compliance bundle evidence before image publication.
+  - PR workflow status now distinguishes non-publishing image verification from publishable image release activity.
+- Status-doc validation:
+  - Updated ADR index and documentation summary to reference this consolidated ADR only.
+  - Updated `.github/instructions/devops.instructions.md` to keep image-publication policy aligned with workflow behavior.
+  - Updated workflow guardrails so skipped release/image PR checks are treated as instruction drift.
+  - Updated generated OpenAPI outputs and API support files where media response shapes changed.
+- Risk & rollback plan:
+  - Risk: media jobs can now fail deterministically when profiles, roots, capabilities, or workspace bounds are invalid; rollback by reverting media runtime wiring and worker stored procedures returns jobs to the prior queued-only state.
+  - Risk: capability readiness depends on snapshot-run grouping; rollback by reverting migration 0139 and DTO changes returns to single-row latest behavior but loses complete refresh context.
+  - Risk: image publication remains disabled until final-image compliance evidence exists; rollback should only happen by replacing the guard with an equivalent verified bundle gate.
+  - Risk: PR image verification can increase CI runtime; rollback by restoring the workflow skip would also restore the skipped-check gap.
+  - Docs-only ADR consolidation can be rolled back by restoring the deleted per-slice ADRs and the long index/SUMMARY entries.
+- Dependency rationale:
+  - No new third-party dependencies were added by the PR feedback closeout or ADR consolidation.
+  - The media crates use workspace-standard dependencies already present in the project for serialization and error typing.
+- Stale-policy check:
+  - Instruction files reviewed: `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/ffi.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Drift found: DevOps instructions did not yet state that media runtime image publication must stay disabled until final-image compliance bundle generation exists.
+  - Drift found during check-activation follow-up: DevOps instructions and workflow guardrails did not yet distinguish non-publishing PR image verification from final-bundle-gated image publication.
+  - Contradictions or stale references removed: consolidated branch-added ADRs 317-431 into this record and removed the per-slice ADR links from `docs/adr/index.md` and `docs/SUMMARY.md`.

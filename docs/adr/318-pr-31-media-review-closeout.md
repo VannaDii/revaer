@@ -1,0 +1,80 @@
+# PR 31 media review closeout
+
+- Status: Accepted
+- Date: 2026-06-08
+- Context:
+  - PR 31 review feedback identified runtime gaps in media replacement safety, capability persistence, automation, cancellation, and public evidence-write exposure.
+  - Follow-up review feedback identified remaining gaps in startup detector refresh, public capability snapshot writes, enqueue-time job intent immutability, target/policy planning, watcher semantics, initial API coverage, portable YAML imports, and capability breadth.
+  - Final review feedback identified remaining gaps in stored-procedure-backed media target/policy/retention configuration, desired-graph compilation from snapshotted target rows, final stream metadata verification, atomic capability refresh completion, portable YAML apply behavior, final-image compliance bundle validation, and package-level SPDX evidence.
+  - The change must preserve Rust 2024 policy, stored-procedure runtime database access, injected runtime collaborators, and Justfile-backed verification.
+- Decision:
+  - Stage generated media output inside the managed worker workspace, compile desired graphs from profile compatibility targets, probe filesystem capacity through an injected adapter, verify candidate and final graphs before marking jobs complete, and persist concrete encoder names in normalized capability rows.
+  - Restrict user cancellation to queued jobs, remove public HTTP writer routes for internal media-job evidence records, remove the public capability snapshot writer, and make detector refresh the only production path for persisted capability snapshots.
+  - Persist normalized capability feature rows for decoders, muxers, demuxers, subtitle support, hardware acceleration, filesystem utilities, utility capabilities, license mode, compliance links, and absent capabilities. Gate readiness and job execution on the specific feature families the runtime needs.
+  - Store compatibility targets, policy profiles, and job retention policy in normalized media configuration tables with list/upsert/update stored procedures and API routes. Seed Plex-compatible HEVC/AAC targets, but allow operators to add versioned target and policy rows.
+  - Snapshot enqueue-time source root, output root, compatibility target version, policy version, target codecs, subtitle policy, and video intent into each media job, and have worker claims use those immutable intent values instead of joining mutable profile rows.
+  - Compile desired media graphs from snapshotted target codecs and subtitle policy. Unknown or missing snapshotted target/policy fields now fail explicitly instead of being inferred from key strings.
+  - Compare final media graphs against full stream identity and metadata: stream id, kind, codec, language, title, and dispositions.
+  - Make capability refresh a single database transaction with a run start/completion marker; latest/readiness queries only consider completed runs so partial detector writes cannot become the latest snapshot.
+  - Disable watcher automation until real event watching/debounce lands. Manual and scheduled discovery remain available, watcher listings report disabled entries, and watcher run endpoints are removed.
+  - Add initial read/preview surfaces for profile validation, compatibility targets, policies, job retention, and planning preview.
+  - Export portable YAML by default with roots tokenized and automation disabled; local-path export is explicit, and importing unresolved portable roots creates forced-dry-run draft roots under `/var/lib/revaer/media-import-drafts` instead of failing.
+  - Require reusable image publication to run a structured final-image compliance bundle validator before login/build/push, and fail the media compliance guardrail when the shipped runtime SPDX inventory collapses Alpine packages or omits per-package version/license/SHA-256 data.
+  - Alternatives considered: leave runtime evidence writers publicly routable for operators, keep codec-derived encoder fallback, retain API-key writable capability snapshots, continue periodic full-root watcher scans, or infer planning behavior from arbitrary keys. Those options were rejected because they bypass the review-requested safety boundaries.
+- Consequences:
+  - Media job replacement is guarded by candidate and final graph checks, failed candidates are quarantined before replacement, and non-dry-run discovery requires a ready capability snapshot with persisted encoders.
+  - Capability refresh may fail readiness if the runtime cannot detect the required feature families. The app can keep serving API traffic, but non-dry-run media execution stays blocked until a valid detector snapshot exists.
+  - Watcher automation is unavailable by design in this release. Operators can use manual discovery or scheduled discovery while event-backed watching is implemented separately.
+  - Portable YAML exports are safer for sharing and review, and applying them without local path mapping now keeps imported profiles dry-run and automation-disabled under deterministic draft roots.
+  - Image publication remains blocked unless a final-image compliance manifest validates required evidence paths and SHA-256s for the exact build.
+- Follow-up:
+  - Watch CI and review-thread state on PR 31 after push.
+  - Add event-backed watcher/debounce support in a later task if operators need live folder automation.
+  - Add richer persisted compatibility target and policy catalogs if operator-defined targets become part of the product surface.
+
+## Task Record
+
+- Motivation:
+  - Address unresolved PR 31 feedback around detector-owned capability snapshots, snapshot breadth, immutable job intent, exact planning keys, watcher behavior, initial API coverage, portable YAML safety, desired graph planning, workspace staging, free-space probing, candidate/final verification, cancellation safety, read-only public evidence APIs, automation startup, and encoder persistence.
+- Design notes:
+  - `media_job_worker_claim_next_v1` now returns profile compatibility and policy keys so the worker can compile desired media graphs.
+  - Capability snapshot runs persist normalized encoder rows, and the worker loads those encoders directly instead of inferring them from codec support.
+  - `0142_media_capability_features_and_job_intent.sql` adds normalized capability feature rows and immutable media-job intent columns for enqueue-time roots, target, and policy.
+  - Detector refresh persists codec, encoder, decoder, muxer, demuxer, hardware, subtitle, utility, license, compliance, and absent-capability rows. Public clients can read snapshots or request refresh, but cannot forge snapshot contents.
+  - Public HTTP routes for media job operations, violations, plan reasons, verification checks, artifacts, and compact audits are GET-only; internal app/data append functions remain available to the worker.
+  - Public HTTP routes now include profile validation, compatibility targets, policies, job retention, and planning preview.
+  - Compatibility target, policy profile, and job retention routes now write through stored procedures instead of serving hard-coded read-only catalogs.
+  - Watcher execution is disabled at service, router, and e2e-contract levels until a real watcher/debounce implementation exists.
+  - YAML export defaults to portable root tokens with automation disabled. Applying those tokens maps them to deterministic import-draft roots and keeps watcher/schedule automation disabled.
+  - Final-image publication requires `scripts/validate-final-image-compliance-bundle.sh`, and the static media runtime SPDX inventory records package-level Alpine 3.23 versions, licenses, and SHA-256 package digests.
+  - A small `revaer-fsops` capacity helper wraps `statvfs`; the app worker receives a capacity-probe trait for testable injection.
+- Test coverage summary:
+  - Added worker regressions for HEVC/AAC desired graph compilation, workspace candidate paths, low-capacity preflight rejection, candidate mismatch quarantine before replacement, and final graph verification.
+  - Added data coverage for queued-only cancellation, latest capability snapshots with encoder and feature rows, media schema inventory updates, and worker claims using enqueue-time intent despite later profile mutation.
+  - Added API coverage proving public evidence collection POSTs return method-not-allowed, and regenerated OpenAPI output.
+  - Updated API e2e coverage to use detector-owned capabilities, verify new media surfaces, prove portable YAML import remains forced dry-run and automation-disabled, and treat watcher listings as disabled/read-only.
+  - Updated media e2e coverage to assert imported YAML disables automation, explicitly re-enable scheduled discovery before running it, and scope media UI automation-label selectors to the profile form.
+  - Stabilized the UI route coverage test after GitHub shard 2 surfaced a strict locator collision between the route loading indicator and another status region.
+  - Added discovery runtime coverage proving watcher flags do not trigger scans, and reran the media service capability/YAML round-trip.
+  - Added targeted coverage for stored-procedure media configuration writes, completed-only capability snapshots, target/policy intent snapshots, snapshotted target graph compilation, full final stream metadata verification, portable YAML draft-root apply, OpenAPI write surfaces, media schema inventory, and media compliance guardrails.
+  - Targeted verification run during the final closeout: `cargo test -p revaer-api openapi_document_exports_media_routes`, `cargo test -p revaer-api openapi_document_exports_media_schemas`, `cargo test -p revaer-data media_configuration_catalogs_are_stored_procedure_backed`, `cargo test -p revaer-data latest_capability_snapshot_ignores_incomplete_latest_run`, `cargo test -p revaer-data latest_capability_snapshot_returns_complete_latest_run`, `cargo test -p revaer-data worker_claim_uses_enqueue_time_profile_intent`, `cargo test -p revaer-data schema_tests`, `cargo test -p revaer-app media_service_round_trips_profile_job_yaml_and_capability_paths`, `cargo test -p revaer-app desired_graph_compiles_from_snapshotted_target_and_selected_subtitles`, `cargo test -p revaer-app final_graph_verification_matches_stream_identity_and_metadata`, and `bash scripts/media-compliance-guardrails.sh`.
+  - GitHub shard follow-up verification: `PLAYWRIGHT_SHARD_INDEX=2 PLAYWRIGHT_SHARD_TOTAL=3 just ui-e2e` passed with 95 tests.
+  - Full local gates: `just ci` passed, and `just ui-e2e` passed with 104 Playwright tests plus API/UI route coverage teardown.
+- Observability updates:
+  - Discovery runtime logs skipped non-dry-run profiles when execution capabilities are not ready.
+  - Worker verification rows now record `candidate_graph` and `final_graph` checks in addition to the replacement completion check.
+  - Startup media capability refresh records detector failures through the existing health/readiness path while leaving the API server available.
+  - Capability snapshot runs expose a completed-run boundary so readiness cannot observe partially persisted detector output.
+  - Final-image compliance publication failures now identify missing manifest fields, missing evidence files, or SHA-256 mismatches before any image push step.
+- Status-doc validation:
+  - This ADR consolidates the PR 31 closeout history; ADR index and documentation summary already point at this record.
+  - `docs/api/openapi.json`, `crates/revaer-app/docs/api/openapi.json`, and `tests/support/api/schema.ts` were regenerated for the current API surface.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Drift found and corrected in the PR 31 ADR itself: portable YAML apply no longer requires path mapping before apply, and the target/policy catalog is no longer read-only.
+  - DevOps scoped instructions now capture structured final-image compliance bundle validation and package-level SPDX evidence requirements for image publication.
+- Risk and rollback plan:
+  - Risks: stricter capability readiness can block non-dry-run media automation until a complete detector snapshot is refreshed, strict graph verification can fail jobs when actual output metadata does not match the compiled target, watcher automation is intentionally unavailable, portable YAML imports without mapping use draft roots that operators must later replace, and final-image publication now fails fast when compliance evidence is incomplete.
+  - Rollback: revert this ADR and the associated code/migration changes; the migrations add normalized capability feature storage and immutable job intent columns, replace worker/cancel procedures, and can be superseded with a follow-up procedure migration if needed.
+- Dependency rationale:
+  - No new dependencies were added. Filesystem capacity probing uses the existing `nix` dependency already present in `revaer-fsops`.

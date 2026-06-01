@@ -39,7 +39,10 @@ pub fn start_postgres() -> Result<TestDatabase> { std::env::var("REVAER_TEST_DAT
 #[doc = "# Errors"]
 #[doc = "Returns an error when the URL is invalid or the database cannot be created and probed."]
 #[rustfmt::skip]
-pub fn start_postgres_at(base_url: &str) -> Result<TestDatabase> { let parsed = Url::parse(base_url).context("invalid postgres connection url")?; let database = unique_database_name(); let connection_string = database_connection_string(&parsed, &database); let create_sql = format!("CREATE DATABASE \"{database}\""); let mut last_error = anyhow::Error::msg("failed to create database"); for admin_url in admin_urls(&parsed) { if let Err(err) = run_admin_operation(&admin_url, &create_sql, "failed to issue CREATE DATABASE") { last_error = err; continue; } run_admin_operation(&connection_string, "SELECT 1", "failed to probe test database")?; return Ok(TestDatabase { connection_string, admin_url, database }); } Err(last_error.context("failed to create database")) }
+pub fn start_postgres_at(base_url: &str) -> Result<TestDatabase> { let parsed = Url::parse(base_url).context("invalid postgres connection url")?; let mut last_error = anyhow::Error::msg("failed to create database"); for candidate in postgres_url_candidates(&parsed) { match create_test_database(&candidate) { Ok(db) => return Ok(db), Err(err) => last_error = err, } } Err(last_error.context("failed to create database")) }
+
+#[rustfmt::skip]
+fn create_test_database(parsed: &Url) -> Result<TestDatabase> { let database = unique_database_name(); let connection_string = database_connection_string(parsed, &database); let create_sql = format!("CREATE DATABASE \"{database}\""); let mut last_error = anyhow::Error::msg("failed to create database"); for admin_url in admin_urls(parsed) { if let Err(err) = run_admin_operation(&admin_url, &create_sql, "failed to issue CREATE DATABASE") { last_error = err; continue; } run_admin_operation(&connection_string, "SELECT 1", "failed to probe test database")?; return Ok(TestDatabase { connection_string, admin_url, database }); } Err(last_error) }
 
 #[must_use]
 #[rustfmt::skip]
@@ -47,6 +50,12 @@ fn unique_database_name() -> String { static NEXT_DATABASE_ID: AtomicU64 = Atomi
 
 #[rustfmt::skip]
 fn database_connection_string(base_url: &Url, database: &str) -> String { let mut database_url = base_url.clone(); database_url.set_path(&format!("/{database}")); database_url.to_string() }
+
+#[rustfmt::skip]
+fn postgres_url_candidates(base_url: &Url) -> Vec<Url> { let mut candidates = vec![base_url.clone()]; if let Some(fallback) = local_docker_host_fallback(base_url) { candidates.push(fallback); } candidates }
+
+#[rustfmt::skip]
+fn local_docker_host_fallback(base_url: &Url) -> Option<Url> { match base_url.host_str()? { "localhost" | "127.0.0.1" => { let mut fallback = base_url.clone(); fallback.set_host(Some("host.docker.internal")).ok()?; Some(fallback) } _ => None } }
 
 #[rustfmt::skip]
 fn admin_urls(base_url: &Url) -> Vec<String> { let mut admin_url = base_url.clone(); admin_url.set_path("/postgres"); if admin_url.path() == base_url.path() { vec![admin_url.to_string()] } else { vec![admin_url.to_string(), base_url.to_string()] } }
@@ -96,5 +105,19 @@ mod tests {
             admin_urls,
             vec!["postgres://localhost:5432/postgres".to_string()]
         );
+    }
+
+    #[test]
+    fn local_docker_host_fallback_rewrites_localhost_only() {
+        let local = Url::parse("postgres://user:pass@localhost:55432/postgres")
+            .expect("valid postgres url");
+        let remote = Url::parse("postgres://user:pass@db.example.test:5432/postgres")
+            .expect("valid postgres url");
+
+        assert_eq!(
+            local_docker_host_fallback(&local).map(|url| url.to_string()),
+            Some("postgres://user:pass@host.docker.internal:55432/postgres".to_string())
+        );
+        assert!(local_docker_host_fallback(&remote).is_none());
     }
 }

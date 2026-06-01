@@ -79,8 +79,8 @@ export default async function globalSetup(): Promise<void> {
     }
     runCommand('just', ['sqlx-install'], { cwd: root });
 
-    const apiBin = path.join(root, 'target', 'debug', 'revaer-app');
     runCommand('cargo', ['build', '-p', 'revaer-app'], { cwd: root });
+    const apiBin = cargoDebugBinary(root, 'revaer-app');
     if (!fs.existsSync(apiBin)) {
       throw new Error(`revaer-app binary not found at ${apiBin}`);
     }
@@ -184,6 +184,27 @@ function commandExists(command: string): boolean {
     stdio: 'ignore',
   });
   return result.status === 0;
+}
+
+function cargoDebugBinary(root: string, binaryName: string): string {
+  const targetDir = cargoTargetDir(root);
+  const buildTarget = process.env.CARGO_BUILD_TARGET?.trim();
+  const debugDir = buildTarget
+    ? path.join(targetDir, buildTarget, 'debug')
+    : path.join(targetDir, 'debug');
+  return path.join(debugDir, executableName(binaryName));
+}
+
+function cargoTargetDir(root: string): string {
+  const configured = process.env.CARGO_TARGET_DIR?.trim();
+  if (!configured) {
+    return path.join(root, 'target');
+  }
+  return path.isAbsolute(configured) ? configured : path.resolve(root, configured);
+}
+
+function executableName(binaryName: string): string {
+  return process.platform === 'win32' ? `${binaryName}.exe` : binaryName;
 }
 
 function urlParts(input: string): UrlParts {

@@ -7,6 +7,8 @@ members = [
     "crates/revaer-config",
     "crates/revaer-fsops",
     "crates/revaer-events",
+    "crates/revaer-media-core",
+    "crates/revaer-media-runtime",
     "crates/revaer-doc-indexer",
     "crates/revaer-telemetry",
     "crates/revaer-torrent-core",

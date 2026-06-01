@@ -9,13 +9,20 @@ use crate::error::{AppError, AppResult};
 use crate::import_job_runtime::ImportJobRuntime;
 use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
+use crate::media::MediaService;
+use crate::media_discovery_runtime::MediaDiscoveryRuntime;
+use crate::media_job_runtime::MediaJobRuntime;
 use revaer_api::TorrentHandles;
+use revaer_api::app::media::{MediaCapabilityRefreshParams, MediaFacade};
 use revaer_config::{AppMode, ConfigService, ConfigSnapshot, DbSessionConfig};
 use revaer_events::EventBus;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
 use tracing::{error, info, warn};
 
+use revaer_media_runtime::capabilities::{FfmpegCapabilityDetector, SystemCapabilityProbeExecutor};
 use revaer_runtime::RuntimeStore;
+use revaer_runtime::media::MediaStore;
+use uuid::Uuid;
 
 #[cfg(feature = "libtorrent")]
 use crate::orchestrator::{
@@ -23,6 +30,8 @@ use crate::orchestrator::{
 };
 #[cfg(feature = "libtorrent")]
 use revaer_torrent_core::{TorrentEngine, TorrentInspector, TorrentWorkflow};
+
+const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
 
 /// Dependencies required to bootstrap the Revaer application.
 pub(crate) struct BootstrapDependencies {
@@ -296,27 +305,25 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         None
     };
 
-    let api = build_api_server(&config, &events, torrent_handles, telemetry.clone())?;
+    let media = Arc::new(build_media_service(&config));
+    refresh_startup_media_capabilities(&media, &events, &telemetry).await;
+    let api = build_api_server(&config, &events, torrent_handles, telemetry.clone(), media)?;
     let indexer_runtime_task =
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
     let import_job_runtime_task =
         ImportJobRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
+    let media_discovery_runtime_task =
+        MediaDiscoveryRuntime::new(MediaStore::new(config.pool().clone())).spawn();
+    let media_job_runtime_task =
+        MediaJobRuntime::new(MediaStore::new(config.pool().clone())).spawn();
     info!(addr = %addr, "Launching API listener");
 
     let serve_result = api.serve(addr).await;
 
-    if !indexer_runtime_task.is_finished() {
-        indexer_runtime_task.abort();
-    }
-    if let Err(err) = indexer_runtime_task.await {
-        warn!(error = %err, "indexer runtime task join failed");
-    }
-    if !import_job_runtime_task.is_finished() {
-        import_job_runtime_task.abort();
-    }
-    if let Err(err) = import_job_runtime_task.await {
-        warn!(error = %err, "import job runtime task join failed");
-    }
+    stop_runtime_task(indexer_runtime_task, "indexer").await;
+    stop_runtime_task(import_job_runtime_task, "import_job").await;
+    stop_runtime_task(media_discovery_runtime_task, "media_discovery").await;
+    stop_runtime_task(media_job_runtime_task, "media_job").await;
 
     #[cfg(feature = "libtorrent")]
     {
@@ -327,17 +334,28 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
             warn!(error = %err, "fsops worker join failed");
         }
 
-        if !config_task.is_finished() {
+        if config_task.is_finished() {
+            if let Err(err) = config_task.await {
+                warn!(error = %err, "config watcher task join failed");
+            }
+        } else {
             config_task.abort();
-        }
-        if let Err(err) = config_task.await {
-            warn!(error = %err, "config watcher task join failed");
+            warn!("config watcher task aborted during bootstrap shutdown");
         }
     }
 
     serve_result.map_err(|err| AppError::api_server("api_server.serve", err))?;
     info!("API server shutdown complete");
     Ok(())
+}
+
+async fn stop_runtime_task<T>(task: tokio::task::JoinHandle<T>, task_name: &'static str) {
+    if !task.is_finished() {
+        task.abort();
+    }
+    if let Err(err) = task.await {
+        warn!(error = %err, task = task_name, "runtime task join failed");
+    }
 }
 
 fn bootstrap_listener_addr(
@@ -371,19 +389,66 @@ fn build_api_server(
     events: &EventBus,
     torrent_handles: Option<TorrentHandles>,
     telemetry: Metrics,
+    media: Arc<MediaService>,
 ) -> AppResult<revaer_api::ApiServer> {
     let indexers = Arc::new(IndexerService::new(
         Arc::new(config.clone()),
         telemetry.clone(),
     ));
-    revaer_api::ApiServer::new(
+    revaer_api::ApiServer::new_with_media(
         config.clone(),
         indexers,
+        media,
         events.clone(),
         torrent_handles,
         telemetry,
     )
     .map_err(|err| AppError::api_server("api_server.new", err))
+}
+
+fn build_media_service(config: &ConfigService) -> MediaService {
+    MediaService::new(
+        MediaStore::new(config.pool().clone()),
+        Arc::new(FfmpegCapabilityDetector::new(
+            Arc::new(SystemCapabilityProbeExecutor),
+            "ffmpeg",
+            "ffprobe",
+        )),
+    )
+}
+
+async fn refresh_startup_media_capabilities(
+    media: &MediaService,
+    events: &EventBus,
+    telemetry: &Metrics,
+) {
+    match media
+        .media_capability_refresh(MediaCapabilityRefreshParams {
+            actor_user_public_id: SYSTEM_USER_PUBLIC_ID,
+        })
+        .await
+    {
+        Ok(snapshot_id) => {
+            info!(
+                media_capability_snapshot_id = snapshot_id,
+                "startup media capability refresh completed"
+            );
+        }
+        Err(error) => {
+            warn!(
+                error = %error,
+                code = error.code().unwrap_or("media_capability_refresh_failed"),
+                "startup media capability refresh failed; media execution remains not ready"
+            );
+            telemetry.inc_event("media_capability_refresh_failed");
+            publish_event(
+                events,
+                revaer_events::Event::HealthChanged {
+                    degraded: vec!["media_capability".to_string()],
+                },
+            );
+        }
+    }
 }
 
 fn load_otel_config_from_env() -> Option<OpenTelemetryConfig<'static>> {
