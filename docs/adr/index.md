@@ -403,3 +403,4 @@
 -   [389](389-media-artifact-compact-audit-app-facade-slice-6-10.md) – Media artifact and compact audit app facade slice 6/10
 -   [390](390-media-artifact-compact-audit-api-slice-10.md) – Media artifact and compact audit API slice 10
 -   [391](391-media-artifact-compact-audit-openapi-slice-10.md) – Media artifact and compact audit OpenAPI slice 10
+-   [392](392-media-artifact-compact-audit-ui-slice-11.md) – Media artifact and compact audit UI slice 11
