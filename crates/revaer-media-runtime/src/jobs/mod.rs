@@ -16,7 +16,9 @@ use crate::execute::{
     build_execution_steps_with_replacement,
 };
 use crate::inspect::{InspectAdapter, InspectError};
-use crate::workspace::{WorkspaceCapacityReport, WorkspaceError, WorkspacePolicy};
+use crate::workspace::{
+    WorkspaceCapacityReport, WorkspaceError, WorkspacePolicy, WorkspaceRejectionReason,
+};
 
 /// Execution phase for a media job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -248,6 +250,17 @@ pub struct PreflightStageRecord {
     pub ok: bool,
     /// Optional machine-readable stage code.
     pub code: Option<&'static str>,
+}
+
+/// Compact audit fact ready for durable media-job audit persistence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactAuditFact {
+    /// Stable fact order index within a job.
+    pub audit_index: i32,
+    /// Machine-readable fact kind.
+    pub fact_kind: &'static str,
+    /// Bounded deterministic fact text.
+    pub fact_text: String,
 }
 
 /// Preflight request inputs.
@@ -577,6 +590,105 @@ pub fn preflight_failure_report(error: &JobPreflightError) -> JobPreflightFailur
     }
 }
 
+/// Project preflight evaluation details into compact deterministic audit facts.
+#[must_use]
+pub fn preflight_compact_audit_facts(evaluation: &JobPreflightEvaluation) -> Vec<CompactAuditFact> {
+    let mut facts = Vec::new();
+    let mut audit_index = 0_i32;
+
+    for record in evaluation.timeline() {
+        push_compact_audit_fact(
+            &mut facts,
+            &mut audit_index,
+            "preflight_timeline",
+            format!(
+                "stage={} ok={} code={}",
+                record.stage,
+                record.ok,
+                preflight_stage_code_text(record.code)
+            ),
+        );
+    }
+
+    match evaluation {
+        JobPreflightEvaluation::Ready(report) => {
+            push_compact_audit_fact(
+                &mut facts,
+                &mut audit_index,
+                "preflight_plan",
+                format!(
+                    "operations={} remux={} metadata_rewrite={} disposition_rewrite={} label_rewrite={} stream_reorder={} audio_transcode={} video_transcode={} estimated_workspace_bytes={}",
+                    report.summary.total_operations,
+                    report.summary.remux_operations,
+                    report.summary.metadata_rewrite_operations,
+                    report.summary.disposition_rewrite_operations,
+                    report.summary.label_rewrite_operations,
+                    report.summary.stream_reorder_operations,
+                    report.summary.audio_transcode_operations,
+                    report.summary.video_transcode_operations,
+                    report.planned.estimated_workspace_bytes
+                ),
+            );
+            push_compact_audit_fact(
+                &mut facts,
+                &mut audit_index,
+                "workspace_capacity",
+                format!(
+                    "accepted={} reason={} available_after_reserve_bytes={} required_workspace_bytes={}",
+                    report.capacity_report.accepted,
+                    workspace_rejection_reason_code(report.capacity_report.reason),
+                    report.capacity_report.available_after_reserve_bytes,
+                    report.capacity_report.required_workspace_bytes
+                ),
+            );
+        }
+        JobPreflightEvaluation::Failed(report) => {
+            push_compact_audit_fact(
+                &mut facts,
+                &mut audit_index,
+                "preflight_failure",
+                format!(
+                    "stage={} code={} detail={}",
+                    report.failed_stage, report.error_code, report.error_detail
+                ),
+            );
+        }
+    }
+
+    facts
+}
+
+fn push_compact_audit_fact(
+    facts: &mut Vec<CompactAuditFact>,
+    audit_index: &mut i32,
+    fact_kind: &'static str,
+    fact_text: String,
+) {
+    facts.push(CompactAuditFact {
+        audit_index: *audit_index,
+        fact_kind,
+        fact_text,
+    });
+    *audit_index += 1;
+}
+
+const fn preflight_stage_code_text(code: Option<&'static str>) -> &'static str {
+    match code {
+        Some(value) => value,
+        None => "none",
+    }
+}
+
+const fn workspace_rejection_reason_code(reason: Option<WorkspaceRejectionReason>) -> &'static str {
+    match reason {
+        None => "none",
+        Some(WorkspaceRejectionReason::InvalidPolicy) => "invalid_policy",
+        Some(WorkspaceRejectionReason::InsufficientReserve) => "insufficient_reserve",
+        Some(WorkspaceRejectionReason::ExceedsMaxWorkspace) => "exceeds_max_workspace",
+        Some(WorkspaceRejectionReason::InsufficientCapacity) => "insufficient_capacity",
+    }
+}
+
 /// Build a deterministic plan and estimate workspace usage.
 ///
 /// # Errors
@@ -898,17 +1010,17 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 #[cfg(test)]
 mod tests {
     use super::{
-        BackupPathError, BuildArgsError, ExecutionStep, JobPreflightError, JobPreflightEvaluation,
-        JobPreflightFailureReport, JobPreflightReport, JobPreflightRequest,
+        BackupPathError, BuildArgsError, CompactAuditFact, ExecutionStep, JobPreflightError,
+        JobPreflightEvaluation, JobPreflightFailureReport, JobPreflightReport, JobPreflightRequest,
         OwnedPreflightBuildInput, PlannedJob, PreflightBuildInput, PreflightBuildTemplate,
         PreflightPolicyInput, PreflightStageRecord, build_job_execution_steps,
         build_job_execution_steps_with_capabilities, build_job_execution_steps_with_replacement,
         build_preflight_input, build_preflight_report, build_preflight_report_from_template,
         ensure_execution_capacity, evaluate_preflight, evaluate_preflight_from_template, plan_job,
-        plan_job_from_inspect, preflight_error_code, preflight_error_detail,
-        preflight_failed_stage, preflight_failure_report, preflight_success_timeline,
-        preflight_timeline_for_error, require_valid_capability_snapshot, resolve_backup_path,
-        summarize_planned_job,
+        plan_job_from_inspect, preflight_compact_audit_facts, preflight_error_code,
+        preflight_error_detail, preflight_failed_stage, preflight_failure_report,
+        preflight_success_timeline, preflight_timeline_for_error,
+        require_valid_capability_snapshot, resolve_backup_path, summarize_planned_job,
     };
     use crate::capabilities::CapabilitySnapshot;
     use crate::inspect::{InspectAdapter, InspectError};
@@ -2208,6 +2320,122 @@ mod tests {
                 BackupPathError::MatchesOutputPath
             )),
             "backup path must not match output path"
+        );
+    }
+
+    #[test]
+    fn preflight_compact_audit_facts_project_ready_timeline_summary_and_capacity() {
+        let outcome = JobPreflightEvaluation::Ready(JobPreflightReport {
+            planned: PlannedJob {
+                operations: vec![PlannedOperation {
+                    kind: revaer_media_core::plan::OperationKind::Remux,
+                    stream_id: None,
+                }],
+                compliance: report_for_status(Status::Compliant),
+                estimated_workspace_bytes: 4_096,
+            },
+            summary: super::PlannedJobSummary {
+                total_operations: 1,
+                remux_operations: 1,
+                metadata_rewrite_operations: 0,
+                disposition_rewrite_operations: 0,
+                label_rewrite_operations: 0,
+                stream_reorder_operations: 0,
+                audio_transcode_operations: 0,
+                video_transcode_operations: 0,
+                explanations: Vec::new(),
+            },
+            steps: Vec::new(),
+            timeline: vec![
+                PreflightStageRecord {
+                    stage: "inspect_plan",
+                    ok: true,
+                    code: None,
+                },
+                PreflightStageRecord {
+                    stage: "workspace_capacity",
+                    ok: true,
+                    code: None,
+                },
+            ],
+            capacity_report: crate::workspace::WorkspaceCapacityReport {
+                accepted: true,
+                reason: None,
+                available_after_reserve_bytes: 8_192,
+                required_workspace_bytes: 4_096,
+            },
+        });
+
+        let facts = preflight_compact_audit_facts(&outcome);
+
+        assert_eq!(
+            facts,
+            vec![
+                CompactAuditFact {
+                    audit_index: 0,
+                    fact_kind: "preflight_timeline",
+                    fact_text: "stage=inspect_plan ok=true code=none".to_string(),
+                },
+                CompactAuditFact {
+                    audit_index: 1,
+                    fact_kind: "preflight_timeline",
+                    fact_text: "stage=workspace_capacity ok=true code=none".to_string(),
+                },
+                CompactAuditFact {
+                    audit_index: 2,
+                    fact_kind: "preflight_plan",
+                    fact_text: "operations=1 remux=1 metadata_rewrite=0 disposition_rewrite=0 label_rewrite=0 stream_reorder=0 audio_transcode=0 video_transcode=0 estimated_workspace_bytes=4096".to_string(),
+                },
+                CompactAuditFact {
+                    audit_index: 3,
+                    fact_kind: "workspace_capacity",
+                    fact_text: "accepted=true reason=none available_after_reserve_bytes=8192 required_workspace_bytes=4096".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn preflight_compact_audit_facts_project_failure_stage_and_detail() {
+        let outcome = JobPreflightEvaluation::Failed(JobPreflightFailureReport {
+            failed_stage: "workspace_capacity",
+            error_code: "preflight_workspace_insufficient_capacity",
+            error_detail: "free disk cannot satisfy workspace demand above reserve",
+            timeline: vec![
+                PreflightStageRecord {
+                    stage: "inspect_plan",
+                    ok: true,
+                    code: None,
+                },
+                PreflightStageRecord {
+                    stage: "workspace_capacity",
+                    ok: false,
+                    code: Some("preflight_workspace_insufficient_capacity"),
+                },
+            ],
+        });
+
+        let facts = preflight_compact_audit_facts(&outcome);
+
+        assert_eq!(
+            facts,
+            vec![
+                CompactAuditFact {
+                    audit_index: 0,
+                    fact_kind: "preflight_timeline",
+                    fact_text: "stage=inspect_plan ok=true code=none".to_string(),
+                },
+                CompactAuditFact {
+                    audit_index: 1,
+                    fact_kind: "preflight_timeline",
+                    fact_text: "stage=workspace_capacity ok=false code=preflight_workspace_insufficient_capacity".to_string(),
+                },
+                CompactAuditFact {
+                    audit_index: 2,
+                    fact_kind: "preflight_failure",
+                    fact_text: "stage=workspace_capacity code=preflight_workspace_insufficient_capacity detail=free disk cannot satisfy workspace demand above reserve".to_string(),
+                },
+            ]
         );
     }
 }
