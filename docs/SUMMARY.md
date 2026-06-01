@@ -391,3 +391,4 @@
     -   [359: Media PR feedback capability and portability pass](adr/359-media-pr-feedback-capability-and-portability-pass.md)
     -   [360: Media UI profile management slice 11](adr/360-media-ui-profile-management-slice-11.md)
     -   [361: Media profile configuration controls slice 11](adr/361-media-profile-configuration-controls-slice-11.md)
+    -   [362: Media runtime compliance artifacts slice 9](adr/362-media-runtime-compliance-artifacts-slice-9.md)

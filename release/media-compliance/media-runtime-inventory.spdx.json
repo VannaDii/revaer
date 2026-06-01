@@ -1,0 +1,95 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "revaer-media-runtime-inventory",
+  "documentNamespace": "https://github.com/VannaDii/revaer/spdx/revaer-media-runtime",
+  "creationInfo": {
+    "created": "2026-05-31T00:00:00Z",
+    "creators": [
+      "Organization: VannaDii"
+    ]
+  },
+  "packages": [
+    {
+      "name": "ffmpeg",
+      "SPDXID": "SPDXRef-Package-ffmpeg",
+      "downloadLocation": "https://ffmpeg.org/download.html",
+      "licenseConcluded": "GPL-3.0-or-later",
+      "licenseDeclared": "GPL-3.0-or-later",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "exiftool",
+      "SPDXID": "SPDXRef-Package-exiftool",
+      "downloadLocation": "https://exiftool.org/",
+      "licenseConcluded": "GPL-1.0-or-later OR Artistic-1.0-Perl",
+      "licenseDeclared": "GPL-1.0-or-later OR Artistic-1.0-Perl",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "mediainfo",
+      "SPDXID": "SPDXRef-Package-mediainfo",
+      "downloadLocation": "https://mediaarea.net/en/MediaInfo",
+      "licenseConcluded": "BSD-2-Clause",
+      "licenseDeclared": "BSD-2-Clause",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "mkvtoolnix",
+      "SPDXID": "SPDXRef-Package-mkvtoolnix",
+      "downloadLocation": "https://mkvtoolnix.download/",
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "bento4",
+      "SPDXID": "SPDXRef-Package-bento4",
+      "downloadLocation": "https://www.bento4.com/",
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "alpine-media-runtime-packages",
+      "SPDXID": "SPDXRef-Package-alpine-media-runtime-packages",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-ffmpeg"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-exiftool"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-mediainfo"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-mkvtoolnix"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-bento4"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-alpine-media-runtime-packages"
+    }
+  ]
+}

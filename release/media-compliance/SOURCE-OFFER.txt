@@ -1,0 +1,24 @@
+Revaer Media Runtime Source Offer
+
+This image contains Revaer plus redistributable open-source media tools and
+libraries installed from the Alpine Linux package repositories. The image is
+distributed in redistributable GPLv3-compatible media-runtime mode because the
+runtime includes GPL media utilities and codec libraries.
+
+Corresponding source for third-party media components is available from the
+upstream projects and Alpine package source records identified in
+media-runtime-inventory.spdx.json and THIRD-PARTY-NOTICES.md. For each published
+image digest, release automation must archive the package inventory, package
+source references, build inputs, notices, and this source offer as the media
+source-compliance bundle.
+
+Operators may also retrieve package source metadata from Alpine's package index
+for the exact runtime base image:
+
+- Alpine Linux packages: https://pkgs.alpinelinux.org/packages
+- Alpine Linux aports source tree: https://gitlab.alpinelinux.org/alpine/aports
+- FFmpeg source: https://ffmpeg.org/download.html
+- ExifTool source: https://exiftool.org/
+
+This source offer does not grant patent rights. Review patent obligations for
+codec use in the jurisdictions where the image is built, distributed, or used.

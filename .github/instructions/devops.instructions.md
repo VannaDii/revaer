@@ -38,6 +38,7 @@ applyTo:
 - Workflow jobs that invoke `just helm-lint` must install `just` first through `./.github/actions/setup-revaer`; do not assume the runner image already provides it.
 - PR UI E2E jobs should use the runner-provided Chrome channel and install Playwright system dependencies only, avoiding redundant browser bundle downloads inside each shard. Keep CI video capture disabled unless Playwright's bundled ffmpeg is intentionally installed.
 - `just lint` runs `scripts/workflow-guardrails.sh`, which rejects unpinned external action refs and direct `${{ inputs.* }}` interpolation inside `run:` blocks.
+- `just lint` runs `scripts/media-compliance-guardrails.sh`, which verifies the media runtime image keeps required redistributable media tools, source-offer links, notices, inventory/SBOM labels, the ExifTool exception artifact, and the default-image `--enable-nonfree` ban aligned.
 - Treat `sonar-project.properties` as the versioned source of truth for Sonar analysis scope and exclusions.
 - Release-tooling dependency changes under `release/**`, including JavaScript lockfiles such as `release/package-lock.json`, must stay manifest-scoped, avoid unrelated workflow churn, and update this instruction file in the same change so instruction-drift remains explicit.
 - Prerelease Helm assets must be produced during the semantic-release prepare phase so the packaged chart version matches the dev release version exactly. OCI publication must consume those already-packaged assets after the GitHub release assets exist.
