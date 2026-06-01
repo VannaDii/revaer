@@ -377,3 +377,4 @@
 -   [363](363-media-compliance-api-ui-slice-9.md) – Media compliance API and UI slice 9
 -   [364](364-media-job-cancel-retry-api-slice-10-14.md) – Media job cancel and retry API slice 10/14
 -   [365](365-media-semantic-role-inference-slice-2.md) – Media semantic role inference slice 2
+-   [366](366-media-deterministic-stream-ranking-slice-2.md) – Media deterministic stream ranking slice 2
