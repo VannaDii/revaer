@@ -411,3 +411,6 @@
 -   [397](397-media-diagnostic-field-bounds-slice-6-10.md) – Media diagnostic field bounds slice 6/10
 -   [398](398-media-profile-not-found-detail-slice-10.md) – Media profile not-found detail slice 10
 -   [399](399-media-ui-schedule-interval-bounds-validation-slice-11-13.md) – Media UI schedule interval bounds validation slice 11/13
+-   [400](400-media-profile-controls-migration-version-slice-6.md) – Media profile controls migration version slice 6
+-   [401](401-helm-release-annotation-rendering-slice-9.md) – Helm release annotation rendering slice 9
+-   [402](402-bootstrap-bind-failure-timeout-slice-ci.md) – Bootstrap bind failure timeout slice ci
