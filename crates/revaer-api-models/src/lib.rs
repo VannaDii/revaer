@@ -596,7 +596,7 @@ pub struct MediaComplianceResponse {
     pub sbom_path: String,
     /// In-image media runtime inventory artifact path.
     pub inventory_path: String,
-    /// In-image ExifTool exception record path.
+    /// In-image `ExifTool` exception record path.
     pub exiftool_exception_path: String,
     /// Capabilities excluded from the default redistributable image.
     pub license_excluded_capabilities: Vec<String>,
