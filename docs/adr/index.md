@@ -383,3 +383,4 @@
 -   [369](369-media-compliance-scoring-explanations-slice-4.md) – Media compliance scoring and explanations slice 4
 -   [370](370-media-planned-job-compliance-report-slice-4-8.md) – Media planned job compliance report slice 4/8
 -   [371](371-media-job-violation-persistence-slice-6.md) – Media job violation persistence slice 6
+-   [372](372-media-job-violation-runtime-facade-slice-6.md) – Media job violation runtime facade slice 6

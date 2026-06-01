@@ -10,9 +10,10 @@ use revaer_data::media::capabilities::{
     record_capability_snapshot,
 };
 use revaer_data::media::jobs::{
-    CreateMediaJobInput, MediaJobOperationRow, MediaJobRow, append_media_job_operation,
-    append_media_job_phase, cancel_media_job, create_media_job, get_media_job,
-    list_media_job_operations, list_media_jobs, retry_media_job,
+    CreateMediaJobInput, MediaJobOperationRow, MediaJobRow, MediaJobViolationRow,
+    append_media_job_operation, append_media_job_phase, append_media_job_violation,
+    cancel_media_job, create_media_job, get_media_job, list_media_job_operations,
+    list_media_job_violations, list_media_jobs, retry_media_job,
 };
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput, get_media_profile,
@@ -138,6 +139,30 @@ impl MediaStore {
         .await
     }
 
+    /// Append a compliance violation for a media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn append_job_violation(
+        &self,
+        media_job_public_id: Uuid,
+        violation_index: i32,
+        violation_kind: &str,
+        severity: &str,
+        stream_id: Option<i32>,
+    ) -> DataResult<()> {
+        append_media_job_violation(
+            &self.pool,
+            media_job_public_id,
+            violation_index,
+            violation_kind,
+            severity,
+            stream_id,
+        )
+        .await
+    }
+
     /// List media jobs for a profile.
     ///
     /// # Errors
@@ -161,6 +186,18 @@ impl MediaStore {
         media_job_public_id: Uuid,
     ) -> DataResult<Vec<MediaJobOperationRow>> {
         list_media_job_operations(&self.pool, media_job_public_id).await
+    }
+
+    /// List persisted compliance violations for one media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn list_job_violations(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<MediaJobViolationRow>> {
+        list_media_job_violations(&self.pool, media_job_public_id).await
     }
 
     /// Load one media job by public id.
@@ -245,6 +282,7 @@ mod tests {
                 if message.contains("docker daemon is not available")
                     || message.contains("docker command not found")
                     || message.contains("could not map host port")
+                    || message.contains("test database url is required")
                     || has_transient_postgres_startup_error_text(&format!("{err:#}"))
                 {
                     eprintln!("skipping media store test: {err}");
@@ -387,12 +425,18 @@ mod tests {
                 ],
             )
             .await?;
+        store
+            .append_job_violation(job_id, 0, "video_codec_mismatch", "high", Some(0))
+            .await?;
 
         let jobs = store.list_jobs(profile_id, Some("queued")).await?;
         assert!(jobs.iter().any(|job| job.media_job_public_id == job_id));
         let operations = store.list_job_operations(job_id).await?;
         assert_eq!(operations.len(), 1);
         assert_eq!(operations[0].operation_kind, "remux");
+        let violations = store.list_job_violations(job_id).await?;
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].violation_kind, "video_codec_mismatch");
 
         let snapshot_id = store
             .record_capability(&RecordCapabilitySnapshotInput {
@@ -465,6 +509,13 @@ mod tests {
         assert!(store.list_jobs(profile_id, Some("queued")).await.is_err());
         assert!(store.get_job(job_id).await.is_err());
         assert!(store.list_job_operations(job_id).await.is_err());
+        assert!(
+            store
+                .append_job_violation(job_id, 0, "codec_mismatch", "high", Some(0))
+                .await
+                .is_err()
+        );
+        assert!(store.list_job_violations(job_id).await.is_err());
         assert!(store.cancel_job(job_id).await.is_err());
         assert!(store.retry_job(job_id).await.is_err());
 
