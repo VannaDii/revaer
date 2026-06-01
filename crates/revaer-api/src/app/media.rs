@@ -113,6 +113,21 @@ pub struct MediaJobOperationAppendParams<'a> {
     pub args: [Option<&'a str>; 5],
 }
 
+/// Append media job violation parameters.
+#[derive(Debug, Clone)]
+pub struct MediaJobViolationAppendParams<'a> {
+    /// Job id.
+    pub media_job_public_id: Uuid,
+    /// Ordered violation index.
+    pub violation_index: i32,
+    /// Violation kind.
+    pub violation_kind: &'a str,
+    /// Violation severity.
+    pub severity: &'a str,
+    /// Optional stream id.
+    pub stream_id: Option<i32>,
+}
+
 /// Record capability snapshot parameters.
 #[derive(Debug, Clone)]
 pub struct MediaCapabilityRecordParams<'a> {
@@ -266,6 +281,21 @@ pub struct MediaJobOperationResponse {
     pub arg_4: Option<String>,
     /// Optional argument 5.
     pub arg_5: Option<String>,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job compliance violation response row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobViolationResponse {
+    /// Ordered violation index.
+    pub violation_index: i32,
+    /// Violation kind.
+    pub violation_kind: String,
+    /// Violation severity.
+    pub severity: String,
+    /// Optional stream id.
+    pub stream_id: Option<i32>,
     /// Row creation timestamp.
     pub created_at: DateTime<Utc>,
 }
@@ -434,6 +464,18 @@ pub trait MediaFacade: Send + Sync {
         media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobOperationResponse>, MediaServiceError>;
 
+    /// Append media job violation.
+    async fn media_job_violation_append(
+        &self,
+        params: MediaJobViolationAppendParams<'_>,
+    ) -> Result<(), MediaServiceError>;
+
+    /// List persisted media job violations.
+    async fn media_job_violation_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobViolationResponse>, MediaServiceError>;
+
     /// Record capability snapshot row.
     async fn media_capability_record(
         &self,
@@ -544,6 +586,20 @@ impl MediaFacade for NoopMedia {
         &self,
         _media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobOperationResponse>, MediaServiceError> {
+        Ok(Vec::new())
+    }
+
+    async fn media_job_violation_append(
+        &self,
+        _params: MediaJobViolationAppendParams<'_>,
+    ) -> Result<(), MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
+    async fn media_job_violation_list(
+        &self,
+        _media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobViolationResponse>, MediaServiceError> {
         Ok(Vec::new())
     }
 

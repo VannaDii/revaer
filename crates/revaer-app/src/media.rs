@@ -6,7 +6,8 @@ use revaer_api::app::media::{
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams,
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
     MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobOperationResponse,
-    MediaJobPhaseAppendParams, MediaJobResponse, MediaProfilePatchParams, MediaProfileResponse,
+    MediaJobPhaseAppendParams, MediaJobResponse, MediaJobViolationAppendParams,
+    MediaJobViolationResponse, MediaProfilePatchParams, MediaProfileResponse,
     MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind, MediaYamlApplyResult,
     MediaYamlProfile, MediaYamlValidationResult,
 };
@@ -251,6 +252,43 @@ impl MediaFacade for MediaService {
                         arg_3: row.arg_3,
                         arg_4: row.arg_4,
                         arg_5: row.arg_5,
+                        created_at: row.created_at,
+                    })
+                    .collect()
+            })
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_violation_append(
+        &self,
+        params: MediaJobViolationAppendParams<'_>,
+    ) -> Result<(), MediaServiceError> {
+        self.store
+            .append_job_violation(
+                params.media_job_public_id,
+                params.violation_index,
+                params.violation_kind,
+                params.severity,
+                params.stream_id,
+            )
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_violation_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobViolationResponse>, MediaServiceError> {
+        self.store
+            .list_job_violations(media_job_public_id)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| MediaJobViolationResponse {
+                        violation_index: row.violation_index,
+                        violation_kind: row.violation_kind,
+                        severity: row.severity,
+                        stream_id: row.stream_id,
                         created_at: row.created_at,
                     })
                     .collect()
@@ -595,7 +633,8 @@ mod tests {
     use revaer_api::app::media::MediaServiceErrorKind;
     use revaer_api::app::media::{
         MediaCapabilityRefreshParams, MediaFacade, MediaJobCreateParams,
-        MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaProfileUpsertParams,
+        MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobViolationAppendParams,
+        MediaProfileUpsertParams,
     };
     use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -831,6 +870,7 @@ mod tests {
             })
             .await?;
         append_plan_phase_and_operation(&service, job_id).await?;
+        append_job_violation(&service, job_id).await?;
         assert!(service.media_job_get(job_id).await?.is_some());
         assert!(
             !service
@@ -839,6 +879,9 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(service.media_job_operation_list(job_id).await?.len(), 1);
+        let violations = service.media_job_violation_list(job_id).await?;
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].violation_kind, "video_codec_mismatch");
         assert_job_cancel_retry(&service, job_id).await?;
 
         assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
@@ -910,6 +953,19 @@ mod tests {
                 stream_id: None,
                 command_bin: "ffmpeg",
                 args: [Some("-i"), Some("in.mkv"), Some("-c"), Some("copy"), None],
+            })
+            .await?;
+        Ok(())
+    }
+
+    async fn append_job_violation(service: &MediaService, job_id: Uuid) -> anyhow::Result<()> {
+        service
+            .media_job_violation_append(MediaJobViolationAppendParams {
+                media_job_public_id: job_id,
+                violation_index: 0,
+                violation_kind: "video_codec_mismatch",
+                severity: "high",
+                stream_id: Some(0),
             })
             .await?;
         Ok(())
