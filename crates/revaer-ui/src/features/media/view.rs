@@ -7,8 +7,8 @@ use crate::features::media::api::{
 use crate::features::media::logic::summarize_media_job_diagnostics;
 use crate::features::media::state::MediaViewState;
 use crate::models::{
-    MediaJobOperationResponse, MediaJobPlanReasonResponse, MediaJobViolationResponse,
-    MediaProfilePatchRequest, MediaProfileUpsertRequest,
+    MediaJobOperationResponse, MediaJobPlanReasonResponse, MediaJobVerificationCheckResponse,
+    MediaJobViolationResponse, MediaProfilePatchRequest, MediaProfileUpsertRequest,
 };
 use yew::platform::spawn_local;
 use yew::prelude::*;
@@ -666,7 +666,7 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                                                 <div class="text-xs opacity-70" data-testid="media-job-diagnostics-summary">
                                                     {summarize_media_job_diagnostics(&diagnostics)}
                                                 </div>
-                                                <div class="grid gap-3 md:grid-cols-3">
+                                                <div class="grid gap-3 md:grid-cols-4">
                                                     <div>
                                                         <h3 class="text-sm font-semibold">{"Operations"}</h3>
                                                         <ul class="space-y-1">{for diagnostics.operations.iter().map(render_job_operation)}</ul>
@@ -678,6 +678,10 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                                                     <div>
                                                         <h3 class="text-sm font-semibold">{"Plan reasons"}</h3>
                                                         <ul class="space-y-1">{for diagnostics.plan_reasons.iter().map(render_job_plan_reason)}</ul>
+                                                    </div>
+                                                    <div>
+                                                        <h3 class="text-sm font-semibold">{"Verification"}</h3>
+                                                        <ul class="space-y-1">{for diagnostics.verification_checks.iter().map(render_job_verification_check)}</ul>
                                                     </div>
                                                 </div>
                                             </div>
@@ -773,6 +777,29 @@ fn render_job_plan_reason(row: &MediaJobPlanReasonResponse) -> Html {
     html! {
         <li class="break-all">
             {format!("#{} {}{} {} - {}", row.reason_index, selected, candidate, row.reason_code, row.reason_text)}
+        </li>
+    }
+}
+
+fn render_job_verification_check(row: &MediaJobVerificationCheckResponse) -> Html {
+    let expected = row
+        .expected_value
+        .as_deref()
+        .map(|value| format!(" expected={value}"))
+        .unwrap_or_default();
+    let actual = row
+        .actual_value
+        .as_deref()
+        .map(|value| format!(" actual={value}"))
+        .unwrap_or_default();
+    let details = row
+        .details_text
+        .as_deref()
+        .map(|value| format!(" - {value}"))
+        .unwrap_or_default();
+    html! {
+        <li class="break-all">
+            {format!("#{} {} {}{}{}{}", row.check_index, row.check_status, row.check_kind, expected, actual, details)}
         </li>
     }
 }

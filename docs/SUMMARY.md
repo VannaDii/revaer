@@ -415,3 +415,4 @@
     -   [383: Media verification check runtime facade slice 6](adr/383-media-verification-check-runtime-facade-slice-6.md)
     -   [384: Media verification check app facade slice 6/10](adr/384-media-verification-check-app-facade-slice-6-10.md)
     -   [385: Media verification check API slice 10](adr/385-media-verification-check-api-slice-10.md)
+    -   [386: Media verification check UI slice 11](adr/386-media-verification-check-ui-slice-11.md)

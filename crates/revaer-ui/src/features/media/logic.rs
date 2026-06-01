@@ -22,6 +22,10 @@ pub(crate) fn media_job_plan_reasons_path(media_job_public_id: Uuid) -> String {
     format!("/v1/media/jobs/{media_job_public_id}/plan-reasons")
 }
 
+pub(crate) fn media_job_verification_checks_path(media_job_public_id: Uuid) -> String {
+    format!("/v1/media/jobs/{media_job_public_id}/verification-checks")
+}
+
 pub(crate) fn summarize_media_job_diagnostics(diagnostics: &MediaJobDiagnostics) -> String {
     let selected_reason = diagnostics
         .plan_reasons
@@ -29,22 +33,24 @@ pub(crate) fn summarize_media_job_diagnostics(diagnostics: &MediaJobDiagnostics)
         .find(|row| row.selected)
         .map_or("none", |row| row.reason_code.as_str());
     format!(
-        "operations={} violations={} reasons={} selected_reason={selected_reason}",
+        "operations={} violations={} reasons={} checks={} selected_reason={selected_reason}",
         diagnostics.operations.len(),
         diagnostics.violations.len(),
-        diagnostics.plan_reasons.len()
+        diagnostics.plan_reasons.len(),
+        diagnostics.verification_checks.len()
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        media_job_operations_path, media_job_plan_reasons_path, media_job_violations_path,
-        media_jobs_path, summarize_media_job_diagnostics,
+        media_job_operations_path, media_job_plan_reasons_path, media_job_verification_checks_path,
+        media_job_violations_path, media_jobs_path, summarize_media_job_diagnostics,
     };
     use crate::features::media::state::MediaJobDiagnostics;
     use crate::models::{
-        MediaJobOperationResponse, MediaJobPlanReasonResponse, MediaJobViolationResponse,
+        MediaJobOperationResponse, MediaJobPlanReasonResponse, MediaJobVerificationCheckResponse,
+        MediaJobViolationResponse,
     };
     use chrono::Utc;
     use uuid::Uuid;
@@ -79,6 +85,10 @@ mod tests {
         assert_eq!(
             media_job_plan_reasons_path(job_id),
             format!("/v1/media/jobs/{job_id}/plan-reasons")
+        );
+        assert_eq!(
+            media_job_verification_checks_path(job_id),
+            format!("/v1/media/jobs/{job_id}/verification-checks")
         );
     }
 
@@ -123,13 +133,22 @@ mod tests {
                     created_at,
                 },
             ],
+            verification_checks: vec![MediaJobVerificationCheckResponse {
+                check_index: 0,
+                check_kind: "duration".to_string(),
+                check_status: "passed".to_string(),
+                expected_value: Some("3600.0".to_string()),
+                actual_value: Some("3599.9".to_string()),
+                details_text: Some("within tolerance".to_string()),
+                created_at,
+            }],
         };
 
         let summary = summarize_media_job_diagnostics(&diagnostics);
 
         assert_eq!(
             summary,
-            "operations=1 violations=1 reasons=2 selected_reason=least_cost"
+            "operations=1 violations=1 reasons=2 checks=1 selected_reason=least_cost"
         );
     }
 }

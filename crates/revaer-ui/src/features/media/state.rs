@@ -7,7 +7,8 @@ use crate::models::{
     MediaJobResponse, MediaProfileResponse,
 };
 use crate::models::{
-    MediaJobOperationResponse, MediaJobPlanReasonResponse, MediaJobViolationResponse,
+    MediaJobOperationResponse, MediaJobPlanReasonResponse, MediaJobVerificationCheckResponse,
+    MediaJobViolationResponse,
 };
 #[cfg(target_arch = "wasm32")]
 use uuid::Uuid;
@@ -17,6 +18,7 @@ pub(crate) struct MediaJobDiagnostics {
     pub operations: Vec<MediaJobOperationResponse>,
     pub violations: Vec<MediaJobViolationResponse>,
     pub plan_reasons: Vec<MediaJobPlanReasonResponse>,
+    pub verification_checks: Vec<MediaJobVerificationCheckResponse>,
 }
 
 #[cfg(target_arch = "wasm32")]

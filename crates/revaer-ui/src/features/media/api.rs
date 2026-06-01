@@ -2,16 +2,18 @@ use std::collections::HashMap;
 
 use crate::features::media::logic::media_jobs_path;
 use crate::features::media::logic::{
-    media_job_operations_path, media_job_plan_reasons_path, media_job_violations_path,
+    media_job_operations_path, media_job_plan_reasons_path, media_job_verification_checks_path,
+    media_job_violations_path,
 };
 use crate::features::media::state::MediaJobDiagnostics;
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse,
     MediaCapabilityRefreshResponse, MediaComplianceResponse, MediaJobListResponse,
     MediaJobOperationListResponse, MediaJobPlanReasonListResponse, MediaJobResponse,
-    MediaJobViolationListResponse, MediaProfileListResponse, MediaProfilePatchRequest,
-    MediaProfileResponse, MediaProfileUpsertRequest, MediaYamlApplyResponse,
-    MediaYamlExportResponse, MediaYamlImportRequest, MediaYamlValidationResponse,
+    MediaJobVerificationCheckListResponse, MediaJobViolationListResponse, MediaProfileListResponse,
+    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
+    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
+    MediaYamlValidationResponse,
 };
 use crate::services::api::ApiClient;
 use uuid::Uuid;
@@ -89,11 +91,16 @@ async fn fetch_job_diagnostics(
         .get_api(&media_job_plan_reasons_path(media_job_public_id))
         .await
         .map_err(|err| err.to_string())?;
+    let verification_checks: MediaJobVerificationCheckListResponse = client
+        .get_api(&media_job_verification_checks_path(media_job_public_id))
+        .await
+        .map_err(|err| err.to_string())?;
 
     Ok(MediaJobDiagnostics {
         operations: operations.operations,
         violations: violations.violations,
         plan_reasons: plan_reasons.reasons,
+        verification_checks: verification_checks.checks,
     })
 }
 
