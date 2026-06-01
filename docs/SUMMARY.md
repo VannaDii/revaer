@@ -432,3 +432,4 @@
     -   [400: Media profile controls migration version slice 6](adr/400-media-profile-controls-migration-version-slice-6.md)
     -   [401: Helm release annotation rendering slice 9](adr/401-helm-release-annotation-rendering-slice-9.md)
     -   [402: Bootstrap bind failure timeout slice ci](adr/402-bootstrap-bind-failure-timeout-slice-ci.md)
+    -   [403: Media job profile root validation slice 10/13](adr/403-media-job-profile-root-validation-slice-10-13.md)

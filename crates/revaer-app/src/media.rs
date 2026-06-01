@@ -123,16 +123,23 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaJobCreateParams<'_>,
     ) -> Result<Uuid, MediaServiceError> {
+        let profile = self
+            .store
+            .get_profile(params.media_profile_public_id)
+            .await
+            .map_err(|err| map_data_error(&err))?
+            .ok_or_else(|| {
+                MediaServiceError::new(MediaServiceErrorKind::NotFound)
+                    .with_code("media_profile_not_found")
+            })?;
+        ensure_media_job_paths_within_profile(
+            params.source_path,
+            params.output_path,
+            &profile.source_root,
+            &profile.output_root,
+        )?;
+
         if !params.dry_run {
-            let profile = self
-                .store
-                .get_profile(params.media_profile_public_id)
-                .await
-                .map_err(|err| map_data_error(&err))?
-                .ok_or_else(|| {
-                    MediaServiceError::new(MediaServiceErrorKind::NotFound)
-                        .with_code("media_profile_not_found")
-                })?;
             if profile.dry_run_only
                 && params.replace_confirmation != Some(REPLACE_CONFIRMATION_PHRASE)
             {
@@ -801,11 +808,52 @@ fn ensure_execution_capability_snapshot(
     Ok(())
 }
 
+fn ensure_media_job_paths_within_profile(
+    source_path: &str,
+    output_path: Option<&str>,
+    source_root: &str,
+    output_root: &str,
+) -> Result<(), MediaServiceError> {
+    if !path_is_within_root(source_path, source_root) {
+        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_job_source_path_outside_profile_root"));
+    }
+
+    if output_path.is_some_and(|path| !path_is_within_root(path, output_root)) {
+        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_job_output_path_outside_profile_root"));
+    }
+
+    Ok(())
+}
+
+fn path_is_within_root(path: &str, root: &str) -> bool {
+    let normalized_path = normalize_path_text(path);
+    let normalized_root = normalize_path_text(root);
+    if normalized_path.is_empty() || normalized_root.is_empty() {
+        return false;
+    }
+
+    normalized_path == normalized_root
+        || normalized_path
+            .strip_prefix(&normalized_root)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn normalize_path_text(path: &str) -> String {
+    let trimmed = path.trim();
+    let normalized = trimmed.trim_end_matches('/');
+    if normalized.is_empty() && trimmed.starts_with('/') {
+        return "/".to_string();
+    }
+    normalized.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         MediaService, ensure_execution_capability_snapshot, map_data_error, map_detect_error,
-        parse_yaml_bundle, validate_yaml_bundle,
+        parse_yaml_bundle, path_is_within_root, validate_yaml_bundle,
     };
     use revaer_api::app::media::MediaServiceErrorKind;
     use revaer_api::app::media::{
@@ -928,6 +976,18 @@ mod tests {
         assert!(ensure_execution_capability_snapshot(Some(&row)).is_ok());
     }
 
+    #[test]
+    fn path_is_within_root_rejects_sibling_prefixes() {
+        assert!(path_is_within_root(
+            "/input/app-media/video.mkv",
+            "/input/app-media"
+        ));
+        assert!(!path_is_within_root(
+            "/input/app-media-other/video.mkv",
+            "/input/app-media"
+        ));
+    }
+
     #[tokio::test]
     async fn media_job_create_requires_replace_confirmation_for_dry_run_profile_override()
     -> anyhow::Result<()> {
@@ -953,6 +1013,50 @@ mod tests {
 
         assert_eq!(err.kind(), MediaServiceErrorKind::Invalid);
         assert_eq!(err.code(), Some("media_job_replace_confirmation_required"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_create_rejects_paths_outside_profile_roots() -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+
+        let source_result = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/other/video.mkv",
+                output_path: Some("/output/app-media/video.mkv"),
+                dry_run: true,
+                replace_confirmation: None,
+            })
+            .await;
+        let source_error = source_result.expect_err("outside source root should be rejected");
+        assert_eq!(source_error.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            source_error.code(),
+            Some("media_job_source_path_outside_profile_root")
+        );
+
+        let output_result = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/app-media/video.mkv",
+                output_path: Some("/output/other/video.mkv"),
+                dry_run: true,
+                replace_confirmation: None,
+            })
+            .await;
+        let output_error = output_result.expect_err("outside output root should be rejected");
+        assert_eq!(output_error.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            output_error.code(),
+            Some("media_job_output_path_outside_profile_root")
+        );
         Ok(())
     }
 
