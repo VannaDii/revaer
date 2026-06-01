@@ -9,6 +9,7 @@ fmt-fix:
 policy:
     bash scripts/policy-guardrails.sh
     bash scripts/workflow-guardrails.sh
+    bash scripts/media-compliance-guardrails.sh
 
 instruction-drift:
     bash scripts/instruction-drift-check.sh
@@ -59,8 +60,28 @@ release-artifacts: build-release api-export
     cp docs/api/openapi.json dist/openapi.json
 
 udeps:
-    if ! command -v cargo-udeps >/dev/null 2>&1; then \
-        cargo install cargo-udeps --locked; \
+    required_udeps_version="0.1.57"; \
+    install_udeps() { \
+        cargo install cargo-udeps --locked --force --version "${required_udeps_version}"; \
+    }; \
+    version_ge() { \
+        awk -v actual="$1" -v required="$2" 'BEGIN { \
+            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
+            max = (ac > rc ? ac : rc); \
+            for (i = 1; i <= max; i++) { \
+                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
+                if (av > rv) exit 0; if (av < rv) exit 1; \
+            } \
+            exit 0; \
+        }'; \
+    }; \
+    if command -v cargo-udeps >/dev/null 2>&1; then \
+        installed_version="$(cargo udeps --version | awk '{print $2}')"; \
+        if ! version_ge "$installed_version" "$required_udeps_version"; then \
+            install_udeps; \
+        fi; \
+    else \
+        install_udeps; \
     fi
     if ! cargo +stable udeps --workspace --all-targets >/dev/null 2>&1; then \
         echo "cargo-udeps: stable toolchain lacks required -Z flags, retrying with nightly"; \
@@ -71,8 +92,17 @@ udeps:
     fi
 
 sqlx-install:
-    if ! command -v sqlx >/dev/null 2>&1; then \
-        cargo install sqlx-cli --no-default-features --features postgres; \
+    required_sqlx_version="0.8.6"; \
+    install_sqlx() { \
+        cargo install sqlx-cli --locked --force --version "${required_sqlx_version}" --no-default-features --features postgres; \
+    }; \
+    if command -v sqlx >/dev/null 2>&1; then \
+        installed_version="$(sqlx --version | awk '{print $2}')"; \
+        if [ "$installed_version" != "$required_sqlx_version" ]; then \
+            install_sqlx; \
+        fi; \
+    else \
+        install_sqlx; \
     fi
 
 db-migrate: sqlx-install
@@ -85,7 +115,15 @@ audit:
         cargo install cargo-audit --locked --force --version "${required_audit_version}"; \
     }; \
     version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
+        awk -v actual="$1" -v required="$2" 'BEGIN { \
+            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
+            max = (ac > rc ? ac : rc); \
+            for (i = 1; i <= max; i++) { \
+                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
+                if (av > rv) exit 0; if (av < rv) exit 1; \
+            } \
+            exit 0; \
+        }'; \
     }; \
     if command -v cargo-audit >/dev/null 2>&1; then \
         installed_version="$(cargo audit -V | awk 'NR==1 {print $2}')"; \
@@ -112,7 +150,15 @@ deny:
         cargo install cargo-deny --locked --force --version "${required_deny_version}"; \
     }; \
     version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
+        awk -v actual="$1" -v required="$2" 'BEGIN { \
+            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
+            max = (ac > rc ? ac : rc); \
+            for (i = 1; i <= max; i++) { \
+                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
+                if (av > rv) exit 0; if (av < rv) exit 1; \
+            } \
+            exit 0; \
+        }'; \
     }; \
     if command -v cargo-deny >/dev/null 2>&1; then \
         installed_version="$(cargo deny --version | awk 'NR==1 {print $2}')"; \
@@ -130,7 +176,15 @@ cov:
         cargo install cargo-llvm-cov --locked --force --version "${required_llvm_cov_version}"; \
     }; \
     version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
+        awk -v actual="$1" -v required="$2" 'BEGIN { \
+            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
+            max = (ac > rc ? ac : rc); \
+            for (i = 1; i <= max; i++) { \
+                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
+                if (av > rv) exit 0; if (av < rv) exit 1; \
+            } \
+            exit 0; \
+        }'; \
     }; \
     if command -v cargo-llvm-cov >/dev/null 2>&1; then \
         installed_version="$(cargo llvm-cov --version | awk '{print $2}')"; \
@@ -287,10 +341,15 @@ ui-build: sync-assets
 ui-e2e:
     cd tests && npm install
     cd tests && npm run gen:api-client
+    playwright_browsers="$(printf "%s" "${E2E_BROWSERS:-chromium}" | tr "," " ")"; \
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
-        cd tests && npx playwright install --with-deps; \
+        if [ -n "${E2E_BROWSER_CHANNEL:-}" ]; then \
+            cd tests && npx playwright install-deps ${playwright_browsers}; \
+        else \
+            cd tests && npx playwright install --with-deps ${playwright_browsers}; \
+        fi; \
     else \
-        cd tests && npx playwright install; \
+        cd tests && npx playwright install ${playwright_browsers}; \
     fi
     shard_arg=""; \
     if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \
@@ -495,16 +554,47 @@ db-start:
     if [ -z "${db_port}" ]; then \
         db_port="5432"; \
     fi; \
-    if [ "${db_host}" = "host.docker.internal" ] && python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' localhost "${db_port}" >/dev/null 2>&1; then \
+    probe_tcp() { \
+        probe_host="$1"; \
+        probe_port="$2"; \
+        if command -v nc >/dev/null 2>&1; then \
+            nc -z -w 1 "${probe_host}" "${probe_port}" >/dev/null 2>&1; \
+        elif command -v python3 >/dev/null 2>&1; then \
+            python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' "${probe_host}" "${probe_port}" >/dev/null 2>&1; \
+        else \
+            echo "db-start requires nc or python3 for TCP readiness probes" >&2; \
+            return 2; \
+        fi; \
+    }; \
+    if ! command -v nc >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then \
+        echo "db-start requires nc or python3 for TCP readiness probes" >&2; \
+        exit 1; \
+    fi; \
+    if [ "${db_host}" = "host.docker.internal" ] && probe_tcp localhost "${db_port}"; then \
         db_host="localhost"; \
         db_url="$(printf "%s" "${db_url}" | sed 's#@host\.docker\.internal\([:/]\)#@localhost\1#')"; \
         echo "Normalized local Docker database host to ${db_host}:${db_port}"; \
     fi; \
+    if [ "${db_host}" = "localhost" ] && ! probe_tcp localhost "${db_port}" && probe_tcp host.docker.internal "${db_port}"; then \
+        db_host="host.docker.internal"; \
+        db_url="$(printf "%s" "${db_url}" | sed 's#@localhost\([:/]\)#@host.docker.internal\1#')"; \
+        echo "Normalized local Docker database host to ${db_host}:${db_port}"; \
+    fi; \
     echo "Using database URL: ${db_url}"; \
     container_name="${PG_CONTAINER:-revaer-db}"; \
-    db_data_dir="${PWD}/.server_root/postgres-data"; \
+    db_data_dir="${REVAER_DB_DATA_DIR:-${PWD}/.server_root/postgres-data}"; \
+    db_shm_size="${REVAER_DB_SHM_SIZE:-1g}"; \
+    required_shm_bytes="${REVAER_DB_SHM_BYTES:-1073741824}"; \
     mkdir -p "${db_data_dir}"; \
     existing_container="$(docker ps -aq -f name=^${container_name}$)"; \
+    if [ -n "${existing_container}" ] && echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
+        existing_shm_bytes="$(docker inspect "${container_name}" 2>/dev/null | sed -n 's/.*"ShmSize": \([0-9][0-9]*\).*/\1/p' | head -n 1)"; \
+        if [ -n "${existing_shm_bytes}" ] && [ "${existing_shm_bytes}" -lt "${required_shm_bytes}" ]; then \
+            echo "Recreating existing Postgres container (${container_name}) with shared memory ${existing_shm_bytes} below ${required_shm_bytes} bytes"; \
+            docker rm -f "${container_name}" >/dev/null; \
+            existing_container=""; \
+        fi; \
+    fi; \
     if [ -n "${existing_container}" ] && [ -z "$(docker ps -q -f name=^${container_name}$)" ]; then \
         if docker logs --tail 50 "${container_name}" 2>&1 | grep -q 'No space left on device'; then \
             echo "Recreating failed Postgres container (${container_name}) with host-backed storage"; \
@@ -512,7 +602,7 @@ db-start:
             existing_container=""; \
         fi; \
     fi; \
-    if python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' "${db_host}" "${db_port}" >/dev/null 2>&1; then \
+    if probe_tcp "${db_host}" "${db_port}"; then \
         echo "Using existing Postgres endpoint ${db_host}:${db_port}"; \
     else \
         if [ -n "$existing_container" ]; then \
@@ -539,6 +629,7 @@ db-start:
                 -e POSTGRES_USER=revaer \
                 -e POSTGRES_PASSWORD=revaer \
                 -e POSTGRES_DB=revaer \
+                --shm-size "${db_shm_size}" \
                 -p "${db_port}:5432" \
                 -v "${db_data_dir}:/var/lib/postgresql/data" \
                 postgres:16-alpine >/dev/null; \
@@ -554,12 +645,18 @@ db-start:
     echo "Waiting for external Postgres endpoint ${db_host}:${db_port}..."; \
     external_ready="0"; \
     for _ in $(seq 1 30); do \
-        if python3 -c 'import socket, sys; probe = socket.create_connection((sys.argv[1], int(sys.argv[2])), 1); probe.close()' "${db_host}" "${db_port}" >/dev/null 2>&1; then \
+        if probe_tcp "${db_host}" "${db_port}"; then \
             external_ready="1"; \
             break; \
         fi; \
         sleep 1; \
     done; \
+    if [ "${external_ready}" != "1" ] && [ "${db_host}" = "localhost" ] && probe_tcp host.docker.internal "${db_port}"; then \
+        db_host="host.docker.internal"; \
+        db_url="$(printf "%s" "${db_url}" | sed 's#@localhost\([:/]\)#@host.docker.internal\1#')"; \
+        external_ready="1"; \
+        echo "Switched Postgres endpoint to ${db_host}:${db_port} after startup reachability probe"; \
+    fi; \
     if [ "${external_ready}" != "1" ]; then \
         echo "Postgres endpoint ${db_host}:${db_port} did not become reachable."; \
         exit 1; \
@@ -578,7 +675,7 @@ db-start:
         echo "Local Postgres container ${container_name} did not exit recovery in time."; \
         return 1; \
     }; \
-    if [ -n "${existing_container}" ]; then \
+    if echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
         wait_for_local_postgres_writable; \
     fi; \
     just sqlx-install; \
@@ -595,11 +692,11 @@ db-start:
             fi; \
             if printf '%s' "${output}" | grep -Eq 'the database system is (in recovery mode|starting up|not yet accepting connections)|consistent recovery state has not been yet reached'; then \
                 printf '%s\n' "${output}" >&2; \
-                if [ "${attempt}" -ge 30 ]; then \
+                if [ "${attempt}" -ge 180 ]; then \
                     echo "Postgres did not become writable in time." >&2; \
                     return 2; \
                 fi; \
-                echo "Postgres is still recovering; retrying in 1s (attempt ${attempt}/30)..."; \
+                echo "Postgres is still recovering; retrying in 1s (attempt ${attempt}/180)..."; \
                 attempt="$((attempt + 1))"; \
                 sleep 1; \
                 continue; \

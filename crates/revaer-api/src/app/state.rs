@@ -16,6 +16,9 @@ use uuid::Uuid;
 
 use crate::TorrentHandles;
 use crate::app::indexers::IndexerFacade;
+use crate::app::media::MediaFacade;
+#[cfg(test)]
+use crate::app::media::noop_media;
 use crate::config::ConfigFacade;
 use crate::http::rate_limit::{RateLimitError, RateLimitSnapshot, RateLimiter};
 use crate::http::torrents::TorrentMetadata;
@@ -396,6 +399,7 @@ mod tests {
 pub(crate) struct ApiState {
     pub(crate) config: Arc<dyn ConfigFacade>,
     pub(crate) indexers: Arc<dyn IndexerFacade>,
+    pub(crate) media: Arc<dyn MediaFacade>,
     pub(crate) setup_token_ttl: Duration,
     pub(crate) telemetry: Metrics,
     pub(crate) openapi_document: Arc<Value>,
@@ -420,6 +424,7 @@ const DASHBOARD_TORRENTS_COMPONENT: &str = "dashboard_torrents";
 const DASHBOARD_DISK_COMPONENT: &str = "dashboard_disk";
 
 impl ApiState {
+    #[cfg(test)]
     pub(crate) fn new(
         config: Arc<dyn ConfigFacade>,
         indexers: Arc<dyn IndexerFacade>,
@@ -428,9 +433,30 @@ impl ApiState {
         events: EventBus,
         torrent: Option<TorrentHandles>,
     ) -> Self {
+        Self::new_with_media(
+            config,
+            indexers,
+            noop_media(),
+            telemetry,
+            openapi_document,
+            events,
+            torrent,
+        )
+    }
+
+    pub(crate) fn new_with_media(
+        config: Arc<dyn ConfigFacade>,
+        indexers: Arc<dyn IndexerFacade>,
+        media: Arc<dyn MediaFacade>,
+        telemetry: Metrics,
+        openapi_document: Arc<Value>,
+        events: EventBus,
+        torrent: Option<TorrentHandles>,
+    ) -> Self {
         Self {
             config,
             indexers,
+            media,
             setup_token_ttl: Duration::from_secs(900),
             telemetry,
             openapi_document,

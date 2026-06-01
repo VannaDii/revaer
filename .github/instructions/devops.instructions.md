@@ -23,6 +23,7 @@ applyTo:
 - Trivy SARIF uploads from the reusable image workflow must set an explicit `upload-sarif` category when workflow refactors would otherwise rename the analysis identity. Keep that category aligned with the legacy `ci.yml` build-image matrix key so GitHub code scanning can compare PR scans against `main`.
 - Release packaging must preserve Artifact Hub ownership metadata when `ARTIFACTHUB_OWNER_NAME` and `ARTIFACTHUB_OWNER_EMAIL` are provided, even for unsigned packaging paths, because Artifact Hub ownership claim and verified-publisher flows depend on that published owner identity.
 - Release packaging should publish an explicit `artifacthub.io/images` chart annotation for the Revaer image so Artifact Hub can index the runtime image and generate package security scans reliably.
+- Helm packaging scripts must render multi-line chart annotations through quoted shell-safe file rendering instead of passing multi-line values through `awk -v`, because awk newline handling differs across local and CI environments.
 - Workflows that install Rust toolchains must use the repository's configured toolchain source of truth rather than hard-coded ad hoc channels unless a documented exception is required.
 - Workflow build, lint, test, coverage, and release gates must call `just` recipes. Do not reintroduce raw `cargo` pipelines into CI jobs.
 - `pr.yml` is the sole pull-request validation workflow. Keep formatting, lint, test, audit, deny, coverage, E2E, and other verification gates there so pull requests are validated exactly once before merge.
@@ -36,7 +37,9 @@ applyTo:
 - Reusable-workflow caller jobs must not use `secrets: inherit` unless the callee truly requires repository secrets. Prefer the default GitHub token plus explicit job permissions, and pass named secrets only when the callee consumes them.
 - Helm chart validation and publication must flow through `just helm-lint`, `just helm-package`, and `just helm-publish`. Do not add ad hoc packaging or registry-push shell blocks to workflows.
 - Workflow jobs that invoke `just helm-lint` must install `just` first through `./.github/actions/setup-revaer`; do not assume the runner image already provides it.
+- PR UI E2E jobs should use the runner-provided Chrome channel and install Playwright system dependencies only, avoiding redundant browser bundle downloads inside each shard. Keep CI video capture disabled unless Playwright's bundled ffmpeg is intentionally installed.
 - `just lint` runs `scripts/workflow-guardrails.sh`, which rejects unpinned external action refs and direct `${{ inputs.* }}` interpolation inside `run:` blocks.
+- `just lint` runs `scripts/media-compliance-guardrails.sh`, which verifies the media runtime image keeps required redistributable media tools, source-offer links, notices, inventory/SBOM labels, the ExifTool exception artifact, and the default-image `--enable-nonfree` ban aligned.
 - Treat `sonar-project.properties` as the versioned source of truth for Sonar analysis scope and exclusions.
 - Release-tooling dependency changes under `release/**`, including JavaScript lockfiles such as `release/package-lock.json`, must stay manifest-scoped, avoid unrelated workflow churn, and update this instruction file in the same change so instruction-drift remains explicit.
 - Prerelease Helm assets must be produced during the semantic-release prepare phase so the packaged chart version matches the dev release version exactly. OCI publication must consume those already-packaged assets after the GitHub release assets exist.
@@ -58,6 +61,7 @@ applyTo:
 
 - CI-only credentials may be ephemeral only when they are clearly scoped to isolated test infrastructure, such as throwaway Postgres service containers.
 - Ephemeral test credentials must never be reused as application secrets, committed runtime credentials, or user-facing examples.
+- Postgres service containers used by migration-heavy gates must request explicit shared memory aligned with local `just db-start` defaults; the current default is 1 GiB because Docker's default shared-memory segment and the previous 256 MiB setting are too small for parallel database test runs.
 - Do not log secrets or secret-like values. Mask or omit them.
 - Keep Helm registry credentials (`HELM_API_KEY_ID`, `HELM_API_KEY_SECRET`) separate from chart-signing material (`HELM_GPG_PRIVATE`, `HELM_GPG_PUBLIC`). Publishing jobs may use registry credentials only when consuming an already-packaged chart artifact.
 - GHCR chart publication on GitHub-hosted runners should prefer the job-scoped `GITHUB_TOKEN` plus explicit `packages: write` over long-lived custom registry secrets. Keep `HELM_API_KEY_*` only for non-GitHub or local override paths.

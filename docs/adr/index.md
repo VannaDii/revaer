@@ -328,3 +328,91 @@
 -   [314](314-artifacthub-verification-and-official-readiness.md) – Artifact Hub verification and official readiness
 -   [315](315-indexer-import-job-runtime-worker.md) – Indexer import job runtime worker
 -   [316](316-import-runtime-gap-closure-followup.md) – Import runtime gap-closure follow-up
+-   [317](317-media-transcoding-foundation-slice-1.md) – Media transcoding foundation slice 1
+-   [318](318-media-transcoding-persistence-foundation-slice-6.md) – Media transcoding persistence foundation slice 6
+-   [319](319-media-transcoding-runtime-facade-slice-8-foundation.md) – Media transcoding runtime facade slice 8 foundation
+-   [320](320-media-transcoding-api-surface-foundation-slice-10.md) – Media transcoding API surface foundation slice 10
+-   [321](321-media-transcoding-yaml-import-export-foundation-slice-7.md) – Media transcoding YAML import and export foundation slice 7
+-   [322](322-media-transcoding-ffprobe-inspection-adapter-slice-8.md) – Media transcoding ffprobe inspection adapter slice 8
+-   [323](323-media-transcoding-inspect-to-plan-preflight-slice-8.md) – Media transcoding inspect-to-plan preflight slice 8
+-   [324](324-media-transcoding-workspace-max-enforcement-slice-12.md) – Media transcoding workspace max enforcement slice 12
+-   [325](325-media-transcoding-capability-gated-execution-steps-slice-8.md) – Media transcoding capability-gated execution steps slice 8
+-   [326](326-media-transcoding-planned-job-summary-slice-4.md) – Media transcoding planned job summary slice 4
+-   [327](327-media-transcoding-preflight-report-runtime-slice-8-12.md) – Media transcoding preflight report runtime slice 8/12
+-   [328](328-media-transcoding-codec-capability-normalization-slice-8.md) – Media transcoding codec capability normalization slice 8
+-   [329](329-media-transcoding-workspace-capacity-report-slice-12.md) – Media transcoding workspace capacity report slice 12
+-   [330](330-media-transcoding-preflight-timeline-records-slice-4-8.md) – Media transcoding preflight timeline records slice 4/8
+-   [331](331-media-transcoding-preflight-error-classification-slice-4-8.md) – Media transcoding preflight error classification slice 4/8
+-   [332](332-media-transcoding-preflight-failure-timeline-projection-slice-4-8.md) – Media transcoding preflight failure timeline projection slice 4/8
+-   [333](333-media-transcoding-preflight-capacity-report-integration-slice-12.md) – Media transcoding preflight capacity report integration slice 12
+-   [334](334-media-transcoding-preflight-success-timeline-builder-slice-4-8.md) – Media transcoding preflight success timeline builder slice 4/8
+-   [335](335-media-transcoding-preflight-stage-code-enrichment-slice-4-8.md) – Media transcoding preflight stage-code enrichment slice 4/8
+-   [336](336-media-transcoding-preflight-failure-report-helper-slice-4-8.md) – Media transcoding preflight failure report helper slice 4/8
+-   [337](337-media-transcoding-preflight-evaluation-outcome-api-slice-4-8.md) – Media transcoding preflight evaluation outcome API slice 4/8
+-   [338](338-media-transcoding-preflight-evaluation-ready-helper-slice-4-8.md) – Media transcoding preflight evaluation ready helper slice 4/8
+-   [339](339-media-transcoding-preflight-evaluation-accessors-slice-4-8.md) – Media transcoding preflight evaluation accessors slice 4/8
+-   [340](340-media-transcoding-preflight-evaluation-failure-accessors-slice-4-8.md) – Media transcoding preflight evaluation failure accessors slice 4/8
+-   [341](341-media-transcoding-preflight-evaluation-timeline-accessor-slice-4-8.md) – Media transcoding preflight evaluation timeline accessor slice 4/8
+-   [342](342-media-pr-feedback-alignment-pass.md) – Media PR feedback alignment pass
+-   [343](343-media-stream-kind-aware-recode-planning-slice-4-14.md) – Media stream-kind-aware recode planning slice 4/14
+-   [344](344-media-stream-removal-planning-remux-correction-slice-4-14.md) – Media stream-removal planning remux correction slice 4/14
+-   [345](345-media-execution-backup-and-atomic-replacement-steps-slice-14.md) – Media execution backup and atomic replacement steps slice 14
+-   [346](346-media-preflight-backup-path-step-sequencing-slice-14.md) – Media preflight backup-path step sequencing slice 14
+-   [347](347-media-owned-preflight-input-policy-adapter-slice-14.md) – Media owned preflight input policy adapter slice 14
+-   [348](348-media-preflight-template-evaluation-entrypoint-slice-14.md) – Media preflight template evaluation entrypoint slice 14
+-   [349](349-media-preflight-backup-path-validation-slice-14.md) – Media preflight backup-path validation slice 14
+-   [350](350-media-preflight-backup-path-conflict-guards-slice-14.md) – Media preflight backup-path conflict guards slice 14
+-   [351](351-media-preflight-backup-path-subcodes-slice-14.md) – Media preflight backup-path subcodes slice 14
+-   [352](352-media-preflight-backup-subcode-test-locks-slice-14.md) – Media preflight backup subcode test locks slice 14
+-   [353](353-media-preflight-template-backup-conflict-evaluation-tests-slice-14.md) – Media preflight template backup-conflict evaluation tests slice 14
+-   [354](354-media-preflight-failure-error-detail-field-slice-14.md) – Media preflight failure error-detail field slice 14
+-   [355](355-media-preflight-evaluation-error-detail-accessor-slice-14.md) – Media preflight evaluation error-detail accessor slice 14
+-   [356](356-media-job-operation-persistence-and-api-slice-14.md) – Media job operation persistence and API slice 14
+-   [357](357-media-ui-foundation-slice-11.md) – Media UI foundation slice 11
+-   [358](358-media-ui-route-foundation-slice-11.md) – Media UI route foundation slice 11
+-   [359](359-media-pr-feedback-capability-and-portability-pass.md) – Media PR feedback capability and portability pass
+-   [360](360-media-ui-profile-management-slice-11.md) – Media UI profile management slice 11
+-   [361](361-media-profile-configuration-controls-slice-11.md) – Media profile configuration controls slice 11
+-   [362](362-media-runtime-compliance-artifacts-slice-9.md) – Media runtime compliance artifacts slice 9
+-   [363](363-media-compliance-api-ui-slice-9.md) – Media compliance API and UI slice 9
+-   [364](364-media-job-cancel-retry-api-slice-10-14.md) – Media job cancel and retry API slice 10/14
+-   [365](365-media-semantic-role-inference-slice-2.md) – Media semantic role inference slice 2
+-   [366](366-media-deterministic-stream-ranking-slice-2.md) – Media deterministic stream ranking slice 2
+-   [367](367-media-codec-language-alias-normalization-slice-2.md) – Media codec and language alias normalization slice 2
+-   [368](368-media-jobs-empty-list-refresh-slice-11.md) – Media jobs empty-list refresh slice 11
+-   [369](369-media-compliance-scoring-explanations-slice-4.md) – Media compliance scoring and explanations slice 4
+-   [370](370-media-planned-job-compliance-report-slice-4-8.md) – Media planned job compliance report slice 4/8
+-   [371](371-media-job-violation-persistence-slice-6.md) – Media job violation persistence slice 6
+-   [372](372-media-job-violation-runtime-facade-slice-6.md) – Media job violation runtime facade slice 6
+-   [373](373-media-job-violation-app-facade-slice-6-10.md) – Media job violation app facade slice 6/10
+-   [374](374-media-job-violation-api-slice-10.md) – Media job violation API slice 10
+-   [375](375-media-openapi-export-slice-10.md) – Media OpenAPI export slice 10
+-   [376](376-media-ui-profile-job-refresh-slice-11.md) – Media UI profile job refresh slice 11
+-   [377](377-media-plan-reason-persistence-slice-6.md) – Media plan reason persistence slice 6
+-   [378](378-media-plan-reason-runtime-facade-slice-6.md) – Media plan reason runtime facade slice 6
+-   [379](379-media-plan-reason-app-facade-slice-6-10.md) – Media plan reason app facade slice 6/10
+-   [380](380-media-plan-reason-api-slice-10.md) – Media plan reason API slice 10
+-   [381](381-media-job-diagnostic-ui-slice-11.md) – Media job diagnostic UI slice 11
+-   [382](382-media-verification-check-persistence-slice-6.md) – Media verification check persistence slice 6
+-   [383](383-media-verification-check-runtime-facade-slice-6.md) – Media verification check runtime facade slice 6
+-   [384](384-media-verification-check-app-facade-slice-6-10.md) – Media verification check app facade slice 6/10
+-   [385](385-media-verification-check-api-slice-10.md) – Media verification check API slice 10
+-   [386](386-media-verification-check-ui-slice-11.md) – Media verification check UI slice 11
+-   [387](387-media-artifact-compact-audit-persistence-slice-6.md) – Media artifact and compact audit persistence slice 6
+-   [388](388-media-artifact-compact-audit-runtime-facade-slice-6.md) – Media artifact and compact audit runtime facade slice 6
+-   [389](389-media-artifact-compact-audit-app-facade-slice-6-10.md) – Media artifact and compact audit app facade slice 6/10
+-   [390](390-media-artifact-compact-audit-api-slice-10.md) – Media artifact and compact audit API slice 10
+-   [391](391-media-artifact-compact-audit-openapi-slice-10.md) – Media artifact and compact audit OpenAPI slice 10
+-   [392](392-media-artifact-compact-audit-ui-slice-11.md) – Media artifact and compact audit UI slice 11
+-   [393](393-media-artifact-managed-path-validation-slice-6-10.md) – Media artifact managed path validation slice 6/10
+-   [394](394-media-preflight-compact-audit-facts-slice-4-8.md) – Media preflight compact audit facts slice 4/8
+-   [395](395-media-destructive-dry-run-override-confirmation-slice-10-11.md) – Media destructive dry-run override confirmation slice 10/11
+-   [396](396-media-ui-retention-bounds-validation-slice-11-12.md) – Media UI retention bounds validation slice 11/12
+-   [397](397-media-diagnostic-field-bounds-slice-6-10.md) – Media diagnostic field bounds slice 6/10
+-   [398](398-media-profile-not-found-detail-slice-10.md) – Media profile not-found detail slice 10
+-   [399](399-media-ui-schedule-interval-bounds-validation-slice-11-13.md) – Media UI schedule interval bounds validation slice 11/13
+-   [400](400-media-profile-controls-migration-version-slice-6.md) – Media profile controls migration version slice 6
+-   [401](401-helm-release-annotation-rendering-slice-9.md) – Helm release annotation rendering slice 9
+-   [402](402-bootstrap-bind-failure-timeout-slice-ci.md) – Bootstrap bind failure timeout slice ci
+-   [403](403-media-job-profile-root-validation-slice-10-13.md) – Media job profile root validation slice 10/13
+-   [404](404-cli-tail-resume-test-stabilization-slice-ci.md) – CLI tail resume test stabilization slice ci

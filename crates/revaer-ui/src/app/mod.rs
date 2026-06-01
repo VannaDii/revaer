@@ -23,6 +23,7 @@ use crate::features::dashboard::DashboardPage;
 use crate::features::health::view::HealthPage;
 use crate::features::indexers::view::IndexersPage;
 use crate::features::logs::view::LogsPage;
+use crate::features::media::view::MediaPage;
 use crate::features::search::view::SearchPage;
 use crate::features::settings::state::SettingsTab;
 use crate::features::settings::view::SettingsPage;
@@ -117,6 +118,7 @@ pub fn revaer_app() -> Html {
             dashboard: text_or(&bundle, "nav.dashboard", "Dashboard"),
             indexers: text_or(&bundle, "nav.indexers", "Indexers"),
             search: text_or(&bundle, "nav.search", "Search"),
+            media: text_or(&bundle, "nav.media", "Media"),
             torrents: bundle.text("nav.torrents"),
             logs: bundle.text("nav.logs"),
             categories: bundle.text("nav.categories"),
@@ -245,6 +247,7 @@ pub fn revaer_app() -> Html {
             "/" => Route::Dashboard,
             "/indexers" => Route::Indexers,
             "/search" => Route::Search,
+            "/media" => Route::Media,
             "/torrents" => Route::Torrents,
             "/settings" => Route::Settings,
             "/logs" => Route::Logs,
@@ -2217,6 +2220,12 @@ pub fn revaer_app() -> Html {
                             },
                             Route::Search => html! {
                                 <SearchPage
+                                    on_success_toast={on_success_toast.clone()}
+                                    on_error_toast={on_error_toast.clone()}
+                                />
+                            },
+                            Route::Media => html! {
+                                <MediaPage
                                     on_success_toast={on_success_toast.clone()}
                                     on_error_toast={on_error_toast.clone()}
                                 />

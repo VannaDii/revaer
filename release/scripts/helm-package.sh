@@ -85,6 +85,22 @@ EOF
     return 0
 }
 
+render_chart_yaml() {
+    local source_file="$1"
+    local destination_file="$2"
+    local annotations="$3"
+    local line
+
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        if [[ "${line}" == *"__RELEASE_HELM_ANNOTATIONS__"* ]]; then
+            printf '%s\n' "${annotations}"
+        else
+            printf '%s\n' "${line}"
+        fi
+    done < "${source_file}" > "${destination_file}"
+    return 0
+}
+
 cp -R "${chart_root}" "${chart_copy_dir}/revaer"
 chart_yaml="${chart_copy_dir}/revaer/Chart.yaml"
 metadata_output="${dist_dir}/artifacthub-repo.yml"
@@ -159,13 +175,7 @@ ${release_annotations}
 EOF
 )"
 
-    awk -v replacement="${release_annotations}" '
-        /__RELEASE_HELM_ANNOTATIONS__/ {
-            print replacement
-            next
-        }
-        { print }
-    ' "${chart_root}/Chart.yaml" > "${chart_yaml}"
+    render_chart_yaml "${chart_root}/Chart.yaml" "${chart_yaml}" "${release_annotations}"
 
     if [[ -n "${ARTIFACTHUB_REPOSITORY_ID:-}" ]]; then
         append_repository_id "${metadata_output}" "${ARTIFACTHUB_REPOSITORY_ID}"
@@ -182,13 +192,7 @@ EOF
         --keyring "${secret_keyring}"
     helm verify "${dist_dir}/revaer-${chart_version}.tgz" --keyring "${dist_dir}/${public_keyring_asset}"
 else
-    awk -v replacement="${release_annotations}" '
-        /__RELEASE_HELM_ANNOTATIONS__/ {
-            print replacement
-            next
-        }
-        { print }
-    ' "${chart_root}/Chart.yaml" > "${chart_yaml}"
+    render_chart_yaml "${chart_root}/Chart.yaml" "${chart_yaml}" "${release_annotations}"
     if [[ -n "${ARTIFACTHUB_REPOSITORY_ID:-}" ]]; then
         append_repository_id "${metadata_output}" "${ARTIFACTHUB_REPOSITORY_ID}"
     fi

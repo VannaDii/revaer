@@ -1,0 +1,19 @@
+[package]
+name = "revaer-media-runtime"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+description = "Runtime adapters and execution helpers for Revaer media transcoding."
+readme = "../../README.md"
+keywords = ["revaer", "media", "runtime"]
+categories = ["multimedia"]
+
+[dependencies]
+revaer-media-core = { path = "../revaer-media-core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

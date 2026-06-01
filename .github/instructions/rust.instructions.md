@@ -1,31 +1,25 @@
 ---
-applyTo:
-  - "Cargo.toml"
-  - "rust-toolchain.toml"
-  - ".clippy.toml"
-  - "deny.toml"
-  - "justfile"
-  - "crates/**/*.rs"
-  - "crates/**/Cargo.toml"
-  - "tests/**/*.rs"
-  - "scripts/**/*.rs"
+applyTo: "{Cargo.toml,rust-toolchain.toml,.clippy.toml,deny.toml,justfile,crates/**/*.rs,crates/**/Cargo.toml,tests/**/*.rs,scripts/**/*.rs}"
 ---
 
-`AGENTS.md` is the root contract. This file only tightens or specializes Rust-related guidance.
+`AGENTS.md` is the root contract. This file tightens Rust-specific guidance for the paths in `applyTo`.
+If any Rust-path rule in this file conflicts with `AGENTS.md`, this file wins for those Rust paths.
 
 # Rust Quality Rules
 
 - Production and bootstrap Rust must be deterministic and panic-free.
 - `panic!`, `unwrap()`, `expect()`, and `unreachable!()` are forbidden in authored production and bootstrap code.
+- In this file, "bootstrap code" means startup/wiring runtime code, not test setup helpers.
 - `todo!()` and `unimplemented!()` are forbidden in authored Rust. Split the work or delete the dead path instead of leaving stubs behind.
 - Tests should prefer `Result`-returning flows and explicit assertions over `unwrap()` and `expect()`. Use panic-based helpers only when the behavior under test is itself a panic boundary.
 - `Option<T>` is valid only for expected absence or partial-function semantics. Do not use it to hide I/O, validation, persistence, network, or parsing failure.
 - `Result<T, E>` is required for recoverable failure, including `Result<(), E>` for side-effecting operations that can fail.
 - `catch_unwind` is forbidden outside the FFI boundary shims covered by `ffi.instructions.md`.
-- Silent suppression is forbidden. `let _ = fallible_operation();` is not acceptable unless the returned value is provably infallible and intentionally discarded.
+- Silent suppression is forbidden. `let _ = expr;` is forbidden when `expr` returns a `Result` or `Option` that represents a failure mode.
+- Discarding non-error values is acceptable when intentional; add a brief comment when the intent is not obvious.
 - Errors are logged once at the origin point, then propagated as data.
 
-# Lint And Cfg Hygiene
+# Authoring And Lint Hygiene
 
 - Keep workspace lint posture aligned with `AGENTS.md`, the active `just` recipes, and crate-root attributes.
 - `just lint` includes `scripts/policy-guardrails.sh`. Keep that guardrail aligned with the root policy when the lint posture changes.
@@ -36,7 +30,11 @@ applyTo:
 - If custom cfgs are introduced, register them with `cargo::rustc-check-cfg` in `build.rs` or the manifest lint configuration. Do not silence `unexpected_cfgs`.
 - Prefer `#[must_use]` for important return values and `pub(crate)` for internal APIs.
 - FFI crates may omit a crate-wide `forbid(unsafe_code)` if necessary, but unsafe code must stay isolated to the documented boundary modules and shims. Do not use lint suppressions to permit unsafe.
-- `just test`, `just test-features-min`, `just test-native`, `just db-migrate`, `just cov`, and `just validate` now default `REVAER_TEST_DATABASE_URL` to the Postgres maintenance database at `postgres://revaer:revaer@localhost:5432/postgres`. `just db-start` also retries transient Postgres recovery/startup/not-yet-accepting-connection errors around `sqlx migrate run` and `sqlx database reset` before treating the database as mismatched. Keep recipes and docs aligned with that admin-connection workflow when test database bootstrapping changes.
+
+# CI And Recipe Maintenance
+
+- `just test`, `just test-features-min`, `just test-native`, `just db-migrate`, `just cov`, and `just validate` now default `REVAER_TEST_DATABASE_URL` to the Postgres maintenance database at `postgres://revaer:revaer@localhost:5432/postgres`. `just db-start` must keep local endpoint normalization between `localhost` and `host.docker.internal`, use portable TCP probes that do not require Python-only environments, support `REVAER_DB_DATA_DIR` for isolated local test data directories, provision local Docker Postgres containers with enough shared memory for migration-heavy test runs, wait for local containers to exit recovery before migrations, and retry transient Postgres recovery/startup/not-yet-accepting-connection errors around `sqlx migrate run` and `sqlx database reset` before treating the database as mismatched. Keep recipes and docs aligned with that admin-connection workflow when test database bootstrapping changes.
+- Tool-version comparisons in `justfile` must stay portable across GNU and BSD userspace; do not rely on GNU-only `sort -V`.
 - `just cov` records coverage once with `cargo llvm-cov --workspace --all-features --no-report`, then enforces the 90% per-package line threshold with `cargo llvm-cov report --package ...` against that shared workspace dataset. Keep the coverage gate workspace-sourced so library crates receive credit for lines exercised by downstream crates and integration tests.
 
 # Documentation

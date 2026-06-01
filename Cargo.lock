@@ -2803,6 +2803,8 @@ dependencies = [
  "revaer-data",
  "revaer-events",
  "revaer-fsops",
+ "revaer-media-core",
+ "revaer-media-runtime",
  "revaer-runtime",
  "revaer-telemetry",
  "revaer-test-support",
@@ -2934,6 +2936,24 @@ dependencies = [
  "uuid",
  "walkdir",
  "zip",
+]
+
+[[package]]
+name = "revaer-media-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "revaer-media-runtime"
+version = "0.1.0"
+dependencies = [
+ "revaer-media-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

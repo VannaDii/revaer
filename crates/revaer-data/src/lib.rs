@@ -18,6 +18,7 @@
 pub mod config;
 pub mod error;
 pub mod indexers;
+pub mod media;
 pub mod runtime;
 
 pub use error::{DataError, Result as DataResult};

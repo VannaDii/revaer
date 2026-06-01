@@ -1,0 +1,51 @@
+# Media compliance scoring and explanations slice 4
+
+- Status: Accepted
+- Date: 2026-06-01
+- Context:
+  - `MEDIA_TRANSCODING.md` requires diff-based compliance reports, scoring, and explanations for selected and rejected plans.
+  - The core crate already compared source and desired graphs and generated primitive operations, but it did not expose deterministic compliance scoring or rejected-plan rationale.
+- Decision:
+  - Add a pure `revaer-media-core` compliance module that scores graph diffs from 0 to 100 and emits normalized status, severity, and violation rows.
+  - Add deterministic operation costs to the planning layer using the cost weights in the media plan.
+  - Add candidate-plan cost calculation and least-cost selection with stable tie-breaking.
+  - Add structured selected/rejected plan explanation output with selected operation reasons and rejected plan cost rationale.
+- Consequences:
+  - Positive outcomes:
+    - Planning callers can persist normalized compliance status, severity, violations, and selected/rejected explanations instead of ad hoc strings.
+    - Candidate selection can choose the least expensive safe plan deterministically before building rejected-plan rationale.
+    - Plan explanations now carry deterministic costs that match the documented planning order.
+  - Risks or trade-offs:
+    - The initial score weights are intentionally small and deterministic; future planner policy work may refine severity by target profile without changing the persistence shape.
+- Follow-up:
+  - Feed compliance reports and plan-selection explanations into API preview, job persistence, and UI job detail surfaces.
+
+## Task Record
+
+- Motivation:
+  - Continue slice 4 by making compliance and plan rationale explicit before expanding execution or persistence behavior.
+- Design notes:
+  - Kept the module pure and dependency-free.
+  - Used normalized compliance status, severity, violation kind, and optional stream id so future persistence can store rows without JSONB.
+  - Centralized operation cost in the planning module so explanation and future candidate pruning share the same weights.
+  - Moved candidate-plan shape into the planning module so explanation consumes planner-owned candidates.
+  - Split the media service round-trip test setup into helpers after workspace lint identified an overlong test body.
+- Test coverage summary:
+  - Added failing media-core tests for removed/recoded stream scoring, full-score empty diffs, compliance statuses, violation severities, selected-plan costs, selected operation reasons, and rejected-plan cost reasons.
+  - Added failing media-core tests for documented cost defaults, candidate cost summing, least-cost selection, and deterministic tie-breaking.
+  - Ran `CARGO_TARGET_DIR=target/media-compliance-red cargo test -p revaer-media-core -- --test-threads=1`.
+  - Ran `CARGO_TARGET_DIR=target/media-compliance-red cargo test -p revaer-app media_service_round_trips_profile_job_yaml_and_capability_paths -- --test-threads=1`.
+  - Ran `CARGO_TARGET_DIR=target/media-compliance-red just lint`.
+- Observability updates:
+  - None. This slice creates deterministic data that later API, audit, and event layers can expose.
+- Status-doc validation:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/devops.instructions.md`, and `MEDIA_TRANSCODING.md`.
+  - Updated ADR index and documentation summary for this task record.
+- Risk & rollback plan:
+  - Risk: initial compliance score weights may need adjustment as profile policy expands. Roll back by reverting the compliance module, explanation additions, tests, and this ADR.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Instruction files reviewed: `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/devops.instructions.md`.
+  - Drift found: none.
+  - Contradictions or stale references removed: none.

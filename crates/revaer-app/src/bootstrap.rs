@@ -9,13 +9,16 @@ use crate::error::{AppError, AppResult};
 use crate::import_job_runtime::ImportJobRuntime;
 use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
+use crate::media::MediaService;
 use revaer_api::TorrentHandles;
 use revaer_config::{AppMode, ConfigService, ConfigSnapshot, DbSessionConfig};
 use revaer_events::EventBus;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
 use tracing::{error, info, warn};
 
+use revaer_media_runtime::capabilities::{FfmpegCapabilityDetector, SystemCapabilityProbeExecutor};
 use revaer_runtime::RuntimeStore;
+use revaer_runtime::media::MediaStore;
 
 #[cfg(feature = "libtorrent")]
 use crate::orchestrator::{
@@ -376,9 +379,18 @@ fn build_api_server(
         Arc::new(config.clone()),
         telemetry.clone(),
     ));
-    revaer_api::ApiServer::new(
+    let media = Arc::new(MediaService::new(
+        MediaStore::new(config.pool().clone()),
+        Arc::new(FfmpegCapabilityDetector::new(
+            Arc::new(SystemCapabilityProbeExecutor),
+            "ffmpeg",
+            "ffprobe",
+        )),
+    ));
+    revaer_api::ApiServer::new_with_media(
         config.clone(),
         indexers,
+        media,
         events.clone(),
         torrent_handles,
         telemetry,

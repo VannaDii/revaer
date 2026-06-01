@@ -1,0 +1,148 @@
+use revaer_test_support::postgres::start_postgres;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+const EXPECTED_TABLES: &[&str] = &[
+    "media_profile",
+    "media_target",
+    "media_job",
+    "media_job_phase",
+    "media_job_operation",
+    "media_job_violation",
+    "media_job_verification_check",
+    "media_job_artifact",
+    "media_job_compact_audit",
+    "media_capability_snapshot",
+];
+
+const EXPECTED_PROCS: &[&str] = &[
+    "media_profile_upsert_v1",
+    "media_profile_upsert_v2",
+    "media_profile_list_v1",
+    "media_profile_list_v2",
+    "media_profile_get_v1",
+    "media_profile_get_v2",
+    "media_profile_update_v1",
+    "media_job_create_v1",
+    "media_job_phase_append_v1",
+    "media_job_operation_append_v1",
+    "media_job_operation_list_v1",
+    "media_job_violation_append_v1",
+    "media_job_violation_list_v1",
+    "media_job_verification_check_append_v1",
+    "media_job_verification_check_list_v1",
+    "media_job_artifact_path_is_managed_v1",
+    "media_job_artifact_append_v1",
+    "media_job_artifact_list_v1",
+    "media_job_compact_audit_append_v1",
+    "media_job_compact_audit_list_v1",
+    "media_capability_snapshot_record_v1",
+    "media_capability_snapshot_latest_v1",
+    "media_job_list_v1",
+    "media_job_get_v1",
+    "media_job_cancel_v1",
+    "media_job_retry_v1",
+];
+const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
+
+pub(crate) struct MediaTestDb {
+    _db: revaer_test_support::postgres::TestDatabase,
+    pool: PgPool,
+    pub(crate) system_user_public_id: Uuid,
+}
+
+impl MediaTestDb {
+    pub(crate) const fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+}
+
+pub(crate) async fn setup_media_db(label: &str) -> anyhow::Result<Option<MediaTestDb>> {
+    let postgres = match start_postgres() {
+        Ok(db) => db,
+        Err(err) => {
+            eprintln!("skipping {label}: {err}");
+            return Ok(None);
+        }
+    };
+
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(postgres.connection_string())
+        .await?;
+
+    let mut migrator = sqlx::migrate!("./migrations");
+    migrator.set_ignore_missing(true);
+    migrator.run(&pool).await?;
+
+    let system_user_public_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT user_public_id FROM app_user WHERE user_public_id = $1",
+    )
+    .bind(SYSTEM_USER_PUBLIC_ID)
+    .fetch_one(&pool)
+    .await?;
+
+    Ok(Some(MediaTestDb {
+        _db: postgres,
+        pool,
+        system_user_public_id,
+    }))
+}
+
+#[tokio::test]
+async fn media_tables_exist() -> anyhow::Result<()> {
+    let db = match setup_media_db("media_tables_exist").await {
+        Ok(Some(db)) => db,
+        Ok(None) => {
+            return Ok(());
+        }
+        Err(err) => return Err(err),
+    };
+
+    let rows = sqlx::query_scalar::<_, String>(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE 'media_%' ORDER BY table_name",
+    )
+    .fetch_all(db.pool())
+    .await?;
+
+    for table in EXPECTED_TABLES {
+        assert!(
+            rows.iter().any(|item| item == table),
+            "missing table {table}"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn media_procedures_exist() -> anyhow::Result<()> {
+    let db = match setup_media_db("media_procedures_exist").await {
+        Ok(Some(db)) => db,
+        Ok(None) => {
+            return Ok(());
+        }
+        Err(err) => return Err(err),
+    };
+
+    let rows = sqlx::query(
+        "SELECT proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND proname LIKE 'media_%'",
+    )
+    .fetch_all(db.pool())
+    .await?;
+
+    let procedure_names: Vec<String> = rows
+        .iter()
+        .map(|row| row.try_get::<String, _>("proname"))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for proc_name in EXPECTED_PROCS {
+        assert!(
+            procedure_names.iter().any(|item| item == proc_name),
+            "missing procedure {proc_name}"
+        );
+    }
+
+    Ok(())
+}

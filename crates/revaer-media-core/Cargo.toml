@@ -1,0 +1,17 @@
+[package]
+name = "revaer-media-core"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+description = "Deterministic domain logic for Revaer media transcoding."
+readme = "../../README.md"
+keywords = ["revaer", "media", "transcoding"]
+categories = ["multimedia"]
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true

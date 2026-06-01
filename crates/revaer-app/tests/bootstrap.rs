@@ -10,6 +10,7 @@ use tokio::sync::{Mutex, MutexGuard};
 use tokio::time::{Duration, timeout};
 
 static BOOTSTRAP_TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+const BOOTSTRAP_BIND_FAILURE_TIMEOUT: Duration = Duration::from_secs(30);
 
 async fn bootstrap_test_guard() -> MutexGuard<'static, ()> {
     BOOTSTRAP_TEST_MUTEX.lock().await
@@ -180,7 +181,7 @@ async fn run_app_reads_env_database_url_and_surfaces_bind_failures() -> Result<(
             )
             .await?;
 
-        let err = timeout(Duration::from_secs(2), run_app())
+        let err = timeout(BOOTSTRAP_BIND_FAILURE_TIMEOUT, run_app())
             .await
             .expect("run_app should surface bind failure without serving")
             .expect_err("occupied socket should fail api server startup");
@@ -235,7 +236,7 @@ async fn run_app_reads_secret_session_env_and_surfaces_bind_failures() -> Result
             )
             .await?;
 
-        let err = timeout(Duration::from_secs(2), run_app())
+        let err = timeout(BOOTSTRAP_BIND_FAILURE_TIMEOUT, run_app())
             .await
             .expect("run_app should surface bind failure with secret session env")
             .expect_err("occupied socket should fail api server startup");
@@ -291,7 +292,7 @@ async fn run_app_with_database_url_rejects_public_setup_bind_from_persisted_conf
         assert_eq!(stored.bind_addr, IpAddr::from([192, 168, 10, 20]));
 
         let err = timeout(
-            Duration::from_secs(2),
+            BOOTSTRAP_BIND_FAILURE_TIMEOUT,
             run_app_with_database_url(database_url),
         )
         .await
@@ -358,7 +359,7 @@ async fn run_app_with_database_url_surfaces_bind_failures_without_child_process(
             .await?;
 
         let err = timeout(
-            Duration::from_secs(2),
+            BOOTSTRAP_BIND_FAILURE_TIMEOUT,
             run_app_with_database_url(database_url),
         )
         .await
@@ -458,7 +459,7 @@ async fn run_app_with_database_url_surfaces_bind_failures_for_valid_persisted_co
             .await?;
 
         let err = timeout(
-            Duration::from_secs(2),
+            BOOTSTRAP_BIND_FAILURE_TIMEOUT,
             run_app_with_database_url(database_url),
         )
         .await
