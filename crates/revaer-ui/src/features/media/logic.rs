@@ -3,6 +3,22 @@
 use crate::features::media::state::MediaJobDiagnostics;
 use uuid::Uuid;
 
+const MIN_RETENTION_DAYS: i32 = 1;
+const MAX_RETENTION_DAYS: i32 = 3650;
+const RETENTION_DAYS_PARSE_ERROR: &str = "Retention days must be a whole number";
+const RETENTION_DAYS_BOUNDS_ERROR: &str = "Retention days must be between 1 and 3650";
+
+pub(crate) fn parse_retention_days_input(input: &str) -> Result<i32, &'static str> {
+    let parsed = input
+        .trim()
+        .parse::<i32>()
+        .map_err(|_| RETENTION_DAYS_PARSE_ERROR)?;
+    if !(MIN_RETENTION_DAYS..=MAX_RETENTION_DAYS).contains(&parsed) {
+        return Err(RETENTION_DAYS_BOUNDS_ERROR);
+    }
+    Ok(parsed)
+}
+
 pub(crate) fn media_jobs_path(media_profile_public_id: Option<Uuid>) -> String {
     media_profile_public_id.map_or_else(
         || "/v1/media/jobs".to_string(),
@@ -56,7 +72,7 @@ mod tests {
     use super::{
         media_job_artifacts_path, media_job_compact_audits_path, media_job_operations_path,
         media_job_plan_reasons_path, media_job_verification_checks_path, media_job_violations_path,
-        media_jobs_path, summarize_media_job_diagnostics,
+        media_jobs_path, parse_retention_days_input, summarize_media_job_diagnostics,
     };
     use crate::features::media::state::MediaJobDiagnostics;
     use crate::models::{
@@ -79,6 +95,23 @@ mod tests {
     #[test]
     fn media_jobs_path_without_profile_uses_collection_route() {
         assert_eq!(media_jobs_path(None), "/v1/media/jobs");
+    }
+
+    #[test]
+    fn parse_retention_days_input_rejects_non_numeric_and_unbounded_values() {
+        assert_eq!(parse_retention_days_input("30"), Ok(30));
+        assert_eq!(
+            parse_retention_days_input("not-a-number"),
+            Err("Retention days must be a whole number")
+        );
+        assert_eq!(
+            parse_retention_days_input("0"),
+            Err("Retention days must be between 1 and 3650")
+        );
+        assert_eq!(
+            parse_retention_days_input("3651"),
+            Err("Retention days must be between 1 and 3650")
+        );
     }
 
     #[test]

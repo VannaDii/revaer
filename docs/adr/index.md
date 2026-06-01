@@ -407,3 +407,4 @@
 -   [393](393-media-artifact-managed-path-validation-slice-6-10.md) – Media artifact managed path validation slice 6/10
 -   [394](394-media-preflight-compact-audit-facts-slice-4-8.md) – Media preflight compact audit facts slice 4/8
 -   [395](395-media-destructive-dry-run-override-confirmation-slice-10-11.md) – Media destructive dry-run override confirmation slice 10/11
+-   [396](396-media-ui-retention-bounds-validation-slice-11-12.md) – Media UI retention bounds validation slice 11/12

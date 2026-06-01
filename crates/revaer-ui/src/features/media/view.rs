@@ -4,7 +4,7 @@ use crate::features::media::api::{
     fetch_jobs_for_profiles, fetch_latest_capability, fetch_profiles, fetch_readiness,
     patch_profile, refresh_capability, validate_yaml,
 };
-use crate::features::media::logic::summarize_media_job_diagnostics;
+use crate::features::media::logic::{parse_retention_days_input, summarize_media_job_diagnostics};
 use crate::features::media::state::MediaViewState;
 use crate::models::{
     MediaJobArtifactResponse, MediaJobCompactAuditResponse, MediaJobOperationResponse,
@@ -353,10 +353,12 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                 on_error_toast.emit("Media API context is unavailable".to_string());
                 return;
             };
-            let retention = (*retention_days).parse::<i32>();
-            let Ok(retention_days) = retention else {
-                on_error_toast.emit("Retention days must be a whole number".to_string());
-                return;
+            let retention_days = match parse_retention_days_input(&retention_days) {
+                Ok(days) => days,
+                Err(message) => {
+                    on_error_toast.emit(message.to_string());
+                    return;
+                }
             };
             let schedule_interval = if schedule_interval_minutes.trim().is_empty() {
                 None
