@@ -6,10 +6,10 @@ use revaer_api::app::media::{
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams,
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
     MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobOperationResponse,
-    MediaJobPhaseAppendParams, MediaJobResponse, MediaJobViolationAppendParams,
-    MediaJobViolationResponse, MediaProfilePatchParams, MediaProfileResponse,
-    MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind, MediaYamlApplyResult,
-    MediaYamlProfile, MediaYamlValidationResult,
+    MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams, MediaJobPlanReasonResponse,
+    MediaJobResponse, MediaJobViolationAppendParams, MediaJobViolationResponse,
+    MediaProfilePatchParams, MediaProfileResponse, MediaProfileUpsertParams, MediaServiceError,
+    MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
 };
 use revaer_data::DataError;
 use revaer_data::media::capabilities::CapabilitySnapshotRow;
@@ -289,6 +289,45 @@ impl MediaFacade for MediaService {
                         violation_kind: row.violation_kind,
                         severity: row.severity,
                         stream_id: row.stream_id,
+                        created_at: row.created_at,
+                    })
+                    .collect()
+            })
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_plan_reason_append(
+        &self,
+        params: MediaJobPlanReasonAppendParams<'_>,
+    ) -> Result<(), MediaServiceError> {
+        self.store
+            .append_job_plan_reason(
+                params.media_job_public_id,
+                params.reason_index,
+                params.candidate_index,
+                params.selected,
+                params.reason_code,
+                params.reason_text,
+            )
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_plan_reason_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobPlanReasonResponse>, MediaServiceError> {
+        self.store
+            .list_job_plan_reasons(media_job_public_id)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| MediaJobPlanReasonResponse {
+                        reason_index: row.reason_index,
+                        candidate_index: row.candidate_index,
+                        selected: row.selected,
+                        reason_code: row.reason_code,
+                        reason_text: row.reason_text,
                         created_at: row.created_at,
                     })
                     .collect()
@@ -633,8 +672,8 @@ mod tests {
     use revaer_api::app::media::MediaServiceErrorKind;
     use revaer_api::app::media::{
         MediaCapabilityRefreshParams, MediaFacade, MediaJobCreateParams,
-        MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobViolationAppendParams,
-        MediaProfileUpsertParams,
+        MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams,
+        MediaJobViolationAppendParams, MediaProfileUpsertParams,
     };
     use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -882,6 +921,19 @@ mod tests {
         let violations = service.media_job_violation_list(job_id).await?;
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].violation_kind, "video_codec_mismatch");
+        service
+            .media_job_plan_reason_append(MediaJobPlanReasonAppendParams {
+                media_job_public_id: job_id,
+                reason_index: 0,
+                candidate_index: Some(0),
+                selected: true,
+                reason_code: "least_cost_selected",
+                reason_text: "Selected the least-cost compliant candidate.",
+            })
+            .await?;
+        let plan_reasons = service.media_job_plan_reason_list(job_id).await?;
+        assert_eq!(plan_reasons.len(), 1);
+        assert_eq!(plan_reasons[0].reason_code, "least_cost_selected");
         assert_job_cancel_retry(&service, job_id).await?;
 
         assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;

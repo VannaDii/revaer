@@ -390,3 +390,4 @@
 -   [376](376-media-ui-profile-job-refresh-slice-11.md) – Media UI profile job refresh slice 11
 -   [377](377-media-plan-reason-persistence-slice-6.md) – Media plan reason persistence slice 6
 -   [378](378-media-plan-reason-runtime-facade-slice-6.md) – Media plan reason runtime facade slice 6
+-   [379](379-media-plan-reason-app-facade-slice-6-10.md) – Media plan reason app facade slice 6/10

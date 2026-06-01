@@ -128,6 +128,23 @@ pub struct MediaJobViolationAppendParams<'a> {
     pub stream_id: Option<i32>,
 }
 
+/// Append media job plan-reason parameters.
+#[derive(Debug, Clone)]
+pub struct MediaJobPlanReasonAppendParams<'a> {
+    /// Job id.
+    pub media_job_public_id: Uuid,
+    /// Ordered reason index.
+    pub reason_index: i32,
+    /// Optional candidate index.
+    pub candidate_index: Option<i32>,
+    /// Whether this reason describes the selected plan.
+    pub selected: bool,
+    /// Stable reason code.
+    pub reason_code: &'a str,
+    /// Human-readable reason text.
+    pub reason_text: &'a str,
+}
+
 /// Record capability snapshot parameters.
 #[derive(Debug, Clone)]
 pub struct MediaCapabilityRecordParams<'a> {
@@ -296,6 +313,23 @@ pub struct MediaJobViolationResponse {
     pub severity: String,
     /// Optional stream id.
     pub stream_id: Option<i32>,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job plan-reason response row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobPlanReasonResponse {
+    /// Ordered reason index.
+    pub reason_index: i32,
+    /// Optional candidate index.
+    pub candidate_index: Option<i32>,
+    /// Whether this reason describes the selected plan.
+    pub selected: bool,
+    /// Stable reason code.
+    pub reason_code: String,
+    /// Human-readable reason text.
+    pub reason_text: String,
     /// Row creation timestamp.
     pub created_at: DateTime<Utc>,
 }
@@ -476,6 +510,18 @@ pub trait MediaFacade: Send + Sync {
         media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobViolationResponse>, MediaServiceError>;
 
+    /// Append media job plan reason.
+    async fn media_job_plan_reason_append(
+        &self,
+        params: MediaJobPlanReasonAppendParams<'_>,
+    ) -> Result<(), MediaServiceError>;
+
+    /// List persisted media job plan reasons.
+    async fn media_job_plan_reason_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobPlanReasonResponse>, MediaServiceError>;
+
     /// Record capability snapshot row.
     async fn media_capability_record(
         &self,
@@ -600,6 +646,20 @@ impl MediaFacade for NoopMedia {
         &self,
         _media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobViolationResponse>, MediaServiceError> {
+        Ok(Vec::new())
+    }
+
+    async fn media_job_plan_reason_append(
+        &self,
+        _params: MediaJobPlanReasonAppendParams<'_>,
+    ) -> Result<(), MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
+    async fn media_job_plan_reason_list(
+        &self,
+        _media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobPlanReasonResponse>, MediaServiceError> {
         Ok(Vec::new())
     }
 
