@@ -36,6 +36,7 @@ use crate::models::{
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
 const MEDIA_PROFILE_LIST_FAILED: &str = "failed to list media profiles";
+const MEDIA_PROFILE_NOT_FOUND: &str = "media profile not found";
 const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
 const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
@@ -186,7 +187,7 @@ pub(crate) async fn patch_media_profile(
             .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
             .into_iter()
             .find(|item| item.media_profile_public_id == media_profile_public_id)
-            .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_LIST_FAILED))?;
+            .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
         if current.schedule_interval_minutes.is_none() {
             return Err(ApiError::bad_request(SCHEDULE_INTERVAL_REQUIRED));
         }
@@ -217,7 +218,7 @@ pub(crate) async fn patch_media_profile(
         .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
         .into_iter()
         .find(|item| item.media_profile_public_id == media_profile_public_id)
-        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_LIST_FAILED))?;
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
 
     Ok(Json(map_profile(profile)))
 }
@@ -248,7 +249,7 @@ pub(crate) async fn get_media_profile(
         .map_err(|err| map_media_error("media_profile_list", MEDIA_PROFILE_LIST_FAILED, &err))?
         .into_iter()
         .find(|item| item.media_profile_public_id == media_profile_public_id)
-        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_LIST_FAILED))?;
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
 
     Ok(Json(map_profile(profile)))
 }
@@ -1236,6 +1237,9 @@ mod tests {
             .expect_err("default facade should not contain requested profile");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = to_bytes(response.into_body(), 64 * 1024).await?;
+        let problem: ProblemDetails = serde_json::from_slice(&body)?;
+        assert_eq!(problem.detail.as_deref(), Some("media profile not found"));
         Ok(())
     }
 
