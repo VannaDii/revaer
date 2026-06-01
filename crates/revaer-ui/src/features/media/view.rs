@@ -1,11 +1,15 @@
 use crate::app::api::ApiCtx;
 use crate::features::media::api::{
-    apply_yaml, create_profile, export_yaml, fetch_compliance, fetch_jobs_for_profiles,
-    fetch_latest_capability, fetch_profiles, fetch_readiness, patch_profile, refresh_capability,
-    validate_yaml,
+    apply_yaml, create_profile, export_yaml, fetch_compliance, fetch_diagnostics_for_jobs,
+    fetch_jobs_for_profiles, fetch_latest_capability, fetch_profiles, fetch_readiness,
+    patch_profile, refresh_capability, validate_yaml,
 };
+use crate::features::media::logic::summarize_media_job_diagnostics;
 use crate::features::media::state::MediaViewState;
-use crate::models::{MediaProfilePatchRequest, MediaProfileUpsertRequest};
+use crate::models::{
+    MediaJobOperationResponse, MediaJobPlanReasonResponse, MediaJobViolationResponse,
+    MediaProfilePatchRequest, MediaProfileUpsertRequest,
+};
 use yew::platform::spawn_local;
 use yew::prelude::*;
 
@@ -53,15 +57,34 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                     Ok(profiles) => fetch_jobs_for_profiles(&api.client, &profiles.profiles).await,
                     Err(err) => Err(err.clone()),
                 };
+                let job_diagnostics = match jobs.as_ref() {
+                    Ok(jobs) => fetch_diagnostics_for_jobs(&api.client, &jobs.jobs).await,
+                    Err(err) => Err(err.clone()),
+                };
                 let readiness = fetch_readiness(&api.client).await;
                 let latest = fetch_latest_capability(&api.client).await;
                 let compliance = fetch_compliance(&api.client).await;
-                match (profiles, jobs, readiness, latest, compliance) {
-                    (Ok(profiles), Ok(jobs), Ok(readiness), Ok(latest), Ok(compliance)) => {
+                match (
+                    profiles,
+                    jobs,
+                    job_diagnostics,
+                    readiness,
+                    latest,
+                    compliance,
+                ) {
+                    (
+                        Ok(profiles),
+                        Ok(jobs),
+                        Ok(job_diagnostics),
+                        Ok(readiness),
+                        Ok(latest),
+                        Ok(compliance),
+                    ) => {
                         let current = (*state).clone();
                         state.set(MediaViewState {
                             profiles: profiles.profiles,
                             jobs: jobs.jobs,
+                            job_diagnostics,
                             readiness: Some(readiness),
                             latest_capability: latest.snapshot,
                             compliance: Some(compliance),
@@ -627,7 +650,41 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                     <div class="card-body gap-2">
                         <h2 class="text-lg font-semibold">{"Recent jobs"}</h2>
                         <ul class="text-sm space-y-1">
-                            {for state.jobs.iter().take(10).map(|row| html! { <li>{format!("{} - {}", row.status, row.source_path)}</li> })}
+                            {for state.jobs.iter().take(10).map(|row| {
+                                let diagnostics = state
+                                    .job_diagnostics
+                                    .get(&row.media_job_public_id)
+                                    .cloned()
+                                    .unwrap_or_default();
+                                html! {
+                                    <li>
+                                        <details class="collapse collapse-arrow bg-base-200" data-testid="media-job-diagnostics">
+                                            <summary class="collapse-title text-sm font-medium">
+                                                {format!("{} - {}", row.status, row.source_path)}
+                                            </summary>
+                                            <div class="collapse-content space-y-3">
+                                                <div class="text-xs opacity-70" data-testid="media-job-diagnostics-summary">
+                                                    {summarize_media_job_diagnostics(&diagnostics)}
+                                                </div>
+                                                <div class="grid gap-3 md:grid-cols-3">
+                                                    <div>
+                                                        <h3 class="text-sm font-semibold">{"Operations"}</h3>
+                                                        <ul class="space-y-1">{for diagnostics.operations.iter().map(render_job_operation)}</ul>
+                                                    </div>
+                                                    <div>
+                                                        <h3 class="text-sm font-semibold">{"Violations"}</h3>
+                                                        <ul class="space-y-1">{for diagnostics.violations.iter().map(render_job_violation)}</ul>
+                                                    </div>
+                                                    <div>
+                                                        <h3 class="text-sm font-semibold">{"Plan reasons"}</h3>
+                                                        <ul class="space-y-1">{for diagnostics.plan_reasons.iter().map(render_job_plan_reason)}</ul>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </details>
+                                    </li>
+                                }
+                            })}
                         </ul>
                     </div>
                 </div>
@@ -670,4 +727,52 @@ fn describe_schedule(enabled: bool, interval: Option<i32>) -> String {
     interval
         .map(|minutes| format!("{minutes}m"))
         .unwrap_or_else(|| "enabled".to_string())
+}
+
+fn render_job_operation(row: &MediaJobOperationResponse) -> Html {
+    let stream = row
+        .stream_id
+        .map(|stream_id| format!(" stream={stream_id}"))
+        .unwrap_or_default();
+    let args = [
+        row.arg_1.as_deref(),
+        row.arg_2.as_deref(),
+        row.arg_3.as_deref(),
+        row.arg_4.as_deref(),
+        row.arg_5.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
+    html! {
+        <li class="break-all">
+            {format!("#{} {}{} {} {}", row.operation_index, row.operation_kind, stream, row.command_bin, args)}
+        </li>
+    }
+}
+
+fn render_job_violation(row: &MediaJobViolationResponse) -> Html {
+    let stream = row
+        .stream_id
+        .map(|stream_id| format!(" stream={stream_id}"))
+        .unwrap_or_default();
+    html! {
+        <li class="break-all">
+            {format!("#{} {} {}{}", row.violation_index, row.severity, row.violation_kind, stream)}
+        </li>
+    }
+}
+
+fn render_job_plan_reason(row: &MediaJobPlanReasonResponse) -> Html {
+    let candidate = row
+        .candidate_index
+        .map(|candidate_index| format!(" candidate={candidate_index}"))
+        .unwrap_or_default();
+    let selected = if row.selected { "selected" } else { "rejected" };
+    html! {
+        <li class="break-all">
+            {format!("#{} {}{} {} - {}", row.reason_index, selected, candidate, row.reason_code, row.reason_text)}
+        </li>
+    }
 }

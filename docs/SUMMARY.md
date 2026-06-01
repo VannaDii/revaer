@@ -410,3 +410,4 @@
     -   [378: Media plan reason runtime facade slice 6](adr/378-media-plan-reason-runtime-facade-slice-6.md)
     -   [379: Media plan reason app facade slice 6/10](adr/379-media-plan-reason-app-facade-slice-6-10.md)
     -   [380: Media plan reason API slice 10](adr/380-media-plan-reason-api-slice-10.md)
+    -   [381: Media job diagnostic UI slice 11](adr/381-media-job-diagnostic-ui-slice-11.md)

@@ -1,10 +1,17 @@
+use std::collections::HashMap;
+
 use crate::features::media::logic::media_jobs_path;
+use crate::features::media::logic::{
+    media_job_operations_path, media_job_plan_reasons_path, media_job_violations_path,
+};
+use crate::features::media::state::MediaJobDiagnostics;
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse,
     MediaCapabilityRefreshResponse, MediaComplianceResponse, MediaJobListResponse,
-    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
-    MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
-    MediaYamlImportRequest, MediaYamlValidationResponse,
+    MediaJobOperationListResponse, MediaJobPlanReasonListResponse, MediaJobResponse,
+    MediaJobViolationListResponse, MediaProfileListResponse, MediaProfilePatchRequest,
+    MediaProfileResponse, MediaProfileUpsertRequest, MediaYamlApplyResponse,
+    MediaYamlExportResponse, MediaYamlImportRequest, MediaYamlValidationResponse,
 };
 use crate::services::api::ApiClient;
 use uuid::Uuid;
@@ -52,6 +59,42 @@ pub(crate) async fn fetch_jobs_for_profiles(
         jobs.append(&mut response.jobs);
     }
     Ok(MediaJobListResponse { jobs })
+}
+
+pub(crate) async fn fetch_diagnostics_for_jobs(
+    client: &ApiClient,
+    jobs: &[MediaJobResponse],
+) -> Result<HashMap<Uuid, MediaJobDiagnostics>, String> {
+    let mut diagnostics = HashMap::new();
+    for job in jobs {
+        let job_diagnostics = fetch_job_diagnostics(client, job.media_job_public_id).await?;
+        diagnostics.insert(job.media_job_public_id, job_diagnostics);
+    }
+    Ok(diagnostics)
+}
+
+async fn fetch_job_diagnostics(
+    client: &ApiClient,
+    media_job_public_id: Uuid,
+) -> Result<MediaJobDiagnostics, String> {
+    let operations: MediaJobOperationListResponse = client
+        .get_api(&media_job_operations_path(media_job_public_id))
+        .await
+        .map_err(|err| err.to_string())?;
+    let violations: MediaJobViolationListResponse = client
+        .get_api(&media_job_violations_path(media_job_public_id))
+        .await
+        .map_err(|err| err.to_string())?;
+    let plan_reasons: MediaJobPlanReasonListResponse = client
+        .get_api(&media_job_plan_reasons_path(media_job_public_id))
+        .await
+        .map_err(|err| err.to_string())?;
+
+    Ok(MediaJobDiagnostics {
+        operations: operations.operations,
+        violations: violations.violations,
+        plan_reasons: plan_reasons.reasons,
+    })
 }
 
 pub(crate) async fn fetch_readiness(
