@@ -414,3 +414,4 @@
     -   [382: Media verification check persistence slice 6](adr/382-media-verification-check-persistence-slice-6.md)
     -   [383: Media verification check runtime facade slice 6](adr/383-media-verification-check-runtime-facade-slice-6.md)
     -   [384: Media verification check app facade slice 6/10](adr/384-media-verification-check-app-facade-slice-6-10.md)
+    -   [385: Media verification check API slice 10](adr/385-media-verification-check-api-slice-10.md)

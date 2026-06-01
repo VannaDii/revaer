@@ -257,88 +257,81 @@ fn media_job_lifecycle_paths() -> Vec<(&'static str, Value)> {
 
 fn media_job_record_paths() -> Vec<(&'static str, Value)> {
     vec![
-        (
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/operations",
-            path_item([
-                (
-                    "get",
-                    media_operation(
-                        "List media job operations",
-                        "200",
-                        "Media job operations",
-                        Some("MediaJobOperationListResponse"),
-                        None,
-                        vec![path_uuid_parameter("media_job_public_id")],
-                    ),
-                ),
-                (
-                    "post",
-                    media_operation(
-                        "Append a media job operation",
-                        "204",
-                        "Media job operation appended",
-                        None,
-                        Some("MediaJobOperationAppendRequest"),
-                        vec![path_uuid_parameter("media_job_public_id")],
-                    ),
-                ),
-            ]),
+            "List media job operations",
+            "Media job operations",
+            "MediaJobOperationListResponse",
+            "Append a media job operation",
+            "Media job operation appended",
+            "MediaJobOperationAppendRequest",
         ),
-        (
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/violations",
-            path_item([
-                (
-                    "get",
-                    media_operation(
-                        "List media job violations",
-                        "200",
-                        "Media job violations",
-                        Some("MediaJobViolationListResponse"),
-                        None,
-                        vec![path_uuid_parameter("media_job_public_id")],
-                    ),
-                ),
-                (
-                    "post",
-                    media_operation(
-                        "Append a media job violation",
-                        "204",
-                        "Media job violation appended",
-                        None,
-                        Some("MediaJobViolationAppendRequest"),
-                        vec![path_uuid_parameter("media_job_public_id")],
-                    ),
-                ),
-            ]),
+            "List media job violations",
+            "Media job violations",
+            "MediaJobViolationListResponse",
+            "Append a media job violation",
+            "Media job violation appended",
+            "MediaJobViolationAppendRequest",
         ),
-        (
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/plan-reasons",
-            path_item([
-                (
-                    "get",
-                    media_operation(
-                        "List media job plan reasons",
-                        "200",
-                        "Media job plan reasons",
-                        Some("MediaJobPlanReasonListResponse"),
-                        None,
-                        vec![path_uuid_parameter("media_job_public_id")],
-                    ),
-                ),
-                (
-                    "post",
-                    media_operation(
-                        "Append a media job plan reason",
-                        "204",
-                        "Media job plan reason appended",
-                        None,
-                        Some("MediaJobPlanReasonAppendRequest"),
-                        vec![path_uuid_parameter("media_job_public_id")],
-                    ),
-                ),
-            ]),
+            "List media job plan reasons",
+            "Media job plan reasons",
+            "MediaJobPlanReasonListResponse",
+            "Append a media job plan reason",
+            "Media job plan reason appended",
+            "MediaJobPlanReasonAppendRequest",
+        ),
+        media_job_record_path(
+            "/v1/media/jobs/{media_job_public_id}/verification-checks",
+            "List media job verification checks",
+            "Media job verification checks",
+            "MediaJobVerificationCheckListResponse",
+            "Append a media job verification check",
+            "Media job verification check appended",
+            "MediaJobVerificationCheckAppendRequest",
         ),
     ]
+}
+
+fn media_job_record_path(
+    path: &'static str,
+    list_summary: &'static str,
+    list_description: &'static str,
+    list_schema: &'static str,
+    append_summary: &'static str,
+    append_description: &'static str,
+    append_schema: &'static str,
+) -> (&'static str, Value) {
+    (
+        path,
+        path_item([
+            (
+                "get",
+                media_operation(
+                    list_summary,
+                    "200",
+                    list_description,
+                    Some(list_schema),
+                    None,
+                    vec![path_uuid_parameter("media_job_public_id")],
+                ),
+            ),
+            (
+                "post",
+                media_operation(
+                    append_summary,
+                    "204",
+                    append_description,
+                    None,
+                    Some(append_schema),
+                    vec![path_uuid_parameter("media_job_public_id")],
+                ),
+            ),
+        ]),
+    )
 }
 
 fn media_capability_paths() -> Vec<(&'static str, Value)> {
@@ -644,6 +637,7 @@ fn media_job_schemas() -> Vec<(&'static str, Value)> {
     schemas.extend(media_job_operation_schemas());
     schemas.extend(media_job_violation_schemas());
     schemas.extend(media_job_plan_reason_schemas());
+    schemas.extend(media_job_verification_check_schemas());
     schemas
 }
 
@@ -822,6 +816,50 @@ fn media_job_plan_reason_schemas() -> Vec<(&'static str, Value)> {
             object_schema(
                 &["reasons"],
                 [("reasons", array_ref_schema("MediaJobPlanReasonResponse"))],
+            ),
+        ),
+    ]
+}
+
+fn media_job_verification_check_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobVerificationCheckAppendRequest",
+            object_schema(
+                &["check_index", "check_kind", "check_status"],
+                [
+                    ("check_index", integer_schema()),
+                    ("check_kind", string_schema()),
+                    ("check_status", verification_check_status_schema()),
+                    ("expected_value", string_schema()),
+                    ("actual_value", string_schema()),
+                    ("details_text", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobVerificationCheckResponse",
+            object_schema(
+                &["check_index", "check_kind", "check_status", "created_at"],
+                [
+                    ("check_index", integer_schema()),
+                    ("check_kind", string_schema()),
+                    ("check_status", verification_check_status_schema()),
+                    ("expected_value", string_schema()),
+                    ("actual_value", string_schema()),
+                    ("details_text", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobVerificationCheckListResponse",
+            object_schema(
+                &["checks"],
+                [(
+                    "checks",
+                    array_ref_schema("MediaJobVerificationCheckResponse"),
+                )],
             ),
         ),
     ]
@@ -1105,6 +1143,10 @@ fn violation_severity_schema() -> Value {
     serde_json::json!({ "type": "string", "enum": ["low", "medium", "high"] })
 }
 
+fn verification_check_status_schema() -> Value {
+    serde_json::json!({ "type": "string", "enum": ["passed", "failed", "skipped"] })
+}
+
 #[must_use]
 /// Return a fresh copy of the embedded `OpenAPI` specification.
 pub fn openapi_document() -> Value {
@@ -1170,6 +1212,7 @@ mod tests {
             "/v1/media/jobs/{media_job_public_id}/operations",
             "/v1/media/jobs/{media_job_public_id}/violations",
             "/v1/media/jobs/{media_job_public_id}/plan-reasons",
+            "/v1/media/jobs/{media_job_public_id}/verification-checks",
             "/v1/media/capabilities",
             "/v1/media/capabilities/readiness",
             "/v1/media/capabilities/refresh",
@@ -1210,6 +1253,9 @@ mod tests {
             "MediaJobPlanReasonAppendRequest",
             "MediaJobPlanReasonListResponse",
             "MediaJobPlanReasonResponse",
+            "MediaJobVerificationCheckAppendRequest",
+            "MediaJobVerificationCheckListResponse",
+            "MediaJobVerificationCheckResponse",
             "MediaCapabilityRecordRequest",
             "MediaCapabilityRecordResponse",
             "MediaCapabilityRefreshResponse",

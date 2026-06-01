@@ -13,8 +13,8 @@ use uuid::Uuid;
 use crate::app::media::{
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCreateParams,
     MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams,
-    MediaJobViolationAppendParams, MediaProfilePatchParams, MediaProfileUpsertParams,
-    MediaServiceError, MediaServiceErrorKind,
+    MediaJobVerificationCheckAppendParams, MediaJobViolationAppendParams, MediaProfilePatchParams,
+    MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -25,6 +25,7 @@ use crate::models::{
     MediaComplianceResponse, MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
     MediaJobOperationAppendRequest, MediaJobOperationListResponse, MediaJobPhaseAppendRequest,
     MediaJobPlanReasonAppendRequest, MediaJobPlanReasonListResponse, MediaJobResponse,
+    MediaJobVerificationCheckAppendRequest, MediaJobVerificationCheckListResponse,
     MediaJobViolationAppendRequest, MediaJobViolationListResponse, MediaProfileListResponse,
     MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
     MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
@@ -45,6 +46,10 @@ const MEDIA_JOB_VIOLATION_APPEND_FAILED: &str = "failed to append media job viol
 const MEDIA_JOB_VIOLATION_LIST_FAILED: &str = "failed to list media job violations";
 const MEDIA_JOB_PLAN_REASON_APPEND_FAILED: &str = "failed to append media job plan reason";
 const MEDIA_JOB_PLAN_REASON_LIST_FAILED: &str = "failed to list media job plan reasons";
+const MEDIA_JOB_VERIFICATION_CHECK_APPEND_FAILED: &str =
+    "failed to append media job verification check";
+const MEDIA_JOB_VERIFICATION_CHECK_LIST_FAILED: &str =
+    "failed to list media job verification checks";
 const MEDIA_CAPABILITY_RECORD_FAILED: &str = "failed to record media capability snapshot";
 const MEDIA_CAPABILITY_LATEST_FAILED: &str = "failed to load latest media capability snapshot";
 const MEDIA_CAPABILITY_READINESS_FAILED: &str = "failed to determine media capability readiness";
@@ -65,6 +70,9 @@ const VIOLATION_SEVERITY_REQUIRED: &str = "severity is required";
 const VIOLATION_SEVERITY_INVALID: &str = "severity must be one of: low, medium, high";
 const REASON_CODE_REQUIRED: &str = "reason_code is required";
 const REASON_TEXT_REQUIRED: &str = "reason_text is required";
+const CHECK_KIND_REQUIRED: &str = "check_kind is required";
+const CHECK_STATUS_REQUIRED: &str = "check_status is required";
+const CHECK_STATUS_INVALID: &str = "check_status must be one of: passed, failed, skipped";
 const COMMAND_BIN_REQUIRED: &str = "command_bin is required";
 const FFMPEG_VERSION_REQUIRED: &str = "ffmpeg_version is required";
 const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
@@ -537,6 +545,68 @@ pub(crate) async fn list_media_job_plan_reasons(
     Ok(Json(MediaJobPlanReasonListResponse { reasons }))
 }
 
+pub(crate) async fn append_media_job_verification_check(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+    Json(request): Json<MediaJobVerificationCheckAppendRequest>,
+) -> Result<StatusCode, ApiError> {
+    let check_kind = normalize_required_str_field(&request.check_kind, CHECK_KIND_REQUIRED)?;
+    let check_status = normalize_required_str_field(&request.check_status, CHECK_STATUS_REQUIRED)?;
+    let check_status = parse_verification_check_status_required(check_status)?;
+
+    state
+        .media
+        .media_job_verification_check_append(MediaJobVerificationCheckAppendParams {
+            media_job_public_id,
+            check_index: request.check_index,
+            check_kind,
+            check_status: check_status.as_str(),
+            expected_value: trim_and_filter_empty(request.expected_value.as_deref()),
+            actual_value: trim_and_filter_empty(request.actual_value.as_deref()),
+            details_text: trim_and_filter_empty(request.details_text.as_deref()),
+        })
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_verification_check_append",
+                MEDIA_JOB_VERIFICATION_CHECK_APPEND_FAILED,
+                &err,
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn list_media_job_verification_checks(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<Json<MediaJobVerificationCheckListResponse>, ApiError> {
+    let checks = state
+        .media
+        .media_job_verification_check_list(media_job_public_id)
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_verification_check_list",
+                MEDIA_JOB_VERIFICATION_CHECK_LIST_FAILED,
+                &err,
+            )
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobVerificationCheckResponse {
+            check_index: item.check_index,
+            check_kind: item.check_kind,
+            check_status: item.check_status,
+            expected_value: item.expected_value,
+            actual_value: item.actual_value,
+            details_text: item.details_text,
+            created_at: item.created_at,
+        })
+        .collect();
+
+    Ok(Json(MediaJobVerificationCheckListResponse { checks }))
+}
+
 pub(crate) async fn record_media_capability(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<MediaCapabilityRecordRequest>,
@@ -857,6 +927,22 @@ fn parse_violation_severity_required(value: &str) -> Result<String, ApiError> {
     } else {
         Err(ApiError::bad_request(VIOLATION_SEVERITY_INVALID))
     }
+}
+
+fn parse_verification_check_status_required(value: &str) -> Result<String, ApiError> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if is_supported_verification_check_status(&normalized) {
+        Ok(normalized)
+    } else {
+        Err(ApiError::bad_request(CHECK_STATUS_INVALID))
+    }
+}
+
+fn is_supported_verification_check_status(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "passed" | "failed" | "skipped"
+    )
 }
 
 fn is_supported_violation_severity(value: &str) -> bool {
@@ -1271,6 +1357,37 @@ mod tests {
         let Json(response) =
             list_media_job_plan_reasons(State(state), Path(Uuid::new_v4())).await?;
         assert!(response.reasons.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_media_job_verification_check_rejects_invalid_status() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobVerificationCheckAppendRequest {
+            check_index: 0,
+            check_kind: "duration".to_string(),
+            check_status: "unknown".to_string(),
+            expected_value: Some("3600.0".to_string()),
+            actual_value: Some("3599.9".to_string()),
+            details_text: Some("within tolerance".to_string()),
+        };
+
+        let err =
+            append_media_job_verification_check(State(state), Path(Uuid::new_v4()), Json(request))
+                .await
+                .expect_err("invalid verification status should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_media_job_verification_checks_returns_empty_payload_with_default_facade()
+    -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let Json(response) =
+            list_media_job_verification_checks(State(state), Path(Uuid::new_v4())).await?;
+        assert!(response.checks.is_empty());
         Ok(())
     }
 

@@ -465,6 +465,26 @@ pub struct MediaJobPlanReasonAppendRequest {
     pub reason_text: String,
 }
 
+/// Request payload for appending a media job verification-check row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobVerificationCheckAppendRequest {
+    /// Verification check order index.
+    pub check_index: i32,
+    /// Verification check kind.
+    pub check_kind: String,
+    /// Verification check status.
+    pub check_status: String,
+    /// Expected value text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_value: Option<String>,
+    /// Actual value text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_value: Option<String>,
+    /// Optional detail text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details_text: Option<String>,
+}
+
 /// Media job response row payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobResponse {
@@ -590,6 +610,35 @@ pub struct MediaJobPlanReasonResponse {
 pub struct MediaJobPlanReasonListResponse {
     /// Ordered plan reasons.
     pub reasons: Vec<MediaJobPlanReasonResponse>,
+}
+
+/// Media job verification-check response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobVerificationCheckResponse {
+    /// Verification check order index.
+    pub check_index: i32,
+    /// Verification check kind.
+    pub check_kind: String,
+    /// Verification check status.
+    pub check_status: String,
+    /// Expected value text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_value: Option<String>,
+    /// Actual value text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_value: Option<String>,
+    /// Optional detail text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details_text: Option<String>,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job verification-check list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobVerificationCheckListResponse {
+    /// Ordered verification checks.
+    pub checks: Vec<MediaJobVerificationCheckResponse>,
 }
 
 /// Request payload for recording one media capability snapshot row.
