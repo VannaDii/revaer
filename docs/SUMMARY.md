@@ -433,3 +433,4 @@
     -   [401: Helm release annotation rendering slice 9](adr/401-helm-release-annotation-rendering-slice-9.md)
     -   [402: Bootstrap bind failure timeout slice ci](adr/402-bootstrap-bind-failure-timeout-slice-ci.md)
     -   [403: Media job profile root validation slice 10/13](adr/403-media-job-profile-root-validation-slice-10-13.md)
+    -   [404: CLI tail resume test stabilization slice ci](adr/404-cli-tail-resume-test-stabilization-slice-ci.md)

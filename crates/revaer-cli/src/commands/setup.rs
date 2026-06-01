@@ -239,7 +239,10 @@ mod tests {
         validate::default_local_networks,
     };
     use serde_json::json;
-    use std::{fs, path::PathBuf};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
     use tokio::time::{Duration, timeout};
     use uuid::Uuid;
 
@@ -259,6 +262,22 @@ mod tests {
         let root = repo_root().join(".server_root");
         fs::create_dir_all(&root)?;
         Ok(root)
+    }
+
+    async fn read_resume_file_after_write(path: &Path) -> Result<String> {
+        timeout(Duration::from_secs(5), async {
+            loop {
+                match fs::read_to_string(path) {
+                    Ok(saved) => return Ok(saved),
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                    Err(err) => return Err(err.into()),
+                }
+            }
+        })
+        .await
+        .map_err(|_| anyhow!("resume file was not written"))?
     }
 
     fn context_with(server: &MockServer, api_key: Option<ApiKeyCredential>) -> Result<AppContext> {
@@ -542,16 +561,19 @@ mod tests {
             retry_secs: 0,
         };
 
-        let result = timeout(
-            Duration::from_millis(200),
-            crate::commands::tail::handle_tail(&ctx, args),
-        )
-        .await;
-        assert!(
-            result.is_err(),
-            "tail should keep running and be cancelled by timeout"
-        );
-        let saved = std::fs::read_to_string(&resume_path)?;
+        let tail_ctx = ctx.clone();
+        let tail_task =
+            tokio::spawn(async move { crate::commands::tail::handle_tail(&tail_ctx, args).await });
+        let saved_result = read_resume_file_after_write(&resume_path).await;
+        tail_task.abort();
+        let tail_result = tail_task.await;
+        let saved = saved_result?;
+        match tail_result {
+            Err(err) if err.is_cancelled() => {}
+            Ok(Ok(())) => return Err(anyhow!("tail exited unexpectedly")),
+            Ok(Err(err)) => return Err(anyhow!("tail failed unexpectedly: {err:?}")),
+            Err(err) => return Err(anyhow!("tail task failed: {err}")),
+        }
         assert_eq!(saved.trim(), "3");
         let _ = std::fs::remove_file(&resume_path);
         Ok(())

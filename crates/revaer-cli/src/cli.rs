@@ -1662,7 +1662,10 @@ mod tests {
     };
     use revaer_config::validate::default_local_networks;
     use revaer_events::{Event, EventEnvelope};
-    use std::{fs, path::PathBuf};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
     use tokio::time::{Duration, timeout};
 
     fn repo_root() -> PathBuf {
@@ -1683,6 +1686,22 @@ mod tests {
 
     fn temp_path(prefix: &str, extension: &str) -> Result<PathBuf> {
         Ok(server_root()?.join(format!("{prefix}-{}.{}", Uuid::new_v4(), extension)))
+    }
+
+    async fn read_resume_file_after_write(path: &Path) -> Result<String> {
+        timeout(Duration::from_secs(5), async {
+            loop {
+                match fs::read_to_string(path) {
+                    Ok(saved) => return Ok(saved),
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                    Err(err) => return Err(err.into()),
+                }
+            }
+        })
+        .await
+        .map_err(|_| anyhow!("resume file was not written"))?
     }
 
     #[test]
@@ -2869,9 +2888,16 @@ mod tests {
             "--retry-secs",
             "0",
         ]);
-        let tail_result = timeout(Duration::from_millis(200), run_with_cli(tail_cli)).await;
-        assert!(tail_result.is_err(), "tail should be cancelled by timeout");
-        let saved = fs::read_to_string(&resume_path)?;
+        let tail_task = tokio::spawn(run_with_cli(tail_cli));
+        let saved_result = read_resume_file_after_write(&resume_path).await;
+        tail_task.abort();
+        let tail_result = tail_task.await;
+        let saved = saved_result?;
+        match tail_result {
+            Err(err) if err.is_cancelled() => {}
+            Ok(code) => return Err(anyhow!("tail exited unexpectedly with code {code}")),
+            Err(err) => return Err(anyhow!("tail task failed: {err}")),
+        }
         assert_eq!(saved.trim(), "3");
         fs::remove_file(&resume_path)?;
         Ok(())
