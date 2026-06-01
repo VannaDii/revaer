@@ -8,6 +8,8 @@ test.describe('Media', () => {
     await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Refresh capability' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Export YAML' })).toBeVisible();
+    await expect(page.getByText('License mode')).toBeVisible();
+    await expect(page.getByText('redistributable-gplv3-runtime')).toBeVisible();
     await expect(page.getByTestId('media-profile-form')).toBeVisible();
     await expect(page.getByPlaceholder('compatibility_target_key')).toBeVisible();
     await expect(page.getByPlaceholder('policy_key')).toBeVisible();

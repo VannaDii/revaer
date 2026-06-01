@@ -21,7 +21,7 @@ use crate::http::handlers::indexers::SYSTEM_ACTOR_PUBLIC_ID;
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse, MediaCapabilityRecordRequest,
     MediaCapabilityRecordResponse, MediaCapabilityRefreshResponse, MediaCapabilitySnapshotResponse,
-    MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
+    MediaComplianceResponse, MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
     MediaJobOperationAppendRequest, MediaJobOperationListResponse, MediaJobPhaseAppendRequest,
     MediaJobResponse, MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
     MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
@@ -64,6 +64,19 @@ const MEDIA_STATUS_INVALID: &str =
     "status must be one of: queued, running, verifying, completed, failed, cancelled";
 const PHASE_STATUS_INVALID: &str =
     "phase_status must be one of: queued, running, verifying, completed, failed, cancelled";
+const MEDIA_LICENSE_MODE: &str = "redistributable-gplv3-runtime";
+const MEDIA_SOURCE_OFFER_PATH: &str = "/app/compliance/SOURCE-OFFER.txt";
+const MEDIA_THIRD_PARTY_NOTICES_PATH: &str = "/app/compliance/THIRD-PARTY-NOTICES.md";
+const MEDIA_SBOM_PATH: &str = "/app/compliance/media-runtime-inventory.spdx.json";
+const MEDIA_INVENTORY_PATH: &str = "/app/compliance/media-runtime-inventory.spdx.json";
+const MEDIA_EXIFTOOL_EXCEPTION_PATH: &str = "/app/compliance/exiftool-exception.md";
+const MEDIA_LICENSE_EXCLUDED_CAPABILITIES: [&str; 5] = [
+    "--enable-nonfree",
+    "libfdk_aac",
+    "proprietary-codecs",
+    "license-incompatible-codecs",
+    "unapproved-source-form-utilities",
+];
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct MediaJobsQuery {
@@ -486,6 +499,21 @@ pub(crate) async fn media_capability_readiness(
     }))
 }
 
+pub(crate) async fn media_compliance() -> Json<MediaComplianceResponse> {
+    Json(MediaComplianceResponse {
+        license_mode: MEDIA_LICENSE_MODE.to_string(),
+        source_offer_path: MEDIA_SOURCE_OFFER_PATH.to_string(),
+        third_party_notices_path: MEDIA_THIRD_PARTY_NOTICES_PATH.to_string(),
+        sbom_path: MEDIA_SBOM_PATH.to_string(),
+        inventory_path: MEDIA_INVENTORY_PATH.to_string(),
+        exiftool_exception_path: MEDIA_EXIFTOOL_EXCEPTION_PATH.to_string(),
+        license_excluded_capabilities: MEDIA_LICENSE_EXCLUDED_CAPABILITIES
+            .iter()
+            .map(|capability| (*capability).to_string())
+            .collect(),
+    })
+}
+
 pub(crate) async fn export_media_yaml(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<MediaYamlExportResponse>, ApiError> {
@@ -694,6 +722,46 @@ mod tests {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let Json(response) = list_media_profiles(State(state)).await?;
         assert!(response.profiles.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_compliance_returns_release_artifact_links() -> anyhow::Result<()> {
+        let Json(response) = media_compliance().await;
+
+        assert_eq!(response.license_mode, "redistributable-gplv3-runtime");
+        assert_eq!(
+            response.source_offer_path,
+            "/app/compliance/SOURCE-OFFER.txt"
+        );
+        assert_eq!(
+            response.third_party_notices_path,
+            "/app/compliance/THIRD-PARTY-NOTICES.md"
+        );
+        assert_eq!(
+            response.sbom_path,
+            "/app/compliance/media-runtime-inventory.spdx.json"
+        );
+        assert_eq!(
+            response.inventory_path,
+            "/app/compliance/media-runtime-inventory.spdx.json"
+        );
+        assert_eq!(
+            response.exiftool_exception_path,
+            "/app/compliance/exiftool-exception.md"
+        );
+        assert!(
+            response
+                .license_excluded_capabilities
+                .iter()
+                .any(|capability| capability == "--enable-nonfree")
+        );
+        assert!(
+            response
+                .license_excluded_capabilities
+                .iter()
+                .any(|capability| capability == "libfdk_aac")
+        );
         Ok(())
     }
 

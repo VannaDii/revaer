@@ -1,9 +1,9 @@
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse,
-    MediaCapabilityRefreshResponse, MediaJobListResponse, MediaProfileListResponse,
-    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlValidationResponse,
+    MediaCapabilityRefreshResponse, MediaComplianceResponse, MediaJobListResponse,
+    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
+    MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
+    MediaYamlImportRequest, MediaYamlValidationResponse,
 };
 use crate::services::api::ApiClient;
 use uuid::Uuid;
@@ -60,6 +60,15 @@ pub(crate) async fn fetch_latest_capability(
 ) -> Result<MediaCapabilityLatestResponse, String> {
     client
         .get_api("/v1/media/capabilities")
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) async fn fetch_compliance(
+    client: &ApiClient,
+) -> Result<MediaComplianceResponse, String> {
+    client
+        .get_api("/v1/media/compliance")
         .await
         .map_err(|err| err.to_string())
 }

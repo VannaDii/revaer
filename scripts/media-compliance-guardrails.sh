@@ -66,7 +66,17 @@ else
   done
 fi
 
-if git grep -n -- '--enable-nonfree' -- Dockerfile release scripts >/tmp/revaer-media-nonfree.matches 2>/dev/null; then
+nonfree_scan_paths=(Dockerfile)
+while IFS= read -r path; do
+  nonfree_scan_paths+=("${path}")
+done < <(
+  git ls-files release/scripts 'release/*.js' scripts \
+    | grep -E '\.(js|sh)$' \
+    | grep -v '^scripts/media-compliance-guardrails\.sh$' \
+    || true
+)
+
+if git grep -n -- '--enable-nonfree' -- "${nonfree_scan_paths[@]}" >/tmp/revaer-media-nonfree.matches 2>/dev/null; then
   cat /tmp/revaer-media-nonfree.matches >&2
   report_failure "default media runtime must not use --enable-nonfree"
 fi

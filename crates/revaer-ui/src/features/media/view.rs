@@ -1,7 +1,7 @@
 use crate::app::api::ApiCtx;
 use crate::features::media::api::{
-    apply_yaml, create_profile, export_yaml, fetch_jobs, fetch_latest_capability, fetch_profiles,
-    fetch_readiness, patch_profile, refresh_capability, validate_yaml,
+    apply_yaml, create_profile, export_yaml, fetch_compliance, fetch_jobs, fetch_latest_capability,
+    fetch_profiles, fetch_readiness, patch_profile, refresh_capability, validate_yaml,
 };
 use crate::features::media::state::MediaViewState;
 use crate::models::{MediaProfilePatchRequest, MediaProfileUpsertRequest};
@@ -51,14 +51,16 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                 let jobs = fetch_jobs(&api.client).await;
                 let readiness = fetch_readiness(&api.client).await;
                 let latest = fetch_latest_capability(&api.client).await;
-                match (profiles, jobs, readiness, latest) {
-                    (Ok(profiles), Ok(jobs), Ok(readiness), Ok(latest)) => {
+                let compliance = fetch_compliance(&api.client).await;
+                match (profiles, jobs, readiness, latest, compliance) {
+                    (Ok(profiles), Ok(jobs), Ok(readiness), Ok(latest), Ok(compliance)) => {
                         let current = (*state).clone();
                         state.set(MediaViewState {
                             profiles: profiles.profiles,
                             jobs: jobs.jobs,
                             readiness: Some(readiness),
                             latest_capability: latest.snapshot,
+                            compliance: Some(compliance),
                             yaml_export: current.yaml_export,
                         });
                     }
@@ -524,6 +526,25 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                 <div class="card bg-base-100 shadow"><div class="card-body"><div class="text-xs uppercase opacity-60">{"Jobs"}</div><div class="text-xl">{state.jobs.len()}</div></div></div>
                 <div class="card bg-base-100 shadow"><div class="card-body"><div class="text-xs uppercase opacity-60">{"Readiness"}</div><div class="text-xl">{readiness}</div></div></div>
                 <div class="card bg-base-100 shadow"><div class="card-body"><div class="text-xs uppercase opacity-60">{"Latest codec"}</div><div class="text-xl">{state.latest_capability.as_ref().map(|row| row.codec_name.clone()).unwrap_or_else(|| "-".to_string())}</div></div></div>
+            </div>
+
+            <div class="card bg-base-100 shadow">
+                <div class="card-body gap-2">
+                    <h2 class="text-lg font-semibold">{"Compliance"}</h2>
+                    {state.compliance.as_ref().map(|compliance| html! {
+                        <div class="grid gap-2 text-sm md:grid-cols-2" data-testid="media-compliance-panel">
+                            <div><span class="font-medium">{"License mode"}</span><span class="ml-2">{compliance.license_mode.clone()}</span></div>
+                            <div><span class="font-medium">{"Source offer"}</span><span class="ml-2 break-all">{compliance.source_offer_path.clone()}</span></div>
+                            <div><span class="font-medium">{"Third-party notices"}</span><span class="ml-2 break-all">{compliance.third_party_notices_path.clone()}</span></div>
+                            <div><span class="font-medium">{"SBOM"}</span><span class="ml-2 break-all">{compliance.sbom_path.clone()}</span></div>
+                            <div><span class="font-medium">{"Inventory"}</span><span class="ml-2 break-all">{compliance.inventory_path.clone()}</span></div>
+                            <div><span class="font-medium">{"ExifTool exception"}</span><span class="ml-2 break-all">{compliance.exiftool_exception_path.clone()}</span></div>
+                            <div class="md:col-span-2"><span class="font-medium">{"Excluded capabilities"}</span><span class="ml-2">{compliance.license_excluded_capabilities.join(", ")}</span></div>
+                        </div>
+                    }).unwrap_or_else(|| html! {
+                        <div class="text-sm" data-testid="media-compliance-panel">{"License mode unknown"}</div>
+                    })}
+                </div>
             </div>
 
             <div class="grid gap-3 lg:grid-cols-2">

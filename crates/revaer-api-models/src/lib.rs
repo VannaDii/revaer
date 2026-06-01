@@ -583,6 +583,25 @@ pub struct MediaCapabilityReadinessResponse {
     pub snapshot: Option<MediaCapabilitySnapshotResponse>,
 }
 
+/// Media runtime license-compliance artifact response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaComplianceResponse {
+    /// Runtime license mode for the default media image.
+    pub license_mode: String,
+    /// In-image source offer artifact path.
+    pub source_offer_path: String,
+    /// In-image third-party notices artifact path.
+    pub third_party_notices_path: String,
+    /// In-image SBOM artifact path.
+    pub sbom_path: String,
+    /// In-image media runtime inventory artifact path.
+    pub inventory_path: String,
+    /// In-image ExifTool exception record path.
+    pub exiftool_exception_path: String,
+    /// Capabilities excluded from the default redistributable image.
+    pub license_excluded_capabilities: Vec<String>,
+}
+
 /// YAML export response payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaYamlExportResponse {

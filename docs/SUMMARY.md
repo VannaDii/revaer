@@ -392,3 +392,4 @@
     -   [360: Media UI profile management slice 11](adr/360-media-ui-profile-management-slice-11.md)
     -   [361: Media profile configuration controls slice 11](adr/361-media-profile-configuration-controls-slice-11.md)
     -   [362: Media runtime compliance artifacts slice 9](adr/362-media-runtime-compliance-artifacts-slice-9.md)
+    -   [363: Media compliance API and UI slice 9](adr/363-media-compliance-api-ui-slice-9.md)
