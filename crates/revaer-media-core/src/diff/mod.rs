@@ -50,7 +50,7 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
 #[cfg(test)]
 mod tests {
     use super::{GraphDiff, RecodedStream, diff_graphs};
-    use crate::compliance::{ViolationKind, score_diff};
+    use crate::compliance::{Severity, Status, ViolationKind, report_for_status, score_diff};
     use crate::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 
     #[test]
@@ -117,17 +117,18 @@ mod tests {
 
         let report = score_diff(&diff);
 
+        assert_eq!(report.status, Status::NonCompliant);
         assert_eq!(report.score, 40);
         assert_eq!(
             report
                 .violations
                 .iter()
-                .map(|item| (item.kind, item.stream_id))
+                .map(|item| (item.kind, item.severity, item.stream_id))
                 .collect::<Vec<_>>(),
             vec![
-                (ViolationKind::RemovedStream, Some(3)),
-                (ViolationKind::AudioCodecMismatch, Some(1)),
-                (ViolationKind::VideoCodecMismatch, Some(0)),
+                (ViolationKind::RemovedStream, Severity::Medium, Some(3)),
+                (ViolationKind::AudioCodecMismatch, Severity::High, Some(1)),
+                (ViolationKind::VideoCodecMismatch, Severity::High, Some(0)),
             ]
         );
     }
@@ -139,7 +140,25 @@ mod tests {
             recoded_streams: Vec::new(),
         });
 
+        assert_eq!(report.status, Status::Compliant);
         assert_eq!(report.score, 100);
         assert!(report.violations.is_empty());
+    }
+
+    #[test]
+    fn report_for_status_preserves_terminal_compliance_status() {
+        let statuses = [
+            Status::Unsupported,
+            Status::DryRunPlanned,
+            Status::FailedValidation,
+            Status::FailedExecution,
+            Status::FailedVerification,
+        ];
+
+        for status in statuses {
+            let report = report_for_status(status);
+            assert_eq!(report.status, status);
+            assert!(report.violations.is_empty());
+        }
     }
 }
