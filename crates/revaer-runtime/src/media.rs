@@ -10,11 +10,14 @@ use revaer_data::media::capabilities::{
     record_capability_snapshot,
 };
 use revaer_data::media::jobs::{
-    AppendMediaJobVerificationCheckInput, CreateMediaJobInput, MediaJobOperationRow,
-    MediaJobPlanReasonRow, MediaJobRow, MediaJobVerificationCheckRow, MediaJobViolationRow,
-    append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
-    append_media_job_verification_check, append_media_job_violation, cancel_media_job,
-    create_media_job, get_media_job, list_media_job_operations, list_media_job_plan_reasons,
+    AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
+    AppendMediaJobVerificationCheckInput, CreateMediaJobInput, MediaJobArtifactRow,
+    MediaJobCompactAuditRow, MediaJobOperationRow, MediaJobPlanReasonRow, MediaJobRow,
+    MediaJobVerificationCheckRow, MediaJobViolationRow, append_media_job_artifact,
+    append_media_job_compact_audit, append_media_job_operation, append_media_job_phase,
+    append_media_job_plan_reason, append_media_job_verification_check, append_media_job_violation,
+    cancel_media_job, create_media_job, get_media_job, list_media_job_artifacts,
+    list_media_job_compact_audits, list_media_job_operations, list_media_job_plan_reasons,
     list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
     retry_media_job,
 };
@@ -204,6 +207,30 @@ impl MediaStore {
         append_media_job_verification_check(&self.pool, input).await
     }
 
+    /// Append an artifact reference for a media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn append_job_artifact(
+        &self,
+        input: &AppendMediaJobArtifactInput<'_>,
+    ) -> DataResult<()> {
+        append_media_job_artifact(&self.pool, input).await
+    }
+
+    /// Append a compact audit fact for a media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn append_job_compact_audit(
+        &self,
+        input: &AppendMediaJobCompactAuditInput<'_>,
+    ) -> DataResult<()> {
+        append_media_job_compact_audit(&self.pool, input).await
+    }
+
     /// List media jobs for a profile.
     ///
     /// # Errors
@@ -265,6 +292,30 @@ impl MediaStore {
         list_media_job_verification_checks(&self.pool, media_job_public_id).await
     }
 
+    /// List persisted artifact references for one media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn list_job_artifacts(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<MediaJobArtifactRow>> {
+        list_media_job_artifacts(&self.pool, media_job_public_id).await
+    }
+
+    /// List persisted compact audit facts for one media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn list_job_compact_audits(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<MediaJobCompactAuditRow>> {
+        list_media_job_compact_audits(&self.pool, media_job_public_id).await
+    }
+
     /// Load one media job by public id.
     ///
     /// # Errors
@@ -319,7 +370,10 @@ mod tests {
     use super::MediaStore;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::RecordCapabilitySnapshotInput;
-    use revaer_data::media::jobs::{AppendMediaJobVerificationCheckInput, CreateMediaJobInput};
+    use revaer_data::media::jobs::{
+        AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
+        AppendMediaJobVerificationCheckInput, CreateMediaJobInput,
+    };
     use revaer_data::media::profiles::UpsertMediaProfileInput;
     use revaer_test_support::postgres::TestDatabase;
     use revaer_test_support::postgres::start_postgres;
@@ -452,6 +506,40 @@ mod tests {
         Ok(())
     }
 
+    async fn append_and_assert_artifact_and_audit(
+        store: &MediaStore,
+        job_id: Uuid,
+    ) -> anyhow::Result<()> {
+        store
+            .append_job_artifact(&AppendMediaJobArtifactInput {
+                media_job_public_id: job_id,
+                artifact_index: 0,
+                artifact_kind: "ffprobe_json",
+                artifact_path: "jobs/abc/ffprobe.json",
+                size_bytes: Some(2048),
+                content_type: Some("application/json"),
+            })
+            .await?;
+        let artifacts = store.list_job_artifacts(job_id).await?;
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].artifact_kind, "ffprobe_json");
+        assert_eq!(artifacts[0].artifact_path, "jobs/abc/ffprobe.json");
+
+        store
+            .append_job_compact_audit(&AppendMediaJobCompactAuditInput {
+                media_job_public_id: job_id,
+                audit_index: 0,
+                fact_kind: "replacement",
+                fact_text: "source preserved before replace",
+            })
+            .await?;
+        let audits = store.list_job_compact_audits(job_id).await?;
+        assert_eq!(audits.len(), 1);
+        assert_eq!(audits[0].fact_kind, "replacement");
+        assert_eq!(audits[0].fact_text, "source preserved before replace");
+        Ok(())
+    }
+
     async fn assert_verification_check_errors(store: &MediaStore, job_id: Uuid) {
         assert!(
             store
@@ -468,6 +556,35 @@ mod tests {
                 .is_err()
         );
         assert!(store.list_job_verification_checks(job_id).await.is_err());
+    }
+
+    async fn assert_artifact_and_audit_errors(store: &MediaStore, job_id: Uuid) {
+        assert!(
+            store
+                .append_job_artifact(&AppendMediaJobArtifactInput {
+                    media_job_public_id: job_id,
+                    artifact_index: 0,
+                    artifact_kind: "ffprobe_json",
+                    artifact_path: "jobs/abc/ffprobe.json",
+                    size_bytes: Some(2048),
+                    content_type: Some("application/json"),
+                })
+                .await
+                .is_err()
+        );
+        assert!(store.list_job_artifacts(job_id).await.is_err());
+        assert!(
+            store
+                .append_job_compact_audit(&AppendMediaJobCompactAuditInput {
+                    media_job_public_id: job_id,
+                    audit_index: 0,
+                    fact_kind: "replacement",
+                    fact_text: "source preserved before replace",
+                })
+                .await
+                .is_err()
+        );
+        assert!(store.list_job_compact_audits(job_id).await.is_err());
     }
 
     #[tokio::test]
@@ -544,6 +661,7 @@ mod tests {
             )
             .await?;
         append_and_assert_verification_check(&store, job_id).await?;
+        append_and_assert_artifact_and_audit(&store, job_id).await?;
 
         let jobs = store.list_jobs(profile_id, Some("queued")).await?;
         assert!(jobs.iter().any(|job| job.media_job_public_id == job_id));
@@ -650,6 +768,7 @@ mod tests {
         );
         assert!(store.list_job_plan_reasons(job_id).await.is_err());
         assert_verification_check_errors(&store, job_id).await;
+        assert_artifact_and_audit_errors(&store, job_id).await;
         assert!(store.cancel_job(job_id).await.is_err());
         assert!(store.retry_job(job_id).await.is_err());
 

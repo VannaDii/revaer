@@ -399,3 +399,4 @@
 -   [385](385-media-verification-check-api-slice-10.md) – Media verification check API slice 10
 -   [386](386-media-verification-check-ui-slice-11.md) – Media verification check UI slice 11
 -   [387](387-media-artifact-compact-audit-persistence-slice-6.md) – Media artifact and compact audit persistence slice 6
+-   [388](388-media-artifact-compact-audit-runtime-facade-slice-6.md) – Media artifact and compact audit runtime facade slice 6
