@@ -480,6 +480,12 @@ impl ApiServer {
                     .route_layer(require_api.clone()),
             )
             .route(
+                "/v1/media/jobs/{media_job_public_id}/violations",
+                get(media_handlers::list_media_job_violations)
+                    .post(media_handlers::append_media_job_violation)
+                    .route_layer(require_api.clone()),
+            )
+            .route(
                 "/v1/media/capabilities",
                 get(media_handlers::latest_media_capability)
                     .post(media_handlers::record_media_capability)

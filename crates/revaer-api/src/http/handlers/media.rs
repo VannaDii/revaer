@@ -12,8 +12,8 @@ use uuid::Uuid;
 
 use crate::app::media::{
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCreateParams,
-    MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaProfilePatchParams,
-    MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
+    MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobViolationAppendParams,
+    MediaProfilePatchParams, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -23,7 +23,8 @@ use crate::models::{
     MediaCapabilityRecordResponse, MediaCapabilityRefreshResponse, MediaCapabilitySnapshotResponse,
     MediaComplianceResponse, MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
     MediaJobOperationAppendRequest, MediaJobOperationListResponse, MediaJobPhaseAppendRequest,
-    MediaJobResponse, MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
+    MediaJobResponse, MediaJobViolationAppendRequest, MediaJobViolationListResponse,
+    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
     MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
     MediaYamlImportRequest, MediaYamlValidationResponse,
 };
@@ -38,6 +39,8 @@ const MEDIA_JOB_RETRY_FAILED: &str = "failed to retry media job";
 const MEDIA_JOB_PHASE_APPEND_FAILED: &str = "failed to append media job phase";
 const MEDIA_JOB_OPERATION_APPEND_FAILED: &str = "failed to append media job operation";
 const MEDIA_JOB_OPERATION_LIST_FAILED: &str = "failed to list media job operations";
+const MEDIA_JOB_VIOLATION_APPEND_FAILED: &str = "failed to append media job violation";
+const MEDIA_JOB_VIOLATION_LIST_FAILED: &str = "failed to list media job violations";
 const MEDIA_CAPABILITY_RECORD_FAILED: &str = "failed to record media capability snapshot";
 const MEDIA_CAPABILITY_LATEST_FAILED: &str = "failed to load latest media capability snapshot";
 const MEDIA_CAPABILITY_READINESS_FAILED: &str = "failed to determine media capability readiness";
@@ -53,6 +56,9 @@ const PHASE_NAME_REQUIRED: &str = "phase_name is required";
 const PHASE_STATUS_REQUIRED: &str = "phase_status is required";
 const OPERATION_KIND_REQUIRED: &str = "operation_kind is required";
 const OPERATION_KIND_INVALID: &str = "operation_kind is invalid";
+const VIOLATION_KIND_REQUIRED: &str = "violation_kind is required";
+const VIOLATION_SEVERITY_REQUIRED: &str = "severity is required";
+const VIOLATION_SEVERITY_INVALID: &str = "severity must be one of: low, medium, high";
 const COMMAND_BIN_REQUIRED: &str = "command_bin is required";
 const FFMPEG_VERSION_REQUIRED: &str = "ffmpeg_version is required";
 const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
@@ -407,6 +413,65 @@ pub(crate) async fn list_media_job_operations(
     Ok(Json(MediaJobOperationListResponse { operations }))
 }
 
+pub(crate) async fn append_media_job_violation(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+    Json(request): Json<MediaJobViolationAppendRequest>,
+) -> Result<StatusCode, ApiError> {
+    let violation_kind =
+        normalize_required_str_field(&request.violation_kind, VIOLATION_KIND_REQUIRED)?;
+    let severity = normalize_required_str_field(&request.severity, VIOLATION_SEVERITY_REQUIRED)?;
+    let severity = parse_violation_severity_required(severity)?;
+
+    state
+        .media
+        .media_job_violation_append(MediaJobViolationAppendParams {
+            media_job_public_id,
+            violation_index: request.violation_index,
+            violation_kind,
+            severity: severity.as_str(),
+            stream_id: request.stream_id,
+        })
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_violation_append",
+                MEDIA_JOB_VIOLATION_APPEND_FAILED,
+                &err,
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn list_media_job_violations(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<Json<MediaJobViolationListResponse>, ApiError> {
+    let violations = state
+        .media
+        .media_job_violation_list(media_job_public_id)
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_violation_list",
+                MEDIA_JOB_VIOLATION_LIST_FAILED,
+                &err,
+            )
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobViolationResponse {
+            violation_index: item.violation_index,
+            violation_kind: item.violation_kind,
+            severity: item.severity,
+            stream_id: item.stream_id,
+            created_at: item.created_at,
+        })
+        .collect();
+
+    Ok(Json(MediaJobViolationListResponse { violations }))
+}
+
 pub(crate) async fn record_media_capability(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<MediaCapabilityRecordRequest>,
@@ -718,6 +783,22 @@ fn parse_operation_kind_required(value: &str, detail: &'static str) -> Result<St
     } else {
         Err(ApiError::bad_request(detail))
     }
+}
+
+fn parse_violation_severity_required(value: &str) -> Result<String, ApiError> {
+    let normalized = value.trim().to_ascii_lowercase();
+    if is_supported_violation_severity(&normalized) {
+        Ok(normalized)
+    } else {
+        Err(ApiError::bad_request(VIOLATION_SEVERITY_INVALID))
+    }
+}
+
+fn is_supported_violation_severity(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "low" | "medium" | "high"
+    )
 }
 
 fn is_supported_operation_kind(value: &str) -> bool {
@@ -1069,6 +1150,33 @@ mod tests {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let Json(response) = list_media_job_operations(State(state), Path(Uuid::new_v4())).await?;
         assert!(response.operations.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_media_job_violation_rejects_invalid_severity() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobViolationAppendRequest {
+            violation_index: 0,
+            violation_kind: "codec_mismatch".to_string(),
+            severity: "critical".to_string(),
+            stream_id: Some(0),
+        };
+
+        let err = append_media_job_violation(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("invalid severity should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_media_job_violations_returns_empty_payload_with_default_facade()
+    -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let Json(response) = list_media_job_violations(State(state), Path(Uuid::new_v4())).await?;
+        assert!(response.violations.is_empty());
         Ok(())
     }
 

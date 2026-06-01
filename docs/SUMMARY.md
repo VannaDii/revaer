@@ -403,3 +403,4 @@
     -   [371: Media job violation persistence slice 6](adr/371-media-job-violation-persistence-slice-6.md)
     -   [372: Media job violation runtime facade slice 6](adr/372-media-job-violation-runtime-facade-slice-6.md)
     -   [373: Media job violation app facade slice 6/10](adr/373-media-job-violation-app-facade-slice-6-10.md)
+    -   [374: Media job violation API slice 10](adr/374-media-job-violation-api-slice-10.md)

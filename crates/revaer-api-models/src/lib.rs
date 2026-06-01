@@ -435,6 +435,20 @@ pub struct MediaJobOperationAppendRequest {
     pub arg_5: Option<String>,
 }
 
+/// Request payload for appending a media job compliance violation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobViolationAppendRequest {
+    /// Violation order index.
+    pub violation_index: i32,
+    /// Violation kind.
+    pub violation_kind: String,
+    /// Violation severity.
+    pub severity: String,
+    /// Optional stream id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<i32>,
+}
+
 /// Media job response row payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobResponse {
@@ -512,6 +526,29 @@ pub struct MediaJobOperationResponse {
 pub struct MediaJobOperationListResponse {
     /// Ordered operations.
     pub operations: Vec<MediaJobOperationResponse>,
+}
+
+/// Media job compliance violation response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobViolationResponse {
+    /// Violation order index.
+    pub violation_index: i32,
+    /// Violation kind.
+    pub violation_kind: String,
+    /// Violation severity.
+    pub severity: String,
+    /// Optional stream id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<i32>,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job compliance violation list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobViolationListResponse {
+    /// Ordered violations.
+    pub violations: Vec<MediaJobViolationResponse>,
 }
 
 /// Request payload for recording one media capability snapshot row.
