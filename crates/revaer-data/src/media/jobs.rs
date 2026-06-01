@@ -10,6 +10,8 @@ const MEDIA_JOB_OPERATION_APPEND_V1: &str = "SELECT media_job_operation_append_v
 const MEDIA_JOB_OPERATION_LIST_V1: &str = "SELECT operation_index, operation_kind, stream_id, command_bin, arg_1, arg_2, arg_3, arg_4, arg_5, created_at FROM media_job_operation_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_VIOLATION_APPEND_V1: &str = "SELECT media_job_violation_append_v1(media_job_public_id_input => $1, violation_index_input => $2, violation_kind_input => $3, severity_input => $4, stream_id_input => $5)";
 const MEDIA_JOB_VIOLATION_LIST_V1: &str = "SELECT violation_index, violation_kind, severity, stream_id, created_at FROM media_job_violation_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_PLAN_REASON_APPEND_V1: &str = "SELECT media_job_plan_reason_append_v1(media_job_public_id_input => $1, reason_index_input => $2, candidate_index_input => $3, selected_input => $4, reason_code_input => $5, reason_text_input => $6)";
+const MEDIA_JOB_PLAN_REASON_LIST_V1: &str = "SELECT reason_index, candidate_index, selected, reason_code, reason_text, created_at FROM media_job_plan_reason_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_CANCEL_V1: &str = "SELECT media_job_cancel_v1(media_job_public_id_input => $1)";
@@ -89,6 +91,23 @@ pub struct MediaJobViolationRow {
     pub severity: String,
     /// Optional stream id for stream-scoped violations.
     pub stream_id: Option<i32>,
+    /// Row creation timestamp.
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Media job plan explanation row.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobPlanReasonRow {
+    /// Reason ordering index.
+    pub reason_index: i32,
+    /// Optional candidate index for rejected/selected candidates.
+    pub candidate_index: Option<i32>,
+    /// Whether this reason describes the selected plan.
+    pub selected: bool,
+    /// Stable reason code.
+    pub reason_code: String,
+    /// Human-readable reason text.
+    pub reason_text: String,
     /// Row creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -192,6 +211,33 @@ pub async fn append_media_job_violation(
     Ok(())
 }
 
+/// Append or update a media job plan-reason row.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn append_media_job_plan_reason(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+    reason_index: i32,
+    candidate_index: Option<i32>,
+    selected: bool,
+    reason_code: &str,
+    reason_text: &str,
+) -> Result<()> {
+    sqlx::query(MEDIA_JOB_PLAN_REASON_APPEND_V1)
+        .bind(media_job_public_id)
+        .bind(reason_index)
+        .bind(candidate_index)
+        .bind(selected)
+        .bind(reason_code)
+        .bind(reason_text)
+        .execute(pool)
+        .await
+        .map_err(try_op("media job plan reason append"))?;
+    Ok(())
+}
+
 /// List media jobs for profile and optional status.
 ///
 /// # Errors
@@ -242,6 +288,22 @@ pub async fn list_media_job_violations(
         .map_err(try_op("media job violation list"))
 }
 
+/// List media job plan reasons for one job.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_plan_reasons(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Vec<MediaJobPlanReasonRow>> {
+    sqlx::query_as::<_, MediaJobPlanReasonRow>(MEDIA_JOB_PLAN_REASON_LIST_V1)
+        .bind(media_job_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job plan reason list"))
+}
+
 /// Get one media job by public id.
 ///
 /// # Errors
@@ -290,12 +352,16 @@ pub async fn retry_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result
 mod tests {
     use super::{
         CreateMediaJobInput, append_media_job_operation, append_media_job_phase,
-        append_media_job_violation, create_media_job, get_media_job, list_media_job_operations,
-        list_media_job_violations, list_media_jobs,
+        append_media_job_plan_reason, append_media_job_violation, create_media_job, get_media_job,
+        list_media_job_operations, list_media_job_plan_reasons, list_media_job_violations,
+        list_media_jobs,
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::setup_media_db;
-    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+    use sqlx::{
+        PgPool,
+        postgres::{PgConnectOptions, PgPoolOptions},
+    };
     use uuid::Uuid;
 
     fn closed_pool_options() -> PgConnectOptions {
@@ -317,6 +383,30 @@ mod tests {
             .connect_lazy_with(closed_pool_options());
         pool.close().await;
         pool
+    }
+
+    async fn append_and_assert_plan_reason(pool: &PgPool, job_id: Uuid) -> anyhow::Result<()> {
+        append_media_job_plan_reason(
+            pool,
+            job_id,
+            0,
+            Some(0),
+            true,
+            "least_cost_selected",
+            "Selected the least-cost compliant candidate.",
+        )
+        .await?;
+        let plan_reasons = list_media_job_plan_reasons(pool, job_id).await?;
+        assert_eq!(plan_reasons.len(), 1);
+        assert_eq!(plan_reasons[0].reason_index, 0);
+        assert_eq!(plan_reasons[0].candidate_index, Some(0));
+        assert!(plan_reasons[0].selected);
+        assert_eq!(plan_reasons[0].reason_code, "least_cost_selected");
+        assert_eq!(
+            plan_reasons[0].reason_text,
+            "Selected the least-cost compliant candidate."
+        );
+        Ok(())
     }
 
     #[tokio::test]
@@ -417,6 +507,8 @@ mod tests {
         assert_eq!(violations[0].violation_kind, "video_codec_mismatch");
         assert_eq!(violations[0].severity, "high");
         assert_eq!(violations[0].stream_id, Some(0));
+
+        append_and_assert_plan_reason(db.pool(), job_id).await?;
         Ok(())
     }
 
@@ -458,5 +550,20 @@ mod tests {
 
         let violations = list_media_job_violations(&pool, job_id).await;
         assert!(violations.is_err());
+
+        let append_reason = append_media_job_plan_reason(
+            &pool,
+            job_id,
+            0,
+            Some(0),
+            true,
+            "least_cost_selected",
+            "Selected candidate.",
+        )
+        .await;
+        assert!(append_reason.is_err());
+
+        let reasons = list_media_job_plan_reasons(&pool, job_id).await;
+        assert!(reasons.is_err());
     }
 }
