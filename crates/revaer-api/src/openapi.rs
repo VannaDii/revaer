@@ -293,6 +293,24 @@ fn media_job_record_paths() -> Vec<(&'static str, Value)> {
             "Media job verification check appended",
             "MediaJobVerificationCheckAppendRequest",
         ),
+        media_job_record_path(
+            "/v1/media/jobs/{media_job_public_id}/artifacts",
+            "List media job artifacts",
+            "Media job artifacts",
+            "MediaJobArtifactListResponse",
+            "Append a media job artifact",
+            "Media job artifact appended",
+            "MediaJobArtifactAppendRequest",
+        ),
+        media_job_record_path(
+            "/v1/media/jobs/{media_job_public_id}/compact-audits",
+            "List media job compact audits",
+            "Media job compact audits",
+            "MediaJobCompactAuditListResponse",
+            "Append a media job compact audit",
+            "Media job compact audit appended",
+            "MediaJobCompactAuditAppendRequest",
+        ),
     ]
 }
 
@@ -638,6 +656,8 @@ fn media_job_schemas() -> Vec<(&'static str, Value)> {
     schemas.extend(media_job_violation_schemas());
     schemas.extend(media_job_plan_reason_schemas());
     schemas.extend(media_job_verification_check_schemas());
+    schemas.extend(media_job_artifact_schemas());
+    schemas.extend(media_job_compact_audit_schemas());
     schemas
 }
 
@@ -860,6 +880,85 @@ fn media_job_verification_check_schemas() -> Vec<(&'static str, Value)> {
                     "checks",
                     array_ref_schema("MediaJobVerificationCheckResponse"),
                 )],
+            ),
+        ),
+    ]
+}
+
+fn media_job_artifact_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobArtifactAppendRequest",
+            object_schema(
+                &["artifact_index", "artifact_kind", "artifact_path"],
+                [
+                    ("artifact_index", integer_schema()),
+                    ("artifact_kind", string_schema()),
+                    ("artifact_path", string_schema()),
+                    ("size_bytes", integer_schema()),
+                    ("content_type", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobArtifactResponse",
+            object_schema(
+                &[
+                    "artifact_index",
+                    "artifact_kind",
+                    "artifact_path",
+                    "created_at",
+                ],
+                [
+                    ("artifact_index", integer_schema()),
+                    ("artifact_kind", string_schema()),
+                    ("artifact_path", string_schema()),
+                    ("size_bytes", integer_schema()),
+                    ("content_type", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobArtifactListResponse",
+            object_schema(
+                &["artifacts"],
+                [("artifacts", array_ref_schema("MediaJobArtifactResponse"))],
+            ),
+        ),
+    ]
+}
+
+fn media_job_compact_audit_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaJobCompactAuditAppendRequest",
+            object_schema(
+                &["audit_index", "fact_kind", "fact_text"],
+                [
+                    ("audit_index", integer_schema()),
+                    ("fact_kind", string_schema()),
+                    ("fact_text", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobCompactAuditResponse",
+            object_schema(
+                &["audit_index", "fact_kind", "fact_text", "created_at"],
+                [
+                    ("audit_index", integer_schema()),
+                    ("fact_kind", string_schema()),
+                    ("fact_text", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobCompactAuditListResponse",
+            object_schema(
+                &["audits"],
+                [("audits", array_ref_schema("MediaJobCompactAuditResponse"))],
             ),
         ),
     ]
@@ -1213,6 +1312,8 @@ mod tests {
             "/v1/media/jobs/{media_job_public_id}/violations",
             "/v1/media/jobs/{media_job_public_id}/plan-reasons",
             "/v1/media/jobs/{media_job_public_id}/verification-checks",
+            "/v1/media/jobs/{media_job_public_id}/artifacts",
+            "/v1/media/jobs/{media_job_public_id}/compact-audits",
             "/v1/media/capabilities",
             "/v1/media/capabilities/readiness",
             "/v1/media/capabilities/refresh",
@@ -1256,6 +1357,12 @@ mod tests {
             "MediaJobVerificationCheckAppendRequest",
             "MediaJobVerificationCheckListResponse",
             "MediaJobVerificationCheckResponse",
+            "MediaJobArtifactAppendRequest",
+            "MediaJobArtifactListResponse",
+            "MediaJobArtifactResponse",
+            "MediaJobCompactAuditAppendRequest",
+            "MediaJobCompactAuditListResponse",
+            "MediaJobCompactAuditResponse",
             "MediaCapabilityRecordRequest",
             "MediaCapabilityRecordResponse",
             "MediaCapabilityRefreshResponse",
