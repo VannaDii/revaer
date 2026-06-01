@@ -1,5 +1,6 @@
 //! Media job status models.
 
+use revaer_media_core::compliance::{Report as ComplianceReport, score_diff};
 use revaer_media_core::diff::diff_graphs;
 use revaer_media_core::explain::{Explanation, explain_plan};
 use revaer_media_core::model::{DesiredGraph, MediaGraph};
@@ -48,6 +49,8 @@ pub struct MediaJob {
 pub struct PlannedJob {
     /// Generated deterministic operations.
     pub operations: Vec<PlannedOperation>,
+    /// Diff-based compliance report.
+    pub compliance: ComplianceReport,
     /// Estimated temporary workspace usage in bytes.
     pub estimated_workspace_bytes: u64,
 }
@@ -611,10 +614,12 @@ pub fn plan_job_from_source_graph(
 ) -> Result<PlannedJob, &'static str> {
     let diff = diff_graphs(source, desired);
     reject_unsupported_recoded_stream_kinds(&diff)?;
+    let compliance = score_diff(&diff);
     let operations = generate_plan(&diff);
     verify_plan_against_source(source, &operations)?;
 
     Ok(PlannedJob {
+        compliance,
         estimated_workspace_bytes: estimate_workspace_bytes(source_file_bytes, &operations),
         operations,
     })
@@ -908,6 +913,7 @@ mod tests {
     use crate::capabilities::CapabilitySnapshot;
     use crate::inspect::{InspectAdapter, InspectError};
     use crate::workspace::{WorkspaceError, WorkspacePolicy};
+    use revaer_media_core::compliance::{Status, report_for_status};
     use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
     use revaer_media_core::plan::PlannedOperation;
 
@@ -949,6 +955,8 @@ mod tests {
             return;
         };
         assert!(!planned.operations.is_empty());
+        assert_eq!(planned.compliance.status, Status::NonCompliant);
+        assert!(!planned.compliance.violations.is_empty());
         assert!(planned.estimated_workspace_bytes > 1_000);
     }
 
@@ -1115,6 +1123,7 @@ mod tests {
                 kind: revaer_media_core::plan::OperationKind::VideoTranscode,
                 stream_id: Some(0),
             }],
+            compliance: report_for_status(Status::Compliant),
             estimated_workspace_bytes: 100,
         };
         let capabilities = CapabilitySnapshot {
@@ -1142,6 +1151,7 @@ mod tests {
                 kind: revaer_media_core::plan::OperationKind::Remux,
                 stream_id: None,
             }],
+            compliance: report_for_status(Status::Compliant),
             estimated_workspace_bytes: 100,
         };
         let capabilities = CapabilitySnapshot {
@@ -1272,6 +1282,7 @@ mod tests {
                     stream_id: Some(0),
                 },
             ],
+            compliance: report_for_status(Status::Compliant),
             estimated_workspace_bytes: 123,
         };
 
@@ -1560,6 +1571,7 @@ mod tests {
         let ready = JobPreflightEvaluation::Ready(JobPreflightReport {
             planned: PlannedJob {
                 operations: Vec::new(),
+                compliance: report_for_status(Status::Compliant),
                 estimated_workspace_bytes: 0,
             },
             summary: super::PlannedJobSummary {
@@ -1638,6 +1650,7 @@ mod tests {
         let ready = JobPreflightEvaluation::Ready(JobPreflightReport {
             planned: PlannedJob {
                 operations: Vec::new(),
+                compliance: report_for_status(Status::Compliant),
                 estimated_workspace_bytes: 0,
             },
             summary: super::PlannedJobSummary {

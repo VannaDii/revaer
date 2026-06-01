@@ -399,3 +399,4 @@
     -   [367: Media codec and language alias normalization slice 2](adr/367-media-codec-language-alias-normalization-slice-2.md)
     -   [368: Media jobs empty-list refresh slice 11](adr/368-media-jobs-empty-list-refresh-slice-11.md)
     -   [369: Media compliance scoring and explanations slice 4](adr/369-media-compliance-scoring-explanations-slice-4.md)
+    -   [370: Media planned job compliance report slice 4/8](adr/370-media-planned-job-compliance-report-slice-4-8.md)
