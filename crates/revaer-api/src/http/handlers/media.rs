@@ -82,7 +82,7 @@ const MEDIA_LICENSE_EXCLUDED_CAPABILITIES: [&str; 5] = [
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct MediaJobsQuery {
-    media_profile_public_id: Uuid,
+    media_profile_public_id: Option<Uuid>,
     status: Option<String>,
 }
 
@@ -251,9 +251,12 @@ pub(crate) async fn list_media_jobs(
         trim_and_filter_empty(query.status.as_deref()),
         MEDIA_STATUS_INVALID,
     )?;
+    let Some(media_profile_public_id) = query.media_profile_public_id else {
+        return Ok(Json(MediaJobListResponse { jobs: Vec::new() }));
+    };
     let jobs = state
         .media
-        .media_job_list(query.media_profile_public_id, status.as_deref())
+        .media_job_list(media_profile_public_id, status.as_deref())
         .await
         .map_err(|err| map_media_error("media_job_list", MEDIA_JOB_LIST_FAILED, &err))?
         .into_iter()
@@ -875,7 +878,7 @@ mod tests {
     async fn list_media_jobs_rejects_invalid_status_filter() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let query = MediaJobsQuery {
-            media_profile_public_id: Uuid::new_v4(),
+            media_profile_public_id: Some(Uuid::new_v4()),
             status: Some("INVALID".to_string()),
         };
 
@@ -891,8 +894,21 @@ mod tests {
     async fn list_media_jobs_accepts_normalized_status_filter() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let query = MediaJobsQuery {
-            media_profile_public_id: Uuid::new_v4(),
+            media_profile_public_id: Some(Uuid::new_v4()),
             status: Some("  COMPLETED ".to_string()),
+        };
+
+        let Json(response) = list_media_jobs(State(state), Query(query)).await?;
+        assert!(response.jobs.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_media_jobs_without_profile_filter_returns_empty_payload() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let query = MediaJobsQuery {
+            media_profile_public_id: None,
+            status: None,
         };
 
         let Json(response) = list_media_jobs(State(state), Query(query)).await?;
