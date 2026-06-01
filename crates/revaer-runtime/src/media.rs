@@ -10,9 +10,10 @@ use revaer_data::media::capabilities::{
     record_capability_snapshot,
 };
 use revaer_data::media::jobs::{
-    CreateMediaJobInput, MediaJobOperationRow, MediaJobRow, MediaJobViolationRow,
-    append_media_job_operation, append_media_job_phase, append_media_job_violation,
-    cancel_media_job, create_media_job, get_media_job, list_media_job_operations,
+    CreateMediaJobInput, MediaJobOperationRow, MediaJobPlanReasonRow, MediaJobRow,
+    MediaJobViolationRow, append_media_job_operation, append_media_job_phase,
+    append_media_job_plan_reason, append_media_job_violation, cancel_media_job, create_media_job,
+    get_media_job, list_media_job_operations, list_media_job_plan_reasons,
     list_media_job_violations, list_media_jobs, retry_media_job,
 };
 use revaer_data::media::profiles::{
@@ -163,6 +164,32 @@ impl MediaStore {
         .await
     }
 
+    /// Append a planner explanation reason for a media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn append_job_plan_reason(
+        &self,
+        media_job_public_id: Uuid,
+        reason_index: i32,
+        candidate_index: Option<i32>,
+        selected: bool,
+        reason_code: &str,
+        reason_text: &str,
+    ) -> DataResult<()> {
+        append_media_job_plan_reason(
+            &self.pool,
+            media_job_public_id,
+            reason_index,
+            candidate_index,
+            selected,
+            reason_code,
+            reason_text,
+        )
+        .await
+    }
+
     /// List media jobs for a profile.
     ///
     /// # Errors
@@ -198,6 +225,18 @@ impl MediaStore {
         media_job_public_id: Uuid,
     ) -> DataResult<Vec<MediaJobViolationRow>> {
         list_media_job_violations(&self.pool, media_job_public_id).await
+    }
+
+    /// List persisted planner explanation reasons for one media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn list_job_plan_reasons(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<MediaJobPlanReasonRow>> {
+        list_media_job_plan_reasons(&self.pool, media_job_public_id).await
     }
 
     /// Load one media job by public id.
@@ -428,6 +467,16 @@ mod tests {
         store
             .append_job_violation(job_id, 0, "video_codec_mismatch", "high", Some(0))
             .await?;
+        store
+            .append_job_plan_reason(
+                job_id,
+                0,
+                Some(0),
+                true,
+                "least_cost_selected",
+                "Selected the least-cost compliant candidate.",
+            )
+            .await?;
 
         let jobs = store.list_jobs(profile_id, Some("queued")).await?;
         assert!(jobs.iter().any(|job| job.media_job_public_id == job_id));
@@ -437,6 +486,9 @@ mod tests {
         let violations = store.list_job_violations(job_id).await?;
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].violation_kind, "video_codec_mismatch");
+        let plan_reasons = store.list_job_plan_reasons(job_id).await?;
+        assert_eq!(plan_reasons.len(), 1);
+        assert_eq!(plan_reasons[0].reason_code, "least_cost_selected");
 
         let snapshot_id = store
             .record_capability(&RecordCapabilitySnapshotInput {
@@ -516,6 +568,20 @@ mod tests {
                 .is_err()
         );
         assert!(store.list_job_violations(job_id).await.is_err());
+        assert!(
+            store
+                .append_job_plan_reason(
+                    job_id,
+                    0,
+                    Some(0),
+                    true,
+                    "least_cost_selected",
+                    "Selected candidate.",
+                )
+                .await
+                .is_err()
+        );
+        assert!(store.list_job_plan_reasons(job_id).await.is_err());
         assert!(store.cancel_job(job_id).await.is_err());
         assert!(store.retry_job(job_id).await.is_err());
 

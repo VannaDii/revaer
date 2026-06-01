@@ -407,3 +407,4 @@
     -   [375: Media OpenAPI export slice 10](adr/375-media-openapi-export-slice-10.md)
     -   [376: Media UI profile job refresh slice 11](adr/376-media-ui-profile-job-refresh-slice-11.md)
     -   [377: Media plan reason persistence slice 6](adr/377-media-plan-reason-persistence-slice-6.md)
+    -   [378: Media plan reason runtime facade slice 6](adr/378-media-plan-reason-runtime-facade-slice-6.md)
