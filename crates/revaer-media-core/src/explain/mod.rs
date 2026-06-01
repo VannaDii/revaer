@@ -1,21 +1,12 @@
 //! Plan explanation models.
 
-use crate::plan::{OperationKind, PlannedOperation, operation_cost};
+use crate::plan::{CandidatePlan, OperationKind, PlannedOperation, candidate_plan_cost};
 
 /// Human-readable explanation record for a selected operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Explanation {
     /// Deterministic message suitable for audit trails.
     pub message: String,
-}
-
-/// Candidate plan used for deterministic selected/rejected explanations.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CandidatePlan {
-    /// Stable plan identifier.
-    pub id: String,
-    /// Operations contained in the candidate.
-    pub operations: Vec<PlannedOperation>,
 }
 
 /// Explanation for a selected plan.
@@ -70,11 +61,11 @@ pub fn explain_plan_selection(
     selected: &CandidatePlan,
     rejected: &[CandidatePlan],
 ) -> PlanSelectionExplanation {
-    let selected_cost = plan_cost(&selected.operations);
+    let selected_cost = candidate_plan_cost(selected);
     let rejected_plans = rejected
         .iter()
         .map(|plan| {
-            let rejected_cost = plan_cost(&plan.operations);
+            let rejected_cost = candidate_plan_cost(plan);
             RejectedPlanExplanation {
                 id: plan.id.clone(),
                 total_cost: rejected_cost,
@@ -107,13 +98,6 @@ const fn operation_kind_code(kind: OperationKind) -> &'static str {
         OperationKind::AudioTranscode => "audio_transcode",
         OperationKind::VideoTranscode => "video_transcode",
     }
-}
-
-fn plan_cost(operations: &[PlannedOperation]) -> u32 {
-    operations
-        .iter()
-        .map(|operation| operation_cost(operation.kind))
-        .sum()
 }
 
 fn selected_operation_reason(operation: &PlannedOperation) -> String {
@@ -154,8 +138,8 @@ fn stream_id_code(stream_id: Option<u32>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{CandidatePlan, explain_plan, explain_plan_selection};
-    use crate::plan::{OperationKind, PlannedOperation};
+    use super::{explain_plan, explain_plan_selection};
+    use crate::plan::{CandidatePlan, OperationKind, PlannedOperation};
 
     #[test]
     fn produce_explanation_rows() {

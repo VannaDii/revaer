@@ -31,6 +31,15 @@ pub struct PlannedOperation {
     pub stream_id: Option<u32>,
 }
 
+/// Candidate operation plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidatePlan {
+    /// Stable plan identifier.
+    pub id: String,
+    /// Operations contained in the candidate.
+    pub operations: Vec<PlannedOperation>,
+}
+
 /// Return the deterministic planning cost for an operation kind.
 #[must_use]
 pub const fn operation_cost(kind: OperationKind) -> u32 {
@@ -43,6 +52,26 @@ pub const fn operation_cost(kind: OperationKind) -> u32 {
         OperationKind::AudioTranscode => 20,
         OperationKind::VideoTranscode => 1000,
     }
+}
+
+/// Return the deterministic total cost for a candidate plan.
+#[must_use]
+pub fn candidate_plan_cost(candidate: &CandidatePlan) -> u32 {
+    candidate
+        .operations
+        .iter()
+        .map(|operation| operation_cost(operation.kind))
+        .sum()
+}
+
+/// Select the least expensive candidate plan, breaking ties by stable id.
+#[must_use]
+pub fn select_least_cost_plan(candidates: &[CandidatePlan]) -> Option<&CandidatePlan> {
+    candidates.iter().min_by(|left, right| {
+        candidate_plan_cost(left)
+            .cmp(&candidate_plan_cost(right))
+            .then_with(|| left.id.cmp(&right.id))
+    })
 }
 
 /// Generate a deterministic operation plan from a diff.
@@ -81,7 +110,10 @@ pub fn generate_plan(diff: &GraphDiff) -> Vec<PlannedOperation> {
 
 #[cfg(test)]
 mod tests {
-    use super::{OperationKind, generate_plan, operation_cost};
+    use super::{
+        CandidatePlan, OperationKind, PlannedOperation, candidate_plan_cost, generate_plan,
+        operation_cost, select_least_cost_plan,
+    };
     use crate::diff::{GraphDiff, RecodedStream};
     use crate::model::StreamKind;
 
@@ -94,6 +126,85 @@ mod tests {
         assert_eq!(operation_cost(OperationKind::Remux), 5);
         assert_eq!(operation_cost(OperationKind::AudioTranscode), 20);
         assert_eq!(operation_cost(OperationKind::VideoTranscode), 1000);
+    }
+
+    #[test]
+    fn candidate_plan_cost_sums_operation_costs() {
+        let candidate = CandidatePlan {
+            id: "audio-remux".to_string(),
+            operations: vec![
+                PlannedOperation {
+                    kind: OperationKind::AudioTranscode,
+                    stream_id: Some(2),
+                },
+                PlannedOperation {
+                    kind: OperationKind::Remux,
+                    stream_id: None,
+                },
+            ],
+        };
+
+        assert_eq!(candidate_plan_cost(&candidate), 25);
+    }
+
+    #[test]
+    fn select_least_cost_plan_prefers_lower_cost_candidate() {
+        let candidates = vec![
+            CandidatePlan {
+                id: "full-transcode".to_string(),
+                operations: vec![PlannedOperation {
+                    kind: OperationKind::VideoTranscode,
+                    stream_id: Some(0),
+                }],
+            },
+            CandidatePlan {
+                id: "audio-remux".to_string(),
+                operations: vec![
+                    PlannedOperation {
+                        kind: OperationKind::AudioTranscode,
+                        stream_id: Some(2),
+                    },
+                    PlannedOperation {
+                        kind: OperationKind::Remux,
+                        stream_id: None,
+                    },
+                ],
+            },
+        ];
+
+        let selected = select_least_cost_plan(&candidates);
+
+        assert_eq!(
+            selected.map(|candidate| candidate.id.as_str()),
+            Some("audio-remux")
+        );
+    }
+
+    #[test]
+    fn select_least_cost_plan_breaks_equal_cost_ties_by_id() {
+        let candidates = vec![
+            CandidatePlan {
+                id: "z-remux".to_string(),
+                operations: vec![PlannedOperation {
+                    kind: OperationKind::Remux,
+                    stream_id: None,
+                }],
+            },
+            CandidatePlan {
+                id: "a-remux".to_string(),
+                operations: vec![PlannedOperation {
+                    kind: OperationKind::Remux,
+                    stream_id: None,
+                }],
+            },
+        ];
+
+        let selected = select_least_cost_plan(&candidates);
+
+        assert_eq!(
+            selected.map(|candidate| candidate.id.as_str()),
+            Some("a-remux")
+        );
     }
 
     #[test]
