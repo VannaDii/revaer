@@ -145,6 +145,25 @@ pub struct MediaJobPlanReasonAppendParams<'a> {
     pub reason_text: &'a str,
 }
 
+/// Append media job verification-check parameters.
+#[derive(Debug, Clone)]
+pub struct MediaJobVerificationCheckAppendParams<'a> {
+    /// Job id.
+    pub media_job_public_id: Uuid,
+    /// Ordered check index.
+    pub check_index: i32,
+    /// Verification check kind.
+    pub check_kind: &'a str,
+    /// Verification check status.
+    pub check_status: &'a str,
+    /// Expected value text.
+    pub expected_value: Option<&'a str>,
+    /// Actual value text.
+    pub actual_value: Option<&'a str>,
+    /// Optional detail text.
+    pub details_text: Option<&'a str>,
+}
+
 /// Record capability snapshot parameters.
 #[derive(Debug, Clone)]
 pub struct MediaCapabilityRecordParams<'a> {
@@ -330,6 +349,25 @@ pub struct MediaJobPlanReasonResponse {
     pub reason_code: String,
     /// Human-readable reason text.
     pub reason_text: String,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job verification check response row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobVerificationCheckResponse {
+    /// Ordered check index.
+    pub check_index: i32,
+    /// Verification check kind.
+    pub check_kind: String,
+    /// Verification check status.
+    pub check_status: String,
+    /// Expected value text.
+    pub expected_value: Option<String>,
+    /// Actual value text.
+    pub actual_value: Option<String>,
+    /// Optional detail text.
+    pub details_text: Option<String>,
     /// Row creation timestamp.
     pub created_at: DateTime<Utc>,
 }
@@ -522,6 +560,18 @@ pub trait MediaFacade: Send + Sync {
         media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobPlanReasonResponse>, MediaServiceError>;
 
+    /// Append media job verification check.
+    async fn media_job_verification_check_append(
+        &self,
+        params: MediaJobVerificationCheckAppendParams<'_>,
+    ) -> Result<(), MediaServiceError>;
+
+    /// List persisted media job verification checks.
+    async fn media_job_verification_check_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobVerificationCheckResponse>, MediaServiceError>;
+
     /// Record capability snapshot row.
     async fn media_capability_record(
         &self,
@@ -660,6 +710,20 @@ impl MediaFacade for NoopMedia {
         &self,
         _media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobPlanReasonResponse>, MediaServiceError> {
+        Ok(Vec::new())
+    }
+
+    async fn media_job_verification_check_append(
+        &self,
+        _params: MediaJobVerificationCheckAppendParams<'_>,
+    ) -> Result<(), MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
+    async fn media_job_verification_check_list(
+        &self,
+        _media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobVerificationCheckResponse>, MediaServiceError> {
         Ok(Vec::new())
     }
 

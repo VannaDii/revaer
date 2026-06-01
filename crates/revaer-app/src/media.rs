@@ -7,14 +7,15 @@ use revaer_api::app::media::{
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
     MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobOperationResponse,
     MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams, MediaJobPlanReasonResponse,
-    MediaJobResponse, MediaJobViolationAppendParams, MediaJobViolationResponse,
-    MediaProfilePatchParams, MediaProfileResponse, MediaProfileUpsertParams, MediaServiceError,
-    MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
+    MediaJobResponse, MediaJobVerificationCheckAppendParams, MediaJobVerificationCheckResponse,
+    MediaJobViolationAppendParams, MediaJobViolationResponse, MediaProfilePatchParams,
+    MediaProfileResponse, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
+    MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
 };
 use revaer_data::DataError;
 use revaer_data::media::capabilities::CapabilitySnapshotRow;
 use revaer_data::media::capabilities::RecordCapabilitySnapshotInput;
-use revaer_data::media::jobs::CreateMediaJobInput;
+use revaer_data::media::jobs::{AppendMediaJobVerificationCheckInput, CreateMediaJobInput};
 use revaer_data::media::profiles::{
     UpdateMediaProfileInput, UpsertMediaProfileInput, upsert_media_profile_with_executor,
 };
@@ -328,6 +329,47 @@ impl MediaFacade for MediaService {
                         selected: row.selected,
                         reason_code: row.reason_code,
                         reason_text: row.reason_text,
+                        created_at: row.created_at,
+                    })
+                    .collect()
+            })
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_verification_check_append(
+        &self,
+        params: MediaJobVerificationCheckAppendParams<'_>,
+    ) -> Result<(), MediaServiceError> {
+        self.store
+            .append_job_verification_check(&AppendMediaJobVerificationCheckInput {
+                media_job_public_id: params.media_job_public_id,
+                check_index: params.check_index,
+                check_kind: params.check_kind,
+                check_status: params.check_status,
+                expected_value: params.expected_value,
+                actual_value: params.actual_value,
+                details_text: params.details_text,
+            })
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_verification_check_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobVerificationCheckResponse>, MediaServiceError> {
+        self.store
+            .list_job_verification_checks(media_job_public_id)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| MediaJobVerificationCheckResponse {
+                        check_index: row.check_index,
+                        check_kind: row.check_kind,
+                        check_status: row.check_status,
+                        expected_value: row.expected_value,
+                        actual_value: row.actual_value,
+                        details_text: row.details_text,
                         created_at: row.created_at,
                     })
                     .collect()
@@ -673,7 +715,8 @@ mod tests {
     use revaer_api::app::media::{
         MediaCapabilityRefreshParams, MediaFacade, MediaJobCreateParams,
         MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams,
-        MediaJobViolationAppendParams, MediaProfileUpsertParams,
+        MediaJobVerificationCheckAppendParams, MediaJobViolationAppendParams,
+        MediaProfileUpsertParams,
     };
     use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -934,6 +977,21 @@ mod tests {
         let plan_reasons = service.media_job_plan_reason_list(job_id).await?;
         assert_eq!(plan_reasons.len(), 1);
         assert_eq!(plan_reasons[0].reason_code, "least_cost_selected");
+        service
+            .media_job_verification_check_append(MediaJobVerificationCheckAppendParams {
+                media_job_public_id: job_id,
+                check_index: 0,
+                check_kind: "duration",
+                check_status: "passed",
+                expected_value: Some("3600.0"),
+                actual_value: Some("3599.9"),
+                details_text: Some("within tolerance"),
+            })
+            .await?;
+        let verification_checks = service.media_job_verification_check_list(job_id).await?;
+        assert_eq!(verification_checks.len(), 1);
+        assert_eq!(verification_checks[0].check_kind, "duration");
+        assert_eq!(verification_checks[0].check_status, "passed");
         assert_job_cancel_retry(&service, job_id).await?;
 
         assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;

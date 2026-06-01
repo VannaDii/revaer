@@ -413,3 +413,4 @@
     -   [381: Media job diagnostic UI slice 11](adr/381-media-job-diagnostic-ui-slice-11.md)
     -   [382: Media verification check persistence slice 6](adr/382-media-verification-check-persistence-slice-6.md)
     -   [383: Media verification check runtime facade slice 6](adr/383-media-verification-check-runtime-facade-slice-6.md)
+    -   [384: Media verification check app facade slice 6/10](adr/384-media-verification-check-app-facade-slice-6-10.md)
