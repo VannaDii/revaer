@@ -39,17 +39,23 @@ fn normalize_codec(value: &str) -> String {
     match raw.as_str() {
         "x264" | "h.264" => "h264".to_string(),
         "x265" | "h.265" | "hevc" => "hevc".to_string(),
+        "dca" => "dts".to_string(),
+        "subrip" => "srt".to_string(),
         _ => raw,
     }
 }
 
 fn normalize_language(value: &str) -> String {
-    let raw = value.trim().to_ascii_lowercase();
-    match raw.as_str() {
+    let normalized = value.trim().to_ascii_lowercase();
+    let raw = normalized
+        .split(['-', '_'])
+        .next()
+        .map_or(normalized.as_str(), |language| language);
+    match raw {
         "eng" | "en" => "eng".to_string(),
         "fra" | "fr" => "fra".to_string(),
         "deu" | "de" => "deu".to_string(),
-        _ => raw,
+        _ => raw.to_string(),
     }
 }
 
@@ -86,5 +92,52 @@ mod tests {
         assert_eq!(normalized.streams[0].language.as_deref(), Some("eng"));
         assert_eq!(normalized.streams[0].title.as_deref(), Some("Main Video"));
         assert_eq!(normalized.streams[0].dispositions, vec!["default"]);
+    }
+
+    #[test]
+    fn normalize_codec_aliases_from_tool_output() {
+        let graph = MediaGraph {
+            source_path: "/data/source.mkv".to_string(),
+            streams: vec![
+                MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Audio,
+                    codec: "dca".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                MediaStream {
+                    stream_id: 1,
+                    kind: StreamKind::Subtitle,
+                    codec: "subrip".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+            ],
+        };
+
+        let normalized = normalize_graph(&graph);
+        assert_eq!(normalized.streams[0].codec, "dts");
+        assert_eq!(normalized.streams[1].codec, "srt");
+    }
+
+    #[test]
+    fn normalize_language_region_aliases() {
+        let graph = MediaGraph {
+            source_path: "/data/source.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Audio,
+                codec: "aac".to_string(),
+                language: Some("eng-US".to_string()),
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+
+        let normalized = normalize_graph(&graph);
+        assert_eq!(normalized.streams[0].language.as_deref(), Some("eng"));
     }
 }
