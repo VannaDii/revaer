@@ -14,6 +14,10 @@ const MEDIA_JOB_PLAN_REASON_APPEND_V1: &str = "SELECT media_job_plan_reason_appe
 const MEDIA_JOB_PLAN_REASON_LIST_V1: &str = "SELECT reason_index, candidate_index, selected, reason_code, reason_text, created_at FROM media_job_plan_reason_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_VERIFICATION_CHECK_APPEND_V1: &str = "SELECT media_job_verification_check_append_v1(media_job_public_id_input => $1, check_index_input => $2, check_kind_input => $3, check_status_input => $4, expected_value_input => $5, actual_value_input => $6, details_text_input => $7)";
 const MEDIA_JOB_VERIFICATION_CHECK_LIST_V1: &str = "SELECT check_index, check_kind, check_status, expected_value, actual_value, details_text, created_at FROM media_job_verification_check_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_ARTIFACT_APPEND_V1: &str = "SELECT media_job_artifact_append_v1(media_job_public_id_input => $1, artifact_index_input => $2, artifact_kind_input => $3, artifact_path_input => $4, size_bytes_input => $5, content_type_input => $6)";
+const MEDIA_JOB_ARTIFACT_LIST_V1: &str = "SELECT artifact_index, artifact_kind, artifact_path, size_bytes, content_type, created_at FROM media_job_artifact_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_COMPACT_AUDIT_APPEND_V1: &str = "SELECT media_job_compact_audit_append_v1(media_job_public_id_input => $1, audit_index_input => $2, fact_kind_input => $3, fact_text_input => $4)";
+const MEDIA_JOB_COMPACT_AUDIT_LIST_V1: &str = "SELECT audit_index, fact_kind, fact_text, created_at FROM media_job_compact_audit_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_CANCEL_V1: &str = "SELECT media_job_cancel_v1(media_job_public_id_input => $1)";
@@ -51,6 +55,36 @@ pub struct AppendMediaJobVerificationCheckInput<'a> {
     pub actual_value: Option<&'a str>,
     /// Optional check details.
     pub details_text: Option<&'a str>,
+}
+
+/// Append media job artifact reference payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppendMediaJobArtifactInput<'a> {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+    /// Artifact ordering index.
+    pub artifact_index: i32,
+    /// Artifact kind.
+    pub artifact_kind: &'a str,
+    /// Managed artifact path.
+    pub artifact_path: &'a str,
+    /// Artifact size in bytes.
+    pub size_bytes: Option<i64>,
+    /// Optional content type.
+    pub content_type: Option<&'a str>,
+}
+
+/// Append media job compact audit fact payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppendMediaJobCompactAuditInput<'a> {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+    /// Audit fact ordering index.
+    pub audit_index: i32,
+    /// Audit fact kind.
+    pub fact_kind: &'a str,
+    /// Audit fact text.
+    pub fact_text: &'a str,
 }
 
 /// Media job listing row.
@@ -148,6 +182,36 @@ pub struct MediaJobVerificationCheckRow {
     pub actual_value: Option<String>,
     /// Optional check details.
     pub details_text: Option<String>,
+    /// Row creation timestamp.
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Media job artifact reference row.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobArtifactRow {
+    /// Artifact ordering index.
+    pub artifact_index: i32,
+    /// Artifact kind.
+    pub artifact_kind: String,
+    /// Managed artifact path.
+    pub artifact_path: String,
+    /// Artifact size in bytes.
+    pub size_bytes: Option<i64>,
+    /// Optional content type.
+    pub content_type: Option<String>,
+    /// Row creation timestamp.
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Media job compact audit fact row.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobCompactAuditRow {
+    /// Audit fact ordering index.
+    pub audit_index: i32,
+    /// Audit fact kind.
+    pub fact_kind: String,
+    /// Audit fact text.
+    pub fact_text: String,
     /// Row creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -301,6 +365,48 @@ pub async fn append_media_job_verification_check(
     Ok(())
 }
 
+/// Append or update a media job artifact reference row.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn append_media_job_artifact(
+    pool: &PgPool,
+    input: &AppendMediaJobArtifactInput<'_>,
+) -> Result<()> {
+    sqlx::query(MEDIA_JOB_ARTIFACT_APPEND_V1)
+        .bind(input.media_job_public_id)
+        .bind(input.artifact_index)
+        .bind(input.artifact_kind)
+        .bind(input.artifact_path)
+        .bind(input.size_bytes)
+        .bind(input.content_type.unwrap_or_default())
+        .execute(pool)
+        .await
+        .map_err(try_op("media job artifact append"))?;
+    Ok(())
+}
+
+/// Append or update a media job compact audit fact row.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn append_media_job_compact_audit(
+    pool: &PgPool,
+    input: &AppendMediaJobCompactAuditInput<'_>,
+) -> Result<()> {
+    sqlx::query(MEDIA_JOB_COMPACT_AUDIT_APPEND_V1)
+        .bind(input.media_job_public_id)
+        .bind(input.audit_index)
+        .bind(input.fact_kind)
+        .bind(input.fact_text)
+        .execute(pool)
+        .await
+        .map_err(try_op("media job compact audit append"))?;
+    Ok(())
+}
+
 /// List media jobs for profile and optional status.
 ///
 /// # Errors
@@ -383,6 +489,38 @@ pub async fn list_media_job_verification_checks(
         .map_err(try_op("media job verification check list"))
 }
 
+/// List media job artifact references for one job.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_artifacts(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Vec<MediaJobArtifactRow>> {
+    sqlx::query_as::<_, MediaJobArtifactRow>(MEDIA_JOB_ARTIFACT_LIST_V1)
+        .bind(media_job_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job artifact list"))
+}
+
+/// List media job compact audit facts for one job.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_compact_audits(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Vec<MediaJobCompactAuditRow>> {
+    sqlx::query_as::<_, MediaJobCompactAuditRow>(MEDIA_JOB_COMPACT_AUDIT_LIST_V1)
+        .bind(media_job_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job compact audit list"))
+}
+
 /// Get one media job by public id.
 ///
 /// # Errors
@@ -430,11 +568,13 @@ pub async fn retry_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result
 #[cfg(test)]
 mod tests {
     use super::{
-        AppendMediaJobVerificationCheckInput, CreateMediaJobInput, append_media_job_operation,
-        append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
-        append_media_job_violation, create_media_job, get_media_job, list_media_job_operations,
-        list_media_job_plan_reasons, list_media_job_verification_checks, list_media_job_violations,
-        list_media_jobs,
+        AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
+        AppendMediaJobVerificationCheckInput, CreateMediaJobInput, append_media_job_artifact,
+        append_media_job_compact_audit, append_media_job_operation, append_media_job_phase,
+        append_media_job_plan_reason, append_media_job_verification_check,
+        append_media_job_violation, create_media_job, get_media_job, list_media_job_artifacts,
+        list_media_job_compact_audits, list_media_job_operations, list_media_job_plan_reasons,
+        list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::setup_media_db;
@@ -523,6 +663,44 @@ mod tests {
             verification_checks[0].details_text.as_deref(),
             Some("within tolerance")
         );
+        Ok(())
+    }
+
+    async fn append_and_assert_artifact_and_audit(
+        pool: &PgPool,
+        job_id: Uuid,
+    ) -> anyhow::Result<()> {
+        append_media_job_artifact(
+            pool,
+            &AppendMediaJobArtifactInput {
+                media_job_public_id: job_id,
+                artifact_index: 0,
+                artifact_kind: "ffprobe_json",
+                artifact_path: "jobs/abc/ffprobe.json",
+                size_bytes: Some(2048),
+                content_type: Some("application/json"),
+            },
+        )
+        .await?;
+        let artifacts = list_media_job_artifacts(pool, job_id).await?;
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].artifact_kind, "ffprobe_json");
+        assert_eq!(artifacts[0].artifact_path, "jobs/abc/ffprobe.json");
+
+        append_media_job_compact_audit(
+            pool,
+            &AppendMediaJobCompactAuditInput {
+                media_job_public_id: job_id,
+                audit_index: 0,
+                fact_kind: "replacement",
+                fact_text: "source preserved before replace",
+            },
+        )
+        .await?;
+        let audits = list_media_job_compact_audits(pool, job_id).await?;
+        assert_eq!(audits.len(), 1);
+        assert_eq!(audits[0].fact_kind, "replacement");
+        assert_eq!(audits[0].fact_text, "source preserved before replace");
         Ok(())
     }
 
@@ -628,6 +806,7 @@ mod tests {
         append_and_assert_plan_reason(db.pool(), job_id).await?;
 
         append_and_assert_verification_check(db.pool(), job_id).await?;
+        append_and_assert_artifact_and_audit(db.pool(), job_id).await?;
         Ok(())
     }
 
@@ -702,5 +881,33 @@ mod tests {
 
         let checks = list_media_job_verification_checks(&pool, job_id).await;
         assert!(checks.is_err());
+
+        let append_artifact = append_media_job_artifact(
+            &pool,
+            &AppendMediaJobArtifactInput {
+                media_job_public_id: job_id,
+                artifact_index: 0,
+                artifact_kind: "ffprobe_json",
+                artifact_path: "jobs/abc/ffprobe.json",
+                size_bytes: Some(2048),
+                content_type: Some("application/json"),
+            },
+        )
+        .await;
+        assert!(append_artifact.is_err());
+        assert!(list_media_job_artifacts(&pool, job_id).await.is_err());
+
+        let append_audit = append_media_job_compact_audit(
+            &pool,
+            &AppendMediaJobCompactAuditInput {
+                media_job_public_id: job_id,
+                audit_index: 0,
+                fact_kind: "replacement",
+                fact_text: "source preserved before replace",
+            },
+        )
+        .await;
+        assert!(append_audit.is_err());
+        assert!(list_media_job_compact_audits(&pool, job_id).await.is_err());
     }
 }

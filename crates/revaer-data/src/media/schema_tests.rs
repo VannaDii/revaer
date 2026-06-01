@@ -11,6 +11,8 @@ const EXPECTED_TABLES: &[&str] = &[
     "media_job_operation",
     "media_job_violation",
     "media_job_verification_check",
+    "media_job_artifact",
+    "media_job_compact_audit",
     "media_capability_snapshot",
 ];
 
@@ -30,6 +32,10 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_job_violation_list_v1",
     "media_job_verification_check_append_v1",
     "media_job_verification_check_list_v1",
+    "media_job_artifact_append_v1",
+    "media_job_artifact_list_v1",
+    "media_job_compact_audit_append_v1",
+    "media_job_compact_audit_list_v1",
     "media_capability_snapshot_record_v1",
     "media_capability_snapshot_latest_v1",
     "media_job_list_v1",
