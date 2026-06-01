@@ -686,11 +686,25 @@ mod tests {
         assert_eq!(artifacts.len(), 1);
         assert_eq!(artifacts[0].artifact_kind, "ffprobe_json");
         assert_eq!(artifacts[0].artifact_path, "jobs/abc/ffprobe.json");
-        let unmanaged_artifact = append_media_job_artifact(
+        let oversized_artifact_path = format!("jobs/{}", "x".repeat(1020));
+        let oversized_artifact = append_media_job_artifact(
             pool,
             &AppendMediaJobArtifactInput {
                 media_job_public_id: job_id,
                 artifact_index: 1,
+                artifact_kind: "ffprobe_json",
+                artifact_path: &oversized_artifact_path,
+                size_bytes: Some(2048),
+                content_type: Some("application/json"),
+            },
+        )
+        .await;
+        assert!(oversized_artifact.is_err());
+        let unmanaged_artifact = append_media_job_artifact(
+            pool,
+            &AppendMediaJobArtifactInput {
+                media_job_public_id: job_id,
+                artifact_index: 2,
                 artifact_kind: "ffprobe_json",
                 artifact_path: "../escape.json",
                 size_bytes: Some(2048),
@@ -714,6 +728,18 @@ mod tests {
         assert_eq!(audits.len(), 1);
         assert_eq!(audits[0].fact_kind, "replacement");
         assert_eq!(audits[0].fact_text, "source preserved before replace");
+        let oversized_fact_text = "x".repeat(1025);
+        let oversized_audit = append_media_job_compact_audit(
+            pool,
+            &AppendMediaJobCompactAuditInput {
+                media_job_public_id: job_id,
+                audit_index: 1,
+                fact_kind: "replacement",
+                fact_text: &oversized_fact_text,
+            },
+        )
+        .await;
+        assert!(oversized_audit.is_err());
         Ok(())
     }
 

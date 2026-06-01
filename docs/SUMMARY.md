@@ -426,3 +426,4 @@
     -   [394: Media preflight compact audit facts slice 4/8](adr/394-media-preflight-compact-audit-facts-slice-4-8.md)
     -   [395: Media destructive dry-run override confirmation slice 10/11](adr/395-media-destructive-dry-run-override-confirmation-slice-10-11.md)
     -   [396: Media UI retention bounds validation slice 11/12](adr/396-media-ui-retention-bounds-validation-slice-11-12.md)
+    -   [397: Media diagnostic field bounds slice 6/10](adr/397-media-diagnostic-field-bounds-slice-6-10.md)

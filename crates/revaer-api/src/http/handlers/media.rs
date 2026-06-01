@@ -83,8 +83,13 @@ const ARTIFACT_KIND_REQUIRED: &str = "artifact_kind is required";
 const ARTIFACT_PATH_REQUIRED: &str = "artifact_path is required";
 const ARTIFACT_PATH_INVALID: &str = "artifact_path must be a managed jobs/... relative path";
 const ARTIFACT_SIZE_INVALID: &str = "size_bytes must be zero or greater";
+const ARTIFACT_KIND_TOO_LONG: &str = "artifact_kind must be 64 characters or fewer";
+const ARTIFACT_PATH_TOO_LONG: &str = "artifact_path must be 1024 characters or fewer";
+const ARTIFACT_CONTENT_TYPE_TOO_LONG: &str = "content_type must be 128 characters or fewer";
 const COMPACT_AUDIT_KIND_REQUIRED: &str = "fact_kind is required";
 const COMPACT_AUDIT_TEXT_REQUIRED: &str = "fact_text is required";
+const COMPACT_AUDIT_KIND_TOO_LONG: &str = "fact_kind must be 64 characters or fewer";
+const COMPACT_AUDIT_TEXT_TOO_LONG: &str = "fact_text must be 1024 characters or fewer";
 const COMMAND_BIN_REQUIRED: &str = "command_bin is required";
 const FFMPEG_VERSION_REQUIRED: &str = "ffmpeg_version is required";
 const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
@@ -629,8 +634,14 @@ pub(crate) async fn append_media_job_artifact(
         normalize_required_str_field(&request.artifact_kind, ARTIFACT_KIND_REQUIRED)?;
     let artifact_path =
         normalize_required_str_field(&request.artifact_path, ARTIFACT_PATH_REQUIRED)?;
+    validate_text_max_chars(artifact_kind, 64, ARTIFACT_KIND_TOO_LONG)?;
+    validate_text_max_chars(artifact_path, 1024, ARTIFACT_PATH_TOO_LONG)?;
     validate_managed_artifact_path(artifact_path)?;
     validate_nonnegative_size(request.size_bytes)?;
+    let content_type = trim_and_filter_empty(request.content_type.as_deref());
+    if let Some(content_type) = content_type {
+        validate_text_max_chars(content_type, 128, ARTIFACT_CONTENT_TYPE_TOO_LONG)?;
+    }
 
     state
         .media
@@ -640,7 +651,7 @@ pub(crate) async fn append_media_job_artifact(
             artifact_kind,
             artifact_path,
             size_bytes: request.size_bytes,
-            content_type: trim_and_filter_empty(request.content_type.as_deref()),
+            content_type,
         })
         .await
         .map_err(|err| {
@@ -690,6 +701,8 @@ pub(crate) async fn append_media_job_compact_audit(
 ) -> Result<StatusCode, ApiError> {
     let fact_kind = normalize_required_str_field(&request.fact_kind, COMPACT_AUDIT_KIND_REQUIRED)?;
     let fact_text = normalize_required_str_field(&request.fact_text, COMPACT_AUDIT_TEXT_REQUIRED)?;
+    validate_text_max_chars(fact_kind, 64, COMPACT_AUDIT_KIND_TOO_LONG)?;
+    validate_text_max_chars(fact_text, 1024, COMPACT_AUDIT_TEXT_TOO_LONG)?;
 
     state
         .media
@@ -1029,6 +1042,18 @@ fn validate_nonnegative_size(value: Option<i64>) -> Result<(), ApiError> {
         Ok(())
     } else {
         Err(ApiError::bad_request(ARTIFACT_SIZE_INVALID))
+    }
+}
+
+fn validate_text_max_chars(
+    value: &str,
+    max_chars: usize,
+    message: &'static str,
+) -> Result<(), ApiError> {
+    if value.chars().count() <= max_chars {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request(message))
     }
 }
 
@@ -1586,6 +1611,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn append_media_job_artifact_rejects_oversized_path() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = crate::models::MediaJobArtifactAppendRequest {
+            artifact_index: 0,
+            artifact_kind: "ffprobe_json".to_string(),
+            artifact_path: format!("jobs/{}", "x".repeat(1020)),
+            size_bytes: Some(2048),
+            content_type: Some("application/json".to_string()),
+        };
+
+        let err = append_media_job_artifact(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("oversized artifact path should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn list_media_job_artifacts_returns_empty_payload_with_default_facade()
     -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
@@ -1606,6 +1650,23 @@ mod tests {
         let err = append_media_job_compact_audit(State(state), Path(Uuid::new_v4()), Json(request))
             .await
             .expect_err("missing audit fact text should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_media_job_compact_audit_rejects_oversized_fact_text() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = crate::models::MediaJobCompactAuditAppendRequest {
+            audit_index: 0,
+            fact_kind: "replacement".to_string(),
+            fact_text: "x".repeat(1025),
+        };
+
+        let err = append_media_job_compact_audit(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("oversized audit fact text should fail validation");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         Ok(())
