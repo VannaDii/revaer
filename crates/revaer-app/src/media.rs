@@ -5,17 +5,21 @@ use revaer_api::app::media::{
     MediaCapabilityReadinessResponse as AppMediaCapabilityReadinessResponse,
     MediaCapabilityRecordParams, MediaCapabilityRefreshParams,
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse, MediaFacade,
-    MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobOperationResponse,
-    MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams, MediaJobPlanReasonResponse,
-    MediaJobResponse, MediaJobVerificationCheckAppendParams, MediaJobVerificationCheckResponse,
-    MediaJobViolationAppendParams, MediaJobViolationResponse, MediaProfilePatchParams,
-    MediaProfileResponse, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
-    MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
+    MediaJobArtifactAppendParams, MediaJobArtifactResponse, MediaJobCompactAuditAppendParams,
+    MediaJobCompactAuditResponse, MediaJobCreateParams, MediaJobOperationAppendParams,
+    MediaJobOperationResponse, MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams,
+    MediaJobPlanReasonResponse, MediaJobResponse, MediaJobVerificationCheckAppendParams,
+    MediaJobVerificationCheckResponse, MediaJobViolationAppendParams, MediaJobViolationResponse,
+    MediaProfilePatchParams, MediaProfileResponse, MediaProfileUpsertParams, MediaServiceError,
+    MediaServiceErrorKind, MediaYamlApplyResult, MediaYamlProfile, MediaYamlValidationResult,
 };
 use revaer_data::DataError;
 use revaer_data::media::capabilities::CapabilitySnapshotRow;
 use revaer_data::media::capabilities::RecordCapabilitySnapshotInput;
-use revaer_data::media::jobs::{AppendMediaJobVerificationCheckInput, CreateMediaJobInput};
+use revaer_data::media::jobs::{
+    AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
+    AppendMediaJobVerificationCheckInput, CreateMediaJobInput,
+};
 use revaer_data::media::profiles::{
     UpdateMediaProfileInput, UpsertMediaProfileInput, upsert_media_profile_with_executor,
 };
@@ -377,6 +381,80 @@ impl MediaFacade for MediaService {
             .map_err(|err| map_data_error(&err))
     }
 
+    async fn media_job_artifact_append(
+        &self,
+        params: MediaJobArtifactAppendParams<'_>,
+    ) -> Result<(), MediaServiceError> {
+        self.store
+            .append_job_artifact(&AppendMediaJobArtifactInput {
+                media_job_public_id: params.media_job_public_id,
+                artifact_index: params.artifact_index,
+                artifact_kind: params.artifact_kind,
+                artifact_path: params.artifact_path,
+                size_bytes: params.size_bytes,
+                content_type: params.content_type,
+            })
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_artifact_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobArtifactResponse>, MediaServiceError> {
+        self.store
+            .list_job_artifacts(media_job_public_id)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| MediaJobArtifactResponse {
+                        artifact_index: row.artifact_index,
+                        artifact_kind: row.artifact_kind,
+                        artifact_path: row.artifact_path,
+                        size_bytes: row.size_bytes,
+                        content_type: row.content_type,
+                        created_at: row.created_at,
+                    })
+                    .collect()
+            })
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_compact_audit_append(
+        &self,
+        params: MediaJobCompactAuditAppendParams<'_>,
+    ) -> Result<(), MediaServiceError> {
+        self.store
+            .append_job_compact_audit(&AppendMediaJobCompactAuditInput {
+                media_job_public_id: params.media_job_public_id,
+                audit_index: params.audit_index,
+                fact_kind: params.fact_kind,
+                fact_text: params.fact_text,
+            })
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_compact_audit_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobCompactAuditResponse>, MediaServiceError> {
+        self.store
+            .list_job_compact_audits(media_job_public_id)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| MediaJobCompactAuditResponse {
+                        audit_index: row.audit_index,
+                        fact_kind: row.fact_kind,
+                        fact_text: row.fact_text,
+                        created_at: row.created_at,
+                    })
+                    .collect()
+            })
+            .map_err(|err| map_data_error(&err))
+    }
+
     async fn media_capability_record(
         &self,
         params: MediaCapabilityRecordParams<'_>,
@@ -713,8 +791,9 @@ mod tests {
     };
     use revaer_api::app::media::MediaServiceErrorKind;
     use revaer_api::app::media::{
-        MediaCapabilityRefreshParams, MediaFacade, MediaJobCreateParams,
-        MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams,
+        MediaCapabilityRefreshParams, MediaFacade, MediaJobArtifactAppendParams,
+        MediaJobCompactAuditAppendParams, MediaJobCreateParams, MediaJobOperationAppendParams,
+        MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams,
         MediaJobVerificationCheckAppendParams, MediaJobViolationAppendParams,
         MediaProfileUpsertParams,
     };
@@ -992,6 +1071,32 @@ mod tests {
         assert_eq!(verification_checks.len(), 1);
         assert_eq!(verification_checks[0].check_kind, "duration");
         assert_eq!(verification_checks[0].check_status, "passed");
+        service
+            .media_job_artifact_append(MediaJobArtifactAppendParams {
+                media_job_public_id: job_id,
+                artifact_index: 0,
+                artifact_kind: "ffprobe_json",
+                artifact_path: "jobs/abc/ffprobe.json",
+                size_bytes: Some(2048),
+                content_type: Some("application/json"),
+            })
+            .await?;
+        let artifacts = service.media_job_artifact_list(job_id).await?;
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].artifact_kind, "ffprobe_json");
+        assert_eq!(artifacts[0].artifact_path, "jobs/abc/ffprobe.json");
+        service
+            .media_job_compact_audit_append(MediaJobCompactAuditAppendParams {
+                media_job_public_id: job_id,
+                audit_index: 0,
+                fact_kind: "replacement",
+                fact_text: "source preserved before replace",
+            })
+            .await?;
+        let audits = service.media_job_compact_audit_list(job_id).await?;
+        assert_eq!(audits.len(), 1);
+        assert_eq!(audits[0].fact_kind, "replacement");
+        assert_eq!(audits[0].fact_text, "source preserved before replace");
         assert_job_cancel_retry(&service, job_id).await?;
 
         assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
