@@ -422,3 +422,4 @@
     -   [390: Media artifact and compact audit API slice 10](adr/390-media-artifact-compact-audit-api-slice-10.md)
     -   [391: Media artifact and compact audit OpenAPI slice 10](adr/391-media-artifact-compact-audit-openapi-slice-10.md)
     -   [392: Media artifact and compact audit UI slice 11](adr/392-media-artifact-compact-audit-ui-slice-11.md)
+    -   [393: Media artifact managed path validation slice 6/10](adr/393-media-artifact-managed-path-validation-slice-6-10.md)

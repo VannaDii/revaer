@@ -686,6 +686,19 @@ mod tests {
         assert_eq!(artifacts.len(), 1);
         assert_eq!(artifacts[0].artifact_kind, "ffprobe_json");
         assert_eq!(artifacts[0].artifact_path, "jobs/abc/ffprobe.json");
+        let unmanaged_artifact = append_media_job_artifact(
+            pool,
+            &AppendMediaJobArtifactInput {
+                media_job_public_id: job_id,
+                artifact_index: 1,
+                artifact_kind: "ffprobe_json",
+                artifact_path: "../escape.json",
+                size_bytes: Some(2048),
+                content_type: Some("application/json"),
+            },
+        )
+        .await;
+        assert!(unmanaged_artifact.is_err());
 
         append_media_job_compact_audit(
             pool,

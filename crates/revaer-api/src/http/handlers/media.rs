@@ -81,6 +81,7 @@ const CHECK_STATUS_REQUIRED: &str = "check_status is required";
 const CHECK_STATUS_INVALID: &str = "check_status must be one of: passed, failed, skipped";
 const ARTIFACT_KIND_REQUIRED: &str = "artifact_kind is required";
 const ARTIFACT_PATH_REQUIRED: &str = "artifact_path is required";
+const ARTIFACT_PATH_INVALID: &str = "artifact_path must be a managed jobs/... relative path";
 const ARTIFACT_SIZE_INVALID: &str = "size_bytes must be zero or greater";
 const COMPACT_AUDIT_KIND_REQUIRED: &str = "fact_kind is required";
 const COMPACT_AUDIT_TEXT_REQUIRED: &str = "fact_text is required";
@@ -627,6 +628,7 @@ pub(crate) async fn append_media_job_artifact(
         normalize_required_str_field(&request.artifact_kind, ARTIFACT_KIND_REQUIRED)?;
     let artifact_path =
         normalize_required_str_field(&request.artifact_path, ARTIFACT_PATH_REQUIRED)?;
+    validate_managed_artifact_path(artifact_path)?;
     validate_nonnegative_size(request.size_bytes)?;
 
     state
@@ -1027,6 +1029,22 @@ fn validate_nonnegative_size(value: Option<i64>) -> Result<(), ApiError> {
     } else {
         Err(ApiError::bad_request(ARTIFACT_SIZE_INVALID))
     }
+}
+
+fn validate_managed_artifact_path(value: &str) -> Result<(), ApiError> {
+    if !value.starts_with("jobs/") || value.ends_with('/') || value.contains("//") {
+        return Err(ApiError::bad_request(ARTIFACT_PATH_INVALID));
+    }
+    if value.contains('\\') {
+        return Err(ApiError::bad_request(ARTIFACT_PATH_INVALID));
+    }
+    if value
+        .split('/')
+        .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    {
+        return Err(ApiError::bad_request(ARTIFACT_PATH_INVALID));
+    }
+    Ok(())
 }
 
 fn parse_media_status_required(value: &str, detail: &'static str) -> Result<String, ApiError> {
@@ -1541,6 +1559,25 @@ mod tests {
         let err = append_media_job_artifact(State(state), Path(Uuid::new_v4()), Json(request))
             .await
             .expect_err("missing artifact kind should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_media_job_artifact_rejects_unmanaged_path() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = crate::models::MediaJobArtifactAppendRequest {
+            artifact_index: 0,
+            artifact_kind: "ffprobe_json".to_string(),
+            artifact_path: "../escape.json".to_string(),
+            size_bytes: Some(2048),
+            content_type: Some("application/json".to_string()),
+        };
+
+        let err = append_media_job_artifact(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("unmanaged artifact path should fail validation");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         Ok(())
