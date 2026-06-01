@@ -4,7 +4,9 @@ use crate::features::media::api::{
     fetch_jobs_for_profiles, fetch_latest_capability, fetch_profiles, fetch_readiness,
     patch_profile, refresh_capability, validate_yaml,
 };
-use crate::features::media::logic::{parse_retention_days_input, summarize_media_job_diagnostics};
+use crate::features::media::logic::{
+    parse_retention_days_input, parse_schedule_interval_input, summarize_media_job_diagnostics,
+};
 use crate::features::media::state::MediaViewState;
 use crate::models::{
     MediaJobArtifactResponse, MediaJobCompactAuditResponse, MediaJobOperationResponse,
@@ -363,12 +365,13 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
             let schedule_interval = if schedule_interval_minutes.trim().is_empty() {
                 None
             } else {
-                let interval = (*schedule_interval_minutes).parse::<i32>();
-                let Ok(interval) = interval else {
-                    on_error_toast.emit("Schedule interval must be a whole number".to_string());
-                    return;
-                };
-                Some(interval)
+                match parse_schedule_interval_input(&schedule_interval_minutes) {
+                    Ok(interval) => Some(interval),
+                    Err(message) => {
+                        on_error_toast.emit(message.to_string());
+                        return;
+                    }
+                }
             };
             let request = MediaProfileUpsertRequest {
                 profile_key: (*profile_key).clone(),

@@ -428,3 +428,4 @@
     -   [396: Media UI retention bounds validation slice 11/12](adr/396-media-ui-retention-bounds-validation-slice-11-12.md)
     -   [397: Media diagnostic field bounds slice 6/10](adr/397-media-diagnostic-field-bounds-slice-6-10.md)
     -   [398: Media profile not-found detail slice 10](adr/398-media-profile-not-found-detail-slice-10.md)
+    -   [399: Media UI schedule interval bounds validation slice 11/13](adr/399-media-ui-schedule-interval-bounds-validation-slice-11-13.md)
