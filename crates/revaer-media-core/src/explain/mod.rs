@@ -187,7 +187,7 @@ mod tests {
         let explanation = explain_plan_selection(&selected, &[]);
 
         assert_eq!(explanation.selected_plan.id, "audio-remux");
-        assert_eq!(explanation.selected_plan.total_cost, 30);
+        assert_eq!(explanation.selected_plan.total_cost, 25);
         assert_eq!(
             explanation.selected_plan.reasons,
             vec![

@@ -35,10 +35,11 @@ pub struct PlannedOperation {
 #[must_use]
 pub const fn operation_cost(kind: OperationKind) -> u32 {
     match kind {
-        OperationKind::MetadataRewrite => 1,
-        OperationKind::DispositionRewrite | OperationKind::LabelRewrite => 2,
-        OperationKind::StreamReorder => 5,
-        OperationKind::Remux => 10,
+        OperationKind::MetadataRewrite
+        | OperationKind::DispositionRewrite
+        | OperationKind::LabelRewrite => 1,
+        OperationKind::StreamReorder => 2,
+        OperationKind::Remux => 5,
         OperationKind::AudioTranscode => 20,
         OperationKind::VideoTranscode => 1000,
     }
@@ -80,9 +81,20 @@ pub fn generate_plan(diff: &GraphDiff) -> Vec<PlannedOperation> {
 
 #[cfg(test)]
 mod tests {
-    use super::{OperationKind, generate_plan};
+    use super::{OperationKind, generate_plan, operation_cost};
     use crate::diff::{GraphDiff, RecodedStream};
     use crate::model::StreamKind;
+
+    #[test]
+    fn operation_cost_uses_documented_planner_defaults() {
+        assert_eq!(operation_cost(OperationKind::MetadataRewrite), 1);
+        assert_eq!(operation_cost(OperationKind::DispositionRewrite), 1);
+        assert_eq!(operation_cost(OperationKind::LabelRewrite), 1);
+        assert_eq!(operation_cost(OperationKind::StreamReorder), 2);
+        assert_eq!(operation_cost(OperationKind::Remux), 5);
+        assert_eq!(operation_cost(OperationKind::AudioTranscode), 20);
+        assert_eq!(operation_cost(OperationKind::VideoTranscode), 1000);
+    }
 
     #[test]
     fn no_diff_yields_remux() {
