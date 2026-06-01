@@ -394,3 +394,4 @@
     -   [362: Media runtime compliance artifacts slice 9](adr/362-media-runtime-compliance-artifacts-slice-9.md)
     -   [363: Media compliance API and UI slice 9](adr/363-media-compliance-api-ui-slice-9.md)
     -   [364: Media job cancel and retry API slice 10/14](adr/364-media-job-cancel-retry-api-slice-10-14.md)
+    -   [365: Media semantic role inference slice 2](adr/365-media-semantic-role-inference-slice-2.md)
