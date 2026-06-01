@@ -436,6 +436,12 @@ impl ApiServer {
     }
 
     fn v1_media_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+        Self::v1_media_profile_job_routes(state)
+            .merge(Self::v1_media_job_record_routes(state))
+            .merge(Self::v1_media_capability_yaml_routes(state))
+    }
+
+    fn v1_media_profile_job_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
         let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
 
         Router::new()
@@ -471,8 +477,14 @@ impl ApiServer {
             )
             .route(
                 "/v1/media/jobs/{media_job_public_id}/phases",
-                post(media_handlers::append_media_job_phase).route_layer(require_api.clone()),
+                post(media_handlers::append_media_job_phase).route_layer(require_api),
             )
+    }
+
+    fn v1_media_job_record_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+        let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
+
+        Router::new()
             .route(
                 "/v1/media/jobs/{media_job_public_id}/operations",
                 get(media_handlers::list_media_job_operations)
@@ -497,6 +509,24 @@ impl ApiServer {
                     .post(media_handlers::append_media_job_verification_check)
                     .route_layer(require_api.clone()),
             )
+            .route(
+                "/v1/media/jobs/{media_job_public_id}/artifacts",
+                get(media_handlers::list_media_job_artifacts)
+                    .post(media_handlers::append_media_job_artifact)
+                    .route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/jobs/{media_job_public_id}/compact-audits",
+                get(media_handlers::list_media_job_compact_audits)
+                    .post(media_handlers::append_media_job_compact_audit)
+                    .route_layer(require_api),
+            )
+    }
+
+    fn v1_media_capability_yaml_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+        let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
+
+        Router::new()
             .route(
                 "/v1/media/capabilities",
                 get(media_handlers::latest_media_capability)

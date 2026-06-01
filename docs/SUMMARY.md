@@ -419,3 +419,4 @@
     -   [387: Media artifact and compact audit persistence slice 6](adr/387-media-artifact-compact-audit-persistence-slice-6.md)
     -   [388: Media artifact and compact audit runtime facade slice 6](adr/388-media-artifact-compact-audit-runtime-facade-slice-6.md)
     -   [389: Media artifact and compact audit app facade slice 6/10](adr/389-media-artifact-compact-audit-app-facade-slice-6-10.md)
+    -   [390: Media artifact and compact audit API slice 10](adr/390-media-artifact-compact-audit-api-slice-10.md)

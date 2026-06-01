@@ -485,6 +485,34 @@ pub struct MediaJobVerificationCheckAppendRequest {
     pub details_text: Option<String>,
 }
 
+/// Request payload for appending a media job artifact reference.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobArtifactAppendRequest {
+    /// Artifact order index.
+    pub artifact_index: i32,
+    /// Artifact kind.
+    pub artifact_kind: String,
+    /// Managed artifact path.
+    pub artifact_path: String,
+    /// Artifact size in bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<i64>,
+    /// Optional content type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+}
+
+/// Request payload for appending a media job compact-audit fact.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCompactAuditAppendRequest {
+    /// Audit fact order index.
+    pub audit_index: i32,
+    /// Audit fact kind.
+    pub fact_kind: String,
+    /// Audit fact text.
+    pub fact_text: String,
+}
+
 /// Media job response row payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobResponse {
@@ -639,6 +667,52 @@ pub struct MediaJobVerificationCheckResponse {
 pub struct MediaJobVerificationCheckListResponse {
     /// Ordered verification checks.
     pub checks: Vec<MediaJobVerificationCheckResponse>,
+}
+
+/// Media job artifact response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobArtifactResponse {
+    /// Artifact order index.
+    pub artifact_index: i32,
+    /// Artifact kind.
+    pub artifact_kind: String,
+    /// Managed artifact path.
+    pub artifact_path: String,
+    /// Artifact size in bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<i64>,
+    /// Optional content type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job artifact list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobArtifactListResponse {
+    /// Ordered artifact references.
+    pub artifacts: Vec<MediaJobArtifactResponse>,
+}
+
+/// Media job compact-audit response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCompactAuditResponse {
+    /// Audit fact order index.
+    pub audit_index: i32,
+    /// Audit fact kind.
+    pub fact_kind: String,
+    /// Audit fact text.
+    pub fact_text: String,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job compact-audit list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCompactAuditListResponse {
+    /// Ordered compact audit facts.
+    pub audits: Vec<MediaJobCompactAuditResponse>,
 }
 
 /// Request payload for recording one media capability snapshot row.

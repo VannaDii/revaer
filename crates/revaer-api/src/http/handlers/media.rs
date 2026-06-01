@@ -11,8 +11,9 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::media::{
-    MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobCreateParams,
-    MediaJobOperationAppendParams, MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams,
+    MediaCapabilityRecordParams, MediaCapabilityRefreshParams, MediaJobArtifactAppendParams,
+    MediaJobCompactAuditAppendParams, MediaJobCreateParams, MediaJobOperationAppendParams,
+    MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams,
     MediaJobVerificationCheckAppendParams, MediaJobViolationAppendParams, MediaProfilePatchParams,
     MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
 };
@@ -22,14 +23,15 @@ use crate::http::handlers::indexers::SYSTEM_ACTOR_PUBLIC_ID;
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse, MediaCapabilityRecordRequest,
     MediaCapabilityRecordResponse, MediaCapabilityRefreshResponse, MediaCapabilitySnapshotResponse,
-    MediaComplianceResponse, MediaJobCreateRequest, MediaJobCreateResponse, MediaJobListResponse,
-    MediaJobOperationAppendRequest, MediaJobOperationListResponse, MediaJobPhaseAppendRequest,
-    MediaJobPlanReasonAppendRequest, MediaJobPlanReasonListResponse, MediaJobResponse,
-    MediaJobVerificationCheckAppendRequest, MediaJobVerificationCheckListResponse,
-    MediaJobViolationAppendRequest, MediaJobViolationListResponse, MediaProfileListResponse,
-    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlValidationResponse,
+    MediaComplianceResponse, MediaJobArtifactAppendRequest, MediaJobArtifactListResponse,
+    MediaJobCompactAuditAppendRequest, MediaJobCompactAuditListResponse, MediaJobCreateRequest,
+    MediaJobCreateResponse, MediaJobListResponse, MediaJobOperationAppendRequest,
+    MediaJobOperationListResponse, MediaJobPhaseAppendRequest, MediaJobPlanReasonAppendRequest,
+    MediaJobPlanReasonListResponse, MediaJobResponse, MediaJobVerificationCheckAppendRequest,
+    MediaJobVerificationCheckListResponse, MediaJobViolationAppendRequest,
+    MediaJobViolationListResponse, MediaProfileListResponse, MediaProfilePatchRequest,
+    MediaProfileResponse, MediaProfileUpsertRequest, MediaYamlApplyResponse,
+    MediaYamlExportResponse, MediaYamlImportRequest, MediaYamlValidationResponse,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -50,6 +52,10 @@ const MEDIA_JOB_VERIFICATION_CHECK_APPEND_FAILED: &str =
     "failed to append media job verification check";
 const MEDIA_JOB_VERIFICATION_CHECK_LIST_FAILED: &str =
     "failed to list media job verification checks";
+const MEDIA_JOB_ARTIFACT_APPEND_FAILED: &str = "failed to append media job artifact";
+const MEDIA_JOB_ARTIFACT_LIST_FAILED: &str = "failed to list media job artifacts";
+const MEDIA_JOB_COMPACT_AUDIT_APPEND_FAILED: &str = "failed to append media job compact audit";
+const MEDIA_JOB_COMPACT_AUDIT_LIST_FAILED: &str = "failed to list media job compact audits";
 const MEDIA_CAPABILITY_RECORD_FAILED: &str = "failed to record media capability snapshot";
 const MEDIA_CAPABILITY_LATEST_FAILED: &str = "failed to load latest media capability snapshot";
 const MEDIA_CAPABILITY_READINESS_FAILED: &str = "failed to determine media capability readiness";
@@ -73,6 +79,11 @@ const REASON_TEXT_REQUIRED: &str = "reason_text is required";
 const CHECK_KIND_REQUIRED: &str = "check_kind is required";
 const CHECK_STATUS_REQUIRED: &str = "check_status is required";
 const CHECK_STATUS_INVALID: &str = "check_status must be one of: passed, failed, skipped";
+const ARTIFACT_KIND_REQUIRED: &str = "artifact_kind is required";
+const ARTIFACT_PATH_REQUIRED: &str = "artifact_path is required";
+const ARTIFACT_SIZE_INVALID: &str = "size_bytes must be zero or greater";
+const COMPACT_AUDIT_KIND_REQUIRED: &str = "fact_kind is required";
+const COMPACT_AUDIT_TEXT_REQUIRED: &str = "fact_text is required";
 const COMMAND_BIN_REQUIRED: &str = "command_bin is required";
 const FFMPEG_VERSION_REQUIRED: &str = "ffmpeg_version is required";
 const FFPROBE_VERSION_REQUIRED: &str = "ffprobe_version is required";
@@ -607,6 +618,123 @@ pub(crate) async fn list_media_job_verification_checks(
     Ok(Json(MediaJobVerificationCheckListResponse { checks }))
 }
 
+pub(crate) async fn append_media_job_artifact(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+    Json(request): Json<MediaJobArtifactAppendRequest>,
+) -> Result<StatusCode, ApiError> {
+    let artifact_kind =
+        normalize_required_str_field(&request.artifact_kind, ARTIFACT_KIND_REQUIRED)?;
+    let artifact_path =
+        normalize_required_str_field(&request.artifact_path, ARTIFACT_PATH_REQUIRED)?;
+    validate_nonnegative_size(request.size_bytes)?;
+
+    state
+        .media
+        .media_job_artifact_append(MediaJobArtifactAppendParams {
+            media_job_public_id,
+            artifact_index: request.artifact_index,
+            artifact_kind,
+            artifact_path,
+            size_bytes: request.size_bytes,
+            content_type: trim_and_filter_empty(request.content_type.as_deref()),
+        })
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_artifact_append",
+                MEDIA_JOB_ARTIFACT_APPEND_FAILED,
+                &err,
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn list_media_job_artifacts(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<Json<MediaJobArtifactListResponse>, ApiError> {
+    let artifacts = state
+        .media
+        .media_job_artifact_list(media_job_public_id)
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_artifact_list",
+                MEDIA_JOB_ARTIFACT_LIST_FAILED,
+                &err,
+            )
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobArtifactResponse {
+            artifact_index: item.artifact_index,
+            artifact_kind: item.artifact_kind,
+            artifact_path: item.artifact_path,
+            size_bytes: item.size_bytes,
+            content_type: item.content_type,
+            created_at: item.created_at,
+        })
+        .collect();
+
+    Ok(Json(MediaJobArtifactListResponse { artifacts }))
+}
+
+pub(crate) async fn append_media_job_compact_audit(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+    Json(request): Json<MediaJobCompactAuditAppendRequest>,
+) -> Result<StatusCode, ApiError> {
+    let fact_kind = normalize_required_str_field(&request.fact_kind, COMPACT_AUDIT_KIND_REQUIRED)?;
+    let fact_text = normalize_required_str_field(&request.fact_text, COMPACT_AUDIT_TEXT_REQUIRED)?;
+
+    state
+        .media
+        .media_job_compact_audit_append(MediaJobCompactAuditAppendParams {
+            media_job_public_id,
+            audit_index: request.audit_index,
+            fact_kind,
+            fact_text,
+        })
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_compact_audit_append",
+                MEDIA_JOB_COMPACT_AUDIT_APPEND_FAILED,
+                &err,
+            )
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn list_media_job_compact_audits(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<Json<MediaJobCompactAuditListResponse>, ApiError> {
+    let audits = state
+        .media
+        .media_job_compact_audit_list(media_job_public_id)
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_job_compact_audit_list",
+                MEDIA_JOB_COMPACT_AUDIT_LIST_FAILED,
+                &err,
+            )
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobCompactAuditResponse {
+            audit_index: item.audit_index,
+            fact_kind: item.fact_kind,
+            fact_text: item.fact_text,
+            created_at: item.created_at,
+        })
+        .collect();
+
+    Ok(Json(MediaJobCompactAuditListResponse { audits }))
+}
+
 pub(crate) async fn record_media_capability(
     State(state): State<Arc<ApiState>>,
     Json(request): Json<MediaCapabilityRecordRequest>,
@@ -890,6 +1018,14 @@ fn validate_schedule_interval(interval: i32) -> Result<(), ApiError> {
         Ok(())
     } else {
         Err(ApiError::bad_request(SCHEDULE_INTERVAL_INVALID))
+    }
+}
+
+fn validate_nonnegative_size(value: Option<i64>) -> Result<(), ApiError> {
+    if value.is_none_or(|size_bytes| size_bytes >= 0) {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request(ARTIFACT_SIZE_INVALID))
     }
 }
 
@@ -1388,6 +1524,61 @@ mod tests {
         let Json(response) =
             list_media_job_verification_checks(State(state), Path(Uuid::new_v4())).await?;
         assert!(response.checks.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_media_job_artifact_rejects_missing_kind() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = crate::models::MediaJobArtifactAppendRequest {
+            artifact_index: 0,
+            artifact_kind: " ".to_string(),
+            artifact_path: "jobs/abc/ffprobe.json".to_string(),
+            size_bytes: Some(2048),
+            content_type: Some("application/json".to_string()),
+        };
+
+        let err = append_media_job_artifact(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("missing artifact kind should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_media_job_artifacts_returns_empty_payload_with_default_facade()
+    -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let Json(response) = list_media_job_artifacts(State(state), Path(Uuid::new_v4())).await?;
+        assert!(response.artifacts.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn append_media_job_compact_audit_rejects_missing_fact_text() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = crate::models::MediaJobCompactAuditAppendRequest {
+            audit_index: 0,
+            fact_kind: "replacement".to_string(),
+            fact_text: " ".to_string(),
+        };
+
+        let err = append_media_job_compact_audit(State(state), Path(Uuid::new_v4()), Json(request))
+            .await
+            .expect_err("missing audit fact text should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_media_job_compact_audits_returns_empty_payload_with_default_facade()
+    -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let Json(response) =
+            list_media_job_compact_audits(State(state), Path(Uuid::new_v4())).await?;
+        assert!(response.audits.is_empty());
         Ok(())
     }
 
