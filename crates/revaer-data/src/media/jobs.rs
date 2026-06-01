@@ -12,6 +12,8 @@ const MEDIA_JOB_VIOLATION_APPEND_V1: &str = "SELECT media_job_violation_append_v
 const MEDIA_JOB_VIOLATION_LIST_V1: &str = "SELECT violation_index, violation_kind, severity, stream_id, created_at FROM media_job_violation_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_PLAN_REASON_APPEND_V1: &str = "SELECT media_job_plan_reason_append_v1(media_job_public_id_input => $1, reason_index_input => $2, candidate_index_input => $3, selected_input => $4, reason_code_input => $5, reason_text_input => $6)";
 const MEDIA_JOB_PLAN_REASON_LIST_V1: &str = "SELECT reason_index, candidate_index, selected, reason_code, reason_text, created_at FROM media_job_plan_reason_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_VERIFICATION_CHECK_APPEND_V1: &str = "SELECT media_job_verification_check_append_v1(media_job_public_id_input => $1, check_index_input => $2, check_kind_input => $3, check_status_input => $4, expected_value_input => $5, actual_value_input => $6, details_text_input => $7)";
+const MEDIA_JOB_VERIFICATION_CHECK_LIST_V1: &str = "SELECT check_index, check_kind, check_status, expected_value, actual_value, details_text, created_at FROM media_job_verification_check_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_CANCEL_V1: &str = "SELECT media_job_cancel_v1(media_job_public_id_input => $1)";
@@ -30,6 +32,25 @@ pub struct CreateMediaJobInput<'a> {
     pub output_path: Option<&'a str>,
     /// Dry-run execution flag.
     pub dry_run: bool,
+}
+
+/// Append media job verification check payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppendMediaJobVerificationCheckInput<'a> {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+    /// Verification check ordering index.
+    pub check_index: i32,
+    /// Verification check kind.
+    pub check_kind: &'a str,
+    /// Verification check status.
+    pub check_status: &'a str,
+    /// Expected value text.
+    pub expected_value: Option<&'a str>,
+    /// Actual value text.
+    pub actual_value: Option<&'a str>,
+    /// Optional check details.
+    pub details_text: Option<&'a str>,
 }
 
 /// Media job listing row.
@@ -108,6 +129,25 @@ pub struct MediaJobPlanReasonRow {
     pub reason_code: String,
     /// Human-readable reason text.
     pub reason_text: String,
+    /// Row creation timestamp.
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Media job verification check row.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobVerificationCheckRow {
+    /// Verification check ordering index.
+    pub check_index: i32,
+    /// Verification check kind.
+    pub check_kind: String,
+    /// Verification check status.
+    pub check_status: String,
+    /// Expected value text.
+    pub expected_value: Option<String>,
+    /// Actual value text.
+    pub actual_value: Option<String>,
+    /// Optional check details.
+    pub details_text: Option<String>,
     /// Row creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -238,6 +278,29 @@ pub async fn append_media_job_plan_reason(
     Ok(())
 }
 
+/// Append or update a media job verification check row.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn append_media_job_verification_check(
+    pool: &PgPool,
+    input: &AppendMediaJobVerificationCheckInput<'_>,
+) -> Result<()> {
+    sqlx::query(MEDIA_JOB_VERIFICATION_CHECK_APPEND_V1)
+        .bind(input.media_job_public_id)
+        .bind(input.check_index)
+        .bind(input.check_kind)
+        .bind(input.check_status)
+        .bind(input.expected_value.unwrap_or_default())
+        .bind(input.actual_value.unwrap_or_default())
+        .bind(input.details_text.unwrap_or_default())
+        .execute(pool)
+        .await
+        .map_err(try_op("media job verification check append"))?;
+    Ok(())
+}
+
 /// List media jobs for profile and optional status.
 ///
 /// # Errors
@@ -304,6 +367,22 @@ pub async fn list_media_job_plan_reasons(
         .map_err(try_op("media job plan reason list"))
 }
 
+/// List media job verification checks for one job.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_verification_checks(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Vec<MediaJobVerificationCheckRow>> {
+    sqlx::query_as::<_, MediaJobVerificationCheckRow>(MEDIA_JOB_VERIFICATION_CHECK_LIST_V1)
+        .bind(media_job_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job verification check list"))
+}
+
 /// Get one media job by public id.
 ///
 /// # Errors
@@ -351,9 +430,10 @@ pub async fn retry_media_job(pool: &PgPool, media_job_public_id: Uuid) -> Result
 #[cfg(test)]
 mod tests {
     use super::{
-        CreateMediaJobInput, append_media_job_operation, append_media_job_phase,
-        append_media_job_plan_reason, append_media_job_violation, create_media_job, get_media_job,
-        list_media_job_operations, list_media_job_plan_reasons, list_media_job_violations,
+        AppendMediaJobVerificationCheckInput, CreateMediaJobInput, append_media_job_operation,
+        append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
+        append_media_job_violation, create_media_job, get_media_job, list_media_job_operations,
+        list_media_job_plan_reasons, list_media_job_verification_checks, list_media_job_violations,
         list_media_jobs,
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
@@ -405,6 +485,43 @@ mod tests {
         assert_eq!(
             plan_reasons[0].reason_text,
             "Selected the least-cost compliant candidate."
+        );
+        Ok(())
+    }
+
+    async fn append_and_assert_verification_check(
+        pool: &PgPool,
+        job_id: Uuid,
+    ) -> anyhow::Result<()> {
+        append_media_job_verification_check(
+            pool,
+            &AppendMediaJobVerificationCheckInput {
+                media_job_public_id: job_id,
+                check_index: 0,
+                check_kind: "duration",
+                check_status: "passed",
+                expected_value: Some("3600.0"),
+                actual_value: Some("3599.9"),
+                details_text: Some("within tolerance"),
+            },
+        )
+        .await?;
+        let verification_checks = list_media_job_verification_checks(pool, job_id).await?;
+        assert_eq!(verification_checks.len(), 1);
+        assert_eq!(verification_checks[0].check_index, 0);
+        assert_eq!(verification_checks[0].check_kind, "duration");
+        assert_eq!(verification_checks[0].check_status, "passed");
+        assert_eq!(
+            verification_checks[0].expected_value.as_deref(),
+            Some("3600.0")
+        );
+        assert_eq!(
+            verification_checks[0].actual_value.as_deref(),
+            Some("3599.9")
+        );
+        assert_eq!(
+            verification_checks[0].details_text.as_deref(),
+            Some("within tolerance")
         );
         Ok(())
     }
@@ -509,6 +626,8 @@ mod tests {
         assert_eq!(violations[0].stream_id, Some(0));
 
         append_and_assert_plan_reason(db.pool(), job_id).await?;
+
+        append_and_assert_verification_check(db.pool(), job_id).await?;
         Ok(())
     }
 
@@ -565,5 +684,23 @@ mod tests {
 
         let reasons = list_media_job_plan_reasons(&pool, job_id).await;
         assert!(reasons.is_err());
+
+        let append_check = append_media_job_verification_check(
+            &pool,
+            &AppendMediaJobVerificationCheckInput {
+                media_job_public_id: job_id,
+                check_index: 0,
+                check_kind: "duration",
+                check_status: "passed",
+                expected_value: Some("3600.0"),
+                actual_value: Some("3599.9"),
+                details_text: Some("within tolerance"),
+            },
+        )
+        .await;
+        assert!(append_check.is_err());
+
+        let checks = list_media_job_verification_checks(&pool, job_id).await;
+        assert!(checks.is_err());
     }
 }

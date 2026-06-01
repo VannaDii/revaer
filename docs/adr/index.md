@@ -393,3 +393,4 @@
 -   [379](379-media-plan-reason-app-facade-slice-6-10.md) – Media plan reason app facade slice 6/10
 -   [380](380-media-plan-reason-api-slice-10.md) – Media plan reason API slice 10
 -   [381](381-media-job-diagnostic-ui-slice-11.md) – Media job diagnostic UI slice 11
+-   [382](382-media-verification-check-persistence-slice-6.md) – Media verification check persistence slice 6
