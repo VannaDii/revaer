@@ -412,3 +412,4 @@
     -   [380: Media plan reason API slice 10](adr/380-media-plan-reason-api-slice-10.md)
     -   [381: Media job diagnostic UI slice 11](adr/381-media-job-diagnostic-ui-slice-11.md)
     -   [382: Media verification check persistence slice 6](adr/382-media-verification-check-persistence-slice-6.md)
+    -   [383: Media verification check runtime facade slice 6](adr/383-media-verification-check-runtime-facade-slice-6.md)

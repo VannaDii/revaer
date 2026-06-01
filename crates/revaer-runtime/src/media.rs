@@ -10,11 +10,13 @@ use revaer_data::media::capabilities::{
     record_capability_snapshot,
 };
 use revaer_data::media::jobs::{
-    CreateMediaJobInput, MediaJobOperationRow, MediaJobPlanReasonRow, MediaJobRow,
-    MediaJobViolationRow, append_media_job_operation, append_media_job_phase,
-    append_media_job_plan_reason, append_media_job_violation, cancel_media_job, create_media_job,
-    get_media_job, list_media_job_operations, list_media_job_plan_reasons,
-    list_media_job_violations, list_media_jobs, retry_media_job,
+    AppendMediaJobVerificationCheckInput, CreateMediaJobInput, MediaJobOperationRow,
+    MediaJobPlanReasonRow, MediaJobRow, MediaJobVerificationCheckRow, MediaJobViolationRow,
+    append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
+    append_media_job_verification_check, append_media_job_violation, cancel_media_job,
+    create_media_job, get_media_job, list_media_job_operations, list_media_job_plan_reasons,
+    list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
+    retry_media_job,
 };
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput, get_media_profile,
@@ -190,6 +192,18 @@ impl MediaStore {
         .await
     }
 
+    /// Append a verification check for a media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn append_job_verification_check(
+        &self,
+        input: &AppendMediaJobVerificationCheckInput<'_>,
+    ) -> DataResult<()> {
+        append_media_job_verification_check(&self.pool, input).await
+    }
+
     /// List media jobs for a profile.
     ///
     /// # Errors
@@ -237,6 +251,18 @@ impl MediaStore {
         media_job_public_id: Uuid,
     ) -> DataResult<Vec<MediaJobPlanReasonRow>> {
         list_media_job_plan_reasons(&self.pool, media_job_public_id).await
+    }
+
+    /// List persisted verification checks for one media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn list_job_verification_checks(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<MediaJobVerificationCheckRow>> {
+        list_media_job_verification_checks(&self.pool, media_job_public_id).await
     }
 
     /// Load one media job by public id.
@@ -293,7 +319,7 @@ mod tests {
     use super::MediaStore;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::RecordCapabilitySnapshotInput;
-    use revaer_data::media::jobs::CreateMediaJobInput;
+    use revaer_data::media::jobs::{AppendMediaJobVerificationCheckInput, CreateMediaJobInput};
     use revaer_data::media::profiles::UpsertMediaProfileInput;
     use revaer_test_support::postgres::TestDatabase;
     use revaer_test_support::postgres::start_postgres;
@@ -404,6 +430,46 @@ mod tests {
         Ok(user_public_id)
     }
 
+    async fn append_and_assert_verification_check(
+        store: &MediaStore,
+        job_id: Uuid,
+    ) -> anyhow::Result<()> {
+        store
+            .append_job_verification_check(&AppendMediaJobVerificationCheckInput {
+                media_job_public_id: job_id,
+                check_index: 0,
+                check_kind: "duration",
+                check_status: "passed",
+                expected_value: Some("3600.0"),
+                actual_value: Some("3599.9"),
+                details_text: Some("within tolerance"),
+            })
+            .await?;
+        let verification_checks = store.list_job_verification_checks(job_id).await?;
+        assert_eq!(verification_checks.len(), 1);
+        assert_eq!(verification_checks[0].check_kind, "duration");
+        assert_eq!(verification_checks[0].check_status, "passed");
+        Ok(())
+    }
+
+    async fn assert_verification_check_errors(store: &MediaStore, job_id: Uuid) {
+        assert!(
+            store
+                .append_job_verification_check(&AppendMediaJobVerificationCheckInput {
+                    media_job_public_id: job_id,
+                    check_index: 0,
+                    check_kind: "duration",
+                    check_status: "passed",
+                    expected_value: Some("3600.0"),
+                    actual_value: Some("3599.9"),
+                    details_text: Some("within tolerance"),
+                })
+                .await
+                .is_err()
+        );
+        assert!(store.list_job_verification_checks(job_id).await.is_err());
+    }
+
     #[tokio::test]
     async fn media_store_round_trips_profiles_jobs_and_capabilities() -> anyhow::Result<()> {
         let Some((postgres, store)) = test_store().await? else {
@@ -477,6 +543,7 @@ mod tests {
                 "Selected the least-cost compliant candidate.",
             )
             .await?;
+        append_and_assert_verification_check(&store, job_id).await?;
 
         let jobs = store.list_jobs(profile_id, Some("queued")).await?;
         assert!(jobs.iter().any(|job| job.media_job_public_id == job_id));
@@ -582,6 +649,7 @@ mod tests {
                 .is_err()
         );
         assert!(store.list_job_plan_reasons(job_id).await.is_err());
+        assert_verification_check_errors(&store, job_id).await;
         assert!(store.cancel_job(job_id).await.is_err());
         assert!(store.retry_job(job_id).await.is_err());
 
