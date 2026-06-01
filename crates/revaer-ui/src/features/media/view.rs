@@ -1,7 +1,8 @@
 use crate::app::api::ApiCtx;
 use crate::features::media::api::{
-    apply_yaml, create_profile, export_yaml, fetch_compliance, fetch_jobs, fetch_latest_capability,
-    fetch_profiles, fetch_readiness, patch_profile, refresh_capability, validate_yaml,
+    apply_yaml, create_profile, export_yaml, fetch_compliance, fetch_jobs_for_profiles,
+    fetch_latest_capability, fetch_profiles, fetch_readiness, patch_profile, refresh_capability,
+    validate_yaml,
 };
 use crate::features::media::state::MediaViewState;
 use crate::models::{MediaProfilePatchRequest, MediaProfileUpsertRequest};
@@ -48,7 +49,10 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
             let on_error_toast = on_error_toast.clone();
             spawn_local(async move {
                 let profiles = fetch_profiles(&api.client).await;
-                let jobs = fetch_jobs(&api.client).await;
+                let jobs = match profiles.as_ref() {
+                    Ok(profiles) => fetch_jobs_for_profiles(&api.client, &profiles.profiles).await,
+                    Err(err) => Err(err.clone()),
+                };
                 let readiness = fetch_readiness(&api.client).await;
                 let latest = fetch_latest_capability(&api.client).await;
                 let compliance = fetch_compliance(&api.client).await;

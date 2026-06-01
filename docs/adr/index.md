@@ -387,3 +387,4 @@
 -   [373](373-media-job-violation-app-facade-slice-6-10.md) – Media job violation app facade slice 6/10
 -   [374](374-media-job-violation-api-slice-10.md) – Media job violation API slice 10
 -   [375](375-media-openapi-export-slice-10.md) – Media OpenAPI export slice 10
+-   [376](376-media-ui-profile-job-refresh-slice-11.md) – Media UI profile job refresh slice 11

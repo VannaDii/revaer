@@ -1,3 +1,4 @@
+use crate::features::media::logic::media_jobs_path;
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse,
     MediaCapabilityRefreshResponse, MediaComplianceResponse, MediaJobListResponse,
@@ -39,11 +40,18 @@ pub(crate) async fn patch_profile(
         .map_err(|err| err.to_string())
 }
 
-pub(crate) async fn fetch_jobs(client: &ApiClient) -> Result<MediaJobListResponse, String> {
-    client
-        .get_api("/v1/media/jobs")
-        .await
-        .map_err(|err| err.to_string())
+pub(crate) async fn fetch_jobs_for_profiles(
+    client: &ApiClient,
+    profiles: &[MediaProfileResponse],
+) -> Result<MediaJobListResponse, String> {
+    let mut jobs = Vec::new();
+    for profile in profiles {
+        let path = media_jobs_path(Some(profile.media_profile_public_id));
+        let mut response: MediaJobListResponse =
+            client.get_api(&path).await.map_err(|err| err.to_string())?;
+        jobs.append(&mut response.jobs);
+    }
+    Ok(MediaJobListResponse { jobs })
 }
 
 pub(crate) async fn fetch_readiness(
