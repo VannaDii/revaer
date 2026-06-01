@@ -948,6 +948,9 @@
           "output_path": {
             "type": "string"
           },
+          "replace_confirmation": {
+            "type": "string"
+          },
           "source_path": {
             "type": "string"
           }

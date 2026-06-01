@@ -390,6 +390,9 @@ pub struct MediaJobCreateRequest {
     pub output_path: Option<String>,
     /// Dry-run flag.
     pub dry_run: bool,
+    /// Exact confirmation phrase required to override a dry-run profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replace_confirmation: Option<String>,
 }
 
 /// Request payload for appending a media job phase.

@@ -79,6 +79,8 @@ pub struct MediaJobCreateParams<'a> {
     pub output_path: Option<&'a str>,
     /// Dry-run flag.
     pub dry_run: bool,
+    /// Exact confirmation phrase required to override a dry-run profile.
+    pub replace_confirmation: Option<&'a str>,
 }
 
 /// Append media job phase parameters.

@@ -263,6 +263,7 @@ pub(crate) async fn create_media_job(
             source_path,
             output_path,
             dry_run: request.dry_run,
+            replace_confirmation: request.replace_confirmation.as_deref(),
         })
         .await
         .map_err(|err| map_media_error("media_job_create", MEDIA_JOB_CREATE_FAILED, &err))?;
@@ -1190,6 +1191,7 @@ mod tests {
             source_path: "/input/demo.mkv".to_string(),
             output_path: Some("/output/demo.mkv".to_string()),
             dry_run: true,
+            replace_confirmation: None,
         };
 
         let err = create_media_job(State(state), Json(request))

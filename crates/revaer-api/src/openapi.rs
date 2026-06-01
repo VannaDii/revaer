@@ -672,6 +672,7 @@ fn media_job_core_schemas() -> Vec<(&'static str, Value)> {
                     ("source_path", string_schema()),
                     ("output_path", string_schema()),
                     ("dry_run", bool_schema()),
+                    ("replace_confirmation", string_schema()),
                 ],
             ),
         ),

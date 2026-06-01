@@ -424,3 +424,4 @@
     -   [392: Media artifact and compact audit UI slice 11](adr/392-media-artifact-compact-audit-ui-slice-11.md)
     -   [393: Media artifact managed path validation slice 6/10](adr/393-media-artifact-managed-path-validation-slice-6-10.md)
     -   [394: Media preflight compact audit facts slice 4/8](adr/394-media-preflight-compact-audit-facts-slice-4-8.md)
+    -   [395: Media destructive dry-run override confirmation slice 10/11](adr/395-media-destructive-dry-run-override-confirmation-slice-10-11.md)

@@ -31,6 +31,8 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use uuid::Uuid;
 
+const REPLACE_CONFIRMATION_PHRASE: &str = "replace";
+
 /// Production media facade backed by `revaer-runtime` media store.
 #[derive(Clone)]
 pub(crate) struct MediaService {
@@ -122,6 +124,22 @@ impl MediaFacade for MediaService {
         params: MediaJobCreateParams<'_>,
     ) -> Result<Uuid, MediaServiceError> {
         if !params.dry_run {
+            let profile = self
+                .store
+                .get_profile(params.media_profile_public_id)
+                .await
+                .map_err(|err| map_data_error(&err))?
+                .ok_or_else(|| {
+                    MediaServiceError::new(MediaServiceErrorKind::NotFound)
+                        .with_code("media_profile_not_found")
+                })?;
+            if profile.dry_run_only
+                && params.replace_confirmation != Some(REPLACE_CONFIRMATION_PHRASE)
+            {
+                return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                    .with_code("media_job_replace_confirmation_required"));
+            }
+
             let latest = self
                 .store
                 .latest_capability()
@@ -910,6 +928,34 @@ mod tests {
         assert!(ensure_execution_capability_snapshot(Some(&row)).is_ok());
     }
 
+    #[tokio::test]
+    async fn media_job_create_requires_replace_confirmation_for_dry_run_profile_override()
+    -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+
+        let result = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/app-media/video.mkv",
+                output_path: Some("/output/app-media/video.mkv"),
+                dry_run: false,
+                replace_confirmation: None,
+            })
+            .await;
+        let Err(err) = result else {
+            panic!("expected dry-run override without confirmation to be rejected");
+        };
+
+        assert_eq!(err.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(err.code(), Some("media_job_replace_confirmation_required"));
+        Ok(())
+    }
+
     #[test]
     fn parse_yaml_bundle_rejects_empty_and_invalid_payloads() {
         let empty = parse_yaml_bundle(" \n\t ");
@@ -1028,6 +1074,7 @@ mod tests {
                 source_path: "/input/app-media/video.mkv",
                 output_path: Some("/output/app-media/video.mkv"),
                 dry_run: true,
+                replace_confirmation: None,
             })
             .await?;
         append_plan_phase_and_operation(&service, job_id).await?;
