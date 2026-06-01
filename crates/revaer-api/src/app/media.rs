@@ -410,6 +410,12 @@ pub trait MediaFacade: Send + Sync {
         media_job_public_id: Uuid,
     ) -> Result<Option<MediaJobResponse>, MediaServiceError>;
 
+    /// Cancel a queued, running, or verifying media job.
+    async fn media_job_cancel(&self, media_job_public_id: Uuid) -> Result<(), MediaServiceError>;
+
+    /// Retry a failed or cancelled media job.
+    async fn media_job_retry(&self, media_job_public_id: Uuid) -> Result<(), MediaServiceError>;
+
     /// Append media job phase.
     async fn media_job_phase_append(
         &self,
@@ -510,6 +516,14 @@ impl MediaFacade for NoopMedia {
         _media_job_public_id: Uuid,
     ) -> Result<Option<MediaJobResponse>, MediaServiceError> {
         Ok(None)
+    }
+
+    async fn media_job_cancel(&self, _media_job_public_id: Uuid) -> Result<(), MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
+    async fn media_job_retry(&self, _media_job_public_id: Uuid) -> Result<(), MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 
     async fn media_job_phase_append(

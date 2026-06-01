@@ -375,3 +375,4 @@
 -   [361](361-media-profile-configuration-controls-slice-11.md) – Media profile configuration controls slice 11
 -   [362](362-media-runtime-compliance-artifacts-slice-9.md) – Media runtime compliance artifacts slice 9
 -   [363](363-media-compliance-api-ui-slice-9.md) – Media compliance API and UI slice 9
+-   [364](364-media-job-cancel-retry-api-slice-10-14.md) – Media job cancel and retry API slice 10/14

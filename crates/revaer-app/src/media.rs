@@ -185,6 +185,20 @@ impl MediaFacade for MediaService {
             .map_err(|err| map_data_error(&err))
     }
 
+    async fn media_job_cancel(&self, media_job_public_id: Uuid) -> Result<(), MediaServiceError> {
+        self.store
+            .cancel_job(media_job_public_id)
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_retry(&self, media_job_public_id: Uuid) -> Result<(), MediaServiceError> {
+        self.store
+            .retry_job(media_job_public_id)
+            .await
+            .map_err(|err| map_data_error(&err))
+    }
+
     async fn media_job_phase_append(
         &self,
         params: MediaJobPhaseAppendParams<'_>,
@@ -849,6 +863,18 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(service.media_job_operation_list(job_id).await?.len(), 1);
+        service.media_job_cancel(job_id).await?;
+        let cancelled_job = service
+            .media_job_get(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("cancelled media job missing"))?;
+        assert_eq!(cancelled_job.status, "cancelled");
+        service.media_job_retry(job_id).await?;
+        let retried_job = service
+            .media_job_get(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("retried media job missing"))?;
+        assert_eq!(retried_job.status, "queued");
 
         assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
 

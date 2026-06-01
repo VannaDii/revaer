@@ -462,6 +462,14 @@ impl ApiServer {
                 get(media_handlers::get_media_job).route_layer(require_api.clone()),
             )
             .route(
+                "/v1/media/jobs/{media_job_public_id}/cancel",
+                post(media_handlers::cancel_media_job).route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/jobs/{media_job_public_id}/retry",
+                post(media_handlers::retry_media_job).route_layer(require_api.clone()),
+            )
+            .route(
                 "/v1/media/jobs/{media_job_public_id}/phases",
                 post(media_handlers::append_media_job_phase).route_layer(require_api.clone()),
             )
