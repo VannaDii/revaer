@@ -348,3 +348,4 @@
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
     -   [317: Media transcoding foundation](adr/317-media-transcoding-foundation.md)
     -   [318: PR 31 media review closeout](adr/318-pr-31-media-review-closeout.md)
+    -   [319: Media conversion fixture plan](adr/319-media-conversion-fixture-plan.md)
