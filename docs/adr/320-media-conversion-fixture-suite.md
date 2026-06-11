@@ -1,0 +1,60 @@
+# ADR 320: Media Conversion Fixture Suite
+
+- Status: Accepted
+- Date: 2026-06-11
+- Context:
+  - `MEDIA_TRANSCODING.md` requires a reproducible fixture suite for media conversion testing across containers, codecs, stream shapes, metadata, and explicit failure contracts.
+  - Fixture media binaries must not be committed, while manifests, scripts, normalized probe snapshots, attribution notes, and tests must be versioned.
+  - The existing media runtime could plan removed streams but built remux commands that mapped the whole input, so stream-selection tests would not have exercised correct production behavior.
+- Decision:
+  - Add a `test-fixtures/` manifest, README, attribution record, ignored binary directories, fixture scripts, Justfile entrypoints, and a fixture-backed Rust integration test in `revaer-media-runtime`.
+  - Route planned-job execution through an explicit desired-graph materializer so generated ffmpeg commands map only requested streams in requested order, while preserving existing capability checks and video policy flags.
+  - Add a PR media conversion fixture job that installs media tools, restores ignored fixture directories from cache, prepares fixtures, verifies probes, and runs `just test-media-conversion`.
+  - Keep the downloader strict: it tries documented primary URLs and exact fallback captures, then fails the fixture preparation path with fixture id and URL rather than silently skipping coverage.
+- Consequences:
+  - Media conversion tests can validate stream selection, subtitle filtering, output probeability, forced-subtitle metadata, and silent audio fixture shape against real files.
+  - Fixture preparation remains resilient to the current Test-Videos HTTP 526 origin failures by using exact Internet Archive captures of the same required URLs.
+  - Planned jobs now carry source and desired graph context, increasing the size of the plan payload but making execution deterministic and verifiable.
+- Follow-up:
+  - Watch Test-Videos availability and remove fallback entries only if the primary URLs are reliably reachable again and the replacement is verified by `just test-media-conversion`.
+
+## Task Record
+
+- Motivation:
+  - Implement the media conversion fixture suite required by `MEDIA_TRANSCODING.md` and close the stream-selection execution gap needed for meaningful multi-audio and subtitle tests.
+- Design notes:
+  - The fixture manifest is committed as JSON and owns deterministic fixture ids, paths, expected stream counts, stable codec sets, attribution, and source notes.
+  - Shell scripts own download, generation, verification, and cleanup tasks. They preflight `ffmpeg`, `ffprobe`, `curl`, `git`, and `base64`.
+  - Verification uses Rust JSON parsing instead of `jq`, matching the repo preference to avoid new dependencies and brittle shell JSON parsing.
+  - Job execution now builds one desired-graph ffmpeg command with exact `-map 0:<stream>` arguments and per-output-stream codec/metadata/disposition settings.
+  - `just db-start` now exits through an already reachable explicit non-Docker database endpoint before Docker container inspection, keeping local gates runnable when Docker Desktop is unavailable.
+- Test coverage summary:
+  - Added `manifest_contract_tracks_fixture_suite`.
+  - Added ignored `verify_prepared_fixture_suite` for prepared media binaries.
+  - Added `job_execution_steps_map_only_desired_streams`.
+  - Added timeout coverage for Docker availability probes in `revaer-test-support`.
+  - Ran `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-media-runtime --all-features`.
+  - Ran `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app persist_ready_plan_records_filesystem_fallback_operations --all-features`.
+  - Ran `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-test-support --all-features`.
+  - Ran `cargo clippy -p revaer-test-support --all-targets --all-features -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`.
+  - Ran `just download-test-fixtures`; after adding exact archive fallbacks and fixing cross-platform `base64` input handling, all upstream fixture files downloaded.
+  - Ran `just generate-test-fixtures`; generated or reused all derived fixtures successfully.
+  - Ran `just verify-test-fixtures`; verified all 30 fixtures, wrote normalized probe snapshots, validated derived metadata, forced subtitles, silent audio, and production pipeline cases.
+  - Ran `just test-media-conversion`; passed after fixture verification and production pipeline assertions.
+  - Ran `DATABASE_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' REVAER_TEST_DATABASE_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' just ci`; passed, including lint, tests, coverage, audits, UI build, and release build.
+  - Ran `env E2E_DB_ADMIN_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' DATABASE_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' REVAER_TEST_DATABASE_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' E2E_SKIP_DB_START=1 just ui-e2e`; passed 104 Playwright tests.
+- Observability updates:
+  - Fixture scripts print fixture ids and source URLs on failure.
+  - Verification writes normalized ffprobe JSON snapshots under `test-fixtures/probe/` when the prepared suite is complete.
+- Status-doc validation:
+  - Re-checked `MEDIA_TRANSCODING.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/ffi.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Updated the devops instruction file because `pr.yml` and the Justfile gained the media fixture gate.
+  - Updated the Rust instruction file because `just db-start` now documents its explicit non-Docker endpoint behavior.
+- Risk & rollback plan:
+  - Risk: upstream fixture hosts can fail and block the dedicated fixture job. Roll back the CI job and Justfile fixture recipes together if the suite must be temporarily removed.
+  - Risk: graph materialization changes ffmpeg command shape. Roll back the execution changes to restore operation-only staging if production execution regresses, but keep the failing stream-selection test as the regression signal.
+- Dependency rationale:
+  - No new Rust, JavaScript, shell, or workflow dependencies were added.
+- Stale-policy check:
+  - Reviewed root and scoped instructions listed above.
+  - Found no contradictions; added the missing devops rule for the new media fixture PR gate and clarified the Justfile database bootstrap rule.

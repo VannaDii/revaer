@@ -349,3 +349,4 @@
     -   [317: Media transcoding foundation](adr/317-media-transcoding-foundation.md)
     -   [318: PR 31 media review closeout](adr/318-pr-31-media-review-closeout.md)
     -   [319: Media conversion fixture plan](adr/319-media-conversion-fixture-plan.md)
+    -   [320: Media conversion fixture suite](adr/320-media-conversion-fixture-suite.md)

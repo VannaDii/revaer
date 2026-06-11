@@ -1929,6 +1929,21 @@ Recommended task surface, using existing Justfile conventions:
 - `just test-media-conversion`: require prepared fixtures, run verification,
   then run the media conversion integration tests.
 
+Implementation artifacts:
+
+- Fixture manifest and attribution live under `test-fixtures/`.
+- Fixture scripts live under `scripts/test-fixtures/`.
+- Runtime fixture tests live in
+  `crates/revaer-media-runtime/tests/media_fixtures.rs`.
+- PR validation restores/caches the ignored media directories and runs the
+  fixture gate through Justfile recipes.
+- Fixture preparation tries the required primary Test-Videos URLs first. For
+  Test-Videos URLs that returned HTTP 526 from this environment on 2026-06-11,
+  the manifest records exact Internet Archive captures of the same URLs as
+  fallback sources. The downloader must still fail explicitly if every
+  documented source for a fixture is unavailable; it must not silently
+  substitute generated or unrelated media.
+
 `test-fixtures/README.md` must document the one-command local preparation
 sequence, the CI preparation sequence, cache behavior, expected disk usage, and
 the difference between committed metadata and ignored media binaries.

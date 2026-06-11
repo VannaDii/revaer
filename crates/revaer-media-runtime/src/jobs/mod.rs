@@ -12,10 +12,7 @@ use thiserror::Error;
 
 use crate::capabilities::CapabilitySnapshot;
 use crate::execute::{
-    BuildArgsError, ExecutionStep, VideoTranscodePolicy, build_execution_steps,
-    build_execution_steps_with_capabilities, build_execution_steps_with_replacement,
-    build_execution_steps_with_replacement_policy,
-    build_execution_steps_with_replacement_video_policy,
+    BuildArgsError, ExecutionStep, VideoTranscodePolicy, build_desired_graph_execution_steps,
 };
 use crate::inspect::{InspectAdapter, InspectError};
 use crate::workspace::{
@@ -51,6 +48,10 @@ pub struct MediaJob {
 /// Normalized planning output for one media job.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedJob {
+    /// Inspected source graph used to generate the plan.
+    pub source: Box<MediaGraph>,
+    /// Desired output graph used to generate the plan.
+    pub desired: Box<DesiredGraph>,
     /// Generated deterministic operations.
     pub operations: Vec<PlannedOperation>,
     /// Diff-based compliance report.
@@ -518,6 +519,9 @@ pub fn preflight_error_code(error: &JobPreflightError) -> &'static str {
         JobPreflightError::Build(BuildArgsError::MissingStreamId) => {
             "preflight_build_missing_stream_id"
         }
+        JobPreflightError::Build(BuildArgsError::DesiredStreamMissing(_)) => {
+            "preflight_build_desired_stream_missing"
+        }
         JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
             "preflight_build_unsupported_codec"
         }
@@ -572,6 +576,9 @@ pub fn preflight_error_detail(error: &JobPreflightError) -> &'static str {
         }
         JobPreflightError::Build(BuildArgsError::MissingStreamId) => {
             "stream-scoped operation is missing stream id"
+        }
+        JobPreflightError::Build(BuildArgsError::DesiredStreamMissing(_)) => {
+            "desired graph references a missing source stream"
         }
         JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
             "required transcode codec is unavailable"
@@ -813,6 +820,8 @@ pub fn plan_job_from_source_graph(
     verify_plan_against_source(source, &operations)?;
 
     Ok(PlannedJob {
+        source: Box::new(source.clone()),
+        desired: Box::new(desired.clone()),
         compliance,
         estimated_workspace_bytes: estimate_workspace_bytes(source_file_bytes, &operations),
         operations,
@@ -859,7 +868,15 @@ pub fn build_job_execution_steps(
     output_path: &str,
     planned: &PlannedJob,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    build_execution_steps(input_path, output_path, &planned.operations)
+    build_desired_graph_execution_steps(
+        input_path,
+        output_path,
+        &planned.source,
+        &planned.desired,
+        &planned.operations,
+        None,
+        VideoTranscodePolicy::default(),
+    )
 }
 
 /// Build deterministic execution steps from planned job output, validating required codecs.
@@ -874,11 +891,14 @@ pub fn build_job_execution_steps_with_capabilities(
     planned: &PlannedJob,
     capabilities: &CapabilitySnapshot,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    build_execution_steps_with_capabilities(
+    build_desired_graph_execution_steps(
         input_path,
         output_path,
+        &planned.source,
+        &planned.desired,
         &planned.operations,
-        capabilities,
+        Some(capabilities),
+        VideoTranscodePolicy::default(),
     )
 }
 
@@ -895,12 +915,14 @@ pub fn build_job_execution_steps_with_replacement(
     capabilities: &CapabilitySnapshot,
     backup_path: Option<&str>,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    build_execution_steps_with_replacement(
+    build_job_execution_steps_with_replacement_video_policy(
         source_path,
         output_path,
-        &planned.operations,
+        planned,
         capabilities,
         backup_path,
+        None,
+        VideoTranscodePolicy::default(),
     )
 }
 
@@ -918,13 +940,14 @@ pub fn build_job_execution_steps_with_replacement_policy(
     backup_path: Option<&str>,
     quarantine_path: Option<&str>,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    build_execution_steps_with_replacement_policy(
+    build_job_execution_steps_with_replacement_video_policy(
         source_path,
         output_path,
-        &planned.operations,
+        planned,
         capabilities,
         backup_path,
         quarantine_path,
+        VideoTranscodePolicy::default(),
     )
 }
 
@@ -943,15 +966,33 @@ pub fn build_job_execution_steps_with_replacement_video_policy(
     quarantine_path: Option<&str>,
     video_policy: VideoTranscodePolicy,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    build_execution_steps_with_replacement_video_policy(
+    let mut steps = Vec::new();
+    if let Some(path) = backup_path {
+        steps.push(ExecutionStep::BackupSource {
+            source_path: source_path.to_string(),
+            backup_path: path.to_string(),
+        });
+    }
+    steps.extend(build_desired_graph_execution_steps(
         source_path,
         output_path,
+        &planned.source,
+        &planned.desired,
         &planned.operations,
-        capabilities,
-        backup_path,
-        quarantine_path,
+        Some(capabilities),
         video_policy,
-    )
+    )?);
+    if let Some(path) = quarantine_path {
+        steps.push(ExecutionStep::QuarantineFailedOutput {
+            output_path: output_path.to_string(),
+            quarantine_path: path.to_string(),
+        });
+    }
+    steps.push(ExecutionStep::AtomicReplace {
+        source_path: source_path.to_string(),
+        output_path: output_path.to_string(),
+    });
+    Ok(steps)
 }
 
 /// Build a deterministic summary of planned operations.
@@ -1328,6 +1369,73 @@ mod tests {
     }
 
     #[test]
+    fn job_execution_steps_map_only_desired_streams() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            streams: vec![
+                MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                MediaStream {
+                    stream_id: 1,
+                    kind: StreamKind::Audio,
+                    codec: "aac".to_string(),
+                    language: Some("eng".to_string()),
+                    title: Some("Main".to_string()),
+                    dispositions: Vec::new(),
+                },
+                MediaStream {
+                    stream_id: 2,
+                    kind: StreamKind::Audio,
+                    codec: "aac".to_string(),
+                    language: Some("und".to_string()),
+                    title: Some("Silent".to_string()),
+                    dispositions: Vec::new(),
+                },
+            ],
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: source.streams[..2].to_vec(),
+        };
+        let planned_result = plan_job(&JobPreflightRequest {
+            desired,
+            source_file_bytes: 1_000,
+            source,
+        });
+        assert!(
+            planned_result.is_ok(),
+            "expected plan to succeed, got: {planned_result:?}"
+        );
+        let Ok(planned) = planned_result else {
+            return;
+        };
+
+        let steps_result =
+            build_job_execution_steps("/input/movie.mkv", "/output/movie.mkv", &planned);
+        assert!(
+            steps_result.is_ok(),
+            "expected step build to succeed, got: {steps_result:?}"
+        );
+        let Ok(steps) = steps_result else {
+            return;
+        };
+        let Some(ExecutionStep::Command { argv, .. }) = steps.first() else {
+            panic!("expected first step to be an ffmpeg command");
+        };
+
+        assert!(argv.windows(2).any(|pair| pair == ["-map", "0:0"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-map", "0:1"]));
+        assert!(!argv.windows(2).any(|pair| pair == ["-map", "0"]));
+        assert!(!argv.windows(2).any(|pair| pair == ["-map", "0:2"]));
+    }
+
+    #[test]
     fn plan_job_rejects_unsupported_recode_stream_kind() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
@@ -1397,14 +1505,13 @@ mod tests {
 
     #[test]
     fn build_job_execution_steps_with_capabilities_rejects_unsupported_codec() {
-        let planned = PlannedJob {
-            operations: vec![PlannedOperation {
+        let planned = planned_job_for_tests(
+            vec![PlannedOperation {
                 kind: revaer_media_core::plan::OperationKind::VideoTranscode,
                 stream_id: Some(0),
             }],
-            compliance: report_for_status(Status::Compliant),
-            estimated_workspace_bytes: 100,
-        };
+            100,
+        );
         let capabilities = CapabilitySnapshot {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
@@ -1426,14 +1533,13 @@ mod tests {
 
     #[test]
     fn build_job_execution_steps_with_replacement_includes_backup_and_replace() {
-        let planned = PlannedJob {
-            operations: vec![PlannedOperation {
+        let planned = planned_job_for_tests(
+            vec![PlannedOperation {
                 kind: revaer_media_core::plan::OperationKind::Remux,
                 stream_id: None,
             }],
-            compliance: report_for_status(Status::Compliant),
-            estimated_workspace_bytes: 100,
-        };
+            100,
+        );
         let capabilities = CapabilitySnapshot {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
@@ -1476,6 +1582,46 @@ mod tests {
             self.graph
                 .clone()
                 .ok_or_else(|| InspectError::Adapter("missing graph".to_string()))
+        }
+    }
+
+    fn single_video_graphs(source_codec: &str, desired_codec: &str) -> (MediaGraph, DesiredGraph) {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: source_codec.to_string(),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: desired_codec.to_string(),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        (source, desired)
+    }
+
+    fn planned_job_for_tests(
+        operations: Vec<PlannedOperation>,
+        estimated_workspace_bytes: u64,
+    ) -> PlannedJob {
+        let (source, desired) = single_video_graphs("h264", "h264");
+        PlannedJob {
+            source: Box::new(source),
+            desired: Box::new(desired),
+            operations,
+            compliance: report_for_status(Status::Compliant),
+            estimated_workspace_bytes,
         }
     }
 
@@ -1532,8 +1678,8 @@ mod tests {
 
     #[test]
     fn summarize_planned_job_counts_kinds_and_includes_explanations() {
-        let planned = PlannedJob {
-            operations: vec![
+        let planned = planned_job_for_tests(
+            vec![
                 PlannedOperation {
                     kind: revaer_media_core::plan::OperationKind::Remux,
                     stream_id: None,
@@ -1563,9 +1709,8 @@ mod tests {
                     stream_id: Some(0),
                 },
             ],
-            compliance: report_for_status(Status::Compliant),
-            estimated_workspace_bytes: 123,
-        };
+            123,
+        );
 
         let summary = summarize_planned_job(&planned);
         assert_eq!(summary.total_operations, 7);
@@ -1859,11 +2004,7 @@ mod tests {
     #[test]
     fn preflight_evaluation_ready_flag_is_deterministic() {
         let ready = JobPreflightEvaluation::Ready(JobPreflightReport {
-            planned: PlannedJob {
-                operations: Vec::new(),
-                compliance: report_for_status(Status::Compliant),
-                estimated_workspace_bytes: 0,
-            },
+            planned: planned_job_for_tests(Vec::new(), 0),
             summary: super::PlannedJobSummary {
                 total_operations: 0,
                 remux_operations: 0,
@@ -1938,11 +2079,7 @@ mod tests {
     #[test]
     fn preflight_evaluation_final_stage_accessors_follow_timeline_tail() {
         let ready = JobPreflightEvaluation::Ready(JobPreflightReport {
-            planned: PlannedJob {
-                operations: Vec::new(),
-                compliance: report_for_status(Status::Compliant),
-                estimated_workspace_bytes: 0,
-            },
+            planned: planned_job_for_tests(Vec::new(), 0),
             summary: super::PlannedJobSummary {
                 total_operations: 0,
                 remux_operations: 0,
@@ -2105,14 +2242,13 @@ mod tests {
 
     #[test]
     fn build_job_execution_steps_with_replacement_policy_includes_quarantine() {
-        let planned = PlannedJob {
-            operations: vec![PlannedOperation {
+        let planned = planned_job_for_tests(
+            vec![PlannedOperation {
                 kind: revaer_media_core::plan::OperationKind::Remux,
                 stream_id: None,
             }],
-            compliance: report_for_status(Status::Compliant),
-            estimated_workspace_bytes: 1024,
-        };
+            1024,
+        );
         let capabilities = CapabilitySnapshot {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
@@ -2717,14 +2853,13 @@ mod tests {
     #[test]
     fn preflight_compact_audit_facts_project_ready_timeline_summary_and_capacity() {
         let outcome = JobPreflightEvaluation::Ready(JobPreflightReport {
-            planned: PlannedJob {
-                operations: vec![PlannedOperation {
+            planned: planned_job_for_tests(
+                vec![PlannedOperation {
                     kind: revaer_media_core::plan::OperationKind::Remux,
                     stream_id: None,
                 }],
-                compliance: report_for_status(Status::Compliant),
-                estimated_workspace_bytes: 4_096,
-            },
+                4_096,
+            ),
             summary: super::PlannedJobSummary {
                 total_operations: 1,
                 remux_operations: 1,

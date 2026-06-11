@@ -1,6 +1,7 @@
 //! Command argument builders.
 
 use crate::capabilities::CapabilitySnapshot;
+use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use std::fs;
 use std::io;
@@ -20,6 +21,9 @@ pub enum BuildArgsError {
     /// No operations were provided for execution planning.
     #[error("at least one operation is required")]
     EmptyOperations,
+    /// Desired graph references a stream that is absent from the inspected source.
+    #[error("desired graph references missing source stream: {0}")]
+    DesiredStreamMissing(u32),
 }
 
 /// Filesystem execution error for non-command execution steps.
@@ -557,6 +561,197 @@ pub fn build_execution_steps_with_video_policy(
         output_path: output_path.to_string(),
     });
     Ok(steps)
+}
+
+/// Build ffmpeg argv that materializes an explicit desired stream graph.
+///
+/// # Errors
+///
+/// Returns [`BuildArgsError`] when desired streams are missing from the source graph or required
+/// codecs are not supported by the supplied capabilities.
+pub fn build_desired_graph_ffmpeg_argv(
+    input_path: &str,
+    output_path: &str,
+    source: &MediaGraph,
+    desired: &DesiredGraph,
+    operations: &[PlannedOperation],
+    capabilities: Option<&CapabilitySnapshot>,
+    policy: VideoTranscodePolicy,
+) -> Result<Vec<String>, BuildArgsError> {
+    if operations.is_empty() {
+        return Err(BuildArgsError::EmptyOperations);
+    }
+
+    let selected_video_encoder = capabilities.and_then(|snapshot| {
+        validate_operation_capabilities(
+            operations,
+            snapshot,
+            select_video_encoder_for_policy(snapshot, policy),
+        )
+        .ok()
+        .and_then(|()| select_video_encoder_for_policy(snapshot, policy))
+    });
+    if let Some(snapshot) = capabilities {
+        validate_operation_capabilities(operations, snapshot, selected_video_encoder)?;
+    }
+    let video_encoder = selected_video_encoder.unwrap_or(DEFAULT_VIDEO_ENCODER);
+
+    let mut args = vec![
+        "-nostdin".to_string(),
+        "-y".to_string(),
+        "-i".to_string(),
+        input_path.to_string(),
+    ];
+
+    for stream in &desired.streams {
+        let source_stream = source_stream_for_desired(source, stream)?;
+        args.push("-map".to_string());
+        args.push(format!("0:{}", source_stream.stream_id));
+    }
+
+    for (output_index, stream) in desired.streams.iter().enumerate() {
+        let source_stream = source_stream_for_desired(source, stream)?;
+        let output_codec = output_codec_for_stream(source_stream, stream, video_encoder)?;
+        args.push(format!("-c:{output_index}"));
+        args.push(output_codec.clone());
+        if stream.kind == StreamKind::Video && output_codec != "copy" {
+            append_video_quality_args(&mut args, &output_codec);
+            append_hdr_color_args(&mut args, policy.hdr_color);
+        }
+        append_stream_metadata_args(&mut args, output_index, stream);
+    }
+
+    args.push(output_path.to_string());
+    Ok(args)
+}
+
+/// Build execution steps for materializing an explicit desired stream graph.
+///
+/// # Errors
+///
+/// Returns [`BuildArgsError`] when desired stream mapping or codec validation fails.
+pub fn build_desired_graph_execution_steps(
+    input_path: &str,
+    output_path: &str,
+    source: &MediaGraph,
+    desired: &DesiredGraph,
+    operations: &[PlannedOperation],
+    capabilities: Option<&CapabilitySnapshot>,
+    policy: VideoTranscodePolicy,
+) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    let argv = build_desired_graph_ffmpeg_argv(
+        input_path,
+        output_path,
+        source,
+        desired,
+        operations,
+        capabilities,
+        policy,
+    )?;
+    Ok(vec![
+        ExecutionStep::Command {
+            bin: "ffmpeg".to_string(),
+            argv,
+        },
+        ExecutionStep::VerifyOutput {
+            output_path: output_path.to_string(),
+        },
+    ])
+}
+
+fn source_stream_for_desired<'a>(
+    source: &'a MediaGraph,
+    desired: &MediaStream,
+) -> Result<&'a MediaStream, BuildArgsError> {
+    source
+        .streams
+        .iter()
+        .find(|stream| stream.stream_id == desired.stream_id)
+        .ok_or(BuildArgsError::DesiredStreamMissing(desired.stream_id))
+}
+
+fn output_codec_for_stream(
+    source: &MediaStream,
+    desired: &MediaStream,
+    video_encoder: &str,
+) -> Result<String, BuildArgsError> {
+    if source
+        .codec
+        .trim()
+        .eq_ignore_ascii_case(desired.codec.trim())
+    {
+        return Ok("copy".to_string());
+    }
+
+    let codec = desired.codec.trim().to_ascii_lowercase();
+    match desired.kind {
+        StreamKind::Video => video_encoder_for_codec(&codec, video_encoder),
+        StreamKind::Audio => audio_encoder_for_codec(&codec),
+        StreamKind::Subtitle => subtitle_encoder_for_codec(&codec),
+        StreamKind::Attachment | StreamKind::Chapter => Ok("copy".to_string()),
+    }
+}
+
+fn video_encoder_for_codec(
+    codec: &str,
+    selected_hevc_encoder: &str,
+) -> Result<String, BuildArgsError> {
+    match codec {
+        "hevc" | "h265" => Ok(selected_hevc_encoder.to_string()),
+        "h264" => Ok("libx264".to_string()),
+        "mpeg4" => Ok("mpeg4".to_string()),
+        "vp8" => Ok("libvpx".to_string()),
+        "vp9" => Ok("libvpx-vp9".to_string()),
+        "av1" => Ok("libaom-av1".to_string()),
+        _ => Err(BuildArgsError::UnsupportedCodec("video")),
+    }
+}
+
+fn audio_encoder_for_codec(codec: &str) -> Result<String, BuildArgsError> {
+    match codec {
+        "aac" => Ok("aac".to_string()),
+        "opus" => Ok("libopus".to_string()),
+        "ac3" => Ok("ac3".to_string()),
+        "mp3" => Ok("libmp3lame".to_string()),
+        "vorbis" => Ok("libvorbis".to_string()),
+        _ => Err(BuildArgsError::UnsupportedCodec("audio")),
+    }
+}
+
+fn subtitle_encoder_for_codec(codec: &str) -> Result<String, BuildArgsError> {
+    match codec {
+        "srt" | "subrip" => Ok("srt".to_string()),
+        "webvtt" => Ok("webvtt".to_string()),
+        _ => Err(BuildArgsError::UnsupportedCodec("subtitle")),
+    }
+}
+
+fn append_stream_metadata_args(args: &mut Vec<String>, output_index: usize, stream: &MediaStream) {
+    if let Some(language) = stream
+        .language
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        args.push(format!("-metadata:s:{output_index}"));
+        args.push(format!("language={language}"));
+    }
+    if let Some(title) = stream
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        args.push(format!("-metadata:s:{output_index}"));
+        args.push(format!("title={title}"));
+    }
+
+    args.push(format!("-disposition:{output_index}"));
+    if stream.dispositions.is_empty() {
+        args.push("0".to_string());
+    } else {
+        args.push(stream.dispositions.join("+"));
+    }
 }
 
 /// Execute a non-command filesystem step.

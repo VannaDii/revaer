@@ -40,6 +40,27 @@ test-native:
     REVAER_NATIVE_IT=1 REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-torrent-libt --all-features
 
+download-test-fixtures:
+    bash scripts/test-fixtures/download-test-fixtures.sh
+
+generate-test-fixtures:
+    bash scripts/test-fixtures/generate-derived-fixtures.sh
+
+verify-test-fixtures:
+    bash scripts/test-fixtures/verify-fixtures.sh
+
+clean-test-fixtures:
+    bash scripts/test-fixtures/clean-test-fixtures.sh
+
+test-media-conversion:
+    just verify-test-fixtures
+    cargo --config 'build.rustflags=["-Dwarnings"]' test \
+        -p revaer-media-runtime \
+        --test media_fixtures \
+        verify_prepared_fixture_suite \
+        --all-features \
+        -- --ignored --nocapture
+
 test-features-min:
     test_database_url="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}"; \
     database_url="${DATABASE_URL:-${test_database_url}}"; \
@@ -582,66 +603,77 @@ db-start:
         echo "Normalized local Docker database host to ${db_host}:${db_port}"; \
     fi; \
     echo "Using database URL: ${db_url}"; \
+    docker_managed_endpoint="0"; \
+    if echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
+        docker_managed_endpoint="1"; \
+    fi; \
     container_name="${PG_CONTAINER:-revaer-db}"; \
-    db_data_dir="${REVAER_DB_DATA_DIR:-${PWD}/.server_root/postgres-data}"; \
-    db_shm_size="${REVAER_DB_SHM_SIZE:-1g}"; \
-    required_shm_bytes="${REVAER_DB_SHM_BYTES:-1073741824}"; \
-    mkdir -p "${db_data_dir}"; \
-    existing_container="$(docker ps -aq -f name=^${container_name}$)"; \
-    if [ -n "${existing_container}" ] && echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
-        existing_shm_bytes="$(docker inspect "${container_name}" 2>/dev/null | sed -n 's/.*"ShmSize": \([0-9][0-9]*\).*/\1/p' | head -n 1)"; \
-        if [ -n "${existing_shm_bytes}" ] && [ "${existing_shm_bytes}" -lt "${required_shm_bytes}" ]; then \
-            echo "Recreating existing Postgres container (${container_name}) with shared memory ${existing_shm_bytes} below ${required_shm_bytes} bytes"; \
-            docker rm -f "${container_name}" >/dev/null; \
-            existing_container=""; \
+    if [ "${docker_managed_endpoint}" = "1" ]; then \
+        db_data_dir="${REVAER_DB_DATA_DIR:-${PWD}/.server_root/postgres-data}"; \
+        db_shm_size="${REVAER_DB_SHM_SIZE:-1g}"; \
+        required_shm_bytes="${REVAER_DB_SHM_BYTES:-1073741824}"; \
+        mkdir -p "${db_data_dir}"; \
+        existing_container="$(docker ps -aq -f name=^${container_name}$)"; \
+        if [ -n "${existing_container}" ]; then \
+            existing_shm_bytes="$(docker inspect "${container_name}" 2>/dev/null | sed -n 's/.*"ShmSize": \([0-9][0-9]*\).*/\1/p' | head -n 1)"; \
+            if [ -n "${existing_shm_bytes}" ] && [ "${existing_shm_bytes}" -lt "${required_shm_bytes}" ]; then \
+                echo "Recreating existing Postgres container (${container_name}) with shared memory ${existing_shm_bytes} below ${required_shm_bytes} bytes"; \
+                docker rm -f "${container_name}" >/dev/null; \
+                existing_container=""; \
+            fi; \
         fi; \
-    fi; \
-    if [ -n "${existing_container}" ] && [ -z "$(docker ps -q -f name=^${container_name}$)" ]; then \
-        if docker logs --tail 50 "${container_name}" 2>&1 | grep -q 'No space left on device'; then \
-            echo "Recreating failed Postgres container (${container_name}) with host-backed storage"; \
-            docker rm -f "${container_name}" >/dev/null 2>&1 || true; \
-            existing_container=""; \
+        if [ -n "${existing_container}" ] && [ -z "$(docker ps -q -f name=^${container_name}$)" ]; then \
+            if docker logs --tail 50 "${container_name}" 2>&1 | grep -q 'No space left on device'; then \
+                echo "Recreating failed Postgres container (${container_name}) with host-backed storage"; \
+                docker rm -f "${container_name}" >/dev/null 2>&1 || true; \
+                existing_container=""; \
+            fi; \
         fi; \
-    fi; \
-    if probe_tcp "${db_host}" "${db_port}"; then \
+        if probe_tcp "${db_host}" "${db_port}"; then \
+            echo "Using existing Postgres endpoint ${db_host}:${db_port}"; \
+        else \
+            if [ -n "$existing_container" ]; then \
+                published_port="$(docker port "${container_name}" 5432/tcp 2>/dev/null || true)"; \
+                if [ -z "$published_port" ]; then \
+                    echo "Recreating existing Postgres container (${container_name}) without a published host port"; \
+                    docker rm -f "${container_name}" >/dev/null; \
+                    existing_container=""; \
+                elif ! printf "%s" "$published_port" | grep -Eq "(:|^)${db_port}$"; then \
+                    echo "Recreating existing Postgres container (${container_name}) with mismatched published port ${published_port}"; \
+                    docker rm -f "${container_name}" >/dev/null; \
+                    existing_container=""; \
+                fi; \
+            fi; \
+            if [ -n "$existing_container" ]; then \
+                if [ -z "$(docker ps -q -f name=^${container_name}$)" ]; then \
+                    echo "Starting existing Postgres container (${container_name})"; \
+                    docker start "${container_name}" >/dev/null; \
+                fi; \
+            else \
+                echo "Starting new Postgres container (${container_name})"; \
+                docker run -d \
+                    --name "${container_name}" \
+                    -e POSTGRES_USER=revaer \
+                    -e POSTGRES_PASSWORD=revaer \
+                    -e POSTGRES_DB=revaer \
+                    --shm-size "${db_shm_size}" \
+                    -p "${db_port}:5432" \
+                    -v "${db_data_dir}:/var/lib/postgresql/data" \
+                    postgres:16-alpine >/dev/null; \
+            fi; \
+            echo "Waiting for Postgres to become ready..."; \
+            for _ in $(seq 1 30); do \
+                if docker exec "${container_name}" pg_isready -U revaer -d postgres >/dev/null 2>&1; then \
+                    break; \
+                fi; \
+                sleep 1; \
+            done; \
+        fi; \
+    elif probe_tcp "${db_host}" "${db_port}"; then \
         echo "Using existing Postgres endpoint ${db_host}:${db_port}"; \
     else \
-        if [ -n "$existing_container" ]; then \
-            published_port="$(docker port "${container_name}" 5432/tcp 2>/dev/null || true)"; \
-            if [ -z "$published_port" ]; then \
-                echo "Recreating existing Postgres container (${container_name}) without a published host port"; \
-                docker rm -f "${container_name}" >/dev/null; \
-                existing_container=""; \
-            elif ! printf "%s" "$published_port" | grep -Eq "(:|^)${db_port}$"; then \
-                echo "Recreating existing Postgres container (${container_name}) with mismatched published port ${published_port}"; \
-                docker rm -f "${container_name}" >/dev/null; \
-                existing_container=""; \
-            fi; \
-        fi; \
-        if [ -n "$existing_container" ]; then \
-            if [ -z "$(docker ps -q -f name=^${container_name}$)" ]; then \
-                echo "Starting existing Postgres container (${container_name})"; \
-                docker start "${container_name}" >/dev/null; \
-            fi; \
-        else \
-            echo "Starting new Postgres container (${container_name})"; \
-            docker run -d \
-                --name "${container_name}" \
-                -e POSTGRES_USER=revaer \
-                -e POSTGRES_PASSWORD=revaer \
-                -e POSTGRES_DB=revaer \
-                --shm-size "${db_shm_size}" \
-                -p "${db_port}:5432" \
-                -v "${db_data_dir}:/var/lib/postgresql/data" \
-                postgres:16-alpine >/dev/null; \
-        fi; \
-        echo "Waiting for Postgres to become ready..."; \
-        for _ in $(seq 1 30); do \
-            if docker exec "${container_name}" pg_isready -U revaer -d postgres >/dev/null 2>&1; then \
-                break; \
-            fi; \
-            sleep 1; \
-        done; \
+        echo "Postgres endpoint ${db_host}:${db_port} is not reachable; refusing to start a Docker container for a non-local DATABASE_URL."; \
+        exit 1; \
     fi; \
     echo "Waiting for external Postgres endpoint ${db_host}:${db_port}..."; \
     external_ready="0"; \
@@ -676,7 +708,7 @@ db-start:
         echo "Local Postgres container ${container_name} did not exit recovery in time."; \
         return 1; \
     }; \
-    if echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
+    if [ "${docker_managed_endpoint}" = "1" ]; then \
         wait_for_local_postgres_writable; \
     fi; \
     just sqlx-install; \
@@ -709,7 +741,7 @@ db-start:
     DATABASE_URL="${db_url}" sqlx database create --database-url "${db_url}" 2>/dev/null || true; \
     reset_db="${REVAER_DB_RESET:-0}"; \
     if [ "${reset_db}" = "1" ]; then \
-        if echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
+        if [ "${docker_managed_endpoint}" = "1" ]; then \
             echo "Resetting local database..."; \
             if run_sqlx_with_recovery_retry env DATABASE_URL="${db_url}" sqlx database reset -y --database-url "${db_url}" --source crates/revaer-data/migrations; then \
                 reset_status="0"; \
@@ -736,7 +768,7 @@ db-start:
             if [ "${migrate_status}" -eq 2 ]; then \
                 exit 1; \
             fi; \
-            if echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
+            if [ "${docker_managed_endpoint}" = "1" ]; then \
                 echo "Migration history mismatch; resetting local database..."; \
                 if run_sqlx_with_recovery_retry env DATABASE_URL="${db_url}" sqlx database reset -y --database-url "${db_url}" --source crates/revaer-data/migrations; then \
                     reset_status="0"; \

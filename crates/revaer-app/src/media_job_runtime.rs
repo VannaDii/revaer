@@ -1988,8 +1988,25 @@ mod tests {
         let Some(fixture) = setup_runtime(true, true).await? else {
             return Ok(());
         };
+        let source = MediaGraph {
+            source_path: "/media/in.mkv".to_string(),
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/media/out.mkv".to_string(),
+            streams: source.streams.clone(),
+        };
         let report = JobPreflightReport {
             planned: PlannedJob {
+                source: Box::new(source),
+                desired: Box::new(desired),
                 operations: vec![PlannedOperation {
                     kind: OperationKind::MetadataRewrite,
                     stream_id: None,
