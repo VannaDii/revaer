@@ -1,27 +1,42 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
-use postgres::NoTls;
 use revaer_test_support::fixtures::{docker_available, docker_available_with_host};
 use revaer_test_support::postgres::{start_postgres, start_postgres_at};
+use sqlx::{Connection, Row, postgres::PgConnection};
 use url::Url;
 
 fn current_database_name(url: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let config = postgres::Config::from_str(url)?;
-    let mut client = config.connect(NoTls)?;
-    let row = client.query_one("SELECT current_database()", &[])?;
-    Ok(row.get(0))
+    let runtime = test_runtime()?;
+    runtime.block_on(async {
+        let mut connection = PgConnection::connect(url).await?;
+        let row = sqlx::query("SELECT current_database()")
+            .fetch_one(&mut connection)
+            .await?;
+        let database = row.try_get(0)?;
+        Ok(database)
+    })
 }
 
 fn database_exists(url: &str, database_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let config = postgres::Config::from_str(url)?;
-    let mut client = config.connect(NoTls)?;
-    let row = client.query_one(
-        "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)",
-        &[&database_name],
-    )?;
-    Ok(row.get(0))
+    let runtime = test_runtime()?;
+    runtime.block_on(async {
+        let mut connection = PgConnection::connect(url).await?;
+        let row = sqlx::query("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)")
+            .bind(database_name)
+            .fetch_one(&mut connection)
+            .await?;
+        let exists = row.try_get(0)?;
+        Ok(exists)
+    })
+}
+
+fn test_runtime() -> Result<tokio::runtime::Runtime, Box<dyn std::error::Error>> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()?;
+    Ok(runtime)
 }
 
 fn admin_database_url(url: &str) -> Result<String, Box<dyn std::error::Error>> {

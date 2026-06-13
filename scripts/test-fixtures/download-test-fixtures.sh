@@ -23,7 +23,7 @@ download_file() {
   local url="$2"
   local destination="$3"
   shift 3
-  local fallback_urls=("$@")
+  local fallback_count="$#"
 
   if [ -s "${destination}" ] && [ "${REVAER_FIXTURE_FORCE_DOWNLOAD:-0}" != "1" ]; then
     printf 'download-test-fixtures: %s already exists: %s\n' "${id}" "${destination}"
@@ -33,7 +33,7 @@ download_file() {
   local temp="${destination}.tmp.$$"
   rm -f "${temp}"
   local candidate_url
-  for candidate_url in "${url}" "${fallback_urls[@]}"; do
+  for candidate_url in "${url}" "$@"; do
     printf 'download-test-fixtures: downloading %s from %s\n' "${id}" "${candidate_url}"
     if curl --fail --location --show-error --retry 3 --retry-delay 2 --output "${temp}" "${candidate_url}"; then
       if [ ! -s "${temp}" ]; then
@@ -48,7 +48,7 @@ download_file() {
     printf 'download-test-fixtures: failed to download %s from %s\n' "${id}" "${candidate_url}" >&2
   done
 
-  printf 'download-test-fixtures: failed to download %s after trying primary and %s fallback URL(s)\n' "${id}" "${#fallback_urls[@]}" >&2
+  printf 'download-test-fixtures: failed to download %s after trying primary and %s fallback URL(s)\n' "${id}" "${fallback_count}" >&2
   exit 1
 }
 

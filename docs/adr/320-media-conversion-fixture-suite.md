@@ -28,6 +28,8 @@
   - Verification uses Rust JSON parsing instead of `jq`, matching the repo preference to avoid new dependencies and brittle shell JSON parsing.
   - Job execution now builds one desired-graph ffmpeg command with exact `-map 0:<stream>` arguments and per-output-stream codec/metadata/disposition settings.
   - `just db-start` now exits through an already reachable explicit non-Docker database endpoint before Docker container inspection, keeping local gates runnable when Docker Desktop is unavailable.
+  - The test-support Postgres fixture helper now uses the workspace `sqlx` and `tokio` dependencies instead of the synchronous `postgres` crate after `cargo audit` reported RustSec advisories against that crate's transitive client stack.
+  - The SQL policy guardrail now documents and enforces a narrow `sqlx::query*` exception for disposable test-database provisioning in `revaer-test-support`; runtime SQL remains confined to `revaer-data`.
 - Test coverage summary:
   - Added `manifest_contract_tracks_fixture_suite`.
   - Added ignored `verify_prepared_fixture_suite` for prepared media binaries.
@@ -37,10 +39,14 @@
   - Ran `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app persist_ready_plan_records_filesystem_fallback_operations --all-features`.
   - Ran `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-test-support --all-features`.
   - Ran `cargo clippy -p revaer-test-support --all-targets --all-features -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`.
-  - Ran `just download-test-fixtures`; after adding exact archive fallbacks and fixing cross-platform `base64` input handling, all upstream fixture files downloaded.
+  - Ran `just download-test-fixtures`; after adding exact archive fallbacks and fixing macOS Bash empty fallback-argument handling plus cross-platform `base64` input handling, all upstream fixture files downloaded.
   - Ran `just generate-test-fixtures`; generated or reused all derived fixtures successfully.
   - Ran `just verify-test-fixtures`; verified all 30 fixtures, wrote normalized probe snapshots, validated derived metadata, forced subtitles, silent audio, and production pipeline cases.
   - Ran `just test-media-conversion`; passed after fixture verification and production pipeline assertions.
+  - Ran `cargo check -p revaer-test-support --all-targets --all-features`; passed after replacing the synchronous `postgres` helper dependency with `sqlx`.
+  - Ran `DATABASE_URL='postgres://revaer:revaer@127.0.0.1:55432/postgres' REVAER_TEST_DATABASE_URL='postgres://revaer:revaer@127.0.0.1:55432/postgres' cargo test -p revaer-test-support --all-features`; passed, including disposable database create/probe/drop coverage.
+  - Ran `just audit`; passed after removing the vulnerable transitive Postgres client stack.
+  - Ran `just deny`; passed without adding new duplicate-crate exceptions.
   - Ran `DATABASE_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' REVAER_TEST_DATABASE_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' just ci`; passed, including lint, tests, coverage, audits, UI build, and release build.
   - Ran `env E2E_DB_ADMIN_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' DATABASE_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' REVAER_TEST_DATABASE_URL='postgres://revaer:revaer@0.0.0.0:55432/postgres' E2E_SKIP_DB_START=1 just ui-e2e`; passed 104 Playwright tests.
 - Observability updates:
@@ -49,12 +55,15 @@
 - Status-doc validation:
   - Re-checked `MEDIA_TRANSCODING.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/ffi.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
   - Updated the devops instruction file because `pr.yml` and the Justfile gained the media fixture gate.
-  - Updated the Rust instruction file because `just db-start` now documents its explicit non-Docker endpoint behavior.
+  - Updated the Rust instruction file because `just db-start` now documents its explicit non-Docker endpoint behavior and the lint guardrail now has a narrow disposable test-database provisioning exception.
+  - Updated the data instruction file because the `sqlx::query*` guardrail description now includes the `revaer-test-support` disposable database helper exception.
 - Risk & rollback plan:
   - Risk: upstream fixture hosts can fail and block the dedicated fixture job. Roll back the CI job and Justfile fixture recipes together if the suite must be temporarily removed.
   - Risk: graph materialization changes ffmpeg command shape. Roll back the execution changes to restore operation-only staging if production execution regresses, but keep the failing stream-selection test as the regression signal.
 - Dependency rationale:
-  - No new Rust, JavaScript, shell, or workflow dependencies were added.
+  - Removed the direct `postgres` crate dependency from `revaer-test-support`.
+  - Added direct `sqlx` and `tokio` dependencies to `revaer-test-support`; both are existing workspace dependencies, so no new external crates or workflow dependencies were introduced.
+  - The change removes the vulnerable transitive Postgres client stack and avoids adding new duplicate-crate exceptions to `deny.toml`.
 - Stale-policy check:
   - Reviewed root and scoped instructions listed above.
   - Found no contradictions; added the missing devops rule for the new media fixture PR gate and clarified the Justfile database bootstrap rule.

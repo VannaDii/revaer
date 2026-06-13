@@ -110,7 +110,9 @@ report_matches "todo!/unimplemented! stubs are forbidden in authored Rust" "${ma
 
 matches="$(
   search_rust_matches 'sqlx::query(_as|_scalar)?|query!|query_as!|query_scalar!' '' \
-    'crates/revaer-data/src/**'
+    'crates/revaer-data/src/**' \
+    'crates/revaer-test-support/src/postgres.rs' \
+    'crates/revaer-test-support/tests/integration.rs'
 )"
 report_matches "sqlx runtime queries are confined to crates/revaer-data/src" "${matches}"
 
