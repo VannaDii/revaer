@@ -2178,6 +2178,11 @@ CI requirements:
   `scripts/test-fixtures/*.sh`, and relevant tool versions so stale fixtures do
   not mask manifest changes.
 - Run `just verify-test-fixtures` before `just test-media-conversion`.
+- Publish one Markdown media conversion report from the fixture job. The report
+  must start with a summary and then list fixture validation, metadata checks,
+  production media pipeline actions, outputs, operation kinds, and outcomes.
+  The PR job must append the report to the GitHub job summary and upload the
+  same file as an artifact.
 - Fixture download failures must name the source URL and fixture id. They must
   not degrade into skipped media conversion tests in the dedicated fixture job.
 - Normal `just ci` behavior must remain Justfile-backed. If full media fixtures

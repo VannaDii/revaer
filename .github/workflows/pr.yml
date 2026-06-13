@@ -220,6 +220,32 @@ jobs:
       - name: Media conversion integration tests
         run: just test-media-conversion
 
+      - name: Publish media conversion report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          report_path="target/media-conversion-report.md"
+          if [ ! -f "${report_path}" ]; then
+            {
+              echo "# Media Conversion Fixture Report"
+              echo
+              echo "## Summary"
+              echo "- Outcome: failed"
+              echo "- Report file missing: ${report_path}"
+            } | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+          cat "${report_path}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload media conversion report
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: media-conversion-report
+          path: target/media-conversion-report.md
+          if-no-files-found: error
+
   feature-matrix:
     name: Feature Matrix
     runs-on: ubuntu-latest

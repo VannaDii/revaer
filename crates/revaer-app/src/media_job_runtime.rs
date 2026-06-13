@@ -803,8 +803,7 @@ fn desired_target_from_job(
         .compatibility_target_key
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .is_none()
+        .is_none_or(str::is_empty)
     {
         return Ok(None);
     }
@@ -1415,7 +1414,7 @@ mod tests {
             Arc::new(StaticCapacityProbe {
                 available_bytes: 1024 * 1024 * 1024,
             }) as Arc<RuntimeCapacityProbe>,
-            Duration::from_secs(60),
+            Duration::from_mins(1),
             WorkspacePolicy {
                 max_bytes: 1024 * 1024 * 1024,
                 reserve_bytes: 1024,

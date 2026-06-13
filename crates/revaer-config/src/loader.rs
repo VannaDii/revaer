@@ -7,12 +7,10 @@
 use argon2::Argon2;
 use argon2::password_hash::{
     Error as PasswordHashError, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
-    rand_core::OsRng,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, Utc, Weekday};
-use rand::Rng;
-use rand::distr::Alphanumeric;
+use rand::distr::{Alphanumeric, SampleString};
 use revaer_data::config::{
     self as data_config, AppProfileRow, EngineProfileRow, FsArrayField, FsBooleanField,
     FsOptionalStringField, FsPolicyRow, FsStringField, LabelPolicyRow, NewSetupToken,
@@ -72,6 +70,7 @@ impl DbSessionConfig {
 }
 
 const SYSTEM_ACTOR_PUBLIC_ID: Uuid = Uuid::nil();
+const SECRET_SALT_BYTES: usize = 16;
 
 #[async_trait]
 /// Abstraction over configuration backends used by the application service.
@@ -2570,14 +2569,14 @@ async fn apply_secret_patches(
 }
 
 fn generate_token(length: usize) -> String {
-    let mut rng = rand::rng();
-    std::iter::repeat_with(|| rng.sample(Alphanumeric) as char)
-        .take(length)
-        .collect()
+    Alphanumeric.sample_string(&mut rand::rng(), length)
 }
 
 fn hash_secret(input: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
+    let mut salt_bytes = [0_u8; SECRET_SALT_BYTES];
+    rand::fill(&mut salt_bytes);
+    let salt = SaltString::encode_b64(&salt_bytes)
+        .map_err(|detail| ConfigError::SecretHashFailed { detail })?;
     let argon = Argon2::default();
     let hash = argon
         .hash_password(input.as_bytes(), &salt)

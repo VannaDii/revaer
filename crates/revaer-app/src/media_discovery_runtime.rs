@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use crate::media::{build_discovery_previews, ensure_execution_capability_snapshot};
 
-const DEFAULT_DISCOVERY_TICK_INTERVAL: Duration = Duration::from_secs(60);
+const DEFAULT_DISCOVERY_TICK_INTERVAL: Duration = Duration::from_mins(1);
 const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
 const MEDIA_FILE_EXTENSIONS: &[&str] = &["avi", "m4v", "mkv", "mov", "mp4"];
 
@@ -355,12 +355,12 @@ mod tests {
 
         assert!(runtime.profile_due(&scheduled, now)?);
         assert!(!runtime.profile_due(&scheduled, now + Duration::from_secs(119))?);
-        assert!(runtime.profile_due(&scheduled, now + Duration::from_secs(120))?);
+        assert!(runtime.profile_due(&scheduled, now + Duration::from_mins(2))?);
 
         let default_interval = media_profile(false, true, None);
         assert!(runtime.profile_due(&default_interval, now)?);
         assert!(!runtime.profile_due(&default_interval, now + Duration::from_secs(59))?);
-        assert!(runtime.profile_due(&default_interval, now + Duration::from_secs(60))?);
+        assert!(runtime.profile_due(&default_interval, now + Duration::from_mins(1))?);
         Ok(())
     }
 }

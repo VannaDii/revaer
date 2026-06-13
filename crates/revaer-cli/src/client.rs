@@ -4,7 +4,7 @@ use std::fmt::{self, Display, Formatter};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::anyhow;
-use rand::{Rng, distr::Alphanumeric};
+use rand::distr::{Alphanumeric, SampleString};
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, StatusCode, Url};
 use serde::Serialize;
@@ -206,10 +206,7 @@ pub(crate) fn parse_api_key(input: Option<String>) -> CliResult<Option<ApiKeyCre
 /// Generate a random alphanumeric string of the requested length.
 #[must_use]
 pub(crate) fn random_string(len: usize) -> String {
-    let mut rng = rand::rng();
-    std::iter::repeat_with(|| rng.sample(Alphanumeric) as char)
-        .take(len)
-        .collect()
+    Alphanumeric.sample_string(&mut rand::rng(), len)
 }
 
 /// Millisecond timestamp helper for telemetry.
@@ -217,8 +214,9 @@ pub(crate) fn random_string(len: usize) -> String {
 pub(crate) fn timestamp_now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(0)
+        .map_or(0, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 /// Classify an HTTP response into a CLI error.
