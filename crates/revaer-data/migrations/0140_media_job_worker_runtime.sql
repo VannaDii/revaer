@@ -3,7 +3,7 @@ ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS ix_media_job_worker_queue
     ON media_job (status, queued_at ASC, media_job_id ASC)
-    WHERE status = 'queued'::media_job_status;
+    WHERE status = media_job_status_queued_v1();
 
 CREATE OR REPLACE FUNCTION media_job_worker_claim_next_v1()
 RETURNS TABLE (
@@ -25,7 +25,7 @@ BEGIN
         SELECT mj.media_job_id
           FROM media_job mj
           JOIN media_profile mp ON mp.media_profile_id = mj.media_profile_id
-         WHERE mj.status = 'queued'::media_job_status
+         WHERE mj.status = media_job_status_queued_v1()
            AND mp.deleted_at IS NULL
          ORDER BY mj.queued_at ASC, mj.media_job_id ASC
          FOR UPDATE SKIP LOCKED
@@ -33,7 +33,7 @@ BEGIN
     ),
     updated AS (
         UPDATE media_job mj
-           SET status = 'running'::media_job_status,
+           SET status = media_job_status_running_v1(),
                started_at = COALESCE(mj.started_at, now()),
                heartbeat_at = now(),
                completed_at = NULL,
@@ -74,12 +74,12 @@ BEGIN
     UPDATE media_job
        SET heartbeat_at = now()
      WHERE media_job_public_id = media_job_public_id_input
-       AND status IN ('running'::media_job_status, 'verifying'::media_job_status);
+       AND status IN (media_job_status_running_v1(), media_job_status_verifying_v1());
 
     GET DIAGNOSTICS rows_updated = ROW_COUNT;
     IF rows_updated = 0 THEN
         RAISE EXCEPTION 'media job not running'
-            USING ERRCODE = 'P0001', DETAIL = 'media_job_worker_heartbeat_invalid_status';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_heartbeat_invalid_status';
     END IF;
 END;
 $$;
@@ -100,34 +100,34 @@ BEGIN
     UPDATE media_job
        SET status = status_input,
            heartbeat_at = CASE
-               WHEN status_input IN ('running'::media_job_status, 'verifying'::media_job_status)
+               WHEN status_input IN (media_job_status_running_v1(), media_job_status_verifying_v1())
                    THEN now()
                ELSE heartbeat_at
            END,
            completed_at = CASE
                WHEN status_input IN (
-                   'completed'::media_job_status,
-                   'failed'::media_job_status,
-                   'cancelled'::media_job_status
+                   media_job_status_completed_v1(),
+                   media_job_status_failed_v1(),
+                   media_job_status_cancelled_v1()
                )
                    THEN now()
                ELSE completed_at
            END,
            last_error = NULLIF(btrim(COALESCE(last_error_input, '')), '')
      WHERE media_job_public_id = media_job_public_id_input
-       AND status IN ('running'::media_job_status, 'verifying'::media_job_status)
+       AND status IN (media_job_status_running_v1(), media_job_status_verifying_v1())
        AND status_input IN (
-           'running'::media_job_status,
-           'verifying'::media_job_status,
-           'completed'::media_job_status,
-           'failed'::media_job_status,
-           'cancelled'::media_job_status
+           media_job_status_running_v1(),
+           media_job_status_verifying_v1(),
+           media_job_status_completed_v1(),
+           media_job_status_failed_v1(),
+           media_job_status_cancelled_v1()
        )
      RETURNING status INTO current_status;
 
     IF current_status IS NULL THEN
         RAISE EXCEPTION 'media job worker status transition invalid'
-            USING ERRCODE = 'P0001', DETAIL = 'media_job_worker_status_invalid';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_status_invalid';
     END IF;
 END;
 $$;

@@ -1,5 +1,5 @@
 use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
-use revaer_media_core::plan::OperationKind;
+use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_runtime::execute::{ProcessCommandRunner, execute_step_sequence};
 use revaer_media_runtime::inspect::{
     FfprobeInspectAdapter, InspectAdapter, SystemInspectProbeExecutor,
@@ -71,6 +71,18 @@ struct PipelineReportRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct MaterializedGraph {
+    operations: Vec<String>,
+    verified_output_path: PathBuf,
+}
+
+impl MaterializedGraph {
+    fn is_noop(&self) -> bool {
+        matches!(self.operations.as_slice(), [operation] if operation == "no_op")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct MediaConversionReport {
     expected_fixtures: usize,
     fixture_validations: Vec<ReportRow>,
@@ -132,6 +144,8 @@ impl MediaConversionReport {
             .iter()
             .filter(|row| row.outcome != "passed")
             .count();
+        let video_transcodes = self.operation_count("video_transcode");
+        let audio_transcodes = self.operation_count("audio_transcode");
         let suite_outcome = if self.suite_failures.is_empty()
             && failed_fixtures == 0
             && failed_metadata == 0
@@ -169,6 +183,8 @@ impl MediaConversionReport {
             "- Pipeline actions: {}\n",
             self.pipeline_actions.len()
         ));
+        markdown.push_str(&format!("- Video transcodes: {video_transcodes}\n"));
+        markdown.push_str(&format!("- Audio transcodes: {audio_transcodes}\n"));
         markdown.push_str(&format!("- Pipeline failures: {failed_pipeline}\n"));
         markdown.push_str(&format!(
             "- Suite failures: {}\n\n",
@@ -233,6 +249,13 @@ impl MediaConversionReport {
         }
         markdown
     }
+
+    fn operation_count(&self, operation: &str) -> usize {
+        self.pipeline_actions
+            .iter()
+            .filter(|row| row.operations.iter().any(|item| item == operation))
+            .count()
+    }
 }
 
 #[test]
@@ -295,16 +318,69 @@ fn media_conversion_report_starts_with_summary_and_lists_actions() -> TestResult
         outcome: "passed".to_string(),
         details: "preserved requested audio order spa,eng".to_string(),
     });
+    report.record_pipeline_action(PipelineReportRow {
+        case_name: "WebM VP8/Vorbis to MP4 H.264/AAC".to_string(),
+        fixture_id: "chromium-bear-320x240-webm".to_string(),
+        input_path: "test-fixtures/chromium/bear-320x240.webm".to_string(),
+        output_path: "target/media-fixture-integration/webm-vp8-vorbis-to-h264-aac.mp4".to_string(),
+        operations: vec!["video_transcode".to_string(), "audio_transcode".to_string()],
+        outcome: "passed".to_string(),
+        details: "output codecs video=[h264] audio=[aac]".to_string(),
+    });
 
     let markdown = report.render_markdown();
 
     assert!(markdown.starts_with("# Media Conversion Fixture Report\n\n## Summary\n"));
     assert!(markdown.contains("- Fixtures verified: 2"));
-    assert!(markdown.contains("- Pipeline actions: 2"));
+    assert!(markdown.contains("- Pipeline actions: 3"));
+    assert!(markdown.contains("- Video transcodes: 1"));
+    assert!(markdown.contains("- Audio transcodes: 1"));
     assert!(markdown.contains("| common MP4 input | bbb-h264-mp4 |"));
     assert!(markdown.contains("| multi-audio ordered selection | multi-audio-mkv |"));
+    assert!(markdown.contains("| WebM VP8/Vorbis to MP4 H.264/AAC |"));
     assert!(markdown.contains("## Pipeline Actions\n"));
     Ok(())
+}
+
+#[test]
+fn noop_materialization_verifies_source_path_without_requesting_output_artifact() {
+    let desired = DesiredGraph {
+        output_path: "target/media-fixture-integration/bbb-h264.mp4".to_string(),
+        container_format: None,
+        streams: Vec::new(),
+    };
+    let source_path = Path::new("test-fixtures/source/bbb-h264.mp4");
+
+    let verified_path = verified_output_path_for_plan(
+        source_path,
+        &desired,
+        &[PlannedOperation {
+            kind: OperationKind::NoOp,
+            stream_id: None,
+        }],
+    );
+
+    assert_eq!(verified_path, source_path);
+}
+
+#[test]
+fn mutating_materialization_verifies_requested_output_artifact() {
+    let desired = DesiredGraph {
+        output_path: "target/media-fixture-integration/bbb-h264.mp4".to_string(),
+        container_format: None,
+        streams: Vec::new(),
+    };
+
+    let verified_path = verified_output_path_for_plan(
+        Path::new("test-fixtures/source/bbb-h264.mp4"),
+        &desired,
+        &[PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+        }],
+    );
+
+    assert_eq!(verified_path, PathBuf::from(&desired.output_path));
 }
 
 #[test]
@@ -491,16 +567,58 @@ fn require_tool(tool: &str) -> TestResult {
     };
     let status = Command::new(tool)
         .args(args)
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
     match status {
-        Ok(value) if value.success() => Ok(()),
+        Ok(value) if value.success() => {
+            if tool == "ffmpeg" {
+                require_ffmpeg_channel_layout_support(tool)?;
+            }
+            Ok(())
+        }
         Ok(value) => fail(format!(
             "required tool preflight failed: {tool} status={value}"
         )),
         Err(error) => fail(format!("required tool missing: {tool}: {error}")),
     }
+}
+
+fn require_ffmpeg_channel_layout_support(tool: &str) -> TestResult {
+    let output = Command::new(tool)
+        .args([
+            "-hide_banner",
+            "-v",
+            "error",
+            "-nostdin",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-t",
+            "0.01",
+            "-map",
+            "0:a:0",
+            "-c:a",
+            "pcm_s16le",
+            "-channel_layout:a:0",
+            "stereo",
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()?;
+    if output.status.success() {
+        return Ok(());
+    }
+    fail(format!(
+        "required FFmpeg channel-layout capability is unavailable: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    ))
 }
 
 fn ffprobe_json(path: &Path) -> TestResult<Value> {
@@ -822,6 +940,9 @@ fn run_pipeline_cases(
 
     assert_multi_audio_selection(root, manifest, &output_root, report)?;
     assert_subtitle_selection(root, manifest, &output_root, report)?;
+    assert_transcoding_cases(root, manifest, &output_root, report)?;
+    assert_pipeline_report_has_operation(report, "video_transcode")?;
+    assert_pipeline_report_has_operation(report, "audio_transcode")?;
     Ok(())
 }
 
@@ -849,28 +970,335 @@ fn materialize_same_graph(
     );
     let desired = DesiredGraph {
         output_path: path_text(&output_path)?,
+        container_format: None,
         streams: graph.streams.clone(),
     };
-    let operations = materialize_desired_graph(&source_path, &graph, &desired)?;
-    let output_graph = inspect_graph(&output_path)?;
+    let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
+    let output_graph = inspect_graph(&materialized.verified_output_path)?;
     assert_eq!(
         output_graph.streams.len(),
         desired.streams.len(),
         "{} output stream count mismatch",
         fixture.id
     );
+    let details = if materialized.is_noop() {
+        "source already satisfied desired graph; no output materialized".to_string()
+    } else {
+        format!(
+            "output probeable with {} stream(s)",
+            output_graph.streams.len()
+        )
+    };
     report.record_pipeline_action(PipelineReportRow {
         case_name: case_name.to_string(),
         fixture_id: fixture.id.clone(),
         input_path: fixture.path.clone(),
-        output_path: report_path(root, &output_path),
-        operations,
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
+        outcome: "passed".to_string(),
+        details,
+    });
+    Ok(())
+}
+
+fn assert_transcoding_cases(
+    root: &Path,
+    manifest: &FixtureManifest,
+    output_root: &Path,
+    report: &mut MediaConversionReport,
+) -> TestResult {
+    let cases = [
+        video_transcode_case(
+            "HEVC MP4 video transcode to H.264",
+            "bbb-h265-mp4",
+            "hevc-to-h264.mp4",
+            "h264",
+            H264_CODEC,
+        ),
+        video_transcode_case(
+            "AV1 MP4 video transcode to H.264",
+            "bbb-av1-mp4",
+            "av1-to-h264.mp4",
+            "h264",
+            H264_CODEC,
+        ),
+        video_transcode_case(
+            "VP8 WebM video transcode to H.264",
+            "bbb-vp8-webm",
+            "vp8-to-h264.mp4",
+            "h264",
+            H264_CODEC,
+        ),
+        video_transcode_case(
+            "VP9 WebM video transcode to H.264",
+            "bbb-vp9-webm",
+            "vp9-to-h264.mp4",
+            "h264",
+            H264_CODEC,
+        ),
+        video_transcode_case(
+            "H.264 MP4 video transcode to MPEG-4 Part 2",
+            "bbb-h264-mp4",
+            "h264-to-mpeg4.avi",
+            "mpeg4",
+            MPEG4_CODEC,
+        ),
+        audio_transcode_case(
+            "MOV AAC audio transcode to Opus",
+            "h264-aac-mov",
+            "aac-to-opus.mkv",
+            OPUS_CODEC,
+            H264_CODEC,
+        ),
+        audio_transcode_case(
+            "Audio-only AAC transcode to MP3",
+            "audio-only-m4a",
+            "audio-only-aac-to-mp3.mp3",
+            MP3_CODEC,
+            NO_CODECS,
+        ),
+        audio_transcode_case(
+            "VP9/Opus WebM audio transcode to AAC",
+            "chromium-bear-vp9-opus-webm",
+            "vp9-opus-to-vp9-aac.mkv",
+            AAC_CODEC,
+            VP9_CODEC,
+        ),
+        audio_video_transcode_case(
+            "WebM VP8/Vorbis to MP4 H.264/AAC",
+            "chromium-bear-320x240-webm",
+            "webm-vp8-vorbis-to-h264-aac.mp4",
+        ),
+        audio_video_transcode_case(
+            "AVI MPEG-4/MP3 to MP4 H.264/AAC",
+            "mpeg4-mp3-avi",
+            "avi-mpeg4-mp3-to-h264-aac.mp4",
+        ),
+        audio_video_transcode_case(
+            "Matroska Theora/Vorbis to MP4 H.264/AAC",
+            "mkv-theora-vorbis-live-style",
+            "theora-vorbis-to-h264-aac.mp4",
+        ),
+    ];
+
+    for item in cases {
+        assert_transcode_case(root, manifest, output_root, report, item)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct TranscodeCase<'a> {
+    case_name: &'a str,
+    fixture_id: &'a str,
+    output_name: &'a str,
+    video_codec: Option<&'a str>,
+    audio_codecs: &'a [&'a str],
+    expected_video_codecs: &'a [&'a str],
+    expected_audio_codecs: &'a [&'a str],
+    expected_operations: &'a [&'a str],
+}
+
+const NO_CODECS: &[&str] = &[];
+const AAC_CODEC: &[&str] = &["aac"];
+const H264_CODEC: &[&str] = &["h264"];
+const MPEG4_CODEC: &[&str] = &["mpeg4"];
+const MP3_CODEC: &[&str] = &["mp3"];
+const OPUS_CODEC: &[&str] = &["opus"];
+const VP9_CODEC: &[&str] = &["vp9"];
+const AUDIO_TRANSCODE_OPERATION: &[&str] = &["audio_transcode"];
+const VIDEO_TRANSCODE_OPERATION: &[&str] = &["video_transcode"];
+const AUDIO_VIDEO_TRANSCODE_OPERATIONS: &[&str] = &["video_transcode", "audio_transcode"];
+
+const fn video_transcode_case(
+    case_name: &'static str,
+    fixture_id: &'static str,
+    output_name: &'static str,
+    video_codec: &'static str,
+    expected_video_codecs: &'static [&'static str],
+) -> TranscodeCase<'static> {
+    TranscodeCase {
+        case_name,
+        fixture_id,
+        output_name,
+        video_codec: Some(video_codec),
+        audio_codecs: NO_CODECS,
+        expected_video_codecs,
+        expected_audio_codecs: NO_CODECS,
+        expected_operations: VIDEO_TRANSCODE_OPERATION,
+    }
+}
+
+const fn audio_transcode_case(
+    case_name: &'static str,
+    fixture_id: &'static str,
+    output_name: &'static str,
+    audio_codecs: &'static [&'static str],
+    expected_video_codecs: &'static [&'static str],
+) -> TranscodeCase<'static> {
+    TranscodeCase {
+        case_name,
+        fixture_id,
+        output_name,
+        video_codec: None,
+        audio_codecs,
+        expected_video_codecs,
+        expected_audio_codecs: audio_codecs,
+        expected_operations: AUDIO_TRANSCODE_OPERATION,
+    }
+}
+
+const fn audio_video_transcode_case(
+    case_name: &'static str,
+    fixture_id: &'static str,
+    output_name: &'static str,
+) -> TranscodeCase<'static> {
+    TranscodeCase {
+        case_name,
+        fixture_id,
+        output_name,
+        video_codec: Some("h264"),
+        audio_codecs: AAC_CODEC,
+        expected_video_codecs: H264_CODEC,
+        expected_audio_codecs: AAC_CODEC,
+        expected_operations: AUDIO_VIDEO_TRANSCODE_OPERATIONS,
+    }
+}
+
+fn assert_transcode_case(
+    root: &Path,
+    manifest: &FixtureManifest,
+    output_root: &Path,
+    report: &mut MediaConversionReport,
+    item: TranscodeCase<'_>,
+) -> TestResult {
+    let fixture = fixture_by_id(manifest, item.fixture_id)?;
+    let source_path = root.join(&fixture.path);
+    let source = inspect_graph(&source_path)?;
+    let output_path = output_root.join(item.output_name);
+    let desired_streams = desired_transcode_streams(
+        &source,
+        item.fixture_id,
+        item.video_codec,
+        item.audio_codecs,
+    )?;
+    let desired = DesiredGraph {
+        output_path: path_text(&output_path)?,
+        container_format: None,
+        streams: desired_streams,
+    };
+
+    let materialized = materialize_desired_graph(&source_path, &source, &desired)?;
+    assert_operations(
+        item.case_name,
+        &materialized.operations,
+        item.expected_operations,
+    )?;
+
+    let output = inspect_graph(&materialized.verified_output_path)?;
+    assert_stream_codecs(
+        item.case_name,
+        &output,
+        StreamKind::Video,
+        item.expected_video_codecs,
+    )?;
+    assert_stream_codecs(
+        item.case_name,
+        &output,
+        StreamKind::Audio,
+        item.expected_audio_codecs,
+    )?;
+
+    report.record_pipeline_action(PipelineReportRow {
+        case_name: item.case_name.to_string(),
+        fixture_id: fixture.id.clone(),
+        input_path: fixture.path.clone(),
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
         outcome: "passed".to_string(),
         details: format!(
-            "output probeable with {} stream(s)",
-            output_graph.streams.len()
+            "output codecs video=[{}] audio=[{}]",
+            item.expected_video_codecs.join(","),
+            item.expected_audio_codecs.join(",")
         ),
     });
+    Ok(())
+}
+
+fn desired_transcode_streams(
+    source: &MediaGraph,
+    fixture_id: &str,
+    video_codec: Option<&str>,
+    audio_codecs: &[&str],
+) -> TestResult<Vec<MediaStream>> {
+    let mut audio_index = 0_usize;
+    let mut desired = Vec::new();
+    for stream in &source.streams {
+        if stream.kind != StreamKind::Video && stream.kind != StreamKind::Audio {
+            continue;
+        }
+        let mut target = stream.clone();
+        match stream.kind {
+            StreamKind::Video => {
+                if let Some(codec) = video_codec {
+                    target.codec = codec.to_string();
+                }
+            }
+            StreamKind::Audio => {
+                if let Some(codec) = audio_codecs.get(audio_index) {
+                    target.codec = (*codec).to_string();
+                }
+                audio_index += 1;
+            }
+            StreamKind::Subtitle
+            | StreamKind::Attachment
+            | StreamKind::Chapter
+            | StreamKind::Data => {}
+        }
+        desired.push(target);
+    }
+
+    if audio_index < audio_codecs.len() {
+        return fail(format!(
+            "{fixture_id} requested {} audio codec override(s), but source had {audio_index} audio stream(s)",
+            audio_codecs.len()
+        ));
+    }
+    Ok(desired)
+}
+
+fn assert_operations(label: &str, actual: &[String], expected: &[&str]) -> TestResult {
+    let expected_values = expected
+        .iter()
+        .map(|item| (*item).to_string())
+        .collect::<Vec<_>>();
+    if actual != expected_values {
+        return fail(format!(
+            "{label} operation mismatch: expected {expected_values:?}, got {actual:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn assert_stream_codecs(
+    label: &str,
+    graph: &MediaGraph,
+    kind: StreamKind,
+    expected: &[&str],
+) -> TestResult {
+    let actual = streams_by_kind(graph, kind)
+        .iter()
+        .map(|stream| stream.codec.clone())
+        .collect::<Vec<_>>();
+    let expected_values = expected
+        .iter()
+        .map(|item| (*item).to_string())
+        .collect::<Vec<_>>();
+    if actual != expected_values {
+        return fail(format!(
+            "{label} {kind:?} codec mismatch: expected {expected_values:?}, got {actual:?}"
+        ));
+    }
     Ok(())
 }
 
@@ -895,17 +1323,18 @@ fn assert_multi_audio_selection(
         .collect::<Vec<_>>();
     let desired = DesiredGraph {
         output_path: path_text(&output_root.join("multi-audio-english-only.mkv"))?,
+        container_format: None,
         streams: english_only,
     };
-    let operations = materialize_desired_graph(&source_path, &graph, &desired)?;
-    let output = inspect_graph(Path::new(&desired.output_path))?;
+    let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
+    let output = inspect_graph(&materialized.verified_output_path)?;
     assert_audio_languages("multi-audio English only", &output, &["eng"])?;
     report.record_pipeline_action(PipelineReportRow {
         case_name: "multi-audio English-only selection".to_string(),
         fixture_id: fixture.id.clone(),
         input_path: fixture.path.clone(),
-        output_path: report_path(root, Path::new(&desired.output_path)),
-        operations,
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
         outcome: "passed".to_string(),
         details: "selected only English audio and dropped non-English plus undeclared silent audio"
             .to_string(),
@@ -927,17 +1356,18 @@ fn assert_multi_audio_selection(
     }
     let desired = DesiredGraph {
         output_path: path_text(&output_root.join("multi-audio-ordered.mkv"))?,
+        container_format: None,
         streams: ordered,
     };
-    let operations = materialize_desired_graph(&source_path, &graph, &desired)?;
-    let output = inspect_graph(Path::new(&desired.output_path))?;
+    let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
+    let output = inspect_graph(&materialized.verified_output_path)?;
     assert_audio_languages("multi-audio ordered", &output, &["spa", "eng"])?;
     report.record_pipeline_action(PipelineReportRow {
         case_name: "multi-audio ordered selection".to_string(),
         fixture_id: fixture.id.clone(),
         input_path: fixture.path.clone(),
-        output_path: report_path(root, Path::new(&desired.output_path)),
-        operations,
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
         outcome: "passed".to_string(),
         details: "preserved requested audio order spa,eng".to_string(),
     });
@@ -956,17 +1386,18 @@ fn assert_subtitle_selection(
 
     let desired_all = DesiredGraph {
         output_path: path_text(&output_root.join("subtitles-all.mkv"))?,
+        container_format: None,
         streams: graph.streams.clone(),
     };
-    let operations = materialize_desired_graph(&source_path, &graph, &desired_all)?;
-    let all_output = inspect_graph(Path::new(&desired_all.output_path))?;
+    let materialized = materialize_desired_graph(&source_path, &graph, &desired_all)?;
+    let all_output = inspect_graph(&materialized.verified_output_path)?;
     assert_eq!(streams_by_kind(&all_output, StreamKind::Subtitle).len(), 2);
     report.record_pipeline_action(PipelineReportRow {
         case_name: "keep all subtitles".to_string(),
         fixture_id: fixture.id.clone(),
         input_path: fixture.path.clone(),
-        output_path: report_path(root, Path::new(&desired_all.output_path)),
-        operations,
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
         outcome: "passed".to_string(),
         details: "retained both subtitle streams".to_string(),
     });
@@ -983,10 +1414,11 @@ fn assert_subtitle_selection(
         .collect::<Vec<_>>();
     let desired_forced = DesiredGraph {
         output_path: path_text(&output_root.join("subtitles-forced.mkv"))?,
+        container_format: None,
         streams: forced_only,
     };
-    let operations = materialize_desired_graph(&source_path, &graph, &desired_forced)?;
-    let forced_output = inspect_graph(Path::new(&desired_forced.output_path))?;
+    let materialized = materialize_desired_graph(&source_path, &graph, &desired_forced)?;
+    let forced_output = inspect_graph(&materialized.verified_output_path)?;
     let forced_subtitles = streams_by_kind(&forced_output, StreamKind::Subtitle);
     assert_eq!(forced_subtitles.len(), 1);
     assert_eq!(forced_subtitles[0].language.as_deref(), Some("eng"));
@@ -1000,8 +1432,8 @@ fn assert_subtitle_selection(
         case_name: "keep forced subtitles only".to_string(),
         fixture_id: fixture.id.clone(),
         input_path: fixture.path.clone(),
-        output_path: report_path(root, Path::new(&desired_forced.output_path)),
-        operations,
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
         outcome: "passed".to_string(),
         details: "retained one forced English subtitle stream".to_string(),
     });
@@ -1014,17 +1446,18 @@ fn assert_subtitle_selection(
         .collect::<Vec<_>>();
     let desired_none = DesiredGraph {
         output_path: path_text(&output_root.join("subtitles-none.mkv"))?,
+        container_format: None,
         streams: no_subtitles,
     };
-    let operations = materialize_desired_graph(&source_path, &graph, &desired_none)?;
-    let none_output = inspect_graph(Path::new(&desired_none.output_path))?;
+    let materialized = materialize_desired_graph(&source_path, &graph, &desired_none)?;
+    let none_output = inspect_graph(&materialized.verified_output_path)?;
     assert!(streams_by_kind(&none_output, StreamKind::Subtitle).is_empty());
     report.record_pipeline_action(PipelineReportRow {
         case_name: "drop all subtitles".to_string(),
         fixture_id: fixture.id.clone(),
         input_path: fixture.path.clone(),
-        output_path: report_path(root, Path::new(&desired_none.output_path)),
-        operations,
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
         outcome: "passed".to_string(),
         details: "removed all subtitle streams".to_string(),
     });
@@ -1040,8 +1473,10 @@ fn materialize_desired_graph(
     source_path: &Path,
     source: &MediaGraph,
     desired: &DesiredGraph,
-) -> TestResult<Vec<String>> {
+) -> TestResult<MaterializedGraph> {
     let planned = plan_job_from_source_graph(desired, fs::metadata(source_path)?.len(), source)?;
+    let verified_output_path =
+        verified_output_path_for_plan(source_path, desired, &planned.operations);
     let operation_names = planned
         .operations
         .iter()
@@ -1050,7 +1485,25 @@ fn materialize_desired_graph(
     let steps =
         build_job_execution_steps(&path_text(source_path)?, &desired.output_path, &planned)?;
     execute_step_sequence(&steps, &ProcessCommandRunner)?;
-    Ok(operation_names)
+    Ok(MaterializedGraph {
+        operations: operation_names,
+        verified_output_path,
+    })
+}
+
+fn verified_output_path_for_plan(
+    source_path: &Path,
+    desired: &DesiredGraph,
+    operations: &[PlannedOperation],
+) -> PathBuf {
+    if planned_operations_are_noop(operations) {
+        return source_path.to_path_buf();
+    }
+    PathBuf::from(&desired.output_path)
+}
+
+fn planned_operations_are_noop(operations: &[PlannedOperation]) -> bool {
+    matches!(operations, [operation] if operation.kind == OperationKind::NoOp)
 }
 
 fn assert_audio_languages(label: &str, graph: &MediaGraph, expected: &[&str]) -> TestResult {
@@ -1068,6 +1521,22 @@ fn assert_audio_languages(label: &str, graph: &MediaGraph, expected: &[&str]) ->
         ));
     }
     Ok(())
+}
+
+fn assert_pipeline_report_has_operation(
+    report: &MediaConversionReport,
+    operation: &str,
+) -> TestResult {
+    if report
+        .pipeline_actions
+        .iter()
+        .any(|row| row.operations.iter().any(|item| item == operation))
+    {
+        return Ok(());
+    }
+    fail(format!(
+        "media fixture pipeline report did not record a {operation} action"
+    ))
 }
 
 fn streams_by_kind(graph: &MediaGraph, kind: StreamKind) -> Vec<&MediaStream> {
@@ -1111,11 +1580,17 @@ fn report_path(root: &Path, path: &Path) -> String {
 
 const fn operation_kind_name(kind: OperationKind) -> &'static str {
     match kind {
+        OperationKind::NoOp => "no_op",
         OperationKind::Remux => "remux",
         OperationKind::MetadataRewrite => "metadata_rewrite",
         OperationKind::DispositionRewrite => "disposition_rewrite",
         OperationKind::LabelRewrite => "label_rewrite",
         OperationKind::StreamReorder => "stream_reorder",
+        OperationKind::EmbedSubtitle => "embed_subtitle",
+        OperationKind::ExtractSubtitle => "extract_subtitle",
+        OperationKind::CopySidecarSubtitle => "copy_sidecar_subtitle",
+        OperationKind::RemoveSidecarSubtitle => "remove_sidecar_subtitle",
+        OperationKind::SubtitleTranscode => "subtitle_transcode",
         OperationKind::AudioTranscode => "audio_transcode",
         OperationKind::VideoTranscode => "video_transcode",
     }

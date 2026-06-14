@@ -2,6 +2,7 @@
 
 pub mod capabilities;
 pub mod configuration;
+pub mod imports;
 pub mod jobs;
 pub mod profiles;
 

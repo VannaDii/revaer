@@ -15,6 +15,8 @@ pub enum StreamKind {
     Attachment,
     /// Chapter or timeline metadata stream.
     Chapter,
+    /// Opaque timed or container data stream.
+    Data,
 }
 
 /// Normalized media stream descriptor.
@@ -26,6 +28,12 @@ pub struct MediaStream {
     pub kind: StreamKind,
     /// Canonical codec identifier.
     pub codec: String,
+    /// Audio channel count when the stream is audio and the probe can determine it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels: Option<u32>,
+    /// Audio channel layout when the stream is audio and the probe can determine it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_layout: Option<String>,
     /// Canonical ISO-639-3 language code when known.
     pub language: Option<String>,
     /// Human-readable title when present.
@@ -39,6 +47,9 @@ pub struct MediaStream {
 pub struct MediaGraph {
     /// Source path used for planning context.
     pub source_path: String,
+    /// Canonical container format names reported by the demuxer.
+    #[serde(default)]
+    pub container_formats: Vec<String>,
     /// Ordered stream list as observed in container order.
     pub streams: Vec<MediaStream>,
 }
@@ -48,6 +59,9 @@ pub struct MediaGraph {
 pub struct DesiredGraph {
     /// Output path for the replacement artifact.
     pub output_path: String,
+    /// Required output container muxer when a target selects one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_format: Option<String>,
     /// Required streams in deterministic output order.
     pub streams: Vec<MediaStream>,
 }

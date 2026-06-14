@@ -41,7 +41,7 @@ BEGIN
 
     IF job_id IS NULL THEN
         RAISE EXCEPTION 'media job not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_job_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_not_found';
     END IF;
 
     INSERT INTO media_job_verification_check (
@@ -99,5 +99,5 @@ AS $$
     FROM media_job_verification_check mjvc
     JOIN media_job mj ON mj.media_job_id = mjvc.media_job_id
     WHERE mj.media_job_public_id = media_job_public_id_input
-    ORDER BY mjvc.check_index;
+    ORDER BY mjvc.check_index ASC;
 $$;

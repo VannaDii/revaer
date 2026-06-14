@@ -1,3 +1,91 @@
+CREATE OR REPLACE FUNCTION media_subtitle_policy_selected_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'selected'
+$$;
+
+CREATE OR REPLACE FUNCTION media_subtitle_policy_all_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'all'
+$$;
+
+CREATE OR REPLACE FUNCTION media_subtitle_policy_none_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'none'
+$$;
+
+CREATE OR REPLACE FUNCTION media_policy_safe_dry_run_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'safe_dry_run'
+$$;
+
+CREATE OR REPLACE FUNCTION media_policy_general_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'general'
+$$;
+
+CREATE OR REPLACE FUNCTION media_policy_anime_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'anime'
+$$;
+
+CREATE OR REPLACE FUNCTION media_policy_archival_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'archival'
+$$;
+
+CREATE OR REPLACE FUNCTION media_retention_policy_default_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'default'
+$$;
+
+CREATE OR REPLACE FUNCTION media_capability_run_status_running_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'running'
+$$;
+
+CREATE OR REPLACE FUNCTION media_capability_run_status_completed_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'completed'
+$$;
+
+CREATE OR REPLACE FUNCTION media_capability_run_status_failed_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'failed'
+$$;
+
 CREATE TABLE IF NOT EXISTS media_compatibility_target (
     media_compatibility_target_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     compatibility_target_key TEXT NOT NULL,
@@ -5,7 +93,7 @@ CREATE TABLE IF NOT EXISTS media_compatibility_target (
     display_name TEXT NOT NULL,
     video_codec TEXT NOT NULL,
     audio_codec TEXT NOT NULL,
-    subtitle_policy TEXT NOT NULL DEFAULT 'selected',
+    subtitle_policy TEXT NOT NULL DEFAULT media_subtitle_policy_selected_v1(),
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -15,7 +103,11 @@ CREATE TABLE IF NOT EXISTS media_compatibility_target (
         btrim(video_codec) <> '' AND btrim(audio_codec) <> ''
     ),
     CONSTRAINT media_compatibility_target_subtitle_policy_known CHECK (
-        subtitle_policy IN ('selected', 'all', 'none')
+        subtitle_policy IN (
+            media_subtitle_policy_selected_v1(),
+            media_subtitle_policy_all_v1(),
+            media_subtitle_policy_none_v1()
+        )
     ),
     CONSTRAINT media_compatibility_target_version_positive CHECK (version > 0)
 );
@@ -28,14 +120,18 @@ CREATE TABLE IF NOT EXISTS media_policy_profile (
     policy_key TEXT NOT NULL,
     version INT NOT NULL DEFAULT 1,
     display_name TEXT NOT NULL,
-    video_intent TEXT NOT NULL DEFAULT 'general',
+    video_intent TEXT NOT NULL DEFAULT media_policy_general_v1(),
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT media_policy_profile_key_nonempty CHECK (btrim(policy_key) <> ''),
     CONSTRAINT media_policy_profile_display_nonempty CHECK (btrim(display_name) <> ''),
     CONSTRAINT media_policy_profile_intent_known CHECK (
-        video_intent IN ('general', 'anime', 'archival')
+        video_intent IN (
+            media_policy_general_v1(),
+            media_policy_anime_v1(),
+            media_policy_archival_v1()
+        )
     ),
     CONSTRAINT media_policy_profile_version_positive CHECK (version > 0)
 );
@@ -76,9 +172,9 @@ BEGIN
         subtitle_policy
     )
     VALUES
-        ('hevc-aac', 1, 'HEVC/AAC', 'hevc', 'aac', 'selected'),
-        ('plex-apple-tv', 1, 'Plex Apple TV HEVC/AAC', 'hevc', 'aac', 'selected'),
-        ('plex-general-hevc-aac', 1, 'Plex General HEVC/AAC', 'hevc', 'aac', 'selected')
+        ('hevc-aac', 1, 'HEVC/AAC', 'hevc', 'aac', media_subtitle_policy_selected_v1()),
+        ('plex-apple-tv', 1, 'Plex Apple TV HEVC/AAC', 'hevc', 'aac', media_subtitle_policy_selected_v1()),
+        ('plex-general-hevc-aac', 1, 'Plex General HEVC/AAC', 'hevc', 'aac', media_subtitle_policy_selected_v1())
     ON CONFLICT (lower(compatibility_target_key), version) DO UPDATE SET
         display_name = EXCLUDED.display_name,
         video_codec = EXCLUDED.video_codec,
@@ -94,10 +190,10 @@ BEGIN
         video_intent
     )
     VALUES
-        ('safe_dry_run', 1, 'Safe dry run', 'general'),
-        ('general', 1, 'General media', 'general'),
-        ('anime', 1, 'Anime', 'anime'),
-        ('archival', 1, 'Archival', 'archival')
+        (media_policy_safe_dry_run_v1(), 1, 'Safe dry run', media_policy_general_v1()),
+        (media_policy_general_v1(), 1, 'General media', media_policy_general_v1()),
+        (media_policy_anime_v1(), 1, 'Anime', media_policy_anime_v1()),
+        (media_policy_archival_v1(), 1, 'Archival', media_policy_archival_v1())
     ON CONFLICT (lower(policy_key), version) DO UPDATE SET
         display_name = EXCLUDED.display_name,
         video_intent = EXCLUDED.video_intent,
@@ -109,7 +205,7 @@ BEGIN
         completed_retention_days,
         failed_diagnostic_retention_days
     )
-    VALUES ('default', 30, 30)
+    VALUES (media_retention_policy_default_v1(), 30, 30)
     ON CONFLICT (lower(policy_key)) DO UPDATE SET
         completed_retention_days = EXCLUDED.completed_retention_days,
         failed_diagnostic_retention_days = EXCLUDED.failed_diagnostic_retention_days,
@@ -167,7 +263,7 @@ WITH job_config AS (
            WHERE lower(policy_key) = lower(COALESCE(
                      mj.intent_policy_key,
                      mp.policy_key,
-                     'safe_dry_run'
+                     media_policy_safe_dry_run_v1()
                  ))
              AND enabled
            ORDER BY version DESC, media_policy_profile_id DESC
@@ -209,14 +305,22 @@ ALTER TABLE media_job
             AND intent_compatibility_target_version IS NOT NULL
             AND btrim(intent_target_video_codec) <> ''
             AND btrim(intent_target_audio_codec) <> ''
-            AND intent_target_subtitle_policy IN ('selected', 'all', 'none')
+            AND intent_target_subtitle_policy IN (
+                media_subtitle_policy_selected_v1(),
+                media_subtitle_policy_all_v1(),
+                media_subtitle_policy_none_v1()
+            )
         )
     ),
     ADD CONSTRAINT media_job_intent_policy_nonempty CHECK (
         intent_policy_profile_id IS NULL
         OR (
             intent_policy_version IS NOT NULL
-            AND intent_policy_video_intent IN ('general', 'anime', 'archival')
+            AND intent_policy_video_intent IN (
+                media_policy_general_v1(),
+                media_policy_anime_v1(),
+                media_policy_archival_v1()
+            )
         )
     );
 
@@ -228,7 +332,11 @@ CREATE TABLE IF NOT EXISTS media_capability_snapshot_run (
     observed_by_user_id BIGINT NOT NULL REFERENCES app_user(user_id),
     error_code TEXT,
     CONSTRAINT media_capability_snapshot_run_status_known CHECK (
-        status IN ('running', 'completed', 'failed')
+        status IN (
+            media_capability_run_status_running_v1(),
+            media_capability_run_status_completed_v1(),
+            media_capability_run_status_failed_v1()
+        )
     ),
     CONSTRAINT media_capability_snapshot_run_error_nonempty CHECK (
         error_code IS NULL OR btrim(error_code) <> ''
@@ -242,7 +350,7 @@ INSERT INTO media_capability_snapshot_run (
     observed_by_user_id
 )
 SELECT snapshot_run_public_id,
-       'completed',
+       media_capability_run_status_completed_v1(),
        max(observed_at),
        min(observed_by_user_id)
   FROM media_capability_snapshot
@@ -299,15 +407,7 @@ DECLARE
     actor_id BIGINT;
     version_value INT;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     version_value := COALESCE(version_input, 1);
 
@@ -390,15 +490,7 @@ DECLARE
     actor_id BIGINT;
     version_value INT;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     version_value := COALESCE(version_input, 1);
 
@@ -443,7 +535,7 @@ AS $$
     SELECT completed_retention_days,
            failed_diagnostic_retention_days
       FROM media_job_retention_policy
-     WHERE lower(policy_key) = 'default'
+     WHERE lower(policy_key) = media_retention_policy_default_v1()
        AND enabled
      ORDER BY updated_at DESC, media_job_retention_policy_id DESC
      LIMIT 1;
@@ -465,15 +557,7 @@ AS $$
 DECLARE
     actor_id BIGINT;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     RETURN QUERY
     INSERT INTO media_job_retention_policy (
@@ -484,7 +568,7 @@ BEGIN
         updated_at
     )
     VALUES (
-        'default',
+        media_retention_policy_default_v1(),
         completed_retention_days_input,
         failed_diagnostic_retention_days_input,
         TRUE,
@@ -513,15 +597,7 @@ AS $$
 DECLARE
     actor_id BIGINT;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     INSERT INTO media_capability_snapshot_run (
         snapshot_run_public_id,
@@ -530,7 +606,7 @@ BEGIN
     )
     VALUES (
         snapshot_run_public_id_input,
-        'running',
+        media_capability_run_status_running_v1(),
         actor_id
     );
 END;
@@ -546,15 +622,15 @@ SET search_path = public, pg_temp
 AS $$
 BEGIN
     UPDATE media_capability_snapshot_run
-       SET status = 'completed',
+       SET status = media_capability_run_status_completed_v1(),
            completed_at = now(),
            error_code = NULL
      WHERE snapshot_run_public_id = snapshot_run_public_id_input
-       AND status = 'running';
+       AND status = media_capability_run_status_running_v1();
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'capability snapshot run not running'
-            USING ERRCODE = 'P0001', DETAIL = 'media_capability_snapshot_run_not_running';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_capability_snapshot_run_not_running';
     END IF;
 END;
 $$;
@@ -576,7 +652,7 @@ AS $$
     WITH latest_run AS (
         SELECT run.snapshot_run_public_id
           FROM media_capability_snapshot_run run
-         WHERE run.status = 'completed'
+         WHERE run.status = media_capability_run_status_completed_v1()
            AND run.completed_at IS NOT NULL
          ORDER BY run.completed_at DESC, run.started_at DESC
          LIMIT 1
@@ -591,7 +667,7 @@ AS $$
            mcs.observed_at
       FROM media_capability_snapshot mcs
       JOIN latest_run lr ON lr.snapshot_run_public_id = mcs.snapshot_run_public_id
-     ORDER BY lower(mcs.codec_name), mcs.media_capability_snapshot_id;
+     ORDER BY lower(mcs.codec_name) ASC, mcs.media_capability_snapshot_id ASC;
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_create_v1(
@@ -613,15 +689,7 @@ DECLARE
     policy_row media_policy_profile%ROWTYPE;
     media_job_public_id_out UUID;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     SELECT *
       INTO profile_row
@@ -631,7 +699,7 @@ BEGIN
 
     IF profile_row.media_profile_id IS NULL THEN
         RAISE EXCEPTION 'profile not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_profile_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
     END IF;
 
     IF profile_row.compatibility_target_key IS NOT NULL THEN
@@ -645,21 +713,21 @@ BEGIN
 
         IF target_row.media_compatibility_target_id IS NULL THEN
             RAISE EXCEPTION 'compatibility target not found'
-                USING ERRCODE = 'P0001', DETAIL = 'media_compatibility_target_not_found';
+                USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_compatibility_target_not_found';
         END IF;
     END IF;
 
     SELECT *
       INTO policy_row
       FROM media_policy_profile
-     WHERE lower(policy_key) = lower(COALESCE(profile_row.policy_key, 'safe_dry_run'))
+     WHERE lower(policy_key) = lower(COALESCE(profile_row.policy_key, media_policy_safe_dry_run_v1()))
        AND enabled
      ORDER BY version DESC, media_policy_profile_id DESC
      LIMIT 1;
 
     IF policy_row.media_policy_profile_id IS NULL THEN
         RAISE EXCEPTION 'policy profile not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_policy_profile_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_policy_profile_not_found';
     END IF;
 
     INSERT INTO media_job (
@@ -734,14 +802,14 @@ BEGIN
     WITH claimed AS (
         SELECT mj.media_job_id
           FROM media_job mj
-         WHERE mj.status = 'queued'::media_job_status
+         WHERE mj.status = media_job_status_queued_v1()
          ORDER BY mj.queued_at ASC, mj.media_job_id ASC
          FOR UPDATE SKIP LOCKED
          LIMIT 1
     ),
     updated AS (
         UPDATE media_job mj
-           SET status = 'running'::media_job_status,
+           SET status = media_job_status_running_v1(),
                started_at = COALESCE(mj.started_at, now()),
                heartbeat_at = now(),
                completed_at = NULL,

@@ -748,6 +748,18 @@
             },
             "type": "array"
           },
+          "ffmpeg_enable_gpl": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_nonfree": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_version3": {
+            "type": "boolean"
+          },
+          "ffmpeg_license_mode": {
+            "type": "string"
+          },
           "ffmpeg_version": {
             "type": "string"
           },
@@ -814,6 +826,10 @@
           "filesystem_utilities",
           "utility_capabilities",
           "license_mode",
+          "ffmpeg_license_mode",
+          "ffmpeg_enable_gpl",
+          "ffmpeg_enable_version3",
+          "ffmpeg_enable_nonfree",
           "compliance_links",
           "absent_capabilities",
           "features",
@@ -837,6 +853,12 @@
       },
       "MediaCompatibilityTargetResponse": {
         "properties": {
+          "audio_channel_layout": {
+            "type": "string"
+          },
+          "audio_channels": {
+            "type": "integer"
+          },
           "audio_codec": {
             "type": "string"
           },
@@ -868,6 +890,12 @@
       },
       "MediaCompatibilityTargetUpsertRequest": {
         "properties": {
+          "audio_channel_layout": {
+            "type": "string"
+          },
+          "audio_channels": {
+            "type": "integer"
+          },
           "audio_codec": {
             "type": "string"
           },
@@ -899,7 +927,28 @@
       },
       "MediaComplianceResponse": {
         "properties": {
+          "absent_license_excluded_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "exiftool_exception_path": {
+            "type": "string"
+          },
+          "ffmpeg_enable_gpl": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_nonfree": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_version3": {
+            "type": "boolean"
+          },
+          "ffmpeg_license_mode": {
+            "type": "string"
+          },
+          "image_license_mode": {
             "type": "string"
           },
           "inventory_path": {
@@ -917,21 +966,206 @@
           "sbom_path": {
             "type": "string"
           },
+          "sbom_url": {
+            "type": "string"
+          },
+          "source_compliance_bundle_digest": {
+            "type": "string"
+          },
+          "source_compliance_bundle_path": {
+            "type": "string"
+          },
           "source_offer_path": {
             "type": "string"
           },
+          "source_offer_url": {
+            "type": "string"
+          },
           "third_party_notices_path": {
+            "type": "string"
+          },
+          "third_party_notices_url": {
             "type": "string"
           }
         },
         "required": [
           "license_mode",
+          "image_license_mode",
+          "ffmpeg_license_mode",
+          "ffmpeg_enable_gpl",
+          "ffmpeg_enable_version3",
+          "ffmpeg_enable_nonfree",
           "source_offer_path",
+          "source_offer_url",
           "third_party_notices_path",
+          "third_party_notices_url",
           "sbom_path",
+          "sbom_url",
           "inventory_path",
           "exiftool_exception_path",
-          "license_excluded_capabilities"
+          "source_compliance_bundle_digest",
+          "source_compliance_bundle_path",
+          "license_excluded_capabilities",
+          "absent_license_excluded_capabilities"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetCreateRequest": {
+        "properties": {
+          "container_format": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "streams": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetStream"
+            },
+            "type": "array"
+          },
+          "target_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_key",
+          "version",
+          "display_name",
+          "container_format",
+          "streams"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetListResponse": {
+        "properties": {
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetResponse": {
+        "properties": {
+          "container_format": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "media_desired_target_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "streams": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetStream"
+            },
+            "type": "array"
+          },
+          "target_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "media_desired_target_profile_public_id",
+          "target_key",
+          "version",
+          "display_name",
+          "container_format",
+          "streams"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetStream": {
+        "properties": {
+          "audio_bitrate_bps": {
+            "type": "integer"
+          },
+          "audio_sample_rate_hz": {
+            "type": "integer"
+          },
+          "channel_count": {
+            "type": "integer"
+          },
+          "channel_layout": {
+            "type": "string"
+          },
+          "codec": {
+            "type": "string"
+          },
+          "color_primaries": {
+            "type": "string"
+          },
+          "color_space": {
+            "type": "string"
+          },
+          "color_transfer": {
+            "type": "string"
+          },
+          "default_disposition": {
+            "type": "boolean"
+          },
+          "forced_disposition": {
+            "type": "boolean"
+          },
+          "hdr_format": {
+            "type": "string"
+          },
+          "image_subtitle_action": {
+            "type": "string"
+          },
+          "language_code": {
+            "type": "string"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "semantic_role": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer"
+          },
+          "stream_key": {
+            "type": "string"
+          },
+          "stream_kind": {
+            "type": "string"
+          },
+          "subtitle_placement": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "video_bitrate_bps": {
+            "type": "integer"
+          },
+          "video_level": {
+            "type": "string"
+          },
+          "video_profile": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "stream_key",
+          "stream_kind",
+          "sort_order",
+          "codec"
         ],
         "type": "object"
       },
@@ -1640,31 +1874,79 @@
       },
       "MediaJobRetentionResponse": {
         "properties": {
-          "completed_retention_days": {
+          "completed_enabled": {
+            "type": "boolean"
+          },
+          "completed_limit": {
             "type": "integer"
           },
-          "failed_diagnostic_retention_days": {
+          "completed_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          },
+          "failed_diagnostic_enabled": {
+            "type": "boolean"
+          },
+          "failed_diagnostic_limit": {
             "type": "integer"
+          },
+          "failed_diagnostic_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
           }
         },
         "required": [
-          "completed_retention_days",
-          "failed_diagnostic_retention_days"
+          "completed_enabled",
+          "completed_mode",
+          "completed_limit",
+          "failed_diagnostic_enabled",
+          "failed_diagnostic_mode",
+          "failed_diagnostic_limit"
         ],
         "type": "object"
       },
       "MediaJobRetentionUpdateRequest": {
         "properties": {
-          "completed_retention_days": {
+          "completed_enabled": {
+            "type": "boolean"
+          },
+          "completed_limit": {
             "type": "integer"
           },
-          "failed_diagnostic_retention_days": {
+          "completed_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          },
+          "failed_diagnostic_enabled": {
+            "type": "boolean"
+          },
+          "failed_diagnostic_limit": {
             "type": "integer"
+          },
+          "failed_diagnostic_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
           }
         },
         "required": [
-          "completed_retention_days",
-          "failed_diagnostic_retention_days"
+          "completed_enabled",
+          "completed_mode",
+          "completed_limit",
+          "failed_diagnostic_enabled",
+          "failed_diagnostic_mode",
+          "failed_diagnostic_limit"
         ],
         "type": "object"
       },
@@ -1889,6 +2171,32 @@
           "policy_key": {
             "type": "string"
           },
+          "verification_decode_all_streams": {
+            "type": "boolean"
+          },
+          "verification_duration_tolerance_millis": {
+            "format": "int64",
+            "maximum": 60000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verification_keyframe_seek": {
+            "type": "boolean"
+          },
+          "verification_mux_validation": {
+            "type": "boolean"
+          },
+          "verification_playback_probe": {
+            "type": "boolean"
+          },
+          "verification_strictness": {
+            "enum": [
+              "strict",
+              "balanced",
+              "fast"
+            ],
+            "type": "string"
+          },
           "version": {
             "type": "integer"
           },
@@ -1900,7 +2208,13 @@
           "policy_key",
           "version",
           "display_name",
-          "video_intent"
+          "video_intent",
+          "verification_strictness",
+          "verification_duration_tolerance_millis",
+          "verification_mux_validation",
+          "verification_decode_all_streams",
+          "verification_keyframe_seek",
+          "verification_playback_probe"
         ],
         "type": "object"
       },
@@ -1912,6 +2226,32 @@
           "policy_key": {
             "type": "string"
           },
+          "verification_decode_all_streams": {
+            "type": "boolean"
+          },
+          "verification_duration_tolerance_millis": {
+            "format": "int64",
+            "maximum": 60000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verification_keyframe_seek": {
+            "type": "boolean"
+          },
+          "verification_mux_validation": {
+            "type": "boolean"
+          },
+          "verification_playback_probe": {
+            "type": "boolean"
+          },
+          "verification_strictness": {
+            "enum": [
+              "strict",
+              "balanced",
+              "fast"
+            ],
+            "type": "string"
+          },
           "version": {
             "type": "integer"
           },
@@ -1923,8 +2263,25 @@
           "policy_key",
           "version",
           "display_name",
-          "video_intent"
+          "video_intent",
+          "verification_strictness",
+          "verification_duration_tolerance_millis",
+          "verification_mux_validation",
+          "verification_decode_all_streams",
+          "verification_keyframe_seek",
+          "verification_playback_probe"
         ],
+        "type": "object"
+      },
+      "MediaProfileDesiredTargetRequest": {
+        "properties": {
+          "target_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "MediaProfileListResponse": {
@@ -1977,6 +2334,12 @@
         "properties": {
           "compatibility_target_key": {
             "type": "string"
+          },
+          "desired_target_key": {
+            "type": "string"
+          },
+          "desired_target_version": {
+            "type": "integer"
           },
           "dry_run_only": {
             "type": "boolean"
@@ -2093,6 +2456,13 @@
           "forced_dry_run": {
             "type": "boolean"
           },
+          "media_profile_import_draft_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
           "media_profile_public_ids": {
             "items": {
               "format": "uuid",
@@ -2103,7 +2473,8 @@
         },
         "required": [
           "forced_dry_run",
-          "media_profile_public_ids"
+          "media_profile_public_ids",
+          "media_profile_import_draft_public_ids"
         ],
         "type": "object"
       },
@@ -2133,11 +2504,30 @@
         ],
         "type": "object"
       },
+      "MediaYamlIssueResponse": {
+        "properties": {
+          "blocking": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "pointer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "pointer",
+          "blocking"
+        ],
+        "type": "object"
+      },
       "MediaYamlValidationResponse": {
         "properties": {
           "issues": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/MediaYamlIssueResponse"
             },
             "type": "array"
           },
@@ -11788,6 +12178,106 @@
           }
         ],
         "summary": "List media discovery watchers"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaDiscoveryRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaDiscoveryRunResponse"
+                }
+              }
+            },
+            "description": "Watcher media discovery run"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid media request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow unavailable"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Run watcher media discovery"
       }
     },
     "/v1/media/export": {
@@ -14315,6 +14805,304 @@
           }
         ],
         "summary": "Patch a media profile"
+      }
+    },
+    "/v1/media/profiles/{media_profile_public_id}/desired-target": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "media_profile_public_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaProfileDesiredTargetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Media profile desired target updated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid media request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow unavailable"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Pin or clear a media profile desired target"
+      }
+    },
+    "/v1/media/targets": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaDesiredTargetListResponse"
+                }
+              }
+            },
+            "description": "Media desired targets"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid media request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow unavailable"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "List immutable media desired targets"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaDesiredTargetCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaDesiredTargetResponse"
+                }
+              }
+            },
+            "description": "Media desired target"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Invalid media request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Authentication failed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow conflict"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Media workflow unavailable"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "summary": "Create an immutable media desired target"
       }
     },
     "/v1/torrents": {

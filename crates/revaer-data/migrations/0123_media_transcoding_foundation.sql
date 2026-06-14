@@ -7,6 +7,86 @@ CREATE TYPE media_job_status AS ENUM (
     'cancelled'
 );
 
+CREATE OR REPLACE FUNCTION media_app_error_code_v1()
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'P0001'
+$$;
+
+CREATE OR REPLACE FUNCTION media_job_status_queued_v1()
+RETURNS media_job_status
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'queued'::media_job_status
+$$;
+
+CREATE OR REPLACE FUNCTION media_job_status_running_v1()
+RETURNS media_job_status
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'running'::media_job_status
+$$;
+
+CREATE OR REPLACE FUNCTION media_job_status_verifying_v1()
+RETURNS media_job_status
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'verifying'::media_job_status
+$$;
+
+CREATE OR REPLACE FUNCTION media_job_status_completed_v1()
+RETURNS media_job_status
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'completed'::media_job_status
+$$;
+
+CREATE OR REPLACE FUNCTION media_job_status_failed_v1()
+RETURNS media_job_status
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'failed'::media_job_status
+$$;
+
+CREATE OR REPLACE FUNCTION media_job_status_cancelled_v1()
+RETURNS media_job_status
+LANGUAGE sql
+IMMUTABLE
+AS $$
+    SELECT 'cancelled'::media_job_status
+$$;
+
+CREATE OR REPLACE FUNCTION media_actor_id_for_public_id_v1(actor_public_id_input UUID)
+RETURNS BIGINT
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    actor_id BIGINT;
+BEGIN
+    SELECT user_id
+      INTO actor_id
+      FROM app_user
+     WHERE user_public_id = actor_public_id_input;
+
+    IF actor_id IS NULL THEN
+        RAISE EXCEPTION 'actor not found'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'app_user_not_found';
+    END IF;
+
+    RETURN actor_id;
+END;
+$$;
+
 CREATE TABLE media_profile (
     media_profile_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     media_profile_public_id UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
@@ -52,7 +132,7 @@ CREATE TABLE media_job (
     media_profile_id BIGINT NOT NULL REFERENCES media_profile(media_profile_id),
     source_path TEXT NOT NULL,
     output_path TEXT,
-    status media_job_status NOT NULL DEFAULT 'queued',
+    status media_job_status NOT NULL DEFAULT media_job_status_queued_v1(),
     queued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
@@ -133,21 +213,13 @@ DECLARE
     actor_id BIGINT;
     profile_public_id_out UUID;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     IF lower(btrim(source_root_input)) = lower(btrim(output_root_input))
        OR lower(btrim(source_root_input)) LIKE lower(btrim(output_root_input)) || '/%'
        OR lower(btrim(output_root_input)) LIKE lower(btrim(source_root_input)) || '/%' THEN
         RAISE EXCEPTION 'profile roots overlap'
-            USING ERRCODE = 'P0001', DETAIL = 'media_profile_roots_overlap';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_roots_overlap';
     END IF;
 
     INSERT INTO media_profile (
@@ -204,7 +276,7 @@ AS $$
         mp.updated_at
     FROM media_profile mp
     WHERE mp.deleted_at IS NULL
-    ORDER BY lower(mp.profile_key);
+    ORDER BY lower(mp.profile_key) ASC;
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_create_v1(
@@ -224,15 +296,7 @@ DECLARE
     profile_id BIGINT;
     media_job_public_id_out UUID;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     SELECT media_profile_id
       INTO profile_id
@@ -242,7 +306,7 @@ BEGIN
 
     IF profile_id IS NULL THEN
         RAISE EXCEPTION 'profile not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_profile_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
     END IF;
 
     INSERT INTO media_job (
@@ -288,7 +352,7 @@ BEGIN
 
     IF job_id IS NULL THEN
         RAISE EXCEPTION 'job not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_job_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_not_found';
     END IF;
 
     INSERT INTO media_job_phase (
@@ -330,15 +394,7 @@ DECLARE
     actor_id BIGINT;
     snapshot_id_out BIGINT;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     INSERT INTO media_capability_snapshot (
         ffmpeg_version,

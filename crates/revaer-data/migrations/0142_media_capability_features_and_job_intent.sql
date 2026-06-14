@@ -42,19 +42,11 @@ DECLARE
     actor_id BIGINT;
     feature_id_out BIGINT;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     IF snapshot_run_public_id_input IS NULL THEN
         RAISE EXCEPTION 'snapshot run id required'
-            USING ERRCODE = 'P0001', DETAIL = 'media_capability_snapshot_run_required';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_capability_snapshot_run_required';
     END IF;
 
     INSERT INTO media_capability_snapshot_feature (
@@ -110,9 +102,9 @@ AS $$
            mcsf.observed_at
       FROM media_capability_snapshot_feature mcsf
      WHERE mcsf.snapshot_run_public_id = snapshot_run_public_id_input
-     ORDER BY lower(mcsf.feature_family),
-              lower(mcsf.feature_name),
-              mcsf.media_capability_snapshot_feature_id;
+     ORDER BY lower(mcsf.feature_family) ASC,
+              lower(mcsf.feature_name) ASC,
+              mcsf.media_capability_snapshot_feature_id ASC;
 $$;
 
 ALTER TABLE media_job
@@ -166,15 +158,7 @@ DECLARE
     profile_row media_profile%ROWTYPE;
     media_job_public_id_out UUID;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     SELECT *
       INTO profile_row
@@ -184,7 +168,7 @@ BEGIN
 
     IF profile_row.media_profile_id IS NULL THEN
         RAISE EXCEPTION 'profile not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_profile_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
     END IF;
 
     INSERT INTO media_job (
@@ -239,14 +223,14 @@ BEGIN
     WITH claimed AS (
         SELECT mj.media_job_id
           FROM media_job mj
-         WHERE mj.status = 'queued'::media_job_status
+         WHERE mj.status = media_job_status_queued_v1()
          ORDER BY mj.queued_at ASC, mj.media_job_id ASC
          FOR UPDATE SKIP LOCKED
          LIMIT 1
     ),
     updated AS (
         UPDATE media_job mj
-           SET status = 'running'::media_job_status,
+           SET status = media_job_status_running_v1(),
                started_at = COALESCE(mj.started_at, now()),
                heartbeat_at = now(),
                completed_at = NULL,

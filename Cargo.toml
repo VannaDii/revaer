@@ -75,9 +75,14 @@ base64 = "0.22"
 regex = "1.12"
 walkdir = "2.5"
 jsonschema = { version = "0.46", default-features = false }
+notify = "8.2"
+sha2 = "0.10"
 revaer-test-support = { path = "crates/revaer-test-support" }
 
 [workspace.metadata.cargo-llvm-cov]
 
 [patch.crates-io]
+flume = { path = "vendor/flume" }
+gloo = { path = "vendor/gloo" }
+yew-macro = { path = "vendor/yew-macro" }
 yewdux = { path = "vendor/yewdux/crates/yewdux" }

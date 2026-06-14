@@ -55,7 +55,7 @@ BEGIN
 
     IF job_id IS NULL THEN
         RAISE EXCEPTION 'media job not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_job_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_not_found';
     END IF;
 
     INSERT INTO media_job_artifact (
@@ -108,7 +108,7 @@ AS $$
     FROM media_job_artifact mja
     JOIN media_job mj ON mj.media_job_id = mja.media_job_id
     WHERE mj.media_job_public_id = media_job_public_id_input
-    ORDER BY mja.artifact_index;
+    ORDER BY mja.artifact_index ASC;
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_compact_audit_append_v1(
@@ -131,7 +131,7 @@ BEGIN
 
     IF job_id IS NULL THEN
         RAISE EXCEPTION 'media job not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_job_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_not_found';
     END IF;
 
     INSERT INTO media_job_compact_audit (
@@ -174,5 +174,5 @@ AS $$
     FROM media_job_compact_audit mjca
     JOIN media_job mj ON mj.media_job_id = mjca.media_job_id
     WHERE mj.media_job_public_id = media_job_public_id_input
-    ORDER BY mjca.audit_index;
+    ORDER BY mjca.audit_index ASC;
 $$;

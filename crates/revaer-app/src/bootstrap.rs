@@ -12,6 +12,7 @@ use crate::indexers::IndexerService;
 use crate::media::MediaService;
 use crate::media_discovery_runtime::MediaDiscoveryRuntime;
 use crate::media_job_runtime::MediaJobRuntime;
+use crate::media_retention_runtime::MediaRetentionRuntime;
 use revaer_api::TorrentHandles;
 use revaer_api::app::media::{MediaCapabilityRefreshParams, MediaFacade};
 use revaer_config::{AppMode, ConfigService, ConfigSnapshot, DbSessionConfig};
@@ -305,7 +306,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         None
     };
 
-    let media = Arc::new(build_media_service(&config));
+    let media = Arc::new(build_media_service(&config, telemetry.clone()));
     refresh_startup_media_capabilities(&media, &events, &telemetry).await;
     let api = build_api_server(&config, &events, torrent_handles, telemetry.clone(), media)?;
     let indexer_runtime_task =
@@ -313,9 +314,17 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     let import_job_runtime_task =
         ImportJobRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
     let media_discovery_runtime_task =
-        MediaDiscoveryRuntime::new(MediaStore::new(config.pool().clone())).spawn();
-    let media_job_runtime_task =
-        MediaJobRuntime::new(MediaStore::new(config.pool().clone())).spawn();
+        MediaDiscoveryRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
+            .spawn();
+    let media_job_runtime_task = MediaJobRuntime::new(
+        MediaStore::new(config.pool().clone()),
+        events.clone(),
+        telemetry.clone(),
+    )
+    .spawn();
+    let media_retention_runtime_task =
+        MediaRetentionRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
+            .spawn();
     info!(addr = %addr, "Launching API listener");
 
     let serve_result = api.serve(addr).await;
@@ -324,6 +333,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     stop_runtime_task(import_job_runtime_task, "import_job").await;
     stop_runtime_task(media_discovery_runtime_task, "media_discovery").await;
     stop_runtime_task(media_job_runtime_task, "media_job").await;
+    stop_runtime_task(media_retention_runtime_task, "media_retention").await;
 
     #[cfg(feature = "libtorrent")]
     {
@@ -406,14 +416,16 @@ fn build_api_server(
     .map_err(|err| AppError::api_server("api_server.new", err))
 }
 
-fn build_media_service(config: &ConfigService) -> MediaService {
+fn build_media_service(config: &ConfigService, telemetry: Metrics) -> MediaService {
     MediaService::new(
         MediaStore::new(config.pool().clone()),
         Arc::new(FfmpegCapabilityDetector::new(
             Arc::new(SystemCapabilityProbeExecutor),
             "ffmpeg",
             "ffprobe",
+            "ffplay",
         )),
+        telemetry,
     )
 }
 
@@ -433,14 +445,28 @@ async fn refresh_startup_media_capabilities(
                 media_capability_snapshot_id = snapshot_id,
                 "startup media capability refresh completed"
             );
+            publish_event(
+                events,
+                revaer_events::Event::MediaCapabilitiesRefreshed {
+                    media_capability_snapshot_id: snapshot_id,
+                },
+            );
         }
         Err(error) => {
+            let code = error
+                .code()
+                .unwrap_or("media_capability_refresh_failed")
+                .to_string();
             warn!(
                 error = %error,
-                code = error.code().unwrap_or("media_capability_refresh_failed"),
+                code = %code,
                 "startup media capability refresh failed; media execution remains not ready"
             );
             telemetry.inc_event("media_capability_refresh_failed");
+            publish_event(
+                events,
+                revaer_events::Event::MediaCapabilitiesRefreshFailed { reason: code },
+            );
             publish_event(
                 events,
                 revaer_events::Event::HealthChanged {

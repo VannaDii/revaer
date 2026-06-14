@@ -3,8 +3,9 @@ use std::collections::HashMap;
 
 #[cfg(target_arch = "wasm32")]
 use crate::models::{
-    MediaCapabilityReadinessResponse, MediaCapabilitySnapshotResponse, MediaComplianceResponse,
-    MediaDiscoveryPreviewItemResponse, MediaJobResponse, MediaProfileResponse,
+    MediaCapabilityReadinessResponse, MediaCapabilitySnapshotResponse,
+    MediaCompatibilityTargetResponse, MediaComplianceResponse, MediaDiscoveryPreviewItemResponse,
+    MediaJobResponse, MediaPolicyResponse, MediaProfileResponse,
 };
 use crate::models::{
     MediaJobArtifactResponse, MediaJobCompactAuditResponse, MediaJobOperationResponse,
@@ -32,6 +33,8 @@ pub(crate) struct MediaViewState {
     pub readiness: Option<MediaCapabilityReadinessResponse>,
     pub latest_capability: Option<MediaCapabilitySnapshotResponse>,
     pub compliance: Option<MediaComplianceResponse>,
+    pub compatibility_targets: Vec<MediaCompatibilityTargetResponse>,
+    pub policies: Vec<MediaPolicyResponse>,
     pub yaml_export: Option<String>,
     pub discovery_preview: Vec<MediaDiscoveryPreviewItemResponse>,
 }

@@ -36,10 +36,22 @@ pub enum Severity {
 /// Normalized compliance violation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViolationKind {
+    /// Source container differs from the desired output container.
+    ContainerMismatch,
     /// Source stream is absent from the desired output graph.
     RemovedStream,
+    /// Desired stream is absent from the source graph.
+    MissingRequiredStream,
+    /// Retained source streams appear in a different order than the desired output graph.
+    StreamOrderMismatch,
+    /// Stream language or title metadata differs from the desired output graph.
+    StreamMetadataMismatch,
+    /// Stream disposition flags differ from the desired output graph.
+    StreamDispositionMismatch,
     /// Audio stream codec differs from the desired output graph.
     AudioCodecMismatch,
+    /// Audio stream channel count or layout differs from the desired output graph.
+    AudioChannelShapeMismatch,
     /// Video stream codec differs from the desired output graph.
     VideoCodecMismatch,
     /// Non-audio/video stream codec differs from the desired output graph.
@@ -53,7 +65,7 @@ pub struct Violation {
     pub kind: ViolationKind,
     /// Violation severity.
     pub severity: Severity,
-    /// Source stream id when the violation is stream-scoped.
+    /// Related stream id when the violation is stream-scoped.
     pub stream_id: Option<u32>,
 }
 
@@ -74,6 +86,15 @@ pub fn score_diff(diff: &GraphDiff) -> Report {
     let mut violations = Vec::new();
     let mut penalty = 0_u16;
 
+    if diff.container_mismatch {
+        violations.push(Violation {
+            kind: ViolationKind::ContainerMismatch,
+            severity: Severity::Medium,
+            stream_id: None,
+        });
+        penalty += 10;
+    }
+
     for stream_id in &diff.removed_streams {
         violations.push(Violation {
             kind: ViolationKind::RemovedStream,
@@ -81,6 +102,15 @@ pub fn score_diff(diff: &GraphDiff) -> Report {
             stream_id: Some(*stream_id),
         });
         penalty += 10;
+    }
+
+    for stream_id in &diff.missing_desired_streams {
+        violations.push(Violation {
+            kind: ViolationKind::MissingRequiredStream,
+            severity: Severity::High,
+            stream_id: Some(*stream_id),
+        });
+        penalty += 30;
     }
 
     for stream in &diff.recoded_streams {
@@ -91,6 +121,42 @@ pub fn score_diff(diff: &GraphDiff) -> Report {
             stream_id: Some(stream.stream_id),
         });
         penalty += stream_penalty;
+    }
+
+    for stream_id in &diff.stream_metadata_mismatched_streams {
+        violations.push(Violation {
+            kind: ViolationKind::StreamMetadataMismatch,
+            severity: Severity::Medium,
+            stream_id: Some(*stream_id),
+        });
+        penalty += 10;
+    }
+
+    for stream_id in &diff.disposition_mismatched_streams {
+        violations.push(Violation {
+            kind: ViolationKind::StreamDispositionMismatch,
+            severity: Severity::Medium,
+            stream_id: Some(*stream_id),
+        });
+        penalty += 10;
+    }
+
+    for stream_id in &diff.audio_channel_mismatched_streams {
+        violations.push(Violation {
+            kind: ViolationKind::AudioChannelShapeMismatch,
+            severity: Severity::High,
+            stream_id: Some(*stream_id),
+        });
+        penalty += 20;
+    }
+
+    if diff.stream_order_changed {
+        violations.push(Violation {
+            kind: ViolationKind::StreamOrderMismatch,
+            severity: Severity::Medium,
+            stream_id: None,
+        });
+        penalty += 10;
     }
 
     Report {
@@ -114,7 +180,7 @@ const fn violation_for_stream_kind(kind: StreamKind) -> (ViolationKind, Severity
     match kind {
         StreamKind::Audio => (ViolationKind::AudioCodecMismatch, Severity::High, 20),
         StreamKind::Video => (ViolationKind::VideoCodecMismatch, Severity::High, 30),
-        StreamKind::Subtitle | StreamKind::Attachment | StreamKind::Chapter => {
+        StreamKind::Subtitle | StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data => {
             (ViolationKind::StreamCodecMismatch, Severity::Low, 10)
         }
     }

@@ -12,6 +12,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use revaer_api_models::MediaVerificationToggle;
+
 /// Create/update media profile parameters.
 #[derive(Debug, Clone)]
 pub struct MediaProfileUpsertParams<'a> {
@@ -249,8 +251,98 @@ pub struct MediaCompatibilityTargetUpsertParams<'a> {
     pub video_codec: &'a str,
     /// Desired audio codec.
     pub audio_codec: &'a str,
+    /// Optional desired audio channel count.
+    pub audio_channels: Option<i32>,
+    /// Optional desired audio channel layout.
+    pub audio_channel_layout: Option<&'a str>,
     /// Subtitle retention policy.
     pub subtitle_policy: &'a str,
+}
+
+/// Ordered desired-target stream parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaDesiredTargetStreamParams {
+    /// Stable stream key.
+    pub stream_key: String,
+    /// Media stream kind.
+    pub stream_kind: String,
+    /// Optional semantic role selector.
+    pub semantic_role: Option<String>,
+    /// Optional language selector.
+    pub language_code: Option<String>,
+    /// Whether a missing source match is acceptable.
+    pub optional: bool,
+    /// Final mux ordering position.
+    pub sort_order: i32,
+    /// Desired output codec.
+    pub codec: String,
+    /// Optional desired audio channel count.
+    pub channel_count: Option<i32>,
+    /// Optional desired audio channel layout.
+    pub channel_layout: Option<String>,
+    /// Optional desired average audio bitrate in bits per second.
+    pub audio_bitrate_bps: Option<i32>,
+    /// Optional desired audio sample rate in hertz.
+    pub audio_sample_rate_hz: Option<i32>,
+    /// Optional desired audio loudness processing profile.
+    pub audio_loudness_profile: Option<String>,
+    /// Optional desired audio dynamic-range behavior.
+    pub audio_dynamic_range: Option<String>,
+    /// Optional desired video profile.
+    pub video_profile: Option<String>,
+    /// Optional desired video level.
+    pub video_level: Option<String>,
+    /// Optional desired average video bitrate in bits per second.
+    pub video_bitrate_bps: Option<i32>,
+    /// Optional desired video color primaries.
+    pub color_primaries: Option<String>,
+    /// Optional desired video transfer characteristic.
+    pub color_transfer: Option<String>,
+    /// Optional desired video color space.
+    pub color_space: Option<String>,
+    /// Optional desired HDR format label.
+    pub hdr_format: Option<String>,
+    /// Optional desired title.
+    pub title: Option<String>,
+    /// Desired default disposition.
+    pub default_disposition: bool,
+    /// Desired forced disposition.
+    pub forced_disposition: bool,
+    /// Desired subtitle placement for subtitle streams.
+    pub subtitle_placement: Option<String>,
+    /// Image-subtitle action for subtitle streams.
+    pub image_subtitle_action: Option<String>,
+}
+
+/// Immutable desired-target version creation parameters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaDesiredTargetCreateParams {
+    /// Actor performing the operation.
+    pub actor_user_public_id: Uuid,
+    /// Stable desired-target key.
+    pub target_key: String,
+    /// Positive immutable version.
+    pub version: i32,
+    /// Operator-facing display name.
+    pub display_name: String,
+    /// Desired output container format.
+    pub container_format: String,
+    /// Complete ordered stream graph.
+    pub streams: Vec<MediaDesiredTargetStreamParams>,
+}
+
+/// Profile desired-target assignment parameters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaProfileDesiredTargetParams {
+    /// Actor performing the operation.
+    pub actor_user_public_id: Uuid,
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Desired-target key, or `None` to clear.
+    pub target_key: Option<String>,
+    /// Exact immutable version.
+    pub version: Option<i32>,
 }
 
 /// Upsert policy profile parameters.
@@ -266,6 +358,18 @@ pub struct MediaPolicyUpsertParams<'a> {
     pub display_name: &'a str,
     /// Worker video intent.
     pub video_intent: &'a str,
+    /// Verification strictness.
+    pub verification_strictness: &'a str,
+    /// Maximum source/candidate duration delta in milliseconds.
+    pub verification_duration_tolerance_millis: i64,
+    /// Whether normalized mux-structure validation is selected.
+    pub verification_mux_validation: MediaVerificationToggle,
+    /// Whether every candidate stream must decode without errors.
+    pub verification_decode_all_streams: MediaVerificationToggle,
+    /// Whether midpoint video keyframe seeking must succeed.
+    pub verification_keyframe_seek: MediaVerificationToggle,
+    /// Whether noninteractive playback smoke verification is selected.
+    pub verification_playback_probe: MediaVerificationToggle,
 }
 
 /// Update media job retention parameters.
@@ -273,14 +377,23 @@ pub struct MediaPolicyUpsertParams<'a> {
 pub struct MediaJobRetentionUpdateParams {
     /// Actor performing the operation.
     pub actor_user_public_id: Uuid,
-    /// Completed job retention in days.
-    pub completed_retention_days: i32,
-    /// Failed terminal diagnostic retention in days.
-    pub failed_diagnostic_retention_days: i32,
+    /// Whether completed-job deletion is enabled.
+    pub completed_enabled: bool,
+    /// Completed-job retention mode.
+    pub completed_mode: &'static str,
+    /// Completed-job age in days or retained-job count.
+    pub completed_limit: i32,
+    /// Whether failed-terminal diagnostic pruning is enabled.
+    pub failed_diagnostic_enabled: bool,
+    /// Failed-terminal diagnostic retention mode.
+    pub failed_diagnostic_mode: &'static str,
+    /// Failed-terminal diagnostic age in days or retained-job count.
+    pub failed_diagnostic_limit: i32,
 }
 
 /// Profile row used in YAML import/export payloads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MediaYamlProfile {
     /// Stable profile key.
     pub profile_key: String,
@@ -295,6 +408,12 @@ pub struct MediaYamlProfile {
     /// Optional compatibility target key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compatibility_target_key: Option<String>,
+    /// Optional immutable desired-target key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desired_target_key: Option<String>,
+    /// Optional immutable desired-target version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desired_target_version: Option<i32>,
     /// Operational policy key.
     #[serde(default = "default_media_policy_key")]
     pub policy_key: String,
@@ -309,6 +428,118 @@ pub struct MediaYamlProfile {
     pub schedule_interval_minutes: Option<i32>,
 }
 
+/// Human-readable metadata for a versioned media configuration bundle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaYamlMetadata {
+    /// Bundle name.
+    pub name: String,
+    /// Optional bundle description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Compatibility catalog row carried by a media configuration bundle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaYamlCompatibilityTarget {
+    /// Stable catalog key.
+    pub compatibility_target_key: String,
+    /// Positive catalog version.
+    pub version: i32,
+    /// Operator-facing label.
+    pub display_name: String,
+    /// Desired video codec.
+    pub video_codec: String,
+    /// Desired audio codec.
+    pub audio_codec: String,
+    /// Optional desired channel count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channels: Option<i32>,
+    /// Optional desired channel layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channel_layout: Option<String>,
+    /// Subtitle retention policy.
+    pub subtitle_policy: String,
+}
+
+/// Immutable desired target carried by a media configuration bundle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaYamlDesiredTarget {
+    /// Stable target key.
+    pub target_key: String,
+    /// Positive immutable version.
+    pub version: i32,
+    /// Operator-facing label.
+    pub display_name: String,
+    /// Desired output container.
+    pub container_format: String,
+    /// Complete ordered stream graph.
+    pub streams: Vec<MediaDesiredTargetStreamParams>,
+}
+
+/// Policy catalog row carried by a media configuration bundle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaYamlPolicy {
+    /// Stable policy key.
+    pub policy_key: String,
+    /// Positive catalog version.
+    pub version: i32,
+    /// Operator-facing label.
+    pub display_name: String,
+    /// Video transcode intent.
+    pub video_intent: String,
+    /// Verification strictness.
+    pub verification_strictness: String,
+    /// Maximum source/candidate duration delta in milliseconds.
+    pub verification_duration_tolerance_millis: i64,
+    /// Whether normalized mux validation is required.
+    pub verification_mux_validation: MediaVerificationToggle,
+    /// Whether every output stream must decode.
+    pub verification_decode_all_streams: MediaVerificationToggle,
+    /// Whether midpoint keyframe seeking is required.
+    pub verification_keyframe_seek: MediaVerificationToggle,
+    /// Whether a playback smoke probe is required.
+    pub verification_playback_probe: MediaVerificationToggle,
+}
+
+/// Complete versioned media configuration exchange bundle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaYamlBundle {
+    /// Numeric schema format version.
+    pub format_version: u32,
+    /// Stable bundle kind discriminator.
+    pub kind: String,
+    /// Human-readable bundle metadata.
+    pub metadata: MediaYamlMetadata,
+    /// Referenced compatibility catalog rows.
+    #[serde(default)]
+    pub compatibility_targets: Vec<MediaYamlCompatibilityTarget>,
+    /// Referenced immutable desired targets.
+    #[serde(default)]
+    pub targets: Vec<MediaYamlDesiredTarget>,
+    /// Referenced policy catalog rows.
+    #[serde(default)]
+    pub policies: Vec<MediaYamlPolicy>,
+    /// Profile definitions.
+    #[serde(default)]
+    pub profiles: Vec<MediaYamlProfile>,
+}
+
+/// Pointer-addressable YAML validation issue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaYamlIssue {
+    /// Stable machine-readable issue code.
+    pub code: String,
+    /// JSON Pointer location in the parsed bundle.
+    pub pointer: String,
+    /// Whether the issue prevents import.
+    pub blocking: bool,
+}
+
 fn default_media_policy_key() -> String {
     "safe_dry_run".to_string()
 }
@@ -321,9 +552,9 @@ pub struct MediaYamlValidationResult {
     /// Validation pass/fail.
     pub valid: bool,
     /// Diagnostic issues.
-    pub issues: Vec<String>,
-    /// Parsed profile rows.
-    pub profiles: Vec<MediaYamlProfile>,
+    pub issues: Vec<MediaYamlIssue>,
+    /// Parsed bundle.
+    pub bundle: MediaYamlBundle,
 }
 
 /// Result of YAML apply.
@@ -333,6 +564,8 @@ pub struct MediaYamlApplyResult {
     pub forced_dry_run: bool,
     /// Imported profile ids.
     pub media_profile_public_ids: Vec<Uuid>,
+    /// Persisted disabled draft ids awaiting local path mapping.
+    pub media_profile_import_draft_public_ids: Vec<Uuid>,
 }
 
 /// Media profile response row.
@@ -352,6 +585,10 @@ pub struct MediaProfileResponse {
     pub retention_days: i32,
     /// Optional compatibility target key.
     pub compatibility_target_key: Option<String>,
+    /// Optional pinned desired-target key.
+    pub desired_target_key: Option<String>,
+    /// Optional pinned desired-target version.
+    pub desired_target_version: Option<i32>,
     /// Operational policy key.
     pub policy_key: String,
     /// Whether filesystem watching is enabled.
@@ -377,8 +614,29 @@ pub struct MediaCompatibilityTargetResponse {
     pub video_codec: String,
     /// Desired audio codec.
     pub audio_codec: String,
+    /// Optional desired audio channel count.
+    pub audio_channels: Option<i32>,
+    /// Optional desired audio channel layout.
+    pub audio_channel_layout: Option<String>,
     /// Subtitle retention policy.
     pub subtitle_policy: String,
+}
+
+/// Complete immutable desired-target version response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaDesiredTargetResponse {
+    /// Desired-target version public id.
+    pub media_desired_target_profile_public_id: Uuid,
+    /// Stable target key.
+    pub target_key: String,
+    /// Immutable version.
+    pub version: i32,
+    /// Display label.
+    pub display_name: String,
+    /// Desired output container format.
+    pub container_format: String,
+    /// Complete ordered stream graph.
+    pub streams: Vec<MediaDesiredTargetStreamParams>,
 }
 
 /// Versioned policy profile response row.
@@ -392,15 +650,35 @@ pub struct MediaPolicyResponse {
     pub display_name: String,
     /// Video transcode intent.
     pub video_intent: String,
+    /// Verification strictness.
+    pub verification_strictness: String,
+    /// Maximum source/candidate duration delta in milliseconds.
+    pub verification_duration_tolerance_millis: i64,
+    /// Whether normalized mux-structure validation is selected.
+    pub verification_mux_validation: MediaVerificationToggle,
+    /// Whether every candidate stream must decode without errors.
+    pub verification_decode_all_streams: MediaVerificationToggle,
+    /// Whether midpoint video keyframe seeking must succeed.
+    pub verification_keyframe_seek: MediaVerificationToggle,
+    /// Whether noninteractive playback smoke verification is selected.
+    pub verification_playback_probe: MediaVerificationToggle,
 }
 
 /// Media job retention policy response row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaJobRetentionResponse {
-    /// Completed-job retention in days.
-    pub completed_retention_days: i32,
-    /// Failed terminal diagnostic retention in days.
-    pub failed_diagnostic_retention_days: i32,
+    /// Whether completed-job deletion is enabled.
+    pub completed_enabled: bool,
+    /// Completed-job retention mode.
+    pub completed_mode: String,
+    /// Completed-job age in days or retained-job count.
+    pub completed_limit: i32,
+    /// Whether failed-terminal diagnostic pruning is enabled.
+    pub failed_diagnostic_enabled: bool,
+    /// Failed-terminal diagnostic retention mode.
+    pub failed_diagnostic_mode: String,
+    /// Failed-terminal diagnostic age in days or retained-job count.
+    pub failed_diagnostic_limit: i32,
 }
 
 /// Media job response row.
@@ -633,6 +911,14 @@ pub struct MediaCapabilitySnapshotResponse {
     pub utility_capabilities: Vec<String>,
     /// License mode captured from the runtime.
     pub license_mode: String,
+    /// License mode captured specifically from the ffmpeg build.
+    pub ffmpeg_license_mode: String,
+    /// Whether ffmpeg was built with `--enable-gpl`.
+    pub ffmpeg_enable_gpl: bool,
+    /// Whether ffmpeg was built with `--enable-version3`.
+    pub ffmpeg_enable_version3: bool,
+    /// Whether ffmpeg was built with `--enable-nonfree`.
+    pub ffmpeg_enable_nonfree: bool,
     /// Runtime compliance artifact links.
     pub compliance_links: Vec<String>,
     /// Capabilities intentionally absent from the runtime.
@@ -755,6 +1041,23 @@ pub trait MediaFacade: Send + Sync {
         &self,
         params: MediaCompatibilityTargetUpsertParams<'_>,
     ) -> Result<MediaCompatibilityTargetResponse, MediaServiceError>;
+
+    /// List complete immutable desired-target versions.
+    async fn media_desired_target_list(
+        &self,
+    ) -> Result<Vec<MediaDesiredTargetResponse>, MediaServiceError>;
+
+    /// Atomically create one immutable desired-target version and its stream graph.
+    async fn media_desired_target_create(
+        &self,
+        params: MediaDesiredTargetCreateParams,
+    ) -> Result<MediaDesiredTargetResponse, MediaServiceError>;
+
+    /// Pin or clear the immutable desired-target version for one profile.
+    async fn media_profile_desired_target_set(
+        &self,
+        params: MediaProfileDesiredTargetParams,
+    ) -> Result<Uuid, MediaServiceError>;
 
     /// List active policy profile versions.
     async fn media_policy_list(&self) -> Result<Vec<MediaPolicyResponse>, MediaServiceError>;
@@ -966,6 +1269,26 @@ impl MediaFacade for NoopMedia {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 
+    async fn media_desired_target_list(
+        &self,
+    ) -> Result<Vec<MediaDesiredTargetResponse>, MediaServiceError> {
+        Ok(Vec::new())
+    }
+
+    async fn media_desired_target_create(
+        &self,
+        _params: MediaDesiredTargetCreateParams,
+    ) -> Result<MediaDesiredTargetResponse, MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
+    async fn media_profile_desired_target_set(
+        &self,
+        _params: MediaProfileDesiredTargetParams,
+    ) -> Result<Uuid, MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
     async fn media_policy_list(&self) -> Result<Vec<MediaPolicyResponse>, MediaServiceError> {
         Ok(Vec::new())
     }
@@ -979,8 +1302,12 @@ impl MediaFacade for NoopMedia {
 
     async fn media_job_retention(&self) -> Result<MediaJobRetentionResponse, MediaServiceError> {
         Ok(MediaJobRetentionResponse {
-            completed_retention_days: 30,
-            failed_diagnostic_retention_days: 30,
+            completed_enabled: false,
+            completed_mode: "age".to_string(),
+            completed_limit: 30,
+            failed_diagnostic_enabled: true,
+            failed_diagnostic_mode: "age".to_string(),
+            failed_diagnostic_limit: 30,
         })
     }
 
@@ -1174,7 +1501,7 @@ impl MediaFacade for NoopMedia {
         &self,
         _include_local_paths: bool,
     ) -> Result<String, MediaServiceError> {
-        Ok("version: revaer.media.v1\nprofiles: []\n".to_string())
+        Ok("format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Revaer media configuration\nprofiles: []\n".to_string())
     }
 
     async fn media_yaml_validate(
@@ -1182,10 +1509,25 @@ impl MediaFacade for NoopMedia {
         _yaml_payload: &str,
     ) -> Result<MediaYamlValidationResult, MediaServiceError> {
         Ok(MediaYamlValidationResult {
-            version: "revaer.media.v1".to_string(),
+            version: "1".to_string(),
             valid: false,
-            issues: vec!["media_unavailable".to_string()],
-            profiles: Vec::new(),
+            issues: vec![MediaYamlIssue {
+                code: "media_unavailable".to_string(),
+                pointer: String::new(),
+                blocking: true,
+            }],
+            bundle: MediaYamlBundle {
+                format_version: 1,
+                kind: "revaer.media.profile_bundle".to_string(),
+                metadata: MediaYamlMetadata {
+                    name: "Revaer media configuration".to_string(),
+                    description: None,
+                },
+                compatibility_targets: Vec::new(),
+                targets: Vec::new(),
+                policies: Vec::new(),
+                profiles: Vec::new(),
+            },
         })
     }
 

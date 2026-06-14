@@ -33,7 +33,7 @@ pub enum ValidationError {
     /// Duplicate profile key in the same compile set.
     #[error("duplicate profile key")]
     DuplicateProfileKey,
-    /// Two profile source roots overlap.
+    /// Two roots owned by different profiles overlap.
     #[error("overlapping profile roots")]
     OverlappingProfileRoots,
 }
@@ -81,13 +81,15 @@ pub fn validate_profiles(profiles: &[MediaProfile]) -> Result<(), ValidationErro
             return Err(ValidationError::DuplicateProfileKey);
         }
 
-        let source = normalize_path(&profile.source_root);
-        for other in &seen_roots {
-            if paths_overlap(&source, other) {
-                return Err(ValidationError::OverlappingProfileRoots);
+        for root in [&profile.source_root, &profile.output_root] {
+            let normalized = normalize_path(root);
+            for other in &seen_roots {
+                if paths_overlap(&normalized, other) {
+                    return Err(ValidationError::OverlappingProfileRoots);
+                }
             }
+            seen_roots.push(normalized);
         }
-        seen_roots.push(source);
     }
 
     Ok(())
@@ -208,6 +210,29 @@ mod tests {
             },
         ];
         assert!(validate_profiles(&profiles).is_ok());
+    }
+
+    #[test]
+    fn reject_cross_profile_source_output_overlap() {
+        let profiles = vec![
+            MediaProfile {
+                key: "movies".to_string(),
+                source_root: "/input/movies".to_string(),
+                output_root: "/library/movies".to_string(),
+                dry_run_only: true,
+            },
+            MediaProfile {
+                key: "tv".to_string(),
+                source_root: "/library/movies/television".to_string(),
+                output_root: "/library/tv".to_string(),
+                dry_run_only: true,
+            },
+        ];
+
+        assert_eq!(
+            validate_profiles(&profiles),
+            Err(ValidationError::OverlappingProfileRoots)
+        );
     }
 
     #[test]

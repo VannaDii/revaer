@@ -21,15 +21,19 @@ use revaer_data::media::configuration::{
 use revaer_data::media::jobs::{
     AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
     AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow, CreateMediaJobInput,
-    MediaJobArtifactRow, MediaJobCompactAuditRow, MediaJobOperationRow, MediaJobPlanReasonRow,
-    MediaJobRow, MediaJobVerificationCheckRow, MediaJobViolationRow, append_media_job_artifact,
-    append_media_job_compact_audit, append_media_job_operation, append_media_job_phase,
-    append_media_job_plan_reason, append_media_job_verification_check, append_media_job_violation,
-    cancel_media_job, create_media_job, get_media_job, list_media_job_artifacts,
-    list_media_job_compact_audits, list_media_job_operations, list_media_job_plan_reasons,
-    list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
-    mark_media_job_completed, media_job_worker_claim_next, media_job_worker_heartbeat,
-    media_job_worker_mark_status, retry_media_job,
+    EnqueueDiscoveredMediaJobInput, MediaJobArtifactRow, MediaJobCompactAuditRow,
+    MediaJobControlRow, MediaJobDesiredTargetStreamRow, MediaJobOperationRow,
+    MediaJobPlanReasonRow, MediaJobRetentionRunRow, MediaJobRow, MediaJobVerificationCheckRow,
+    MediaJobViolationRow, append_media_job_artifact, append_media_job_compact_audit,
+    append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
+    append_media_job_verification_check, append_media_job_violation, cancel_media_job,
+    create_media_job, enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
+    list_media_job_compact_audits, list_media_job_desired_target_streams,
+    list_media_job_operations, list_media_job_plan_reasons, list_media_job_verification_checks,
+    list_media_job_violations, list_media_jobs, mark_media_job_completed,
+    media_job_worker_acknowledge_cancel, media_job_worker_claim_next, media_job_worker_complete,
+    media_job_worker_heartbeat, media_job_worker_mark_status, media_job_worker_poll_control,
+    retry_media_job, run_media_job_retention,
 };
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput, get_media_profile,
@@ -94,6 +98,18 @@ impl MediaStore {
         media_profile_public_id: Uuid,
     ) -> DataResult<Option<MediaProfileRow>> {
         get_media_profile(&self.pool, media_profile_public_id).await
+    }
+
+    /// Atomically enqueue a changed file discovered by a watcher or scheduled scan.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the durable fingerprint claim or job creation fails.
+    pub async fn enqueue_discovered_job(
+        &self,
+        input: &EnqueueDiscoveredMediaJobInput<'_>,
+    ) -> DataResult<Option<Uuid>> {
+        enqueue_discovered_media_job(&self.pool, input).await
     }
 
     /// List active compatibility targets.
@@ -404,7 +420,9 @@ impl MediaStore {
     ///
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn cancel_job(&self, media_job_public_id: Uuid) -> DataResult<()> {
-        cancel_media_job(&self.pool, media_job_public_id).await
+        cancel_media_job(&self.pool, media_job_public_id)
+            .await
+            .map(|_| ())
     }
 
     /// Retry one media job.
@@ -434,6 +452,18 @@ impl MediaStore {
         media_job_worker_claim_next(&self.pool).await
     }
 
+    /// List the immutable desired-target stream snapshot for one claimed job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn list_job_desired_target_streams(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<MediaJobDesiredTargetStreamRow>> {
+        list_media_job_desired_target_streams(&self.pool, media_job_public_id).await
+    }
+
     /// Refresh worker heartbeat for a claimed media job.
     ///
     /// # Errors
@@ -441,6 +471,53 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn heartbeat_job(&self, media_job_public_id: Uuid) -> DataResult<()> {
         media_job_worker_heartbeat(&self.pool, media_job_public_id).await
+    }
+
+    /// Refresh heartbeat and read cancellation state for a claimed job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the job is no longer worker-owned or execution fails.
+    pub async fn poll_job_control(
+        &self,
+        media_job_public_id: Uuid,
+        observed_cancel_generation: i64,
+    ) -> DataResult<MediaJobControlRow> {
+        media_job_worker_poll_control(&self.pool, media_job_public_id, observed_cancel_generation)
+            .await
+    }
+
+    /// Acknowledge a pending cancellation and mark the claimed job cancelled.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no cancellation is pending or execution fails.
+    pub async fn acknowledge_job_cancel(
+        &self,
+        media_job_public_id: Uuid,
+        observed_cancel_generation: i64,
+    ) -> DataResult<i64> {
+        media_job_worker_acknowledge_cancel(
+            &self.pool,
+            media_job_public_id,
+            observed_cancel_generation,
+        )
+        .await
+    }
+
+    /// Atomically complete a job or acknowledge a cancellation that won the terminal race.
+    ///
+    /// Returns `true` when cancellation won and `false` when completion won.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the job is no longer worker-owned or execution fails.
+    pub async fn complete_job(
+        &self,
+        media_job_public_id: Uuid,
+        observed_cancel_generation: i64,
+    ) -> DataResult<bool> {
+        media_job_worker_complete(&self.pool, media_job_public_id, observed_cancel_generation).await
     }
 
     /// Mark a claimed media job with a worker status.
@@ -457,28 +534,16 @@ impl MediaStore {
         media_job_worker_mark_status(&self.pool, media_job_public_id, status_text, last_error).await
     }
 
-    /// Delete completed media jobs older than their profile retention window.
+    /// Run the active completed-job and failed-diagnostic retention policies.
     ///
     /// # Errors
     ///
     /// Returns an error when the underlying stored-procedure call fails.
-    pub async fn cleanup_completed_jobs(
+    pub async fn run_job_retention(
         &self,
         as_of: sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
-    ) -> DataResult<i32> {
-        revaer_data::media::jobs::cleanup_completed_media_jobs(&self.pool, as_of).await
-    }
-
-    /// Delete diagnostic child rows for failed/cancelled jobs past the default retention window.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the underlying stored-procedure call fails.
-    pub async fn cleanup_failed_terminal_diagnostics(
-        &self,
-        as_of: sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
-    ) -> DataResult<i32> {
-        revaer_data::media::jobs::cleanup_failed_terminal_media_diagnostics(&self.pool, as_of).await
+    ) -> DataResult<MediaJobRetentionRunRow> {
+        run_media_job_retention(&self.pool, as_of).await
     }
 
     /// Record one capability snapshot row.
@@ -535,6 +600,7 @@ mod tests {
         RecordCapabilitySnapshotInput, complete_capability_snapshot_run_with_executor,
         record_capability_snapshot_with_executor, start_capability_snapshot_run_with_executor,
     };
+    use revaer_data::media::configuration::UpdateMediaJobRetentionPolicyInput;
     use revaer_data::media::jobs::{
         AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
         AppendMediaJobVerificationCheckInput, CreateMediaJobInput,
@@ -910,11 +976,22 @@ mod tests {
             .await?;
 
         store.mark_job_completed(job_id).await?;
-        let removed = store
-            .cleanup_completed_jobs(chrono::Utc::now() + chrono::Duration::days(2))
+        store
+            .update_job_retention_policy(UpdateMediaJobRetentionPolicyInput {
+                actor_public_id: actor,
+                completed_enabled: true,
+                completed_mode: "age".to_string(),
+                completed_limit: 1,
+                failed_diagnostic_enabled: false,
+                failed_diagnostic_mode: "age".to_string(),
+                failed_diagnostic_limit: 30,
+            })
+            .await?;
+        let outcome = store
+            .run_job_retention(chrono::Utc::now() + chrono::Duration::days(2))
             .await?;
 
-        assert_eq!(removed, 1);
+        assert_eq!(outcome.completed_jobs_deleted, 1);
         assert!(store.get_job(job_id).await?.is_none());
         Ok(())
     }
@@ -995,17 +1072,18 @@ mod tests {
             .await?;
         store.cancel_job(job_id).await?;
 
-        let removed = store
-            .cleanup_failed_terminal_diagnostics(chrono::Utc::now() + chrono::Duration::days(31))
+        let outcome = store
+            .run_job_retention(chrono::Utc::now() + chrono::Duration::days(31))
             .await?;
 
-        assert_eq!(removed, 5);
+        assert_eq!(outcome.failed_jobs_pruned, 1);
+        assert_eq!(outcome.failed_detail_rows_deleted, 4);
         assert!(store.get_job(job_id).await?.is_some());
         assert!(store.list_job_violations(job_id).await?.is_empty());
         assert!(store.list_job_plan_reasons(job_id).await?.is_empty());
         assert!(store.list_job_verification_checks(job_id).await?.is_empty());
         assert!(store.list_job_artifacts(job_id).await?.is_empty());
-        assert!(store.list_job_compact_audits(job_id).await?.is_empty());
+        assert_eq!(store.list_job_compact_audits(job_id).await?.len(), 1);
         Ok(())
     }
 
@@ -1112,17 +1190,6 @@ mod tests {
         let job_id = Uuid::new_v4();
 
         assert!(store.mark_job_completed(job_id).await.is_err());
-        assert!(
-            store
-                .cleanup_completed_jobs(chrono::Utc::now())
-                .await
-                .is_err()
-        );
-        assert!(
-            store
-                .cleanup_failed_terminal_diagnostics(chrono::Utc::now())
-                .await
-                .is_err()
-        );
+        assert!(store.run_job_retention(chrono::Utc::now()).await.is_err());
     }
 }

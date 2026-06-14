@@ -87,6 +87,21 @@
       "copyrightText": "See Alpine package source metadata."
     },
     {
+      "name": "ffplay",
+      "SPDXID": "SPDXRef-Package-ffplay",
+      "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=ffplay&branch=v3.23",
+      "versionInfo": "8.0.1-r1",
+      "licenseConcluded": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+      "licenseDeclared": "GPL-2.0-or-later AND LGPL-2.1-or-later",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "a81c5b59ade6f01801142580450d075b8f102ae82f2fa51152aa72df2b059171"
+        }
+      ],
+      "copyrightText": "See Alpine package source metadata."
+    },
+    {
       "name": "font-dejavu",
       "SPDXID": "SPDXRef-Package-font-dejavu",
       "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=font-dejavu&branch=v3.23",
@@ -337,6 +352,11 @@
       "spdxElementId": "SPDXRef-DOCUMENT",
       "relationshipType": "DESCRIBES",
       "relatedSpdxElement": "SPDXRef-Package-ffmpeg"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-ffplay"
     },
     {
       "spdxElementId": "SPDXRef-DOCUMENT",

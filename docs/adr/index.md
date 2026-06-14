@@ -328,9 +328,19 @@
 -   [314](314-artifacthub-verification-and-official-readiness.md) – Artifact Hub verification and official readiness
 -   [315](315-indexer-import-job-runtime-worker.md) – Indexer import job runtime worker
 -   [316](316-import-runtime-gap-closure-followup.md) – Import runtime gap-closure follow-up
--   [317](317-media-transcoding-foundation.md) – Media transcoding foundation
--   [318](318-pr-31-media-review-closeout.md) – PR 31 media review closeout
--   [319](319-media-conversion-fixture-plan.md) – Media conversion fixture plan
--   [320](320-media-conversion-fixture-suite.md) – Media conversion fixture suite
--   [321](321-media-conversion-ci-report.md) – Media conversion CI report
--   [322](322-supply-chain-ci-tool-cache.md) – Supply chain CI tool cache
+-   [317](317-media-transcoding-foundation.md) - Media transcoding foundation and PR 31 implementation record
+-   [322](322-supply-chain-ci-tool-cache.md) - Supply chain CI and advisory remediation
+-   [323](323-media-target-video-constraints.md) - Media target video constraints
+-   [324](324-media-video-constraint-execution.md) - Media video constraint execution
+-   [325](325-media-video-constraint-verification.md) - Media video constraint verification
+-   [326](326-media-audio-constraint-verification.md) - Media audio constraint verification
+-   [327](327-media-target-stream-kind-fail-closed.md) - Media target stream kind fail-closed guard
+-   [328](328-media-audio-loudness-policy.md) - Media audio loudness policy
+-   [329](329-media-audio-loudness-verification.md) - Media audio loudness verification
+-   [330](330-media-target-constraint-mapping-fail-closed.md) - Media target constraint mapping fail-closed
+-   [331](331-media-hdr10-side-data-verification.md) - Media HDR10 side-data verification
+-   [332](332-media-metadata-rewrite-fail-closed.md) - Media metadata rewrite fail-closed
+-   [333](333-media-hdr-format-fail-closed.md) - Media HDR format fail-closed validation
+-   [334](334-media-chapter-preservation-verification.md) - Media chapter preservation verification
+-   [335](335-media-stream-metadata-diff-planning.md) - Media stream metadata diff planning
+-   [336](336-media-data-target-fail-closed.md) - Media data target fail-closed validation

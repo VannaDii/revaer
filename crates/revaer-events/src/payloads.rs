@@ -123,6 +123,86 @@ pub enum Event {
         /// Explanation for why the selection changed.
         reason: String,
     },
+    /// Media profile configuration changed.
+    MediaProfileChanged {
+        /// Identifier for the changed media profile.
+        media_profile_public_id: Uuid,
+        /// Stable operator-facing profile key.
+        profile_key: String,
+    },
+    /// Media runtime capabilities were refreshed successfully.
+    MediaCapabilitiesRefreshed {
+        /// Identifier for the refreshed capability snapshot.
+        media_capability_snapshot_id: i64,
+    },
+    /// Media runtime capability refresh failed.
+    MediaCapabilitiesRefreshFailed {
+        /// Machine-readable or bounded human-readable failure reason.
+        reason: String,
+    },
+    /// Media discovery preview produced candidate counts.
+    MediaDiscoveryPreviewed {
+        /// Identifier for the profile used for discovery.
+        media_profile_public_id: Uuid,
+        /// Number of discovered candidates.
+        candidate_count: u64,
+        /// Number of accepted candidates.
+        accepted_count: u64,
+    },
+    /// Media job was queued.
+    MediaJobQueued {
+        /// Identifier for the queued media job.
+        media_job_public_id: Uuid,
+        /// Identifier for the associated media profile.
+        media_profile_public_id: Uuid,
+        /// Whether the queued job is dry-run only.
+        dry_run: bool,
+    },
+    /// Media job source inspection completed.
+    MediaJobInspected {
+        /// Identifier for the inspected media job.
+        media_job_public_id: Uuid,
+    },
+    /// Media job planning completed.
+    MediaJobPlanned {
+        /// Identifier for the planned media job.
+        media_job_public_id: Uuid,
+        /// Number of planned operations.
+        operation_count: u64,
+        /// Whether the planned job is dry-run only.
+        dry_run: bool,
+    },
+    /// Media job destructive execution started.
+    MediaJobExecutionStarted {
+        /// Identifier for the executing media job.
+        media_job_public_id: Uuid,
+    },
+    /// Media job verification failed.
+    MediaJobVerificationFailed {
+        /// Identifier for the media job whose verification failed.
+        media_job_public_id: Uuid,
+        /// Verification check that failed.
+        check_kind: String,
+        /// Machine-readable failure code.
+        error_code: String,
+    },
+    /// Media job completed successfully.
+    MediaJobCompleted {
+        /// Identifier for the completed media job.
+        media_job_public_id: Uuid,
+    },
+    /// Media job failed.
+    MediaJobFailed {
+        /// Identifier for the failed media job.
+        media_job_public_id: Uuid,
+        /// Machine-readable failure code.
+        error_code: String,
+    },
+    /// Media job history retention pruned terminal job rows.
+    MediaJobHistoryPruned {
+        /// Number of pruned rows.
+        pruned_count: u64,
+    },
 }
 
 impl Event {
@@ -144,6 +224,18 @@ impl Event {
             Self::SettingsChanged { .. } => "settings_changed",
             Self::HealthChanged { .. } => "health_changed",
             Self::SelectionReconciled { .. } => "selection_reconciled",
+            Self::MediaProfileChanged { .. } => "media_profile_changed",
+            Self::MediaCapabilitiesRefreshed { .. } => "media_capabilities_refreshed",
+            Self::MediaCapabilitiesRefreshFailed { .. } => "media_capabilities_refresh_failed",
+            Self::MediaDiscoveryPreviewed { .. } => "media_discovery_previewed",
+            Self::MediaJobQueued { .. } => "media_job_queued",
+            Self::MediaJobInspected { .. } => "media_job_inspected",
+            Self::MediaJobPlanned { .. } => "media_job_planned",
+            Self::MediaJobExecutionStarted { .. } => "media_job_execution_started",
+            Self::MediaJobVerificationFailed { .. } => "media_job_verification_failed",
+            Self::MediaJobCompleted { .. } => "media_job_completed",
+            Self::MediaJobFailed { .. } => "media_job_failed",
+            Self::MediaJobHistoryPruned { .. } => "media_job_history_pruned",
         }
     }
 }
@@ -270,6 +362,90 @@ mod tests {
                 reason: "policy".into(),
             },
             "selection_reconciled",
+        );
+    }
+
+    #[test]
+    fn event_kind_maps_media_variants() {
+        assert_event_kind(
+            &Event::MediaProfileChanged {
+                media_profile_public_id: Uuid::nil(),
+                profile_key: "movies".into(),
+            },
+            "media_profile_changed",
+        );
+        assert_event_kind(
+            &Event::MediaCapabilitiesRefreshed {
+                media_capability_snapshot_id: 42,
+            },
+            "media_capabilities_refreshed",
+        );
+        assert_event_kind(
+            &Event::MediaCapabilitiesRefreshFailed {
+                reason: "ffmpeg missing".into(),
+            },
+            "media_capabilities_refresh_failed",
+        );
+        assert_event_kind(
+            &Event::MediaDiscoveryPreviewed {
+                media_profile_public_id: Uuid::nil(),
+                candidate_count: 2,
+                accepted_count: 1,
+            },
+            "media_discovery_previewed",
+        );
+        assert_event_kind(
+            &Event::MediaJobQueued {
+                media_job_public_id: Uuid::nil(),
+                media_profile_public_id: Uuid::nil(),
+                dry_run: true,
+            },
+            "media_job_queued",
+        );
+        assert_event_kind(
+            &Event::MediaJobInspected {
+                media_job_public_id: Uuid::nil(),
+            },
+            "media_job_inspected",
+        );
+        assert_event_kind(
+            &Event::MediaJobPlanned {
+                media_job_public_id: Uuid::nil(),
+                operation_count: 1,
+                dry_run: true,
+            },
+            "media_job_planned",
+        );
+        assert_event_kind(
+            &Event::MediaJobExecutionStarted {
+                media_job_public_id: Uuid::nil(),
+            },
+            "media_job_execution_started",
+        );
+        assert_event_kind(
+            &Event::MediaJobVerificationFailed {
+                media_job_public_id: Uuid::nil(),
+                check_kind: "candidate_graph".into(),
+                error_code: "media_job_output_graph_mismatch".into(),
+            },
+            "media_job_verification_failed",
+        );
+        assert_event_kind(
+            &Event::MediaJobCompleted {
+                media_job_public_id: Uuid::nil(),
+            },
+            "media_job_completed",
+        );
+        assert_event_kind(
+            &Event::MediaJobFailed {
+                media_job_public_id: Uuid::nil(),
+                error_code: "media_capability_snapshot_missing".into(),
+            },
+            "media_job_failed",
+        );
+        assert_event_kind(
+            &Event::MediaJobHistoryPruned { pruned_count: 3 },
+            "media_job_history_pruned",
         );
     }
 

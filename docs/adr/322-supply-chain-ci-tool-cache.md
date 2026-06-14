@@ -1,47 +1,52 @@
-# Supply Chain CI Tool Cache
+# Supply Chain CI And Advisory Remediation
 
 - Status: Accepted
-- Date: 2026-06-13
-- Context:
-  - The PR workflow ran `audit`, `deny`, and `udeps` as separate jobs. Each job paid repeated setup cost, and `cargo-deny`, `cargo-audit`, and `cargo-udeps` could be compiled from source when absent on a fresh runner.
-  - `cargo-udeps` requires nightly-only compiler flags, but the recipe first attempted a stable run before retrying on nightly.
-  - Downstream jobs must remain gated on supply-chain checks; the change must not remove the validation dependency.
-- Decision:
-  - Replace the separate PR `audit`, `deny`, and `udeps` jobs with one `supply-chain` job that restores installed-tool and advisory caches, installs the three cargo tools through the existing pinned prebuilt installer action, and runs `just audit`, `just deny`, and `just udeps`.
-  - Keep downstream jobs gated on the combined `supply-chain` job.
-  - Change `just udeps` to run directly on `REVAER_UDEPS_TOOLCHAIN`, defaulting to `nightly`, instead of probing stable first.
-  - Alternative considered: remove supply-chain checks from downstream `needs` and rely only on branch protection. That would reduce wall-clock time further, but was explicitly out of scope for this task.
-- Consequences:
-  - Fresh runners avoid compiling supply-chain tools from source when the prebuilt installer can provide them.
-  - Warm runners can reuse installed tool binaries and the advisory database.
-  - The combined job trades some parallelism for less repeated setup; downstream validation still waits for the full supply-chain result.
-  - Branch protection may need to track the new `Supply Chain Checks` job name instead of the previous three separate checks.
-- Follow-up:
-  - Compare CI timings after this lands and keep the combined job only if setup savings outweigh the parallelism loss.
-  - If cargo-udeps becomes stable-compatible later, revisit the nightly-only recipe.
+- Date: 2026-07-18
+
+## Context
+
+- PR validation repeatedly installed supply-chain tools and downloaded advisory data, delaying required checks and increasing runner pressure.
+- The dependency graph also contained RustSec findings that had to be removed from the lock graph rather than ignored.
+- This record consolidates the CI tool-cache decision and the RustSec lock-graph remediation previously recorded separately in ADR 357.
+
+## Decisions
+
+- Run Cargo and npm supply-chain validation through the canonical `just audit`, `just deny`, and `just udeps` recipes.
+- Use one PR supply-chain job with version-keyed installed-tool caches and a separately keyed advisory-database cache.
+- Install pinned prebuilt tool releases through the pinned installer action and fail if the required versions are unavailable.
+- Do not restore the multi-gigabyte shared Cargo/sccache artifact for first-wave policy, lint, Helm, supply-chain, or other jobs that do not need compiled artifacts.
+- Reject every npm advisory severity in both lockfiles and every Cargo advisory warning.
+- Keep `.secignore` and `deny.toml` advisory ignores empty. Remove vulnerable crates from the resolved lock graph by upgrading or replacing dependencies.
+- Keep duplicate-crate allowances exact-version scoped and remove them when the lock graph no longer needs them.
+
+## Consequences
+
+- Required supply-chain checks start promptly and remain independent of large build caches.
+- Advisory data can refresh independently from tool binaries.
+- Lockfile changes are intentional evidence of remediation, not warning suppression.
+- A new advisory blocks the PR until the dependency graph is fixed or the operator explicitly approves a time-bounded exception with an ADR and guardrail update.
 
 ## Task Record
 
 - Motivation:
-  - The `udeps` and `deny` CI steps were taking too long because setup and tool installation dominated the checks.
+  - Make mandatory supply-chain checks fast enough to run consistently while preserving zero-ignore advisory policy.
 - Design notes:
-  - The implementation preserves `just` as the command surface and keeps the workflow using pinned external actions.
-  - Installed tool cache keys include exact tool versions so binary reuse cannot silently cross a tool upgrade.
-  - The advisory database cache is separate from the installed-tool cache because its refresh cadence is independent of tool versions.
+  - Cache keys include tool versions and platform identity.
+  - The Justfile remains the only build/test/lint/audit command surface.
 - Test coverage summary:
-  - Added workflow guardrails that fail when PR supply-chain checks are split back into standalone setup-heavy jobs or lose tool/advisory caches.
-  - Target verification for this change is `bash scripts/workflow-guardrails.sh`, `just fmt`, `just lint`, `just audit`, `just deny`, and `just udeps`.
+  - `just audit`
+  - `just deny`
+  - `just udeps`
+  - `just policy`
+  - `just ci`
+  - Remote Supply Chain Checks and Trivy jobs.
 - Observability updates:
-  - No runtime observability changes. CI logs now group audit, deny, and udeps under the `Supply Chain Checks` job.
-- Status-doc validation:
-  - Updated `.github/instructions/devops.instructions.md`, `docs/adr/index.md`, and `docs/SUMMARY.md`.
-  - No user-facing runtime README changes are required.
-- Risk & rollback plan:
-  - If the prebuilt installer does not support one of the requested cargo tools, revert the `supply-chain` job to source installation through the existing `just` recipes or split only the unsupported tool back out.
-  - If branch protection expects the old job names, update branch protection to require `Supply Chain Checks` or temporarily restore the old jobs.
+  - CI exposes tool installation, cache restoration, advisory refresh, and each canonical gate as separate log steps.
+- Risk and rollback plan:
+  - Delete a broken cache entry or bump its version key; do not bypass a check.
+  - Revert a dependency upgrade only with an alternative lock graph that remains advisory-clean.
 - Dependency rationale:
-  - No new project dependency was added.
-  - The workflow reuses the already-pinned `taiki-e/install-action` and `actions/cache` actions.
+  - No runtime dependency was added. Tool versions are pinned CI dependencies; lockfile upgrades remove vulnerable transitive packages.
 - Stale-policy check:
-  - Reviewed `AGENTS.md`, `.github/instructions/devops.instructions.md`, `.github/workflows/pr.yml`, `.github/actions/setup-revaer/action.yml`, and `justfile`.
-  - Drift found: the instructions did not yet describe the combined supply-chain job or direct-nightly `udeps`; this ADR and the devops instruction update record the new policy.
+  - Reviewed `AGENTS.md` and `.github/instructions/devops.instructions.md`.
+  - Drift found in duplicate cache setup and advisory exception language; the workflow and instructions now require one canonical, zero-ignore path.

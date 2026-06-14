@@ -41,6 +41,18 @@ struct MetricsInner {
     indexer_job_outcomes_total: IntCounterVec,
     indexer_operations_total: IntCounterVec,
     indexer_operation_latency_ms: HistogramVec,
+    media_discovery_candidates_total: IntCounterVec,
+    media_jobs_queued_total: IntCounterVec,
+    media_capability_refresh_total: IntCounterVec,
+    media_job_phases_total: IntCounterVec,
+    media_job_operations_total: IntCounterVec,
+    media_job_verification_checks_total: IntCounterVec,
+    media_job_failures_total: IntCounterVec,
+    media_job_outcomes_total: IntCounterVec,
+    media_job_duration_ms: HistogramVec,
+    media_workspace_cleanup_total: IntCounterVec,
+    media_retention_runs_total: IntCounterVec,
+    media_retention_rows_total: IntCounterVec,
 }
 
 struct MetricsCollectors {
@@ -62,6 +74,33 @@ struct MetricsCollectors {
     indexer_job_outcomes_total: IntCounterVec,
     indexer_operations_total: IntCounterVec,
     indexer_operation_latency_ms: HistogramVec,
+    media_discovery_candidates_total: IntCounterVec,
+    media_jobs_queued_total: IntCounterVec,
+    media_capability_refresh_total: IntCounterVec,
+    media_job_phases_total: IntCounterVec,
+    media_job_operations_total: IntCounterVec,
+    media_job_verification_checks_total: IntCounterVec,
+    media_job_failures_total: IntCounterVec,
+    media_job_outcomes_total: IntCounterVec,
+    media_job_duration_ms: HistogramVec,
+    media_workspace_cleanup_total: IntCounterVec,
+    media_retention_runs_total: IntCounterVec,
+    media_retention_rows_total: IntCounterVec,
+}
+
+struct MediaMetricsCollectors {
+    discovery_candidates_total: IntCounterVec,
+    jobs_queued_total: IntCounterVec,
+    capability_refresh_total: IntCounterVec,
+    job_phases_total: IntCounterVec,
+    job_operations_total: IntCounterVec,
+    job_verification_checks_total: IntCounterVec,
+    job_failures_total: IntCounterVec,
+    job_outcomes_total: IntCounterVec,
+    job_duration_ms: HistogramVec,
+    workspace_cleanup_total: IntCounterVec,
+    retention_runs_total: IntCounterVec,
+    retention_rows_total: IntCounterVec,
 }
 
 /// Snapshot of selected gauges and counters for health reporting.
@@ -222,6 +261,102 @@ impl Metrics {
             .observe(duration.as_secs_f64() * 1000.0);
     }
 
+    /// Increment discovered media candidate throughput by source and outcome.
+    pub fn inc_media_discovery_candidate(&self, source: &str, outcome: &str) {
+        self.inner
+            .media_discovery_candidates_total
+            .with_label_values(&[source, outcome])
+            .inc();
+    }
+
+    /// Increment queued media jobs by source and dry-run mode.
+    pub fn inc_media_job_queued(&self, source: &str, dry_run: bool) {
+        self.inner
+            .media_jobs_queued_total
+            .with_label_values(&[source, dry_run_label(dry_run)])
+            .inc();
+    }
+
+    /// Increment media capability refresh attempts by outcome.
+    pub fn inc_media_capability_refresh(&self, outcome: &str) {
+        self.inner
+            .media_capability_refresh_total
+            .with_label_values(&[outcome])
+            .inc();
+    }
+
+    /// Increment persisted media job phases by phase and status.
+    pub fn inc_media_job_phase(&self, phase: &str, status: &str) {
+        self.inner
+            .media_job_phases_total
+            .with_label_values(&[phase, status])
+            .inc();
+    }
+
+    /// Increment persisted media job operations by operation kind and outcome.
+    pub fn inc_media_job_operation(&self, operation: &str, outcome: &str) {
+        self.inner
+            .media_job_operations_total
+            .with_label_values(&[operation, outcome])
+            .inc();
+    }
+
+    /// Increment persisted media verification checks by check kind and status.
+    pub fn inc_media_job_verification_check(&self, check: &str, status: &str) {
+        self.inner
+            .media_job_verification_checks_total
+            .with_label_values(&[check, status])
+            .inc();
+    }
+
+    /// Increment media job failures by stable failure category.
+    pub fn inc_media_job_failure(&self, category: &str) {
+        self.inner
+            .media_job_failures_total
+            .with_label_values(&[category])
+            .inc();
+    }
+
+    /// Increment terminal media job outcomes by outcome and dry-run mode.
+    pub fn inc_media_job_outcome(&self, outcome: &str, dry_run: bool) {
+        self.inner
+            .media_job_outcomes_total
+            .with_label_values(&[outcome, dry_run_label(dry_run)])
+            .inc();
+    }
+
+    /// Observe terminal media job duration in milliseconds.
+    pub fn observe_media_job_duration(&self, outcome: &str, dry_run: bool, duration: Duration) {
+        self.inner
+            .media_job_duration_ms
+            .with_label_values(&[outcome, dry_run_label(dry_run)])
+            .observe(duration.as_secs_f64() * 1000.0);
+    }
+
+    /// Increment terminal workspace cleanup outcomes.
+    pub fn inc_media_workspace_cleanup(&self, outcome: &str) {
+        self.inner
+            .media_workspace_cleanup_total
+            .with_label_values(&[outcome])
+            .inc();
+    }
+
+    /// Increment media retention janitor runs by outcome.
+    pub fn inc_media_retention_run(&self, outcome: &str) {
+        self.inner
+            .media_retention_runs_total
+            .with_label_values(&[outcome])
+            .inc();
+    }
+
+    /// Add policy-pruned media retention rows by stable row category.
+    pub fn add_media_retention_rows(&self, category: &str, count: u64) {
+        self.inner
+            .media_retention_rows_total
+            .with_label_values(&[category])
+            .inc_by(count);
+    }
+
     /// Render the metrics registry using the Prometheus text exposition format.
     ///
     /// # Errors
@@ -282,6 +417,18 @@ impl MetricsInner {
             indexer_job_outcomes_total,
             indexer_operations_total,
             indexer_operation_latency_ms,
+            media_discovery_candidates_total,
+            media_jobs_queued_total,
+            media_capability_refresh_total,
+            media_job_phases_total,
+            media_job_operations_total,
+            media_job_verification_checks_total,
+            media_job_failures_total,
+            media_job_outcomes_total,
+            media_job_duration_ms,
+            media_workspace_cleanup_total,
+            media_retention_runs_total,
+            media_retention_rows_total,
         } = collectors;
 
         Ok(Self {
@@ -304,12 +451,39 @@ impl MetricsInner {
             indexer_job_outcomes_total,
             indexer_operations_total,
             indexer_operation_latency_ms,
+            media_discovery_candidates_total,
+            media_jobs_queued_total,
+            media_capability_refresh_total,
+            media_job_phases_total,
+            media_job_operations_total,
+            media_job_verification_checks_total,
+            media_job_failures_total,
+            media_job_outcomes_total,
+            media_job_duration_ms,
+            media_workspace_cleanup_total,
+            media_retention_runs_total,
+            media_retention_rows_total,
         })
     }
 }
 
 impl MetricsCollectors {
     fn new() -> Result<Self> {
+        let MediaMetricsCollectors {
+            discovery_candidates_total,
+            jobs_queued_total,
+            capability_refresh_total,
+            job_phases_total,
+            job_operations_total,
+            job_verification_checks_total,
+            job_failures_total,
+            job_outcomes_total,
+            job_duration_ms,
+            workspace_cleanup_total,
+            retention_runs_total,
+            retention_rows_total,
+        } = media_metrics_collectors()?;
+
         Ok(Self {
             http_requests_total: counter_vec(
                 "http_requests_total",
@@ -379,6 +553,18 @@ impl MetricsCollectors {
                 "Indexer service operation latency in milliseconds by operation and outcome",
                 &["operation", "outcome"],
             )?,
+            media_discovery_candidates_total: discovery_candidates_total,
+            media_jobs_queued_total: jobs_queued_total,
+            media_capability_refresh_total: capability_refresh_total,
+            media_job_phases_total: job_phases_total,
+            media_job_operations_total: job_operations_total,
+            media_job_verification_checks_total: job_verification_checks_total,
+            media_job_failures_total: job_failures_total,
+            media_job_outcomes_total: job_outcomes_total,
+            media_job_duration_ms: job_duration_ms,
+            media_workspace_cleanup_total: workspace_cleanup_total,
+            media_retention_runs_total: retention_runs_total,
+            media_retention_rows_total: retention_rows_total,
         })
     }
 
@@ -457,8 +643,142 @@ impl MetricsCollectors {
             "indexer_operation_latency_ms",
             self.indexer_operation_latency_ms.clone(),
         )?;
+        self.register_media_collectors(registry)?;
         Ok(())
     }
+
+    fn register_media_collectors(&self, registry: &Registry) -> Result<()> {
+        register_collector(
+            registry,
+            "media_discovery_candidates_total",
+            self.media_discovery_candidates_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_jobs_queued_total",
+            self.media_jobs_queued_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_capability_refresh_total",
+            self.media_capability_refresh_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_job_phases_total",
+            self.media_job_phases_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_job_operations_total",
+            self.media_job_operations_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_job_verification_checks_total",
+            self.media_job_verification_checks_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_job_failures_total",
+            self.media_job_failures_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_job_outcomes_total",
+            self.media_job_outcomes_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_job_duration_ms",
+            self.media_job_duration_ms.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_workspace_cleanup_total",
+            self.media_workspace_cleanup_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_retention_runs_total",
+            self.media_retention_runs_total.clone(),
+        )?;
+        register_collector(
+            registry,
+            "media_retention_rows_total",
+            self.media_retention_rows_total.clone(),
+        )?;
+        Ok(())
+    }
+}
+
+fn media_metrics_collectors() -> Result<MediaMetricsCollectors> {
+    Ok(MediaMetricsCollectors {
+        discovery_candidates_total: counter_vec(
+            "media_discovery_candidates_total",
+            "Media discovery candidates by source and outcome",
+            &["source", "outcome"],
+        )?,
+        jobs_queued_total: counter_vec(
+            "media_jobs_queued_total",
+            "Queued media jobs by source and dry-run mode",
+            &["source", "dry_run"],
+        )?,
+        capability_refresh_total: counter_vec(
+            "media_capability_refresh_total",
+            "Media capability refresh attempts by outcome",
+            &["outcome"],
+        )?,
+        job_phases_total: counter_vec(
+            "media_job_phases_total",
+            "Persisted media job phases by phase and status",
+            &["phase", "status"],
+        )?,
+        job_operations_total: counter_vec(
+            "media_job_operations_total",
+            "Persisted media job operations by operation kind and outcome",
+            &["operation", "outcome"],
+        )?,
+        job_verification_checks_total: counter_vec(
+            "media_job_verification_checks_total",
+            "Persisted media job verification checks by check kind and status",
+            &["check", "status"],
+        )?,
+        job_failures_total: counter_vec(
+            "media_job_failures_total",
+            "Media job failures by stable failure category",
+            &["category"],
+        )?,
+        job_outcomes_total: counter_vec(
+            "media_job_outcomes_total",
+            "Terminal media job outcomes by outcome and dry-run mode",
+            &["outcome", "dry_run"],
+        )?,
+        job_duration_ms: histogram_vec(
+            "media_job_duration_ms",
+            "Terminal media job duration in milliseconds by outcome and dry-run mode",
+            &["outcome", "dry_run"],
+        )?,
+        workspace_cleanup_total: counter_vec(
+            "media_workspace_cleanup_total",
+            "Media job terminal workspace cleanup outcomes",
+            &["outcome"],
+        )?,
+        retention_runs_total: counter_vec(
+            "media_retention_runs_total",
+            "Media retention janitor runs by outcome",
+            &["outcome"],
+        )?,
+        retention_rows_total: counter_vec(
+            "media_retention_rows_total",
+            "Rows affected by media retention category",
+            &["category"],
+        )?,
+    })
+}
+
+const fn dry_run_label(dry_run: bool) -> &'static str {
+    if dry_run { "true" } else { "false" }
 }
 
 fn counter_vec(name: &'static str, help: &'static str, labels: &[&str]) -> Result<IntCounterVec> {
@@ -526,6 +846,18 @@ mod tests {
             "success",
             Duration::from_millis(75),
         );
+        metrics.inc_media_discovery_candidate("manual", "queued");
+        metrics.inc_media_job_queued("manual", true);
+        metrics.inc_media_capability_refresh("success");
+        metrics.inc_media_job_phase("inspect_plan", "completed");
+        metrics.inc_media_job_operation("video_transcode", "planned");
+        metrics.inc_media_job_verification_check("candidate_graph", "passed");
+        metrics.inc_media_job_failure("verification");
+        metrics.inc_media_job_outcome("completed", true);
+        metrics.observe_media_job_duration("completed", true, Duration::from_millis(250));
+        metrics.inc_media_workspace_cleanup("success");
+        metrics.inc_media_retention_run("success");
+        metrics.add_media_retention_rows("completed_jobs", 2);
 
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.active_torrents, 5);
@@ -546,6 +878,18 @@ mod tests {
         assert!(rendered.contains("indexer_job_outcomes_total"));
         assert!(rendered.contains("indexer_operations_total"));
         assert!(rendered.contains("indexer_operation_latency_ms"));
+        assert!(rendered.contains("media_discovery_candidates_total"));
+        assert!(rendered.contains("media_jobs_queued_total"));
+        assert!(rendered.contains("media_capability_refresh_total"));
+        assert!(rendered.contains("media_job_phases_total"));
+        assert!(rendered.contains("media_job_operations_total"));
+        assert!(rendered.contains("media_job_verification_checks_total"));
+        assert!(rendered.contains("media_job_failures_total"));
+        assert!(rendered.contains("media_job_outcomes_total"));
+        assert!(rendered.contains("media_job_duration_ms"));
+        assert!(rendered.contains("media_workspace_cleanup_total"));
+        assert!(rendered.contains("media_retention_runs_total"));
+        assert!(rendered.contains("media_retention_rows_total"));
         Ok(())
     }
 

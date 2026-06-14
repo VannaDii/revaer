@@ -354,6 +354,12 @@ pub struct MediaProfileResponse {
     /// Optional compatibility target key.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compatibility_target_key: Option<String>,
+    /// Optional pinned desired-target key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desired_target_key: Option<String>,
+    /// Optional pinned desired-target version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desired_target_version: Option<i32>,
     /// Operational policy key.
     pub policy_key: String,
     /// Whether filesystem watching is enabled.
@@ -400,6 +406,12 @@ pub struct MediaCompatibilityTargetResponse {
     pub video_codec: String,
     /// Desired audio codec.
     pub audio_codec: String,
+    /// Optional desired audio channel count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channels: Option<i32>,
+    /// Optional desired audio channel layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channel_layout: Option<String>,
     /// Subtitle retention policy.
     pub subtitle_policy: String,
 }
@@ -424,8 +436,165 @@ pub struct MediaCompatibilityTargetUpsertRequest {
     pub video_codec: String,
     /// Desired audio codec.
     pub audio_codec: String,
+    /// Optional desired audio channel count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channels: Option<i32>,
+    /// Optional desired audio channel layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channel_layout: Option<String>,
     /// Subtitle retention policy.
     pub subtitle_policy: String,
+}
+
+/// Ordered stream in an immutable desired-target version.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetStream {
+    /// Stable stream key within the target version.
+    pub stream_key: String,
+    /// Stream kind: video, audio, or subtitle.
+    pub stream_kind: String,
+    /// Optional semantic role selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_role: Option<String>,
+    /// Optional language selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language_code: Option<String>,
+    /// Whether absence of a matching source stream is acceptable.
+    #[serde(default)]
+    pub optional: bool,
+    /// Final mux ordering position.
+    pub sort_order: i32,
+    /// Desired output codec.
+    pub codec: String,
+    /// Optional desired audio channel count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_count: Option<i32>,
+    /// Optional desired audio channel layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_layout: Option<String>,
+    /// Optional desired average audio bitrate in bits per second.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_bitrate_bps: Option<i32>,
+    /// Optional desired audio sample rate in hertz.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_sample_rate_hz: Option<i32>,
+    /// Optional desired audio loudness processing profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_loudness_profile: Option<String>,
+    /// Optional desired audio dynamic-range behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_dynamic_range: Option<String>,
+    /// Optional desired video profile, such as `main` or `main10`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_profile: Option<String>,
+    /// Optional desired video level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_level: Option<String>,
+    /// Optional desired average video bitrate in bits per second.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_bitrate_bps: Option<i32>,
+    /// Optional desired video color primaries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_primaries: Option<String>,
+    /// Optional desired video transfer characteristic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_transfer: Option<String>,
+    /// Optional desired video color space.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_space: Option<String>,
+    /// Optional desired HDR format label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hdr_format: Option<String>,
+    /// Optional desired stream title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Desired default disposition.
+    #[serde(default)]
+    pub default_disposition: bool,
+    /// Desired forced disposition.
+    #[serde(default)]
+    pub forced_disposition: bool,
+    /// Desired subtitle placement: embedded, sidecar, both, or none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitle_placement: Option<String>,
+    /// Image-subtitle action: preserve, remove, or fail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_subtitle_action: Option<String>,
+}
+
+/// Request payload for creating an immutable desired-target version.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetCreateRequest {
+    /// Stable desired-target key.
+    pub target_key: String,
+    /// Positive immutable version.
+    pub version: i32,
+    /// Operator-facing display name.
+    pub display_name: String,
+    /// Desired output container format.
+    pub container_format: String,
+    /// Complete desired stream graph in final mux order.
+    pub streams: Vec<MediaDesiredTargetStream>,
+}
+
+/// Complete immutable desired-target version.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetResponse {
+    /// Desired-target version public id.
+    pub media_desired_target_profile_public_id: Uuid,
+    /// Stable desired-target key.
+    pub target_key: String,
+    /// Immutable version.
+    pub version: i32,
+    /// Operator-facing display name.
+    pub display_name: String,
+    /// Desired output container format.
+    pub container_format: String,
+    /// Complete desired stream graph in final mux order.
+    pub streams: Vec<MediaDesiredTargetStream>,
+}
+
+/// Desired-target catalog response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetListResponse {
+    /// Enabled immutable desired-target versions.
+    pub targets: Vec<MediaDesiredTargetResponse>,
+}
+
+/// Request payload for pinning or clearing a profile desired target.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileDesiredTargetRequest {
+    /// Desired-target key. Omit to clear the profile target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_key: Option<String>,
+    /// Exact immutable version. Required when `target_key` is supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<i32>,
+}
+
+/// Boolean selection for one media verification check.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct MediaVerificationToggle(bool);
+
+impl MediaVerificationToggle {
+    /// Return whether the verification check is enabled.
+    #[must_use]
+    pub const fn enabled(self) -> bool {
+        self.0
+    }
+}
+
+impl From<bool> for MediaVerificationToggle {
+    fn from(value: bool) -> Self {
+        Self(value)
+    }
+}
+
+impl std::fmt::Display for MediaVerificationToggle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
 }
 
 /// Media policy summary.
@@ -439,6 +608,18 @@ pub struct MediaPolicyResponse {
     pub display_name: String,
     /// Video transcode intent used by the worker.
     pub video_intent: String,
+    /// Verification strictness (`strict`, `balanced`, or `fast`).
+    pub verification_strictness: String,
+    /// Maximum source/candidate duration delta in milliseconds.
+    pub verification_duration_tolerance_millis: i64,
+    /// Whether normalized mux-structure validation is selected.
+    pub verification_mux_validation: MediaVerificationToggle,
+    /// Whether every candidate stream must decode without errors.
+    pub verification_decode_all_streams: MediaVerificationToggle,
+    /// Whether midpoint video keyframe seeking must succeed.
+    pub verification_keyframe_seek: MediaVerificationToggle,
+    /// Whether noninteractive playback smoke verification is selected.
+    pub verification_playback_probe: MediaVerificationToggle,
 }
 
 /// Media policy list response.
@@ -459,24 +640,52 @@ pub struct MediaPolicyUpsertRequest {
     pub display_name: String,
     /// Worker video transcode intent.
     pub video_intent: String,
+    /// Verification strictness (`strict`, `balanced`, or `fast`).
+    pub verification_strictness: String,
+    /// Maximum source/candidate duration delta in milliseconds.
+    pub verification_duration_tolerance_millis: i64,
+    /// Whether normalized mux-structure validation is selected.
+    pub verification_mux_validation: MediaVerificationToggle,
+    /// Whether every candidate stream must decode without errors.
+    pub verification_decode_all_streams: MediaVerificationToggle,
+    /// Whether midpoint video keyframe seeking must succeed.
+    pub verification_keyframe_seek: MediaVerificationToggle,
+    /// Whether noninteractive playback smoke verification is selected.
+    pub verification_playback_probe: MediaVerificationToggle,
 }
 
 /// Media job retention settings response.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobRetentionResponse {
-    /// Completed job retention in days.
-    pub completed_retention_days: i32,
-    /// Failed terminal diagnostic retention in days.
-    pub failed_diagnostic_retention_days: i32,
+    /// Whether completed-job deletion is enabled.
+    pub completed_enabled: bool,
+    /// Completed-job retention mode (`age` or `count`).
+    pub completed_mode: String,
+    /// Completed-job age in days or retained-job count.
+    pub completed_limit: i32,
+    /// Whether failed-terminal diagnostic pruning is enabled.
+    pub failed_diagnostic_enabled: bool,
+    /// Failed-terminal diagnostic retention mode (`age` or `count`).
+    pub failed_diagnostic_mode: String,
+    /// Failed-terminal diagnostic age in days or retained-job count.
+    pub failed_diagnostic_limit: i32,
 }
 
 /// Request payload for updating media job retention settings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobRetentionUpdateRequest {
-    /// Completed job retention in days.
-    pub completed_retention_days: i32,
-    /// Failed terminal diagnostic retention in days.
-    pub failed_diagnostic_retention_days: i32,
+    /// Whether completed-job deletion is enabled.
+    pub completed_enabled: bool,
+    /// Completed-job retention mode (`age` or `count`).
+    pub completed_mode: String,
+    /// Completed-job age in days or retained-job count.
+    pub completed_limit: i32,
+    /// Whether failed-terminal diagnostic pruning is enabled.
+    pub failed_diagnostic_enabled: bool,
+    /// Failed-terminal diagnostic retention mode (`age` or `count`).
+    pub failed_diagnostic_mode: String,
+    /// Failed-terminal diagnostic age in days or retained-job count.
+    pub failed_diagnostic_limit: i32,
 }
 
 /// Request payload for previewing media planning admission.
@@ -1029,6 +1238,14 @@ pub struct MediaCapabilitySnapshotResponse {
     pub utility_capabilities: Vec<String>,
     /// Runtime license mode.
     pub license_mode: String,
+    /// License mode inferred specifically from the ffmpeg build flags.
+    pub ffmpeg_license_mode: String,
+    /// Whether ffmpeg was built with `--enable-gpl`.
+    pub ffmpeg_enable_gpl: bool,
+    /// Whether ffmpeg was built with `--enable-version3`.
+    pub ffmpeg_enable_version3: bool,
+    /// Whether ffmpeg was built with `--enable-nonfree`.
+    pub ffmpeg_enable_nonfree: bool,
     /// Runtime compliance artifact links.
     pub compliance_links: Vec<String>,
     /// Capabilities intentionally absent from the runtime.
@@ -1065,18 +1282,40 @@ pub struct MediaCapabilityReadinessResponse {
 pub struct MediaComplianceResponse {
     /// Runtime license mode for the default media image.
     pub license_mode: String,
+    /// License mode for the complete media runtime image.
+    pub image_license_mode: String,
+    /// License mode inferred from the active ffmpeg build.
+    pub ffmpeg_license_mode: String,
+    /// Whether the active ffmpeg build reports `--enable-gpl`.
+    pub ffmpeg_enable_gpl: bool,
+    /// Whether the active ffmpeg build reports `--enable-version3`.
+    pub ffmpeg_enable_version3: bool,
+    /// Whether the active ffmpeg build reports `--enable-nonfree`.
+    pub ffmpeg_enable_nonfree: bool,
     /// In-image source offer artifact path.
     pub source_offer_path: String,
+    /// Source offer artifact URL.
+    pub source_offer_url: String,
     /// In-image third-party notices artifact path.
     pub third_party_notices_path: String,
+    /// Third-party notices artifact URL.
+    pub third_party_notices_url: String,
     /// In-image SBOM artifact path.
     pub sbom_path: String,
+    /// SBOM artifact URL.
+    pub sbom_url: String,
     /// In-image media runtime inventory artifact path.
     pub inventory_path: String,
     /// In-image `ExifTool` exception record path.
     pub exiftool_exception_path: String,
+    /// Validated source-compliance bundle digest for the final image.
+    pub source_compliance_bundle_digest: String,
+    /// In-image source-compliance bundle manifest path.
+    pub source_compliance_bundle_path: String,
     /// Capabilities excluded from the default redistributable image.
     pub license_excluded_capabilities: Vec<String>,
+    /// License-excluded capabilities absent from the active runtime snapshot.
+    pub absent_license_excluded_capabilities: Vec<String>,
 }
 
 /// YAML export response payload.
@@ -1095,6 +1334,17 @@ pub struct MediaYamlImportRequest {
     pub yaml_payload: String,
 }
 
+/// Pointer-addressable media YAML validation issue.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlIssueResponse {
+    /// Stable machine-readable issue code.
+    pub code: String,
+    /// JSON Pointer location in the parsed bundle.
+    pub pointer: String,
+    /// Whether the issue prevents import.
+    pub blocking: bool,
+}
+
 /// YAML validation response payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaYamlValidationResponse {
@@ -1102,8 +1352,8 @@ pub struct MediaYamlValidationResponse {
     pub version: String,
     /// Whether validation passed.
     pub valid: bool,
-    /// Validation issue codes.
-    pub issues: Vec<String>,
+    /// Pointer-addressable validation issues.
+    pub issues: Vec<MediaYamlIssueResponse>,
     /// Parsed profile count.
     pub profile_count: usize,
 }
@@ -1115,6 +1365,8 @@ pub struct MediaYamlApplyResponse {
     pub forced_dry_run: bool,
     /// Imported profile ids.
     pub media_profile_public_ids: Vec<Uuid>,
+    /// Disabled draft ids awaiting local path mapping.
+    pub media_profile_import_draft_public_ids: Vec<Uuid>,
 }
 
 /// Health notification hook creation request payload.

@@ -21,6 +21,11 @@ Rust integration test. The integration test writes a Markdown report to
 `target/media-conversion-report.md` by default; set
 `REVAER_MEDIA_CONVERSION_REPORT` to write it somewhere else.
 
+The fixture-backed test suite exercises both stream-copy/remux behavior and
+real audio/video transcoding through the production media planner. Transcode
+cases assert the planned operation kind and then probe the materialized output
+to verify the resulting video and audio codecs.
+
 ## CI Setup
 
 CI should restore a cache for these ignored directories when available:
@@ -73,7 +78,8 @@ after preparation for the local total.
 manifest stream counts and stable codecs, checks derived language metadata and
 forced subtitle disposition, and verifies the silent-audio fixture has an audio
 stream. `just test-media-conversion` also records fixture validation, metadata
-checks, and production pipeline materialization actions in the Markdown report.
+checks, production pipeline materialization actions, and audio/video transcode
+counts in the Markdown report.
 Any mismatch exits non-zero with the fixture id and field name.
 
 Fixture preparation tries primary upstream URLs first. Some Test-Videos entries

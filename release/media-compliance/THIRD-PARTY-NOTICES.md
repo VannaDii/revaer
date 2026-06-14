@@ -6,7 +6,7 @@ index at image build time and must be captured in the per-image inventory.
 
 ## Core Runtime Tools
 
-- FFmpeg and FFprobe: https://ffmpeg.org/
+- FFmpeg, FFprobe, and FFplay: https://ffmpeg.org/
 - ExifTool: https://exiftool.org/
 - MediaInfo: https://mediaarea.net/en/MediaInfo
 - MKVToolNix: https://mkvtoolnix.download/

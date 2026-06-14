@@ -20,10 +20,31 @@ inputs:
     description: Node.js version to install.
     required: false
     default: ""
+  cargo-cache:
+    description: Restore and save the shared Cargo and sccache artifact cache.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
+    - name: Verify Rust toolchain input
+      shell: bash
+      env:
+        INPUT_TOOLCHAIN: ${{ inputs.toolchain }}
+      run: |
+        set -euo pipefail
+        configured_toolchain="$(sed -n 's/^channel = "\([^"]*\)"$/\1/p' rust-toolchain.toml)"
+        if [ -z "${configured_toolchain}" ]; then
+          echo "rust-toolchain.toml does not contain a parseable channel" >&2
+          exit 1
+        fi
+        if [ "${INPUT_TOOLCHAIN}" != "${configured_toolchain}" ]; then
+          echo "Workflow Rust toolchain ${INPUT_TOOLCHAIN} does not match rust-toolchain.toml ${configured_toolchain}" >&2
+          exit 1
+        fi
+
     - name: Cache Rust artifacts
+      if: ${{ inputs['cargo-cache'] != 'false' }}
       uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: |

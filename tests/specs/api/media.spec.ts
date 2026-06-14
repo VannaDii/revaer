@@ -77,11 +77,90 @@ test.describe('Media API', () => {
         display_name: `E2E target ${suffix}`,
         video_codec: 'hevc',
         audio_codec: 'aac',
+        audio_channels: 2,
+        audio_channel_layout: 'stereo',
         subtitle_policy: 'selected',
       },
     });
     expect(upsertedTarget.response.status).toBe(201);
     expect(upsertedTarget.data?.compatibility_target_key).toBe(`e2e-target-${suffix}`);
+    expect(upsertedTarget.data?.audio_channels).toBe(2);
+    expect(upsertedTarget.data?.audio_channel_layout).toBe('stereo');
+
+    const desiredTargetKey = `e2e-desired-target-${suffix}`;
+    const createdDesiredTarget = await api.POST('/v1/media/targets', {
+      body: {
+        target_key: desiredTargetKey,
+        version: 1,
+        display_name: `E2E desired target ${suffix}`,
+        container_format: 'matroska',
+        streams: [
+          {
+            stream_key: 'video-main',
+            stream_kind: 'video',
+            optional: false,
+            sort_order: 0,
+            codec: 'hevc',
+            default_disposition: true,
+            forced_disposition: false,
+          },
+          {
+            stream_key: 'audio-main',
+            stream_kind: 'audio',
+            semantic_role: 'primary',
+            language_code: 'eng',
+            optional: false,
+            sort_order: 1,
+            codec: 'aac',
+            channel_count: 2,
+            channel_layout: 'stereo',
+            default_disposition: true,
+            forced_disposition: false,
+          },
+          {
+            stream_key: 'subtitle-full',
+            stream_kind: 'subtitle',
+            semantic_role: 'primary',
+            language_code: 'eng',
+            optional: true,
+            sort_order: 2,
+            codec: 'subrip',
+            default_disposition: false,
+            forced_disposition: false,
+          },
+        ],
+      },
+    });
+    expect(createdDesiredTarget.response.status).toBe(201);
+    expect(createdDesiredTarget.data?.target_key).toBe(desiredTargetKey);
+    expect(createdDesiredTarget.data?.streams.map((stream) => stream.stream_key)).toEqual([
+      'video-main',
+      'audio-main',
+      'subtitle-full',
+    ]);
+
+    const desiredTargets = await api.GET('/v1/media/targets');
+    expect(desiredTargets.response.status).toBe(200);
+    expect(
+      desiredTargets.data?.targets.some((target) => target.target_key === desiredTargetKey)
+    ).toBeTruthy();
+
+    const pinnedDesiredTarget = await api.PATCH(
+      '/v1/media/profiles/{media_profile_public_id}/desired-target',
+      {
+        params: { path: { media_profile_public_id: profileId } },
+        body: { target_key: desiredTargetKey, version: 1 },
+      }
+    );
+    expect(pinnedDesiredTarget.response.status).toBe(204);
+
+    const profileWithDesiredTarget = await api.GET(
+      '/v1/media/profiles/{media_profile_public_id}',
+      { params: { path: { media_profile_public_id: profileId } } }
+    );
+    expect(profileWithDesiredTarget.response.status).toBe(200);
+    expect(profileWithDesiredTarget.data?.desired_target_key).toBe(desiredTargetKey);
+    expect(profileWithDesiredTarget.data?.desired_target_version).toBe(1);
 
     const policies = await api.GET('/v1/media/policies');
     expect(policies.response.status).toBe(200);
@@ -95,24 +174,77 @@ test.describe('Media API', () => {
         version: 1,
         display_name: `E2E policy ${suffix}`,
         video_intent: 'general',
+        verification_strictness: 'strict',
+        verification_duration_tolerance_millis: 100,
+        verification_mux_validation: true,
+        verification_decode_all_streams: true,
+        verification_keyframe_seek: true,
+        verification_playback_probe: true,
       },
     });
     expect(upsertedPolicy.response.status).toBe(201);
     expect(upsertedPolicy.data?.policy_key).toBe(`e2e-policy-${suffix}`);
+    expect(upsertedPolicy.data?.verification_playback_probe).toBe(true);
+
+    const invalidProfileValidation = await api.POST('/v1/media/profiles/validate', {
+      body: {
+        profile_key: `e2e-media-invalid-${suffix}`,
+        source_root: `${sourceRoot}/invalid-validation`,
+        output_root: `${outputRoot}/invalid-validation`,
+        dry_run_only: true,
+        retention_days: 30,
+        compatibility_target_key: `missing-target-${suffix}`,
+        policy_key: `missing-policy-${suffix}`,
+        schedule_enabled: false,
+        watcher_enabled: false,
+      },
+    });
+    expect(invalidProfileValidation.response.status).toBe(200);
+    expect(invalidProfileValidation.data?.valid).toBe(false);
+    expect(invalidProfileValidation.data?.issues).toContain(
+      'media_profile_compatibility_target_not_found'
+    );
+    expect(invalidProfileValidation.data?.issues).toContain('media_profile_policy_profile_not_found');
+
+    const invalidProfileCreate = await api.POST('/v1/media/profiles', {
+      body: {
+        profile_key: `e2e-media-invalid-create-${suffix}`,
+        source_root: `${sourceRoot}/invalid-create`,
+        output_root: `${outputRoot}/invalid-create`,
+        dry_run_only: true,
+        retention_days: 30,
+        compatibility_target_key: `missing-target-${suffix}`,
+        policy_key: `missing-policy-${suffix}`,
+        schedule_enabled: false,
+        watcher_enabled: false,
+      },
+    });
+    expect(invalidProfileCreate.response.status).toBe(400);
 
     const retention = await api.GET('/v1/media/job-retention');
     expect(retention.response.status).toBe(200);
-    expect(retention.data?.completed_retention_days).toBeGreaterThan(0);
+    expect(retention.data?.completed_enabled).toBe(false);
+    expect(retention.data?.completed_mode).toBe('age');
+    expect(retention.data?.completed_limit).toBeGreaterThan(0);
+    expect(retention.data?.failed_diagnostic_enabled).toBe(true);
 
     const patchedRetention = await api.PATCH('/v1/media/job-retention', {
       body: {
-        completed_retention_days: 32,
-        failed_diagnostic_retention_days: 33,
+        completed_enabled: true,
+        completed_mode: 'count',
+        completed_limit: 32,
+        failed_diagnostic_enabled: true,
+        failed_diagnostic_mode: 'age',
+        failed_diagnostic_limit: 33,
       },
     });
     expect(patchedRetention.response.status).toBe(200);
-    expect(patchedRetention.data?.completed_retention_days).toBe(32);
-    expect(patchedRetention.data?.failed_diagnostic_retention_days).toBe(33);
+    expect(patchedRetention.data?.completed_enabled).toBe(true);
+    expect(patchedRetention.data?.completed_mode).toBe('count');
+    expect(patchedRetention.data?.completed_limit).toBe(32);
+    expect(patchedRetention.data?.failed_diagnostic_enabled).toBe(true);
+    expect(patchedRetention.data?.failed_diagnostic_mode).toBe('age');
+    expect(patchedRetention.data?.failed_diagnostic_limit).toBe(33);
 
     const latestCapability = await api.GET('/v1/media/capabilities');
     expect(latestCapability.response.status).toBe(200);
@@ -146,6 +278,47 @@ test.describe('Media API', () => {
     expect(validated.response.status).toBe(200);
     expect(validated.data?.valid).toBe(true);
 
+    const invalidYamlPayload = [
+      'format_version: 1',
+      'kind: revaer.media.profile_bundle',
+      'metadata:',
+      '  name: Invalid catalog references',
+      'profiles:',
+      `  - profile_key: e2e-yaml-invalid-${suffix}`,
+      `    source_root: ${sourceRoot}/yaml-invalid`,
+      `    output_root: ${outputRoot}/yaml-invalid`,
+      '    dry_run_only: true',
+      '    retention_days: 30',
+      `    compatibility_target_key: missing-target-${suffix}`,
+      `    policy_key: missing-policy-${suffix}`,
+    ].join('\n');
+    const invalidYamlValidation = await api.POST('/v1/media/imports/validate', {
+      body: { yaml_payload: invalidYamlPayload },
+    });
+    expect(invalidYamlValidation.response.status).toBe(200);
+    expect(invalidYamlValidation.data?.valid).toBe(false);
+    expect(
+      invalidYamlValidation.data?.issues.some(
+        (issue) =>
+          issue.code === 'media_yaml_compatibility_target_not_found' &&
+          issue.pointer === '/profiles/0/compatibility_target_key' &&
+          issue.blocking
+      )
+    ).toBe(true);
+    expect(
+      invalidYamlValidation.data?.issues.some(
+        (issue) =>
+          issue.code === 'media_yaml_policy_profile_not_found' &&
+          issue.pointer === '/profiles/0/policy_key' &&
+          issue.blocking
+      )
+    ).toBe(true);
+
+    const invalidYamlApply = await api.POST('/v1/media/imports/apply', {
+      body: { yaml_payload: invalidYamlPayload },
+    });
+    expect(invalidYamlApply.response.status).toBe(400);
+
     const portableApply = await api.POST('/v1/media/imports/apply', {
       body: { yaml_payload: yamlPayload },
     });
@@ -166,6 +339,22 @@ test.describe('Media API', () => {
     });
     expect(applied.response.status).toBe(201);
     expect(applied.data?.forced_dry_run).toBe(true);
+
+    const restoredProfile = await api.PATCH('/v1/media/profiles/{media_profile_public_id}', {
+      params: { path: { media_profile_public_id: profileId } },
+      body: {
+        source_root: sourceRoot,
+        output_root: outputRoot,
+        dry_run_only: true,
+        retention_days: 31,
+        schedule_enabled: false,
+        schedule_interval_minutes: 120,
+        watcher_enabled: false,
+      },
+    });
+    expect(restoredProfile.response.status).toBe(200);
+    expect(restoredProfile.data?.source_root).toBe(sourceRoot);
+    expect(restoredProfile.data?.output_root).toBe(outputRoot);
 
     const schedules = await api.GET('/v1/media/discovery/schedules');
     expect(schedules.response.status).toBe(200);
@@ -193,21 +382,31 @@ test.describe('Media API', () => {
       )
     ).toBeTruthy();
 
-    const restoredProfile = await api.PATCH('/v1/media/profiles/{media_profile_public_id}', {
+    const watcherProfile = await api.PATCH('/v1/media/profiles/{media_profile_public_id}', {
       params: { path: { media_profile_public_id: profileId } },
       body: {
-        source_root: sourceRoot,
-        output_root: outputRoot,
-        dry_run_only: true,
-        retention_days: 31,
-        schedule_enabled: true,
-        schedule_interval_minutes: 120,
-        watcher_enabled: false,
+        watcher_enabled: true,
       },
     });
-    expect(restoredProfile.response.status).toBe(200);
-    expect(restoredProfile.data?.source_root).toBe(sourceRoot);
-    expect(restoredProfile.data?.output_root).toBe(outputRoot);
+    expect(watcherProfile.response.status).toBe(200);
+    expect(watcherProfile.data?.watcher_enabled).toBe(true);
+
+    const enabledWatchers = await api.GET('/v1/media/discovery/watchers');
+    expect(enabledWatchers.response.status).toBe(200);
+    expect(
+      enabledWatchers.data?.watchers.some(
+        (watcher) => watcher.media_profile_public_id === profileId && watcher.enabled === true
+      )
+    ).toBeTruthy();
+
+    const watcherRun = await api.POST('/v1/media/discovery/watchers', {
+      body: {
+        media_profile_public_id: profileId,
+        source_paths: [`${sourceRoot}/watcher-${suffix}.mkv`],
+      },
+    });
+    expect(watcherRun.response.status).toBe(201);
+    expect(watcherRun.data?.queued_jobs.length).toBe(1);
 
     const planningPreview = await api.POST('/v1/media/planning/preview', {
       body: {

@@ -27,19 +27,11 @@ DECLARE
     actor_id BIGINT;
     encoder_id_out BIGINT;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     IF snapshot_run_public_id_input IS NULL THEN
         RAISE EXCEPTION 'snapshot run id required'
-            USING ERRCODE = 'P0001', DETAIL = 'media_capability_snapshot_run_required';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_capability_snapshot_run_required';
     END IF;
 
     INSERT INTO media_capability_snapshot_encoder (
@@ -77,7 +69,7 @@ AS $$
            mcse.observed_at
       FROM media_capability_snapshot_encoder mcse
      WHERE mcse.snapshot_run_public_id = snapshot_run_public_id_input
-     ORDER BY lower(mcse.encoder_name), mcse.media_capability_snapshot_encoder_id;
+     ORDER BY lower(mcse.encoder_name) ASC, mcse.media_capability_snapshot_encoder_id ASC;
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_cancel_v1(
@@ -90,10 +82,10 @@ SET search_path = public, pg_temp
 AS $$
 BEGIN
     UPDATE media_job
-       SET status = 'cancelled'::media_job_status,
+       SET status = media_job_status_cancelled_v1(),
            completed_at = now()
      WHERE media_job_public_id = media_job_public_id_input
-       AND status = 'queued'::media_job_status;
+       AND status = media_job_status_queued_v1();
 
     IF NOT FOUND THEN
         IF EXISTS (
@@ -102,10 +94,10 @@ BEGIN
              WHERE media_job_public_id = media_job_public_id_input
         ) THEN
             RAISE EXCEPTION 'job cancel blocked by status'
-                USING ERRCODE = 'P0001', DETAIL = 'media_job_cancel_invalid_status';
+                USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_cancel_invalid_status';
         END IF;
         RAISE EXCEPTION 'job not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_job_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_not_found';
     END IF;
 END;
 $$;
@@ -134,7 +126,7 @@ BEGIN
         SELECT mj.media_job_id
           FROM media_job mj
           JOIN media_profile mp ON mp.media_profile_id = mj.media_profile_id
-         WHERE mj.status = 'queued'::media_job_status
+         WHERE mj.status = media_job_status_queued_v1()
            AND mp.deleted_at IS NULL
          ORDER BY mj.queued_at ASC, mj.media_job_id ASC
          FOR UPDATE SKIP LOCKED
@@ -142,7 +134,7 @@ BEGIN
     ),
     updated AS (
         UPDATE media_job mj
-           SET status = 'running'::media_job_status,
+           SET status = media_job_status_running_v1(),
                started_at = COALESCE(mj.started_at, now()),
                heartbeat_at = now(),
                completed_at = NULL,

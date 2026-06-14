@@ -91,6 +91,14 @@ jobs:
             exit 1
           fi
           scripts/validate-final-image-compliance-bundle.sh "${FINAL_IMAGE_COMPLIANCE_BUNDLE}"
+          staged_bundle="release/media-compliance/final-image-compliance-bundle.json"
+          mkdir -p "$(dirname "${staged_bundle}")"
+          bundle_abs="$(realpath "${FINAL_IMAGE_COMPLIANCE_BUNDLE}")"
+          staged_abs="$(realpath "${staged_bundle}")"
+          if [ "${bundle_abs}" != "${staged_abs}" ]; then
+            cp "${FINAL_IMAGE_COMPLIANCE_BUNDLE}" "${staged_bundle}"
+          fi
+          chmod 0444 "${staged_bundle}"
 
       - name: Log in to GHCR
         if: inputs.final_image_compliance_bundle != ''

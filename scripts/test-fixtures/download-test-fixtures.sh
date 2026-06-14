@@ -25,7 +25,7 @@ download_file() {
   shift 3
   local fallback_count="$#"
 
-  if [ -s "${destination}" ] && [ "${REVAER_FIXTURE_FORCE_DOWNLOAD:-0}" != "1" ]; then
+  if [[ -s "${destination}" && "${REVAER_FIXTURE_FORCE_DOWNLOAD:-0}" != "1" ]]; then
     printf 'download-test-fixtures: %s already exists: %s\n' "${id}" "${destination}"
     return 0
   fi
@@ -36,7 +36,7 @@ download_file() {
   for candidate_url in "${url}" "$@"; do
     printf 'download-test-fixtures: downloading %s from %s\n' "${id}" "${candidate_url}"
     if curl --fail --location --show-error --retry 3 --retry-delay 2 --output "${temp}" "${candidate_url}"; then
-      if [ ! -s "${temp}" ]; then
+      if [[ ! -s "${temp}" ]]; then
         rm -f "${temp}"
         printf 'download-test-fixtures: downloaded empty file for %s from %s\n' "${id}" "${candidate_url}" >&2
         exit 1
@@ -72,7 +72,7 @@ download_chromium_file() {
   local url="https://chromium.googlesource.com/chromium/src/+/lkgr/media/test/data/${source_filename}?format=TEXT"
   local destination="test-fixtures/chromium/${destination_filename}"
 
-  if [ -s "${destination}" ] && [ "${REVAER_FIXTURE_FORCE_DOWNLOAD:-0}" != "1" ]; then
+  if [[ -s "${destination}" && "${REVAER_FIXTURE_FORCE_DOWNLOAD:-0}" != "1" ]]; then
     printf 'download-test-fixtures: %s already exists: %s\n' "${id}" "${destination}"
     return 0
   fi
@@ -92,7 +92,7 @@ download_chromium_file() {
     exit 1
   fi
   rm -f "${encoded}"
-  if [ ! -s "${temp}" ]; then
+  if [[ ! -s "${temp}" ]]; then
     rm -f "${temp}"
     printf 'download-test-fixtures: decoded empty file for %s from %s\n' "${id}" "${url}" >&2
     exit 1
@@ -145,11 +145,11 @@ copy_matroska_file() {
   local destination="$3"
   local source_path="${matroska_tmp}/repo/test_files/${source_name}"
 
-  if [ ! -s "${source_path}" ]; then
+  if [[ ! -s "${source_path}" ]]; then
     printf 'download-test-fixtures: Matroska source missing for %s: %s\n' "${id}" "${source_path}" >&2
     exit 1
   fi
-  if [ -s "${destination}" ] && [ "${REVAER_FIXTURE_FORCE_DOWNLOAD:-0}" != "1" ]; then
+  if [[ -s "${destination}" && "${REVAER_FIXTURE_FORCE_DOWNLOAD:-0}" != "1" ]]; then
     printf 'download-test-fixtures: %s already exists: %s\n' "${id}" "${destination}"
     return 0
   fi

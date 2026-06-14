@@ -25,4 +25,5 @@ pub mod explain;
 pub mod model;
 pub mod normalize;
 pub mod plan;
+pub mod target;
 pub mod verify;

@@ -468,6 +468,17 @@ impl ApiServer {
                     .route_layer(require_api.clone()),
             )
             .route(
+                "/v1/media/targets",
+                get(media_handlers::list_media_desired_targets)
+                    .post(media_handlers::create_media_desired_target)
+                    .route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/profiles/{media_profile_public_id}/desired-target",
+                patch(media_handlers::set_media_profile_desired_target)
+                    .route_layer(require_api.clone()),
+            )
+            .route(
                 "/v1/media/policies",
                 get(media_handlers::list_media_policies)
                     .post(media_handlers::upsert_media_policy)
@@ -521,7 +532,9 @@ impl ApiServer {
             )
             .route(
                 "/v1/media/discovery/watchers",
-                get(media_handlers::list_media_discovery_watchers).route_layer(require_api),
+                get(media_handlers::list_media_discovery_watchers)
+                    .post(media_handlers::run_media_discovery_watcher)
+                    .route_layer(require_api),
             )
     }
 

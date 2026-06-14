@@ -20,6 +20,7 @@ docs/book
 /tests/.auth
 /tests/.runtime
 /tests/logs
+/tests/support/api/schema.ts
 /test-fixtures/source/
 /test-fixtures/matroska/
 /test-fixtures/chromium/

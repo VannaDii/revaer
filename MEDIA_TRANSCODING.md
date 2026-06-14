@@ -2094,15 +2094,23 @@ Minimum media conversion integration cases:
    - Assert conversion succeeds or fails with an explicit unsupported-codec
      error.
    - Do not allow silent success with invalid output.
+   - Include an explicit HEVC video transcode case to the selected fallback
+     video codec when the fixture runtime exposes the required decoder and
+     encoder.
 3. AV1 input:
    - Input: `test-fixtures/source/bbb-av1.mp4`.
    - Assert conversion succeeds or fails with an explicit unsupported-codec
      error.
+   - Include an explicit AV1 video transcode case to the selected fallback
+     video codec when the fixture runtime exposes the required decoder and
+     encoder.
 4. WebM VP8 and VP9 input:
    - Inputs: `test-fixtures/source/bbb-vp8.webm` and
      `test-fixtures/source/bbb-vp9.webm`.
    - Assert conversion succeeds or fails explicitly.
    - Assert the configured output policy is respected.
+   - Include explicit VP8 and VP9 video transcode cases, plus at least one
+     WebM audio transcode case when audio is present.
 5. MKV H.264 input:
    - Input: `test-fixtures/source/bbb-h264.mkv`.
    - Assert remux or transcode path works according to the selected target
@@ -2127,6 +2135,8 @@ Minimum media conversion integration cases:
    - Input: `test-fixtures/derived/audio-only.m4a`.
    - Assert behavior is explicit: either reject as non-video input or handle
      audio-only conversion if Revaer supports it.
+   - If handled, include an explicit audio transcode case and verify the output
+     audio codec with `ffprobe`.
 10. Silent audio detection:
     - Input: `test-fixtures/derived/silent-audio.mp4`.
     - Assert silent audio is detected when the feature exists.
@@ -2146,6 +2156,8 @@ Minimum media conversion integration cases:
       `test-fixtures/derived/mpeg4-mp3.avi`.
     - Assert remux, transcode, or rejection behavior is explicit for each
       container and codec combination.
+    - Include at least one explicit audio transcode case and one combined
+      video/audio transcode case across these derived container fixtures.
 14. Chromium edge cases:
     - Use `bear-vp8-webvtt.webm` to cover WebVTT subtitle behavior.
     - Use `bear-vp9-opus.webm` to cover Opus audio in WebM.
@@ -2164,6 +2176,10 @@ The fixture-backed acceptance matrix must cover at least:
 - Subtitle codecs: SRT and WebVTT.
 - Stream shapes: multi-audio, multi-video, forced subtitles, silent audio,
   video-only, and audio-only.
+- Pipeline actions: remux or stream-copy materialization, audio transcode,
+  video transcode, and combined audio/video transcode. For every transcode
+  action, tests must assert the planned operation kind and validate the
+  resulting stream codec from `ffprobe` JSON.
 
 Do not use brittle duration assertions. Duration checks must allow a documented
 tolerance and should be secondary to graph, stream, codec, metadata, and

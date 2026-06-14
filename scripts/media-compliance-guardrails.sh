@@ -14,7 +14,7 @@ report_failure() {
 
 require_file() {
   local path="$1"
-  if [ ! -f "${path}" ]; then
+  if [[ ! -f "${path}" ]]; then
     report_failure "missing ${path}"
   fi
 }
@@ -42,11 +42,12 @@ require_workflow_token() {
   fi
 }
 
-if [ ! -f Dockerfile ]; then
+if [[ ! -f Dockerfile ]]; then
   report_failure "Dockerfile is required for media runtime compliance"
 else
   for package in \
     ffmpeg \
+    ffplay \
     exiftool \
     mediainfo \
     mkvtoolnix \
@@ -70,7 +71,8 @@ else
     revaer.media.third_party_notices \
     revaer.media.sbom \
     revaer.media.inventory \
-    revaer.media.exiftool_exception; do
+    revaer.media.exiftool_exception \
+    revaer.media.source_compliance_bundle; do
     require_dockerfile_label "${label}"
   done
 fi
@@ -95,6 +97,7 @@ require_file release/media-compliance/SOURCE-OFFER.txt
 require_file release/media-compliance/THIRD-PARTY-NOTICES.md
 require_file release/media-compliance/media-runtime-inventory.spdx.json
 require_file release/media-compliance/exiftool-exception.md
+require_file release/media-compliance/final-image-compliance-bundle.json
 
 require_workflow_token \
   .github/workflows/build-images.yml \
@@ -114,6 +117,10 @@ require_workflow_token \
   "image workflow must run structured final-image compliance bundle validation"
 require_workflow_token \
   .github/workflows/build-images.yml \
+  "release/media-compliance/final-image-compliance-bundle.json" \
+  "image workflow must stage the validated final-image compliance bundle into the Docker build context"
+require_workflow_token \
+  .github/workflows/build-images.yml \
   "Build Image (verification only)" \
   "PR image checks must build without publishing when the final-image compliance bundle is absent"
 require_workflow_token \
@@ -130,13 +137,14 @@ if grep -Fq "final_image_compliance_bundle:" .github/workflows/ci.yml; then
 fi
 
 if command -v jq >/dev/null 2>&1 \
-   && [ -f release/media-compliance/media-runtime-inventory.spdx.json ]; then
+   && [[ -f release/media-compliance/media-runtime-inventory.spdx.json ]]; then
   for package in \
     bento4 \
     ca-certificates \
     curl \
     exiftool \
     ffmpeg \
+    ffplay \
     font-dejavu \
     fontconfig \
     gnutls \
@@ -177,6 +185,6 @@ else
   report_failure "jq is required to validate media runtime SPDX inventory"
 fi
 
-if [ "${failures}" -ne 0 ]; then
+if [[ "${failures}" -ne 0 ]]; then
   exit 1
 fi

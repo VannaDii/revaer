@@ -42,15 +42,7 @@ DECLARE
     policy_key_value TEXT;
     schedule_enabled_value BOOLEAN;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     compatibility_target_key_value := NULLIF(btrim(compatibility_target_key_input), '');
     policy_key_value := COALESCE(NULLIF(btrim(policy_key_input), ''), 'safe_dry_run');
@@ -58,14 +50,14 @@ BEGIN
 
     IF schedule_enabled_value AND schedule_interval_minutes_input IS NULL THEN
         RAISE EXCEPTION 'schedule interval required'
-            USING ERRCODE = 'P0001', DETAIL = 'media_profile_schedule_interval_required';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_schedule_interval_required';
     END IF;
 
     IF lower(btrim(source_root_input)) = lower(btrim(output_root_input))
        OR lower(btrim(source_root_input)) LIKE lower(btrim(output_root_input)) || '/%'
        OR lower(btrim(output_root_input)) LIKE lower(btrim(source_root_input)) || '/%' THEN
         RAISE EXCEPTION 'profile roots overlap'
-            USING ERRCODE = 'P0001', DETAIL = 'media_profile_roots_overlap';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_roots_overlap';
     END IF;
 
     INSERT INTO media_profile (
@@ -142,15 +134,7 @@ DECLARE
     schedule_enabled_value BOOLEAN;
     schedule_interval_minutes_value INT;
 BEGIN
-    SELECT user_id
-      INTO actor_id
-      FROM app_user
-     WHERE user_public_id = actor_public_id_input;
-
-    IF actor_id IS NULL THEN
-        RAISE EXCEPTION 'actor not found'
-            USING ERRCODE = 'P0001', DETAIL = 'app_user_not_found';
-    END IF;
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
 
     SELECT
         media_profile_id,
@@ -180,19 +164,19 @@ BEGIN
 
     IF profile_id IS NULL THEN
         RAISE EXCEPTION 'profile not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_profile_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
     END IF;
 
     IF schedule_enabled_value AND schedule_interval_minutes_value IS NULL THEN
         RAISE EXCEPTION 'schedule interval required'
-            USING ERRCODE = 'P0001', DETAIL = 'media_profile_schedule_interval_required';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_schedule_interval_required';
     END IF;
 
     IF lower(source_root_value) = lower(output_root_value)
        OR lower(source_root_value) LIKE lower(output_root_value) || '/%'
        OR lower(output_root_value) LIKE lower(source_root_value) || '/%' THEN
         RAISE EXCEPTION 'profile roots overlap'
-            USING ERRCODE = 'P0001', DETAIL = 'media_profile_roots_overlap';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_roots_overlap';
     END IF;
 
     UPDATE media_profile
@@ -245,7 +229,7 @@ AS $$
         mp.updated_at
     FROM media_profile mp
     WHERE mp.deleted_at IS NULL
-    ORDER BY lower(mp.profile_key);
+    ORDER BY lower(mp.profile_key) ASC;
 $$;
 
 CREATE OR REPLACE FUNCTION media_profile_get_v2(media_profile_public_id_input UUID)

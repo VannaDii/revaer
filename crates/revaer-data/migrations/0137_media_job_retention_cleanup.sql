@@ -11,14 +11,14 @@ DECLARE
     current_status media_job_status;
 BEGIN
     UPDATE media_job
-       SET status = 'completed'::media_job_status,
+       SET status = media_job_status_completed_v1(),
            completed_at = now(),
            last_error = NULL
      WHERE media_job_public_id = media_job_public_id_input
        AND status IN (
-           'queued'::media_job_status,
-           'running'::media_job_status,
-           'verifying'::media_job_status
+           media_job_status_queued_v1(),
+           media_job_status_running_v1(),
+           media_job_status_verifying_v1()
        );
 
     GET DIAGNOSTICS affected_count = ROW_COUNT;
@@ -32,15 +32,15 @@ BEGIN
 
     IF current_status IS NULL THEN
         RAISE EXCEPTION 'media job not found'
-            USING ERRCODE = 'P0001', DETAIL = 'media_job_not_found';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_not_found';
     END IF;
 
-    IF current_status = 'completed'::media_job_status THEN
+    IF current_status = media_job_status_completed_v1() THEN
         RETURN;
     END IF;
 
     RAISE EXCEPTION 'media job cannot be completed from current status'
-        USING ERRCODE = 'P0001', DETAIL = 'media_job_complete_invalid_status';
+        USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_complete_invalid_status';
 END;
 $$;
 
@@ -57,14 +57,14 @@ DECLARE
 BEGIN
     IF as_of_input IS NULL THEN
         RAISE EXCEPTION 'media cleanup timestamp is required'
-            USING ERRCODE = 'P0001', DETAIL = 'media_job_cleanup_as_of_required';
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_cleanup_as_of_required';
     END IF;
 
     WITH expired_jobs AS (
         SELECT mj.media_job_id
         FROM media_job mj
         JOIN media_profile mp ON mp.media_profile_id = mj.media_profile_id
-        WHERE mj.status = 'completed'::media_job_status
+        WHERE mj.status = media_job_status_completed_v1()
           AND mj.completed_at IS NOT NULL
           AND mj.completed_at <= as_of_input - make_interval(days => mp.retention_days)
     ),

@@ -53,6 +53,7 @@ RUN addgroup -S revaer && adduser -S revaer -G revaer \
         curl \
         exiftool \
         ffmpeg \
+        ffplay \
         font-dejavu \
         fontconfig \
         gnutls \
@@ -83,6 +84,7 @@ COPY --from=builder --chown=root:root --chmod=0444 /workspace/release/media-comp
 COPY --from=builder --chown=root:root --chmod=0444 /workspace/release/media-compliance/THIRD-PARTY-NOTICES.md /app/compliance/THIRD-PARTY-NOTICES.md
 COPY --from=builder --chown=root:root --chmod=0444 /workspace/release/media-compliance/media-runtime-inventory.spdx.json /app/compliance/media-runtime-inventory.spdx.json
 COPY --from=builder --chown=root:root --chmod=0444 /workspace/release/media-compliance/exiftool-exception.md /app/compliance/exiftool-exception.md
+COPY --from=builder --chown=root:root --chmod=0444 /workspace/release/media-compliance/final-image-compliance-bundle.json /app/compliance/final-image-compliance-bundle.json
 
 RUN install -d -o revaer -g revaer -m 0755 /app/docs/api
 
@@ -118,6 +120,7 @@ LABEL revaer.media.third_party_notices="/app/compliance/THIRD-PARTY-NOTICES.md"
 LABEL revaer.media.sbom="/app/compliance/media-runtime-inventory.spdx.json"
 LABEL revaer.media.inventory="/app/compliance/media-runtime-inventory.spdx.json"
 LABEL revaer.media.exiftool_exception="/app/compliance/exiftool-exception.md"
+LABEL revaer.media.source_compliance_bundle="/app/compliance/final-image-compliance-bundle.json"
 
 USER revaer
 ENTRYPOINT ["/usr/local/bin/revaer-app"]

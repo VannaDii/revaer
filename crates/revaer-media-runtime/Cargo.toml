@@ -17,3 +17,7 @@ revaer-media-core = { path = "../revaer-media-core" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+tempfile = "3.10"

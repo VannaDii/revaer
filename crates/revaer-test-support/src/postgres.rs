@@ -24,7 +24,7 @@ impl TestDatabase {
 }
 
 #[rustfmt::skip]
-impl Drop for TestDatabase { fn drop(&mut self) { let _ = run_admin_operation(&self.admin_url, &format!("DROP DATABASE IF EXISTS \"{}\"", self.database), "failed to drop test database"); } }
+impl Drop for TestDatabase { fn drop(&mut self) { let _ = run_admin_operation(&self.admin_url, &drop_database_sql(&self.database), "failed to drop test database"); } }
 
 #[doc = "Start a disposable test database on an externally managed Postgres instance."]
 #[doc = ""]
@@ -46,6 +46,10 @@ fn create_test_database(parsed: &Url) -> Result<TestDatabase> { let database = u
 #[must_use]
 #[rustfmt::skip]
 fn unique_database_name() -> String { static NEXT_DATABASE_ID: AtomicU64 = AtomicU64::new(1); format!("revaer_test_{}_{}", std::process::id(), NEXT_DATABASE_ID.fetch_add(1, Ordering::Relaxed)) }
+
+#[must_use]
+#[rustfmt::skip]
+fn drop_database_sql(database: &str) -> String { format!("DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)") }
 
 #[rustfmt::skip]
 fn database_connection_string(base_url: &Url, database: &str) -> String { let mut database_url = base_url.clone(); database_url.set_path(&format!("/{database}")); database_url.to_string() }
@@ -118,5 +122,13 @@ mod tests {
             Some("postgres://user:pass@host.docker.internal:55432/postgres".to_string())
         );
         assert!(local_docker_host_fallback(&remote).is_none());
+    }
+
+    #[test]
+    fn drop_database_sql_forces_stale_pool_sessions_closed() {
+        assert_eq!(
+            drop_database_sql("revaer_test_42_7"),
+            "DROP DATABASE IF EXISTS \"revaer_test_42_7\" WITH (FORCE)"
+        );
     }
 }

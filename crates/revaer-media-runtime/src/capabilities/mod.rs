@@ -34,6 +34,14 @@ pub struct CapabilitySnapshot {
     pub utility_capabilities: Vec<String>,
     /// License mode inferred from the runtime ffmpeg build.
     pub license_mode: String,
+    /// License mode inferred specifically from the ffmpeg build flags.
+    pub ffmpeg_license_mode: String,
+    /// Whether ffmpeg was built with `--enable-gpl`.
+    pub ffmpeg_enable_gpl: bool,
+    /// Whether ffmpeg was built with `--enable-version3`.
+    pub ffmpeg_enable_version3: bool,
+    /// Whether ffmpeg was built with `--enable-nonfree`.
+    pub ffmpeg_enable_nonfree: bool,
     /// Compliance artifact links bundled with the runtime image.
     pub compliance_links: Vec<String>,
     /// Capabilities intentionally absent from this runtime.
@@ -63,7 +71,11 @@ impl CapabilitySnapshot {
             && !self.muxers.is_empty()
             && !self.demuxers.is_empty()
             && !self.filesystem_utilities.is_empty()
-            && !self.utility_capabilities.is_empty()
+            && ["ffmpeg", "ffprobe", "ffplay"].iter().all(|required| {
+                self.utility_capabilities
+                    .iter()
+                    .any(|actual| actual == required)
+            })
             && !self.license_mode.trim().is_empty()
     }
 
@@ -98,6 +110,10 @@ impl Default for CapabilitySnapshot {
             filesystem_utilities: filesystem_utilities(),
             utility_capabilities: utility_capabilities(),
             license_mode: "gpl".to_string(),
+            ffmpeg_license_mode: "gpl".to_string(),
+            ffmpeg_enable_gpl: true,
+            ffmpeg_enable_version3: false,
+            ffmpeg_enable_nonfree: false,
             compliance_links: compliance_links(),
             absent_capabilities: vec!["--enable-nonfree".to_string()],
         }
@@ -175,6 +191,7 @@ pub struct FfmpegCapabilityDetector {
     executor: Arc<dyn CapabilityProbeExecutor>,
     ffmpeg_bin: String,
     ffprobe_bin: String,
+    ffplay_bin: String,
 }
 
 impl FfmpegCapabilityDetector {
@@ -184,11 +201,13 @@ impl FfmpegCapabilityDetector {
         executor: Arc<dyn CapabilityProbeExecutor>,
         ffmpeg_bin: impl Into<String>,
         ffprobe_bin: impl Into<String>,
+        ffplay_bin: impl Into<String>,
     ) -> Self {
         Self {
             executor,
             ffmpeg_bin: ffmpeg_bin.into(),
             ffprobe_bin: ffprobe_bin.into(),
+            ffplay_bin: ffplay_bin.into(),
         }
     }
 }
@@ -197,6 +216,7 @@ impl CapabilityDetector for FfmpegCapabilityDetector {
     fn detect(&self) -> Result<CapabilitySnapshot, CapabilityDetectError> {
         let ffmpeg_version_output = self.executor.run(&self.ffmpeg_bin, &["-version"])?;
         let ffprobe_version_output = self.executor.run(&self.ffprobe_bin, &["-version"])?;
+        let ffplay_version_output = self.executor.run(&self.ffplay_bin, &["-version"])?;
         let codecs_output = self.executor.run(&self.ffmpeg_bin, &["-codecs"])?;
         let encoders_output = self.executor.run(&self.ffmpeg_bin, &["-encoders"])?;
         let decoders_output = self.executor.run(&self.ffmpeg_bin, &["-decoders"])?;
@@ -209,6 +229,9 @@ impl CapabilityDetector for FfmpegCapabilityDetector {
         })?;
         let ffprobe_version = parse_version_line(&ffprobe_version_output).ok_or_else(|| {
             CapabilityDetectError::OutputMalformed("missing ffprobe version line".to_string())
+        })?;
+        let _ffplay_version = parse_version_line(&ffplay_version_output).ok_or_else(|| {
+            CapabilityDetectError::OutputMalformed("missing ffplay version line".to_string())
         })?;
         let codec_support = parse_codecs(&codecs_output);
         if codec_support.is_empty() {
@@ -227,6 +250,9 @@ impl CapabilityDetector for FfmpegCapabilityDetector {
         let hardware_accelerators = parse_hwaccels(&hwaccels_output);
         let subtitle_support = subtitle_codecs_from(&codec_support, &encoders, &decoders);
         let license_mode = license_mode_from_version_output(&ffmpeg_version_output);
+        let ffmpeg_enable_gpl = ffmpeg_version_output.contains("--enable-gpl");
+        let ffmpeg_enable_version3 = ffmpeg_version_output.contains("--enable-version3");
+        let ffmpeg_enable_nonfree = ffmpeg_version_output.contains("--enable-nonfree");
         let mut absent_capabilities = absent_capabilities_from(&hardware_accelerators, &encoders);
         absent_capabilities.extend(license_excluded_capabilities(&ffmpeg_version_output));
         absent_capabilities.sort();
@@ -245,7 +271,11 @@ impl CapabilityDetector for FfmpegCapabilityDetector {
             subtitle_support,
             filesystem_utilities: filesystem_utilities(),
             utility_capabilities: utility_capabilities(),
-            license_mode,
+            license_mode: license_mode.clone(),
+            ffmpeg_license_mode: license_mode,
+            ffmpeg_enable_gpl,
+            ffmpeg_enable_version3,
+            ffmpeg_enable_nonfree,
             compliance_links: compliance_links(),
             absent_capabilities,
         })
@@ -411,6 +441,7 @@ fn utility_capabilities() -> Vec<String> {
     [
         "ffmpeg",
         "ffprobe",
+        "ffplay",
         "managed_workspace",
         "final_graph_verify",
     ]
@@ -460,8 +491,16 @@ mod tests {
                 hardware_accelerators: Vec::new(),
                 subtitle_support: vec!["subrip".to_string()],
                 filesystem_utilities: vec!["atomic_rename".to_string()],
-                utility_capabilities: vec!["ffmpeg".to_string(), "ffprobe".to_string()],
+                utility_capabilities: vec![
+                    "ffmpeg".to_string(),
+                    "ffprobe".to_string(),
+                    "ffplay".to_string(),
+                ],
                 license_mode: "gpl".to_string(),
+                ffmpeg_license_mode: "gpl".to_string(),
+                ffmpeg_enable_gpl: true,
+                ffmpeg_enable_version3: false,
+                ffmpeg_enable_nonfree: false,
                 compliance_links: vec!["/app/compliance/SOURCE-OFFER.txt".to_string()],
                 absent_capabilities: vec!["--enable-nonfree".to_string()],
             })
@@ -484,6 +523,10 @@ mod tests {
             filesystem_utilities: Vec::new(),
             utility_capabilities: Vec::new(),
             license_mode: String::new(),
+            ffmpeg_license_mode: String::new(),
+            ffmpeg_enable_gpl: false,
+            ffmpeg_enable_version3: false,
+            ffmpeg_enable_nonfree: false,
             compliance_links: Vec::new(),
             absent_capabilities: Vec::new(),
         };
@@ -522,16 +565,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn ffmpeg_detector_parses_versions_and_codecs() {
+    fn capability_probe_outputs() -> HashMap<String, String> {
         let mut outputs = HashMap::new();
         outputs.insert(
             "ffmpeg -version".to_string(),
-            "ffmpeg version 7.0.2 Copyright --enable-gpl".to_string(),
+            "ffmpeg version 7.0.2 Copyright --enable-gpl --enable-version3".to_string(),
         );
         outputs.insert(
             "ffprobe -version".to_string(),
             "ffprobe version 7.0.2 Copyright".to_string(),
+        );
+        outputs.insert(
+            "ffplay -version".to_string(),
+            "ffplay version 7.0.2 Copyright".to_string(),
         );
         outputs.insert(
             "ffmpeg -codecs".to_string(),
@@ -557,9 +603,19 @@ mod tests {
             "ffmpeg -hwaccels".to_string(),
             "Hardware acceleration methods:\nvideotoolbox\n".to_string(),
         );
+        outputs
+    }
 
-        let detector =
-            FfmpegCapabilityDetector::new(Arc::new(StubExecutor { outputs }), "ffmpeg", "ffprobe");
+    #[test]
+    fn ffmpeg_detector_parses_versions_and_codecs() {
+        let detector = FfmpegCapabilityDetector::new(
+            Arc::new(StubExecutor {
+                outputs: capability_probe_outputs(),
+            }),
+            "ffmpeg",
+            "ffprobe",
+            "ffplay",
+        );
         let snapshot_result = detector.detect();
         assert!(snapshot_result.is_ok());
         let Ok(snapshot) = snapshot_result else {
@@ -615,6 +671,10 @@ mod tests {
         );
         assert_eq!(snapshot.subtitle_support, vec!["subrip".to_string()]);
         assert_eq!(snapshot.license_mode, "gpl");
+        assert_eq!(snapshot.ffmpeg_license_mode, "gpl");
+        assert!(snapshot.ffmpeg_enable_gpl);
+        assert!(snapshot.ffmpeg_enable_version3);
+        assert!(!snapshot.ffmpeg_enable_nonfree);
         assert!(
             snapshot
                 .compliance_links

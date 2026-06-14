@@ -28,6 +28,7 @@ jobs:
       - uses: ./.github/actions/setup-revaer
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
+          cargo-cache: "false"
 
       - name: Instruction drift
         env:
@@ -45,6 +46,7 @@ jobs:
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           components: rustfmt
+          cargo-cache: "false"
 
       - name: Format
         run: just fmt
@@ -58,7 +60,7 @@ jobs:
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           components: clippy
-          apt-profile: base
+          cargo-cache: "false"
 
       - name: Lint
         run: just lint
@@ -71,7 +73,7 @@ jobs:
       - uses: ./.github/actions/setup-revaer
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: base
+          cargo-cache: "false"
 
       - name: Check
         run: just check
@@ -85,7 +87,7 @@ jobs:
       - uses: ./.github/actions/setup-revaer
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: base
+          cargo-cache: "false"
 
       - name: Set up Helm
         uses: Azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
@@ -101,11 +103,9 @@ jobs:
     needs: [fmt, lint, check, helm-lint, supply-chain, load-matrix, instruction-drift]
     permissions:
       contents: read
-      pull-requests: read
     env:
       REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
       DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
-      SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -123,6 +123,9 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
       - uses: ./.github/actions/setup-revaer
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
@@ -133,25 +136,142 @@ jobs:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
         run: just db-migrate
 
+      - name: Reclaim coverage runner disk
+        run: |
+          set -euo pipefail
+
+          df -h /
+
+          cleanup_paths=(
+            /usr/share/dotnet
+            /usr/local/lib/android
+            /opt/ghc
+            /usr/local/share/boost
+          )
+          if [ -n "${AGENT_TOOLSDIRECTORY:-}" ]; then
+            cleanup_paths+=("${AGENT_TOOLSDIRECTORY}")
+          fi
+
+          for cleanup_path in "${cleanup_paths[@]}"; do
+            if [ -e "${cleanup_path}" ]; then
+              sudo rm -rf "${cleanup_path}"
+            fi
+          done
+
+          df -h /
+
       - name: Coverage
         run: just cov
+
+      - name: Build native compile database
+        run: just sonar-compile-db
+
+      - name: Verify Sonar analysis inputs
+        run: |
+          set -euo pipefail
+          test -s coverage/lcov.info
+          test -s coverage/compile_commands.json
+          test -s coverage/cxxbridge/include/rust/cxx.h
+          test -s coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
+          grep -q '^SF:' coverage/lcov.info
+          grep -q '^DA:' coverage/lcov.info
+          grep -q '"file":' coverage/compile_commands.json
+          grep -q 'coverage/cxxbridge/include' coverage/compile_commands.json
 
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: sonar-coverage
-          path: coverage
+          path: |
+            coverage/lcov.info
+            coverage/compile_commands.json
+            coverage/cxxbridge/include/rust/cxx.h
+            coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
           if-no-files-found: error
 
-      - name: Build native compile database
-        run: just sonar-compile-db
+  sonar:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    needs: coverage
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-revaer
+        with:
+          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
+          components: rustfmt,clippy,llvm-tools-preview
+          apt-packages: libtorrent-rasterbar-dev
+          cargo-cache: "false"
+
+      - name: Prepare Sonar SCM context
+        env:
+          SONAR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "${SONAR_BASE_REF}" != "main" ]; then
+            echo "Unexpected Sonar base ref: ${SONAR_BASE_REF}" >&2
+            exit 1
+          fi
+
+          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+            git fetch --no-tags --prune --unshallow origin
+          fi
+          git fetch --no-tags --prune origin "+refs/heads/${SONAR_BASE_REF}:refs/remotes/origin/${SONAR_BASE_REF}"
+          git show-ref --verify --quiet "refs/remotes/origin/${SONAR_BASE_REF}"
+
+      - name: Download Sonar coverage inputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sonar-coverage
+          path: coverage
+
+      - name: Verify Sonar analysis inputs
+        run: |
+          set -euo pipefail
+          test -s coverage/lcov.info
+          test -s coverage/compile_commands.json
+          test -s coverage/cxxbridge/include/rust/cxx.h
+          test -s coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
+          grep -q '^SF:' coverage/lcov.info
+          grep -q '^DA:' coverage/lcov.info
+          grep -q '"file":' coverage/compile_commands.json
+          grep -q 'coverage/cxxbridge/include' coverage/compile_commands.json
+
+      - name: Require Sonar token
+        if: github.event.pull_request.head.repo.fork == false
+        run: test -n "${SONAR_AUTH_TOKEN}"
 
       - name: SonarQube scan
         if: github.event.pull_request.head.repo.fork == false && env.SONAR_AUTH_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
         env:
           SONAR_TOKEN: ${{ env.SONAR_AUTH_TOKEN }}
+
+      - name: Verify Sonar published result
+        if: github.event.pull_request.head.repo.fork == false && env.SONAR_AUTH_TOKEN != ''
+        env:
+          SONAR_PROJECT_KEY: VannaDii_Revaer
+          SONAR_PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: just sonar-verify-result
+
+      - name: Upload Sonar analysis evidence
+        if: always() && github.event.pull_request.head.repo.fork == false
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: sonar-analysis-evidence
+          path: |
+            .scannerwork/report-task.txt
+            .scannerwork/scanner-report.tar.xz
+          if-no-files-found: error
 
   native-it:
     name: Native Integration Tests
@@ -179,6 +299,7 @@ jobs:
       - uses: ./.github/actions/setup-revaer
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
+          cargo-cache: "false"
           apt-packages: >-
             coreutils
             curl
@@ -295,9 +416,10 @@ jobs:
       E2E_API_BASE_URL: http://localhost:7070
       E2E_BASE_URL: http://localhost:8080
       E2E_BROWSER_CHANNEL: chrome
-      E2E_DB_ADMIN_URL: postgres://revaer:revaer@localhost:5432/postgres
       E2E_SKIP_DB_START: "1"
       E2E_VIDEO: "off"
+      REVAER_TEST_DB_USER: revaer
+      REVAER_TEST_DB_PASSWORD: revaer
       REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
       DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
       PLAYWRIGHT_SHARD_INDEX: ${{ matrix.shard }}
@@ -324,6 +446,14 @@ jobs:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
           apt-profile: db
+
+      - name: Configure UI E2E database URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'E2E_DB_ADMIN_URL=postgres://%s:%s@localhost:5432/postgres\n' \
+            "${REVAER_TEST_DB_USER}" \
+            "${REVAER_TEST_DB_PASSWORD}" >> "${GITHUB_ENV}"
 
       - name: UI E2E
         run: just ui-e2e
@@ -389,7 +519,7 @@ jobs:
 
   build-pr-images:
     name: Images
-    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage, load-matrix]
+    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage, sonar, load-matrix]
     if: github.event.pull_request.head.repo.fork == false
     uses: ./.github/workflows/build-images.yml
     permissions:
@@ -418,7 +548,7 @@ jobs:
       - uses: ./.github/actions/setup-revaer
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: base
+          cargo-cache: "false"
 
       - name: Restore Cargo supply-chain tool cache
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -456,7 +586,7 @@ jobs:
   build-release:
     name: Build Release
     runs-on: ubuntu-latest
-    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage]
+    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage, sonar]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer

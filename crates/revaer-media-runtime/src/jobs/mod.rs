@@ -5,14 +5,18 @@ use revaer_media_core::diff::diff_graphs;
 use revaer_media_core::explain::{Explanation, explain_plan};
 use revaer_media_core::model::{DesiredGraph, MediaGraph};
 use revaer_media_core::plan::{OperationKind, PlannedOperation, generate_plan};
-use revaer_media_core::verify::verify_plan_against_source;
+use revaer_media_core::target::{
+    CompiledDesiredTarget, DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource,
+};
+use revaer_media_core::verify::{verify_plan_against_source, verify_unique_stream_ids};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
 
 use crate::capabilities::CapabilitySnapshot;
 use crate::execute::{
-    BuildArgsError, ExecutionStep, VideoTranscodePolicy, build_desired_graph_execution_steps,
+    BuildArgsError, DesiredGraphBuildContext, ExecutionStep, SubtitleArtifactPlan,
+    VideoTranscodePolicy, build_desired_graph_execution_steps_with_sidecars,
 };
 use crate::inspect::{InspectAdapter, InspectError};
 use crate::workspace::{
@@ -52,6 +56,12 @@ pub struct PlannedJob {
     pub source: Box<MediaGraph>,
     /// Desired output graph used to generate the plan.
     pub desired: Box<DesiredGraph>,
+    /// Existing sidecars selected as embedded media inputs.
+    pub sidecar_embeddings: Vec<SidecarEmbedding>,
+    /// Managed sidecar outputs selected by the target.
+    pub sidecar_outputs: Vec<DesiredSidecarOutput>,
+    /// Existing sidecars removed only after verified replacement.
+    pub sidecar_removals: Vec<String>,
     /// Generated deterministic operations.
     pub operations: Vec<PlannedOperation>,
     /// Diff-based compliance report.
@@ -75,6 +85,16 @@ pub struct PlannedJobSummary {
     pub label_rewrite_operations: usize,
     /// Count of stream reorder operations.
     pub stream_reorder_operations: usize,
+    /// Count of sidecar-to-container subtitle embeds.
+    pub embed_subtitle_operations: usize,
+    /// Count of embedded-to-sidecar subtitle extractions.
+    pub extract_subtitle_operations: usize,
+    /// Count of managed sidecar copies or conversions.
+    pub copy_sidecar_subtitle_operations: usize,
+    /// Count of verified source-sidecar removals.
+    pub remove_sidecar_subtitle_operations: usize,
+    /// Count of subtitle codec conversions.
+    pub subtitle_transcode_operations: usize,
     /// Count of audio transcode operations.
     pub audio_transcode_operations: usize,
     /// Count of video transcode operations.
@@ -115,7 +135,7 @@ pub struct JobPreflightFailureReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobPreflightEvaluation {
     /// Successful preflight report.
-    Ready(JobPreflightReport),
+    Ready(Box<JobPreflightReport>),
     /// Failed preflight report with structured diagnostics.
     Failed(JobPreflightFailureReport),
 }
@@ -351,7 +371,7 @@ impl std::fmt::Display for QuarantinePathError {
 }
 
 /// Inputs required to build/evaluate a preflight report.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PreflightBuildInput<'a> {
     /// Source path used for inspection.
     pub source_path: &'a str,
@@ -376,7 +396,7 @@ pub struct PreflightBuildInput<'a> {
 }
 
 /// Policy-derived inputs used to construct preflight requests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreflightPolicyInput<'a> {
     /// Optional backup root configured by policy/profile.
     pub backup_root: Option<&'a str>,
@@ -444,7 +464,7 @@ impl<'a> OwnedPreflightBuildInput<'a> {
             capabilities: self.capabilities,
             workspace_policy: self.workspace_policy,
             free_bytes: self.free_bytes,
-            video_policy: self.video_policy,
+            video_policy: self.video_policy.clone(),
         }
     }
 }
@@ -497,116 +517,176 @@ pub fn build_preflight_input<'a>(
 /// Deterministic machine-readable error code for preflight failures.
 #[must_use]
 pub fn preflight_error_code(error: &JobPreflightError) -> &'static str {
-    match error {
-        JobPreflightError::Inspect(_) => "preflight_inspect_failed",
-        JobPreflightError::Plan(plan_error) => match *plan_error {
-            "unsupported_recode_stream_kind" => "preflight_plan_unsupported_recode_stream_kind",
-            _ => "preflight_plan_failed",
-        },
-        JobPreflightError::Capability(_) => "preflight_capability_failed",
-        JobPreflightError::Workspace(WorkspaceError::InvalidPolicy) => {
-            "preflight_workspace_invalid_policy"
-        }
-        JobPreflightError::Workspace(WorkspaceError::InsufficientReserve) => {
-            "preflight_workspace_insufficient_reserve"
-        }
-        JobPreflightError::Workspace(WorkspaceError::InsufficientCapacity) => {
-            "preflight_workspace_insufficient_capacity"
-        }
-        JobPreflightError::Workspace(WorkspaceError::ExceedsMaxWorkspace) => {
-            "preflight_workspace_exceeds_max"
-        }
-        JobPreflightError::Build(BuildArgsError::MissingStreamId) => {
-            "preflight_build_missing_stream_id"
-        }
-        JobPreflightError::Build(BuildArgsError::DesiredStreamMissing(_)) => {
-            "preflight_build_desired_stream_missing"
-        }
-        JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
-            "preflight_build_unsupported_codec"
-        }
-        JobPreflightError::Build(BuildArgsError::EmptyOperations) => {
-            "preflight_build_empty_operations"
-        }
-        JobPreflightError::BackupPath(BackupPathError::SourceFileNameMissing) => {
-            "preflight_backup_path_source_filename_missing"
-        }
-        JobPreflightError::BackupPath(BackupPathError::MatchesSourcePath) => {
-            "preflight_backup_path_matches_source"
-        }
-        JobPreflightError::BackupPath(BackupPathError::MatchesOutputPath) => {
-            "preflight_backup_path_matches_output"
-        }
-        JobPreflightError::QuarantinePath(QuarantinePathError::SourceFileNameMissing) => {
-            "preflight_quarantine_path_source_filename_missing"
-        }
-        JobPreflightError::QuarantinePath(QuarantinePathError::MatchesSourcePath) => {
-            "preflight_quarantine_path_matches_source"
-        }
-        JobPreflightError::QuarantinePath(QuarantinePathError::MatchesOutputPath) => {
-            "preflight_quarantine_path_matches_output"
-        }
-        JobPreflightError::QuarantinePath(QuarantinePathError::MatchesBackupPath) => {
-            "preflight_quarantine_path_matches_backup"
-        }
-    }
+    preflight_error_metadata(error).code
 }
 
 /// Deterministic human-readable detail for preflight failures.
 #[must_use]
 pub fn preflight_error_detail(error: &JobPreflightError) -> &'static str {
+    preflight_error_metadata(error).detail
+}
+
+struct PreflightErrorMetadata {
+    code: &'static str,
+    detail: &'static str,
+}
+
+fn preflight_error_metadata(error: &JobPreflightError) -> PreflightErrorMetadata {
     match error {
-        JobPreflightError::Inspect(_) => "source inspection failed",
-        JobPreflightError::Plan(plan_error) => match *plan_error {
-            "unsupported_recode_stream_kind" => "plan includes unsupported recode stream kind",
-            _ => "plan verification failed",
+        JobPreflightError::Inspect(_) => PreflightErrorMetadata {
+            code: "preflight_inspect_failed",
+            detail: "source inspection failed",
         },
-        JobPreflightError::Capability(_) => "capability snapshot is missing or invalid",
-        JobPreflightError::Workspace(WorkspaceError::InvalidPolicy) => {
-            "workspace policy is invalid"
-        }
-        JobPreflightError::Workspace(WorkspaceError::InsufficientReserve) => {
-            "free disk is below workspace reserve"
-        }
-        JobPreflightError::Workspace(WorkspaceError::InsufficientCapacity) => {
-            "free disk cannot satisfy workspace demand above reserve"
-        }
-        JobPreflightError::Workspace(WorkspaceError::ExceedsMaxWorkspace) => {
-            "workspace demand exceeds configured max"
-        }
-        JobPreflightError::Build(BuildArgsError::MissingStreamId) => {
-            "stream-scoped operation is missing stream id"
-        }
-        JobPreflightError::Build(BuildArgsError::DesiredStreamMissing(_)) => {
-            "desired graph references a missing source stream"
-        }
-        JobPreflightError::Build(BuildArgsError::UnsupportedCodec(_)) => {
-            "required transcode codec is unavailable"
-        }
-        JobPreflightError::Build(BuildArgsError::EmptyOperations) => {
-            "at least one operation is required"
-        }
-        JobPreflightError::BackupPath(BackupPathError::SourceFileNameMissing) => {
-            "configured backup root requires a source file name"
-        }
-        JobPreflightError::BackupPath(BackupPathError::MatchesSourcePath) => {
-            "backup path must not match source path"
-        }
-        JobPreflightError::BackupPath(BackupPathError::MatchesOutputPath) => {
-            "backup path must not match output path"
-        }
-        JobPreflightError::QuarantinePath(QuarantinePathError::SourceFileNameMissing) => {
-            "configured quarantine root requires a source file name"
-        }
-        JobPreflightError::QuarantinePath(QuarantinePathError::MatchesSourcePath) => {
-            "quarantine path must not match source path"
-        }
-        JobPreflightError::QuarantinePath(QuarantinePathError::MatchesOutputPath) => {
-            "quarantine path must not match output path"
-        }
-        JobPreflightError::QuarantinePath(QuarantinePathError::MatchesBackupPath) => {
-            "quarantine path must not match backup path"
-        }
+        JobPreflightError::Plan(plan_error) => preflight_plan_metadata(plan_error),
+        JobPreflightError::Capability(_) => PreflightErrorMetadata {
+            code: "preflight_capability_failed",
+            detail: "capability snapshot is missing or invalid",
+        },
+        JobPreflightError::Workspace(error) => workspace_error_metadata(error),
+        JobPreflightError::Build(error) => build_error_metadata(error),
+        JobPreflightError::BackupPath(error) => backup_path_metadata(*error),
+        JobPreflightError::QuarantinePath(error) => quarantine_path_metadata(*error),
+    }
+}
+
+fn preflight_plan_metadata(plan_error: &str) -> PreflightErrorMetadata {
+    match plan_error {
+        "duplicate_source_stream_id" => PreflightErrorMetadata {
+            code: "preflight_plan_duplicate_source_stream_id",
+            detail: "source graph contains duplicate stream ids",
+        },
+        "duplicate_desired_stream_id" => PreflightErrorMetadata {
+            code: "preflight_plan_duplicate_desired_stream_id",
+            detail: "desired graph contains duplicate stream ids",
+        },
+        "missing_desired_stream" => PreflightErrorMetadata {
+            code: "preflight_plan_missing_desired_stream",
+            detail: "desired graph references a missing source stream",
+        },
+        "unsupported_recode_stream_kind" => PreflightErrorMetadata {
+            code: "preflight_plan_unsupported_recode_stream_kind",
+            detail: "plan includes unsupported recode stream kind",
+        },
+        _ => PreflightErrorMetadata {
+            code: "preflight_plan_failed",
+            detail: "plan verification failed",
+        },
+    }
+}
+
+const fn workspace_error_metadata(error: &WorkspaceError) -> PreflightErrorMetadata {
+    match error {
+        WorkspaceError::InvalidPolicy => PreflightErrorMetadata {
+            code: "preflight_workspace_invalid_policy",
+            detail: "workspace policy is invalid",
+        },
+        WorkspaceError::InsufficientReserve => PreflightErrorMetadata {
+            code: "preflight_workspace_insufficient_reserve",
+            detail: "free disk is below workspace reserve",
+        },
+        WorkspaceError::InsufficientCapacity => PreflightErrorMetadata {
+            code: "preflight_workspace_insufficient_capacity",
+            detail: "free disk cannot satisfy workspace demand above reserve",
+        },
+        WorkspaceError::ExceedsMaxWorkspace => PreflightErrorMetadata {
+            code: "preflight_workspace_exceeds_max",
+            detail: "workspace demand exceeds configured max",
+        },
+    }
+}
+
+const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata {
+    match error {
+        BuildArgsError::MissingStreamId => PreflightErrorMetadata {
+            code: "preflight_build_missing_stream_id",
+            detail: "stream-scoped operation is missing stream id",
+        },
+        BuildArgsError::DesiredStreamMissing(_) => PreflightErrorMetadata {
+            code: "preflight_build_desired_stream_missing",
+            detail: "desired graph references a missing source stream",
+        },
+        BuildArgsError::DesiredStreamKindMismatch(_) => PreflightErrorMetadata {
+            code: "preflight_build_desired_stream_kind_mismatch",
+            detail: "desired graph stream kind does not match source stream",
+        },
+        BuildArgsError::DuplicateSourceStreamIds => PreflightErrorMetadata {
+            code: "preflight_build_duplicate_source_stream_id",
+            detail: "source graph contains duplicate stream ids",
+        },
+        BuildArgsError::DuplicateDesiredStreamIds => PreflightErrorMetadata {
+            code: "preflight_build_duplicate_desired_stream_id",
+            detail: "desired graph contains duplicate stream ids",
+        },
+        BuildArgsError::UnsupportedCodec(_) => PreflightErrorMetadata {
+            code: "preflight_build_unsupported_codec",
+            detail: "required transcode codec is unavailable",
+        },
+        BuildArgsError::UnsupportedMuxer(_) => PreflightErrorMetadata {
+            code: "preflight_build_unsupported_muxer",
+            detail: "required output muxer is unavailable",
+        },
+        BuildArgsError::UnsupportedMetadataRewrite => PreflightErrorMetadata {
+            code: "preflight_build_unsupported_metadata_rewrite",
+            detail: "metadata rewrite requires a verified desired metadata contract",
+        },
+        BuildArgsError::EmptyOperations => PreflightErrorMetadata {
+            code: "preflight_build_empty_operations",
+            detail: "at least one operation is required",
+        },
+        BuildArgsError::InvalidOperations(_) => PreflightErrorMetadata {
+            code: "preflight_build_invalid_operations",
+            detail: "operation list is invalid",
+        },
+        BuildArgsError::NoOpCommand => PreflightErrorMetadata {
+            code: "preflight_build_noop_command",
+            detail: "no-op operation does not require command construction",
+        },
+        BuildArgsError::SubtitleArtifactContextRequired => PreflightErrorMetadata {
+            code: "preflight_build_subtitle_artifact_context_required",
+            detail: "subtitle artifact operation requires complete desired-target context",
+        },
+        BuildArgsError::SidecarCompanionMismatch => PreflightErrorMetadata {
+            code: "preflight_build_sidecar_companion_mismatch",
+            detail: "paired sidecar companion paths are inconsistent",
+        },
+    }
+}
+
+const fn backup_path_metadata(error: BackupPathError) -> PreflightErrorMetadata {
+    match error {
+        BackupPathError::SourceFileNameMissing => PreflightErrorMetadata {
+            code: "preflight_backup_path_source_filename_missing",
+            detail: "configured backup root requires a source file name",
+        },
+        BackupPathError::MatchesSourcePath => PreflightErrorMetadata {
+            code: "preflight_backup_path_matches_source",
+            detail: "backup path must not match source path",
+        },
+        BackupPathError::MatchesOutputPath => PreflightErrorMetadata {
+            code: "preflight_backup_path_matches_output",
+            detail: "backup path must not match output path",
+        },
+    }
+}
+
+const fn quarantine_path_metadata(error: QuarantinePathError) -> PreflightErrorMetadata {
+    match error {
+        QuarantinePathError::SourceFileNameMissing => PreflightErrorMetadata {
+            code: "preflight_quarantine_path_source_filename_missing",
+            detail: "configured quarantine root requires a source file name",
+        },
+        QuarantinePathError::MatchesSourcePath => PreflightErrorMetadata {
+            code: "preflight_quarantine_path_matches_source",
+            detail: "quarantine path must not match source path",
+        },
+        QuarantinePathError::MatchesOutputPath => PreflightErrorMetadata {
+            code: "preflight_quarantine_path_matches_output",
+            detail: "quarantine path must not match output path",
+        },
+        QuarantinePathError::MatchesBackupPath => PreflightErrorMetadata {
+            code: "preflight_quarantine_path_matches_backup",
+            detail: "quarantine path must not match backup path",
+        },
     }
 }
 
@@ -813,19 +893,148 @@ pub fn plan_job_from_source_graph(
     source_file_bytes: u64,
     source: &MediaGraph,
 ) -> Result<PlannedJob, &'static str> {
+    plan_job_from_source_graph_with_artifacts(
+        desired,
+        source_file_bytes,
+        source,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
+/// Build a deterministic plan from a complete desired-target compilation.
+///
+/// # Errors
+///
+/// Returns an error when external stream bindings or generated operations are inconsistent.
+pub fn plan_job_from_compiled_target(
+    compiled: &CompiledDesiredTarget,
+    source_file_bytes: u64,
+    source: &MediaGraph,
+) -> Result<PlannedJob, &'static str> {
+    plan_job_from_source_graph_with_artifacts(
+        &compiled.graph,
+        source_file_bytes,
+        source,
+        compiled.sidecar_embeddings.clone(),
+        compiled.sidecar_outputs.clone(),
+        compiled.sidecar_removals.clone(),
+    )
+}
+
+fn plan_job_from_source_graph_with_artifacts(
+    desired: &DesiredGraph,
+    source_file_bytes: u64,
+    source: &MediaGraph,
+    sidecar_embeddings: Vec<SidecarEmbedding>,
+    sidecar_outputs: Vec<DesiredSidecarOutput>,
+    sidecar_removals: Vec<String>,
+) -> Result<PlannedJob, &'static str> {
+    verify_unique_stream_ids(&source.streams).map_err(|_| "duplicate_source_stream_id")?;
+    verify_unique_stream_ids(&desired.streams).map_err(|_| "duplicate_desired_stream_id")?;
+    validate_sidecar_bindings(source, desired, &sidecar_embeddings)?;
     let diff = diff_graphs(source, desired);
+    reject_unbound_desired_streams(&diff, &sidecar_embeddings)?;
     reject_unsupported_recoded_stream_kinds(&diff)?;
     let compliance = score_diff(&diff);
-    let operations = generate_plan(&diff);
+    let mut operations = generate_plan(&diff);
+    append_sidecar_operations(
+        &mut operations,
+        &sidecar_embeddings,
+        &sidecar_outputs,
+        &sidecar_removals,
+    );
     verify_plan_against_source(source, &operations)?;
 
     Ok(PlannedJob {
         source: Box::new(source.clone()),
         desired: Box::new(desired.clone()),
+        sidecar_embeddings,
+        sidecar_outputs,
+        sidecar_removals,
         compliance,
         estimated_workspace_bytes: estimate_workspace_bytes(source_file_bytes, &operations),
         operations,
     })
+}
+
+fn reject_unbound_desired_streams(
+    diff: &revaer_media_core::diff::GraphDiff,
+    sidecar_embeddings: &[SidecarEmbedding],
+) -> Result<(), &'static str> {
+    if diff.missing_desired_streams.iter().all(|stream_id| {
+        sidecar_embeddings
+            .iter()
+            .any(|binding| binding.output_stream.stream_id == *stream_id)
+    }) {
+        Ok(())
+    } else {
+        Err("missing_desired_stream")
+    }
+}
+
+fn validate_sidecar_bindings(
+    source: &MediaGraph,
+    desired: &DesiredGraph,
+    embeddings: &[SidecarEmbedding],
+) -> Result<(), &'static str> {
+    let mut ids = std::collections::BTreeSet::new();
+    for binding in embeddings {
+        if !ids.insert(binding.output_stream.stream_id) {
+            return Err("duplicate_sidecar_embedding_stream_id");
+        }
+        if source
+            .streams
+            .iter()
+            .any(|stream| stream.stream_id == binding.output_stream.stream_id)
+        {
+            return Err("sidecar_embedding_stream_id_overlaps_source");
+        }
+        if !desired
+            .streams
+            .iter()
+            .any(|stream| stream == &binding.output_stream)
+        {
+            return Err("sidecar_embedding_missing_from_desired_graph");
+        }
+    }
+    Ok(())
+}
+
+fn append_sidecar_operations(
+    operations: &mut Vec<PlannedOperation>,
+    embeddings: &[SidecarEmbedding],
+    outputs: &[DesiredSidecarOutput],
+    removals: &[String],
+) {
+    if !embeddings.is_empty() || !outputs.is_empty() || !removals.is_empty() {
+        operations.retain(|operation| operation.kind != OperationKind::NoOp);
+    }
+    operations.extend(embeddings.iter().map(|binding| PlannedOperation {
+        kind: OperationKind::EmbedSubtitle,
+        stream_id: Some(binding.output_stream.stream_id),
+    }));
+    operations.extend(outputs.iter().map(|output| PlannedOperation {
+        kind: match &output.source {
+            SidecarOutputSource::EmbeddedStream { .. } => OperationKind::ExtractSubtitle,
+            SidecarOutputSource::ExistingSidecar { .. } => OperationKind::CopySidecarSubtitle,
+        },
+        stream_id: match &output.source {
+            SidecarOutputSource::EmbeddedStream { stream_id } => Some(*stream_id),
+            SidecarOutputSource::ExistingSidecar { .. } => None,
+        },
+    }));
+    operations.extend(removals.iter().map(|_| PlannedOperation {
+        kind: OperationKind::RemoveSidecarSubtitle,
+        stream_id: None,
+    }));
+    if operations.is_empty() {
+        operations.push(PlannedOperation {
+            kind: OperationKind::NoOp,
+            stream_id: None,
+        });
+    }
 }
 
 fn reject_unsupported_recoded_stream_kinds(
@@ -834,10 +1043,11 @@ fn reject_unsupported_recoded_stream_kinds(
     for stream in &diff.recoded_streams {
         match stream.kind {
             revaer_media_core::model::StreamKind::Audio
-            | revaer_media_core::model::StreamKind::Video => {}
-            revaer_media_core::model::StreamKind::Subtitle
-            | revaer_media_core::model::StreamKind::Attachment
-            | revaer_media_core::model::StreamKind::Chapter => {
+            | revaer_media_core::model::StreamKind::Video
+            | revaer_media_core::model::StreamKind::Subtitle => {}
+            revaer_media_core::model::StreamKind::Attachment
+            | revaer_media_core::model::StreamKind::Chapter
+            | revaer_media_core::model::StreamKind::Data => {
                 return Err("unsupported_recode_stream_kind");
             }
         }
@@ -868,22 +1078,23 @@ pub fn build_job_execution_steps(
     output_path: &str,
     planned: &PlannedJob,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    build_desired_graph_execution_steps(
-        input_path,
-        output_path,
-        &planned.source,
-        &planned.desired,
-        &planned.operations,
-        None,
-        VideoTranscodePolicy::default(),
+    build_desired_graph_execution_steps_with_sidecars(
+        planned_build_context(
+            input_path,
+            output_path,
+            planned,
+            None,
+            VideoTranscodePolicy::default(),
+        ),
+        planned_subtitle_artifacts(planned),
     )
 }
 
-/// Build deterministic execution steps from planned job output, validating required codecs.
+/// Build deterministic execution steps from planned job output, validating required capabilities.
 ///
 /// # Errors
 ///
-/// Returns [`BuildArgsError::UnsupportedCodec`] when required transcode codec support is missing.
+/// Returns [`BuildArgsError`] when a required codec or muxer capability is missing.
 /// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
 pub fn build_job_execution_steps_with_capabilities(
     input_path: &str,
@@ -891,14 +1102,15 @@ pub fn build_job_execution_steps_with_capabilities(
     planned: &PlannedJob,
     capabilities: &CapabilitySnapshot,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
-    build_desired_graph_execution_steps(
-        input_path,
-        output_path,
-        &planned.source,
-        &planned.desired,
-        &planned.operations,
-        Some(capabilities),
-        VideoTranscodePolicy::default(),
+    build_desired_graph_execution_steps_with_sidecars(
+        planned_build_context(
+            input_path,
+            output_path,
+            planned,
+            Some(capabilities),
+            VideoTranscodePolicy::default(),
+        ),
+        planned_subtitle_artifacts(planned),
     )
 }
 
@@ -906,7 +1118,7 @@ pub fn build_job_execution_steps_with_capabilities(
 ///
 /// # Errors
 ///
-/// Returns [`BuildArgsError::UnsupportedCodec`] when required transcode codec support is missing.
+/// Returns [`BuildArgsError`] when a required codec or muxer capability is missing.
 /// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
 pub fn build_job_execution_steps_with_replacement(
     source_path: &str,
@@ -930,7 +1142,7 @@ pub fn build_job_execution_steps_with_replacement(
 ///
 /// # Errors
 ///
-/// Returns [`BuildArgsError::UnsupportedCodec`] when required transcode codec support is missing.
+/// Returns [`BuildArgsError`] when a required codec or muxer capability is missing.
 /// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
 pub fn build_job_execution_steps_with_replacement_policy(
     source_path: &str,
@@ -955,7 +1167,7 @@ pub fn build_job_execution_steps_with_replacement_policy(
 ///
 /// # Errors
 ///
-/// Returns [`BuildArgsError::UnsupportedCodec`] when required transcode codec support is missing.
+/// Returns [`BuildArgsError`] when a required codec or muxer capability is missing.
 /// Returns [`BuildArgsError::MissingStreamId`] when operation metadata is incomplete.
 pub fn build_job_execution_steps_with_replacement_video_policy(
     source_path: &str,
@@ -966,6 +1178,19 @@ pub fn build_job_execution_steps_with_replacement_video_policy(
     quarantine_path: Option<&str>,
     video_policy: VideoTranscodePolicy,
 ) -> Result<Vec<ExecutionStep>, BuildArgsError> {
+    if operations_are_noop(&planned.operations) {
+        return build_desired_graph_execution_steps_with_sidecars(
+            planned_build_context(
+                source_path,
+                output_path,
+                planned,
+                Some(capabilities),
+                video_policy,
+            ),
+            planned_subtitle_artifacts(planned),
+        );
+    }
+
     let mut steps = Vec::new();
     if let Some(path) = backup_path {
         steps.push(ExecutionStep::BackupSource {
@@ -973,14 +1198,15 @@ pub fn build_job_execution_steps_with_replacement_video_policy(
             backup_path: path.to_string(),
         });
     }
-    steps.extend(build_desired_graph_execution_steps(
-        source_path,
-        output_path,
-        &planned.source,
-        &planned.desired,
-        &planned.operations,
-        Some(capabilities),
-        video_policy,
+    steps.extend(build_desired_graph_execution_steps_with_sidecars(
+        planned_build_context(
+            source_path,
+            output_path,
+            planned,
+            Some(capabilities),
+            video_policy,
+        ),
+        planned_subtitle_artifacts(planned),
     )?);
     if let Some(path) = quarantine_path {
         steps.push(ExecutionStep::QuarantineFailedOutput {
@@ -995,6 +1221,32 @@ pub fn build_job_execution_steps_with_replacement_video_policy(
     Ok(steps)
 }
 
+fn planned_build_context<'a>(
+    input_path: &'a str,
+    output_path: &'a str,
+    planned: &'a PlannedJob,
+    capabilities: Option<&'a CapabilitySnapshot>,
+    policy: VideoTranscodePolicy,
+) -> DesiredGraphBuildContext<'a> {
+    DesiredGraphBuildContext {
+        input_path,
+        output_path,
+        source: &planned.source,
+        desired: &planned.desired,
+        operations: &planned.operations,
+        capabilities,
+        policy,
+    }
+}
+
+fn planned_subtitle_artifacts(planned: &PlannedJob) -> SubtitleArtifactPlan<'_> {
+    SubtitleArtifactPlan {
+        embeddings: &planned.sidecar_embeddings,
+        outputs: &planned.sidecar_outputs,
+        removals: &planned.sidecar_removals,
+    }
+}
+
 /// Build a deterministic summary of planned operations.
 #[must_use]
 pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
@@ -1003,16 +1255,27 @@ pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
     let mut disposition_rewrite_operations = 0_usize;
     let mut label_rewrite_operations = 0_usize;
     let mut stream_reorder_operations = 0_usize;
+    let mut embed_subtitle_operations = 0_usize;
+    let mut extract_subtitle_operations = 0_usize;
+    let mut copy_sidecar_subtitle_operations = 0_usize;
+    let mut remove_sidecar_subtitle_operations = 0_usize;
+    let mut subtitle_transcode_operations = 0_usize;
     let mut audio_transcode_operations = 0_usize;
     let mut video_transcode_operations = 0_usize;
 
     for operation in &planned.operations {
         match operation.kind {
+            OperationKind::NoOp => {}
             OperationKind::Remux => remux_operations += 1,
             OperationKind::MetadataRewrite => metadata_rewrite_operations += 1,
             OperationKind::DispositionRewrite => disposition_rewrite_operations += 1,
             OperationKind::LabelRewrite => label_rewrite_operations += 1,
             OperationKind::StreamReorder => stream_reorder_operations += 1,
+            OperationKind::EmbedSubtitle => embed_subtitle_operations += 1,
+            OperationKind::ExtractSubtitle => extract_subtitle_operations += 1,
+            OperationKind::CopySidecarSubtitle => copy_sidecar_subtitle_operations += 1,
+            OperationKind::RemoveSidecarSubtitle => remove_sidecar_subtitle_operations += 1,
+            OperationKind::SubtitleTranscode => subtitle_transcode_operations += 1,
             OperationKind::AudioTranscode => audio_transcode_operations += 1,
             OperationKind::VideoTranscode => video_transcode_operations += 1,
         }
@@ -1025,6 +1288,11 @@ pub fn summarize_planned_job(planned: &PlannedJob) -> PlannedJobSummary {
         disposition_rewrite_operations,
         label_rewrite_operations,
         stream_reorder_operations,
+        embed_subtitle_operations,
+        extract_subtitle_operations,
+        copy_sidecar_subtitle_operations,
+        remove_sidecar_subtitle_operations,
+        subtitle_transcode_operations,
         audio_transcode_operations,
         video_transcode_operations,
         explanations: explain_plan(&planned.operations),
@@ -1047,6 +1315,32 @@ pub fn build_preflight_report(
         input.desired,
         input.source_file_bytes,
     )?;
+    build_preflight_report_for_planned(planned, input)
+}
+
+/// Build preflight from one complete target compilation and its source inspection.
+///
+/// # Errors
+///
+/// Returns [`JobPreflightError`] when planning, capability, workspace, or execution-step
+/// validation fails.
+pub fn build_preflight_report_from_compiled_target(
+    source: &MediaGraph,
+    compiled: &CompiledDesiredTarget,
+    input: PreflightBuildInput<'_>,
+) -> Result<JobPreflightReport, JobPreflightError> {
+    if input.desired != &compiled.graph {
+        return Err(JobPreflightError::Plan("compiled_desired_graph_mismatch"));
+    }
+    let planned = plan_job_from_compiled_target(compiled, input.source_file_bytes, source)
+        .map_err(JobPreflightError::Plan)?;
+    build_preflight_report_for_planned(planned, input)
+}
+
+fn build_preflight_report_for_planned(
+    planned: PlannedJob,
+    input: PreflightBuildInput<'_>,
+) -> Result<JobPreflightReport, JobPreflightError> {
     require_valid_capability_snapshot(Some(input.capabilities))
         .map_err(JobPreflightError::Capability)?;
     let capacity_report = input
@@ -1073,6 +1367,19 @@ pub fn build_preflight_report(
     })
 }
 
+/// Evaluate preflight from a complete target compilation and source inspection.
+#[must_use]
+pub fn evaluate_preflight_from_compiled_target(
+    source: &MediaGraph,
+    compiled: &CompiledDesiredTarget,
+    input: PreflightBuildInput<'_>,
+) -> JobPreflightEvaluation {
+    match build_preflight_report_from_compiled_target(source, compiled, input) {
+        Ok(report) => JobPreflightEvaluation::Ready(Box::new(report)),
+        Err(error) => JobPreflightEvaluation::Failed(preflight_failure_report(&error)),
+    }
+}
+
 /// Evaluate preflight and always return a structured outcome payload.
 #[must_use]
 pub fn evaluate_preflight(
@@ -1080,7 +1387,7 @@ pub fn evaluate_preflight(
     input: PreflightBuildInput<'_>,
 ) -> JobPreflightEvaluation {
     match build_preflight_report(inspector, input) {
-        Ok(report) => JobPreflightEvaluation::Ready(report),
+        Ok(report) => JobPreflightEvaluation::Ready(Box::new(report)),
         Err(error) => JobPreflightEvaluation::Failed(preflight_failure_report(&error)),
     }
 }
@@ -1162,7 +1469,7 @@ pub fn evaluate_preflight_from_template(
     policy_input: PreflightPolicyInput<'_>,
 ) -> JobPreflightEvaluation {
     match build_preflight_report_from_template(inspector, template, policy_input) {
-        Ok(report) => JobPreflightEvaluation::Ready(report),
+        Ok(report) => JobPreflightEvaluation::Ready(Box::new(report)),
         Err(error) => JobPreflightEvaluation::Failed(preflight_failure_report(&error)),
     }
 }
@@ -1185,18 +1492,28 @@ pub fn require_valid_capability_snapshot(
 }
 
 fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperation]) -> u64 {
+    if operations_are_noop(operations) {
+        return 0;
+    }
+
     // Conservative fixed multipliers for current foundation implementation.
     let mut max_multiplier_num: u64 = 1;
     let mut max_multiplier_den: u64 = 1;
 
     for op in operations {
         let candidate = match op.kind {
+            revaer_media_core::plan::OperationKind::NoOp => (0_u64, 1_u64),
             revaer_media_core::plan::OperationKind::Remux
             | revaer_media_core::plan::OperationKind::MetadataRewrite
             | revaer_media_core::plan::OperationKind::DispositionRewrite
             | revaer_media_core::plan::OperationKind::LabelRewrite
-            | revaer_media_core::plan::OperationKind::StreamReorder => (6_u64, 5_u64), // 1.2x
-            revaer_media_core::plan::OperationKind::AudioTranscode => (3_u64, 2_u64), // 1.5x
+            | revaer_media_core::plan::OperationKind::StreamReorder
+            | revaer_media_core::plan::OperationKind::EmbedSubtitle
+            | revaer_media_core::plan::OperationKind::ExtractSubtitle
+            | revaer_media_core::plan::OperationKind::CopySidecarSubtitle
+            | revaer_media_core::plan::OperationKind::RemoveSidecarSubtitle => (6_u64, 5_u64), // 1.2x
+            revaer_media_core::plan::OperationKind::AudioTranscode
+            | revaer_media_core::plan::OperationKind::SubtitleTranscode => (3_u64, 2_u64), // 1.5x
             revaer_media_core::plan::OperationKind::VideoTranscode => (5_u64, 2_u64), // 2.5x
         };
         if candidate.0.saturating_mul(max_multiplier_den)
@@ -1209,6 +1526,16 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
 
     // Use saturating math for deterministic overflow-safe behavior.
     source_file_bytes.saturating_mul(max_multiplier_num) / max_multiplier_den
+}
+
+fn operations_are_noop(operations: &[PlannedOperation]) -> bool {
+    matches!(
+        operations,
+        [PlannedOperation {
+            kind: OperationKind::NoOp,
+            stream_id: None
+        }]
+    )
 }
 
 #[cfg(test)]
@@ -1233,16 +1560,19 @@ mod tests {
     use crate::workspace::{WorkspaceError, WorkspacePolicy};
     use revaer_media_core::compliance::{Status, report_for_status};
     use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
-    use revaer_media_core::plan::PlannedOperation;
+    use revaer_media_core::plan::{OperationKind, PlannedOperation};
 
     #[test]
     fn plan_job_builds_operations_and_estimate() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
                 codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1250,10 +1580,13 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
                 codec: "hevc".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1282,10 +1615,13 @@ mod tests {
     fn preflight_capacity_check_fails_when_demand_exceeds_reserve_budget() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
                 codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1293,10 +1629,13 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
                 codec: "hevc".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1329,10 +1668,13 @@ mod tests {
     fn build_job_execution_steps_adds_verify_step() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
                 codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1340,10 +1682,13 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
                 codec: "hevc".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1372,11 +1717,14 @@ mod tests {
     fn job_execution_steps_map_only_desired_streams() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
                     stream_id: 0,
                     kind: StreamKind::Video,
                     codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
                     language: None,
                     title: None,
                     dispositions: Vec::new(),
@@ -1385,6 +1733,8 @@ mod tests {
                     stream_id: 1,
                     kind: StreamKind::Audio,
                     codec: "aac".to_string(),
+                    channels: None,
+                    channel_layout: None,
                     language: Some("eng".to_string()),
                     title: Some("Main".to_string()),
                     dispositions: Vec::new(),
@@ -1393,6 +1743,8 @@ mod tests {
                     stream_id: 2,
                     kind: StreamKind::Audio,
                     codec: "aac".to_string(),
+                    channels: None,
+                    channel_layout: None,
                     language: Some("und".to_string()),
                     title: Some("Silent".to_string()),
                     dispositions: Vec::new(),
@@ -1401,6 +1753,7 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: source.streams[..2].to_vec(),
         };
         let planned_result = plan_job(&JobPreflightRequest {
@@ -1439,23 +1792,29 @@ mod tests {
     fn plan_job_rejects_unsupported_recode_stream_kind() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 3,
-                kind: StreamKind::Subtitle,
-                codec: "srt".to_string(),
-                language: Some("eng".to_string()),
-                title: Some("English".to_string()),
+                kind: StreamKind::Attachment,
+                codec: "ttf".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: Some("Font".to_string()),
                 dispositions: Vec::new(),
             }],
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: vec![MediaStream {
                 stream_id: 3,
-                kind: StreamKind::Subtitle,
-                codec: "ass".to_string(),
-                language: Some("eng".to_string()),
-                title: Some("English".to_string()),
+                kind: StreamKind::Attachment,
+                codec: "otf".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: Some("Font".to_string()),
                 dispositions: Vec::new(),
             }],
         };
@@ -1467,6 +1826,162 @@ mod tests {
         });
 
         assert_eq!(result, Err("unsupported_recode_stream_kind"));
+    }
+
+    #[test]
+    fn plan_job_rejects_missing_desired_stream() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
+            streams: vec![
+                MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                MediaStream {
+                    stream_id: 7,
+                    kind: StreamKind::Audio,
+                    codec: "aac".to_string(),
+                    channels: Some(2),
+                    channel_layout: Some("stereo".to_string()),
+                    language: Some("eng".to_string()),
+                    title: Some("Generated".to_string()),
+                    dispositions: Vec::new(),
+                },
+            ],
+        };
+
+        let result = plan_job(&JobPreflightRequest {
+            source,
+            desired,
+            source_file_bytes: 1_024,
+        });
+
+        assert_eq!(result, Err("missing_desired_stream"));
+    }
+
+    #[test]
+    fn plan_job_rejects_duplicate_source_stream_ids() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![
+                MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Audio,
+                    codec: "aac".to_string(),
+                    channels: Some(2),
+                    channel_layout: Some("stereo".to_string()),
+                    language: Some("eng".to_string()),
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+            ],
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+
+        let result = plan_job(&JobPreflightRequest {
+            source,
+            desired,
+            source_file_bytes: 1_024,
+        });
+
+        assert_eq!(result, Err("duplicate_source_stream_id"));
+    }
+
+    #[test]
+    fn plan_job_rejects_duplicate_desired_stream_ids() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
+            streams: vec![
+                MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: Some("Duplicate".to_string()),
+                    dispositions: Vec::new(),
+                },
+            ],
+        };
+
+        let result = plan_job(&JobPreflightRequest {
+            source,
+            desired,
+            source_file_bytes: 1_024,
+        });
+
+        assert_eq!(result, Err("duplicate_desired_stream_id"));
     }
 
     #[test]
@@ -1588,10 +2103,13 @@ mod tests {
     fn single_video_graphs(source_codec: &str, desired_codec: &str) -> (MediaGraph, DesiredGraph) {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
                 codec: source_codec.to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1599,10 +2117,13 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
                 codec: desired_codec.to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1619,6 +2140,9 @@ mod tests {
         PlannedJob {
             source: Box::new(source),
             desired: Box::new(desired),
+            sidecar_embeddings: Vec::new(),
+            sidecar_outputs: Vec::new(),
+            sidecar_removals: Vec::new(),
             operations,
             compliance: report_for_status(Status::Compliant),
             estimated_workspace_bytes,
@@ -1629,10 +2153,13 @@ mod tests {
     fn plan_job_from_inspect_uses_inspected_graph() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
                 codec: "hevc".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1641,10 +2168,13 @@ mod tests {
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: vec![MediaStream {
                     stream_id: 1,
                     kind: StreamKind::Video,
                     codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
                     language: None,
                     title: None,
                     dispositions: Vec::new(),
@@ -1665,6 +2195,7 @@ mod tests {
     fn plan_job_from_inspect_propagates_inspect_error() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -1728,10 +2259,13 @@ mod tests {
     fn build_preflight_report_returns_summary_and_steps() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
                 codec: "hevc".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -1740,10 +2274,13 @@ mod tests {
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: vec![MediaStream {
                     stream_id: 1,
                     kind: StreamKind::Video,
                     codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
                     language: None,
                     title: None,
                     dispositions: Vec::new(),
@@ -1802,18 +2339,100 @@ mod tests {
     }
 
     #[test]
+    fn build_preflight_report_for_compliant_graph_uses_noop_without_replacement_steps() {
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
+            streams: vec![MediaStream {
+                stream_id: 1,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let inspector = StubInspectAdapter {
+            graph: Some(MediaGraph {
+                source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
+                streams: vec![MediaStream {
+                    stream_id: 1,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                }],
+            }),
+            error: None,
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+            codec_support: Vec::new(),
+            encoders: vec!["libx265".to_string(), "aac".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+        let policy = WorkspacePolicy {
+            max_bytes: 100_000,
+            reserve_bytes: 1_000,
+        };
+
+        let report = build_preflight_report(
+            &inspector,
+            PreflightBuildInput {
+                source_path: "/input/movie.mkv",
+                output_path: "/output/movie.mkv",
+                backup_path: Some("/backup/movie.mkv"),
+                quarantine_path: Some("/quarantine/movie.mkv"),
+                desired: &desired,
+                source_file_bytes: 4_000,
+                capabilities: &capabilities,
+                workspace_policy: &policy,
+                free_bytes: 20_000,
+                video_policy: VideoTranscodePolicy::default(),
+            },
+        );
+        assert!(report.is_ok());
+        let Ok(report) = report else {
+            return;
+        };
+
+        assert_eq!(report.planned.operations.len(), 1);
+        assert_eq!(report.planned.operations[0].kind, OperationKind::NoOp);
+        assert_eq!(report.summary.total_operations, 1);
+        assert!(report.steps.iter().all(|step| !matches!(
+            step,
+            ExecutionStep::Command { .. }
+                | ExecutionStep::BackupSource { .. }
+                | ExecutionStep::QuarantineFailedOutput { .. }
+                | ExecutionStep::AtomicReplace { .. }
+        )));
+    }
+
+    #[test]
     fn build_preflight_report_rejects_invalid_capabilities() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: vec![MediaStream {
                     stream_id: 0,
                     kind: StreamKind::Video,
                     codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
                     language: None,
                     title: None,
                     dispositions: Vec::new(),
@@ -1896,6 +2515,110 @@ mod tests {
             "plan includes unsupported recode stream kind"
         );
         assert_eq!(preflight_failed_stage(&err), "inspect_plan");
+
+        let err = JobPreflightError::Plan("missing_desired_stream");
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_plan_missing_desired_stream"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "desired graph references a missing source stream"
+        );
+        assert_eq!(preflight_failed_stage(&err), "inspect_plan");
+
+        let err = JobPreflightError::Plan("duplicate_source_stream_id");
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_plan_duplicate_source_stream_id"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "source graph contains duplicate stream ids"
+        );
+        assert_eq!(preflight_failed_stage(&err), "inspect_plan");
+
+        let err = JobPreflightError::Plan("duplicate_desired_stream_id");
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_plan_duplicate_desired_stream_id"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "desired graph contains duplicate stream ids"
+        );
+        assert_eq!(preflight_failed_stage(&err), "inspect_plan");
+
+        let err = JobPreflightError::Build(BuildArgsError::DuplicateSourceStreamIds);
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_duplicate_source_stream_id"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "source graph contains duplicate stream ids"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+
+        let err = JobPreflightError::Build(BuildArgsError::DuplicateDesiredStreamIds);
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_duplicate_desired_stream_id"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "desired graph contains duplicate stream ids"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+
+        let err = JobPreflightError::Build(BuildArgsError::DesiredStreamKindMismatch(0));
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_desired_stream_kind_mismatch"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "desired graph stream kind does not match source stream"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+
+        let err = JobPreflightError::Build(BuildArgsError::InvalidOperations(
+            "no-op operation must not be combined with mutating operations",
+        ));
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_invalid_operations"
+        );
+        assert_eq!(preflight_error_detail(&err), "operation list is invalid");
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+    }
+
+    #[test]
+    fn unsupported_metadata_rewrite_preflight_classification_is_stable() {
+        let err = JobPreflightError::Build(BuildArgsError::UnsupportedMetadataRewrite);
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_unsupported_metadata_rewrite"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "metadata rewrite requires a verified desired metadata contract"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+    }
+
+    #[test]
+    fn unsupported_muxer_preflight_classification_is_stable() {
+        let err = JobPreflightError::Build(BuildArgsError::UnsupportedMuxer("mp4".to_string()));
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_unsupported_muxer"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "required output muxer is unavailable"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
     }
 
     #[test]
@@ -1950,15 +2673,19 @@ mod tests {
     fn evaluate_preflight_returns_structured_failed_outcome() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: vec![MediaStream {
                     stream_id: 0,
                     kind: StreamKind::Video,
                     codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
                     language: None,
                     title: None,
                     dispositions: Vec::new(),
@@ -2003,7 +2730,7 @@ mod tests {
 
     #[test]
     fn preflight_evaluation_ready_flag_is_deterministic() {
-        let ready = JobPreflightEvaluation::Ready(JobPreflightReport {
+        let ready = JobPreflightEvaluation::Ready(Box::new(JobPreflightReport {
             planned: planned_job_for_tests(Vec::new(), 0),
             summary: super::PlannedJobSummary {
                 total_operations: 0,
@@ -2012,6 +2739,11 @@ mod tests {
                 disposition_rewrite_operations: 0,
                 label_rewrite_operations: 0,
                 stream_reorder_operations: 0,
+                embed_subtitle_operations: 0,
+                extract_subtitle_operations: 0,
+                copy_sidecar_subtitle_operations: 0,
+                remove_sidecar_subtitle_operations: 0,
+                subtitle_transcode_operations: 0,
                 audio_transcode_operations: 0,
                 video_transcode_operations: 0,
                 explanations: Vec::new(),
@@ -2024,7 +2756,7 @@ mod tests {
                 available_after_reserve_bytes: 0,
                 required_workspace_bytes: 0,
             },
-        });
+        }));
         assert!(ready.is_ready());
 
         let failed = JobPreflightEvaluation::Failed(JobPreflightFailureReport {
@@ -2078,7 +2810,7 @@ mod tests {
 
     #[test]
     fn preflight_evaluation_final_stage_accessors_follow_timeline_tail() {
-        let ready = JobPreflightEvaluation::Ready(JobPreflightReport {
+        let ready = JobPreflightEvaluation::Ready(Box::new(JobPreflightReport {
             planned: planned_job_for_tests(Vec::new(), 0),
             summary: super::PlannedJobSummary {
                 total_operations: 0,
@@ -2087,6 +2819,11 @@ mod tests {
                 disposition_rewrite_operations: 0,
                 label_rewrite_operations: 0,
                 stream_reorder_operations: 0,
+                embed_subtitle_operations: 0,
+                extract_subtitle_operations: 0,
+                copy_sidecar_subtitle_operations: 0,
+                remove_sidecar_subtitle_operations: 0,
+                subtitle_transcode_operations: 0,
                 audio_transcode_operations: 0,
                 video_transcode_operations: 0,
                 explanations: Vec::new(),
@@ -2110,7 +2847,7 @@ mod tests {
                 available_after_reserve_bytes: 0,
                 required_workspace_bytes: 0,
             },
-        });
+        }));
         assert_eq!(ready.final_stage(), Some("ready"));
         assert_eq!(ready.final_stage_code(), None);
 
@@ -2163,6 +2900,7 @@ mod tests {
     fn build_preflight_input_resolves_backup_path_from_policy() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let capabilities = CapabilitySnapshot {
@@ -2208,6 +2946,7 @@ mod tests {
     fn owned_preflight_input_as_borrowed_exposes_managed_paths() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let capabilities = CapabilitySnapshot {
@@ -2283,10 +3022,13 @@ mod tests {
     fn build_preflight_report_from_template_applies_video_policy_to_steps() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
                 codec: "hevc".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -2295,10 +3037,13 @@ mod tests {
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: vec![MediaStream {
                     stream_id: 1,
                     kind: StreamKind::Video,
                     codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
                     language: None,
                     title: None,
                     dispositions: Vec::new(),
@@ -2336,6 +3081,7 @@ mod tests {
                 video_policy: VideoTranscodePolicy {
                     intent: VideoTranscodeIntent::Anime,
                     hdr_color: HdrColorPolicy::PreserveHdr10,
+                    ..VideoTranscodePolicy::default()
                 },
             },
         );
@@ -2359,10 +3105,13 @@ mod tests {
     fn evaluate_preflight_from_template_builds_and_evaluates_ready_path() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
-                codec: "h264".to_string(),
+                codec: "hevc".to_string(),
+                channels: None,
+                channel_layout: None,
                 language: None,
                 title: None,
                 dispositions: Vec::new(),
@@ -2371,10 +3120,13 @@ mod tests {
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: vec![MediaStream {
                     stream_id: 1,
                     kind: StreamKind::Video,
                     codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
                     language: None,
                     title: None,
                     dispositions: Vec::new(),
@@ -2385,9 +3137,9 @@ mod tests {
         let capabilities = CapabilitySnapshot {
             ffmpeg_version: "7.0".to_string(),
             ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
+            codecs: vec!["h264".to_string(), "libx265".to_string()],
             codec_support: Vec::new(),
-            encoders: vec!["libx264".to_string()],
+            encoders: vec!["libx264".to_string(), "libx265".to_string()],
             ..CapabilitySnapshot::default()
         };
         let workspace_policy = WorkspacePolicy {
@@ -2435,11 +3187,13 @@ mod tests {
     fn evaluate_preflight_from_template_rejects_quarantine_path_matching_backup() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: Vec::new(),
             }),
             error: None,
@@ -2488,11 +3242,13 @@ mod tests {
     fn evaluate_preflight_from_template_rejects_unresolvable_backup_path() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/".to_string(),
+                container_formats: Vec::new(),
                 streams: Vec::new(),
             }),
             error: None,
@@ -2541,11 +3297,13 @@ mod tests {
     fn evaluate_preflight_from_template_rejects_backup_path_matching_source() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: Vec::new(),
             }),
             error: None,
@@ -2590,11 +3348,13 @@ mod tests {
     fn evaluate_preflight_from_template_rejects_backup_path_matching_output() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: Vec::new(),
             }),
             error: None,
@@ -2639,11 +3399,13 @@ mod tests {
     fn build_preflight_report_from_template_returns_backup_path_error() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/".to_string(),
+                container_formats: Vec::new(),
                 streams: Vec::new(),
             }),
             error: None,
@@ -2690,11 +3452,13 @@ mod tests {
     fn build_preflight_report_from_template_rejects_backup_path_equal_to_source() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: Vec::new(),
             }),
             error: None,
@@ -2740,11 +3504,13 @@ mod tests {
     fn build_preflight_report_from_template_rejects_backup_path_equal_to_output() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_format: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_formats: Vec::new(),
                 streams: Vec::new(),
             }),
             error: None,
@@ -2852,7 +3618,7 @@ mod tests {
 
     #[test]
     fn preflight_compact_audit_facts_project_ready_timeline_summary_and_capacity() {
-        let outcome = JobPreflightEvaluation::Ready(JobPreflightReport {
+        let outcome = JobPreflightEvaluation::Ready(Box::new(JobPreflightReport {
             planned: planned_job_for_tests(
                 vec![PlannedOperation {
                     kind: revaer_media_core::plan::OperationKind::Remux,
@@ -2867,6 +3633,11 @@ mod tests {
                 disposition_rewrite_operations: 0,
                 label_rewrite_operations: 0,
                 stream_reorder_operations: 0,
+                embed_subtitle_operations: 0,
+                extract_subtitle_operations: 0,
+                copy_sidecar_subtitle_operations: 0,
+                remove_sidecar_subtitle_operations: 0,
+                subtitle_transcode_operations: 0,
                 audio_transcode_operations: 0,
                 video_transcode_operations: 0,
                 explanations: Vec::new(),
@@ -2890,7 +3661,7 @@ mod tests {
                 available_after_reserve_bytes: 8_192,
                 required_workspace_bytes: 4_096,
             },
-        });
+        }));
 
         let facts = preflight_compact_audit_facts(&outcome);
 

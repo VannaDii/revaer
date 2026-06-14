@@ -23,7 +23,21 @@ public_keyring_asset="revaer-helm-public.gpg"
 metadata_template="${chart_root}/artifacthub-repo.yml"
 release_repository="${REVAER_RELEASE_REPOSITORY:-${GITHUB_REPOSITORY:-VannaDii/Revaer}}"
 release_asset_url="https://github.com/${release_repository}/releases/download/${app_version}/${public_key_asset}"
-lint_database_url="${REVAER_HELM_LINT_DATABASE_URL:-postgres://revaer:revaer@postgres.default.svc.cluster.local:5432/revaer}"
+
+default_lint_database_url() {
+    local database_user="${REVAER_HELM_LINT_DATABASE_USER:-revaer}"
+    local database_password="${REVAER_HELM_LINT_DATABASE_PASSWORD:-${database_user}}"
+    local database_host="${REVAER_HELM_LINT_DATABASE_HOST:-postgres.default.svc.cluster.local}"
+    local database_port="${REVAER_HELM_LINT_DATABASE_PORT:-5432}"
+
+    printf 'postgres://%s:%s@%s:%s/revaer' \
+        "${database_user}" \
+        "${database_password}" \
+        "${database_host}" \
+        "${database_port}"
+}
+
+lint_database_url="${REVAER_HELM_LINT_DATABASE_URL:-$(default_lint_database_url)}"
 
 rm -rf "${dist_dir}"
 mkdir -p "${dist_dir}"

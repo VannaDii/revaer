@@ -8,13 +8,16 @@ use crate::features::media::logic::{
 use crate::features::media::state::MediaJobDiagnostics;
 use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse,
-    MediaCapabilityRefreshResponse, MediaComplianceResponse, MediaDiscoveryPreviewRequest,
-    MediaDiscoveryPreviewResponse, MediaJobArtifactListResponse, MediaJobCompactAuditListResponse,
-    MediaJobListResponse, MediaJobOperationListResponse, MediaJobPlanReasonListResponse,
-    MediaJobResponse, MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
-    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
-    MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
-    MediaYamlImportRequest, MediaYamlValidationResponse,
+    MediaCapabilityRefreshResponse, MediaCompatibilityTargetListResponse,
+    MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
+    MediaComplianceResponse, MediaDiscoveryPreviewRequest, MediaDiscoveryPreviewResponse,
+    MediaJobArtifactListResponse, MediaJobCompactAuditListResponse, MediaJobListResponse,
+    MediaJobOperationListResponse, MediaJobPlanReasonListResponse, MediaJobResponse,
+    MediaJobVerificationCheckListResponse, MediaJobViolationListResponse, MediaPolicyListResponse,
+    MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileListResponse,
+    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
+    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
+    MediaYamlValidationResponse,
 };
 use crate::services::api::ApiClient;
 use uuid::Uuid;
@@ -148,6 +151,42 @@ pub(crate) async fn fetch_compliance(
 ) -> Result<MediaComplianceResponse, String> {
     client
         .get_api("/v1/media/compliance")
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) async fn fetch_compatibility_targets(
+    client: &ApiClient,
+) -> Result<MediaCompatibilityTargetListResponse, String> {
+    client
+        .get_api("/v1/media/compatibility-targets")
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) async fn upsert_compatibility_target(
+    client: &ApiClient,
+    request: &MediaCompatibilityTargetUpsertRequest,
+) -> Result<MediaCompatibilityTargetResponse, String> {
+    client
+        .post_api("/v1/media/compatibility-targets", request)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) async fn fetch_policies(client: &ApiClient) -> Result<MediaPolicyListResponse, String> {
+    client
+        .get_api("/v1/media/policies")
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) async fn upsert_policy(
+    client: &ApiClient,
+    request: &MediaPolicyUpsertRequest,
+) -> Result<MediaPolicyResponse, String> {
+    client
+        .post_api("/v1/media/policies", request)
         .await
         .map_err(|err| err.to_string())
 }

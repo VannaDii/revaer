@@ -90,11 +90,17 @@ pub fn explain_plan_selection(
 
 const fn operation_kind_code(kind: OperationKind) -> &'static str {
     match kind {
+        OperationKind::NoOp => "no_op",
         OperationKind::Remux => "remux",
         OperationKind::MetadataRewrite => "metadata_rewrite",
         OperationKind::DispositionRewrite => "disposition_rewrite",
         OperationKind::LabelRewrite => "label_rewrite",
         OperationKind::StreamReorder => "stream_reorder",
+        OperationKind::EmbedSubtitle => "embed_subtitle",
+        OperationKind::ExtractSubtitle => "extract_subtitle",
+        OperationKind::CopySidecarSubtitle => "copy_sidecar_subtitle",
+        OperationKind::RemoveSidecarSubtitle => "remove_sidecar_subtitle",
+        OperationKind::SubtitleTranscode => "subtitle_transcode",
         OperationKind::AudioTranscode => "audio_transcode",
         OperationKind::VideoTranscode => "video_transcode",
     }
@@ -102,6 +108,7 @@ const fn operation_kind_code(kind: OperationKind) -> &'static str {
 
 fn selected_operation_reason(operation: &PlannedOperation) -> String {
     match operation.kind {
+        OperationKind::NoOp => "source already satisfies desired output".to_string(),
         OperationKind::AudioTranscode => format!(
             "audio codec mismatch requires {} stream_id={}",
             operation_kind_code(operation.kind),
@@ -118,6 +125,17 @@ fn selected_operation_reason(operation: &PlannedOperation) -> String {
         OperationKind::LabelRewrite => "stream label differs from policy".to_string(),
         OperationKind::StreamReorder => {
             "stream order differs from deterministic ranking".to_string()
+        }
+        OperationKind::EmbedSubtitle => "existing sidecar must be embedded".to_string(),
+        OperationKind::ExtractSubtitle => "embedded subtitle must be extracted".to_string(),
+        OperationKind::CopySidecarSubtitle => {
+            "existing sidecar must be materialized in managed output".to_string()
+        }
+        OperationKind::RemoveSidecarSubtitle => {
+            "existing sidecar must be removed after verified replacement".to_string()
+        }
+        OperationKind::SubtitleTranscode => {
+            "subtitle codec mismatch requires supported text or copy conversion".to_string()
         }
     }
 }
