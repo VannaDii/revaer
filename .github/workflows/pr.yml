@@ -98,7 +98,7 @@ jobs:
   coverage:
     name: Check Coverage
     runs-on: ubuntu-latest
-    needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
+    needs: [fmt, lint, check, helm-lint, supply-chain, load-matrix, instruction-drift]
     permissions:
       contents: read
       pull-requests: read
@@ -156,7 +156,7 @@ jobs:
   native-it:
     name: Native Integration Tests
     runs-on: ubuntu-latest
-    needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
+    needs: [fmt, lint, check, helm-lint, supply-chain, load-matrix, instruction-drift]
     env:
       REVAER_NATIVE_IT: "1"
       DOCKER_HOST: unix:///var/run/docker.sock
@@ -173,7 +173,7 @@ jobs:
   media-conversion:
     name: Media Conversion Fixtures
     runs-on: ubuntu-latest
-    needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
+    needs: [fmt, lint, check, helm-lint, supply-chain, load-matrix, instruction-drift]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
@@ -249,7 +249,7 @@ jobs:
   feature-matrix:
     name: Feature Matrix
     runs-on: ubuntu-latest
-    needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
+    needs: [fmt, lint, check, helm-lint, supply-chain, load-matrix, instruction-drift]
     env:
       REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
       DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
@@ -290,7 +290,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
-    needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
+    needs: [fmt, lint, check, helm-lint, supply-chain, load-matrix, instruction-drift]
     env:
       E2E_API_BASE_URL: http://localhost:7070
       E2E_BASE_URL: http://localhost:8080
@@ -410,32 +410,8 @@ jobs:
       HELM_GPG_PRIVATE: ${{ secrets.HELM_GPG_PRIVATE }}
       HELM_GPG_PUBLIC: ${{ secrets.HELM_GPG_PUBLIC }}
 
-  audit:
-    name: Run Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: ./.github/actions/setup-revaer
-        with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-
-      - name: Audit
-        run: just audit
-
-  deny:
-    name: Check Deny
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: ./.github/actions/setup-revaer
-        with:
-          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-
-      - name: Deny
-        run: just deny
-
-  udeps:
-    name: Check Unused Deps
+  supply-chain:
+    name: Supply Chain Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -443,6 +419,36 @@ jobs:
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           apt-profile: base
+
+      - name: Restore Cargo supply-chain tool cache
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/cargo-udeps
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: ${{ runner.os }}-cargo-supply-chain-tools-audit-0.22.0-deny-0.18.9-udeps-0.1.57
+
+      - name: Restore Cargo advisory cache
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.cargo/advisory-db
+          key: ${{ runner.os }}-cargo-advisory-db-${{ hashFiles('Cargo.lock', 'deny.toml', '.secignore') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-advisory-db-
+
+      - name: Install supply-chain cargo tools
+        uses: taiki-e/install-action@cf39a74df4a72510be4e5b63348d61067f11e64a # v2.75.0
+        with:
+          tool: cargo-audit@0.22.0,cargo-deny@0.18.9,cargo-udeps@0.1.57
+
+      - name: Audit
+        run: just audit
+
+      - name: Deny
+        run: just deny
 
       - name: Unused Deps
         run: just udeps

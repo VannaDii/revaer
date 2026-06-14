@@ -105,13 +105,11 @@ udeps:
     else \
         install_udeps; \
     fi
-    if ! cargo +stable udeps --workspace --all-targets >/dev/null 2>&1; then \
-        echo "cargo-udeps: stable toolchain lacks required -Z flags, retrying with nightly"; \
-        if ! rustup toolchain list | grep -q nightly; then \
-            rustup toolchain install nightly --no-self-update; \
-        fi; \
-        cargo +nightly udeps --workspace --all-targets; \
-    fi
+    udeps_toolchain="${REVAER_UDEPS_TOOLCHAIN:-nightly}"; \
+    if ! rustup run "${udeps_toolchain}" rustc --version >/dev/null 2>&1; then \
+        rustup toolchain install "${udeps_toolchain}" --no-self-update; \
+    fi; \
+    cargo +"${udeps_toolchain}" udeps --workspace --all-targets
 
 sqlx-install:
     required_sqlx_version="0.8.6"; \

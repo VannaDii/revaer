@@ -351,3 +351,4 @@
     -   [319: Media conversion fixture plan](adr/319-media-conversion-fixture-plan.md)
     -   [320: Media conversion fixture suite](adr/320-media-conversion-fixture-suite.md)
     -   [321: Media conversion CI report](adr/321-media-conversion-ci-report.md)
+    -   [322: Supply chain CI tool cache](adr/322-supply-chain-ci-tool-cache.md)
