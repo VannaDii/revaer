@@ -349,3 +349,4 @@
     -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
     -   [318: Media transcoding foundation](adr/318-media-transcoding-foundation.md)
     -   [322: Supply Chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)
+    -   [323: Media review closeout](adr/323-media-review-closeout.md)
