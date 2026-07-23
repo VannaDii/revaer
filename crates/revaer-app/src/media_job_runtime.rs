@@ -1404,7 +1404,7 @@ impl MediaJobRuntime {
         let compliance_links = feature_names(&snapshot.features, "compliance", true);
         let absent_capabilities = feature_names(&snapshot.features, "absent", false);
 
-        Ok(CapabilitySnapshot {
+        let runtime_snapshot = CapabilitySnapshot {
             ffmpeg_version: snapshot.ffmpeg_version,
             ffprobe_version: snapshot.ffprobe_version,
             codecs,
@@ -1424,7 +1424,13 @@ impl MediaJobRuntime {
             ffmpeg_enable_nonfree,
             compliance_links,
             absent_capabilities,
-        })
+        };
+        if !runtime_snapshot.is_valid() {
+            return Err(MediaJobRuntimeError::InvalidCapability(
+                "media_capability_snapshot_invalid",
+            ));
+        }
+        Ok(runtime_snapshot)
     }
 
     async fn persist_ready_plan(

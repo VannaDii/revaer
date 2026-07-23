@@ -2906,12 +2906,7 @@ mod tests {
             snapshot: CapabilitySnapshot {
                 ffmpeg_version: "7.1".to_string(),
                 ffprobe_version: "7.1".to_string(),
-                codecs: vec![
-                    "h264".to_string(),
-                    "hevc".to_string(),
-                    "h264".to_string(),
-                    "  ".to_string(),
-                ],
+                codecs: vec!["h264".to_string(), "hevc".to_string()],
                 codec_support: vec![
                     CodecCapability {
                         name: "h264".to_string(),
@@ -3511,12 +3506,12 @@ mod tests {
 
         let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
         assert_profile_is_listed(&service, profile_id).await?;
+        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
 
         let job_id = create_app_media_job(&service, actor_user_public_id, profile_id).await?;
         assert_job_records_round_trip(&service, profile_id, job_id).await?;
         assert_job_cancel_retry(&service, job_id).await?;
 
-        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
         assert_yaml_round_trip(&service, actor_user_public_id).await?;
 
         Ok(())

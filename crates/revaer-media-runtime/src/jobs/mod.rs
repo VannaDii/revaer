@@ -1554,13 +1554,34 @@ mod tests {
         preflight_timeline_for_error, require_valid_capability_snapshot, resolve_backup_path,
         resolve_quarantine_path, summarize_planned_job,
     };
-    use crate::capabilities::CapabilitySnapshot;
+    use crate::capabilities::{CapabilitySnapshot, CodecCapability};
     use crate::execute::{HdrColorPolicy, VideoTranscodeIntent, VideoTranscodePolicy};
     use crate::inspect::{InspectAdapter, InspectError};
     use crate::workspace::{WorkspaceError, WorkspacePolicy};
     use revaer_media_core::compliance::{Status, report_for_status};
     use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
+
+    fn capability_snapshot_for_tests(codecs: &[&str], encoders: &[&str]) -> CapabilitySnapshot {
+        CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: codecs.iter().map(|codec| (*codec).to_string()).collect(),
+            codec_support: codecs
+                .iter()
+                .map(|codec| CodecCapability {
+                    name: (*codec).to_string(),
+                    encode_supported: true,
+                    decode_supported: true,
+                })
+                .collect(),
+            encoders: encoders
+                .iter()
+                .map(|encoder| (*encoder).to_string())
+                .collect(),
+            ..CapabilitySnapshot::default()
+        }
+    }
 
     #[test]
     fn plan_job_builds_operations_and_estimate() {
@@ -2007,14 +2028,7 @@ mod tests {
 
     #[test]
     fn require_capability_snapshot_accepts_valid_snapshot() {
-        let valid = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: vec!["libx265".to_string()],
-            ..CapabilitySnapshot::default()
-        };
+        let valid = capability_snapshot_for_tests(&["h264"], &["libx265"]);
         assert!(require_valid_capability_snapshot(Some(&valid)).is_ok());
     }
 
@@ -2027,14 +2041,7 @@ mod tests {
             }],
             100,
         );
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: vec!["libx264".to_string()],
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         assert_eq!(
             build_job_execution_steps_with_capabilities(
                 "/input/movie.mkv",
@@ -2055,14 +2062,7 @@ mod tests {
             }],
             100,
         );
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: vec!["libx264".to_string()],
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let steps_result = build_job_execution_steps_with_replacement(
             "/input/movie.mkv",
             "/output/movie.mkv",
@@ -2288,14 +2288,7 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["libx265".to_string()],
-            codec_support: Vec::new(),
-            encoders: vec!["libx265".to_string()],
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["libx265"], &["libx265"]);
         let policy = WorkspacePolicy {
             max_bytes: 100_000,
             reserve_bytes: 1_000,
@@ -2371,14 +2364,7 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: vec!["libx265".to_string(), "aac".to_string()],
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx265", "aac"]);
         let policy = WorkspacePolicy {
             max_bytes: 100_000,
             reserve_bytes: 1_000,
@@ -2903,14 +2889,7 @@ mod tests {
             container_format: None,
             streams: Vec::new(),
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: vec!["libx264".to_string()],
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -2949,14 +2928,7 @@ mod tests {
             container_format: None,
             streams: Vec::new(),
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: Vec::new(),
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -2988,14 +2960,7 @@ mod tests {
             }],
             1024,
         );
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: Vec::new(),
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
 
         let steps = build_job_execution_steps_with_replacement_policy(
             "/input/movie.mkv",
@@ -3051,14 +3016,8 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["libx265".to_string(), "hevc_nvenc".to_string()],
-            codec_support: Vec::new(),
-            encoders: vec!["libx265".to_string(), "hevc_nvenc".to_string()],
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities =
+            capability_snapshot_for_tests(&["libx265", "hevc_nvenc"], &["libx265", "hevc_nvenc"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -3134,14 +3093,8 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string(), "libx265".to_string()],
-            codec_support: Vec::new(),
-            encoders: vec!["libx264".to_string(), "libx265".to_string()],
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities =
+            capability_snapshot_for_tests(&["h264", "libx265"], &["libx264", "libx265"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -3198,14 +3151,7 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: Vec::new(),
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -3253,14 +3199,7 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: Vec::new(),
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -3308,14 +3247,7 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: Vec::new(),
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -3359,14 +3291,7 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: Vec::new(),
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -3410,14 +3335,7 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: Vec::new(),
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -3463,14 +3381,7 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: Vec::new(),
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,
@@ -3515,14 +3426,7 @@ mod tests {
             }),
             error: None,
         };
-        let capabilities = CapabilitySnapshot {
-            ffmpeg_version: "7.0".to_string(),
-            ffprobe_version: "7.0".to_string(),
-            codecs: vec!["h264".to_string()],
-            codec_support: Vec::new(),
-            encoders: Vec::new(),
-            ..CapabilitySnapshot::default()
-        };
+        let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
         let workspace_policy = WorkspacePolicy {
             max_bytes: 1_000_000,
             reserve_bytes: 10_000,

@@ -60,12 +60,13 @@ pub struct CodecCapability {
 }
 
 impl CapabilitySnapshot {
-    /// Returns true when required binaries and at least one codec are present.
+    /// Returns true when required binaries and supported codecs are present.
     #[must_use]
     pub fn is_valid(&self) -> bool {
         !self.ffmpeg_version.trim().is_empty()
             && !self.ffprobe_version.trim().is_empty()
             && !self.codecs.is_empty()
+            && codec_support_covers_codecs(&self.codecs, &self.codec_support)
             && !self.encoders.is_empty()
             && !self.decoders.is_empty()
             && !self.muxers.is_empty()
@@ -92,6 +93,18 @@ impl CapabilitySnapshot {
                 decode_supported: false,
             })
     }
+}
+
+fn codec_support_covers_codecs(codecs: &[String], support: &[CodecCapability]) -> bool {
+    !support.is_empty()
+        && codecs.iter().all(|codec| {
+            let normalized = codec.trim();
+            !normalized.is_empty()
+                && support.iter().any(|item| {
+                    item.name.eq_ignore_ascii_case(normalized)
+                        && (item.encode_supported || item.decode_supported)
+                })
+        })
 }
 
 impl Default for CapabilitySnapshot {
@@ -241,6 +254,7 @@ impl CapabilityDetector for FfmpegCapabilityDetector {
         }
         let codecs = codec_support
             .iter()
+            .filter(|item| item.encode_supported || item.decode_supported)
             .map(|item| item.name.clone())
             .collect::<Vec<_>>();
         let encoders = parse_tool_names(&encoders_output);
@@ -534,6 +548,56 @@ mod tests {
     }
 
     #[test]
+    fn invalid_when_codec_support_missing_for_advertised_codec() {
+        let snapshot = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+            codec_support: Vec::new(),
+            encoders: vec!["libx264".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+
+        assert!(!snapshot.is_valid());
+    }
+
+    #[test]
+    fn invalid_when_codec_support_has_no_supported_direction() {
+        let snapshot = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+            codec_support: vec![CodecCapability {
+                name: "h264".to_string(),
+                encode_supported: false,
+                decode_supported: false,
+            }],
+            encoders: vec!["libx264".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+
+        assert!(!snapshot.is_valid());
+    }
+
+    #[test]
+    fn decode_only_codec_support_can_be_valid() {
+        let snapshot = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["h264".to_string()],
+            codec_support: vec![CodecCapability {
+                name: "H264".to_string(),
+                encode_supported: false,
+                decode_supported: true,
+            }],
+            encoders: vec!["libx264".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+
+        assert!(snapshot.is_valid());
+    }
+
+    #[test]
     fn unavailable_detector_returns_error() {
         let detector = UnavailableCapabilityDetector;
         assert_eq!(detector.detect(), Err(CapabilityDetectError::Unavailable));
@@ -581,7 +645,7 @@ mod tests {
         );
         outputs.insert(
             "ffmpeg -codecs".to_string(),
-            "Codecs:\n DEVILS h264 H.264\n DEVILS hevc H.265\n".to_string(),
+            "Codecs:\n DEVILS h264 H.264\n ..V.L. evc MPEG-5 EVC\n DEVILS hevc H.265\n".to_string(),
         );
         outputs.insert(
             "ffmpeg -encoders".to_string(),
@@ -630,6 +694,11 @@ mod tests {
         assert_eq!(
             snapshot.codec_support,
             vec![
+                CodecCapability {
+                    name: "evc".to_string(),
+                    encode_supported: false,
+                    decode_supported: false,
+                },
                 CodecCapability {
                     name: "h264".to_string(),
                     encode_supported: true,

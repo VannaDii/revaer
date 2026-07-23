@@ -362,3 +362,4 @@
     -   [334: Media chapter preservation verification](adr/334-media-chapter-preservation-verification.md)
     -   [335: Media stream metadata diff planning](adr/335-media-stream-metadata-diff-planning.md)
     -   [336: Media data target fail-closed validation](adr/336-media-data-target-fail-closed.md)
+    -   [337: Media capability codec support validation](adr/337-media-capability-codec-support-validation.md)
