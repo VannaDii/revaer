@@ -328,4 +328,6 @@
 -   [314](314-artifacthub-verification-and-official-readiness.md) – Artifact Hub verification and official readiness
 -   [315](315-indexer-import-job-runtime-worker.md) – Indexer import job runtime worker
 -   [316](316-import-runtime-gap-closure-followup.md) – Import runtime gap-closure follow-up
--   [317](317-media-transcoding-foundation.md) – Media transcoding foundation
+-   [317](317-media-transcoding-foundation.md) - Media transcoding foundation and PR 31 implementation record
+-   [322](322-supply-chain-ci-tool-cache.md) - Supply chain CI and advisory remediation
+-   [323](323-media-review-closeout.md) - Media review closeout
