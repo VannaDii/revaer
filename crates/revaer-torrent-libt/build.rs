@@ -6,6 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const MIN_VERSION: &str = "2.0.10";
+const CXXBRIDGE_RUST_HEADER: &str = "rust/cxx.h";
+const CXXBRIDGE_CRATE_HEADER: &str = "revaer-torrent-libt/src/ffi/bridge.rs.h";
 
 fn main() {
     if let Err(err) = try_main() {
@@ -137,8 +139,15 @@ fn maybe_write_compile_commands(
         .parent()
         .and_then(Path::parent)
         .ok_or(BuildError::MissingWorkspaceRoot)?;
+    let staged_include_dirs = stage_cxxbridge_headers(&output_path, compiler_args)?;
     let output_object = workspace_root.join("target/sonar/session.cpp.o");
-    let command = compile_command(compiler_path, compiler_args, &source_path, &output_object);
+    let command = compile_command(
+        compiler_path,
+        compiler_args,
+        &staged_include_dirs,
+        &source_path,
+        &output_object,
+    );
     let contents = format!(
         "[\n  {{\n    \"directory\": \"{}\",\n    \"file\": \"{}\",\n    \"command\": \"{}\"\n  }}\n]\n",
         json_escape(directory.to_string_lossy().as_ref()),
@@ -153,16 +162,86 @@ fn maybe_write_compile_commands(
     fs::write(output_path, contents).map_err(|source| BuildError::WriteCompileCommands { source })
 }
 
+fn stage_cxxbridge_headers(
+    output_path: &Path,
+    compiler_args: &[OsString],
+) -> Result<Vec<PathBuf>, BuildError> {
+    let output_dir = output_path
+        .parent()
+        .ok_or(BuildError::MissingCompileCommandsDir)?;
+    let staged_include_dir = output_dir.join("cxxbridge").join("include");
+    for relative_header in [CXXBRIDGE_RUST_HEADER, CXXBRIDGE_CRATE_HEADER] {
+        let source_header = cxxbridge_header_source(compiler_args, relative_header)?;
+        let staged_header = staged_include_dir.join(relative_header);
+        stage_header(&source_header, &staged_header, relative_header)?;
+    }
+    Ok(vec![staged_include_dir])
+}
+
+fn cxxbridge_header_source(
+    compiler_args: &[OsString],
+    relative_header: &'static str,
+) -> Result<PathBuf, BuildError> {
+    compiler_include_dirs(compiler_args)
+        .into_iter()
+        .map(|include_dir| include_dir.join(relative_header))
+        .find(|header| header.is_file())
+        .ok_or(BuildError::MissingCxxbridgeHeader { relative_header })
+}
+
+fn stage_header(
+    source_header: &Path,
+    staged_header: &Path,
+    relative_header: &'static str,
+) -> Result<(), BuildError> {
+    let staged_header_dir = staged_header
+        .parent()
+        .ok_or(BuildError::MissingCxxbridgeHeader { relative_header })?;
+    fs::create_dir_all(staged_header_dir)
+        .map_err(|source| BuildError::CreateCxxbridgeHeaderDir { source })?;
+    fs::copy(source_header, staged_header)
+        .map_err(|source| BuildError::CopyCxxbridgeHeader { source })?;
+    Ok(())
+}
+
+fn compiler_include_dirs(compiler_args: &[OsString]) -> Vec<PathBuf> {
+    let mut include_dirs = Vec::new();
+    let mut expects_include_dir = false;
+    for argument in compiler_args {
+        let argument_text = argument.to_string_lossy();
+        if expects_include_dir {
+            include_dirs.push(PathBuf::from(argument_text.as_ref()));
+            expects_include_dir = false;
+            continue;
+        }
+        if argument_text == "-I" {
+            expects_include_dir = true;
+            continue;
+        }
+        if let Some(include_dir) = argument_text.strip_prefix("-I")
+            && !include_dir.is_empty()
+        {
+            include_dirs.push(PathBuf::from(include_dir));
+        }
+    }
+    include_dirs
+}
+
 fn compile_command(
     compiler_path: &Path,
     compiler_args: &[OsString],
+    extra_include_dirs: &[PathBuf],
     source_path: &Path,
     output_object: &Path,
 ) -> String {
-    let mut parts = Vec::with_capacity(compiler_args.len() + 5);
+    let mut parts = Vec::with_capacity(compiler_args.len() + extra_include_dirs.len() * 2 + 5);
     parts.push(shell_escape(compiler_path.to_string_lossy().as_ref()));
     for argument in compiler_args {
         parts.push(shell_escape(argument.to_string_lossy().as_ref()));
+    }
+    for include_dir in extra_include_dirs {
+        parts.push("-I".to_string());
+        parts.push(shell_escape(include_dir.to_string_lossy().as_ref()));
     }
     parts.push("-c".to_string());
     parts.push(shell_escape(source_path.to_string_lossy().as_ref()));
@@ -277,11 +356,15 @@ fn parse_version_part(value: Option<&str>) -> Option<u32> {
 enum BuildError {
     MissingManifestDir,
     MissingWorkspaceRoot,
+    MissingCompileCommandsDir,
     MissingIncludeDir,
+    MissingCxxbridgeHeader { relative_header: &'static str },
     PkgConfig(pkg_config::Error),
     ReadHeader { source: std::io::Error },
     ResolveCompileCommandsPath { source: std::io::Error },
     CreateCompileCommandsDir { source: std::io::Error },
+    CreateCxxbridgeHeaderDir { source: std::io::Error },
+    CopyCxxbridgeHeader { source: std::io::Error },
     WriteCompileCommands { source: std::io::Error },
     MissingDefine,
     InvalidMinVersion,
@@ -293,7 +376,11 @@ impl fmt::Display for BuildError {
         match self {
             Self::MissingManifestDir => write!(f, "cargo manifest directory missing"),
             Self::MissingWorkspaceRoot => write!(f, "workspace root unavailable"),
+            Self::MissingCompileCommandsDir => write!(f, "compile commands directory unavailable"),
             Self::MissingIncludeDir => write!(f, "libtorrent include directory missing"),
+            Self::MissingCxxbridgeHeader { relative_header } => {
+                write!(f, "generated CXX bridge header missing: {relative_header}")
+            }
             Self::PkgConfig(_) => write!(f, "libtorrent pkg-config probe failed"),
             Self::ReadHeader { .. } => write!(f, "libtorrent version header read failed"),
             Self::ResolveCompileCommandsPath { .. } => {
@@ -301,6 +388,12 @@ impl fmt::Display for BuildError {
             }
             Self::CreateCompileCommandsDir { .. } => {
                 write!(f, "compile commands directory creation failed")
+            }
+            Self::CreateCxxbridgeHeaderDir { .. } => {
+                write!(f, "staged CXX bridge header directory creation failed")
+            }
+            Self::CopyCxxbridgeHeader { .. } => {
+                write!(f, "generated CXX bridge header staging failed")
             }
             Self::WriteCompileCommands { .. } => {
                 write!(f, "compile commands write failed")
@@ -319,6 +412,8 @@ impl Error for BuildError {
             Self::ReadHeader { source, .. } => Some(source),
             Self::ResolveCompileCommandsPath { source, .. } => Some(source),
             Self::CreateCompileCommandsDir { source, .. } => Some(source),
+            Self::CreateCxxbridgeHeaderDir { source, .. } => Some(source),
+            Self::CopyCxxbridgeHeader { source, .. } => Some(source),
             Self::WriteCompileCommands { source, .. } => Some(source),
             _ => None,
         }
