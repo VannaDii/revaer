@@ -133,6 +133,8 @@ pub struct NavLabels {
     pub indexers: String,
     /// Search nav label.
     pub search: String,
+    /// Media nav label.
+    pub media: String,
     /// Torrents nav label.
     pub torrents: String,
     /// Logs nav label.
