@@ -16,10 +16,12 @@
 //! Filesystem post-processing pipeline for completed torrents.
 //! Layout: `model/` (request types), `error.rs` (error types), `service/` (pipeline + IO).
 
+pub mod capacity;
 pub mod error;
 pub mod model;
 pub mod service;
 
+pub use capacity::available_bytes;
 pub use error::{FsOpsError, FsOpsResult};
 pub use model::FsOpsRequest;
 pub use service::*;
