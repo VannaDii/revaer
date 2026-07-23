@@ -203,6 +203,7 @@ fn normalize_stream_inspection(stream: &FfprobeStream) -> Result<StreamInspectio
         profile: normalize_optional_text(stream.profile.as_deref()),
         duration_millis: parse_optional_duration_millis(stream.duration.as_deref())?,
         bit_rate: parse_optional_u64(stream.bit_rate.as_deref(), "stream bit rate")?,
+        max_bit_rate: parse_optional_u64(stream.max_bit_rate.as_deref(), "stream max bit rate")?,
         sample_rate: sample_rate_for_stream(&stream.codec_type, stream.sample_rate.as_deref())?,
         width: stream.width.filter(|value| *value > 0),
         height: stream.height.filter(|value| *value > 0),

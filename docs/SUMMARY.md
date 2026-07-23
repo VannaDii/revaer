@@ -361,6 +361,7 @@
     -   [419: PR 76 media data review remediation](adr/419-pr76-media-data-review-remediation.md)
     -   [420: Media text input contract](adr/420-media-text-input-contract.md)
     -   [427: Runtime execution review hardening](adr/427-runtime-execution-review-hardening.md)
+    -   [429: PR 81 job runtime review closeout](adr/429-pr81-job-runtime-review-closeout.md)
     -   [430: Bounded media discovery and read models](adr/430-bounded-media-discovery-and-read-models.md)
     -   [431: Lazy media job diagnostics UI](adr/431-lazy-media-job-diagnostics-ui.md)
     -   [432: Docs OpenAPI media contract](adr/432-docs-openapi-media-contract.md)

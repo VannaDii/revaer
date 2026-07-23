@@ -8,6 +8,7 @@ use revaer_media_core::target::{DesiredSidecarOutput, SidecarEmbedding, SidecarO
 use revaer_media_core::verify::{verify_plan, verify_unique_stream_ids};
 use std::fs;
 use std::io;
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
@@ -300,6 +301,27 @@ pub enum HdrColorPolicy {
 }
 
 /// Per-stream video constraints selected by an immutable desired target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaxBitrateBps(NonZeroU32);
+
+impl MaxBitrateBps {
+    /// Construct a positive maximum bitrate.
+    #[must_use]
+    pub const fn new(value: u32) -> Option<Self> {
+        match NonZeroU32::new(value) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    /// Return the maximum bitrate in bits per second.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+/// Per-stream video constraints selected by an immutable desired target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoStreamConstraints {
     /// Desired stream id after target compilation.
@@ -308,8 +330,8 @@ pub struct VideoStreamConstraints {
     pub profile: Option<String>,
     /// Desired encoder level in the toolchain's accepted representation.
     pub level: Option<String>,
-    /// Maximum permitted encoded bitrate in bits per second.
-    pub max_bitrate_bps: Option<u32>,
+    /// Maximum permitted bitrate in bits per second.
+    pub max_bitrate_bps: Option<MaxBitrateBps>,
     /// Desired color primaries.
     pub color_primaries: Option<String>,
     /// Desired transfer characteristic.
@@ -402,6 +424,101 @@ pub enum ExecutionStep {
         /// Verified output path.
         output_path: String,
     },
+}
+
+/// Stable audit mapping emitted for one compiled execution step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionStepAudit {
+    /// Stable identifier derived from the compiled step order and kind.
+    pub step_id: String,
+    /// Zero-based compiled step index.
+    pub step_index: usize,
+    /// Logical operation indices satisfied by this step.
+    pub operation_indices: Vec<usize>,
+}
+
+/// Emit a stable mapping from compiled steps to the logical operations they satisfy.
+#[must_use]
+pub fn compile_execution_step_audits(
+    operations: &[PlannedOperation],
+    steps: &[ExecutionStep],
+) -> Vec<ExecutionStepAudit> {
+    let mut audits = steps
+        .iter()
+        .enumerate()
+        .map(|(step_index, step)| ExecutionStepAudit {
+            step_id: format!("step-{step_index:04}-{}", execution_step_kind(step)),
+            step_index,
+            operation_indices: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    let mut assigned = vec![false; operations.len()];
+    let primary_command = steps
+        .iter()
+        .position(|step| matches!(step, ExecutionStep::Command { .. }));
+
+    if let Some(step_index) = primary_command {
+        for (operation_index, operation) in operations.iter().enumerate() {
+            if !matches!(
+                operation.kind,
+                OperationKind::CopySidecarSubtitle
+                    | OperationKind::ExtractSubtitle
+                    | OperationKind::RemoveSidecarSubtitle
+            ) {
+                audits[step_index].operation_indices.push(operation_index);
+                assigned[operation_index] = true;
+            }
+        }
+    }
+
+    for (step_index, step) in steps.iter().enumerate() {
+        let operation_kind = match step {
+            ExecutionStep::CopySidecarSubtitle { .. } => Some(OperationKind::CopySidecarSubtitle),
+            ExecutionStep::Command { .. } if Some(step_index) != primary_command => {
+                Some(OperationKind::ExtractSubtitle)
+            }
+            ExecutionStep::AtomicReplace { .. } => Some(OperationKind::RemoveSidecarSubtitle),
+            _ => None,
+        };
+        let Some(operation_kind) = operation_kind else {
+            continue;
+        };
+        for (operation_index, operation) in operations.iter().enumerate() {
+            if !assigned[operation_index] && operation.kind == operation_kind {
+                audits[step_index].operation_indices.push(operation_index);
+                assigned[operation_index] = true;
+                if operation_kind != OperationKind::RemoveSidecarSubtitle {
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(fallback_step) = primary_command.or_else(|| {
+        steps
+            .iter()
+            .position(|step| matches!(step, ExecutionStep::AtomicReplace { .. }))
+    }) {
+        for (operation_index, was_assigned) in assigned.into_iter().enumerate() {
+            if !was_assigned {
+                audits[fallback_step]
+                    .operation_indices
+                    .push(operation_index);
+            }
+        }
+    }
+    audits
+}
+
+const fn execution_step_kind(step: &ExecutionStep) -> &'static str {
+    match step {
+        ExecutionStep::Command { .. } => "command",
+        ExecutionStep::CopySidecarSubtitle { .. } => "copy-sidecar",
+        ExecutionStep::BackupSource { .. } => "backup",
+        ExecutionStep::VerifyOutput { .. } => "verify",
+        ExecutionStep::QuarantineFailedOutput { .. } => "quarantine",
+        ExecutionStep::AtomicReplace { .. } => "replace",
+    }
 }
 
 /// Build ffmpeg-compatible argv vector without shell-string construction.
@@ -901,7 +1018,12 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
 
     for stream in &desired.streams {
         args.push("-map".to_string());
-        args.push(desired_stream_map(source, stream, sidecar_embeddings)?);
+        args.push(desired_stream_map(
+            source,
+            desired,
+            stream,
+            sidecar_embeddings,
+        )?);
     }
 
     append_desired_stream_args(
@@ -943,6 +1065,7 @@ fn append_desired_stream_args(
         let constraints = audio_constraints_for_stream(policy, stream);
         let output_codec = output_codec_for_desired_with_audio_policy(
             source,
+            desired,
             stream,
             sidecar_embeddings,
             video_encoder,
@@ -1109,12 +1232,23 @@ fn operation_plan_error(error: &'static str) -> BuildArgsError {
 
 fn source_stream_for_desired<'a>(
     source: &'a MediaGraph,
+    desired_graph: &DesiredGraph,
     desired: &MediaStream,
 ) -> Result<&'a MediaStream, BuildArgsError> {
+    let source_stream_id = if desired_graph.stream_bindings.is_empty() {
+        desired.stream_id
+    } else {
+        desired_graph
+            .stream_bindings
+            .iter()
+            .find(|binding| binding.output_stream_id == desired.stream_id)
+            .and_then(|binding| binding.source_stream_id)
+            .ok_or(BuildArgsError::DesiredStreamMissing(desired.stream_id))?
+    };
     let source_stream = source
         .streams
         .iter()
-        .find(|stream| stream.stream_id == desired.stream_id)
+        .find(|stream| stream.stream_id == source_stream_id)
         .ok_or(BuildArgsError::DesiredStreamMissing(desired.stream_id))?;
     if source_stream.kind != desired.kind {
         return Err(BuildArgsError::DesiredStreamKindMismatch(desired.stream_id));
@@ -1124,10 +1258,11 @@ fn source_stream_for_desired<'a>(
 
 fn desired_stream_map(
     source: &MediaGraph,
+    desired_graph: &DesiredGraph,
     desired: &MediaStream,
     embeddings: &[SidecarEmbedding],
 ) -> Result<String, BuildArgsError> {
-    match source_stream_for_desired(source, desired) {
+    match source_stream_for_desired(source, desired_graph, desired) {
         Ok(source_stream) => return Ok(format!("0:{}", source_stream.stream_id)),
         Err(BuildArgsError::DesiredStreamMissing(_)) => {}
         Err(error) => return Err(error),
@@ -1141,11 +1276,12 @@ fn desired_stream_map(
 
 fn output_codec_for_desired(
     source: &MediaGraph,
+    desired_graph: &DesiredGraph,
     desired: &MediaStream,
     embeddings: &[SidecarEmbedding],
     video_encoder: &str,
 ) -> Result<String, BuildArgsError> {
-    match source_stream_for_desired(source, desired) {
+    match source_stream_for_desired(source, desired_graph, desired) {
         Ok(source_stream) => {
             return output_codec_for_stream(source_stream, desired, video_encoder);
         }
@@ -1191,7 +1327,7 @@ fn verify_desired_graph_stream_ids(
         }
     }
     for stream in &desired.streams {
-        desired_stream_map(source, stream, embeddings)?;
+        desired_stream_map(source, desired, stream, embeddings)?;
     }
     Ok(())
 }
@@ -1368,13 +1504,19 @@ fn output_codec_for_stream(
 
 fn output_codec_for_desired_with_audio_policy(
     source: &MediaGraph,
+    desired_graph: &DesiredGraph,
     desired: &MediaStream,
     sidecar_embeddings: &[SidecarEmbedding],
     video_encoder: &str,
     audio_constraints: Option<&AudioStreamConstraints>,
 ) -> Result<String, BuildArgsError> {
-    let output_codec =
-        output_codec_for_desired(source, desired, sidecar_embeddings, video_encoder)?;
+    let output_codec = output_codec_for_desired(
+        source,
+        desired_graph,
+        desired,
+        sidecar_embeddings,
+        video_encoder,
+    )?;
     if output_codec == "copy" && audio_constraints_require_filter(audio_constraints) {
         return audio_encoder_for_codec(desired.codec.trim());
     }
@@ -1492,6 +1634,7 @@ fn unsupported_encoder_label(output_codec: &str) -> &'static str {
     match output_codec {
         "aac" => "aac",
         "ac3" => "ac3",
+        "eac3" => "eac3",
         "mpeg4" => "mpeg4",
         "srt" => "srt",
         "webvtt" => "webvtt",
@@ -1534,6 +1677,7 @@ fn audio_encoder_for_codec(codec: &str) -> Result<String, BuildArgsError> {
         "aac" => Ok("aac".to_string()),
         "opus" => Ok("libopus".to_string()),
         "ac3" => Ok("ac3".to_string()),
+        "eac3" => Ok("eac3".to_string()),
         "mp3" => Ok("libmp3lame".to_string()),
         "vorbis" => Ok("libvorbis".to_string()),
         _ => Err(BuildArgsError::UnsupportedCodec("audio")),
@@ -1821,7 +1965,7 @@ fn append_video_constraint_args(
     );
     append_optional_stream_arg(args, "level", output_index, constraints.level.as_deref());
     if let Some(max_bitrate_bps) = constraints.max_bitrate_bps {
-        let max_bitrate_bps = u64::from(max_bitrate_bps);
+        let max_bitrate_bps = u64::from(max_bitrate_bps.get());
         let average_target = max_bitrate_bps.saturating_mul(VIDEO_AVERAGE_TARGET_PERCENT) / 100;
         let vbv_buffer = max_bitrate_bps.saturating_mul(VIDEO_VBV_SECONDS);
         args.push(format!("-b:{output_index}"));
@@ -2005,7 +2149,7 @@ const fn is_recovery_step(step: &ExecutionStep) -> bool {
 mod tests {
     use super::{
         AudioStreamConstraints, BuildArgsError, CommandRunner, DesiredGraphBuildContext,
-        ExecutionControl, ExecutionStep, HdrColorPolicy, ProcessCommandRunner,
+        ExecutionControl, ExecutionStep, HdrColorPolicy, MaxBitrateBps, ProcessCommandRunner,
         SubtitleArtifactPlan, VideoStreamConstraints, VideoTranscodeIntent, VideoTranscodePolicy,
         append_video_constraint_args, append_video_quality_args,
         build_desired_graph_execution_steps, build_desired_graph_execution_steps_with_sidecars,
@@ -3945,7 +4089,7 @@ mod tests {
                 stream_id: 0,
                 profile: Some("main10".to_string()),
                 level: Some("5.1".to_string()),
-                max_bitrate_bps: Some(8_000_000),
+                max_bitrate_bps: MaxBitrateBps::new(8_000_000),
                 color_primaries: Some("bt2020".to_string()),
                 color_transfer: Some("smpte2084".to_string()),
                 color_space: Some("bt2020nc".to_string()),
@@ -3982,7 +4126,7 @@ mod tests {
             stream_id: 0,
             profile: None,
             level: None,
-            max_bitrate_bps: Some(8_000_000),
+            max_bitrate_bps: MaxBitrateBps::new(8_000_000),
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -4403,5 +4547,51 @@ mod tests {
                 if source_path == "/incoming/movie.eng.forced.srt"
                     && output_path == "/workspace/movie.eng.forced.srt"
         )));
+    }
+
+    #[test]
+    fn execution_step_audits_map_fused_and_non_command_operations() {
+        let operations = vec![
+            PlannedOperation {
+                kind: OperationKind::VideoTranscode,
+                stream_id: Some(0),
+                output_stream_id: Some(0),
+            },
+            PlannedOperation {
+                kind: OperationKind::MetadataRewrite,
+                stream_id: None,
+                output_stream_id: None,
+            },
+            PlannedOperation {
+                kind: OperationKind::CopySidecarSubtitle,
+                stream_id: None,
+                output_stream_id: None,
+            },
+            PlannedOperation {
+                kind: OperationKind::RemoveSidecarSubtitle,
+                stream_id: None,
+                output_stream_id: None,
+            },
+        ];
+        let steps = vec![
+            ExecutionStep::Command {
+                bin: "ffmpeg".to_string(),
+                argv: vec!["-i".to_string(), "source.mkv".to_string()],
+            },
+            ExecutionStep::CopySidecarSubtitle {
+                source_path: "source.srt".to_string(),
+                output_path: "output.srt".to_string(),
+            },
+            ExecutionStep::AtomicReplace {
+                source_path: "source.mkv".to_string(),
+                output_path: "output.mkv".to_string(),
+            },
+        ];
+
+        let audits = super::compile_execution_step_audits(&operations, &steps);
+        assert_eq!(audits[0].step_id, "step-0000-command");
+        assert_eq!(audits[0].operation_indices, vec![0, 1]);
+        assert_eq!(audits[1].operation_indices, vec![2]);
+        assert_eq!(audits[2].operation_indices, vec![3]);
     }
 }
