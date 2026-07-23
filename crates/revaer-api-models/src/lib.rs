@@ -448,6 +448,7 @@ pub struct MediaCompatibilityTargetUpsertRequest {
 
 /// Ordered stream in an immutable desired-target version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct MediaDesiredTargetStream {
     /// Stable stream key within the target version.
     pub stream_key: String,
