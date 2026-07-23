@@ -341,3 +341,4 @@
 -   [411](411-untracked-generated-api-schema.md) – Untracked generated API schema
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [462](462-pr88-shell-return.md) – PR 88 shell return correction
+-   [463](463-pr-78-sonar-complexity-correction.md) – PR 78 Sonar complexity correction
