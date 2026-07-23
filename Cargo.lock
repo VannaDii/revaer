@@ -2522,9 +2522,6 @@ name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
-dependencies = [
- "getrandom 0.2.16",
-]
 
 [[package]]
 name = "rand_core"
@@ -2783,7 +2780,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "rand 0.9.4",
- "rand_core 0.6.4",
  "revaer-data",
  "revaer-test-support",
  "serde",
