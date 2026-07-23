@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const MIN_VERSION: &str = "2.0.10";
+const MAX_EXCLUSIVE_VERSION: (u32, u32, u32) = (2, 1, 0);
 const CXXBRIDGE_RUST_HEADER: &str = "rust/cxx.h";
 const CXXBRIDGE_CRATE_HEADER: &str = "revaer-torrent-libt/src/ffi/bridge.rs.h";
 
@@ -67,6 +68,11 @@ fn try_main() -> Result<(), BuildError> {
         {
             Ok(libtorrent) => {
                 ensure_probe_header_version(&libtorrent.include_paths)?;
+                let mut defines: Vec<_> = libtorrent.defines.into_iter().collect();
+                defines.sort_by(|left, right| left.0.cmp(&right.0));
+                for (name, value) in defines {
+                    bridge.define(&name, value.as_deref());
+                }
                 for path in libtorrent.include_paths {
                     bridge.include(path);
                 }
@@ -329,6 +335,9 @@ fn ensure_header_version(include_dir: &Path) -> Result<(), BuildError> {
     if (major, minor, patch) < required {
         return Err(BuildError::VersionTooOld);
     }
+    if (major, minor, patch) >= MAX_EXCLUSIVE_VERSION {
+        return Err(BuildError::VersionTooNew);
+    }
     Ok(())
 }
 
@@ -379,6 +388,7 @@ enum BuildError {
     MissingDefine,
     InvalidMinVersion,
     VersionTooOld,
+    VersionTooNew,
 }
 
 impl fmt::Display for BuildError {
@@ -411,6 +421,7 @@ impl fmt::Display for BuildError {
             Self::MissingDefine => write!(f, "libtorrent version header missing field"),
             Self::InvalidMinVersion => write!(f, "invalid libtorrent minimum version"),
             Self::VersionTooOld => write!(f, "libtorrent version is too old"),
+            Self::VersionTooNew => write!(f, "libtorrent version is unsupported"),
         }
     }
 }
