@@ -132,20 +132,13 @@ pub(super) fn parse_ansi_line(line: &str) -> Vec<AnsiSpan> {
     let mut current = String::new();
     let mut chars = line.chars().peekable();
 
-    loop {
-        let Some(ch) = chars.next() else {
-            break;
-        };
-
+    while let Some(ch) = chars.next() {
         if ch == '\u{1b}' && matches!(chars.peek(), Some('[')) {
             chars.next();
             let mut buffer = String::new();
             let mut terminated = false;
 
-            loop {
-                let Some(code) = chars.next() else {
-                    break;
-                };
+            for code in chars.by_ref() {
                 if code == 'm' {
                     terminated = true;
                     break;
