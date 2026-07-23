@@ -35,6 +35,8 @@ pub mod media;
 /// In-process media discovery runtime wiring.
 pub mod media_discovery_runtime;
 mod media_discovery_watcher;
+/// In-process media-job runtime wiring.
+pub mod media_job_runtime;
 /// In-process policy-driven media retention janitor wiring.
 pub mod media_retention_runtime;
 /// Torrent orchestrator wiring.
