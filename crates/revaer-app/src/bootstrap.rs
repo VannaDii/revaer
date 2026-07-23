@@ -11,6 +11,7 @@ use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
 use crate::media::MediaService;
 use crate::media_discovery_runtime::MediaDiscoveryRuntime;
+use crate::media_job_runtime::MediaJobRuntime;
 use crate::media_retention_runtime::MediaRetentionRuntime;
 use revaer_api::TorrentHandles;
 use revaer_api::app::media::{MediaCapabilityRefreshParams, MediaFacade};
@@ -315,6 +316,12 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     let media_discovery_runtime_task =
         MediaDiscoveryRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
             .spawn();
+    let media_job_runtime_task = MediaJobRuntime::new(
+        MediaStore::new(config.pool().clone()),
+        events.clone(),
+        telemetry.clone(),
+    )
+    .spawn();
     let media_retention_runtime_task =
         MediaRetentionRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
             .spawn();
@@ -325,6 +332,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     stop_runtime_task(indexer_runtime_task, "indexer").await;
     stop_runtime_task(import_job_runtime_task, "import_job").await;
     stop_runtime_task(media_discovery_runtime_task, "media_discovery").await;
+    stop_runtime_task(media_job_runtime_task, "media_job").await;
     stop_runtime_task(media_retention_runtime_task, "media_retention").await;
 
     #[cfg(feature = "libtorrent")]
