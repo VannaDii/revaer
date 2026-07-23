@@ -24,7 +24,7 @@ yew-router = "0.19"
 yewdux = "0.11"
 revaer-api-models = { path = "../revaer-api-models" }
 revaer-events = { path = "../revaer-events" }
-gloo = { version = "0.11", features = ["timers", "storage", "console", "dialogs", "events", "file", "render"] }
+gloo = { version = "0.11", default-features = false, features = ["timers", "storage", "console", "dialogs", "events", "file", "render"] }
 gloo-net = { version = "0.5", features = ["http"] }
 gloo-timers = { version = "0.3", features = ["futures"] }
 js-sys = "0.3"
