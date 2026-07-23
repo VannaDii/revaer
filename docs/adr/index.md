@@ -330,7 +330,6 @@
 -   [316](316-import-runtime-gap-closure-followup.md) – Import runtime gap-closure follow-up
 -   [317](317-supply-chain-advisory-baseline.md) – Supply chain advisory baseline
 -   [318](318-media-transcoding-foundation.md) – Media transcoding foundation
--   [458](458-media-data-module-boundary.md) – Media data module boundary integration correction
 -   [322](322-supply-chain-ci-tool-cache.md) – Supply chain CI and advisory remediation
 -   [323](323-core-planner-review-repair.md) – Core planner review repair
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
@@ -344,6 +343,8 @@
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
+-   [431](431-lazy-media-job-diagnostics-ui.md) – Lazy media job diagnostics UI
+-   [458](458-media-data-module-boundary.md) – Media data module boundary integration correction
 -   [461](461-adr-task-record-status-semantics.md) – ADR and task-record status semantics
 -   [462](462-pr88-shell-return.md) – PR 88 shell return correction
 -   [463](463-pr-78-sonar-complexity-correction.md) – PR 78 Sonar complexity correction
