@@ -2806,6 +2806,7 @@ dependencies = [
 name = "revaer-media-runtime"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "revaer-media-core",
  "serde",
  "serde_json",
