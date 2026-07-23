@@ -116,9 +116,20 @@ pub(crate) fn matches_sse_filter(envelope: &EventEnvelope, filter: &SseFilter) -
             | CoreEvent::FsopsCompleted { torrent_id, .. }
             | CoreEvent::FsopsFailed { torrent_id, .. }
             | CoreEvent::SelectionReconciled { torrent_id, .. } => torrent_id,
-            CoreEvent::SettingsChanged { .. } | CoreEvent::HealthChanged { .. } => {
-                return false;
-            }
+            CoreEvent::SettingsChanged { .. }
+            | CoreEvent::HealthChanged { .. }
+            | CoreEvent::MediaProfileChanged { .. }
+            | CoreEvent::MediaCapabilitiesRefreshed { .. }
+            | CoreEvent::MediaCapabilitiesRefreshFailed { .. }
+            | CoreEvent::MediaDiscoveryPreviewed { .. }
+            | CoreEvent::MediaJobQueued { .. }
+            | CoreEvent::MediaJobInspected { .. }
+            | CoreEvent::MediaJobPlanned { .. }
+            | CoreEvent::MediaJobExecutionStarted { .. }
+            | CoreEvent::MediaJobVerificationFailed { .. }
+            | CoreEvent::MediaJobCompleted { .. }
+            | CoreEvent::MediaJobFailed { .. }
+            | CoreEvent::MediaJobHistoryPruned { .. } => return false,
         };
 
         if !filter.torrent_ids.contains(torrent_id) {
@@ -134,10 +145,10 @@ pub(crate) fn matches_sse_filter(envelope: &EventEnvelope, filter: &SseFilter) -
                     return false;
                 }
             }
-            CoreEvent::Completed { .. } => {
-                if !filter.states.contains(&TorrentStateKind::Completed) {
-                    return false;
-                }
+            CoreEvent::Completed { .. }
+                if !filter.states.contains(&TorrentStateKind::Completed) =>
+            {
+                return false;
             }
             _ => {}
         }

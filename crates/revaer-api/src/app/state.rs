@@ -16,6 +16,9 @@ use uuid::Uuid;
 
 use crate::TorrentHandles;
 use crate::app::indexers::IndexerFacade;
+use crate::app::media::MediaFacade;
+#[cfg(test)]
+use crate::app::media::noop_media;
 use crate::config::ConfigFacade;
 use crate::http::rate_limit::{RateLimitError, RateLimitSnapshot, RateLimiter};
 use crate::http::torrents::TorrentMetadata;
@@ -358,7 +361,7 @@ mod tests {
 
         let limit = ApiKeyRateLimit {
             burst: 2,
-            replenish_period: Duration::from_secs(60),
+            replenish_period: Duration::from_mins(1),
         };
         let snapshot = state
             .enforce_rate_limit("demo", Some(&limit))?
@@ -381,7 +384,7 @@ mod tests {
         );
         let limit = ApiKeyRateLimit {
             burst: 1,
-            replenish_period: Duration::from_secs(60),
+            replenish_period: Duration::from_mins(1),
         };
         assert!(state.enforce_rate_limit("demo", Some(&limit))?.is_some());
         let Err(err) = state.enforce_rate_limit("demo", Some(&limit)) else {
@@ -396,6 +399,7 @@ mod tests {
 pub(crate) struct ApiState {
     pub(crate) config: Arc<dyn ConfigFacade>,
     pub(crate) indexers: Arc<dyn IndexerFacade>,
+    pub(crate) media: Arc<dyn MediaFacade>,
     pub(crate) setup_token_ttl: Duration,
     pub(crate) telemetry: Metrics,
     pub(crate) openapi_document: Arc<Value>,
@@ -404,6 +408,7 @@ pub(crate) struct ApiState {
     rate_limiters: Mutex<HashMap<String, RateLimiter>>,
     torrent_metadata: Mutex<HashMap<Uuid, TorrentMetadata>>,
     pub(crate) torrent: Option<TorrentHandles>,
+    dashboard_disk_usage: fn(&Path) -> std::io::Result<(u32, u32)>,
     #[cfg(feature = "compat-qb")]
     compat_sessions: Mutex<HashMap<String, CompatSession>>,
 }
@@ -415,11 +420,12 @@ pub(crate) struct CompatSession {
 }
 
 #[cfg(feature = "compat-qb")]
-pub(crate) const COMPAT_SESSION_TTL: Duration = Duration::from_secs(30 * 60);
+pub(crate) const COMPAT_SESSION_TTL: Duration = Duration::from_mins(30);
 const DASHBOARD_TORRENTS_COMPONENT: &str = "dashboard_torrents";
 const DASHBOARD_DISK_COMPONENT: &str = "dashboard_disk";
 
 impl ApiState {
+    #[cfg(test)]
     pub(crate) fn new(
         config: Arc<dyn ConfigFacade>,
         indexers: Arc<dyn IndexerFacade>,
@@ -428,10 +434,31 @@ impl ApiState {
         events: EventBus,
         torrent: Option<TorrentHandles>,
     ) -> Self {
+        Self::new_with_media(
+            config,
+            indexers,
+            noop_media(),
+            telemetry,
+            openapi_document,
+            events,
+            torrent,
+        )
+    }
+
+    pub(crate) fn new_with_media(
+        config: Arc<dyn ConfigFacade>,
+        indexers: Arc<dyn IndexerFacade>,
+        media: Arc<dyn MediaFacade>,
+        telemetry: Metrics,
+        openapi_document: Arc<Value>,
+        events: EventBus,
+        torrent: Option<TorrentHandles>,
+    ) -> Self {
         Self {
             config,
             indexers,
-            setup_token_ttl: Duration::from_secs(900),
+            media,
+            setup_token_ttl: Duration::from_mins(15),
             telemetry,
             openapi_document,
             events,
@@ -439,9 +466,19 @@ impl ApiState {
             rate_limiters: Mutex::new(HashMap::new()),
             torrent_metadata: Mutex::new(HashMap::new()),
             torrent,
+            dashboard_disk_usage: dashboard_disk_usage_gb,
             #[cfg(feature = "compat-qb")]
             compat_sessions: Mutex::new(HashMap::new()),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_dashboard_disk_usage(
+        mut self,
+        dashboard_disk_usage: fn(&Path) -> std::io::Result<(u32, u32)>,
+    ) -> Self {
+        self.dashboard_disk_usage = dashboard_disk_usage;
+        self
     }
 
     pub(crate) fn add_degraded_component(&self, component: &str) -> bool {
@@ -514,7 +551,7 @@ impl ApiState {
         let statuses = self.dashboard_statuses().await;
         let (download_bps, upload_bps, active, paused, completed) =
             aggregate_dashboard_counts(&statuses);
-        let (disk_total_gb, disk_used_gb) = match dashboard_disk_usage_gb(library_root) {
+        let (disk_total_gb, disk_used_gb) = match (self.dashboard_disk_usage)(library_root) {
             Ok(snapshot) => {
                 self.remove_degraded_component(DASHBOARD_DISK_COMPONENT);
                 snapshot
