@@ -23,7 +23,21 @@ public_keyring_asset="revaer-helm-public.gpg"
 metadata_template="${chart_root}/artifacthub-repo.yml"
 release_repository="${REVAER_RELEASE_REPOSITORY:-${GITHUB_REPOSITORY:-VannaDii/Revaer}}"
 release_asset_url="https://github.com/${release_repository}/releases/download/${app_version}/${public_key_asset}"
-lint_database_url="${REVAER_HELM_LINT_DATABASE_URL:-postgres://revaer:revaer@postgres.default.svc.cluster.local:5432/revaer}"
+
+default_lint_database_url() {
+    local database_user="${REVAER_HELM_LINT_DATABASE_USER:-revaer}"
+    local database_password="${REVAER_HELM_LINT_DATABASE_PASSWORD:-${database_user}}"
+    local database_host="${REVAER_HELM_LINT_DATABASE_HOST:-postgres.default.svc.cluster.local}"
+    local database_port="${REVAER_HELM_LINT_DATABASE_PORT:-5432}"
+
+    printf 'postgres://%s:%s@%s:%s/revaer' \
+        "${database_user}" \
+        "${database_password}" \
+        "${database_host}" \
+        "${database_port}"
+}
+
+lint_database_url="${REVAER_HELM_LINT_DATABASE_URL:-$(default_lint_database_url)}"
 
 rm -rf "${dist_dir}"
 mkdir -p "${dist_dir}"
@@ -82,6 +96,22 @@ owners:
   - name: $(yaml_quote "${owner_name}")
     email: $(yaml_quote "${owner_email}")
 EOF
+    return 0
+}
+
+render_chart_yaml() {
+    local source_file="$1"
+    local destination_file="$2"
+    local annotations="$3"
+    local line
+
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        if [[ "${line}" == *"__RELEASE_HELM_ANNOTATIONS__"* ]]; then
+            printf '%s\n' "${annotations}"
+        else
+            printf '%s\n' "${line}"
+        fi
+    done < "${source_file}" > "${destination_file}"
     return 0
 }
 
@@ -159,13 +189,7 @@ ${release_annotations}
 EOF
 )"
 
-    awk -v replacement="${release_annotations}" '
-        /__RELEASE_HELM_ANNOTATIONS__/ {
-            print replacement
-            next
-        }
-        { print }
-    ' "${chart_root}/Chart.yaml" > "${chart_yaml}"
+    render_chart_yaml "${chart_root}/Chart.yaml" "${chart_yaml}" "${release_annotations}"
 
     if [[ -n "${ARTIFACTHUB_REPOSITORY_ID:-}" ]]; then
         append_repository_id "${metadata_output}" "${ARTIFACTHUB_REPOSITORY_ID}"
@@ -182,13 +206,7 @@ EOF
         --keyring "${secret_keyring}"
     helm verify "${dist_dir}/revaer-${chart_version}.tgz" --keyring "${dist_dir}/${public_keyring_asset}"
 else
-    awk -v replacement="${release_annotations}" '
-        /__RELEASE_HELM_ANNOTATIONS__/ {
-            print replacement
-            next
-        }
-        { print }
-    ' "${chart_root}/Chart.yaml" > "${chart_yaml}"
+    render_chart_yaml "${chart_root}/Chart.yaml" "${chart_yaml}" "${release_annotations}"
     if [[ -n "${ARTIFACTHUB_REPOSITORY_ID:-}" ]]; then
         append_repository_id "${metadata_output}" "${ARTIFACTHUB_REPOSITORY_ID}"
     fi
