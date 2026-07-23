@@ -37,7 +37,6 @@ pub fn verify_plan(operations: &[PlannedOperation]) -> Result<(), &'static str> 
                 | OperationKind::VideoTranscode
                 | OperationKind::DispositionRewrite
                 | OperationKind::LabelRewrite
-                | OperationKind::ExtractSubtitle
                 | OperationKind::SubtitleTranscode
         ) && (item.stream_id.is_none() || item.output_stream_id.is_none())
     }) {
@@ -49,6 +48,13 @@ pub fn verify_plan(operations: &[PlannedOperation]) -> Result<(), &'static str> 
         .any(|item| item.kind == OperationKind::EmbedSubtitle && item.output_stream_id.is_none())
     {
         return Err("subtitle embed operation is missing output stream id");
+    }
+
+    if operations.iter().any(|item| {
+        item.kind == OperationKind::ExtractSubtitle
+            && (item.stream_id.is_none() || item.output_stream_id.is_some())
+    }) {
+        return Err("subtitle extract operation must target only a source stream");
     }
 
     if operations.iter().any(|item| {
@@ -298,6 +304,31 @@ mod tests {
         assert_eq!(
             verify_plan(&operations),
             Err("non-stream-scoped operation must not target a stream")
+        );
+    }
+
+    #[test]
+    fn accept_source_scoped_subtitle_extraction() {
+        let operations = vec![PlannedOperation {
+            kind: OperationKind::ExtractSubtitle,
+            stream_id: Some(3),
+            output_stream_id: None,
+        }];
+
+        assert_eq!(verify_plan(&operations), Ok(()));
+    }
+
+    #[test]
+    fn reject_subtitle_extraction_with_container_output_identity() {
+        let operations = vec![PlannedOperation {
+            kind: OperationKind::ExtractSubtitle,
+            stream_id: Some(3),
+            output_stream_id: Some(4),
+        }];
+
+        assert_eq!(
+            verify_plan(&operations),
+            Err("subtitle extract operation must target only a source stream")
         );
     }
 
