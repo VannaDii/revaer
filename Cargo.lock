@@ -2874,6 +2874,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "revaer-media-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "revaer-media-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "revaer-runtime"
 version = "0.1.0"
 dependencies = [
