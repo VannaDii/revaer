@@ -40,7 +40,7 @@ pub(crate) trait EngineConfigurator: Send + Sync {
     async fn apply_engine_plan(&self, plan: &EngineRuntimePlan) -> TorrentResult<()>;
 }
 
-const BLOCKLIST_REFRESH_INTERVAL: Duration = Duration::from_secs(30 * 60);
+const BLOCKLIST_REFRESH_INTERVAL: Duration = Duration::from_mins(30);
 const MAX_BLOCKLIST_RULES: usize = 100_000;
 
 #[derive(Clone)]
@@ -734,7 +734,20 @@ const fn event_torrent_id(event: &Event) -> Option<Uuid> {
         | Event::FsopsCompleted { torrent_id }
         | Event::FsopsFailed { torrent_id, .. }
         | Event::SelectionReconciled { torrent_id, .. } => Some(*torrent_id),
-        Event::SettingsChanged { .. } | Event::HealthChanged { .. } => None,
+        Event::SettingsChanged { .. }
+        | Event::HealthChanged { .. }
+        | Event::MediaProfileChanged { .. }
+        | Event::MediaCapabilitiesRefreshed { .. }
+        | Event::MediaCapabilitiesRefreshFailed { .. }
+        | Event::MediaDiscoveryPreviewed { .. }
+        | Event::MediaJobQueued { .. }
+        | Event::MediaJobInspected { .. }
+        | Event::MediaJobPlanned { .. }
+        | Event::MediaJobExecutionStarted { .. }
+        | Event::MediaJobVerificationFailed { .. }
+        | Event::MediaJobCompleted { .. }
+        | Event::MediaJobFailed { .. }
+        | Event::MediaJobHistoryPruned { .. } => None,
     }
 }
 
@@ -1021,7 +1034,19 @@ impl TorrentCatalog {
             }
             Event::SettingsChanged { .. }
             | Event::HealthChanged { .. }
-            | Event::SelectionReconciled { .. } => {}
+            | Event::SelectionReconciled { .. }
+            | Event::MediaProfileChanged { .. }
+            | Event::MediaCapabilitiesRefreshed { .. }
+            | Event::MediaCapabilitiesRefreshFailed { .. }
+            | Event::MediaDiscoveryPreviewed { .. }
+            | Event::MediaJobQueued { .. }
+            | Event::MediaJobInspected { .. }
+            | Event::MediaJobPlanned { .. }
+            | Event::MediaJobExecutionStarted { .. }
+            | Event::MediaJobVerificationFailed { .. }
+            | Event::MediaJobCompleted { .. }
+            | Event::MediaJobFailed { .. }
+            | Event::MediaJobHistoryPruned { .. } => {}
         }
     }
 
