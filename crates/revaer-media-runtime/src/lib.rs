@@ -18,6 +18,10 @@
 //! execution argument builders, and job state models.
 
 pub mod capabilities;
+pub mod execute;
 pub mod inspect;
+pub mod jobs;
+pub mod replacement;
 pub mod sidecar;
+pub mod verification;
 pub mod workspace;
