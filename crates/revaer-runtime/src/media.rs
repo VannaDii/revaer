@@ -24,17 +24,19 @@ use revaer_data::media::jobs::{
     CreateMediaJobInput, EnqueueDiscoveredMediaJobInput, MediaJobArtifactRow,
     MediaJobCompactAuditRow, MediaJobControlRow, MediaJobDesiredTargetStreamRow,
     MediaJobOperationRow, MediaJobPlanReasonRow, MediaJobRetentionRunRow, MediaJobRow,
-    MediaJobVerificationCheckRow, MediaJobViolationRow, MediaRecentJobRow,
-    append_media_job_artifact, append_media_job_compact_audit, append_media_job_operation,
-    append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
-    append_media_job_violation, cancel_media_job, create_media_job, enqueue_discovered_media_job,
-    get_media_job, list_media_job_artifacts, list_media_job_compact_audits,
-    list_media_job_desired_target_streams, list_media_job_operations, list_media_job_plan_reasons,
-    list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
-    list_recent_media_jobs, mark_media_job_completed, media_job_worker_acknowledge_cancel,
-    media_job_worker_claim_next, media_job_worker_complete, media_job_worker_heartbeat,
-    media_job_worker_mark_status, media_job_worker_poll_control, retry_media_job,
-    run_media_job_retention,
+    MediaJobTerminalOutboxRow, MediaJobVerificationCheckRow, MediaJobViolationRow,
+    MediaRecentJobRow, append_media_job_artifact, append_media_job_compact_audit,
+    append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
+    append_media_job_verification_check, append_media_job_violation, cancel_media_job,
+    create_media_job, enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
+    list_media_job_compact_audits, list_media_job_desired_target_streams,
+    list_media_job_operations, list_media_job_plan_reasons,
+    list_media_job_terminal_outbox_unpublished, list_media_job_verification_checks,
+    list_media_job_violations, list_media_jobs, list_recent_media_jobs, mark_media_job_completed,
+    mark_media_job_terminal_outbox_published, media_job_worker_acknowledge_cancel,
+    media_job_worker_claim_next, media_job_worker_commit_replacement_terminal,
+    media_job_worker_complete, media_job_worker_heartbeat, media_job_worker_mark_status,
+    media_job_worker_poll_control, retry_media_job, run_media_job_retention,
 };
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput, get_media_profile,
@@ -533,6 +535,46 @@ impl MediaStore {
             observed_cancel_generation,
         )
         .await
+    }
+
+    /// Atomically commit replacement verification, terminal completion, and its outbox event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the job is not worker-owned or execution fails.
+    pub async fn commit_replacement_terminal(
+        &self,
+        media_job_public_id: Uuid,
+        claim_generation: i64,
+        observed_cancel_generation: i64,
+    ) -> DataResult<bool> {
+        media_job_worker_commit_replacement_terminal(
+            &self.pool,
+            media_job_public_id,
+            claim_generation,
+            observed_cancel_generation,
+        )
+        .await
+    }
+
+    /// List bounded unpublished terminal events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when stored-procedure execution fails.
+    pub async fn list_unpublished_terminal_events(
+        &self,
+    ) -> DataResult<Vec<MediaJobTerminalOutboxRow>> {
+        list_media_job_terminal_outbox_unpublished(&self.pool).await
+    }
+
+    /// Mark a durable terminal event published.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the event does not exist or execution fails.
+    pub async fn mark_terminal_event_published(&self, media_job_public_id: Uuid) -> DataResult<()> {
+        mark_media_job_terminal_outbox_published(&self.pool, media_job_public_id).await
     }
 
     /// Mark a claimed media job with a worker status.

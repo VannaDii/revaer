@@ -151,7 +151,10 @@ export default async function globalSetup(): Promise<void> {
       apiBin,
       [],
       path.join(logDir, 'api.log'),
-      { DATABASE_URL: activeDbUrl },
+      {
+        DATABASE_URL: activeDbUrl,
+        REVAER_MEDIA_WORKSPACE_ROOT: path.join(resolvedFsRoot, '.media-workspace'),
+      },
       { cwd: root },
     );
     writeState({

@@ -21,6 +21,7 @@ const MAX_LOGICAL_SIDECARS: usize = 64;
 const MAX_SIDECAR_BYTES: u64 = 256 * 1024 * 1024;
 const SIDECAR_EXTENSIONS: &[&str] = &["ass", "idx", "srt", "ssa", "sub", "sup", "vtt"];
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MediaAggregateFingerprint {
     pub(crate) size_bytes: i64,
     pub(crate) modified_ns: i64,

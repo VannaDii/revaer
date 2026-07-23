@@ -32,6 +32,7 @@ ui-e2e: trunk-install api-test-client
         cd tests && bash ../scripts/with-node.sh npx playwright install; \
     fi
     bash scripts/with-node.sh tests/node_modules/.bin/tsc --project tests/tsconfig.coverage.json
+    set -euo pipefail; \
     shard_arg=""; \
     coverage_suffix=""; \
     if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \

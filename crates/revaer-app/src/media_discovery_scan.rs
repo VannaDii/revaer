@@ -207,59 +207,318 @@ const fn finish(
 
 #[cfg(test)]
 mod tests {
-    use super::{ScanBudget, ScanLimit, scan_media_source_paths};
+    use super::{ScanBudget, ScanError, ScanLimit, scan_media_source_paths};
+    use std::cell::Cell;
     use std::fs;
+    use std::io::ErrorKind;
+    #[cfg(target_os = "linux")]
+    use std::os::unix::ffi::OsStringExt;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+    use std::path::Path;
     use std::time::Duration;
 
-    #[test]
-    fn scan_enforces_each_budget_and_resumes_without_duplicates() -> anyhow::Result<()> {
-        let temp = tempfile::tempdir()?;
-        fs::create_dir_all(temp.path().join("a/b"))?;
-        for index in 0..5 {
-            fs::write(temp.path().join(format!("movie-{index}.mkv")), b"1234")?;
-        }
-        fs::write(temp.path().join("a/b/deep.mkv"), b"1234")?;
-
-        let mut budget = ScanBudget {
+    const fn test_budget() -> ScanBudget {
+        ScanBudget {
             depth: 8,
             entries: 64,
-            files: 2,
+            files: 64,
             bytes: 64,
             elapsed: Duration::from_secs(1),
-        };
-        let first = scan_media_source_paths(temp.path(), &budget, None, || false)?;
-        assert_eq!(first.limit, Some(ScanLimit::Files));
-        let second = scan_media_source_paths(temp.path(), &budget, first.cursor, || false)?;
-        assert!(first.paths.iter().all(|path| !second.paths.contains(path)));
+        }
+    }
 
-        budget.files = 64;
+    fn path_string(path: &Path) -> String {
+        path.to_string_lossy().into_owned()
+    }
+
+    fn drain_scan(
+        root: &Path,
+        budget: &ScanBudget,
+        maximum_batches: usize,
+    ) -> anyhow::Result<(Vec<String>, Vec<ScanLimit>)> {
+        let mut cursor = None;
+        let mut paths = Vec::new();
+        let mut limits = Vec::new();
+        for _ in 0..maximum_batches {
+            let batch = scan_media_source_paths(root, budget, cursor, || false)?;
+            paths.extend(batch.paths);
+            if let Some(limit) = batch.limit {
+                limits.push(limit);
+            }
+            cursor = batch.cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert!(
+            cursor.is_none(),
+            "scan did not finish within its batch bound"
+        );
+        paths.sort();
+        Ok((paths, limits))
+    }
+
+    #[test]
+    fn scan_returns_sorted_recursive_media_files() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let nested = temp.path().join("a");
+        let nested_media = nested.join("deep.mp4");
+        let root_media = temp.path().join("z-root.MKV");
+        fs::create_dir(&nested)?;
+        fs::write(&nested_media, b"nested")?;
+        fs::write(&root_media, b"root")?;
+        fs::write(temp.path().join("subtitle.srt"), b"subtitle")?;
+        fs::write(temp.path().join("README"), b"notes")?;
+
+        let batch = scan_media_source_paths(temp.path(), &ScanBudget::default(), None, || false)?;
+        let mut expected = vec![path_string(&nested_media), path_string(&root_media)];
+        expected.sort();
+
+        assert_eq!(batch.paths, expected);
+        assert!(batch.cursor.is_none());
+        assert!(batch.limit.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn scan_resumes_entry_limited_batches_without_duplicates() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let nested = temp.path().join("c");
+        let first_media = temp.path().join("a.mkv");
+        let nested_media = nested.join("d.mp4");
+        fs::create_dir(&nested)?;
+        fs::write(&first_media, b"first")?;
+        fs::write(temp.path().join("b.txt"), b"ignored")?;
+        fs::write(&nested_media, b"nested")?;
+
+        let mut budget = test_budget();
         budget.entries = 1;
+        let (paths, limits) = drain_scan(temp.path(), &budget, 8)?;
+        let mut expected = vec![path_string(&first_media), path_string(&nested_media)];
+        expected.sort();
+
+        assert_eq!(paths, expected);
         assert_eq!(
-            scan_media_source_paths(temp.path(), &budget, None, || false)?.limit,
-            Some(ScanLimit::Entries)
+            limits,
+            vec![ScanLimit::Entries, ScanLimit::Entries, ScanLimit::Entries]
         );
-        budget.entries = 64;
-        budget.bytes = 3;
-        let bytes = scan_media_source_paths(temp.path(), &budget, None, || false)?;
-        assert!(bytes.paths.is_empty());
-        assert_eq!(bytes.limit, Some(ScanLimit::Bytes));
-        budget.bytes = 64;
+        Ok(())
+    }
+
+    #[test]
+    fn scan_resumes_file_limited_batches_without_duplicates() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let media = ["a.mkv", "b.mp4", "c.webm"].map(|name| temp.path().join(name));
+        for path in &media {
+            fs::write(path, b"media")?;
+        }
+
+        let mut budget = test_budget();
+        budget.files = 1;
+        let (paths, limits) = drain_scan(temp.path(), &budget, 4)?;
+        let expected = media
+            .iter()
+            .map(|path| path_string(path))
+            .collect::<Vec<_>>();
+
+        assert_eq!(paths, expected);
+        assert_eq!(limits, vec![ScanLimit::Files, ScanLimit::Files]);
+        Ok(())
+    }
+
+    #[test]
+    fn scan_defers_file_that_exceeds_remaining_byte_budget() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let first_media = temp.path().join("a.mkv");
+        let second_media = temp.path().join("b.mkv");
+        fs::write(&first_media, b"1234")?;
+        fs::write(&second_media, b"5678")?;
+
+        let mut budget = test_budget();
+        budget.bytes = 5;
+        let first = scan_media_source_paths(temp.path(), &budget, None, || false)?;
+        assert_eq!(first.paths, vec![path_string(&first_media)]);
+        assert_eq!(first.limit, Some(ScanLimit::Bytes));
+        assert!(first.cursor.is_some());
+
+        let second = scan_media_source_paths(temp.path(), &budget, first.cursor, || false)?;
+        assert_eq!(second.paths, vec![path_string(&second_media)]);
+        assert!(second.cursor.is_none());
+        assert!(second.limit.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn scan_skips_file_larger_than_total_byte_budget() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let oversized = temp.path().join("a-oversized.mkv");
+        let selected = temp.path().join("b-selected.mkv");
+        fs::write(&oversized, b"123456")?;
+        fs::write(&selected, b"1234")?;
+
+        let mut budget = test_budget();
+        budget.bytes = 5;
+        let first = scan_media_source_paths(temp.path(), &budget, None, || false)?;
+        assert!(first.paths.is_empty());
+        assert_eq!(first.limit, Some(ScanLimit::Bytes));
+
+        let second = scan_media_source_paths(temp.path(), &budget, first.cursor, || false)?;
+        assert_eq!(second.paths, vec![path_string(&selected)]);
+        assert!(second.cursor.is_none());
+        assert!(second.limit.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn scan_skips_directories_beyond_depth_and_resumes_siblings() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let nested = temp.path().join("a");
+        let nested_media = nested.join("deep.mkv");
+        let root_media = temp.path().join("z-root.mkv");
+        fs::create_dir(&nested)?;
+        fs::write(&nested_media, b"nested")?;
+        fs::write(&root_media, b"root")?;
+
+        let mut budget = test_budget();
         budget.depth = 0;
-        assert_eq!(
-            scan_media_source_paths(temp.path(), &budget, None, || false)?.limit,
-            Some(ScanLimit::Depth)
-        );
-        budget.depth = 8;
+        let first = scan_media_source_paths(temp.path(), &budget, None, || false)?;
+        assert!(first.paths.is_empty());
+        assert_eq!(first.limit, Some(ScanLimit::Depth));
+
+        let second = scan_media_source_paths(temp.path(), &budget, first.cursor, || false)?;
+        assert_eq!(second.paths, vec![path_string(&root_media)]);
+        assert!(!second.paths.contains(&path_string(&nested_media)));
+        assert!(second.cursor.is_none());
+        assert!(second.limit.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn scan_resumes_after_cancellation() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let media = temp.path().join("movie.mkv");
+        fs::write(&media, b"media")?;
+        let cancel_next_check = Cell::new(true);
+
+        let first = scan_media_source_paths(temp.path(), &test_budget(), None, || {
+            cancel_next_check.replace(false)
+        })?;
+        assert!(first.paths.is_empty());
+        assert_eq!(first.limit, Some(ScanLimit::Cancelled));
+        assert!(!cancel_next_check.get());
+
+        let second = scan_media_source_paths(temp.path(), &test_budget(), first.cursor, || false)?;
+        assert_eq!(second.paths, vec![path_string(&media)]);
+        assert!(second.cursor.is_none());
+        assert!(second.limit.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn scan_resumes_after_elapsed_limit() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let media = temp.path().join("movie.mkv");
+        fs::write(&media, b"media")?;
+        let mut budget = test_budget();
         budget.elapsed = Duration::ZERO;
-        assert_eq!(
-            scan_media_source_paths(temp.path(), &budget, None, || false)?.limit,
-            Some(ScanLimit::Elapsed)
-        );
+
+        let first = scan_media_source_paths(temp.path(), &budget, None, || false)?;
+        assert!(first.paths.is_empty());
+        assert_eq!(first.limit, Some(ScanLimit::Elapsed));
+
         budget.elapsed = Duration::from_secs(1);
-        assert_eq!(
-            scan_media_source_paths(temp.path(), &budget, None, || true)?.limit,
-            Some(ScanLimit::Cancelled)
-        );
+        let second = scan_media_source_paths(temp.path(), &budget, first.cursor, || false)?;
+        assert_eq!(second.paths, vec![path_string(&media)]);
+        assert!(second.cursor.is_none());
+        assert!(second.limit.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn scan_reports_missing_root() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let missing = temp.path().join("missing");
+        let result = scan_media_source_paths(&missing, &test_budget(), None, || false);
+
+        assert!(result.as_ref().err().is_some_and(|error| {
+            error
+                .to_string()
+                .starts_with("media discovery scan io error for ")
+        }));
+        assert!(matches!(
+            result,
+            Err(ScanError::Io { path, source })
+                if path == missing && source.kind() == ErrorKind::NotFound
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn scan_reports_entry_removed_during_traversal() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let media = temp.path().join("movie.mkv");
+        fs::write(&media, b"media")?;
+        let removal_attempted = Cell::new(false);
+        let media_to_remove = media.clone();
+
+        let result = scan_media_source_paths(temp.path(), &test_budget(), None, || {
+            if !removal_attempted.replace(true) {
+                assert!(
+                    fs::remove_file(&media_to_remove).is_ok(),
+                    "test setup must remove the enumerated entry"
+                );
+            }
+            false
+        });
+
+        assert!(removal_attempted.get());
+        assert!(matches!(
+            result,
+            Err(ScanError::Io { path, source })
+                if path == media && source.kind() == ErrorKind::NotFound
+        ));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_ignores_symbolic_links() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let real_directory = temp.path().join("real");
+        let real_media = real_directory.join("movie.mkv");
+        fs::create_dir(&real_directory)?;
+        fs::write(&real_media, b"media")?;
+        symlink(&real_media, temp.path().join("linked-movie.mkv"))?;
+        symlink(&real_directory, temp.path().join("linked-directory"))?;
+
+        let batch = scan_media_source_paths(temp.path(), &test_budget(), None, || false)?;
+
+        assert_eq!(batch.paths, vec![path_string(&real_media)]);
+        assert!(batch.cursor.is_none());
+        assert!(batch.limit.is_none());
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn scan_reports_non_unicode_media_path() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let name = std::ffi::OsString::from_vec(b"movie-\xff.mkv".to_vec());
+        let media = temp.path().join(name);
+        fs::write(&media, b"media")?;
+
+        let result = scan_media_source_paths(temp.path(), &test_budget(), None, || false);
+
+        assert!(result.as_ref().err().is_some_and(|error| {
+            error
+                .to_string()
+                .starts_with("media discovery scan path is not unicode: ")
+        }));
+        assert!(matches!(
+            result,
+            Err(ScanError::NonUnicodePath(path)) if path == media
+        ));
         Ok(())
     }
 }

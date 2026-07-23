@@ -2533,11 +2533,15 @@ AS $$
 DECLARE
     cancelled BOOLEAN;
     terminal_status media_job_status;
+    current_job_id BIGINT;
+    current_attempt_id BIGINT;
 BEGIN
-    SELECT job.cancel_generation > observed_cancel_generation_input,
+    SELECT job.media_job_id,
+           attempt.media_job_attempt_id,
+           job.cancel_generation > observed_cancel_generation_input,
            CASE WHEN job.cancel_generation > observed_cancel_generation_input
                THEN media_job_status_cancelled_v1() ELSE media_job_status_completed_v1() END
-      INTO cancelled, terminal_status
+      INTO current_job_id, current_attempt_id, cancelled, terminal_status
       FROM media_job job
       JOIN media_job_attempt attempt ON attempt.media_job_attempt_id = job.current_attempt_id
      WHERE job.media_job_public_id = media_job_public_id_input
@@ -2548,6 +2552,33 @@ BEGIN
     IF cancelled IS NULL THEN
         RAISE EXCEPTION 'stale worker claim'
             USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    IF cancelled THEN
+        INSERT INTO media_job_phase (
+            media_job_id, media_job_attempt_id, phase_index, phase_name, phase_status, details_text
+        ) VALUES (
+            current_job_id, current_attempt_id, 98, 'runtime_cancellation',
+            media_job_status_cancelled_v1(), 'media_job_cancelled_by_operator'
+        )
+        ON CONFLICT (media_job_attempt_id, phase_index)
+        DO UPDATE SET
+            phase_name = EXCLUDED.phase_name,
+            phase_status = EXCLUDED.phase_status,
+            details_text = EXCLUDED.details_text;
+        INSERT INTO media_job_verification_check (
+            media_job_id, media_job_attempt_id, check_index, check_kind, check_status,
+            expected_value, actual_value, details_text
+        ) VALUES (
+            current_job_id, current_attempt_id, 98, 'cancellation', 'skipped',
+            'continue', 'operator_cancelled', 'worker observed cancellation at terminal commit'
+        )
+        ON CONFLICT (media_job_attempt_id, check_index)
+        DO UPDATE SET
+            check_kind = EXCLUDED.check_kind,
+            check_status = EXCLUDED.check_status,
+            expected_value = EXCLUDED.expected_value,
+            actual_value = EXCLUDED.actual_value,
+            details_text = EXCLUDED.details_text;
     END IF;
     UPDATE media_job_attempt
        SET status = terminal_status, completed_at = now(), last_error = NULL
@@ -2640,7 +2671,12 @@ BEGIN
     ) VALUES (
         current_job_id, current_attempt_id, phase_index_input, btrim(phase_name_input),
         phase_status_input::media_job_status, NULLIF(btrim(details_text_input), '')
-    );
+    )
+    ON CONFLICT (media_job_attempt_id, phase_index)
+    DO UPDATE SET
+        phase_name = EXCLUDED.phase_name,
+        phase_status = EXCLUDED.phase_status,
+        details_text = EXCLUDED.details_text;
 END;
 $$;
 

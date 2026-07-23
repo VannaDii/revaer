@@ -7,6 +7,14 @@ use tokio::runtime::Runtime;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 
+fn test_media_workspace() -> AppResult<tempfile::TempDir> {
+    tempfile::tempdir().map_err(|source| AppError::Io {
+        operation: "test.media_workspace.create",
+        path: None,
+        source,
+    })
+}
+
 #[cfg(unix)]
 fn non_unicode_os_string() -> std::ffi::OsString {
     use std::os::unix::ffi::OsStringExt;
@@ -110,6 +118,24 @@ fn optional_env_var_with_rejects_non_unicode_values() {
 }
 
 #[test]
+fn media_workspace_root_is_required_and_absolute() {
+    assert!(matches!(
+        media_workspace_root_from_value(None),
+        Err(AppError::InvalidConfig {
+            field: "REVAER_MEDIA_WORKSPACE_ROOT",
+            reason: "absolute_private_workspace_root_required",
+            value: None,
+        })
+    ));
+    assert!(media_workspace_root_from_value(Some("relative/workspace".into())).is_err());
+    assert_eq!(
+        media_workspace_root_from_value(Some("/private/media-workspace".into()))
+            .expect("absolute workspace root"),
+        PathBuf::from("/private/media-workspace")
+    );
+}
+
+#[test]
 fn otel_and_guardrail_helpers_cover_expected_modes() -> AppResult<()> {
     assert!(env_flag_value(Some("true")));
     assert!(env_flag_value(Some(" On ")));
@@ -189,6 +215,7 @@ async fn bootstrap_dependencies_from_database_url_track_persisted_settings_chang
         }
     };
 
+    let workspace = test_media_workspace()?;
     let BootstrapDependencies {
         config,
         snapshot,
@@ -196,7 +223,11 @@ async fn bootstrap_dependencies_from_database_url_track_persisted_settings_chang
         events,
         telemetry,
         ..
-    } = BootstrapDependencies::from_database_url(postgres.connection_string().to_string()).await?;
+    } = BootstrapDependencies::from_database_url_with_workspace_root(
+        postgres.connection_string().to_string(),
+        workspace.path().to_path_buf(),
+    )
+    .await?;
     watcher.disable_listen();
 
     assert!(
@@ -273,8 +304,12 @@ async fn run_bootstrap_services_rejects_public_setup_bind_from_dependencies() ->
         }
     };
 
-    let mut dependencies =
-        BootstrapDependencies::from_database_url(postgres.connection_string().to_string()).await?;
+    let workspace = test_media_workspace()?;
+    let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
+        postgres.connection_string().to_string(),
+        workspace.path().to_path_buf(),
+    )
+    .await?;
     dependencies.snapshot.app_profile.mode = AppMode::Setup;
     dependencies.snapshot.app_profile.bind_addr = IpAddr::from([10, 0, 0, 1]);
 
@@ -304,8 +339,12 @@ async fn run_bootstrap_services_rejects_zero_http_port_from_dependencies() -> Ap
         }
     };
 
-    let mut dependencies =
-        BootstrapDependencies::from_database_url(postgres.connection_string().to_string()).await?;
+    let workspace = test_media_workspace()?;
+    let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
+        postgres.connection_string().to_string(),
+        workspace.path().to_path_buf(),
+    )
+    .await?;
     dependencies.snapshot.app_profile.http_port = 0;
 
     let err = Box::pin(run_bootstrap_services(dependencies))
@@ -351,8 +390,12 @@ async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> A
             .port(),
     );
 
-    let mut dependencies =
-        BootstrapDependencies::from_database_url(postgres.connection_string().to_string()).await?;
+    let workspace = test_media_workspace()?;
+    let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
+        postgres.connection_string().to_string(),
+        workspace.path().to_path_buf(),
+    )
+    .await?;
     dependencies.snapshot.app_profile.mode = AppMode::Setup;
     dependencies.snapshot.app_profile.bind_addr = IpAddr::from([127, 0, 0, 1]);
     dependencies.snapshot.app_profile.http_port = reserved_port;
