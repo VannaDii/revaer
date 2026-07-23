@@ -1846,6 +1846,368 @@ Verification strictness profiles:
 
 ---
 
+## Media Conversion Integration Fixture Suite
+
+Build a reproducible media conversion fixture suite before declaring the
+transcoding pipeline complete. The suite must test Revaer's production media
+selection, planning, execution, replacement, metadata, and failure contracts. It
+must not only test that FFmpeg can read or write files.
+
+Hard fixture rules:
+
+- Do not commit downloaded or generated media binaries unless they already
+  exist in the repository.
+- Add binary fixture directories to `.gitignore` in the same implementation
+  slice that creates them.
+- Commit only fixture documentation, attribution/license notes, manifests,
+  downloader scripts, generator scripts, verification scripts, normalized probe
+  snapshots, and tests.
+- Use deterministic fixture ids and deterministic on-disk file names.
+- Use `ffmpeg` and `ffprobe` for media generation and inspection.
+- Every fixture script must fail early with a clear error if `ffmpeg`,
+  `ffprobe`, `curl`, `git`, or `base64` is missing.
+- Keep fixture files small where practical. Prefer short sample files and
+  stream-copy derived fixtures over unnecessary full transcodes.
+- Scripts must be idempotent: rerunning download, generate, verify, or clean
+  commands must leave the same final tree or a clear failure.
+- The tests must run in CI through repository task-runner commands. CI may
+  cache binary fixture directories, but it must not require committing those
+  binaries.
+- Match existing repository conventions. Wire commands through the Justfile and
+  integrate tests with the existing Rust and Playwright test structure instead
+  of creating a parallel task runner.
+
+Required fixture tree:
+
+```text
+test-fixtures/
+  README.md
+  ATTRIBUTION.md
+  manifest.json
+  source/
+  matroska/
+  chromium/
+  derived/
+  probe/
+scripts/
+  test-fixtures/
+    download-test-fixtures.sh
+    generate-derived-fixtures.sh
+    verify-fixtures.sh
+    clean-test-fixtures.sh
+```
+
+The implementation slice must add these binary directories to `.gitignore`:
+
+```text
+test-fixtures/source/
+test-fixtures/matroska/
+test-fixtures/chromium/
+test-fixtures/derived/
+```
+
+The implementation slice must keep these paths committed:
+
+```text
+test-fixtures/README.md
+test-fixtures/ATTRIBUTION.md
+test-fixtures/manifest.json
+test-fixtures/probe/*.json
+scripts/test-fixtures/*.sh
+```
+
+Recommended task surface, using existing Justfile conventions:
+
+- `just download-test-fixtures`: run
+  `scripts/test-fixtures/download-test-fixtures.sh`.
+- `just generate-test-fixtures`: run
+  `scripts/test-fixtures/generate-derived-fixtures.sh`.
+- `just verify-test-fixtures`: run
+  `scripts/test-fixtures/verify-fixtures.sh`.
+- `just clean-test-fixtures`: run
+  `scripts/test-fixtures/clean-test-fixtures.sh`.
+- `just test-media-conversion`: require prepared fixtures, run verification,
+  then run the media conversion integration tests.
+
+Implementation artifacts:
+
+- Fixture manifest and attribution live under `test-fixtures/`.
+- Fixture scripts live under `scripts/test-fixtures/`.
+- Runtime fixture tests live in
+  `crates/revaer-media-runtime/tests/media_fixtures.rs`.
+- PR validation restores/caches the ignored media directories and runs the
+  fixture gate through Justfile recipes.
+- Fixture preparation tries the required primary Test-Videos URLs first. For
+  Test-Videos URLs that returned HTTP 526 from this environment on 2026-06-11,
+  the manifest records exact Internet Archive captures of the same URLs as
+  fallback sources. The downloader must still fail explicitly if every
+  documented source for a fixture is unavailable; it must not silently
+  substitute generated or unrelated media.
+
+`test-fixtures/README.md` must document the one-command local preparation
+sequence, the CI preparation sequence, cache behavior, expected disk usage, and
+the difference between committed metadata and ignored media binaries.
+
+`test-fixtures/ATTRIBUTION.md` must include every upstream source, copyright or
+project attribution, license text or license link, retrieval URL, and any
+redistribution limitation discovered during implementation. If license evidence
+for a candidate source is missing or ambiguous, the implementation must fail the
+fixture preparation path until the source is replaced or the attribution record
+is completed.
+
+`test-fixtures/manifest.json` must contain one entry per fixture with at least
+these fields:
+
+- `id`
+- `path`
+- `source`
+- `license`
+- `attribution`
+- `container`
+- `expectedVideoCodecs`
+- `expectedAudioCodecs`
+- `expectedSubtitleCodecs`
+- `expectedVideoStreamCount`
+- `expectedAudioStreamCount`
+- `expectedSubtitleStreamCount`
+- `purpose`
+- `generated`
+- `shouldDownload`
+- `shouldGenerate`
+- `notes`
+
+Additional fields such as upstream checksum, normalized probe snapshot hash, or
+license evidence URL are allowed when they make the fixture path more
+deterministic.
+
+Download these Test-Videos Big Buck Bunny files into `test-fixtures/source/`:
+
+| Fixture id | Destination path | Source URL | Coverage purpose |
+| --- | --- | --- | --- |
+| `bbb-h264-mp4` | `test-fixtures/source/bbb-h264.mp4` | `https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4` | MP4 with H.264 coverage. |
+| `bbb-h265-mp4` | `test-fixtures/source/bbb-h265.mp4` | `https://test-videos.co.uk/vids/bigbuckbunny/mp4/h265/360/Big_Buck_Bunny_360_10s_1MB.mp4` | MP4 with H.265/HEVC coverage. |
+| `bbb-av1-mp4` | `test-fixtures/source/bbb-av1.mp4` | `https://test-videos.co.uk/vids/bigbuckbunny/mp4/av1/360/Big_Buck_Bunny_360_10s_1MB.mp4` | MP4 with AV1 coverage. |
+| `bbb-vp8-webm` | `test-fixtures/source/bbb-vp8.webm` | `https://test-videos.co.uk/vids/bigbuckbunny/webm/vp8/360/Big_Buck_Bunny_360_10s_1MB.webm` | WebM with VP8 coverage. |
+| `bbb-vp9-webm` | `test-fixtures/source/bbb-vp9.webm` | `https://test-videos.co.uk/vids/bigbuckbunny/webm/vp9/360/Big_Buck_Bunny_360_10s_1MB.webm` | WebM with VP9 coverage. |
+| `bbb-h264-mkv` | `test-fixtures/source/bbb-h264.mkv` | `https://test-videos.co.uk/vids/bigbuckbunny/mkv/360/Big_Buck_Bunny_360_10s_1MB.mkv` | MKV with H.264 coverage. |
+
+Download the official Matroska test file corpus by cloning
+`https://github.com/ietf-wg-cellar/matroska-test-files.git` into a temporary
+script workspace, then copy only these files from `test_files/` into
+`test-fixtures/matroska/`:
+
+| Fixture id | Corpus file | Destination path | Coverage purpose |
+| --- | --- | --- | --- |
+| `mkv-basic-divx-mp3` | `test1.mkv` | `test-fixtures/matroska/mkv-basic-divx-mp3.mkv` | Basic Matroska, DivX, and MP3 behavior. |
+| `mkv-h264-aac-weird-timecode` | `test2.mkv` | `test-fixtures/matroska/mkv-h264-aac-weird-timecode.mkv` | H.264/AAC with unusual timecode behavior. |
+| `mkv-h264-mp3-header-stripping` | `test3.mkv` | `test-fixtures/matroska/mkv-h264-mp3-header-stripping.mkv` | Header stripping and legacy decoder edge case. |
+| `mkv-theora-vorbis-live-style` | `test4.mkv` | `test-fixtures/matroska/mkv-theora-vorbis-live-style.mkv` | Theora/Vorbis live-style Matroska behavior. |
+| `mkv-multi-audio-multi-subtitles` | `test5.mkv` | `test-fixtures/matroska/mkv-multi-audio-multi-subtitles.mkv` | Multi-audio and multi-subtitle Matroska behavior. |
+| `mkv-audio-gap` | `test8.mkv` | `test-fixtures/matroska/mkv-audio-gap.mkv` | Audio gap behavior. |
+
+Download these Chromium media test data files into `test-fixtures/chromium/`.
+Fetch each file from
+`https://chromium.googlesource.com/chromium/src/+/lkgr/media/test/data/{filename}?format=TEXT`,
+then decode the base64 response to the destination file with the same file name:
+
+- `bear-320x240.webm`
+- `bear-vp9-opus.webm`
+- `bear-vp8-webvtt.webm`
+- `bear-1280x720_av_frag.mp4`
+- `bear-320x180-hi10p.mp4`
+- `bear-320x240-vp9_profile2.webm`
+- `bear-320x240-v_frag-hevc.mp4`
+- `bear-1280x720-aac_he.ts`
+- `bbb-320x240-2video-2audio.mp4`
+- `multitrack-3video-2audio.webm`
+
+Generate these derived fixtures from `test-fixtures/source/bbb-h264.mp4`.
+Generation must preserve deterministic stream order and fail if the source
+fixture is missing or not probeable:
+
+| Fixture id | Destination path | Required content |
+| --- | --- | --- |
+| `multi-audio-mkv` | `test-fixtures/derived/multi-audio.mkv` | One copied video stream and four audio streams, in order: English AAC tone, Japanese Opus tone, Spanish AC3 tone, and undeclared silent AAC. Add language metadata and stream titles to every audio stream. |
+| `subtitles-mkv` | `test-fixtures/derived/subtitles.mkv` | One copied video stream, copied original audio when present, English full SRT subtitles, and English forced SRT subtitles. Mark only the second subtitle stream as forced. Add language metadata and titles. |
+| `video-only-mp4` | `test-fixtures/derived/video-only.mp4` | One video stream. No audio streams. No subtitle streams. |
+| `audio-only-m4a` | `test-fixtures/derived/audio-only.m4a` | One AAC audio stream. No video streams. |
+| `silent-audio-mp4` | `test-fixtures/derived/silent-audio.mp4` | One copied video stream and one full-duration silent AAC stereo audio stream for silent-track detection. |
+| `h264-aac-ts` | `test-fixtures/derived/h264-aac.ts` | H.264 video, AAC audio, and MPEG-TS container. |
+| `h264-aac-mov` | `test-fixtures/derived/h264-aac.mov` | H.264 video, AAC audio, and MOV container. |
+| `mpeg4-mp3-avi` | `test-fixtures/derived/mpeg4-mp3.avi` | MPEG-4 Part 2 video, MP3 audio, and AVI container. |
+
+Derived generation details:
+
+- Use deterministic synthetic audio sources for generated tones and silence.
+  The generator should derive fixture duration from `ffprobe` output instead of
+  hard-coding a duration.
+- Use stable language tags: `eng`, `jpn`, `spa`, and `und`.
+- Use stable audio titles: `English AAC Tone`, `Japanese Opus Tone`,
+  `Spanish AC3 Tone`, and `Undeclared Silent AAC`.
+- Use stable subtitle titles: `English Full Subtitles` and
+  `English Forced Subtitles`.
+- Keep temporary subtitle text files inside a script-owned temporary directory
+  and delete them on success or failure.
+
+`scripts/test-fixtures/verify-fixtures.sh` must:
+
+- Confirm every manifest entry resolves to an existing fixture file after
+  download and generation.
+- Run `ffprobe` on every fixture with JSON output and write normalized probe
+  snapshots to `test-fixtures/probe/{fixture-id}.json`.
+- Validate expected video, audio, and subtitle stream counts.
+- Validate expected codec names where they are stable across supported FFmpeg
+  builds.
+- Validate language metadata for `multi-audio-mkv` and `subtitles-mkv`.
+- Validate forced subtitle disposition for `subtitles-mkv`.
+- Validate `silent-audio-mp4` has an audio stream.
+- Optionally validate `silent-audio-mp4` silence with `ffmpeg` `silencedetect`
+  using a reasonable noise threshold and duration tolerance.
+- Avoid brittle checks against absolute paths, encoder build strings, exact
+  bitrates, or exact durations without tolerance.
+- Exit non-zero on mismatch and print a clear summary that names each failing
+  fixture id, field, expected value, and actual value.
+
+Probe snapshot normalization must remove or stabilize highly variable fields
+before writing committed JSON snapshots. Prefer structured JSON assertions in
+Rust test helpers over parsing FFmpeg text logs. Do not add `jq` as a fixture
+script dependency unless an ADR explains why the existing Rust JSON tooling is
+insufficient.
+
+Integration tests must exercise production behavior through the cleanest
+available service or CLI boundary. If the conversion engine does not yet expose
+a clean API for fixture-backed tests, add a thin test harness around the
+existing CLI or service boundary. The suite must validate stream selection,
+target profile rules, replacement behavior, metadata handling, explicit failure
+contracts, and output probeability.
+
+Minimum media conversion integration cases:
+
+1. Common MP4 input:
+   - Input: `test-fixtures/source/bbb-h264.mp4`.
+   - Assert conversion succeeds.
+   - Assert output is probeable.
+   - Assert output has the expected video and audio streams for the selected
+     target profile.
+2. HEVC input:
+   - Input: `test-fixtures/source/bbb-h265.mp4`.
+   - Assert conversion succeeds or fails with an explicit unsupported-codec
+     error.
+   - Do not allow silent success with invalid output.
+   - Include an explicit HEVC video transcode case to the selected fallback
+     video codec when the fixture runtime exposes the required decoder and
+     encoder.
+3. AV1 input:
+   - Input: `test-fixtures/source/bbb-av1.mp4`.
+   - Assert conversion succeeds or fails with an explicit unsupported-codec
+     error.
+   - Include an explicit AV1 video transcode case to the selected fallback
+     video codec when the fixture runtime exposes the required decoder and
+     encoder.
+4. WebM VP8 and VP9 input:
+   - Inputs: `test-fixtures/source/bbb-vp8.webm` and
+     `test-fixtures/source/bbb-vp9.webm`.
+   - Assert conversion succeeds or fails explicitly.
+   - Assert the configured output policy is respected.
+   - Include explicit VP8 and VP9 video transcode cases, plus at least one
+     WebM audio transcode case when audio is present.
+5. MKV H.264 input:
+   - Input: `test-fixtures/source/bbb-h264.mkv`.
+   - Assert remux or transcode path works according to the selected target
+     profile.
+6. Multi-audio stream selection:
+   - Input: `test-fixtures/derived/multi-audio.mkv`.
+   - Test selecting only English audio.
+   - Test selecting multiple ordered audio streams.
+   - Test dropping silent undeclared audio.
+   - Test preserving requested stream order.
+7. Subtitle retention and removal:
+   - Input: `test-fixtures/derived/subtitles.mkv`.
+   - Test keeping all subtitles.
+   - Test keeping only forced subtitles.
+   - Test dropping all subtitles.
+   - Test preserving subtitle language metadata when subtitles are retained.
+8. Video-only input:
+   - Input: `test-fixtures/derived/video-only.mp4`.
+   - Assert behavior is explicit: either conversion succeeds as video-only or
+     fails with a clear `audio required` error.
+9. Audio-only input:
+   - Input: `test-fixtures/derived/audio-only.m4a`.
+   - Assert behavior is explicit: either reject as non-video input or handle
+     audio-only conversion if Revaer supports it.
+   - If handled, include an explicit audio transcode case and verify the output
+     audio codec with `ffprobe`.
+10. Silent audio detection:
+    - Input: `test-fixtures/derived/silent-audio.mp4`.
+    - Assert silent audio is detected when the feature exists.
+    - If detection is not implemented yet, add a pending or skipped test whose
+      reason names the missing feature and the production boundary it should
+      exercise.
+11. Fragmented MP4:
+    - Input: `test-fixtures/chromium/bear-1280x720_av_frag.mp4`.
+    - Assert parser and conversion behavior are explicit.
+12. Multi-track MP4 and WebM:
+    - Inputs: `test-fixtures/chromium/bbb-320x240-2video-2audio.mp4` and
+      `test-fixtures/chromium/multitrack-3video-2audio.webm`.
+    - Assert stream selection policy is deterministic.
+13. TS, MOV, and AVI containers:
+    - Inputs: `test-fixtures/derived/h264-aac.ts`,
+      `test-fixtures/derived/h264-aac.mov`, and
+      `test-fixtures/derived/mpeg4-mp3.avi`.
+    - Assert remux, transcode, or rejection behavior is explicit for each
+      container and codec combination.
+    - Include at least one explicit audio transcode case and one combined
+      video/audio transcode case across these derived container fixtures.
+14. Chromium edge cases:
+    - Use `bear-vp8-webvtt.webm` to cover WebVTT subtitle behavior.
+    - Use `bear-vp9-opus.webm` to cover Opus audio in WebM.
+    - Use `bear-320x180-hi10p.mp4`,
+      `bear-320x240-vp9_profile2.webm`, and
+      `bear-320x240-v_frag-hevc.mp4` to cover profile and fragmented codec
+      edge cases.
+    - Use `bear-1280x720-aac_he.ts` to cover HE-AAC in MPEG-TS.
+
+The fixture-backed acceptance matrix must cover at least:
+
+- Containers: MP4, MKV, WebM, MPEG-TS, MOV, AVI.
+- Video codecs: H.264, H.265/HEVC, AV1, VP8, VP9, MPEG-4 Part 2, Theora, DivX
+  where available from the Matroska corpus.
+- Audio codecs: AAC, Opus, AC3, MP3, Vorbis, HE-AAC.
+- Subtitle codecs: SRT and WebVTT.
+- Stream shapes: multi-audio, multi-video, forced subtitles, silent audio,
+  video-only, and audio-only.
+- Pipeline actions: remux or stream-copy materialization, audio transcode,
+  video transcode, and combined audio/video transcode. For every transcode
+  action, tests must assert the planned operation kind and validate the
+  resulting stream codec from `ffprobe` JSON.
+
+Do not use brittle duration assertions. Duration checks must allow a documented
+tolerance and should be secondary to graph, stream, codec, metadata, and
+contract assertions.
+
+CI requirements:
+
+- Add a fixture preparation path that restores cached binary fixture
+  directories when available and otherwise downloads/generates them through the
+  checked-in scripts.
+- Key the cache by `test-fixtures/manifest.json`,
+  `scripts/test-fixtures/*.sh`, and relevant tool versions so stale fixtures do
+  not mask manifest changes.
+- Run `just verify-test-fixtures` before `just test-media-conversion`.
+- Publish one Markdown media conversion report from the fixture job. The report
+  must start with a summary and then list fixture validation, metadata checks,
+  production media pipeline actions, outputs, operation kinds, and outcomes.
+  The PR job must append the report to the GitHub job summary and upload the
+  same file as an artifact.
+- Fixture download failures must name the source URL and fixture id. They must
+  not degrade into skipped media conversion tests in the dedicated fixture job.
+- Normal `just ci` behavior must remain Justfile-backed. If full media fixtures
+  are too heavy for the default local CI gate, document the split and make the
+  dedicated media conversion task mandatory in the media implementation slice
+  and CI workflow that owns this feature.
+
+---
+
 ## Fingerprinting And Caching
 
 Fingerprinting supports:
@@ -2294,6 +2656,20 @@ Every slice adds an ADR and keeps docs in sync.
     - Add intent-specific safeguards.
     - Add strict regression tests.
 
+16. Media conversion fixture suite and integration coverage
+    - Add the fixture tree, manifest, attribution notes, downloader, generator,
+      verifier, cleanup script, normalized probe snapshots, and README described
+      in `Media Conversion Integration Fixture Suite`.
+    - Add the binary fixture directories to `.gitignore`.
+    - Add Justfile recipes for download, generation, verification, cleanup, and
+      media conversion integration tests.
+    - Add fixture-backed tests through the existing Rust integration-test or
+      service/CLI harness path.
+    - Cover MP4, MKV, WebM, MPEG-TS, MOV, AVI, H.264, H.265/HEVC, AV1, VP8,
+      VP9, AAC, Opus, AC3, MP3, SRT, WebVTT, multi-audio, multi-video, forced
+      subtitles, silent audio, video-only, and audio-only behavior.
+    - Add CI cache and execution wiring without committing media binaries.
+
 ---
 
 ## Verification Gates
@@ -2344,6 +2720,16 @@ Additional media-specific gates:
 - Revaer binaries do not directly link GPL media libraries.
 - Published image metadata, release notes, API About surface, and UI About
   surface expose source-offer, third-party-notice, and SBOM links.
+- Fixture-backed media conversion tests cover every fixture acceptance-matrix
+  item listed in `Media Conversion Integration Fixture Suite`.
+- Fixture preparation scripts fail early when `ffmpeg`, `ffprobe`, `curl`,
+  `git`, or `base64` is unavailable.
+- Downloaded and generated fixture binaries remain ignored by git, while
+  manifest, attribution, scripts, normalized probe snapshots, and tests remain
+  committed.
+- `just verify-test-fixtures` validates manifest existence, stream counts,
+  stable codec names, derived language metadata, forced subtitle disposition,
+  and silent-audio presence before `just test-media-conversion` runs.
 
 ---
 
