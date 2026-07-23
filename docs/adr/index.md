@@ -329,4 +329,5 @@
 -   [315](315-indexer-import-job-runtime-worker.md) – Indexer import job runtime worker
 -   [316](316-import-runtime-gap-closure-followup.md) – Import runtime gap-closure follow-up
 -   [317](317-supply-chain-advisory-baseline.md) – Supply chain advisory baseline
+-   [318](318-media-transcoding-foundation.md) – Media transcoding foundation
 -   [322](322-supply-chain-ci-tool-cache.md) – Supply Chain CI and advisory remediation
