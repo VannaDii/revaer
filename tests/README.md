@@ -9,9 +9,9 @@
 
 ## Requirements
 
-- Ports `7070` (API) and `8080` (UI) must be free (global setup will stop existing Revaer dev servers, but other services must be stopped manually).
+- Port `7070` (API) and the configured UI port from `E2E_BASE_URL` (default `8080`) must be free. Global setup will stop existing Revaer dev servers, but other services must be stopped manually or avoided with a different `E2E_BASE_URL` port.
 - Postgres must be reachable via `E2E_DB_ADMIN_URL`.
-  - If the host is local, global setup will call `just db-start` to bootstrap Docker.
+  - If the host is local, global setup calls `just db-start` with explicit managed-database provenance so the synthesized local URL can bootstrap Docker.
 
 ## Run
 
@@ -21,7 +21,7 @@ just ui-e2e
 
 ## Configuration
 
-- `E2E_BASE_URL` / `E2E_API_BASE_URL`: UI/API base URLs (defaults to `http://localhost:8080` and `http://localhost:7070`).
+- `E2E_BASE_URL` / `E2E_API_BASE_URL`: UI/API base URLs (defaults to `http://localhost:8080` and `http://localhost:7070`). The UI server launched by global setup uses the port from `E2E_BASE_URL` and builds the UI with `E2E_API_BASE_URL` as its API base.
 - `E2E_DB_ADMIN_URL`: admin connection string used to create temp DBs.
 - `E2E_SKIP_DB_START`: set to `1` to skip `just db-start` in global setup (useful in CI).
 - `E2E_DB_PREFIX`: prefix for temp DB names.
