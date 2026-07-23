@@ -1,0 +1,238 @@
+//! Pure helpers for the media UI feature.
+
+use crate::features::media::state::MediaJobDiagnostics;
+use uuid::Uuid;
+
+const MIN_RETENTION_DAYS: i32 = 1;
+const MAX_RETENTION_DAYS: i32 = 3650;
+const MIN_SCHEDULE_INTERVAL_MINUTES: i32 = 1;
+const MAX_SCHEDULE_INTERVAL_MINUTES: i32 = 525_600;
+const RETENTION_DAYS_PARSE_ERROR: &str = "Retention days must be a whole number";
+const RETENTION_DAYS_BOUNDS_ERROR: &str = "Retention days must be between 1 and 3650";
+const SCHEDULE_INTERVAL_PARSE_ERROR: &str = "Schedule interval must be a whole number";
+const SCHEDULE_INTERVAL_BOUNDS_ERROR: &str = "Schedule interval must be between 1 and 525600";
+
+pub(crate) fn parse_retention_days_input(input: &str) -> Result<i32, &'static str> {
+    let parsed = input
+        .trim()
+        .parse::<i32>()
+        .map_err(|_| RETENTION_DAYS_PARSE_ERROR)?;
+    if !(MIN_RETENTION_DAYS..=MAX_RETENTION_DAYS).contains(&parsed) {
+        return Err(RETENTION_DAYS_BOUNDS_ERROR);
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn parse_schedule_interval_input(input: &str) -> Result<i32, &'static str> {
+    let parsed = input
+        .trim()
+        .parse::<i32>()
+        .map_err(|_| SCHEDULE_INTERVAL_PARSE_ERROR)?;
+    if !(MIN_SCHEDULE_INTERVAL_MINUTES..=MAX_SCHEDULE_INTERVAL_MINUTES).contains(&parsed) {
+        return Err(SCHEDULE_INTERVAL_BOUNDS_ERROR);
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn media_recent_jobs_path(
+    limit: u16,
+    cursor: Option<&str>,
+    media_profile_public_id: Option<Uuid>,
+) -> String {
+    let mut path = format!("/v1/media/jobs/recent?limit={limit}");
+    if let Some(cursor) = cursor {
+        path.push_str("&cursor=");
+        path.push_str(&urlencoding::encode(cursor));
+    }
+    if let Some(profile_id) = media_profile_public_id {
+        path.push_str("&media_profile_public_id=");
+        path.push_str(&profile_id.to_string());
+    }
+    path
+}
+
+pub(crate) const fn media_discovery_preview_path() -> &'static str {
+    "/v1/media/discovery/preview"
+}
+
+pub(crate) fn media_job_diagnostics_path(media_job_public_id: Uuid) -> String {
+    format!("/v1/media/jobs/{media_job_public_id}/diagnostics")
+}
+
+pub(crate) fn summarize_media_job_diagnostics(diagnostics: &MediaJobDiagnostics) -> String {
+    let selected_reason = diagnostics
+        .plan_reasons
+        .iter()
+        .find(|row| row.selected)
+        .map_or("none", |row| row.reason_code.as_str());
+    format!(
+        "operations={} violations={} reasons={} checks={} artifacts={} audits={} selected_reason={selected_reason}",
+        diagnostics.operations.len(),
+        diagnostics.violations.len(),
+        diagnostics.plan_reasons.len(),
+        diagnostics.verification_checks.len(),
+        diagnostics.artifacts.len(),
+        diagnostics.compact_audits.len()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        media_discovery_preview_path, media_job_diagnostics_path, media_recent_jobs_path,
+        parse_retention_days_input, parse_schedule_interval_input, summarize_media_job_diagnostics,
+    };
+    use crate::features::media::state::MediaJobDiagnostics;
+    use crate::models::{
+        MediaJobArtifactResponse, MediaJobCompactAuditResponse, MediaJobOperationResponse,
+        MediaJobPlanReasonResponse, MediaJobVerificationCheckResponse, MediaJobViolationResponse,
+    };
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    #[test]
+    fn media_recent_jobs_path_includes_bound_cursor_and_profile_filter() {
+        let profile_id = Uuid::from_u128(1);
+
+        assert_eq!(
+            media_recent_jobs_path(25, Some("2026-08-12T12:00:00Z/job 1"), Some(profile_id)),
+            format!(
+                "/v1/media/jobs/recent?limit=25&cursor=2026-08-12T12%3A00%3A00Z%2Fjob%201&media_profile_public_id={profile_id}"
+            )
+        );
+    }
+
+    #[test]
+    fn media_recent_jobs_path_without_optional_filters_uses_bounded_route() {
+        assert_eq!(
+            media_recent_jobs_path(10, None, None),
+            "/v1/media/jobs/recent?limit=10"
+        );
+    }
+
+    #[test]
+    fn media_discovery_preview_path_uses_preview_route() {
+        assert_eq!(
+            media_discovery_preview_path(),
+            "/v1/media/discovery/preview"
+        );
+    }
+
+    #[test]
+    fn parse_retention_days_input_rejects_non_numeric_and_unbounded_values() {
+        assert_eq!(parse_retention_days_input("30"), Ok(30));
+        assert_eq!(
+            parse_retention_days_input("not-a-number"),
+            Err("Retention days must be a whole number")
+        );
+        assert_eq!(
+            parse_retention_days_input("0"),
+            Err("Retention days must be between 1 and 3650")
+        );
+        assert_eq!(
+            parse_retention_days_input("3651"),
+            Err("Retention days must be between 1 and 3650")
+        );
+    }
+
+    #[test]
+    fn parse_schedule_interval_input_rejects_non_numeric_and_unbounded_values() {
+        assert_eq!(parse_schedule_interval_input("60"), Ok(60));
+        assert_eq!(
+            parse_schedule_interval_input("later"),
+            Err("Schedule interval must be a whole number")
+        );
+        assert_eq!(
+            parse_schedule_interval_input("0"),
+            Err("Schedule interval must be between 1 and 525600")
+        );
+        assert_eq!(
+            parse_schedule_interval_input("525601"),
+            Err("Schedule interval must be between 1 and 525600")
+        );
+    }
+
+    #[test]
+    fn media_job_diagnostics_path_uses_aggregate_job_route() {
+        let job_id = Uuid::from_u128(2);
+
+        assert_eq!(
+            media_job_diagnostics_path(job_id),
+            format!("/v1/media/jobs/{job_id}/diagnostics")
+        );
+    }
+
+    #[test]
+    fn summarize_media_job_diagnostics_counts_rows_and_selected_reasons() {
+        let created_at = Utc::now();
+        let diagnostics = MediaJobDiagnostics {
+            operations: vec![MediaJobOperationResponse {
+                operation_index: 0,
+                operation_kind: "remux".to_string(),
+                stream_id: Some(1),
+                command_bin: "ffmpeg".to_string(),
+                arg_1: Some("-i".to_string()),
+                arg_2: None,
+                arg_3: None,
+                arg_4: None,
+                arg_5: None,
+                created_at,
+            }],
+            violations: vec![MediaJobViolationResponse {
+                violation_index: 0,
+                violation_kind: "audio_codec".to_string(),
+                severity: "medium".to_string(),
+                stream_id: Some(2),
+                created_at,
+            }],
+            plan_reasons: vec![
+                MediaJobPlanReasonResponse {
+                    reason_index: 0,
+                    candidate_index: Some(0),
+                    selected: false,
+                    reason_code: "too_expensive".to_string(),
+                    reason_text: "Rejected higher cost candidate.".to_string(),
+                    created_at,
+                },
+                MediaJobPlanReasonResponse {
+                    reason_index: 1,
+                    candidate_index: Some(1),
+                    selected: true,
+                    reason_code: "least_cost".to_string(),
+                    reason_text: "Selected least cost candidate.".to_string(),
+                    created_at,
+                },
+            ],
+            verification_checks: vec![MediaJobVerificationCheckResponse {
+                check_index: 0,
+                check_kind: "duration".to_string(),
+                check_status: "passed".to_string(),
+                expected_value: Some("3600.0".to_string()),
+                actual_value: Some("3599.9".to_string()),
+                details_text: Some("within tolerance".to_string()),
+                created_at,
+            }],
+            artifacts: vec![MediaJobArtifactResponse {
+                artifact_index: 0,
+                artifact_kind: "ffprobe_json".to_string(),
+                artifact_path: "jobs/abc/ffprobe.json".to_string(),
+                size_bytes: Some(2048),
+                content_type: Some("application/json".to_string()),
+                created_at,
+            }],
+            compact_audits: vec![MediaJobCompactAuditResponse {
+                audit_index: 0,
+                fact_kind: "replacement".to_string(),
+                fact_text: "source preserved before replace".to_string(),
+                created_at,
+            }],
+        };
+
+        let summary = summarize_media_job_diagnostics(&diagnostics);
+
+        assert_eq!(
+            summary,
+            "operations=1 violations=1 reasons=2 checks=1 artifacts=1 audits=1 selected_reason=least_cost"
+        );
+    }
+}
