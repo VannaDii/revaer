@@ -332,6 +332,7 @@
 -   [318](318-media-transcoding-foundation.md) – Media transcoding foundation
 -   [322](322-supply-chain-ci-tool-cache.md) – Supply chain CI and advisory remediation
 -   [323](323-core-planner-review-repair.md) – Core planner review repair
+-   [324](324-media-review-closeout.md) – Media review closeout
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools

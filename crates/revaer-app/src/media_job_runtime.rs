@@ -2425,8 +2425,7 @@ fn video_constraint_stream_mismatch(
         ));
     }
     if let Some(expected) = constraint.level.as_deref()
-        && normalized_constraint_text(stream_level_metadata(stream))
-            .is_none_or(|actual| actual != normalized_constraint_value(expected))
+        && !video_level_matches(expected, stream_level_metadata(stream))
     {
         return Some(video_constraint_mismatch(
             constraint.stream_id,
@@ -2519,6 +2518,71 @@ fn stream_level_metadata(stream: &StreamInspection) -> Option<&str> {
         .iter()
         .find(|entry| normalized_constraint_value(&entry.key) == "level")
         .map(|entry| entry.value.as_str())
+}
+
+fn video_level_matches(expected: &str, actual: Option<&str>) -> bool {
+    let Some(actual) = actual else {
+        return false;
+    };
+    match (parse_video_level(expected), parse_video_level(actual)) {
+        (Some(expected), Some(actual)) => expected == actual,
+        _ => normalized_constraint_value(actual) == normalized_constraint_value(expected),
+    }
+}
+
+fn parse_video_level(value: &str) -> Option<u16> {
+    let candidate = first_video_level_candidate(value.trim())?;
+    if candidate.contains('.') {
+        parse_dotted_video_level(candidate)
+    } else {
+        parse_integer_video_level(candidate)
+    }
+}
+
+fn first_video_level_candidate(value: &str) -> Option<&str> {
+    let lowercase = value.to_ascii_lowercase();
+    if let Some(level_index) = lowercase.find("level") {
+        let after_level = level_index.checked_add("level".len())?;
+        if let Some(candidate) = first_numeric_video_level_candidate(&value[after_level..]) {
+            return Some(candidate);
+        }
+    }
+    first_numeric_video_level_candidate(value)
+}
+
+fn first_numeric_video_level_candidate(value: &str) -> Option<&str> {
+    let start = value
+        .char_indices()
+        .find_map(|(index, item)| item.is_ascii_digit().then_some(index))?;
+    let end = value[start..]
+        .char_indices()
+        .find_map(|(offset, item)| {
+            (!item.is_ascii_digit() && item != '.').then_some(start + offset)
+        })
+        .unwrap_or(value.len());
+    Some(&value[start..end])
+}
+
+fn parse_dotted_video_level(value: &str) -> Option<u16> {
+    let (major, minor) = value.split_once('.')?;
+    if major.is_empty() || minor.len() != 1 || minor.contains('.') {
+        return None;
+    }
+    let major = major.parse::<u16>().ok()?;
+    let minor = minor.parse::<u16>().ok()?;
+    major.checked_mul(10)?.checked_add(minor)
+}
+
+fn parse_integer_video_level(value: &str) -> Option<u16> {
+    if value.is_empty() {
+        return None;
+    }
+    let parsed = value.parse::<u16>().ok()?;
+    if value.len() == 1 {
+        parsed.checked_mul(10)
+    } else {
+        Some(parsed)
+    }
 }
 
 fn normalized_expected_color_constraints(
@@ -3497,8 +3561,9 @@ mod tests {
         AudioAnalysisAdapter, AudioMeasurement, AudioStreamConstraints, DesiredTargetSnapshot,
         FilesystemCapacityProbe, MediaJobRuntime, MediaJobRuntimeComponents, RuntimeAudioAnalyzer,
         RuntimeCapacityProbe, RuntimeCommandRunner, RuntimeInspector, RuntimeReplacementCommitter,
-        RuntimeVerificationExecutor, SystemFfmpegAudioAnalysisAdapter, audio_measurement_mismatch,
-        expected_audio_constraints, parse_ebur128_summary, verification_policy_from_job,
+        RuntimeVerificationExecutor, SystemFfmpegAudioAnalysisAdapter, VideoStreamConstraints,
+        audio_measurement_mismatch, expected_audio_constraints, parse_ebur128_summary,
+        verification_policy_from_job, video_constraint_stream_mismatch,
         video_policy_from_policy_intent, video_policy_from_target_snapshot,
     };
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -3965,6 +4030,81 @@ mod tests {
             subtitle_placement: None,
             image_subtitle_action: None,
         }
+    }
+
+    fn video_level_constraint(expected_level: &str) -> VideoStreamConstraints {
+        VideoStreamConstraints {
+            stream_id: 0,
+            profile: None,
+            level: Some(expected_level.to_string()),
+            bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+        }
+    }
+
+    fn video_stream_inspection_with_level(actual_level: &str) -> StreamInspection {
+        StreamInspection {
+            stream_id: 0,
+            profile: None,
+            duration_millis: None,
+            bit_rate: None,
+            sample_rate: None,
+            width: None,
+            height: None,
+            pixel_format: None,
+            sample_aspect_ratio: None,
+            display_aspect_ratio: None,
+            average_frame_rate: None,
+            color_range: None,
+            color_space: None,
+            color_transfer: None,
+            color_primaries: None,
+            chroma_location: None,
+            field_order: None,
+            metadata: vec![MetadataEntry {
+                key: "level".to_string(),
+                value: actual_level.to_string(),
+            }],
+            side_data_types: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn video_level_constraint_accepts_ffprobe_integer_equivalent() {
+        let constraint = video_level_constraint("5.1");
+        let stream = video_stream_inspection_with_level("51");
+
+        assert!(video_constraint_stream_mismatch(&constraint, &stream).is_none());
+    }
+
+    #[test]
+    fn video_level_constraint_accepts_labeled_level_equivalent() {
+        let constraint = video_level_constraint("51");
+        let stream = video_stream_inspection_with_level("Level 5.1");
+
+        assert!(video_constraint_stream_mismatch(&constraint, &stream).is_none());
+    }
+
+    #[test]
+    fn video_level_constraint_prefers_labeled_level_over_codec_digits() {
+        let constraint = video_level_constraint("51");
+        let stream = video_stream_inspection_with_level("h264 level 5.1");
+
+        assert!(video_constraint_stream_mismatch(&constraint, &stream).is_none());
+    }
+
+    #[test]
+    fn video_level_constraint_rejects_non_equivalent_level() {
+        let constraint = video_level_constraint("5.2");
+        let stream = video_stream_inspection_with_level("51");
+        let mismatch = video_constraint_stream_mismatch(&constraint, &stream)
+            .expect("different video levels should fail verification");
+
+        assert_eq!(mismatch.expected, "stream:0:level=5.2");
+        assert_eq!(mismatch.actual, "51");
     }
 
     #[test]
