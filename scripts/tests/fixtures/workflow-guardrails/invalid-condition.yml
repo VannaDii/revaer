@@ -1,0 +1,10 @@
+name: Invalid condition
+on:
+  pull_request:
+jobs:
+  policy:
+    if:
+      - success()
+    runs-on: ubuntu-latest
+    steps:
+      - run: just policy

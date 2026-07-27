@@ -9,6 +9,9 @@ use uuid::Uuid;
 /// LISTEN/NOTIFY channel for configuration revision broadcasts.
 pub const SETTINGS_CHANNEL: &str = "revaer_settings_changed";
 
+const DEADLOCK_SQLSTATE: &str = "40P01";
+const FACTORY_RESET_MAX_ATTEMPTS: usize = 4;
+
 fn map_query_err(operation: &'static str) -> impl FnOnce(sqlx::Error) -> DataError {
     move |source| DataError::QueryFailed { operation, source }
 }
@@ -919,15 +922,31 @@ where
 /// # Errors
 ///
 /// Returns an error if the reset procedure fails to execute.
-pub async fn factory_reset<'e, E>(executor: E) -> Result<()>
-where
-    E: Executor<'e, Database = Postgres>,
-{
+pub async fn factory_reset(pool: &PgPool) -> Result<()> {
+    let mut attempt = 1;
+    loop {
+        match execute_factory_reset(pool).await {
+            Ok(()) => return Ok(()),
+            Err(source) if attempt < FACTORY_RESET_MAX_ATTEMPTS && is_deadlock_error(&source) => {
+                attempt += 1;
+            }
+            Err(source) => return Err(map_query_err("execute factory reset")(source)),
+        }
+    }
+}
+
+async fn execute_factory_reset(pool: &PgPool) -> std::result::Result<(), sqlx::Error> {
     sqlx::query("SELECT revaer_config.factory_reset()")
-        .execute(executor)
-        .await
-        .map_err(map_query_err("execute factory reset"))?;
+        .execute(pool)
+        .await?;
     Ok(())
+}
+
+fn is_deadlock_error(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(sqlx::error::DatabaseError::code)
+        .is_some_and(|code| code.as_ref() == DEADLOCK_SQLSTATE)
 }
 
 /// Load a secret row by name.
