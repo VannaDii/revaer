@@ -28,34 +28,56 @@ multiple-versions = "deny"
 wildcards = "allow"
 
 [[bans.skip]]
-crate = "getrandom@0.2.16"
-reason = "Legacy rand 0.8 stack from password hashing dependencies."
-
-
-[[bans.skip]]
-crate = "rand@0.8.7"
-reason = "SQLx transitively depends on the patched rand 0.8.x line."
+crate = "getrandom@0.2.17"
+reason = "ADR 321: gloo/ring/rand_core retain getrandom 0.2 while jsonschema/tempfile and sqlx use newer getrandom lines."
 
 [[bans.skip]]
-crate = "rand@0.9.4"
-reason = "Workspace crates use rand 0.9.x directly while sqlx still pulls rand 0.8.x."
+crate = "getrandom@0.3.4"
+reason = "ADR 321: jsonschema/tempfile/opentelemetry use getrandom 0.3 while workspace rand and sqlx-postgres use getrandom 0.4."
 
 [[bans.skip]]
-crate = "rand_chacha@0.3.1"
-reason = "sqlx 0.8 transitively depends on rand 0.8.x stack."
+crate = "r-efi@5.3.0"
+reason = "ADR 321: getrandom 0.3 and 0.4 target different WASI support stacks until upstream converges."
 
 [[bans.skip]]
-crate = "rand_chacha@0.9.0"
-reason = "rand 0.9.x stack accompanies the workspace rand dependency; argon2 stack remains on rand 0.8."
+crate = "hashbrown@0.16.1"
+reason = "ADR 321: hashlink/referencing/sqlx use hashbrown 0.16 while indexmap remains on hashbrown 0.17."
+
+[[bans.skip]]
+crate = "block-buffer@0.10.4"
+reason = "ADR 321: argon2/headers/sqlx-core use digest 0.10 while sqlx-postgres 0.9 uses digest 0.11."
+
+[[bans.skip]]
+crate = "cpufeatures@0.2.17"
+reason = "ADR 321: digest 0.10 consumers remain on cpufeatures 0.2 while rand/sqlx-postgres use cpufeatures 0.3."
+
+[[bans.skip]]
+crate = "crypto-common@0.1.7"
+reason = "ADR 321: digest 0.10 consumers remain on crypto-common 0.1 while sqlx-postgres 0.9 uses digest 0.11."
+
+[[bans.skip]]
+crate = "digest@0.10.7"
+reason = "ADR 321: argon2/headers/sqlx-core use digest 0.10 while sqlx-postgres 0.9 uses digest 0.11."
+
+[[bans.skip]]
+crate = "sha2@0.10.9"
+reason = "ADR 321: asset_sync/fsops/sqlx-core use sha2 0.10 while sqlx-postgres 0.9 uses sha2 0.11."
+
+[[bans.skip]]
+crate = "rand@0.9.5"
+reason = "ADR 321: opentelemetry uses rand 0.9 while workspace token generation and sqlx-postgres use rand 0.10."
 
 [[bans.skip]]
 crate = "rand_core@0.6.4"
-reason = "argon2/password-hash use rand_core 0.6.x."
+reason = "ADR 321: argon2/password-hash use rand_core 0.6 while opentelemetry and rand 0.10 use newer rand_core lines."
 
 [[bans.skip]]
-crate = "rand_core@0.9.3"
-reason = "rand 0.9.x stack accompanies the workspace rand dependency; argon2 stack remains on rand_core 0.6."
+crate = "rand_core@0.9.5"
+reason = "ADR 321: opentelemetry uses rand_core 0.9 while workspace token generation and sqlx-postgres use rand_core 0.10."
 
+[[bans.skip]]
+crate = "syn@2.0.119"
+reason = "ADR 321: yew-macro uses syn 3 while current macro dependencies retain syn 2."
 
 [[bans.skip]]
 crate = "http@0.2.12"
@@ -67,68 +89,16 @@ crate = "thiserror@1.0.69"
 reason = "Prometheus/protobuf pin the 1.x line."
 
 [[bans.skip]]
-crate = "thiserror@2.0.17"
-reason = "Workspace crates use the current 2.x line."
-
-[[bans.skip]]
 crate = "thiserror-impl@1.0.69"
 reason = "Matches thiserror 1.x pinned by prometheus/protobuf."
 
 [[bans.skip]]
-crate = "thiserror-impl@2.0.17"
-reason = "Matches thiserror 2.x used by workspace crates."
+crate = "windows-sys@0.52.0"
+reason = "ADR 317/321, expires 2026-10-01: ring uses 0.52 while rpassword and notify require newer Windows support lines."
 
 [[bans.skip]]
-crate = "hashbrown@*"
-reason = "SQLx/hashlink require hashbrown 0.15.x while yew/indexmap require 0.16.x (ADR 076)."
-
-[[bans.skip]]
-crate = "foldhash@*"
-reason = "Paired with hashbrown 0.15.x and 0.16.x until SQLx adopts hashlink 0.11 (ADR 076)."
-
-[[bans.skip]]
-crate = "webpki-roots@*"
-reason = "Both sqlx/ureq (0.26.x) and hyper-rustls/reqwest (1.x) are required."
-
-[[bans.skip]]
-crate = "windows-sys@*"
-reason = "Tokio, sqlx, and rustls require multiple versions across their supported Windows targets."
-
-[[bans.skip]]
-crate = "windows-targets@*"
-reason = "Matches windows-sys releases for individual target triples."
-
-[[bans.skip]]
-crate = "windows_aarch64_gnullvm@*"
-reason = "Target-specific windows bindings; duplicates mirror windows-sys versions."
-
-[[bans.skip]]
-crate = "windows_aarch64_msvc@*"
-reason = "Target-specific windows bindings; duplicates mirror windows-sys versions."
-
-[[bans.skip]]
-crate = "windows_i686_gnu@*"
-reason = "Target-specific windows bindings; duplicates mirror windows-sys versions."
-
-[[bans.skip]]
-crate = "windows_i686_gnullvm@*"
-reason = "Target-specific windows bindings; duplicates mirror windows-sys versions."
-
-[[bans.skip]]
-crate = "windows_i686_msvc@*"
-reason = "Target-specific windows bindings; duplicates mirror windows-sys versions."
-
-[[bans.skip]]
-crate = "windows_x86_64_gnu@*"
-reason = "Target-specific windows bindings; duplicates mirror windows-sys versions."
-
-[[bans.skip]]
-crate = "windows_x86_64_gnullvm@*"
-reason = "Target-specific windows bindings; duplicates mirror windows-sys versions."
-
-[[bans.skip]]
-crate = "windows_x86_64_msvc@*"
-reason = "Target-specific windows bindings; duplicates mirror windows-sys versions."
+crate = "windows-sys@0.59.0"
+reason = "ADR 317/321, expires 2026-10-01: rpassword uses 0.59 while ring and notify require adjacent Windows support lines."
 
 [sources]
 unknown-registry = "deny"

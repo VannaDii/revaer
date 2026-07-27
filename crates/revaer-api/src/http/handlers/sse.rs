@@ -134,10 +134,10 @@ pub(crate) fn matches_sse_filter(envelope: &EventEnvelope, filter: &SseFilter) -
                     return false;
                 }
             }
-            CoreEvent::Completed { .. } => {
-                if !filter.states.contains(&TorrentStateKind::Completed) {
-                    return false;
-                }
+            CoreEvent::Completed { .. }
+                if !filter.states.contains(&TorrentStateKind::Completed) =>
+            {
+                return false;
             }
             _ => {}
         }
