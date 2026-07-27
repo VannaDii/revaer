@@ -59,20 +59,47 @@ release-artifacts: build-release api-export
     cp docs/api/openapi.json dist/openapi.json
 
 udeps:
-    if ! command -v cargo-udeps >/dev/null 2>&1; then \
-        cargo install cargo-udeps --locked; \
-    fi
-    if ! cargo +stable udeps --workspace --all-targets >/dev/null 2>&1; then \
-        echo "cargo-udeps: stable toolchain lacks required -Z flags, retrying with nightly"; \
-        if ! rustup toolchain list | grep -q nightly; then \
-            rustup toolchain install nightly --no-self-update; \
+    required_udeps_version="0.1.57"; \
+    install_udeps() { \
+        cargo install cargo-udeps --locked --force --version "${required_udeps_version}"; \
+    }; \
+    version_ge() { \
+        awk -v actual="$1" -v required="$2" 'BEGIN { \
+            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
+            max = (ac > rc ? ac : rc); \
+            for (i = 1; i <= max; i++) { \
+                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
+                if (av > rv) exit 0; if (av < rv) exit 1; \
+            } \
+            exit 0; \
+        }'; \
+    }; \
+    if command -v cargo-udeps >/dev/null 2>&1; then \
+        installed_version="$(cargo udeps --version | awk '{print $2}')"; \
+        if ! version_ge "$installed_version" "$required_udeps_version"; then \
+            install_udeps; \
         fi; \
-        cargo +nightly udeps --workspace --all-targets; \
+    else \
+        install_udeps; \
     fi
+    udeps_toolchain="${REVAER_UDEPS_TOOLCHAIN:-nightly}"; \
+    if ! rustup run "${udeps_toolchain}" rustc --version >/dev/null 2>&1; then \
+        rustup toolchain install "${udeps_toolchain}" --no-self-update; \
+    fi; \
+    cargo +"${udeps_toolchain}" udeps --workspace --all-targets
 
 sqlx-install:
-    if ! command -v sqlx >/dev/null 2>&1; then \
-        cargo install sqlx-cli --no-default-features --features postgres; \
+    required_sqlx_version="0.8.6"; \
+    install_sqlx() { \
+        cargo install sqlx-cli --locked --force --version "${required_sqlx_version}" --no-default-features --features postgres; \
+    }; \
+    if command -v sqlx >/dev/null 2>&1; then \
+        installed_version="$(sqlx --version | awk '{print $2}')"; \
+        if [ "$installed_version" != "$required_sqlx_version" ]; then \
+            install_sqlx; \
+        fi; \
+    else \
+        install_sqlx; \
     fi
 
 db-migrate: sqlx-install
@@ -268,23 +295,27 @@ sync-assets:
 check-assets: sync-assets
     git diff --exit-code -- static/nexus
 
-ui-serve: sync-assets
-    rustup target add wasm32-unknown-unknown
-    if ! command -v trunk >/dev/null 2>&1; then \
-        cargo install trunk; \
+trunk-install:
+    required_trunk_version="0.21.14"; \
+    installed_trunk_version=""; \
+    if command -v trunk >/dev/null 2>&1; then \
+        installed_trunk_version="$(trunk --version | awk '{print $2}')"; \
+    fi; \
+    if [ "${installed_trunk_version}" != "${required_trunk_version}" ]; then \
+        cargo install trunk --locked --force --version "${required_trunk_version}"; \
     fi
+
+ui-serve: sync-assets trunk-install
+    rustup target add wasm32-unknown-unknown
     mkdir -p crates/revaer-ui/dist-serve/.stage
     cd crates/revaer-ui && NO_COLOR=true trunk serve --dist dist-serve --open
 
-ui-build: sync-assets
+ui-build: sync-assets trunk-install
     rustup target add wasm32-unknown-unknown
-    if ! command -v trunk >/dev/null 2>&1; then \
-        cargo install trunk; \
-    fi
     mkdir -p crates/revaer-ui/dist/.stage
     cd crates/revaer-ui && NO_COLOR=true trunk build --release
 
-ui-e2e:
+ui-e2e: trunk-install
     cd tests && npm install
     cd tests && npm run gen:api-client
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \

@@ -1,26 +1,63 @@
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
-use postgres::NoTls;
 use revaer_test_support::fixtures::{docker_available, docker_available_with_host};
 use revaer_test_support::postgres::{start_postgres, start_postgres_at};
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{AssertSqlSafe, Row, raw_sql};
 
 fn current_database_name(url: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let config = postgres::Config::from_str(url)?;
-    let mut client = config.connect(NoTls)?;
-    let row = client.query_one("SELECT current_database()", &[])?;
-    Ok(row.get(0))
+    let url = url.to_owned();
+    thread_query(move || async move {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await?;
+        let row = raw_sql("SELECT current_database()")
+            .fetch_one(&pool)
+            .await?;
+        let current_database = row.try_get(0)?;
+        Ok(current_database)
+    })
 }
 
 fn database_exists(url: &str, database_name: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let config = postgres::Config::from_str(url)?;
-    let mut client = config.connect(NoTls)?;
-    let row = client.query_one(
-        "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)",
-        &[&database_name],
-    )?;
-    Ok(row.get(0))
+    let url = url.to_owned();
+    let database_name = database_name.to_owned();
+    thread_query(move || async move {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await?;
+        let database_name = sql_string_literal(&database_name);
+        let sql =
+            format!("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = {database_name})");
+        let row = raw_sql(AssertSqlSafe(sql)).fetch_one(&pool).await?;
+        let exists = row.try_get(0)?;
+        Ok(exists)
+    })
+}
+
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn thread_query<F, Fut, T>(operation: F) -> Result<T, Box<dyn std::error::Error>>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T, anyhow::Error>> + Send + 'static,
+    T: Send + 'static,
+{
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        runtime.block_on(operation())
+    })
+    .join()
+    .map_err(|_| anyhow::Error::msg("postgres test worker panicked"))?
+    .map_err(Into::into)
 }
 
 #[test]

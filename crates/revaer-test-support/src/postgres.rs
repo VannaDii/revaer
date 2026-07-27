@@ -1,13 +1,13 @@
 //! Helpers for creating disposable databases on an externally managed Postgres instance.
 
 use std::{
-    str::FromStr,
     sync::atomic::{AtomicU64, Ordering},
     thread,
 };
 
 use anyhow::{Context, Result};
-use postgres::NoTls;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{AssertSqlSafe, raw_sql};
 use url::Url;
 
 const TEST_DATABASE_URL_IS_REQUIRED: &str = "test database url is required";
@@ -52,7 +52,7 @@ fn database_connection_string(base_url: &Url, database: &str) -> String { let mu
 fn admin_urls(base_url: &Url) -> Vec<String> { let mut admin_url = base_url.clone(); admin_url.set_path("/postgres"); if admin_url.path() == base_url.path() { vec![admin_url.to_string()] } else { vec![admin_url.to_string(), base_url.to_string()] } }
 
 #[rustfmt::skip]
-fn run_admin_operation(connection_string: &str, sql: &str, error_context: &'static str) -> Result<()> { let connection_string = connection_string.to_owned(); let sql = sql.to_owned(); thread::spawn(move || { let config = postgres::Config::from_str(&connection_string)?; let mut client = config.connect(NoTls)?; client.simple_query(&sql).map(|_| ()).context(error_context) }).join().map_err(|_| anyhow::Error::msg("postgres admin worker panicked"))? }
+fn run_admin_operation(connection_string: &str, sql: &str, error_context: &'static str) -> Result<()> { let connection_string = connection_string.to_owned(); let sql = sql.to_owned(); thread::spawn(move || { let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().context("failed to create postgres admin runtime")?; runtime.block_on(async move { let pool = PgPoolOptions::new().max_connections(1).connect(&connection_string).await?; raw_sql(AssertSqlSafe(sql)).execute(&pool).await.map(|_| ()).context(error_context) }) }).join().map_err(|_| anyhow::Error::msg("postgres admin worker panicked"))? }
 
 #[cfg(test)]
 mod tests {
