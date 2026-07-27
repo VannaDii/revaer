@@ -1,0 +1,53 @@
+# Supply Chain Advisory Baseline
+
+- Status: Accepted
+- Date: 2026-07-27
+- Context:
+  - PR stack validation must fail closed on RustSec and cargo-deny findings before media runtime work is layered on top.
+  - The previous dependency graph carried stale advisory ignores for `proc-macro-error`, `bincode`, and `rand 0.8.5`.
+- Decision:
+  - Vendor patched `gloo` and `yew-macro` sources to remove `gloo-worker` and `bincode`.
+  - Replace `proc-macro-error` usage in vendored Yew/Yewdux macros with local `syn::Error` handling.
+  - Remove the direct `postgres` test-support dependency and reuse SQLx bootstrap calls with explicitly safe raw SQL.
+  - Keep native libtorrent optional unless `REVAER_NATIVE_IT` is set, reject unsupported 2.1+ headers, and preserve Sonar compile-command header staging.
+- Consequences:
+  - `cargo audit` and `cargo deny` run with an empty advisory ignore list.
+  - The PR stack can place strict quality gates after this supply-chain baseline instead of failing before the dependency fixes land.
+  - The exact patched `rand 0.8.7` duplicate remains documented in `deny.toml` because SQLx still resolves that line transitively.
+- Follow-up:
+  - Remove the `rand 0.8.x` duplicate tolerance when SQLx no longer resolves that stack.
+  - Keep vendored macro patches narrow and drop them when upstream releases remove the advisory-hit dependencies.
+
+## Task Record
+
+- Motivation:
+  - The PR stack must start from a dependency graph that passes advisory and deny gates without stale advisory ignores.
+- Design notes:
+  - Vendored macro edits avoid new diagnostic dependencies and preserve compile-error behavior for invalid hook usage.
+  - SQLx raw SQL is confined to disposable test database bootstrap and uses a local string-literal escape for internally generated database names.
+  - `just sqlx-install` pins SQLx CLI to `0.8.6` with `--locked` so database-backed PR checks do not float to a release that requires a newer Rust toolchain than the repository config.
+  - `just trunk-install` pins Trunk to `0.21.14` with `--locked` so UI build and UI E2E checks do not float through transitive CSS parser releases that outrun the configured Rust toolchain.
+  - The native build script treats unsupported local libtorrent headers as optional-path unavailable unless native integration is explicitly required.
+- Test coverage summary:
+  - Ran `just fmt`.
+  - Ran `just audit`.
+  - Ran `just deny`.
+  - Ran `just lint`.
+  - Ran `just udeps` after pinning cargo-udeps installation for this bottom stack layer.
+  - Ran `just sqlx-install` after pinning SQLx CLI installation for database-backed CI jobs.
+  - Ran `just trunk-install` after pinning Trunk installation for UI build and UI E2E jobs.
+- Observability updates:
+  - No runtime observability surface changed.
+  - Sonar compile-command staging remains available for native C++ analysis.
+- Status-doc validation:
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+- Risk & rollback plan:
+  - Roll back this branch to restore the previous dependency graph if vendored macro behavior regresses.
+  - Native build regressions can be isolated by setting `REVAER_NATIVE_IT=1` in a controlled environment with supported libtorrent headers.
+- Dependency rationale:
+  - No new third-party dependency was added.
+  - Existing SQLx is reused in test support to remove the vulnerable `postgres` client path.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Removed stale advisory-ignore entries from `deny.toml`.
+  - No instruction-file contradictions were introduced.

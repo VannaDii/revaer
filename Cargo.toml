@@ -57,4 +57,6 @@ revaer-test-support = { path = "crates/revaer-test-support" }
 [workspace.metadata.cargo-llvm-cov]
 
 [patch.crates-io]
+gloo = { path = "vendor/gloo" }
+yew-macro = { path = "vendor/yew-macro" }
 yewdux = { path = "vendor/yewdux/crates/yewdux" }
