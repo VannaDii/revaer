@@ -1,0 +1,8 @@
+name: Unpinned action
+on:
+  pull_request:
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main

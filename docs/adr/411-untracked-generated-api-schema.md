@@ -10,6 +10,8 @@
   - Add `just api-test-client` as the canonical test-time generation entrypoint. It uses `npm ci` against `tests/package-lock.json`, invokes the existing `gen:api-client` script, and rejects empty output.
   - Run an index-and-ignore guardrail plus fixture tests from `just policy` so the generated file cannot silently return as tracked source.
   - Retain `openapi-typescript` and the committed OpenAPI document as the existing generator and input rather than introducing a second generation path.
+  - Close live Sonar findings on the same quality-baseline deliverable by deriving disposable PostgreSQL credentials from the workflow run context, correcting Docker shell quoting, and using Ruby's default `RuntimeError` form instead of redundant explicit exception classes.
+  - Make the PR Sonar job prove its repository is non-shallow, fetch the exact reviewed base ref, and remove generated UI and Playwright output before analysis.
 - Consequences:
   - Reviews and static analysis no longer treat generated API client output as authored source.
   - E2E setup performs an exact lockfile installation before generation, so it requires registry access when dependencies are not already available in the npm cache.
@@ -28,6 +30,7 @@
   - Run the generated-source guardrail against the real worktree.
   - Run fixture tests proving tracked and non-ignored schemas are rejected.
   - Generate the API schema twice from a clean lockfile install and compare hashes, then run focused policy and instruction-drift gates.
+  - Exercise the changed workflow and coverage-generator branches through the canonical policy and script-coverage suites, then require the refreshed Sonar PR analysis to report no unresolved issue, no scanner warning, complete SCM blame, and at least 80% new-code coverage.
 - Observability updates:
   - No runtime observability surfaces change. Guardrail failures identify whether tracking or ignore state violated policy.
 - Status-doc validation:
@@ -38,4 +41,4 @@
   - No dependency was added. The existing exact `openapi-typescript` lockfile resolution remains authoritative.
 - Stale-policy check:
   - Reviewed `AGENTS.md` and `.github/instructions/devops.instructions.md` because the Justfile test lifecycle changed.
-  - Drift was found in the absence of an explicit untracked-generated-source rule; the devops instruction now records the required lifecycle and guardrail.
+  - Drift was found in the absence of an explicit untracked-generated-source rule, an explicit prohibition on committed credential-shaped literals for disposable CI services, and a fail-closed SCM/source-cleanup contract for PR analysis; the devops instruction now records all three requirements.

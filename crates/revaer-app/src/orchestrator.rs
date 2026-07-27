@@ -40,7 +40,7 @@ pub(crate) trait EngineConfigurator: Send + Sync {
     async fn apply_engine_plan(&self, plan: &EngineRuntimePlan) -> TorrentResult<()>;
 }
 
-const BLOCKLIST_REFRESH_INTERVAL: Duration = Duration::from_secs(30 * 60);
+const BLOCKLIST_REFRESH_INTERVAL: Duration = Duration::from_mins(30);
 const MAX_BLOCKLIST_RULES: usize = 100_000;
 
 #[derive(Clone)]

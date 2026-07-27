@@ -358,7 +358,7 @@ mod tests {
 
         let limit = ApiKeyRateLimit {
             burst: 2,
-            replenish_period: Duration::from_secs(60),
+            replenish_period: Duration::from_mins(1),
         };
         let snapshot = state
             .enforce_rate_limit("demo", Some(&limit))?
@@ -381,7 +381,7 @@ mod tests {
         );
         let limit = ApiKeyRateLimit {
             burst: 1,
-            replenish_period: Duration::from_secs(60),
+            replenish_period: Duration::from_mins(1),
         };
         assert!(state.enforce_rate_limit("demo", Some(&limit))?.is_some());
         let Err(err) = state.enforce_rate_limit("demo", Some(&limit)) else {
@@ -415,7 +415,7 @@ pub(crate) struct CompatSession {
 }
 
 #[cfg(feature = "compat-qb")]
-pub(crate) const COMPAT_SESSION_TTL: Duration = Duration::from_secs(30 * 60);
+pub(crate) const COMPAT_SESSION_TTL: Duration = Duration::from_mins(30);
 const DASHBOARD_TORRENTS_COMPONENT: &str = "dashboard_torrents";
 const DASHBOARD_DISK_COMPONENT: &str = "dashboard_disk";
 
@@ -431,7 +431,7 @@ impl ApiState {
         Self {
             config,
             indexers,
-            setup_token_ttl: Duration::from_secs(900),
+            setup_token_ttl: Duration::from_mins(15),
             telemetry,
             openapi_document,
             events,

@@ -20,17 +20,62 @@ inputs:
     description: Node.js version to install.
     required: false
     default: ""
+  cargo-cache:
+    description: Restore and save the shared Cargo and sccache artifact cache.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
+    - name: Read exact build inputs
+      id: build-inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+        set -a
+        source .github/build-inputs.env
+        set +a
+        printf 'rust_version=%s\n' "${RUST_VERSION}" >> "${GITHUB_OUTPUT}"
+        printf 'node_version=%s\n' "${NODE_VERSION}" >> "${GITHUB_OUTPUT}"
+        printf 'npm_version=%s\n' "${NPM_VERSION}" >> "${GITHUB_OUTPUT}"
+        printf 'just_version=%s\n' "${JUST_VERSION}" >> "${GITHUB_OUTPUT}"
+
+    - name: Verify Rust toolchain input
+      shell: bash
+      env:
+        INPUT_TOOLCHAIN: ${{ inputs.toolchain }}
+        MANIFEST_RUST_VERSION: ${{ steps.build-inputs.outputs.rust_version }}
+        INPUT_NODE_VERSION: ${{ inputs.node-version }}
+        MANIFEST_NODE_VERSION: ${{ steps.build-inputs.outputs.node_version }}
+      run: |
+        set -euo pipefail
+        configured_toolchain="$(sed -n 's/^channel = "\([^"]*\)"$/\1/p' rust-toolchain.toml)"
+        if [ -z "${configured_toolchain}" ]; then
+          echo "rust-toolchain.toml does not contain a parseable channel" >&2
+          exit 1
+        fi
+        if [ "${INPUT_TOOLCHAIN}" != "${configured_toolchain}" ]; then
+          echo "Workflow Rust toolchain ${INPUT_TOOLCHAIN} does not match rust-toolchain.toml ${configured_toolchain}" >&2
+          exit 1
+        fi
+        if [ "${MANIFEST_RUST_VERSION}" != "${configured_toolchain}" ]; then
+          echo "Build-input Rust ${MANIFEST_RUST_VERSION} does not match rust-toolchain.toml ${configured_toolchain}" >&2
+          exit 1
+        fi
+        if [ -n "${INPUT_NODE_VERSION}" ] && [ "${INPUT_NODE_VERSION}" != "${MANIFEST_NODE_VERSION}" ]; then
+          echo "Workflow Node.js ${INPUT_NODE_VERSION} does not match build-input manifest ${MANIFEST_NODE_VERSION}" >&2
+          exit 1
+        fi
+
     - name: Cache Rust artifacts
+      if: ${{ inputs['cargo-cache'] != 'false' }}
       uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           ~/.cache/sccache
-        key: ${{ runner.os }}-cargo-${{ inputs.toolchain }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ inputs.toolchain }}-${{ github.job }}-${{ hashFiles('**/Cargo.lock', '.github/build-inputs.env') }}
         restore-keys: |
           ${{ runner.os }}-cargo-${{ inputs.toolchain }}-${{ github.job }}-
           ${{ runner.os }}-cargo-${{ inputs.toolchain }}-
@@ -44,15 +89,28 @@ runs:
     - name: Install just
       uses: taiki-e/install-action@cf39a74df4a72510be4e5b63348d61067f11e64a # v2.75.0
       with:
-        tool: just
+        tool: just@${{ steps.build-inputs.outputs.just_version }}
+        fallback: none
 
     - name: Install Node.js
       if: ${{ inputs.node-version != '' }}
       uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
       with:
-        node-version: ${{ inputs.node-version }}
+        node-version: ${{ steps.build-inputs.outputs.node_version }}
         cache: npm
         cache-dependency-path: tests/package-lock.json
+
+    - name: Install exact npm
+      if: ${{ inputs.node-version != '' }}
+      shell: bash
+      env:
+        EXPECTED_NODE_VERSION: ${{ steps.build-inputs.outputs.node_version }}
+        EXPECTED_NPM_VERSION: ${{ steps.build-inputs.outputs.npm_version }}
+      run: |
+        set -euo pipefail
+        test "$(node --version)" = "v${EXPECTED_NODE_VERSION}"
+        npm install --global --ignore-scripts --no-audit --no-fund "npm@11.12.1"
+        test "$(npm --version)" = "${EXPECTED_NPM_VERSION}"
 
     - name: Install apt packages
       shell: bash
@@ -76,7 +134,27 @@ runs:
               packages=(libtorrent-rasterbar-dev pkg-config libpq-dev postgresql-client sccache)
               ;;
             coverage)
-              packages=(libtorrent-rasterbar-dev pkg-config libpq-dev postgresql-client sccache clang-19)
+              packages=(
+                libtorrent-rasterbar-dev
+                pkg-config
+                libpq-dev
+                postgresql-client
+                sccache
+                clang-19
+                ca-certificates
+                curl
+                build-essential
+                cmake
+                python3
+                binutils-dev
+                libssl-dev
+                libcurl4-openssl-dev
+                libelf-dev
+                libstdc++-12-dev
+                zlib1g-dev
+                libdw-dev
+                libiberty-dev
+              )
               ;;
             "")
               packages=()
@@ -105,6 +183,47 @@ runs:
 
         sudo apt-get update
         sudo apt-get install -y -- "${packages[@]}"
+
+    - name: Cache exact kcov
+      if: ${{ inputs.apt-profile == 'coverage' }}
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      with:
+        path: ~/.local/revaer/kcov/a39874f938ce13f7a65f253120d1ec946b349ffe
+        key: ${{ runner.os }}-${{ runner.arch }}-kcov-a39874f938ce13f7a65f253120d1ec946b349ffe
+
+    - name: Install exact kcov
+      if: ${{ inputs.apt-profile == 'coverage' }}
+      shell: bash
+      env:
+        KCOV_COMMIT: a39874f938ce13f7a65f253120d1ec946b349ffe
+        KCOV_SHA256: dac01569171979477b500924be264d2a1bc649dae6010536228cbb319344d516
+      run: |
+        set -euo pipefail
+        install_prefix="${HOME}/.local/revaer/kcov/${KCOV_COMMIT}"
+        if [ ! -x "${install_prefix}/bin/kcov" ]; then
+          archive="${RUNNER_TEMP}/kcov-${KCOV_COMMIT}.tar.gz"
+          source_directory="${RUNNER_TEMP}/kcov-${KCOV_COMMIT}"
+          build_directory="${RUNNER_TEMP}/kcov-build-${KCOV_COMMIT}"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "${archive}" \
+            "https://github.com/SimonKagstrom/kcov/archive/${KCOV_COMMIT}.tar.gz"
+          printf '%s  %s\n' "${KCOV_SHA256}" "${archive}" | sha256sum --check --strict
+          mkdir -p "${source_directory}" "${build_directory}"
+          tar --extract --gzip --file "${archive}" --directory "${source_directory}" --strip-components=1
+          cmake \
+            -S "${source_directory}" \
+            -B "${build_directory}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${install_prefix}"
+          cmake --build "${build_directory}" --parallel "$(nproc)"
+          cmake --install "${build_directory}"
+        fi
+        actual_version="$("${install_prefix}/bin/kcov" --version)"
+        if [ "${actual_version}" != "kcov 43" ]; then
+          echo "Expected kcov 43, found ${actual_version}" >&2
+          exit 1
+        fi
+        echo "${install_prefix}/bin" >> "${GITHUB_PATH}"
 
     - name: Configure sccache
       shell: bash
