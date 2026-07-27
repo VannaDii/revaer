@@ -29,6 +29,12 @@ applyTo:
 - Justfile recipes must run under non-login Bash so caller-selected Rust and NVM tool paths remain active inside every recipe.
 - `just check-assets` must run the canonical asset synchronizer and compare `crates/revaer-ui/static/nexus/**` from the repository root; a cwd-relative comparison that misses generated served assets is forbidden.
 - Generated Playwright API schema output must remain ignored and untracked. Regenerate it from the committed OpenAPI document at test time through `just api-test-client`, using `npm ci` so `tests/package-lock.json` is the complete dependency-resolution source of truth; keep the generated-source guardrail and its fixture tests in `just policy`.
+- Media fixture acquisition must use `test-fixtures/lock.json` as the immutable
+  source, revision, SHA-256, and byte-bound record. Cache keys must include that
+  lock. Normal verification must create canonical probes in a private temporary
+  tree and diff them against reviewed snapshots without modifying the worktree;
+  snapshot replacement is allowed only through the explicit
+  `just update-test-fixture-probes` operator recipe.
 - `pr.yml` is the sole pull-request validation workflow. Keep formatting, lint, test, audit, deny, coverage, E2E, and other verification gates there so pull requests are validated exactly once before merge.
 - `pr.yml` must run its release-build validation job on pull requests. Keep post-merge and tag publication in `ci.yml`, but do not hide PR release-build validation behind main/tag-only guards.
 - Required CI recipes must install Rust CLI tools at exact reviewed versions with `--locked`; do not let floating registry resolution decide the tool version at check time. Route cargo-audit, cargo-deny, cargo-llvm-cov, cargo-udeps, SQLx CLI, and Trunk through `scripts/ensure-exact-cargo-tool.sh`, which must replace missing, older, and newer versions while retaining an exact match, and through the bounded retry installer. `just sqlx-install` must install SQLx CLI `0.8.6` because newer CLI releases can outrun the configured Rust toolchain, and `just trunk-install` must install Trunk `0.21.14` because newer transitive CSS tooling can outrun the configured Rust toolchain. `just udeps` must pair cargo-udeps `0.1.57` with `nightly-2026-06-13`, run `--workspace --all-targets`, and emit compiler, tool, and command evidence; keep both pins in the PR cache key and update them only through an explicit reviewed change with a successful smoke run.
