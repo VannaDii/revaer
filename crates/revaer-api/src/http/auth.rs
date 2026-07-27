@@ -260,7 +260,7 @@ mod tests {
             label: Some("label".to_string()),
             rate_limit: Some(ApiKeyRateLimit {
                 burst: 5,
-                replenish_period: Duration::from_secs(60),
+                replenish_period: Duration::from_mins(1),
             }),
         };
         let state = api_state(
@@ -470,7 +470,7 @@ mod tests {
             label: Some("label".to_string()),
             rate_limit: Some(ApiKeyRateLimit {
                 burst: 5,
-                replenish_period: Duration::from_secs(60),
+                replenish_period: Duration::from_mins(1),
             }),
         };
         let state = api_state(
@@ -644,7 +644,7 @@ mod tests {
             label: Some("label".to_string()),
             rate_limit: Some(ApiKeyRateLimit {
                 burst: 5,
-                replenish_period: Duration::from_secs(60),
+                replenish_period: Duration::from_mins(1),
             }),
         };
         let state = api_state(
