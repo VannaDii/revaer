@@ -347,3 +347,4 @@
     -   [315: Indexer import job runtime worker](adr/315-indexer-import-job-runtime-worker.md)
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
     -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
+    -   [322: Supply Chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)

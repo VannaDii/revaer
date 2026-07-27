@@ -1,11 +1,12 @@
-import { execFileSync, spawn, spawnSync } from 'child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import dotenv from 'dotenv';
-import fs from 'fs';
-import http from 'http';
-import https from 'https';
-import net from 'net';
+import fs from 'node:fs';
+import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
 import { randomBytes } from 'node:crypto';
-import path from 'path';
+import os from 'node:os';
+import path from 'node:path';
 
 import { cleanupE2EState } from './support/e2e-cleanup';
 import { writeState } from './support/e2e-state';
@@ -37,6 +38,60 @@ const STOP_PATTERNS = [
 ];
 
 const KNOWN_DEV_PROCESS = /revaer-app|revaer-ui|trunk serve|cargo run -p revaer-app|cargo run -p revaer-ui/;
+const LOCAL_TEST_DB_USER = 'revaer';
+
+const CARGO_BIN_DIR = process.env.CARGO_HOME
+  ? path.join(process.env.CARGO_HOME, 'bin')
+  : path.join(os.homedir(), '.cargo', 'bin');
+
+const COMMAND_CANDIDATES = new Map<string, string[]>([
+  [
+    'cargo',
+    [path.join(CARGO_BIN_DIR, 'cargo'), '/usr/local/bin/cargo', '/opt/homebrew/bin/cargo', '/usr/bin/cargo'],
+  ],
+  [
+    'just',
+    [path.join(CARGO_BIN_DIR, 'just'), '/usr/local/bin/just', '/opt/homebrew/bin/just', '/usr/bin/just'],
+  ],
+  [
+    'lsof',
+    [
+      '/usr/sbin/lsof',
+      '/usr/bin/lsof',
+      '/usr/local/sbin/lsof',
+      '/usr/local/bin/lsof',
+      '/opt/homebrew/sbin/lsof',
+      '/opt/homebrew/bin/lsof',
+    ],
+  ],
+  [
+    'pgrep',
+    ['/usr/bin/pgrep', '/bin/pgrep', '/usr/local/bin/pgrep', '/opt/homebrew/bin/pgrep'],
+  ],
+  ['ps', ['/bin/ps', '/usr/bin/ps']],
+  [
+    'rustup',
+    [
+      path.join(CARGO_BIN_DIR, 'rustup'),
+      '/usr/local/bin/rustup',
+      '/opt/homebrew/bin/rustup',
+      '/usr/bin/rustup',
+    ],
+  ],
+  [
+    'sqlx',
+    [path.join(CARGO_BIN_DIR, 'sqlx'), '/usr/local/bin/sqlx', '/opt/homebrew/bin/sqlx', '/usr/bin/sqlx'],
+  ],
+  [
+    'trunk',
+    [
+      path.join(CARGO_BIN_DIR, 'trunk'),
+      '/usr/local/bin/trunk',
+      '/opt/homebrew/bin/trunk',
+      '/usr/bin/trunk',
+    ],
+  ],
+]);
 
 export default async function globalSetup(): Promise<void> {
   const root = repoRoot();
@@ -49,10 +104,11 @@ export default async function globalSetup(): Promise<void> {
   try {
     const apiBaseUrl = process.env.E2E_API_BASE_URL ?? 'http://localhost:7070';
     const baseUrl = process.env.E2E_BASE_URL ?? 'http://localhost:8080';
+    const uiPort = httpPortFromUrl(baseUrl);
     const dbAdminUrl =
       process.env.E2E_DB_ADMIN_URL ??
       process.env.REVAER_TEST_DATABASE_URL ??
-      'postgres://revaer:revaer@localhost:5432/postgres';
+      defaultLocalDbAdminUrl();
     const dbPrefix = process.env.E2E_DB_PREFIX ?? 'revaer_e2e';
     const fsRoot = process.env.E2E_FS_ROOT ?? root;
     const resolvedFsRoot = path.isAbsolute(fsRoot) ? fsRoot : path.resolve(root, fsRoot);
@@ -65,22 +121,24 @@ export default async function globalSetup(): Promise<void> {
 
     stopDevServers();
     await requirePortFree(7070);
-    await requirePortFree(8080);
+    await requirePortFree(uiPort);
     fs.mkdirSync(resolvedFsRoot, { recursive: true });
 
     const adminUrl = await resolveAdminUrl(dbAdminUrl);
     const adminHost = urlParts(adminUrl).host;
     if (LOCAL_HOSTS.has(adminHost) && !isTruthy(process.env.E2E_SKIP_DB_START)) {
       const dbStartUrl = withPath(adminUrl, '/revaer');
-      runCommand('just', ['db-start'], {
-        cwd: root,
-        env: { ...process.env, DATABASE_URL: dbStartUrl },
-      });
+      runCommandWithEnv(
+        'just',
+        ['db-start'],
+        { DATABASE_URL: dbStartUrl, REVAER_DB_MANAGED: '1' },
+        { cwd: root },
+      );
     }
     runCommand('just', ['sqlx-install'], { cwd: root });
 
-    const apiBin = path.join(root, 'target', 'debug', 'revaer-app');
     runCommand('cargo', ['build', '-p', 'revaer-app'], { cwd: root });
+    const apiBin = cargoDebugBinary(root, 'revaer-app');
     if (!fs.existsSync(apiBin)) {
       throw new Error(`revaer-app binary not found at ${apiBin}`);
     }
@@ -89,10 +147,13 @@ export default async function globalSetup(): Promise<void> {
     fs.mkdirSync(logDir, { recursive: true });
 
     const activeDbUrl = await createTempDb(adminUrl, dbPrefix, root);
-    const apiProcess = spawnLogged(apiBin, [], path.join(logDir, 'api.log'), {
-      cwd: root,
-      env: { ...process.env, DATABASE_URL: activeDbUrl },
-    });
+    const apiProcess = spawnLoggedWithEnv(
+      apiBin,
+      [],
+      path.join(logDir, 'api.log'),
+      { DATABASE_URL: activeDbUrl },
+      { cwd: root },
+    );
     writeState({
       apiPid: apiProcess.pid,
       dbUrl: activeDbUrl,
@@ -105,25 +166,23 @@ export default async function globalSetup(): Promise<void> {
 
     runCommand('just', ['sync-assets'], { cwd: root });
     runCommand('rustup', ['target', 'add', 'wasm32-unknown-unknown'], { cwd: root });
-    if (!commandExists('trunk')) {
-      runCommand('cargo', ['install', 'trunk'], { cwd: root });
-    }
+    const trunkCommand = requireCommand('trunk');
     fs.mkdirSync(path.join(root, 'crates', 'revaer-ui', 'dist-serve', '.stage'), {
       recursive: true,
     });
 
     const uiProcess = spawnLogged(
-      'trunk',
-      ['serve', '--dist', 'dist-serve', '--port', '8080'],
+      trunkCommand,
+      ['serve', '--dist', 'dist-serve', '--port', String(uiPort)],
       path.join(logDir, 'ui.log'),
       {
         cwd: path.join(root, 'crates', 'revaer-ui'),
-        env: {
-          ...process.env,
-          DATABASE_URL: activeDbUrl,
-          RUST_LOG: process.env.RUST_LOG ?? 'info',
-          NO_COLOR: 'true',
-        },
+      },
+      {
+        DATABASE_URL: activeDbUrl,
+        REVAER_UI_API_BASE_URL: apiBaseUrl,
+        RUST_LOG: process.env.RUST_LOG ?? 'info',
+        NO_COLOR: 'true',
       },
     );
 
@@ -150,28 +209,38 @@ function isTruthy(value: string | undefined): boolean {
 function runCommand(
   command: string,
   args: string[],
-  options?: { cwd?: string; env?: NodeJS.ProcessEnv },
+  options?: { cwd?: string },
 ): void {
-  execFileSync(command, args, {
+  execFileSync(requireCommand(command), args, {
     stdio: 'inherit',
     cwd: options?.cwd,
-    env: options?.env ?? process.env,
   });
+}
+
+function runCommandWithEnv(
+  command: string,
+  args: string[],
+  overrides: NodeJS.ProcessEnv,
+  options?: { cwd?: string },
+): void {
+  withTemporaryEnv(overrides, () => runCommand(command, args, options));
 }
 
 function spawnLogged(
   command: string,
   args: string[],
   logPath: string,
-  options: { cwd?: string; env?: NodeJS.ProcessEnv },
+  options: { cwd?: string },
+  overrides?: NodeJS.ProcessEnv,
 ): ProcessInfo {
   const out = fs.openSync(logPath, 'a');
-  const child = spawn(command, args, {
-    cwd: options.cwd,
-    env: options.env,
-    detached: true,
-    stdio: ['ignore', out, out],
-  });
+  const child = withTemporaryEnv(overrides ?? {}, () =>
+    spawn(command, args, {
+      cwd: options.cwd,
+      detached: true,
+      stdio: ['ignore', out, out],
+    }),
+  );
   if (!child.pid) {
     throw new Error(`Failed to start ${command}.`);
   }
@@ -179,11 +248,78 @@ function spawnLogged(
   return { pid: child.pid, logPath };
 }
 
+function spawnLoggedWithEnv(
+  command: string,
+  args: string[],
+  logPath: string,
+  overrides: NodeJS.ProcessEnv,
+  options: { cwd?: string },
+): ProcessInfo {
+  return spawnLogged(command, args, logPath, options, overrides);
+}
+
+function withTemporaryEnv<T>(overrides: NodeJS.ProcessEnv, callback: () => T): T {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(overrides)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  try {
+    return callback();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 function commandExists(command: string): boolean {
-  const result = spawnSync('sh', ['-c', `command -v ${command}`], {
-    stdio: 'ignore',
-  });
-  return result.status === 0;
+  return findCommand(command) !== null;
+}
+
+function requireCommand(command: string): string {
+  const resolved = findCommand(command);
+  if (!resolved) {
+    throw new Error(`Required command not found in fixed command candidates: ${command}`);
+  }
+  return resolved;
+}
+
+function findCommand(command: string): string | null {
+  if (path.isAbsolute(command) && fs.existsSync(command)) {
+    return command;
+  }
+  const candidates = COMMAND_CANDIDATES.get(command) ?? [];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
+function cargoDebugBinary(root: string, binaryName: string): string {
+  const targetDir = cargoTargetDir(root);
+  const buildTarget = process.env.CARGO_BUILD_TARGET?.trim();
+  const debugDir = buildTarget
+    ? path.join(targetDir, buildTarget, 'debug')
+    : path.join(targetDir, 'debug');
+  return path.join(debugDir, executableName(binaryName));
+}
+
+function cargoTargetDir(root: string): string {
+  const configured = process.env.CARGO_TARGET_DIR?.trim();
+  if (!configured) {
+    return path.join(root, 'target');
+  }
+  return path.isAbsolute(configured) ? configured : path.resolve(root, configured);
+}
+
+function executableName(binaryName: string): string {
+  return process.platform === 'win32' ? `${binaryName}.exe` : binaryName;
 }
 
 function urlParts(input: string): UrlParts {
@@ -194,9 +330,27 @@ function urlParts(input: string): UrlParts {
   };
 }
 
+function httpPortFromUrl(input: string): number {
+  const parsed = new URL(input);
+  if (parsed.port) {
+    return Number(parsed.port);
+  }
+  if (parsed.protocol === 'https:') {
+    return 443;
+  }
+  return 80;
+}
+
 function withPath(input: string, pathname: string): string {
   const parsed = new URL(input);
   parsed.pathname = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  return parsed.toString();
+}
+
+function defaultLocalDbAdminUrl(): string {
+  const parsed = new URL('postgres://localhost:5432/postgres');
+  parsed.username = LOCAL_TEST_DB_USER;
+  parsed.password = LOCAL_TEST_DB_USER;
   return parsed.toString();
 }
 
@@ -266,37 +420,55 @@ function stopDevServers(): void {
     return;
   }
   for (const pattern of STOP_PATTERNS) {
-    let output = '';
-    try {
-      output = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf-8' }).trim();
-    } catch {
-      continue;
-    }
-    if (!output) {
-      continue;
-    }
-    for (const pidStr of output.split(/\s+/)) {
-      const pid = Number(pidStr);
-      if (!pid || pid === process.pid) {
-        continue;
-      }
-      const cmd = readCommand(pid);
-      if (!cmd || cmd.includes('pgrep -f') || cmd.includes('ps -p')) {
-        continue;
-      }
-      if (cmd.includes('global-setup')) {
-        continue;
-      }
-      if (cmd) {
-        console.error(`Stopping existing Revaer dev process (pid ${pid}: ${cmd})`);
-      }
-      try {
-        process.kill(pid, 'SIGTERM');
-      } catch {
-        // Ignore missing process.
-      }
-    }
+    stopDevServersMatching(pattern);
   }
+}
+
+function stopDevServersMatching(pattern: string): void {
+  const output = pgrep(pattern);
+  if (!output) {
+    return;
+  }
+  for (const pidStr of output.split(/\s+/)) {
+    stopDevPid(Number(pidStr));
+  }
+}
+
+function pgrep(pattern: string): string {
+  const pgrepPath = findCommand('pgrep');
+  if (!pgrepPath) {
+    return '';
+  }
+  try {
+    return execFileSync(pgrepPath, ['-f', pattern], { encoding: 'utf-8' }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function stopDevPid(pid: number): void {
+  if (!pid || pid === process.pid) {
+    return;
+  }
+  const cmd = readCommand(pid);
+  if (!shouldStopDevCommand(cmd)) {
+    return;
+  }
+  console.error(`Stopping existing Revaer dev process (pid ${pid}: ${cmd})`);
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    // Ignore missing process.
+  }
+}
+
+function shouldStopDevCommand(cmd: string): boolean {
+  return Boolean(
+    cmd &&
+      !cmd.includes('pgrep -f') &&
+      !cmd.includes('ps -p') &&
+      !cmd.includes('global-setup'),
+  );
 }
 
 async function requirePortFree(port: number): Promise<void> {
@@ -319,39 +491,54 @@ async function stopKnownDevProcesses(port: number): Promise<boolean> {
     return false;
   }
 
+  if (!stopKnownPids(port, pids)) {
+    return false;
+  }
+  return waitForPortRelease(port);
+}
+
+function stopKnownPids(port: number, pids: number[]): boolean {
   let stopped = false;
   for (const pid of pids) {
-    const cmd = readCommand(pid);
-    if (!cmd) {
-      continue;
-    }
-    if (KNOWN_DEV_PROCESS.test(cmd)) {
-      console.error(`Stopping existing Revaer dev process on port ${port} (pid ${pid}: ${cmd})`);
-      try {
-        process.kill(pid, 'SIGTERM');
-      } catch {
-        continue;
-      }
-      stopped = true;
-    } else {
-      throw new Error(`Port ${port} is in use by a non-Revaer process: ${cmd}`);
-    }
+    stopped = stopKnownPid(port, pid) || stopped;
   }
+  return stopped;
+}
 
-  if (stopped) {
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (!(await isPortOpen(port))) {
-        return true;
-      }
-      await delay(250);
+function stopKnownPid(port: number, pid: number): boolean {
+  const cmd = readCommand(pid);
+  if (!cmd) {
+    return false;
+  }
+  if (!KNOWN_DEV_PROCESS.test(cmd)) {
+    throw new Error(`Port ${port} is in use by a non-Revaer process: ${cmd}`);
+  }
+  console.error(`Stopping existing Revaer dev process on port ${port} (pid ${pid}: ${cmd})`);
+  try {
+    process.kill(pid, 'SIGTERM');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPortRelease(port: number): Promise<boolean> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!(await isPortOpen(port))) {
+      return true;
     }
+    await delay(250);
   }
   return false;
 }
 
 function pidsOnPort(port: number): number[] {
+  const lsofPath = findCommand('lsof');
+  if (!lsofPath) {
+    return [];
+  }
   try {
-    const output = execFileSync('lsof', ['-ti', `:${port}`], {
+    const output = execFileSync(lsofPath, ['-ti', `:${port}`], {
       encoding: 'utf-8',
     }).trim();
     if (!output) {
@@ -359,7 +546,7 @@ function pidsOnPort(port: number): number[] {
     }
     return output
       .split(/\s+/)
-      .map((pid) => Number(pid))
+      .map(Number)
       .filter((pid) => Number.isFinite(pid) && pid > 0);
   } catch {
     return [];
@@ -367,11 +554,12 @@ function pidsOnPort(port: number): number[] {
 }
 
 function readCommand(pid: number): string {
-  if (!commandExists('ps')) {
+  const psPath = findCommand('ps');
+  if (!psPath) {
     return '';
   }
   try {
-    return execFileSync('ps', ['-p', String(pid), '-o', 'args='], {
+    return execFileSync(psPath, ['-p', String(pid), '-o', 'args='], {
       encoding: 'utf-8',
     }).trim();
   } catch {
@@ -464,18 +652,19 @@ function isPidAlive(pid: number): boolean {
 }
 
 async function createTempDb(adminUrl: string, prefix: string, root: string): Promise<string> {
-  const runId = `${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  const runId = `${Date.now()}_${randomBytes(4).toString('hex')}`;
   const dbName = `${prefix}_${runId}`;
   const dbUrl = withPath(adminUrl, dbName);
   runCommand(
     'sqlx',
     ['database', 'create', '--database-url', dbUrl],
-    { cwd: root, env: { ...process.env, DATABASE_URL: dbUrl } },
+    { cwd: root },
   );
-  runCommand(
+  runCommandWithEnv(
     'sqlx',
     ['migrate', 'run', '--database-url', dbUrl, '--source', 'crates/revaer-data/migrations'],
-    { cwd: root, env: { ...process.env, DATABASE_URL: dbUrl } },
+    { DATABASE_URL: dbUrl },
+    { cwd: root },
   );
   return dbUrl;
 }
@@ -498,11 +687,12 @@ function assertApiDb(pid: number, expected: string): void {
 }
 
 function assertApiListener(pid: number, port: number): void {
-  if (!commandExists('lsof')) {
+  const lsofPath = findCommand('lsof');
+  if (!lsofPath) {
     return;
   }
   try {
-    const listener = execFileSync('lsof', ['-tiTCP:' + port, '-sTCP:LISTEN'], {
+    const listener = execFileSync(lsofPath, ['-tiTCP:' + port, '-sTCP:LISTEN'], {
       encoding: 'utf-8',
     })
       .trim()
