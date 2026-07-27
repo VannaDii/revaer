@@ -27,7 +27,7 @@ pub enum DocIndexError {
         /// Markdown file path.
         path: PathBuf,
         /// Underlying parse error.
-        source: Box<DocIndexError>,
+        source: Box<Self>,
     },
     /// A regex failed to compile.
     RegexCompile {

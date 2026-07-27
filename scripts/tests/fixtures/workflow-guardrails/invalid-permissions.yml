@@ -1,0 +1,10 @@
+name: Invalid permissions
+on:
+  pull_request:
+permissions:
+  contents: admin
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: just policy

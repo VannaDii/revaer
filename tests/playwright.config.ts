@@ -2,7 +2,10 @@ import { defineConfig } from '@playwright/test';
 import dotenv from 'dotenv';
 import path from 'path';
 
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+const envDir = path.resolve(process.env.E2E_ENV_DIR ?? __dirname);
+const testResultsDir = path.join(envDir, 'test-results');
+
+dotenv.config({ path: path.join(envDir, '.env') });
 
 type BrowserName = 'chromium' | 'firefox' | 'webkit';
 
@@ -34,7 +37,7 @@ const browsers = parseBrowserList(process.env.E2E_BROWSERS);
 
 export default defineConfig({
   testDir: './specs',
-  outputDir: 'test-results',
+  outputDir: testResultsDir,
   timeout: testTimeout,
   fullyParallel: true,
   retries,
@@ -44,7 +47,7 @@ export default defineConfig({
   expect: {
     timeout: expectTimeout,
   },
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: path.join(envDir, 'playwright-report') }]],
   use: {
     baseURL,
     headless,
@@ -58,40 +61,49 @@ export default defineConfig({
   projects: [
     {
       name: 'api-none',
-      testMatch: /api\/.*\.spec\.ts/,
+      testMatch: /api\/.*\.spec\.(ts|js)/,
       use: {
         baseURL: apiBaseURL,
       },
       metadata: {
         authMode: 'none',
         keepActive: false,
-        coverageFile: `test-results/api-coverage-api-none${coverageShardSuffix}.json`,
+        coverageFile: path.join(
+          testResultsDir,
+          `api-coverage-api-none${coverageShardSuffix}.json`,
+        ),
       },
       workers: 1,
     },
     {
       name: 'api-api-key',
       dependencies: ['api-none'],
-      testMatch: /api\/.*\.spec\.ts/,
+      testMatch: /api\/.*\.spec\.(ts|js)/,
       use: {
         baseURL: apiBaseURL,
       },
       metadata: {
         authMode: 'api_key',
         keepActive: true,
-        coverageFile: `test-results/api-coverage-api-key${coverageShardSuffix}.json`,
+        coverageFile: path.join(
+          testResultsDir,
+          `api-coverage-api-key${coverageShardSuffix}.json`,
+        ),
       },
       workers: 1,
     },
     ...browsers.map((name) => ({
       name: `ui-${name}`,
       dependencies: ['api-api-key'],
-      testMatch: /ui\/.*\.spec\.ts/,
+      testMatch: /ui\/.*\.spec\.(ts|js)/,
       use: { browserName: name },
       workers: uiWorkers,
       metadata: {
         authMode: 'api_key',
-        coverageFile: `test-results/ui-coverage-ui-${name}${coverageShardSuffix}.json`,
+        coverageFile: path.join(
+          testResultsDir,
+          `ui-coverage-ui-${name}${coverageShardSuffix}.json`,
+        ),
       },
     })),
   ],

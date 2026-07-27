@@ -1,0 +1,9 @@
+name: Duplicate key
+on:
+  pull_request:
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    runs-on: macos-latest
+    steps:
+      - run: just policy
