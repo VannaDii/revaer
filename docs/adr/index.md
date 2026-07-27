@@ -338,3 +338,4 @@
 -   [410](410-libtorrent-21-compatibility.md) – Libtorrent 2.1 compatibility foundation
 -   [411](411-untracked-generated-api-schema.md) – Untracked generated API schema
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
+-   [462](462-pr88-shell-return.md) – PR 88 shell return correction
