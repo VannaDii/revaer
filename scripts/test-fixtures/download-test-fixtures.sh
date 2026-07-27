@@ -30,7 +30,7 @@ if ! jq -e '
   ([.sources[].path] | length == (unique | length)) and
   all(.sources[];
     (.id | type == "string" and length > 0) and
-    (.path | type == "string" and test("^test-fixtures/(source|chromium)/[A-Za-z0-9._-]+$")) and
+    (.path | type == "string" and test("^test-fixtures/(source|matroska|chromium)/[A-Za-z0-9._-]+$")) and
     (.encoding == "raw" or .encoding == "base64") and
     (.sha256 | test("^[0-9a-f]{64}$")) and
     (.minimumBytes | type == "number" and . > 0 and . == floor) and

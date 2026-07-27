@@ -6,6 +6,7 @@ fmt-fix:
 
 policy:
     bash scripts/tests/policy-suite.sh
+    just test-fixture-scripts
 
 workflow-guardrails-test:
     bash scripts/tests/workflow-guardrails-test.sh

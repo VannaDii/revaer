@@ -21,15 +21,16 @@ already exist. It verifies locked source integrity and reviewed probe snapshots,
 then writes a Markdown report to `target/media-conversion-report.md` by default; set
 `REVAER_MEDIA_CONVERSION_REPORT` to write it somewhere else.
 
-The foundation suite covers exact-byte acquisition, fragmented MP4 diagnostics,
-real FFmpeg subtitle muxing, stream metadata and disposition, and canonical
-probe comparison.
+The catalog covers common and unusual container, codec, multi-stream, subtitle,
+fragmentation, timecode, and generated-audio combinations. Runtime layers may
+consume the same immutable catalog for production planner and executor tests.
 
 ## CI Setup
 
 CI should restore a cache for these ignored directories when available:
 
 - `test-fixtures/source/`
+- `test-fixtures/matroska/`
 - `test-fixtures/chromium/`
 - `test-fixtures/derived/`
 
@@ -69,8 +70,9 @@ Ignored files:
 - generated derived media
 - temporary script workspaces
 
-The prepared fixture set is expected to stay small enough for CI caching. Run
-`du -sh test-fixtures/source test-fixtures/chromium test-fixtures/derived`
+The prepared fixture set is expected to stay small enough for CI caching. Exact
+size depends on upstream corpus revisions and generated outputs; run
+`du -sh test-fixtures/source test-fixtures/matroska test-fixtures/chromium test-fixtures/derived`
 after preparation for the local total.
 
 ## Verification
@@ -85,11 +87,14 @@ explicit operator action:
 just update-test-fixture-probes
 ```
 
-`just test-media-conversion` records fixture validation and bounded diagnostic
-counts in the Markdown report. Any mismatch exits non-zero with the fixture id
-and field name.
+`just test-media-conversion` records source, generated-fixture, and bounded
+diagnostic counts in the Markdown report. Any mismatch exits non-zero with the
+fixture id and field name.
 
-Fixture preparation fails rather than skipping media coverage when a documented
-source is unavailable. Downloads use exclusive files inside a private temporary
-directory, enforce connection and total deadlines, cap transferred and decoded
-bytes, and install a file only after its hash and byte bounds pass.
+Fixture preparation tries primary upstream URLs first. Some Test-Videos entries
+also declare exact Internet Archive captures of the same URLs as fallbacks in
+`lock.json`; preparation fails rather than skipping media coverage when all
+documented sources for a fixture are unavailable. Downloads use exclusive files
+inside a private temporary directory, enforce connection and total deadlines,
+cap transferred and decoded bytes, and install a file only after its hash and
+byte bounds pass.

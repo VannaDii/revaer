@@ -10,6 +10,7 @@ jq -s -e '
   ($lock.schemaVersion == 1) and
   ($lock.cacheKeyInputs | index("test-fixtures/lock.json") != null) and
   ($lock.upstreams.chromium.revision | test("^[0-9a-f]{40}$")) and
+  ($lock.upstreams.matroska.revision | test("^[0-9a-f]{40}$")) and
   ($lock.sources | length > 0) and
   ([$lock.sources[].id] | length == (unique | length)) and
   ([$lock.sources[].path] | length == (unique | length)) and
