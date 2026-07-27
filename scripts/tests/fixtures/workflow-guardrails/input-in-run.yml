@@ -1,0 +1,12 @@
+name: Input in run
+on:
+  workflow_call:
+    inputs:
+      value:
+        type: string
+        required: true
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: printf '%s\n' '${{ inputs.value }}'
