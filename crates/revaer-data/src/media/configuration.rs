@@ -1048,6 +1048,7 @@ mod tests {
         assert_invalid_subtitle_placement_rejected(&db, target_id).await?;
         assert_cross_kind_subtitle_fields_rejected(&db, target_id).await?;
         assert_unknown_hdr_format_rejected(&db, target_id).await?;
+        assert_unknown_video_level_rejected(&db, target_id).await?;
         assert_unsupported_target_stream_kinds_rejected(&db, target_id).await
     }
 
@@ -1153,6 +1154,30 @@ mod tests {
         };
         assert_eq!(
             unknown_hdr.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+        Ok(())
+    }
+
+    async fn assert_unknown_video_level_rejected(
+        db: &MediaTestDb,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let unknown_level = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-unknown-level",
+                sort_order: 0,
+                video_level: Some("7.9"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(unknown_level) = unknown_level else {
+            return Err(anyhow::anyhow!("unknown video level was accepted"));
+        };
+        assert_eq!(
+            unknown_level.database_detail(),
             Some("media_desired_target_video_shape_invalid")
         );
         Ok(())

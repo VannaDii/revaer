@@ -217,6 +217,16 @@ pub enum TargetCompileError {
         /// Requested HDR format.
         hdr_format: String,
     },
+    /// The target requested a video level without a supported codec contract.
+    #[error("unsupported desired target video level on stream {stream_key}: {codec} {video_level}")]
+    UnsupportedVideoLevel {
+        /// Target stream identity.
+        stream_key: String,
+        /// Requested video codec.
+        codec: String,
+        /// Requested video level.
+        video_level: String,
+    },
     /// Subtitle-only properties were assigned to another stream kind.
     #[error("subtitle shape assigned to non-subtitle target stream: {0}")]
     SubtitleShapeOnNonSubtitleStream(String),
@@ -858,6 +868,16 @@ fn validate_target_stream(stream: &TargetStream, key: &str) -> Result<(), Target
             hdr_format: hdr_format.to_string(),
         });
     }
+    if stream.kind == StreamKind::Video
+        && let Some(video_level) = stream.video_level.as_deref()
+        && !is_known_video_level(&stream.codec, video_level)
+    {
+        return Err(TargetCompileError::UnsupportedVideoLevel {
+            stream_key: key.to_string(),
+            codec: stream.codec.clone(),
+            video_level: video_level.to_string(),
+        });
+    }
     if stream.kind != StreamKind::Subtitle
         && (stream.subtitle_placement.is_some() || stream.image_subtitle_action.is_some())
     {
@@ -910,6 +930,83 @@ fn is_unknown_dynamic_range(value: &str) -> bool {
         value.trim().to_ascii_lowercase().as_str(),
         "preserve" | "speech"
     )
+}
+
+fn is_known_video_level(codec: &str, level: &str) -> bool {
+    let Some(level) = normalized_video_level(level) else {
+        return false;
+    };
+    match normalized_video_codec(codec).as_str() {
+        "h264" => matches!(
+            level,
+            NormalizedVideoLevel::H264Level1b
+                | NormalizedVideoLevel::Number(
+                    10 | 11
+                        | 12
+                        | 13
+                        | 20
+                        | 21
+                        | 22
+                        | 30
+                        | 31
+                        | 32
+                        | 40
+                        | 41
+                        | 42
+                        | 50
+                        | 51
+                        | 52
+                        | 60
+                        | 61
+                        | 62
+                )
+        ),
+        "hevc" => matches!(
+            level,
+            NormalizedVideoLevel::Number(
+                10 | 20 | 21 | 30 | 31 | 40 | 41 | 50 | 51 | 52 | 60 | 61 | 62
+            )
+        ),
+        _ => false,
+    }
+}
+
+fn normalized_video_codec(codec: &str) -> String {
+    match codec.trim().to_ascii_lowercase().as_str() {
+        "avc" | "avc1" | "libx264" | "x264" => "h264".to_string(),
+        "h265" | "libx265" | "x265" => "hevc".to_string(),
+        normalized => normalized.to_string(),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NormalizedVideoLevel {
+    Number(u16),
+    H264Level1b,
+}
+
+fn normalized_video_level(level: &str) -> Option<NormalizedVideoLevel> {
+    let candidate = level.trim().to_ascii_lowercase();
+    if candidate == "1b" {
+        return Some(NormalizedVideoLevel::H264Level1b);
+    }
+    if let Some((major, minor)) = candidate.split_once('.') {
+        if major.is_empty() || minor.len() != 1 || minor.contains('.') {
+            return None;
+        }
+        let major = major.parse::<u16>().ok()?;
+        let minor = minor.parse::<u16>().ok()?;
+        return major
+            .checked_mul(10)?
+            .checked_add(minor)
+            .map(NormalizedVideoLevel::Number);
+    }
+    let parsed = candidate.parse::<u16>().ok()?;
+    if candidate.len() == 1 {
+        parsed.checked_mul(10).map(NormalizedVideoLevel::Number)
+    } else {
+        Some(NormalizedVideoLevel::Number(parsed))
+    }
 }
 
 fn matches(source: &MediaStream, target: &TargetStream) -> bool {
@@ -1334,6 +1431,37 @@ mod tests {
             Err(TargetCompileError::UnsupportedDesiredStreamKind(
                 "chapter-main".to_string()
             ))
+        );
+    }
+
+    #[test]
+    fn target_validation_rejects_unknown_video_level() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        let mut unsupported_level = target_stream("video", StreamKind::Video, None, None, "hevc");
+        unsupported_level.video_level = Some("7.9".to_string());
+        let unsupported_level_target = DesiredTarget {
+            target_key: "invalid-level".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![unsupported_level],
+        };
+
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &unsupported_level_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::UnsupportedVideoLevel {
+                stream_key: "video".to_string(),
+                codec: "hevc".to_string(),
+                video_level: "7.9".to_string(),
+            })
         );
     }
 
