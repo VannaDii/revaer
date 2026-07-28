@@ -967,6 +967,34 @@ fn is_known_video_level(codec: &str, level: &str) -> bool {
                 10 | 20 | 21 | 30 | 31 | 40 | 41 | 50 | 51 | 52 | 60 | 61 | 62
             )
         ),
+        "av1" => matches!(
+            level,
+            NormalizedVideoLevel::Number(
+                20 | 21
+                    | 22
+                    | 23
+                    | 30
+                    | 31
+                    | 32
+                    | 33
+                    | 40
+                    | 41
+                    | 42
+                    | 43
+                    | 50
+                    | 51
+                    | 52
+                    | 53
+                    | 60
+                    | 61
+                    | 62
+                    | 63
+                    | 70
+                    | 71
+                    | 72
+                    | 73
+            )
+        ),
         _ => false,
     }
 }
@@ -975,6 +1003,7 @@ fn normalized_video_codec(codec: &str) -> String {
     match codec.trim().to_ascii_lowercase().as_str() {
         "avc" | "avc1" | "libx264" | "x264" => "h264".to_string(),
         "h265" | "libx265" | "x265" => "hevc".to_string(),
+        "av01" | "libaom-av1" | "librav1e" | "libsvtav1" | "libsvt-av1" => "av1".to_string(),
         normalized => normalized.to_string(),
     }
 }
@@ -1460,6 +1489,51 @@ mod tests {
             Err(TargetCompileError::UnsupportedVideoLevel {
                 stream_key: "video".to_string(),
                 codec: "hevc".to_string(),
+                video_level: "7.9".to_string(),
+            })
+        );
+
+        let mut supported_av1_level = target_stream("video", StreamKind::Video, None, None, "av1");
+        supported_av1_level.video_level = Some("7.3".to_string());
+        let supported_av1_level_target = DesiredTarget {
+            target_key: "av1-level".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![supported_av1_level],
+        };
+
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &supported_av1_level_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::RequiredStreamMissing(
+                "video".to_string()
+            ))
+        );
+
+        let mut unsupported_av1_level =
+            target_stream("video", StreamKind::Video, None, None, "libaom-av1");
+        unsupported_av1_level.video_level = Some("7.9".to_string());
+        let unsupported_av1_level_target = DesiredTarget {
+            target_key: "invalid-av1-level".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![unsupported_av1_level],
+        };
+
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &unsupported_av1_level_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::UnsupportedVideoLevel {
+                stream_key: "video".to_string(),
+                codec: "libaom-av1".to_string(),
                 video_level: "7.9".to_string(),
             })
         );

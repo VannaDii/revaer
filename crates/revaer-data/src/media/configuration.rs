@@ -1180,6 +1180,49 @@ mod tests {
             unknown_level.database_detail(),
             Some("media_desired_target_video_shape_invalid")
         );
+
+        let av1_target_id = create_media_desired_target(
+            db.pool(),
+            CreateMediaDesiredTargetInput {
+                actor_public_id: db.system_user_public_id,
+                target_key: "av1-level-validation",
+                version: 1,
+                display_name: "AV1 level validation",
+                container_format: "matroska",
+            },
+        )
+        .await?;
+
+        append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-av1-level",
+                sort_order: 0,
+                codec: "av1",
+                video_level: Some("7.3"),
+                ..video_target_stream(av1_target_id)
+            },
+        )
+        .await?;
+
+        let unknown_av1_level = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-unknown-av1-level",
+                sort_order: 1,
+                codec: "libaom-av1",
+                video_level: Some("7.9"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(unknown_av1_level) = unknown_av1_level else {
+            return Err(anyhow::anyhow!("unknown AV1 video level was accepted"));
+        };
+        assert_eq!(
+            unknown_av1_level.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
         Ok(())
     }
 
