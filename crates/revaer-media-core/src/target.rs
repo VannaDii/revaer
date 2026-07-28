@@ -2,7 +2,10 @@
 
 use crate::classify::{SemanticRole, infer_role};
 use crate::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
-use crate::normalize::{normalize_container_format, normalize_subtitle_codec};
+use crate::normalize::{
+    audio_channel_count_for_layout, normalize_audio_channel_layout, normalize_container_format,
+    normalize_subtitle_codec,
+};
 use std::collections::BTreeSet;
 use std::path::Path;
 use thiserror::Error;
@@ -206,9 +209,47 @@ pub enum TargetCompileError {
     /// Audio-only properties were assigned to a non-audio stream.
     #[error("audio shape assigned to non-audio target stream: {0}")]
     AudioShapeOnNonAudioStream(String),
+    /// An audio property carries an impossible zero value.
+    #[error("invalid desired target audio constraint {field} on stream {stream_key}")]
+    InvalidAudioConstraint {
+        /// Target stream identity.
+        stream_key: String,
+        /// Invalid field name.
+        field: &'static str,
+    },
+    /// A target requested an unsupported audio channel layout.
+    #[error(
+        "unsupported desired target audio channel layout on stream {stream_key}: {channel_layout}"
+    )]
+    UnsupportedAudioChannelLayout {
+        /// Target stream identity.
+        stream_key: String,
+        /// Requested channel layout.
+        channel_layout: String,
+    },
+    /// A target requested a channel count that conflicts with its channel layout.
+    #[error(
+        "desired target audio channel count does not match layout on stream {stream_key}: {channels} != {layout_channels}"
+    )]
+    AudioChannelLayoutCountMismatch {
+        /// Target stream identity.
+        stream_key: String,
+        /// Requested channel count.
+        channels: u32,
+        /// Channel count required by the requested layout.
+        layout_channels: u32,
+    },
     /// Video-only properties were assigned to a non-video stream.
     #[error("video shape assigned to non-video target stream: {0}")]
     VideoShapeOnNonVideoStream(String),
+    /// A video property carries an impossible zero value.
+    #[error("invalid desired target video constraint {field} on stream {stream_key}")]
+    InvalidVideoConstraint {
+        /// Target stream identity.
+        stream_key: String,
+        /// Invalid field name.
+        field: &'static str,
+    },
     /// The target requested an HDR format without an implemented verification contract.
     #[error("unsupported desired target HDR format on stream {stream_key}: {hdr_format}")]
     UnsupportedHdrFormat {
@@ -226,6 +267,16 @@ pub enum TargetCompileError {
         codec: String,
         /// Requested video level.
         video_level: String,
+    },
+    /// The target requested a video color value outside the verified FFmpeg/ffprobe contract.
+    #[error("unsupported desired target video color {field} on stream {stream_key}: {value}")]
+    UnsupportedVideoColor {
+        /// Target stream identity.
+        stream_key: String,
+        /// Requested color field.
+        field: &'static str,
+        /// Requested color value.
+        value: String,
     },
     /// Subtitle-only properties were assigned to another stream kind.
     #[error("subtitle shape assigned to non-subtitle target stream: {0}")]
@@ -836,59 +887,187 @@ fn validate_target_stream(stream: &TargetStream, key: &str) -> Result<(), Target
     if stream.codec.trim().is_empty() {
         return Err(TargetCompileError::EmptyCodec(key.to_string()));
     }
-    if matches!(
-        stream.kind,
-        StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data
-    ) {
-        return Err(TargetCompileError::UnsupportedDesiredStreamKind(
-            key.to_string(),
-        ));
+
+    match stream.kind {
+        StreamKind::Audio => validate_audio_target_stream(stream, key),
+        StreamKind::Video => validate_video_target_stream(stream, key),
+        StreamKind::Subtitle => validate_subtitle_target_stream(stream, key),
+        StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data => Err(
+            TargetCompileError::UnsupportedDesiredStreamKind(key.to_string()),
+        ),
     }
-    if stream.kind != StreamKind::Audio && has_audio_shape(stream) {
+}
+
+fn validate_audio_target_stream(
+    stream: &TargetStream,
+    key: &str,
+) -> Result<(), TargetCompileError> {
+    if has_invalid_audio_policy(stream) {
         return Err(TargetCompileError::AudioShapeOnNonAudioStream(
             key.to_string(),
         ));
     }
-    if stream.kind == StreamKind::Audio && has_invalid_audio_policy(stream) {
-        return Err(TargetCompileError::AudioShapeOnNonAudioStream(
-            key.to_string(),
-        ));
-    }
-    if stream.kind != StreamKind::Video && has_video_shape(stream) {
+    validate_audio_constraints(stream, key)?;
+    if has_video_shape(stream) {
         return Err(TargetCompileError::VideoShapeOnNonVideoStream(
             key.to_string(),
         ));
     }
-    if stream.kind == StreamKind::Video
-        && let Some(hdr_format) = stream.hdr_format.as_deref()
-        && !hdr_format.trim().eq_ignore_ascii_case("hdr10")
-    {
-        return Err(TargetCompileError::UnsupportedHdrFormat {
-            stream_key: key.to_string(),
-            hdr_format: hdr_format.to_string(),
-        });
-    }
-    if stream.kind == StreamKind::Video
-        && let Some(video_level) = stream.video_level.as_deref()
-        && !is_known_video_level(&stream.codec, video_level)
-    {
-        return Err(TargetCompileError::UnsupportedVideoLevel {
-            stream_key: key.to_string(),
-            codec: stream.codec.clone(),
-            video_level: video_level.to_string(),
-        });
-    }
-    if stream.kind != StreamKind::Subtitle
-        && (stream.subtitle_placement.is_some() || stream.image_subtitle_action.is_some())
-    {
+    if has_subtitle_shape(stream) {
         return Err(TargetCompileError::SubtitleShapeOnNonSubtitleStream(
             key.to_string(),
         ));
     }
-    if stream.kind == StreamKind::Subtitle && stream.role == Some(SemanticRole::DescriptiveAudio) {
+    Ok(())
+}
+
+fn validate_video_target_stream(
+    stream: &TargetStream,
+    key: &str,
+) -> Result<(), TargetCompileError> {
+    if has_audio_shape(stream) {
+        return Err(TargetCompileError::AudioShapeOnNonAudioStream(
+            key.to_string(),
+        ));
+    }
+    if has_subtitle_shape(stream) {
+        return Err(TargetCompileError::SubtitleShapeOnNonSubtitleStream(
+            key.to_string(),
+        ));
+    }
+    validate_video_constraints(stream, key)?;
+    validate_video_hdr_format(stream, key)?;
+    validate_video_level(stream, key)?;
+    validate_video_color_value(key, "color_primaries", stream.color_primaries.as_deref())?;
+    validate_video_color_value(key, "color_transfer", stream.color_transfer.as_deref())?;
+    validate_video_color_value(key, "color_space", stream.color_space.as_deref())
+}
+
+fn validate_subtitle_target_stream(
+    stream: &TargetStream,
+    key: &str,
+) -> Result<(), TargetCompileError> {
+    if has_audio_shape(stream) {
+        return Err(TargetCompileError::AudioShapeOnNonAudioStream(
+            key.to_string(),
+        ));
+    }
+    if has_video_shape(stream) {
+        return Err(TargetCompileError::VideoShapeOnNonVideoStream(
+            key.to_string(),
+        ));
+    }
+    if stream.role == Some(SemanticRole::DescriptiveAudio) {
         return Err(TargetCompileError::InvalidSubtitleRole(key.to_string()));
     }
     Ok(())
+}
+
+fn validate_audio_constraints(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
+    if stream.channels == Some(0) {
+        return Err(TargetCompileError::InvalidAudioConstraint {
+            stream_key: key.to_string(),
+            field: "channels",
+        });
+    }
+    if stream.audio_bitrate_bps == Some(0) {
+        return Err(TargetCompileError::InvalidAudioConstraint {
+            stream_key: key.to_string(),
+            field: "audio_bitrate_bps",
+        });
+    }
+    if stream.audio_sample_rate_hz == Some(0) {
+        return Err(TargetCompileError::InvalidAudioConstraint {
+            stream_key: key.to_string(),
+            field: "audio_sample_rate_hz",
+        });
+    }
+    if let Some(layout) = stream.channel_layout.as_deref() {
+        let canonical_layout = normalize_audio_channel_layout(layout).ok_or_else(|| {
+            TargetCompileError::UnsupportedAudioChannelLayout {
+                stream_key: key.to_string(),
+                channel_layout: layout.to_string(),
+            }
+        })?;
+        let Some(layout_channels) = audio_channel_count_for_layout(canonical_layout) else {
+            return Err(TargetCompileError::UnsupportedAudioChannelLayout {
+                stream_key: key.to_string(),
+                channel_layout: layout.to_string(),
+            });
+        };
+        if let Some(channels) = stream.channels
+            && channels != layout_channels
+        {
+            return Err(TargetCompileError::AudioChannelLayoutCountMismatch {
+                stream_key: key.to_string(),
+                channels,
+                layout_channels,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_video_constraints(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
+    if stream.video_bitrate_bps == Some(0) {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "video_bitrate_bps",
+        });
+    }
+    Ok(())
+}
+
+fn validate_video_hdr_format(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
+    let Some(hdr_format) = stream.hdr_format.as_deref() else {
+        return Ok(());
+    };
+    if hdr_format.trim().eq_ignore_ascii_case("hdr10") {
+        return Ok(());
+    }
+    Err(TargetCompileError::UnsupportedHdrFormat {
+        stream_key: key.to_string(),
+        hdr_format: hdr_format.to_string(),
+    })
+}
+
+fn validate_video_level(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
+    let Some(video_level) = stream.video_level.as_deref() else {
+        return Ok(());
+    };
+    if is_known_video_level(&stream.codec, video_level) {
+        return Ok(());
+    }
+    Err(TargetCompileError::UnsupportedVideoLevel {
+        stream_key: key.to_string(),
+        codec: stream.codec.clone(),
+        video_level: video_level.to_string(),
+    })
+}
+
+fn validate_video_color_value(
+    stream_key: &str,
+    field: &'static str,
+    value: Option<&str>,
+) -> Result<(), TargetCompileError> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let normalized = value.trim().to_ascii_lowercase();
+    let known = match field {
+        "color_primaries" => is_known_color_primaries(&normalized),
+        "color_transfer" => is_known_color_transfer(&normalized),
+        "color_space" => is_known_color_space(&normalized),
+        _ => false,
+    };
+    if known {
+        return Ok(());
+    }
+    Err(TargetCompileError::UnsupportedVideoColor {
+        stream_key: stream_key.to_string(),
+        field,
+        value: value.to_string(),
+    })
 }
 
 const fn has_audio_shape(stream: &TargetStream) -> bool {
@@ -908,6 +1087,10 @@ const fn has_video_shape(stream: &TargetStream) -> bool {
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
         || stream.hdr_format.is_some()
+}
+
+const fn has_subtitle_shape(stream: &TargetStream) -> bool {
+    stream.subtitle_placement.is_some() || stream.image_subtitle_action.is_some()
 }
 
 fn has_invalid_audio_policy(stream: &TargetStream) -> bool {
@@ -1008,6 +1191,64 @@ fn normalized_video_codec(codec: &str) -> String {
     }
 }
 
+fn is_known_color_primaries(value: &str) -> bool {
+    matches!(
+        value,
+        "bt709"
+            | "bt470m"
+            | "bt470bg"
+            | "smpte170m"
+            | "smpte240m"
+            | "film"
+            | "bt2020"
+            | "smpte428"
+            | "smpte431"
+            | "smpte432"
+            | "ebu3213"
+    )
+}
+
+fn is_known_color_transfer(value: &str) -> bool {
+    matches!(
+        value,
+        "bt709"
+            | "bt470m"
+            | "bt470bg"
+            | "smpte170m"
+            | "smpte240m"
+            | "linear"
+            | "log"
+            | "log_sqrt"
+            | "iec61966-2-4"
+            | "bt1361e"
+            | "iec61966-2-1"
+            | "bt2020-10"
+            | "bt2020-12"
+            | "smpte2084"
+            | "smpte428"
+            | "arib-std-b67"
+    )
+}
+
+fn is_known_color_space(value: &str) -> bool {
+    matches!(
+        value,
+        "gbr"
+            | "bt709"
+            | "fcc"
+            | "bt470bg"
+            | "smpte170m"
+            | "smpte240m"
+            | "ycgco"
+            | "bt2020nc"
+            | "bt2020c"
+            | "smpte2085"
+            | "chroma-derived-nc"
+            | "chroma-derived-c"
+            | "ictcp"
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NormalizedVideoLevel {
     Number(u16),
@@ -1061,7 +1302,11 @@ fn apply_target_stream(source: &MediaStream, target: &TargetStream) -> MediaStre
         kind: source.kind,
         codec: target.codec.trim().to_ascii_lowercase(),
         channels: target.channels,
-        channel_layout: target.channel_layout.clone(),
+        channel_layout: target
+            .channel_layout
+            .as_deref()
+            .and_then(normalize_audio_channel_layout)
+            .map(str::to_string),
         language: target
             .language
             .as_deref()
@@ -1459,6 +1704,253 @@ mod tests {
             ),
             Err(TargetCompileError::UnsupportedDesiredStreamKind(
                 "chapter-main".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn target_validation_prioritizes_invalid_audio_policy() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        let mut invalid_audio_policy = target_stream("audio", StreamKind::Audio, None, None, "aac");
+        invalid_audio_policy.audio_dynamic_range = Some("flatten".to_string());
+        invalid_audio_policy.video_profile = Some("main10".to_string());
+        let target = DesiredTarget {
+            target_key: "invalid".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![invalid_audio_policy],
+        };
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::AudioShapeOnNonAudioStream(
+                "audio".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn target_validation_rejects_zero_audio_constraints() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        let target = DesiredTarget {
+            target_key: "invalid".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
+        };
+
+        let mut invalid_channels = target.clone();
+        invalid_channels.streams[0].channels = Some(0);
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &invalid_channels,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::InvalidAudioConstraint {
+                stream_key: "audio".to_string(),
+                field: "channels",
+            })
+        );
+
+        let mut invalid_bitrate = target.clone();
+        invalid_bitrate.streams[0].audio_bitrate_bps = Some(0);
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &invalid_bitrate,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::InvalidAudioConstraint {
+                stream_key: "audio".to_string(),
+                field: "audio_bitrate_bps",
+            })
+        );
+
+        let mut invalid_sample_rate = target;
+        invalid_sample_rate.streams[0].audio_sample_rate_hz = Some(0);
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &invalid_sample_rate,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::InvalidAudioConstraint {
+                stream_key: "audio".to_string(),
+                field: "audio_sample_rate_hz",
+            })
+        );
+    }
+
+    #[test]
+    fn target_validation_rejects_unsupported_audio_channel_layouts() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        let target = DesiredTarget {
+            target_key: "invalid".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
+        };
+
+        let mut invalid_layout = target.clone();
+        invalid_layout.streams[0].channel_layout = Some("ambisonic".to_string());
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &invalid_layout,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::UnsupportedAudioChannelLayout {
+                stream_key: "audio".to_string(),
+                channel_layout: "ambisonic".to_string(),
+            })
+        );
+
+        let mut count_mismatch = target;
+        count_mismatch.streams[0].channels = Some(6);
+        count_mismatch.streams[0].channel_layout = Some("stereo".to_string());
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &count_mismatch,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::AudioChannelLayoutCountMismatch {
+                stream_key: "audio".to_string(),
+                channels: 6,
+                layout_channels: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn target_compilation_canonicalizes_supported_audio_channel_layouts() {
+        let source = multistream_source();
+        let mut target = DesiredTarget {
+            target_key: "audio-layout".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![target_stream(
+                "audio-main",
+                StreamKind::Audio,
+                Some(SemanticRole::Primary),
+                Some("eng"),
+                "opus",
+            )],
+        };
+        target.streams[0].channels = Some(2);
+        target.streams[0].channel_layout = Some(" 2C ".to_string());
+
+        let desired = compile_desired_target(
+            &source,
+            "/output/movie.mkv",
+            &target,
+            UnmatchedStreamPolicy::Remove,
+        )
+        .expect("supported channel layout should compile");
+
+        assert_eq!(desired.streams[0].channel_layout.as_deref(), Some("stereo"));
+    }
+
+    #[test]
+    fn target_validation_rejects_zero_video_bitrate() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        let mut invalid_video = target_stream("video", StreamKind::Video, None, None, "hevc");
+        invalid_video.video_bitrate_bps = Some(0);
+        let target = DesiredTarget {
+            target_key: "invalid".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![invalid_video],
+        };
+
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::InvalidVideoConstraint {
+                stream_key: "video".to_string(),
+                field: "video_bitrate_bps",
+            })
+        );
+    }
+
+    #[test]
+    fn target_validation_rejects_unknown_video_color_values() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        let mut unsupported_color = target_stream("video", StreamKind::Video, None, None, "hevc");
+        unsupported_color.color_transfer = Some("make-it-pop".to_string());
+        let unsupported_color_target = DesiredTarget {
+            target_key: "invalid-color".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![unsupported_color],
+        };
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &unsupported_color_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::UnsupportedVideoColor {
+                stream_key: "video".to_string(),
+                field: "color_transfer",
+                value: "make-it-pop".to_string(),
+            })
+        );
+
+        let mut supported_sdr_color = target_stream("video", StreamKind::Video, None, None, "h264");
+        supported_sdr_color.color_primaries = Some("bt709".to_string());
+        supported_sdr_color.color_transfer = Some("bt709".to_string());
+        supported_sdr_color.color_space = Some("bt709".to_string());
+        let supported_sdr_color_target = DesiredTarget {
+            target_key: "sdr-color".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![supported_sdr_color],
+        };
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &supported_sdr_color_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::RequiredStreamMissing(
+                "video".to_string()
             ))
         );
     }

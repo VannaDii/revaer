@@ -43,6 +43,49 @@ pub fn normalize_subtitle_codec(value: &str) -> String {
     }
 }
 
+/// Return the canonical channel-layout label for supported audio layouts.
+#[must_use]
+pub fn normalize_audio_channel_layout(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "mono" | "1c" => Some("mono"),
+        "stereo" | "2c" => Some("stereo"),
+        "2.1" => Some("2.1"),
+        "3.0" => Some("3.0"),
+        "3.0(back)" => Some("3.0(back)"),
+        "4.0" => Some("4.0"),
+        "quad" => Some("quad"),
+        "quad(side)" => Some("quad(side)"),
+        "3.1" => Some("3.1"),
+        "5.0" => Some("5.0"),
+        "5.0(side)" => Some("5.0(side)"),
+        "4.1" => Some("4.1"),
+        "5.1" => Some("5.1"),
+        "5.1(side)" => Some("5.1(side)"),
+        "6.1" => Some("6.1"),
+        "6.1(back)" => Some("6.1(back)"),
+        "7.1" => Some("7.1"),
+        "7.1(wide)" => Some("7.1(wide)"),
+        "7.1(wide-side)" => Some("7.1(wide-side)"),
+        _ => None,
+    }
+}
+
+/// Return the required channel count for a canonical supported audio layout.
+#[must_use]
+pub fn audio_channel_count_for_layout(value: &str) -> Option<u32> {
+    match normalize_audio_channel_layout(value) {
+        Some("mono") => Some(1),
+        Some("stereo") => Some(2),
+        Some("2.1" | "3.0" | "3.0(back)") => Some(3),
+        Some("4.0" | "quad" | "quad(side)" | "3.1") => Some(4),
+        Some("5.0" | "5.0(side)" | "4.1") => Some(5),
+        Some("5.1" | "5.1(side)") => Some(6),
+        Some("6.1" | "6.1(back)") => Some(7),
+        Some("7.1" | "7.1(wide)" | "7.1(wide-side)") => Some(8),
+        Some(_) | None => None,
+    }
+}
+
 fn normalize_stream(stream: &MediaStream) -> MediaStream {
     let mut dispositions: Vec<String> = stream
         .dispositions
@@ -94,10 +137,14 @@ fn normalize_channel_layout(
     if kind != crate::model::StreamKind::Audio {
         return None;
     }
-    channel_layout
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_ascii_lowercase)
+    channel_layout.and_then(|value| {
+        normalize_audio_channel_layout(value)
+            .map(str::to_string)
+            .or_else(|| {
+                let normalized = value.trim().to_ascii_lowercase();
+                (!normalized.is_empty()).then_some(normalized)
+            })
+    })
 }
 
 fn normalize_language(value: &str) -> String {
@@ -124,7 +171,10 @@ fn normalize_disposition(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_container_format, normalize_graph, normalize_subtitle_codec};
+    use super::{
+        audio_channel_count_for_layout, normalize_audio_channel_layout, normalize_container_format,
+        normalize_graph, normalize_subtitle_codec,
+    };
     use crate::model::{MediaGraph, MediaStream, StreamKind};
 
     #[test]
@@ -166,6 +216,23 @@ mod tests {
         assert_eq!(normalize_subtitle_codec("vtt"), "webvtt");
         assert_eq!(normalize_subtitle_codec("pgs"), "hdmv_pgs_subtitle");
         assert_eq!(normalize_subtitle_codec("vobsub"), "dvd_subtitle");
+    }
+
+    #[test]
+    fn normalize_audio_channel_layouts_to_supported_contract() {
+        assert_eq!(normalize_audio_channel_layout(" 2C "), Some("stereo"));
+        assert_eq!(
+            normalize_audio_channel_layout("5.1(SIDE)"),
+            Some("5.1(side)")
+        );
+        assert_eq!(
+            normalize_audio_channel_layout("7.1(wide-side)"),
+            Some("7.1(wide-side)")
+        );
+        assert_eq!(normalize_audio_channel_layout("ambisonic"), None);
+        assert_eq!(audio_channel_count_for_layout("mono"), Some(1));
+        assert_eq!(audio_channel_count_for_layout("5.1(side)"), Some(6));
+        assert_eq!(audio_channel_count_for_layout("7.1"), Some(8));
     }
 
     #[test]

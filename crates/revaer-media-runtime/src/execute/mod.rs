@@ -2,7 +2,9 @@
 
 use crate::capabilities::CapabilitySnapshot;
 use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
-use revaer_media_core::normalize::{normalize_container_format, normalize_subtitle_codec};
+use revaer_media_core::normalize::{
+    normalize_audio_channel_layout, normalize_container_format, normalize_subtitle_codec,
+};
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_core::target::{DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource};
 use revaer_media_core::verify::{verify_plan, verify_unique_stream_ids};
@@ -44,6 +46,12 @@ pub enum BuildArgsError {
     /// Desired graph stream identity resolves to a source stream with a different kind.
     #[error("desired graph stream kind does not match source stream: {0}")]
     DesiredStreamKindMismatch(u32),
+    /// Desired graph contains a retained inspection stream kind without a mutating contract.
+    #[error("desired graph stream kind is not supported for command materialization: {stream_id}")]
+    UnsupportedDesiredStreamKind {
+        /// Desired stream identity.
+        stream_id: u32,
+    },
     /// Source graph stream ids are ambiguous.
     #[error("source graph contains duplicate stream ids")]
     DuplicateSourceStreamIds,
@@ -832,6 +840,7 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
     if operations_are_noop(operations) {
         return Err(BuildArgsError::NoOpCommand);
     }
+    validate_materialized_stream_kinds(desired)?;
     verify_desired_graph_stream_ids(source, desired, sidecar_embeddings)?;
 
     let selected_video_encoder = capabilities.and_then(|snapshot| {
@@ -1154,6 +1163,20 @@ fn verify_desired_graph_stream_ids(
     Ok(())
 }
 
+fn validate_materialized_stream_kinds(desired: &DesiredGraph) -> Result<(), BuildArgsError> {
+    for stream in &desired.streams {
+        if matches!(
+            stream.kind,
+            StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data
+        ) {
+            return Err(BuildArgsError::UnsupportedDesiredStreamKind {
+                stream_id: stream.stream_id,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn append_sidecar_output_steps(
     steps: &mut Vec<ExecutionStep>,
     input_path: &str,
@@ -1428,10 +1451,7 @@ fn audio_filtergraph_for_constraints(
 }
 
 fn normalized_channel_layout(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(str::to_ascii_lowercase)
+    value.and_then(|item| normalize_audio_channel_layout(item).map(str::to_string))
 }
 
 fn validate_output_codec_capability(
@@ -2900,6 +2920,53 @@ mod tests {
             ),
             Err(BuildArgsError::UnsupportedMuxer("mp4".to_string()))
         );
+    }
+
+    #[test]
+    fn desired_graph_rejects_unsupported_stream_kinds_for_command_materialization() {
+        for kind in [
+            StreamKind::Attachment,
+            StreamKind::Chapter,
+            StreamKind::Data,
+        ] {
+            let stream = MediaStream {
+                stream_id: 2,
+                kind,
+                codec: "bin_data".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            };
+            let source = MediaGraph {
+                source_path: "/in.mkv".to_string(),
+                container_formats: Vec::new(),
+                streams: vec![stream.clone()],
+            };
+            let desired = DesiredGraph {
+                output_path: "/out.mkv".to_string(),
+                container_format: Some("matroska".to_string()),
+                streams: vec![stream],
+            };
+            let operations = [PlannedOperation {
+                kind: OperationKind::Remux,
+                stream_id: None,
+            }];
+
+            assert_eq!(
+                build_desired_graph_ffmpeg_argv(
+                    "/in.mkv",
+                    "/out.mkv",
+                    &source,
+                    &desired,
+                    &operations,
+                    None,
+                    VideoTranscodePolicy::default(),
+                ),
+                Err(BuildArgsError::UnsupportedDesiredStreamKind { stream_id: 2 })
+            );
+        }
     }
 
     #[test]

@@ -81,6 +81,7 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_desired_target_stream_append_v3",
     "media_desired_target_stream_append_v4",
     "media_video_level_known_v1",
+    "media_audio_channel_layout_count_v1",
     "media_desired_target_list_v1",
     "media_desired_target_stream_list_v1",
     "media_desired_target_stream_list_v2",
