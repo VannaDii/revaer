@@ -2583,28 +2583,49 @@ fn stream_has_hdr10_mastering_display_payload(stream: &StreamInspection) -> bool
     let Some(side_data) = stream_side_data(stream, "mastering display metadata") else {
         return false;
     };
-    side_data_has_all_fields(
-        side_data,
-        &[
-            "red_x",
-            "red_y",
-            "green_x",
-            "green_y",
-            "blue_x",
-            "blue_y",
-            "white_point_x",
-            "white_point_y",
-            "min_luminance",
-            "max_luminance",
-        ],
-    )
+    hdr10_mastering_display_payload_is_valid(side_data)
 }
 
 fn stream_has_hdr10_content_light_payload(stream: &StreamInspection) -> bool {
     let Some(side_data) = stream_side_data(stream, "content light level metadata") else {
         return false;
     };
-    side_data_has_all_fields(side_data, &["max_content", "max_average"])
+    hdr10_content_light_payload_is_valid(side_data)
+}
+
+fn hdr10_mastering_display_payload_is_valid(side_data: &SideDataInspection) -> bool {
+    let chromaticity_fields = [
+        "red_x",
+        "red_y",
+        "green_x",
+        "green_y",
+        "blue_x",
+        "blue_y",
+        "white_point_x",
+        "white_point_y",
+    ];
+    if !chromaticity_fields.iter().all(|field| {
+        side_data_numeric_value(side_data, field).is_some_and(|value| value > 0.0 && value <= 1.0)
+    }) {
+        return false;
+    }
+    let Some(min_luminance) = side_data_numeric_value(side_data, "min_luminance") else {
+        return false;
+    };
+    let Some(max_luminance) = side_data_numeric_value(side_data, "max_luminance") else {
+        return false;
+    };
+    min_luminance >= 0.0 && max_luminance > min_luminance
+}
+
+fn hdr10_content_light_payload_is_valid(side_data: &SideDataInspection) -> bool {
+    let Some(max_content) = side_data_numeric_value(side_data, "max_content") else {
+        return false;
+    };
+    let Some(max_average) = side_data_numeric_value(side_data, "max_average") else {
+        return false;
+    };
+    max_content > 0.0 && max_average > 0.0 && max_average <= max_content
 }
 
 fn stream_side_data<'a>(
@@ -2625,12 +2646,32 @@ fn stream_side_data<'a>(
         .find(|actual| normalized_constraint_value(&actual.side_data_type) == expected)
 }
 
-fn side_data_has_all_fields(side_data: &SideDataInspection, fields: &[&str]) -> bool {
-    fields.iter().all(|expected| {
-        side_data.metadata.iter().any(|entry| {
-            normalized_constraint_value(&entry.key) == *expected && !entry.value.trim().is_empty()
-        })
+fn side_data_numeric_value(side_data: &SideDataInspection, expected: &str) -> Option<f64> {
+    side_data.metadata.iter().find_map(|entry| {
+        if normalized_constraint_value(&entry.key) == expected {
+            parse_side_data_number(&entry.value)
+        } else {
+            None
+        }
     })
+}
+
+fn parse_side_data_number(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let parsed = if let Some((numerator, denominator)) = value.split_once('/') {
+        let numerator = numerator.trim().parse::<f64>().ok()?;
+        let denominator = denominator.trim().parse::<f64>().ok()?;
+        if denominator <= 0.0 {
+            return None;
+        }
+        numerator / denominator
+    } else {
+        value.parse::<f64>().ok()?
+    };
+    parsed.is_finite().then_some(parsed)
 }
 
 fn normalized_compact_text(value: Option<&str>) -> Option<String> {
@@ -4171,6 +4212,69 @@ mod tests {
             side_data
                 .metadata
                 .retain(|entry| entry.key != "max_average");
+        }
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_out_of_range_mastering_chromaticity() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        if let Some(side_data) = inspection.streams[0]
+            .side_data
+            .iter_mut()
+            .find(|side_data| side_data.side_data_type == "mastering display metadata")
+            && let Some(entry) = side_data
+                .metadata
+                .iter_mut()
+                .find(|entry| entry.key == "red_x")
+        {
+            entry.value = "51000/50000".to_string();
+        }
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_invalid_luminance_ordering() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        if let Some(side_data) = inspection.streams[0]
+            .side_data
+            .iter_mut()
+            .find(|side_data| side_data.side_data_type == "mastering display metadata")
+            && let Some(entry) = side_data
+                .metadata
+                .iter_mut()
+                .find(|entry| entry.key == "max_luminance")
+        {
+            entry.value = "50/10000".to_string();
+        }
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_content_light_average_above_peak() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        if let Some(side_data) = inspection.streams[0]
+            .side_data
+            .iter_mut()
+            .find(|side_data| side_data.side_data_type == "content light level metadata")
+            && let Some(entry) = side_data
+                .metadata
+                .iter_mut()
+                .find(|entry| entry.key == "max_average")
+        {
+            entry.value = "1001".to_string();
         }
 
         assert!(!video_hdr_constraint_matches(
