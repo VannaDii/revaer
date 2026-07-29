@@ -25,7 +25,6 @@ load_rust_files() {
   rust_files=()
 
   while IFS= read -r file; do
-    [[ -f "${file}" ]] || continue
     case "${file}" in
       crates/revaer-ui/ui_vendor/** | \
       crates/revaer-ui/dist/** | \
@@ -110,7 +109,6 @@ report_matches "source-level lint suppressions are forbidden in authored Rust" "
 
 authored_files=()
 while IFS= read -r file; do
-  [[ -f "${file}" ]] || continue
   case "${file}" in
     crates/revaer-ui/ui_vendor/** | \
     crates/revaer-ui/dist/** | \

@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use proc_macro_error3::emit_error;
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
 use syn::{
@@ -11,7 +12,6 @@ use syn::{
 pub struct BodyRewriter {
     branch_lock: Arc<Mutex<()>>,
     ctx_ident: Ident,
-    errors: Vec<syn::Error>,
 }
 
 impl BodyRewriter {
@@ -19,12 +19,7 @@ impl BodyRewriter {
         Self {
             branch_lock: Arc::default(),
             ctx_ident,
-            errors: Vec::new(),
         }
-    }
-
-    pub fn into_result(self) -> syn::Result<()> {
-        crate::join_errors(self.errors.into_iter())
     }
 
     fn is_branched(&self) -> bool {
@@ -50,10 +45,12 @@ impl VisitMut for BodyRewriter {
             if let Some(m) = m.path.segments.last().as_ref().map(|m| &m.ident) {
                 if m.to_string().starts_with("use_") {
                     if self.is_branched() {
-                        self.errors.push(syn::Error::new_spanned(
+                        emit_error!(
                             m,
-                            "hooks cannot be called at this position; move hooks to the top-level of your function; see: https://yew.rs/docs/next/concepts/function-components/hooks",
-                        ));
+                            "hooks cannot be called at this position.";
+                            help = "move hooks to the top-level of your function.";
+                            note = "see: https://yew.rs/docs/next/concepts/function-components/hooks"
+                        );
                     } else {
                         *i = parse_quote_spanned! { i.span() => ::yew::functional::Hook::run(#i, #ctx_ident) };
                     }
@@ -74,10 +71,12 @@ impl VisitMut for BodyRewriter {
                 if let Some(ident) = m.mac.path.segments.last().as_ref().map(|m| &m.ident) {
                     if ident.to_string().starts_with("use_") {
                         if self.is_branched() {
-                            self.errors.push(syn::Error::new_spanned(
+                            emit_error!(
                                 ident,
-                                "hooks cannot be called at this position; move hooks to the top-level of your function; see: https://yew.rs/docs/next/concepts/function-components/hooks",
-                            ));
+                                "hooks cannot be called at this position.";
+                                help = "move hooks to the top-level of your function.";
+                                note = "see: https://yew.rs/docs/next/concepts/function-components/hooks"
+                            );
                         } else {
                             *i = parse_quote_spanned! { i.span() => ::yew::functional::Hook::run(#i, #ctx_ident) };
                         }
