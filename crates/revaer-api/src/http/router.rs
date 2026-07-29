@@ -571,6 +571,10 @@ impl ApiServer {
                 post(media_handlers::retry_media_job).route_layer(require_api.clone()),
             )
             .route(
+                "/v1/media/jobs/{media_job_public_id}/phases",
+                get(media_handlers::list_media_job_phases).route_layer(require_api.clone()),
+            )
+            .route(
                 "/v1/media/discovery/preview",
                 post(media_handlers::preview_media_discovery).route_layer(require_api.clone()),
             )

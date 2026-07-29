@@ -1293,7 +1293,7 @@ mod tests {
         )?;
         let job_id = Uuid::new_v4();
         for (collection, expected_status) in [
-            ("phases", StatusCode::NOT_FOUND),
+            ("phases", StatusCode::METHOD_NOT_ALLOWED),
             ("operations", StatusCode::METHOD_NOT_ALLOWED),
             ("violations", StatusCode::METHOD_NOT_ALLOWED),
             ("plan-reasons", StatusCode::METHOD_NOT_ALLOWED),

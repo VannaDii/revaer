@@ -139,7 +139,7 @@ fn take_locked<T>(slot: &Mutex<Option<T>>) -> Option<T> {
 type SourceMetadataConflictListCall = (Uuid, Option<bool>, Option<i32>);
 
 #[derive(Clone)]
-struct StubConfig;
+pub(crate) struct StubConfig;
 
 #[async_trait]
 impl ConfigFacade for StubConfig {

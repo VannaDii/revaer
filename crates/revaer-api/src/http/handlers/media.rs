@@ -50,8 +50,8 @@ use crate::models::{
     MediaDiscoveryWatcherListResponse, MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse,
     MediaJobCompactAuditListResponse, MediaJobCreateRequest, MediaJobCreateResponse,
     MediaJobDiagnosticCounts, MediaJobDiagnosticsResponse, MediaJobListResponse,
-    MediaJobOperationListResponse, MediaJobPlanReasonListResponse, MediaJobResponse,
-    MediaJobRetentionResponse, MediaJobRetentionUpdateRequest,
+    MediaJobOperationListResponse, MediaJobPhaseListResponse, MediaJobPlanReasonListResponse,
+    MediaJobResponse, MediaJobRetentionResponse, MediaJobRetentionUpdateRequest,
     MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
     MediaPlanningPreviewRequest, MediaPlanningPreviewResponse, MediaPolicyListResponse,
     MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileDesiredTargetRequest,
@@ -79,6 +79,7 @@ const MEDIA_JOB_DIAGNOSTICS_FAILED: &str = "failed to load media job diagnostics
 const MEDIA_JOB_DIAGNOSTIC_LIMIT: usize = 1_024;
 const MEDIA_JOB_CANCEL_FAILED: &str = "failed to cancel media job";
 const MEDIA_JOB_RETRY_FAILED: &str = "failed to retry media job";
+const MEDIA_JOB_PHASE_LIST_FAILED: &str = "failed to list media job phases";
 const MEDIA_JOB_OPERATION_LIST_FAILED: &str = "failed to list media job operations";
 const MEDIA_JOB_VIOLATION_LIST_FAILED: &str = "failed to list media job violations";
 const MEDIA_JOB_PLAN_REASON_LIST_FAILED: &str = "failed to list media job plan reasons";
@@ -1139,6 +1140,20 @@ pub(crate) async fn retry_media_job(
     Ok(StatusCode::NO_CONTENT)
 }
 
+pub(crate) async fn list_media_job_phases(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<Json<MediaJobPhaseListResponse>, ApiError> {
+    let phases = state
+        .media
+        .media_job_phase_list(media_job_public_id)
+        .await
+        .map_err(|err| map_media_error("media_job_phase_list", MEDIA_JOB_PHASE_LIST_FAILED, &err))?
+        .into_iter()
+        .collect();
+
+    Ok(Json(MediaJobPhaseListResponse { phases }))
+}
 pub(crate) async fn list_media_job_operations(
     State(state): State<Arc<ApiState>>,
     Path(media_job_public_id): Path<Uuid>,
@@ -3112,6 +3127,19 @@ mod tests {
     async fn list_media_job_operations_reports_unavailable_default_facade() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let error = list_media_job_operations(State(state), Path(Uuid::new_v4()))
+            .await
+            .expect_err("default media facade must fail closed");
+        assert_eq!(
+            error.into_response().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_media_job_phases_reports_unavailable_default_facade() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let error = list_media_job_phases(State(state), Path(Uuid::new_v4()))
             .await
             .expect_err("default media facade must fail closed");
         assert_eq!(

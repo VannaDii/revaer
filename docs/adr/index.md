@@ -360,6 +360,7 @@
 -   [349](349-media-finalized-completion-boundary.md) – Media finalized replacement terminal invariant
 -   [351](351-media-runtime-cooperative-shutdown.md) – Media runtime cooperative shutdown
 -   [352](352-media-claim-shutdown-cancellation.md) – Media claim shutdown cancellation
+-   [353](353-media-job-phase-read-model.md) – Media job phase read model
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [404](404-doc-indexer-fixture-isolation.md) – Doc indexer fixture isolation
@@ -391,9 +392,10 @@
 -   [463](463-pr-78-sonar-complexity-correction.md) – PR 78 Sonar complexity correction
 -   [464](464-pr171-media-identity-error-coverage.md) – PR 171 media identity error coverage
 -   [470](470-pr85-media-runtime-fixtures.md) – PR 85 media runtime fixture correction
- -   [467](467-pr99-openapi-lint-boundary.md) – PR 99 OpenAPI lint boundary correction
- -   [468](468-pr99-native-watcher-test-stability.md) – PR 99 native watcher test stability
- -   [474](474-pr82-cancellation-clone-boundary.md) – PR 82 cancellation clone boundary correction
+-   [467](467-pr99-openapi-lint-boundary.md) – PR 99 OpenAPI lint boundary correction
+-   [468](468-pr99-native-watcher-test-stability.md) – PR 99 native watcher test stability
+-   [474](474-pr82-cancellation-clone-boundary.md) – PR 82 cancellation clone boundary correction
+-   [475](475-pr110-openapi-schema-catalogue.md) – PR 110 OpenAPI schema catalogue correction
 -   [477](477-stacked-pr-check-emission.md) – Uniform stacked-PR check emission
 -   [478](478-validation-foundation-advisory-refresh.md) – Validation foundation advisory refresh
 -   [479](479-platform-safe-test-dependencies.md) – Platform-safe test dependencies

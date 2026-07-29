@@ -21,6 +21,7 @@ use revaer_api_models::{
     MediaJobArtifactResponse as SharedMediaJobArtifactResponse,
     MediaJobCompactAuditResponse as SharedMediaJobCompactAuditResponse,
     MediaJobOperationResponse as SharedMediaJobOperationResponse,
+    MediaJobPhaseResponse as SharedMediaJobPhaseResponse,
     MediaJobPlanReasonResponse as SharedMediaJobPlanReasonResponse,
     MediaJobVerificationCheckResponse as SharedMediaJobVerificationCheckResponse,
     MediaJobViolationResponse as SharedMediaJobViolationResponse, MediaVerificationToggle,
@@ -756,6 +757,9 @@ pub struct MediaDiscoveryRunResponse {
 /// Media job operation response row.
 pub type MediaJobOperationResponse = SharedMediaJobOperationResponse;
 
+/// Media job phase response row.
+pub type MediaJobPhaseResponse = SharedMediaJobPhaseResponse;
+
 /// Media job compliance violation response row.
 pub type MediaJobViolationResponse = SharedMediaJobViolationResponse;
 
@@ -984,6 +988,12 @@ pub trait MediaFacade: Send + Sync {
         &self,
         params: MediaJobPhaseAppendParams<'_>,
     ) -> Result<(), MediaServiceError>;
+
+    /// List persisted media job phases.
+    async fn media_job_phase_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobPhaseResponse>, MediaServiceError>;
 
     /// Append media job operation.
     async fn media_job_operation_append(
@@ -1249,6 +1259,13 @@ impl MediaFacade for NoopMedia {
         &self,
         _params: MediaJobPhaseAppendParams<'_>,
     ) -> Result<(), MediaServiceError> {
+        media_unavailable()
+    }
+
+    async fn media_job_phase_list(
+        &self,
+        _media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobPhaseResponse>, MediaServiceError> {
         media_unavailable()
     }
 

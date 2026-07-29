@@ -167,10 +167,27 @@ module WorkflowGuardrails
         error("every UI shard coverage upload must fail when coverage files are missing")
       end
 
+      api_job = pr_jobs["api-e2e"]
+      api_upload = named_step(api_job, "Upload API E2E coverage")
+      unless api_upload&.dig("if") == "always()" && api_upload&.dig("with") == {
+        "name" => "api-e2e-coverage",
+        "path" => "tests/test-results/api-coverage-*.json",
+        "if-no-files-found" => "error"
+      }
+        error("API E2E coverage must be retained as an exact fail-closed artifact")
+      end
+
       aggregate = pr_jobs["ui-e2e-coverage"]
-      expected_needs = %w[coverage feature-matrix native-it ui-e2e]
+      expected_needs = %w[api-e2e coverage feature-matrix native-it ui-e2e]
       unless normalize_needs(aggregate&.fetch("needs", nil)).sort == expected_needs.sort
-        error("UI E2E Coverage must wait for the complete UI matrix and prerequisite gates")
+        error("UI E2E Coverage must wait for API coverage, the complete UI matrix, and prerequisite gates")
+      end
+      api_download = named_step(aggregate, "Download API E2E coverage")
+      unless api_download&.dig("with") == {
+        "name" => "api-e2e-coverage",
+        "path" => "tests/test-results"
+      }
+        error("UI E2E Coverage must download the exact API coverage artifact")
       end
       %w[1 2 3].each do |shard|
         step = named_step(aggregate, "Download E2E coverage shard #{shard}")

@@ -62,6 +62,21 @@ function assertCoverage(label: string, required: Set<string>, covered: Set<strin
   throw new Error(`${label} coverage missing ${missing.length} entries:\n${details}`);
 }
 
+function requireCoverage(kind: 'API' | 'UI'): boolean {
+  const envName = `E2E_COVERAGE_REQUIRE_${kind}`;
+  const value = process.env[envName];
+  if (!value) {
+    return true;
+  }
+  if (/^(1|true|TRUE|yes|YES|on|ON)$/.test(value)) {
+    return true;
+  }
+  if (/^(0|false|FALSE|no|NO|off|OFF)$/.test(value)) {
+    return false;
+  }
+  throw new Error(`${envName} must be a boolean value.`);
+}
+
 export default async function globalTeardown(): Promise<void> {
   await cleanupE2EState();
 
@@ -72,19 +87,23 @@ export default async function globalTeardown(): Promise<void> {
   }
 
   const root = repoRoot();
-  const resultsDir = path.join(root, 'tests', 'test-results');
+  const resultsDir = path.resolve(__dirname, 'test-results');
 
-  const openapiPath = path.join(root, 'docs', 'api', 'openapi.json');
-  const requiredApi = requiredApiOperations(openapiPath);
-  const apiCoverage = loadCoverageFiles(resultsDir, 'api-coverage-');
-  if (apiCoverage.files.length === 0) {
-    throw new Error('API coverage files were not produced; check the API fixture setup.');
+  if (requireCoverage('API')) {
+    const openapiPath = path.join(root, 'docs', 'api', 'openapi.json');
+    const requiredApi = requiredApiOperations(openapiPath);
+    const apiCoverage = loadCoverageFiles(resultsDir, 'api-coverage-');
+    if (apiCoverage.files.length === 0) {
+      throw new Error('API coverage files were not produced; check the API fixture setup.');
+    }
+    assertCoverage('API', requiredApi, apiCoverage.covered);
   }
-  assertCoverage('API', requiredApi, apiCoverage.covered);
 
-  const uiCoverage = loadCoverageFiles(resultsDir, 'ui-coverage-');
-  if (uiCoverage.files.length === 0) {
-    throw new Error('UI coverage files were not produced; check the UI fixture setup.');
+  if (requireCoverage('UI')) {
+    const uiCoverage = loadCoverageFiles(resultsDir, 'ui-coverage-');
+    if (uiCoverage.files.length === 0) {
+      throw new Error('UI coverage files were not produced; check the UI fixture setup.');
+    }
+    assertCoverage('UI', new Set(REQUIRED_UI_ROUTES), uiCoverage.covered);
   }
-  assertCoverage('UI', new Set(REQUIRED_UI_ROUTES), uiCoverage.covered);
 }

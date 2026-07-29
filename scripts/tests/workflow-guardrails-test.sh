@@ -215,6 +215,24 @@ replace_once "${case_root}/.github/workflows/pr.yml" \
   $'          name: ui-e2e-coverage-shard-${{ matrix.shard }}\n          path: |\n            tests/test-results/api-coverage-*.json\n            tests/test-results/ui-coverage-*.json\n          if-no-files-found: warn'
 expect_failure "a non-failing UI shard coverage upload" "${case_root}"
 
+case_root="$(new_case api-e2e-upload-warn)"
+replace_once "${case_root}/.github/workflows/pr.yml" \
+  $'          name: api-e2e-coverage\n          path: tests/test-results/api-coverage-*.json\n          if-no-files-found: error' \
+  $'          name: api-e2e-coverage\n          path: tests/test-results/api-coverage-*.json\n          if-no-files-found: warn'
+expect_failure "a non-failing API E2E coverage upload" "${case_root}"
+
+case_root="$(new_case aggregate-missing-api-e2e-dependency)"
+replace_once "${case_root}/.github/workflows/pr.yml" \
+  '    needs: [api-e2e, ui-e2e, feature-matrix, native-it, coverage]' \
+  '    needs: [ui-e2e, feature-matrix, native-it, coverage]'
+expect_failure "an aggregate missing the API E2E dependency" "${case_root}"
+
+case_root="$(new_case aggregate-missing-api-e2e-download)"
+replace_once "${case_root}/.github/workflows/pr.yml" \
+  $'      - name: Download API E2E coverage\n        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1\n        with:\n          name: api-e2e-coverage' \
+  $'      - name: Download API E2E coverage\n        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1\n        with:\n          name: ui-e2e-coverage-shard-1'
+expect_failure "an aggregate missing the exact API E2E artifact" "${case_root}"
+
 case_root="$(new_case missing-ui-shard-download)"
 replace_once "${case_root}/.github/workflows/pr.yml" \
   '          name: ui-e2e-coverage-shard-2' '          name: ui-e2e-coverage-shard-1'

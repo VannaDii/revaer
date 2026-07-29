@@ -535,6 +535,11 @@ test.describe('Media API', () => {
     expect(job.response.status).toBe(200);
     expect(job.data?.source_path).toBe(sourcePath);
 
+    const phases = await api.GET('/v1/media/jobs/{media_job_public_id}/phases', {
+      params: { path: { media_job_public_id: jobId } },
+    });
+    expect(phases.response.status).toBe(200);
+    expect(Array.isArray(phases.data?.phases)).toBe(true);
     const operations = await api.GET('/v1/media/jobs/{media_job_public_id}/operations', {
       params: { path: { media_job_public_id: jobId } },
     });
