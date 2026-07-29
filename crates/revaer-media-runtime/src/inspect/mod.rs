@@ -3,6 +3,7 @@
 use revaer_media_core::model::{MediaGraph, MediaStream, StreamKind};
 use revaer_media_core::normalize::{normalize_graph, normalize_subtitle_codec};
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
@@ -54,12 +55,21 @@ pub trait InspectAdapter {
 }
 
 /// One normalized metadata key/value pair.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MetadataEntry {
     /// Lowercase metadata key.
     pub key: String,
     /// Trimmed metadata value.
     pub value: String,
+}
+
+/// One normalized stream side-data record.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SideDataInspection {
+    /// Lowercase side-data type.
+    pub side_data_type: String,
+    /// Normalized side-data payload fields.
+    pub metadata: Vec<MetadataEntry>,
 }
 
 /// Normalized container-level inspection state.
@@ -133,6 +143,8 @@ pub struct StreamInspection {
     pub metadata: Vec<MetadataEntry>,
     /// Normalized side-data type names, including HDR and Dolby Vision descriptors.
     pub side_data_types: Vec<String>,
+    /// Normalized side-data records, including HDR value payloads when reported.
+    pub side_data: Vec<SideDataInspection>,
 }
 
 /// Complete normalized media inspection report.
@@ -245,7 +257,10 @@ impl InspectAdapter for FfprobeInspectAdapter {
         let args = [
             "-v",
             "error",
+            "-read_intervals",
+            "%+#1",
             "-show_streams",
+            "-show_frames",
             "-show_format",
             "-show_chapters",
             "-of",
@@ -255,10 +270,11 @@ impl InspectAdapter for FfprobeInspectAdapter {
         let output = self.executor.run(&self.ffprobe_bin, &args)?;
         let parsed: FfprobeOutput = serde_json::from_str(&output)
             .map_err(|err| InspectError::OutputMalformed(err.to_string()))?;
+        let frame_side_data = frame_side_data_by_stream(&parsed.frames);
         let technical_streams = parsed
             .streams
             .iter()
-            .map(normalize_stream_inspection)
+            .map(|stream| normalize_stream_inspection(stream, &frame_side_data))
             .collect::<Result<Vec<_>, _>>()?;
         let probe = ProbeGraph {
             source_path: source_path.to_string(),
@@ -470,7 +486,14 @@ fn channel_layout_for_stream(kind: StreamKind, channel_layout: Option<&str>) -> 
         .map(str::to_ascii_lowercase)
 }
 
-fn normalize_stream_inspection(stream: &FfprobeStream) -> Result<StreamInspection, InspectError> {
+fn normalize_stream_inspection(
+    stream: &FfprobeStream,
+    frame_side_data: &BTreeMap<u32, Vec<&FfprobeSideData>>,
+) -> Result<StreamInspection, InspectError> {
+    let empty_side_data = Vec::new();
+    let frame_side_data = frame_side_data
+        .get(&stream.index)
+        .map_or(empty_side_data.as_slice(), Vec::as_slice);
     Ok(StreamInspection {
         stream_id: stream.index,
         profile: normalize_optional_text(stream.profile.as_deref()),
@@ -489,11 +512,9 @@ fn normalize_stream_inspection(stream: &FfprobeStream) -> Result<StreamInspectio
         color_primaries: normalize_lowercase_text(stream.color_primaries.as_deref()),
         chroma_location: normalize_lowercase_text(stream.chroma_location.as_deref()),
         field_order: normalize_lowercase_text(stream.field_order.as_deref()),
-        metadata: stream
-            .tags
-            .as_ref()
-            .map_or_else(Vec::new, metadata_from_stream_tags),
-        side_data_types: normalize_side_data(&stream.side_data_list),
+        metadata: metadata_from_stream(stream),
+        side_data_types: normalize_side_data(&stream.side_data_list, frame_side_data),
+        side_data: normalize_side_data_records(&stream.side_data_list, frame_side_data),
     })
 }
 
@@ -548,13 +569,19 @@ fn normalize_metadata(values: BTreeMap<String, String>) -> Vec<MetadataEntry> {
         .collect()
 }
 
-fn metadata_from_stream_tags(tags: &FfprobeTags) -> Vec<MetadataEntry> {
-    let mut values = tags.extra.clone();
-    if let Some(language) = &tags.language {
-        values.insert("language".to_string(), language.clone());
-    }
-    if let Some(title) = &tags.title {
-        values.insert("title".to_string(), title.clone());
+fn metadata_from_stream(stream: &FfprobeStream) -> Vec<MetadataEntry> {
+    let mut values = stream.tags.as_ref().map_or_else(BTreeMap::new, |tags| {
+        let mut values = tags.extra.clone();
+        if let Some(language) = &tags.language {
+            values.insert("language".to_string(), language.clone());
+        }
+        if let Some(title) = &tags.title {
+            values.insert("title".to_string(), title.clone());
+        }
+        values
+    });
+    if let Some(level) = stream.level.as_ref().and_then(side_data_scalar_text) {
+        values.insert("level".to_string(), level);
     }
     normalize_metadata(values)
 }
@@ -565,14 +592,91 @@ fn metadata_entry(key: &str, value: &str) -> Option<MetadataEntry> {
     (!key.is_empty() && !value.is_empty()).then_some(MetadataEntry { key, value })
 }
 
-fn normalize_side_data(values: &[FfprobeSideData]) -> Vec<String> {
-    let mut normalized = values
+fn normalize_side_data(
+    stream_values: &[FfprobeSideData],
+    frame_values: &[&FfprobeSideData],
+) -> Vec<String> {
+    let mut normalized = stream_values
         .iter()
         .filter_map(|value| normalize_lowercase_text(Some(&value.side_data_type)))
         .collect::<Vec<_>>();
+    normalized.extend(
+        frame_values
+            .iter()
+            .filter_map(|value| normalize_lowercase_text(Some(&value.side_data_type))),
+    );
     normalized.sort();
     normalized.dedup();
     normalized
+}
+
+fn normalize_side_data_records(
+    stream_values: &[FfprobeSideData],
+    frame_values: &[&FfprobeSideData],
+) -> Vec<SideDataInspection> {
+    let mut merged: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for value in stream_values {
+        merge_side_data_record(&mut merged, value);
+    }
+    for value in frame_values {
+        merge_side_data_record(&mut merged, value);
+    }
+    let mut normalized = merged
+        .into_iter()
+        .map(|(side_data_type, values)| SideDataInspection {
+            side_data_type,
+            metadata: normalize_metadata(values),
+        })
+        .collect::<Vec<_>>();
+    normalized.sort_by(|left, right| {
+        left.side_data_type
+            .cmp(&right.side_data_type)
+            .then_with(|| left.metadata.cmp(&right.metadata))
+    });
+    normalized.dedup();
+    normalized
+}
+
+fn merge_side_data_record(
+    target: &mut BTreeMap<String, BTreeMap<String, String>>,
+    value: &FfprobeSideData,
+) {
+    let Some(side_data_type) = normalize_lowercase_text(Some(&value.side_data_type)) else {
+        return;
+    };
+    let values = target.entry(side_data_type).or_default();
+    for entry in normalize_side_data_metadata(&value.extra) {
+        values.insert(entry.key, entry.value);
+    }
+}
+
+fn frame_side_data_by_stream(frames: &[FfprobeFrame]) -> BTreeMap<u32, Vec<&FfprobeSideData>> {
+    let mut values: BTreeMap<u32, Vec<&FfprobeSideData>> = BTreeMap::new();
+    for frame in frames {
+        values
+            .entry(frame.stream_index)
+            .or_default()
+            .extend(frame.side_data_list.iter());
+    }
+    values
+}
+
+fn normalize_side_data_metadata(values: &BTreeMap<String, Value>) -> Vec<MetadataEntry> {
+    values
+        .iter()
+        .filter_map(|(key, value)| {
+            side_data_scalar_text(value).and_then(|text| metadata_entry(key, &text))
+        })
+        .collect()
+}
+
+fn side_data_scalar_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        Value::Bool(value) => Some(value.to_string()),
+        Value::Null | Value::Array(_) | Value::Object(_) => None,
+    }
 }
 
 fn normalize_optional_text(value: Option<&str>) -> Option<String> {
@@ -709,6 +813,8 @@ fn dispositions_from_raw(raw: Option<FfprobeDisposition>) -> Vec<String> {
 struct FfprobeOutput {
     streams: Vec<FfprobeStream>,
     #[serde(default)]
+    frames: Vec<FfprobeFrame>,
+    #[serde(default)]
     chapters: Vec<FfprobeChapter>,
     format: Option<FfprobeFormat>,
 }
@@ -738,6 +844,14 @@ struct FfprobeStream {
     color_primaries: Option<String>,
     chroma_location: Option<String>,
     field_order: Option<String>,
+    level: Option<Value>,
+    #[serde(default)]
+    side_data_list: Vec<FfprobeSideData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FfprobeFrame {
+    stream_index: u32,
     #[serde(default)]
     side_data_list: Vec<FfprobeSideData>,
 }
@@ -781,6 +895,8 @@ struct FfprobeChapter {
 #[derive(Debug, Deserialize)]
 struct FfprobeSideData {
     side_data_type: String,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
 }
 
 #[cfg(test)]
@@ -796,6 +912,12 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::sidecar::{SidecarDiscoverer, SidecarDiscoveryError, SidecarSubtitle};
+
+    const PRIMARY_INSPECT_PROBE_PREFIX: &str = "ffprobe -v error -read_intervals %+#1 -show_streams -show_frames -show_format -show_chapters -of json";
+
+    fn primary_inspect_probe_key(path: &str) -> String {
+        format!("{PRIMARY_INSPECT_PROBE_PREFIX} {path}")
+    }
 
     #[derive(Default)]
     struct StubInspectExecutor {
@@ -1048,9 +1170,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_builds_expected_argv_and_maps_streams() {
-        let key =
-            "ffprobe -v error -show_streams -show_format -show_chapters -of json /input/movie.mkv"
-                .to_string();
+        let key = primary_inspect_probe_key("/input/movie.mkv");
         let mut outputs = HashMap::new();
         outputs.insert(
             key.clone(),
@@ -1120,9 +1240,7 @@ mod tests {
         let Some(source_text) = source.to_str() else {
             return;
         };
-        let key = format!(
-            "ffprobe -v error -show_streams -show_format -show_chapters -of json {source_text}"
-        );
+        let key = format!("{PRIMARY_INSPECT_PROBE_PREFIX} {source_text}");
         let mut outputs = HashMap::new();
         outputs.insert(
             key,
@@ -1189,9 +1307,7 @@ mod tests {
         };
         let mut outputs = HashMap::new();
         outputs.insert(
-            format!(
-                "ffprobe -v error -show_streams -show_format -show_chapters -of json {source_text}"
-            ),
+            format!("{PRIMARY_INSPECT_PROBE_PREFIX} {source_text}"),
             r#"{
                 "streams": [{
                     "index": 0,
@@ -1244,9 +1360,7 @@ mod tests {
         let Some(source_text) = source.to_str() else {
             return;
         };
-        let key = format!(
-            "ffprobe -v error -show_streams -show_format -show_chapters -of json {source_text}"
-        );
+        let key = format!("{PRIMARY_INSPECT_PROBE_PREFIX} {source_text}");
         let mut outputs = HashMap::new();
         outputs.insert(
             key,
@@ -1277,21 +1391,14 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn ffprobe_adapter_normalizes_complete_container_timeline_and_hdr_state() {
-        let key =
-            "ffprobe -v error -show_streams -show_format -show_chapters -of json /input/hdr.mkv"
-                .to_string();
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            key,
-            r#"{
+    const COMPLETE_HDR_PROBE_OUTPUT: &str = r#"{
                 "streams": [
                     {
                         "index": 0,
                         "codec_type": "video",
                         "codec_name": "hevc",
                         "profile": "Main 10",
+                        "level": 153,
                         "duration": "60.125",
                         "bit_rate": "4000000",
                         "width": 3840,
@@ -1309,14 +1416,41 @@ mod tests {
                         "disposition": {"default": 1},
                         "tags": {"language": "eng", "BPS": "4000000"},
                         "side_data_list": [
-                            {"side_data_type": "Mastering display metadata"},
-                            {"side_data_type": "Content light level metadata"}
+                            {
+                                "side_data_type": "Mastering display metadata",
+                                "red_x": "34000/50000"
+                            }
                         ]
                     },
                     {
                         "index": 1,
                         "codec_type": "data",
                         "codec_name": "bin_data"
+                    }
+                ],
+                "frames": [
+                    {
+                        "stream_index": 0,
+                        "side_data_list": [
+                            {
+                                "side_data_type": "Mastering display metadata",
+                                "red_x": "34000/50000",
+                                "red_y": "16000/50000",
+                                "green_x": "13250/50000",
+                                "green_y": "34500/50000",
+                                "blue_x": "7500/50000",
+                                "blue_y": "3000/50000",
+                                "white_point_x": "15635/50000",
+                                "white_point_y": "16450/50000",
+                                "min_luminance": "50/10000",
+                                "max_luminance": "10000000/10000"
+                            },
+                            {
+                                "side_data_type": "Content light level metadata",
+                                "max_content": 1000,
+                                "max_average": 400
+                            }
+                        ]
                     }
                 ],
                 "chapters": [
@@ -1335,9 +1469,15 @@ mod tests {
                     "bit_rate": "4008316",
                     "tags": {"TITLE": "HDR Fixture", "TMDB": "123"}
                 }
-            }"#
-            .to_string(),
-        );
+            }"#;
+
+    #[test]
+    fn ffprobe_adapter_normalizes_complete_container_timeline_and_hdr_state() {
+        let key =
+            "ffprobe -v error -read_intervals %+#1 -show_streams -show_frames -show_format -show_chapters -of json /input/hdr.mkv"
+                .to_string();
+        let mut outputs = HashMap::new();
+        outputs.insert(key, COMPLETE_HDR_PROBE_OUTPUT.to_string());
         let adapter = test_adapter(
             Arc::new(StubInspectExecutor {
                 outputs,
@@ -1362,6 +1502,12 @@ mod tests {
             inspection.streams[0].color_transfer.as_deref(),
             Some("smpte2084")
         );
+        assert!(
+            inspection.streams[0]
+                .metadata
+                .iter()
+                .any(|entry| entry.key == "level" && entry.value == "153")
+        );
         assert_eq!(
             inspection.streams[0].side_data_types,
             vec![
@@ -1369,6 +1515,28 @@ mod tests {
                 "mastering display metadata".to_string()
             ]
         );
+        assert!(inspection.streams[0].side_data.iter().any(|side_data| {
+            side_data.side_data_type == "content light level metadata"
+                && side_data
+                    .metadata
+                    .iter()
+                    .any(|entry| entry.key == "max_content" && entry.value == "1000")
+                && side_data
+                    .metadata
+                    .iter()
+                    .any(|entry| entry.key == "max_average" && entry.value == "400")
+        }));
+        assert!(inspection.streams[0].side_data.iter().any(|side_data| {
+            side_data.side_data_type == "mastering display metadata"
+                && side_data
+                    .metadata
+                    .iter()
+                    .any(|entry| entry.key == "red_x" && entry.value == "34000/50000")
+                && side_data
+                    .metadata
+                    .iter()
+                    .any(|entry| entry.key == "max_luminance" && entry.value == "10000000/10000")
+        }));
         assert!(
             inspection
                 .container
@@ -1380,10 +1548,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_preserves_audio_channel_shape() {
-        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
-        let full_key =
-            "ffprobe -v error -show_streams -show_format -show_chapters -of json /input/movie.mkv"
-                .to_string();
+        let key = primary_inspect_probe_key("/input/movie.mkv");
         let mut outputs = HashMap::new();
         let probe_output = r#"{
                 "streams": [
@@ -1400,7 +1565,6 @@ mod tests {
                 ]
             }"#;
         outputs.insert(key, probe_output.to_string());
-        outputs.insert(full_key, probe_output.to_string());
         let adapter = test_adapter(
             Arc::new(StubInspectExecutor {
                 outputs,
@@ -1446,7 +1610,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_rejects_malformed_json() {
-        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
+        let key = primary_inspect_probe_key("/input/movie.mkv");
         let mut outputs = HashMap::new();
         outputs.insert(key, "{not-json".to_string());
         let adapter = test_adapter(
@@ -1463,7 +1627,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_rejects_stream_with_missing_codec() {
-        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
+        let key = primary_inspect_probe_key("/input/movie.mkv");
         let mut outputs = HashMap::new();
         outputs.insert(
             key,
@@ -1497,7 +1661,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_normalizes_blank_tag_fields_to_none() {
-        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
+        let key = primary_inspect_probe_key("/input/movie.mkv");
         let mut outputs = HashMap::new();
         outputs.insert(
             key,
@@ -1535,7 +1699,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_ignores_zero_dispositions() {
-        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
+        let key = primary_inspect_probe_key("/input/movie.mkv");
         let mut outputs = HashMap::new();
         outputs.insert(
             key,
@@ -1575,7 +1739,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_handles_missing_tags_object() {
-        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
+        let key = primary_inspect_probe_key("/input/movie.mkv");
         let mut outputs = HashMap::new();
         outputs.insert(
             key,
@@ -1612,7 +1776,7 @@ mod tests {
 
     #[test]
     fn ffprobe_adapter_emits_dispositions_in_stable_order() {
-        let key = "ffprobe -v error -show_streams -of json /input/movie.mkv".to_string();
+        let key = primary_inspect_probe_key("/input/movie.mkv");
         let mut outputs = HashMap::new();
         outputs.insert(
             key,

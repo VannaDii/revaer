@@ -6,7 +6,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const MIN_VERSION: &str = "2.0.10";
-const MAX_EXCLUSIVE_VERSION: (u32, u32, u32) = (2, 1, 0);
 const CXXBRIDGE_RUST_HEADER: &str = "rust/cxx.h";
 const CXXBRIDGE_CRATE_HEADER: &str = "revaer-torrent-libt/src/ffi/bridge.rs.h";
 
@@ -48,49 +47,55 @@ fn try_main() -> Result<(), BuildError> {
             return Ok(vec!["torrent-rasterbar".to_string()]);
         }
 
+        for prefix in ["/opt/homebrew", "/usr/local"] {
+            let root = PathBuf::from(prefix);
+            let include = root.join("include");
+            if include.join("libtorrent").exists() {
+                bridge.include(&include);
+            }
+            let lib = root.join("lib");
+            if lib.join("libtorrent-rasterbar.dylib").exists()
+                || lib.join("libtorrent-rasterbar.a").exists()
+            {
+                println!("cargo:rustc-link-search=native={}", lib.display());
+            }
+        }
+
         let include_override = env::var_os("LIBTORRENT_INCLUDE_DIR").map(PathBuf::from);
+        if let Some(path) = include_override.as_ref() {
+            bridge.include(path);
+        }
+
+        let mut libs: Vec<String> = Vec::new();
         let lib_dir_override = env::var_os("LIBTORRENT_LIB_DIR").map(PathBuf::from);
+        if let Some(path) = lib_dir_override.as_ref() {
+            println!("cargo:rustc-link-search=native={}", path.display());
+            libs.push("torrent-rasterbar".to_string());
+        }
+
         if let Some(include_dir) = include_override.as_ref() {
             ensure_header_version(include_dir)?;
-            bridge.include(include_dir);
-            if let Some(lib_dir) = lib_dir_override.as_ref() {
-                println!("cargo:rustc-link-search=native={}", lib_dir.display());
-            }
-            return Ok(vec!["torrent-rasterbar".to_string()]);
-        }
-        if lib_dir_override.is_some() {
+        } else if lib_dir_override.is_some() {
             return Err(BuildError::MissingIncludeDir);
         }
 
-        match pkg_config::Config::new()
-            .atleast_version(MIN_VERSION)
-            .probe("libtorrent-rasterbar")
-        {
-            Ok(libtorrent) => {
-                ensure_probe_header_version(&libtorrent.include_paths)?;
-                let mut defines: Vec<_> = libtorrent.defines.into_iter().collect();
-                defines.sort_by(|left, right| left.0.cmp(&right.0));
-                for (name, value) in defines {
-                    bridge.define(&name, value.as_deref());
-                }
-                for path in libtorrent.include_paths {
-                    bridge.include(path);
-                }
-                for lib_path in libtorrent.link_paths {
-                    println!("cargo:rustc-link-search=native={}", lib_path.display());
-                }
-                Ok(libtorrent.libs)
+        if libs.is_empty() {
+            let libtorrent = pkg_config::Config::new()
+                .atleast_version(MIN_VERSION)
+                .probe("libtorrent-rasterbar")
+                .map_err(BuildError::PkgConfig)?;
+            let include_paths = libtorrent.include_paths;
+            for path in include_paths {
+                bridge.include(path);
             }
-            Err(source) => {
-                let Some((include, lib)) = prefix_paths() else {
-                    return Err(BuildError::PkgConfig(source));
-                };
-                ensure_header_version(&include)?;
-                bridge.include(include);
-                println!("cargo:rustc-link-search=native={}", lib.display());
-                Ok(vec!["torrent-rasterbar".to_string()])
+            let link_paths = libtorrent.link_paths;
+            for lib_path in link_paths {
+                println!("cargo:rustc-link-search=native={}", lib_path.display());
             }
+            libs.extend(libtorrent.libs);
         }
+
+        Ok(libs)
     })();
 
     let libs = match libs_result {
@@ -285,27 +290,6 @@ fn bundled_paths() -> Option<(PathBuf, PathBuf)> {
     }
 }
 
-fn prefix_paths() -> Option<(PathBuf, PathBuf)> {
-    ["/opt/homebrew", "/usr/local"]
-        .into_iter()
-        .map(PathBuf::from)
-        .map(|root| (root.join("include"), root.join("lib")))
-        .find(|(include, lib)| {
-            include.join("libtorrent").exists()
-                && (lib.join("libtorrent-rasterbar.dylib").exists()
-                    || lib.join("libtorrent-rasterbar.a").exists())
-        })
-}
-
-fn ensure_probe_header_version(include_paths: &[PathBuf]) -> Result<(), BuildError> {
-    for include_dir in include_paths {
-        if include_dir.join("libtorrent").join("version.hpp").is_file() {
-            return ensure_header_version(include_dir);
-        }
-    }
-    Err(BuildError::MissingIncludeDir)
-}
-
 fn emit_link_libs(libs: Vec<String>) {
     for lib in libs {
         println!("cargo:rustc-link-lib={lib}");
@@ -334,9 +318,6 @@ fn ensure_header_version(include_dir: &Path) -> Result<(), BuildError> {
     let required = parse_min_version()?;
     if (major, minor, patch) < required {
         return Err(BuildError::VersionTooOld);
-    }
-    if (major, minor, patch) >= MAX_EXCLUSIVE_VERSION {
-        return Err(BuildError::VersionTooNew);
     }
     Ok(())
 }
@@ -388,7 +369,6 @@ enum BuildError {
     MissingDefine,
     InvalidMinVersion,
     VersionTooOld,
-    VersionTooNew,
 }
 
 impl fmt::Display for BuildError {
@@ -421,7 +401,6 @@ impl fmt::Display for BuildError {
             Self::MissingDefine => write!(f, "libtorrent version header missing field"),
             Self::InvalidMinVersion => write!(f, "invalid libtorrent minimum version"),
             Self::VersionTooOld => write!(f, "libtorrent version is too old"),
-            Self::VersionTooNew => write!(f, "libtorrent version is unsupported"),
         }
     }
 }
