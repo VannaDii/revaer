@@ -7,11 +7,12 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 const MAX_VERIFICATION_DETAIL_CHARS: usize = 2_048;
 const MAX_VERIFICATION_STDERR_BYTES: usize = 64 * 1024;
+const VERIFICATION_COMMAND_TIMEOUT: Duration = Duration::from_hours(6);
 const TRUNCATION_MARKER: &str = "...[truncated]";
 
 /// Policy-selected candidate safety checks.
@@ -191,22 +192,12 @@ impl ExecutionControl for NeverCancel {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SystemVerificationExecutor;
 
-impl VerificationExecutor for SystemVerificationExecutor {
-    fn run(&self, bin: &str, argv: &[String]) -> Result<(), String> {
-        match self.run_controlled(bin, argv, &NeverCancel) {
-            Ok(()) => Ok(()),
-            Err(VerificationExecutionError::Failed(detail)) => Err(detail),
-            Err(VerificationExecutionError::Cancelled) => {
-                Err("verification cancelled without a cancellation signal".to_string())
-            }
-        }
-    }
-
-    fn run_controlled(
-        &self,
+impl SystemVerificationExecutor {
+    fn run_controlled_with_timeout(
         bin: &str,
         argv: &[String],
         control: &dyn ExecutionControl,
+        timeout: Duration,
     ) -> Result<(), VerificationExecutionError> {
         if control.cancellation_requested() {
             return Err(VerificationExecutionError::Cancelled);
@@ -232,12 +223,20 @@ impl VerificationExecutor for SystemVerificationExecutor {
             )));
         };
         let stderr_reader = thread::spawn(move || read_stderr(stderr));
+        let started = Instant::now();
 
         let status = loop {
             if control.cancellation_requested() {
                 terminate_verifier(&mut child, bin)?;
                 let _stderr = join_stderr(stderr_reader, bin)?;
                 return Err(VerificationExecutionError::Cancelled);
+            }
+            if started.elapsed() >= timeout {
+                terminate_verifier(&mut child, bin)?;
+                let stderr = join_stderr(stderr_reader, bin)?;
+                return Err(VerificationExecutionError::Failed(verifier_timeout_detail(
+                    bin, timeout, &stderr,
+                )));
             }
             match child.try_wait() {
                 Ok(Some(status)) => break status,
@@ -267,6 +266,27 @@ impl VerificationExecutor for SystemVerificationExecutor {
     }
 }
 
+impl VerificationExecutor for SystemVerificationExecutor {
+    fn run(&self, bin: &str, argv: &[String]) -> Result<(), String> {
+        match self.run_controlled(bin, argv, &NeverCancel) {
+            Ok(()) => Ok(()),
+            Err(VerificationExecutionError::Failed(detail)) => Err(detail),
+            Err(VerificationExecutionError::Cancelled) => {
+                Err("verification cancelled without a cancellation signal".to_string())
+            }
+        }
+    }
+
+    fn run_controlled(
+        &self,
+        bin: &str,
+        argv: &[String],
+        control: &dyn ExecutionControl,
+    ) -> Result<(), VerificationExecutionError> {
+        Self::run_controlled_with_timeout(bin, argv, control, VERIFICATION_COMMAND_TIMEOUT)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BoundedVerificationStderr {
     detail: String,
@@ -275,6 +295,27 @@ struct BoundedVerificationStderr {
 
 fn verifier_failure(bin: &str, operation: &str, detail: &str) -> VerificationExecutionError {
     VerificationExecutionError::Failed(bounded_detail(&format!("{bin} {operation}: {detail}")))
+}
+
+fn verifier_timeout_detail(
+    bin: &str,
+    timeout: Duration,
+    stderr: &BoundedVerificationStderr,
+) -> String {
+    let prefix = format!("{bin} timed out after {}", format_timeout_duration(timeout));
+    if stderr.detail.is_empty() {
+        bounded_detail(&prefix)
+    } else {
+        bounded_prefixed_detail(&format!("{prefix}: "), &stderr.detail, stderr.truncated)
+    }
+}
+
+fn format_timeout_duration(timeout: Duration) -> String {
+    if timeout.as_secs() == 0 {
+        format!("{}ms", timeout.as_millis())
+    } else {
+        format!("{}s", timeout.as_secs())
+    }
 }
 
 fn terminate_verifier(
@@ -826,6 +867,29 @@ mod tests {
         assert!(detail.contains(TRUNCATION_MARKER));
         assert!(detail.contains("verification-summary"));
         assert!(detail.chars().count() <= MAX_VERIFICATION_DETAIL_CHARS);
+    }
+
+    #[test]
+    fn system_verifier_times_out_active_child_with_bounded_stderr() {
+        let started = Instant::now();
+
+        let result = SystemVerificationExecutor::run_controlled_with_timeout(
+            "/bin/sh",
+            &[
+                "-c".to_string(),
+                "printf verification-started >&2; exec sleep 30".to_string(),
+            ],
+            &super::NeverCancel,
+            Duration::from_millis(150),
+        );
+
+        let Err(VerificationExecutionError::Failed(detail)) = result else {
+            panic!("expected verifier timeout failure");
+        };
+        assert!(detail.contains("timed out after 150ms"));
+        assert!(detail.contains("verification-started"));
+        assert!(detail.chars().count() <= MAX_VERIFICATION_DETAIL_CHARS);
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]
