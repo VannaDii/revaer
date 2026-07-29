@@ -12,19 +12,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use revaer_api_models::{
-    MediaCapabilityCodecResponse as SharedMediaCapabilityCodecResponse,
-    MediaCapabilityFeatureResponse as SharedMediaCapabilityFeatureResponse,
-    MediaCapabilityReadinessResponse as SharedMediaCapabilityReadinessResponse,
-    MediaCapabilitySnapshotResponse as SharedMediaCapabilitySnapshotResponse,
-    MediaDesiredTargetStream as SharedMediaDesiredTargetStream,
-    MediaJobArtifactResponse as SharedMediaJobArtifactResponse,
-    MediaJobCompactAuditResponse as SharedMediaJobCompactAuditResponse,
-    MediaJobOperationResponse as SharedMediaJobOperationResponse,
-    MediaJobPlanReasonResponse as SharedMediaJobPlanReasonResponse,
-    MediaJobVerificationCheckResponse as SharedMediaJobVerificationCheckResponse,
-    MediaJobViolationResponse as SharedMediaJobViolationResponse, MediaVerificationToggle,
-};
+use revaer_api_models::MediaVerificationToggle;
 
 /// Create/update media profile parameters.
 #[derive(Debug, Clone)]
@@ -272,7 +260,60 @@ pub struct MediaCompatibilityTargetUpsertParams<'a> {
 }
 
 /// Ordered desired-target stream parameters.
-pub type MediaDesiredTargetStreamParams = SharedMediaDesiredTargetStream;
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaDesiredTargetStreamParams {
+    /// Stable stream key.
+    pub stream_key: String,
+    /// Media stream kind.
+    pub stream_kind: String,
+    /// Optional semantic role selector.
+    pub semantic_role: Option<String>,
+    /// Optional language selector.
+    pub language_code: Option<String>,
+    /// Whether a missing source match is acceptable.
+    pub optional: bool,
+    /// Final mux ordering position.
+    pub sort_order: i32,
+    /// Desired output codec.
+    pub codec: String,
+    /// Optional desired audio channel count.
+    pub channel_count: Option<i32>,
+    /// Optional desired audio channel layout.
+    pub channel_layout: Option<String>,
+    /// Optional desired average audio bitrate in bits per second.
+    pub audio_bitrate_bps: Option<i32>,
+    /// Optional desired audio sample rate in hertz.
+    pub audio_sample_rate_hz: Option<i32>,
+    /// Optional desired audio loudness processing profile.
+    pub audio_loudness_profile: Option<String>,
+    /// Optional desired audio dynamic-range behavior.
+    pub audio_dynamic_range: Option<String>,
+    /// Optional desired video profile.
+    pub video_profile: Option<String>,
+    /// Optional desired video level.
+    pub video_level: Option<String>,
+    /// Optional desired average video bitrate in bits per second.
+    pub video_bitrate_bps: Option<i32>,
+    /// Optional desired video color primaries.
+    pub color_primaries: Option<String>,
+    /// Optional desired video transfer characteristic.
+    pub color_transfer: Option<String>,
+    /// Optional desired video color space.
+    pub color_space: Option<String>,
+    /// Optional desired HDR format label.
+    pub hdr_format: Option<String>,
+    /// Optional desired title.
+    pub title: Option<String>,
+    /// Desired default disposition.
+    pub default_disposition: bool,
+    /// Desired forced disposition.
+    pub forced_disposition: bool,
+    /// Desired subtitle placement for subtitle streams.
+    pub subtitle_placement: Option<String>,
+    /// Image-subtitle action for subtitle streams.
+    pub image_subtitle_action: Option<String>,
+}
 
 /// Immutable desired-target version creation parameters.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -710,34 +751,194 @@ pub struct MediaDiscoveryRunResponse {
 }
 
 /// Media job operation response row.
-pub type MediaJobOperationResponse = SharedMediaJobOperationResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobOperationResponse {
+    /// Ordered operation index.
+    pub operation_index: i32,
+    /// Operation kind.
+    pub operation_kind: String,
+    /// Optional stream id.
+    pub stream_id: Option<i32>,
+    /// Command binary.
+    pub command_bin: String,
+    /// Optional argument 1.
+    pub arg_1: Option<String>,
+    /// Optional argument 2.
+    pub arg_2: Option<String>,
+    /// Optional argument 3.
+    pub arg_3: Option<String>,
+    /// Optional argument 4.
+    pub arg_4: Option<String>,
+    /// Optional argument 5.
+    pub arg_5: Option<String>,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
+}
 
 /// Media job compliance violation response row.
-pub type MediaJobViolationResponse = SharedMediaJobViolationResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobViolationResponse {
+    /// Ordered violation index.
+    pub violation_index: i32,
+    /// Violation kind.
+    pub violation_kind: String,
+    /// Violation severity.
+    pub severity: String,
+    /// Optional stream id.
+    pub stream_id: Option<i32>,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
+}
 
 /// Media job plan-reason response row.
-pub type MediaJobPlanReasonResponse = SharedMediaJobPlanReasonResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobPlanReasonResponse {
+    /// Ordered reason index.
+    pub reason_index: i32,
+    /// Optional candidate index.
+    pub candidate_index: Option<i32>,
+    /// Whether this reason describes the selected plan.
+    pub selected: bool,
+    /// Stable reason code.
+    pub reason_code: String,
+    /// Human-readable reason text.
+    pub reason_text: String,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
+}
 
 /// Media job verification check response row.
-pub type MediaJobVerificationCheckResponse = SharedMediaJobVerificationCheckResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobVerificationCheckResponse {
+    /// Ordered check index.
+    pub check_index: i32,
+    /// Verification check kind.
+    pub check_kind: String,
+    /// Verification check status.
+    pub check_status: String,
+    /// Expected value text.
+    pub expected_value: Option<String>,
+    /// Actual value text.
+    pub actual_value: Option<String>,
+    /// Optional detail text.
+    pub details_text: Option<String>,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
+}
 
 /// Media job artifact response row.
-pub type MediaJobArtifactResponse = SharedMediaJobArtifactResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobArtifactResponse {
+    /// Ordered artifact index.
+    pub artifact_index: i32,
+    /// Artifact kind.
+    pub artifact_kind: String,
+    /// Managed artifact path.
+    pub artifact_path: String,
+    /// Artifact size in bytes.
+    pub size_bytes: Option<i64>,
+    /// Optional content type.
+    pub content_type: Option<String>,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
+}
 
 /// Media job compact-audit response row.
-pub type MediaJobCompactAuditResponse = SharedMediaJobCompactAuditResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaJobCompactAuditResponse {
+    /// Ordered audit index.
+    pub audit_index: i32,
+    /// Audit fact kind.
+    pub fact_kind: String,
+    /// Audit fact text.
+    pub fact_text: String,
+    /// Row creation timestamp.
+    pub created_at: DateTime<Utc>,
+}
 
 /// Codec row within a media capability snapshot run.
-pub type MediaCapabilityCodecResponse = SharedMediaCapabilityCodecResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaCapabilityCodecResponse {
+    /// Codec name.
+    pub codec_name: String,
+    /// Encode support.
+    pub encode_supported: bool,
+    /// Decode support.
+    pub decode_supported: bool,
+}
 
 /// Additional capability feature row within a media capability snapshot run.
-pub type MediaCapabilityFeatureResponse = SharedMediaCapabilityFeatureResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaCapabilityFeatureResponse {
+    /// Feature family.
+    pub feature_family: String,
+    /// Feature name.
+    pub feature_name: String,
+    /// Support status.
+    pub supported: bool,
+    /// Optional detail text.
+    pub detail_text: Option<String>,
+}
 
 /// Media capability snapshot response row.
-pub type MediaCapabilitySnapshotResponse = SharedMediaCapabilitySnapshotResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaCapabilitySnapshotResponse {
+    /// Snapshot id.
+    pub media_capability_snapshot_id: i64,
+    /// Snapshot run id shared by all codec rows from the same detection.
+    pub snapshot_run_public_id: Uuid,
+    /// ffmpeg version.
+    pub ffmpeg_version: String,
+    /// ffprobe version.
+    pub ffprobe_version: String,
+    /// Codec rows captured in the snapshot run.
+    pub codecs: Vec<MediaCapabilityCodecResponse>,
+    /// Concrete ffmpeg encoder names captured in the snapshot run.
+    pub encoders: Vec<String>,
+    /// Concrete ffmpeg decoder names captured in the snapshot run.
+    pub decoders: Vec<String>,
+    /// Available ffmpeg muxers.
+    pub muxers: Vec<String>,
+    /// Available ffmpeg demuxers.
+    pub demuxers: Vec<String>,
+    /// Subtitle codecs supported by the runtime.
+    pub subtitle_support: Vec<String>,
+    /// Hardware acceleration backends.
+    pub hardware_accelerators: Vec<String>,
+    /// Filesystem primitives available for managed replacement.
+    pub filesystem_utilities: Vec<String>,
+    /// Runtime utility capabilities.
+    pub utility_capabilities: Vec<String>,
+    /// License mode captured from the runtime.
+    pub license_mode: String,
+    /// License mode captured specifically from the ffmpeg build.
+    pub ffmpeg_license_mode: String,
+    /// Whether ffmpeg was built with `--enable-gpl`.
+    pub ffmpeg_enable_gpl: bool,
+    /// Whether ffmpeg was built with `--enable-version3`.
+    pub ffmpeg_enable_version3: bool,
+    /// Whether ffmpeg was built with `--enable-nonfree`.
+    pub ffmpeg_enable_nonfree: bool,
+    /// Runtime compliance artifact links.
+    pub compliance_links: Vec<String>,
+    /// Capabilities intentionally absent from the runtime.
+    pub absent_capabilities: Vec<String>,
+    /// All additional feature rows captured by the snapshot.
+    pub features: Vec<MediaCapabilityFeatureResponse>,
+    /// observed timestamp.
+    pub observed_at: DateTime<Utc>,
+}
 
 /// Media capability readiness response.
-pub type MediaCapabilityReadinessResponse = SharedMediaCapabilityReadinessResponse;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaCapabilityReadinessResponse {
+    /// Whether media execution can proceed.
+    pub ready: bool,
+    /// Reason code when not ready.
+    pub reason: Option<String>,
+    /// Latest snapshot when available.
+    pub snapshot: Option<MediaCapabilitySnapshotResponse>,
+}
 
 /// Media service error kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -322,41 +322,53 @@ fn media_profile_support_paths() -> Vec<(&'static str, Value)> {
 }
 
 fn media_configuration_paths() -> Vec<(&'static str, Value)> {
-    media_collection_specs([
-        MediaCollectionSpec::post(
+    vec![
+        media_collection_path(
             "/v1/media/compatibility-targets",
             "List media compatibility targets",
             "Media compatibility targets",
             "MediaCompatibilityTargetListResponse",
-            "Create or replace a media compatibility target",
-            "Media compatibility target",
-            (
-                "MediaCompatibilityTargetResponse",
-                "MediaCompatibilityTargetUpsertRequest",
+            media_op(
+                "post",
+                "Create or replace a media compatibility target",
+                "201",
+                "Media compatibility target",
+                Some("MediaCompatibilityTargetResponse"),
+                Some("MediaCompatibilityTargetUpsertRequest"),
+                MediaParameterSet::None,
             ),
         ),
-        MediaCollectionSpec::post(
+        media_collection_path(
             "/v1/media/targets",
             "List immutable media desired targets",
             "Media desired targets",
             "MediaDesiredTargetListResponse",
-            "Create an immutable media desired target",
-            "Media desired target",
-            (
-                "MediaDesiredTargetResponse",
-                "MediaDesiredTargetCreateRequest",
+            media_op(
+                "post",
+                "Create an immutable media desired target",
+                "201",
+                "Media desired target",
+                Some("MediaDesiredTargetResponse"),
+                Some("MediaDesiredTargetCreateRequest"),
+                MediaParameterSet::None,
             ),
         ),
-        MediaCollectionSpec::post(
+        media_collection_path(
             "/v1/media/policies",
             "List media policies",
             "Media policies",
             "MediaPolicyListResponse",
-            "Create or replace a media policy",
-            "Media policy",
-            ("MediaPolicyResponse", "MediaPolicyUpsertRequest"),
+            media_op(
+                "post",
+                "Create or replace a media policy",
+                "201",
+                "Media policy",
+                Some("MediaPolicyResponse"),
+                Some("MediaPolicyUpsertRequest"),
+                MediaParameterSet::None,
+            ),
         ),
-        MediaCollectionSpec::write(
+        media_collection_path(
             "/v1/media/job-retention",
             "Read media job retention policy",
             "Media job retention",
@@ -371,78 +383,7 @@ fn media_configuration_paths() -> Vec<(&'static str, Value)> {
                 MediaParameterSet::None,
             ),
         ),
-    ])
-}
-
-#[derive(Clone, Copy)]
-struct MediaCollectionSpec {
-    path: &'static str,
-    list_summary: &'static str,
-    list_description: &'static str,
-    list_schema: &'static str,
-    write: MediaOperationSpec,
-}
-
-impl MediaCollectionSpec {
-    const fn write(
-        path: &'static str,
-        list_summary: &'static str,
-        list_description: &'static str,
-        list_schema: &'static str,
-        write: MediaOperationSpec,
-    ) -> Self {
-        Self {
-            path,
-            list_summary,
-            list_description,
-            list_schema,
-            write,
-        }
-    }
-
-    const fn post(
-        path: &'static str,
-        list_summary: &'static str,
-        list_description: &'static str,
-        list_schema: &'static str,
-        write_summary: &'static str,
-        write_description: &'static str,
-        write_schemas: (&'static str, &'static str),
-    ) -> Self {
-        let (response_schema, request_schema) = write_schemas;
-        Self::write(
-            path,
-            list_summary,
-            list_description,
-            list_schema,
-            media_op(
-                "post",
-                write_summary,
-                "201",
-                write_description,
-                Some(response_schema),
-                Some(request_schema),
-                MediaParameterSet::None,
-            ),
-        )
-    }
-}
-
-fn media_collection_specs<const N: usize>(
-    specs: [MediaCollectionSpec; N],
-) -> Vec<(&'static str, Value)> {
-    specs
-        .into_iter()
-        .map(|spec| {
-            media_collection_path(
-                spec.path,
-                spec.list_summary,
-                spec.list_description,
-                spec.list_schema,
-                spec.write,
-            )
-        })
-        .collect()
+    ]
 }
 
 fn media_discovery_paths() -> Vec<(&'static str, Value)> {
@@ -459,68 +400,49 @@ fn media_discovery_paths() -> Vec<(&'static str, Value)> {
                 MediaParameterSet::None,
             ),
         ),
-        media_discovery_run_path(
+        media_single_path(
             "/v1/media/discovery/runs",
-            "Run media discovery",
-            "Media discovery run",
+            media_op(
+                "post",
+                "Run media discovery",
+                "201",
+                "Media discovery run",
+                Some("MediaDiscoveryRunResponse"),
+                Some("MediaDiscoveryRunRequest"),
+                MediaParameterSet::None,
+            ),
         ),
-        media_discovery_run_collection_path(
+        media_collection_path(
             "/v1/media/discovery/schedules",
             "List media discovery schedules",
             "Media discovery schedules",
             "MediaDiscoveryScheduleListResponse",
-            "Run scheduled media discovery",
-            "Scheduled media discovery run",
+            media_op(
+                "post",
+                "Run scheduled media discovery",
+                "201",
+                "Scheduled media discovery run",
+                Some("MediaDiscoveryRunResponse"),
+                Some("MediaDiscoveryRunRequest"),
+                MediaParameterSet::None,
+            ),
         ),
-        media_discovery_run_collection_path(
+        media_collection_path(
             "/v1/media/discovery/watchers",
             "List media discovery watchers",
             "Media discovery watchers",
             "MediaDiscoveryWatcherListResponse",
-            "Run watcher media discovery",
-            "Watcher media discovery run",
+            media_op(
+                "post",
+                "Run watcher media discovery",
+                "201",
+                "Watcher media discovery run",
+                Some("MediaDiscoveryRunResponse"),
+                Some("MediaDiscoveryRunRequest"),
+                MediaParameterSet::None,
+            ),
         ),
     ]
-}
-
-fn media_discovery_run_path(
-    path: &'static str,
-    summary: &'static str,
-    description: &'static str,
-) -> (&'static str, Value) {
-    media_single_path(path, media_discovery_run_op(summary, description))
-}
-
-fn media_discovery_run_collection_path(
-    path: &'static str,
-    list_summary: &'static str,
-    list_description: &'static str,
-    list_schema: &'static str,
-    run_summary: &'static str,
-    run_description: &'static str,
-) -> (&'static str, Value) {
-    media_collection_path(
-        path,
-        list_summary,
-        list_description,
-        list_schema,
-        media_discovery_run_op(run_summary, run_description),
-    )
-}
-
-const fn media_discovery_run_op(
-    summary: &'static str,
-    description: &'static str,
-) -> MediaOperationSpec {
-    media_op(
-        "post",
-        summary,
-        "201",
-        description,
-        Some("MediaDiscoveryRunResponse"),
-        Some("MediaDiscoveryRunRequest"),
-        MediaParameterSet::None,
-    )
 }
 
 fn media_job_paths() -> Vec<(&'static str, Value)> {
@@ -613,48 +535,44 @@ fn media_job_lifecycle_paths() -> Vec<(&'static str, Value)> {
 }
 
 fn media_job_record_paths() -> Vec<(&'static str, Value)> {
-    [
-        (
+    vec![
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/operations",
             "List media job operations",
             "Media job operations",
             "MediaJobOperationListResponse",
         ),
-        (
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/violations",
             "List media job violations",
             "Media job violations",
             "MediaJobViolationListResponse",
         ),
-        (
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/plan-reasons",
             "List media job plan reasons",
             "Media job plan reasons",
             "MediaJobPlanReasonListResponse",
         ),
-        (
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/verification-checks",
             "List media job verification checks",
             "Media job verification checks",
             "MediaJobVerificationCheckListResponse",
         ),
-        (
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/artifacts",
             "List media job artifacts",
             "Media job artifacts",
             "MediaJobArtifactListResponse",
         ),
-        (
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/compact-audits",
             "List media job compact audits",
             "Media job compact audits",
             "MediaJobCompactAuditListResponse",
         ),
     ]
-    .map(|(path, summary, description, schema)| {
-        media_job_record_path(path, summary, description, schema)
-    })
-    .into()
 }
 
 fn media_job_record_path(
@@ -679,61 +597,55 @@ fn media_job_record_path(
 
 fn media_capability_paths() -> Vec<(&'static str, Value)> {
     vec![
-        media_capability_path(
+        media_single_path(
             "/v1/media/capabilities",
-            "get",
-            "Read latest media capability snapshot",
-            "200",
-            "Latest media capability snapshot",
-            "MediaCapabilityLatestResponse",
+            media_op(
+                "get",
+                "Read latest media capability snapshot",
+                "200",
+                "Latest media capability snapshot",
+                Some("MediaCapabilityLatestResponse"),
+                None,
+                MediaParameterSet::None,
+            ),
         ),
-        media_capability_path(
+        media_single_path(
             "/v1/media/capabilities/readiness",
-            "get",
-            "Read media capability readiness",
-            "200",
-            "Media capability readiness",
-            "MediaCapabilityReadinessResponse",
+            media_op(
+                "get",
+                "Read media capability readiness",
+                "200",
+                "Media capability readiness",
+                Some("MediaCapabilityReadinessResponse"),
+                None,
+                MediaParameterSet::None,
+            ),
         ),
-        media_capability_path(
+        media_single_path(
             "/v1/media/capabilities/refresh",
-            "post",
-            "Refresh media capabilities",
-            "201",
-            "Media capability snapshot refreshed",
-            "MediaCapabilityRefreshResponse",
+            media_op(
+                "post",
+                "Refresh media capabilities",
+                "201",
+                "Media capability snapshot refreshed",
+                Some("MediaCapabilityRefreshResponse"),
+                None,
+                MediaParameterSet::None,
+            ),
         ),
-        media_capability_path(
+        media_single_path(
             "/v1/media/compliance",
-            "get",
-            "Read media runtime compliance artifacts",
-            "200",
-            "Media runtime compliance artifacts",
-            "MediaComplianceResponse",
+            media_op(
+                "get",
+                "Read media runtime compliance artifacts",
+                "200",
+                "Media runtime compliance artifacts",
+                Some("MediaComplianceResponse"),
+                None,
+                MediaParameterSet::None,
+            ),
         ),
     ]
-}
-
-fn media_capability_path(
-    path: &'static str,
-    method: &'static str,
-    summary: &'static str,
-    success_status: &'static str,
-    success_description: &'static str,
-    response_schema: &'static str,
-) -> (&'static str, Value) {
-    media_single_path(
-        path,
-        media_op(
-            method,
-            summary,
-            success_status,
-            success_description,
-            Some(response_schema),
-            None,
-            MediaParameterSet::None,
-        ),
-    )
 }
 
 fn media_yaml_paths() -> Vec<(&'static str, Value)> {
@@ -1103,7 +1015,26 @@ fn media_compatibility_target_schemas() -> Vec<(&'static str, Value)> {
     vec![
         (
             "MediaCompatibilityTargetResponse",
-            media_compatibility_target_schema(),
+            object_schema(
+                &[
+                    "compatibility_target_key",
+                    "version",
+                    "display_name",
+                    "video_codec",
+                    "audio_codec",
+                    "subtitle_policy",
+                ],
+                [
+                    ("compatibility_target_key", string_schema()),
+                    ("version", integer_schema()),
+                    ("display_name", string_schema()),
+                    ("video_codec", string_schema()),
+                    ("audio_codec", string_schema()),
+                    ("audio_channels", integer_schema()),
+                    ("audio_channel_layout", string_schema()),
+                    ("subtitle_policy", string_schema()),
+                ],
+            ),
         ),
         (
             "MediaCompatibilityTargetListResponse",
@@ -1117,61 +1048,31 @@ fn media_compatibility_target_schemas() -> Vec<(&'static str, Value)> {
         ),
         (
             "MediaCompatibilityTargetUpsertRequest",
-            media_compatibility_target_schema(),
+            object_schema(
+                &[
+                    "compatibility_target_key",
+                    "version",
+                    "display_name",
+                    "video_codec",
+                    "audio_codec",
+                    "subtitle_policy",
+                ],
+                [
+                    ("compatibility_target_key", string_schema()),
+                    ("version", integer_schema()),
+                    ("display_name", string_schema()),
+                    ("video_codec", string_schema()),
+                    ("audio_codec", string_schema()),
+                    ("audio_channels", integer_schema()),
+                    ("audio_channel_layout", string_schema()),
+                    ("subtitle_policy", string_schema()),
+                ],
+            ),
         ),
     ]
-}
-
-fn media_compatibility_target_schema() -> Value {
-    object_schema(
-        &[
-            "compatibility_target_key",
-            "version",
-            "display_name",
-            "video_codec",
-            "audio_codec",
-            "subtitle_policy",
-        ],
-        [
-            ("compatibility_target_key", string_schema()),
-            ("version", integer_schema()),
-            ("display_name", string_schema()),
-            ("video_codec", string_schema()),
-            ("audio_codec", string_schema()),
-            ("audio_channels", integer_schema()),
-            ("audio_channel_layout", string_schema()),
-            ("subtitle_policy", string_schema()),
-        ],
-    )
 }
 
 fn media_policy_profile_schemas() -> Vec<(&'static str, Value)> {
-    let required = [
-        "policy_key",
-        "version",
-        "display_name",
-        "video_intent",
-        "verification_strictness",
-        "verification_duration_tolerance_millis",
-        "verification_mux_validation",
-        "verification_decode_all_streams",
-        "verification_keyframe_seek",
-        "verification_playback_probe",
-    ];
-    vec![
-        ("MediaPolicyResponse", media_policy_schema(&required)),
-        (
-            "MediaPolicyListResponse",
-            object_schema(
-                &["policies"],
-                [("policies", array_ref_schema("MediaPolicyResponse"))],
-            ),
-        ),
-        ("MediaPolicyUpsertRequest", media_policy_schema(&required)),
-    ]
-}
-
-fn media_policy_schema(required: &[&'static str]) -> Value {
     let verification_strictness_schema = || {
         serde_json::json!({
             "type": "string",
@@ -1186,61 +1087,122 @@ fn media_policy_schema(required: &[&'static str]) -> Value {
             "maximum": 60000
         })
     };
-    object_schema(
-        required,
-        [
-            ("policy_key", string_schema()),
-            ("version", integer_schema()),
-            ("display_name", string_schema()),
-            ("video_intent", string_schema()),
-            ("verification_strictness", verification_strictness_schema()),
-            (
-                "verification_duration_tolerance_millis",
-                verification_duration_tolerance_schema(),
-            ),
-            ("verification_mux_validation", bool_schema()),
-            ("verification_decode_all_streams", bool_schema()),
-            ("verification_keyframe_seek", bool_schema()),
-            ("verification_playback_probe", bool_schema()),
-        ],
-    )
-}
-
-fn media_job_retention_schemas() -> Vec<(&'static str, Value)> {
+    let required = [
+        "policy_key",
+        "version",
+        "display_name",
+        "video_intent",
+        "verification_strictness",
+        "verification_duration_tolerance_millis",
+        "verification_mux_validation",
+        "verification_decode_all_streams",
+        "verification_keyframe_seek",
+        "verification_playback_probe",
+    ];
     vec![
-        ("MediaJobRetentionResponse", media_job_retention_schema()),
         (
-            "MediaJobRetentionUpdateRequest",
-            media_job_retention_schema(),
+            "MediaPolicyResponse",
+            object_schema(
+                &required,
+                [
+                    ("policy_key", string_schema()),
+                    ("version", integer_schema()),
+                    ("display_name", string_schema()),
+                    ("video_intent", string_schema()),
+                    ("verification_strictness", verification_strictness_schema()),
+                    (
+                        "verification_duration_tolerance_millis",
+                        verification_duration_tolerance_schema(),
+                    ),
+                    ("verification_mux_validation", bool_schema()),
+                    ("verification_decode_all_streams", bool_schema()),
+                    ("verification_keyframe_seek", bool_schema()),
+                    ("verification_playback_probe", bool_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaPolicyListResponse",
+            object_schema(
+                &["policies"],
+                [("policies", array_ref_schema("MediaPolicyResponse"))],
+            ),
+        ),
+        (
+            "MediaPolicyUpsertRequest",
+            object_schema(
+                &required,
+                [
+                    ("policy_key", string_schema()),
+                    ("version", integer_schema()),
+                    ("display_name", string_schema()),
+                    ("video_intent", string_schema()),
+                    ("verification_strictness", verification_strictness_schema()),
+                    (
+                        "verification_duration_tolerance_millis",
+                        verification_duration_tolerance_schema(),
+                    ),
+                    ("verification_mux_validation", bool_schema()),
+                    ("verification_decode_all_streams", bool_schema()),
+                    ("verification_keyframe_seek", bool_schema()),
+                    ("verification_playback_probe", bool_schema()),
+                ],
+            ),
         ),
     ]
 }
 
-fn media_job_retention_schema() -> Value {
+fn media_job_retention_schemas() -> Vec<(&'static str, Value)> {
     let retention_mode_schema = || {
         serde_json::json!({
             "type": "string",
             "enum": ["age", "count"]
         })
     };
-    object_schema(
-        &[
-            "completed_enabled",
-            "completed_mode",
-            "completed_limit",
-            "failed_diagnostic_enabled",
-            "failed_diagnostic_mode",
-            "failed_diagnostic_limit",
-        ],
-        [
-            ("completed_enabled", bool_schema()),
-            ("completed_mode", retention_mode_schema()),
-            ("completed_limit", integer_schema()),
-            ("failed_diagnostic_enabled", bool_schema()),
-            ("failed_diagnostic_mode", retention_mode_schema()),
-            ("failed_diagnostic_limit", integer_schema()),
-        ],
-    )
+    vec![
+        (
+            "MediaJobRetentionResponse",
+            object_schema(
+                &[
+                    "completed_enabled",
+                    "completed_mode",
+                    "completed_limit",
+                    "failed_diagnostic_enabled",
+                    "failed_diagnostic_mode",
+                    "failed_diagnostic_limit",
+                ],
+                [
+                    ("completed_enabled", bool_schema()),
+                    ("completed_mode", retention_mode_schema()),
+                    ("completed_limit", integer_schema()),
+                    ("failed_diagnostic_enabled", bool_schema()),
+                    ("failed_diagnostic_mode", retention_mode_schema()),
+                    ("failed_diagnostic_limit", integer_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobRetentionUpdateRequest",
+            object_schema(
+                &[
+                    "completed_enabled",
+                    "completed_mode",
+                    "completed_limit",
+                    "failed_diagnostic_enabled",
+                    "failed_diagnostic_mode",
+                    "failed_diagnostic_limit",
+                ],
+                [
+                    ("completed_enabled", bool_schema()),
+                    ("completed_mode", retention_mode_schema()),
+                    ("completed_limit", integer_schema()),
+                    ("failed_diagnostic_enabled", bool_schema()),
+                    ("failed_diagnostic_mode", retention_mode_schema()),
+                    ("failed_diagnostic_limit", integer_schema()),
+                ],
+            ),
+        ),
+    ]
 }
 
 fn media_discovery_schemas() -> Vec<(&'static str, Value)> {
@@ -1472,107 +1434,265 @@ fn media_job_core_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_job_operation_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobOperationAppendRequest",
-        "MediaJobOperationResponse",
-        "MediaJobOperationListResponse",
-        "operations",
-        &["operation_index", "operation_kind", "command_bin"],
-        [
-            schema_property("operation_index", SchemaKind::Integer),
-            schema_property("operation_kind", SchemaKind::OperationKind),
-            schema_property("stream_id", SchemaKind::Integer),
-            schema_property("command_bin", SchemaKind::String),
-            schema_property("arg_1", SchemaKind::String),
-            schema_property("arg_2", SchemaKind::String),
-            schema_property("arg_3", SchemaKind::String),
-            schema_property("arg_4", SchemaKind::String),
-            schema_property("arg_5", SchemaKind::String),
-        ],
-    )
+    vec![
+        (
+            "MediaJobOperationAppendRequest",
+            object_schema(
+                &["operation_index", "operation_kind", "command_bin"],
+                [
+                    ("operation_index", integer_schema()),
+                    ("operation_kind", operation_kind_schema()),
+                    ("stream_id", integer_schema()),
+                    ("command_bin", string_schema()),
+                    ("arg_1", string_schema()),
+                    ("arg_2", string_schema()),
+                    ("arg_3", string_schema()),
+                    ("arg_4", string_schema()),
+                    ("arg_5", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobOperationResponse",
+            object_schema(
+                &[
+                    "operation_index",
+                    "operation_kind",
+                    "command_bin",
+                    "created_at",
+                ],
+                [
+                    ("operation_index", integer_schema()),
+                    ("operation_kind", operation_kind_schema()),
+                    ("stream_id", integer_schema()),
+                    ("command_bin", string_schema()),
+                    ("arg_1", string_schema()),
+                    ("arg_2", string_schema()),
+                    ("arg_3", string_schema()),
+                    ("arg_4", string_schema()),
+                    ("arg_5", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobOperationListResponse",
+            object_schema(
+                &["operations"],
+                [("operations", array_ref_schema("MediaJobOperationResponse"))],
+            ),
+        ),
+    ]
 }
 
 fn media_job_violation_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobViolationAppendRequest",
-        "MediaJobViolationResponse",
-        "MediaJobViolationListResponse",
-        "violations",
-        &["violation_index", "violation_kind", "severity"],
-        [
-            schema_property("violation_index", SchemaKind::Integer),
-            schema_property("violation_kind", SchemaKind::String),
-            schema_property("severity", SchemaKind::ViolationSeverity),
-            schema_property("stream_id", SchemaKind::Integer),
-        ],
-    )
+    vec![
+        (
+            "MediaJobViolationAppendRequest",
+            object_schema(
+                &["violation_index", "violation_kind", "severity"],
+                [
+                    ("violation_index", integer_schema()),
+                    ("violation_kind", string_schema()),
+                    ("severity", violation_severity_schema()),
+                    ("stream_id", integer_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobViolationResponse",
+            object_schema(
+                &[
+                    "violation_index",
+                    "violation_kind",
+                    "severity",
+                    "created_at",
+                ],
+                [
+                    ("violation_index", integer_schema()),
+                    ("violation_kind", string_schema()),
+                    ("severity", violation_severity_schema()),
+                    ("stream_id", integer_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobViolationListResponse",
+            object_schema(
+                &["violations"],
+                [("violations", array_ref_schema("MediaJobViolationResponse"))],
+            ),
+        ),
+    ]
 }
 
 fn media_job_plan_reason_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobPlanReasonAppendRequest",
-        "MediaJobPlanReasonResponse",
-        "MediaJobPlanReasonListResponse",
-        "reasons",
-        &["reason_index", "selected", "reason_code", "reason_text"],
-        [
-            schema_property("reason_index", SchemaKind::Integer),
-            schema_property("candidate_index", SchemaKind::Integer),
-            schema_property("selected", SchemaKind::Boolean),
-            schema_property("reason_code", SchemaKind::String),
-            schema_property("reason_text", SchemaKind::String),
-        ],
-    )
+    vec![
+        (
+            "MediaJobPlanReasonAppendRequest",
+            object_schema(
+                &["reason_index", "selected", "reason_code", "reason_text"],
+                [
+                    ("reason_index", integer_schema()),
+                    ("candidate_index", integer_schema()),
+                    ("selected", bool_schema()),
+                    ("reason_code", string_schema()),
+                    ("reason_text", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobPlanReasonResponse",
+            object_schema(
+                &[
+                    "reason_index",
+                    "selected",
+                    "reason_code",
+                    "reason_text",
+                    "created_at",
+                ],
+                [
+                    ("reason_index", integer_schema()),
+                    ("candidate_index", integer_schema()),
+                    ("selected", bool_schema()),
+                    ("reason_code", string_schema()),
+                    ("reason_text", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobPlanReasonListResponse",
+            object_schema(
+                &["reasons"],
+                [("reasons", array_ref_schema("MediaJobPlanReasonResponse"))],
+            ),
+        ),
+    ]
 }
 
 fn media_job_verification_check_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobVerificationCheckAppendRequest",
-        "MediaJobVerificationCheckResponse",
-        "MediaJobVerificationCheckListResponse",
-        "checks",
-        &["check_index", "check_kind", "check_status"],
-        [
-            schema_property("check_index", SchemaKind::Integer),
-            schema_property("check_kind", SchemaKind::String),
-            schema_property("check_status", SchemaKind::VerificationStatus),
-            schema_property("expected_value", SchemaKind::String),
-            schema_property("actual_value", SchemaKind::String),
-            schema_property("details_text", SchemaKind::String),
-        ],
-    )
+    vec![
+        (
+            "MediaJobVerificationCheckAppendRequest",
+            object_schema(
+                &["check_index", "check_kind", "check_status"],
+                [
+                    ("check_index", integer_schema()),
+                    ("check_kind", string_schema()),
+                    ("check_status", verification_check_status_schema()),
+                    ("expected_value", string_schema()),
+                    ("actual_value", string_schema()),
+                    ("details_text", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobVerificationCheckResponse",
+            object_schema(
+                &["check_index", "check_kind", "check_status", "created_at"],
+                [
+                    ("check_index", integer_schema()),
+                    ("check_kind", string_schema()),
+                    ("check_status", verification_check_status_schema()),
+                    ("expected_value", string_schema()),
+                    ("actual_value", string_schema()),
+                    ("details_text", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobVerificationCheckListResponse",
+            object_schema(
+                &["checks"],
+                [(
+                    "checks",
+                    array_ref_schema("MediaJobVerificationCheckResponse"),
+                )],
+            ),
+        ),
+    ]
 }
 
 fn media_job_artifact_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobArtifactAppendRequest",
-        "MediaJobArtifactResponse",
-        "MediaJobArtifactListResponse",
-        "artifacts",
-        &["artifact_index", "artifact_kind", "artifact_path"],
-        [
-            schema_property("artifact_index", SchemaKind::Integer),
-            schema_property("artifact_kind", SchemaKind::String),
-            schema_property("artifact_path", SchemaKind::String),
-            schema_property("size_bytes", SchemaKind::Integer),
-            schema_property("content_type", SchemaKind::String),
-        ],
-    )
+    vec![
+        (
+            "MediaJobArtifactAppendRequest",
+            object_schema(
+                &["artifact_index", "artifact_kind", "artifact_path"],
+                [
+                    ("artifact_index", integer_schema()),
+                    ("artifact_kind", string_schema()),
+                    ("artifact_path", string_schema()),
+                    ("size_bytes", integer_schema()),
+                    ("content_type", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobArtifactResponse",
+            object_schema(
+                &[
+                    "artifact_index",
+                    "artifact_kind",
+                    "artifact_path",
+                    "created_at",
+                ],
+                [
+                    ("artifact_index", integer_schema()),
+                    ("artifact_kind", string_schema()),
+                    ("artifact_path", string_schema()),
+                    ("size_bytes", integer_schema()),
+                    ("content_type", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobArtifactListResponse",
+            object_schema(
+                &["artifacts"],
+                [("artifacts", array_ref_schema("MediaJobArtifactResponse"))],
+            ),
+        ),
+    ]
 }
 
 fn media_job_compact_audit_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobCompactAuditAppendRequest",
-        "MediaJobCompactAuditResponse",
-        "MediaJobCompactAuditListResponse",
-        "audits",
-        &["audit_index", "fact_kind", "fact_text"],
-        [
-            schema_property("audit_index", SchemaKind::Integer),
-            schema_property("fact_kind", SchemaKind::String),
-            schema_property("fact_text", SchemaKind::String),
-        ],
-    )
+    vec![
+        (
+            "MediaJobCompactAuditAppendRequest",
+            object_schema(
+                &["audit_index", "fact_kind", "fact_text"],
+                [
+                    ("audit_index", integer_schema()),
+                    ("fact_kind", string_schema()),
+                    ("fact_text", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobCompactAuditResponse",
+            object_schema(
+                &["audit_index", "fact_kind", "fact_text", "created_at"],
+                [
+                    ("audit_index", integer_schema()),
+                    ("fact_kind", string_schema()),
+                    ("fact_text", string_schema()),
+                    ("created_at", date_time_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobCompactAuditListResponse",
+            object_schema(
+                &["audits"],
+                [("audits", array_ref_schema("MediaJobCompactAuditResponse"))],
+            ),
+        ),
+    ]
 }
 
 fn media_capability_schemas() -> Vec<(&'static str, Value)> {
@@ -1861,102 +1981,10 @@ fn capability_id_response_schema() -> Value {
     )
 }
 
-#[derive(Clone, Copy)]
-enum SchemaKind {
-    String,
-    Integer,
-    Boolean,
-    DateTime,
-    OperationKind,
-    ViolationSeverity,
-    VerificationStatus,
-}
-
-impl SchemaKind {
-    fn value(self) -> Value {
-        match self {
-            Self::String => string_schema(),
-            Self::Integer => integer_schema(),
-            Self::Boolean => bool_schema(),
-            Self::DateTime => date_time_schema(),
-            Self::OperationKind => operation_kind_schema(),
-            Self::ViolationSeverity => violation_severity_schema(),
-            Self::VerificationStatus => verification_check_status_schema(),
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-struct SchemaProperty {
-    name: &'static str,
-    kind: SchemaKind,
-}
-
-const fn schema_property(name: &'static str, kind: SchemaKind) -> SchemaProperty {
-    SchemaProperty { name, kind }
-}
-
-fn media_job_append_record_schemas<const N: usize>(
-    append_schema: &'static str,
-    response_schema: &'static str,
-    list_schema: &'static str,
-    list_field: &'static str,
-    append_required: &[&'static str],
-    properties: [SchemaProperty; N],
-) -> Vec<(&'static str, Value)> {
-    let response_required = append_required
-        .iter()
-        .copied()
-        .chain(["created_at"])
-        .collect::<Vec<_>>();
-    vec![
-        (
-            append_schema,
-            typed_object_schema_from_fields(append_required, properties),
-        ),
-        (
-            response_schema,
-            typed_object_schema_from_fields(
-                &response_required,
-                properties
-                    .into_iter()
-                    .chain([schema_property("created_at", SchemaKind::DateTime)]),
-            ),
-        ),
-        (
-            list_schema,
-            list_response_schema(list_field, response_schema),
-        ),
-    ]
-}
-
-fn typed_object_schema_from_fields<I>(required: &[&'static str], properties: I) -> Value
-where
-    I: IntoIterator<Item = SchemaProperty>,
-{
-    object_schema_from_iter(
-        required,
-        properties
-            .into_iter()
-            .map(|property| (property.name, property.kind.value())),
-    )
-}
-
-fn list_response_schema(field: &'static str, item_schema: &'static str) -> Value {
-    object_schema(&[field], [(field, array_ref_schema(item_schema))])
-}
-
 fn object_schema<const N: usize>(
     required: &[&'static str],
     properties: [(&'static str, Value); N],
 ) -> Value {
-    object_schema_from_iter(required, properties)
-}
-
-fn object_schema_from_iter<I>(required: &[&'static str], properties: I) -> Value
-where
-    I: IntoIterator<Item = (&'static str, Value)>,
-{
     let mut property_map = Map::new();
     for (name, schema) in properties {
         property_map.insert(name.to_string(), schema);

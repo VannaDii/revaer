@@ -24,8 +24,9 @@ use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
 use crate::http::handlers::indexers::SYSTEM_ACTOR_PUBLIC_ID;
 use crate::models::{
-    MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse,
-    MediaCapabilityRefreshResponse, MediaCompatibilityTargetListResponse,
+    MediaCapabilityCodecResponse, MediaCapabilityFeatureResponse, MediaCapabilityLatestResponse,
+    MediaCapabilityReadinessResponse, MediaCapabilityRefreshResponse,
+    MediaCapabilitySnapshotResponse, MediaCompatibilityTargetListResponse,
     MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
     MediaComplianceResponse, MediaDesiredTargetCreateRequest, MediaDesiredTargetListResponse,
     MediaDesiredTargetResponse, MediaDesiredTargetStream, MediaDiscoveryPreviewItemResponse,
@@ -1053,7 +1054,21 @@ pub(crate) async fn list_media_job_operations(
                 MEDIA_JOB_OPERATION_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobOperationResponse {
+            operation_index: item.operation_index,
+            operation_kind: item.operation_kind,
+            stream_id: item.stream_id,
+            command_bin: item.command_bin,
+            arg_1: item.arg_1,
+            arg_2: item.arg_2,
+            arg_3: item.arg_3,
+            arg_4: item.arg_4,
+            arg_5: item.arg_5,
+            created_at: item.created_at,
+        })
+        .collect();
 
     Ok(Json(MediaJobOperationListResponse { operations }))
 }
@@ -1072,7 +1087,16 @@ pub(crate) async fn list_media_job_violations(
                 MEDIA_JOB_VIOLATION_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobViolationResponse {
+            violation_index: item.violation_index,
+            violation_kind: item.violation_kind,
+            severity: item.severity,
+            stream_id: item.stream_id,
+            created_at: item.created_at,
+        })
+        .collect();
 
     Ok(Json(MediaJobViolationListResponse { violations }))
 }
@@ -1091,7 +1115,17 @@ pub(crate) async fn list_media_job_plan_reasons(
                 MEDIA_JOB_PLAN_REASON_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobPlanReasonResponse {
+            reason_index: item.reason_index,
+            candidate_index: item.candidate_index,
+            selected: item.selected,
+            reason_code: item.reason_code,
+            reason_text: item.reason_text,
+            created_at: item.created_at,
+        })
+        .collect();
 
     Ok(Json(MediaJobPlanReasonListResponse { reasons }))
 }
@@ -1110,7 +1144,18 @@ pub(crate) async fn list_media_job_verification_checks(
                 MEDIA_JOB_VERIFICATION_CHECK_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobVerificationCheckResponse {
+            check_index: item.check_index,
+            check_kind: item.check_kind,
+            check_status: item.check_status,
+            expected_value: item.expected_value,
+            actual_value: item.actual_value,
+            details_text: item.details_text,
+            created_at: item.created_at,
+        })
+        .collect();
 
     Ok(Json(MediaJobVerificationCheckListResponse { checks }))
 }
@@ -1129,7 +1174,17 @@ pub(crate) async fn list_media_job_artifacts(
                 MEDIA_JOB_ARTIFACT_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobArtifactResponse {
+            artifact_index: item.artifact_index,
+            artifact_kind: item.artifact_kind,
+            artifact_path: item.artifact_path,
+            size_bytes: item.size_bytes,
+            content_type: item.content_type,
+            created_at: item.created_at,
+        })
+        .collect();
 
     Ok(Json(MediaJobArtifactListResponse { artifacts }))
 }
@@ -1148,7 +1203,15 @@ pub(crate) async fn list_media_job_compact_audits(
                 MEDIA_JOB_COMPACT_AUDIT_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .map(|item| crate::models::MediaJobCompactAuditResponse {
+            audit_index: item.audit_index,
+            fact_kind: item.fact_kind,
+            fact_text: item.fact_text,
+            created_at: item.created_at,
+        })
+        .collect();
 
     Ok(Json(MediaJobCompactAuditListResponse { audits }))
 }
@@ -1193,13 +1256,18 @@ pub(crate) async fn refresh_media_capability(
 pub(crate) async fn latest_media_capability(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<MediaCapabilityLatestResponse>, ApiError> {
-    let snapshot = state.media.media_capability_latest().await.map_err(|err| {
-        map_media_error(
-            "media_capability_latest",
-            MEDIA_CAPABILITY_LATEST_FAILED,
-            &err,
-        )
-    })?;
+    let snapshot = state
+        .media
+        .media_capability_latest()
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_capability_latest",
+                MEDIA_CAPABILITY_LATEST_FAILED,
+                &err,
+            )
+        })?
+        .map(map_capability_snapshot);
 
     Ok(Json(MediaCapabilityLatestResponse { snapshot }))
 }
@@ -1219,7 +1287,13 @@ pub(crate) async fn media_capability_readiness(
             )
         })?;
 
-    Ok(Json(readiness))
+    let snapshot = readiness.snapshot.map(map_capability_snapshot);
+
+    Ok(Json(MediaCapabilityReadinessResponse {
+        ready: readiness.ready,
+        reason: readiness.reason,
+        snapshot,
+    }))
 }
 
 pub(crate) async fn media_compliance(
@@ -1412,7 +1486,37 @@ fn map_desired_target_response(
         version: target.version,
         display_name: target.display_name,
         container_format: target.container_format,
-        streams: target.streams,
+        streams: target
+            .streams
+            .into_iter()
+            .map(|stream| MediaDesiredTargetStream {
+                stream_key: stream.stream_key,
+                stream_kind: stream.stream_kind,
+                semantic_role: stream.semantic_role,
+                language_code: stream.language_code,
+                optional: stream.optional,
+                sort_order: stream.sort_order,
+                codec: stream.codec,
+                channel_count: stream.channel_count,
+                channel_layout: stream.channel_layout,
+                audio_bitrate_bps: stream.audio_bitrate_bps,
+                audio_sample_rate_hz: stream.audio_sample_rate_hz,
+                audio_loudness_profile: stream.audio_loudness_profile,
+                audio_dynamic_range: stream.audio_dynamic_range,
+                video_profile: stream.video_profile,
+                video_level: stream.video_level,
+                video_bitrate_bps: stream.video_bitrate_bps,
+                color_primaries: stream.color_primaries,
+                color_transfer: stream.color_transfer,
+                color_space: stream.color_space,
+                hdr_format: stream.hdr_format,
+                title: stream.title,
+                default_disposition: stream.default_disposition,
+                forced_disposition: stream.forced_disposition,
+                subtitle_placement: stream.subtitle_placement,
+                image_subtitle_action: stream.image_subtitle_action,
+            })
+            .collect(),
     }
 }
 
@@ -1446,6 +1550,52 @@ fn map_job(job: crate::app::media::MediaJobResponse) -> MediaJobResponse {
         started_at: job.started_at,
         completed_at: job.completed_at,
         last_error: job.last_error,
+    }
+}
+
+fn map_capability_snapshot(
+    row: crate::app::media::MediaCapabilitySnapshotResponse,
+) -> MediaCapabilitySnapshotResponse {
+    MediaCapabilitySnapshotResponse {
+        media_capability_snapshot_id: row.media_capability_snapshot_id,
+        snapshot_run_public_id: row.snapshot_run_public_id,
+        ffmpeg_version: row.ffmpeg_version,
+        ffprobe_version: row.ffprobe_version,
+        codecs: row
+            .codecs
+            .into_iter()
+            .map(|codec| MediaCapabilityCodecResponse {
+                codec_name: codec.codec_name,
+                encode_supported: codec.encode_supported,
+                decode_supported: codec.decode_supported,
+            })
+            .collect(),
+        encoders: row.encoders,
+        decoders: row.decoders,
+        muxers: row.muxers,
+        demuxers: row.demuxers,
+        subtitle_support: row.subtitle_support,
+        hardware_accelerators: row.hardware_accelerators,
+        filesystem_utilities: row.filesystem_utilities,
+        utility_capabilities: row.utility_capabilities,
+        license_mode: row.license_mode,
+        ffmpeg_license_mode: row.ffmpeg_license_mode,
+        ffmpeg_enable_gpl: row.ffmpeg_enable_gpl,
+        ffmpeg_enable_version3: row.ffmpeg_enable_version3,
+        ffmpeg_enable_nonfree: row.ffmpeg_enable_nonfree,
+        compliance_links: row.compliance_links,
+        absent_capabilities: row.absent_capabilities,
+        features: row
+            .features
+            .into_iter()
+            .map(|feature| MediaCapabilityFeatureResponse {
+                feature_family: feature.feature_family,
+                feature_name: feature.feature_name,
+                supported: feature.supported,
+                detail_text: feature.detail_text,
+            })
+            .collect(),
+        observed_at: row.observed_at,
     }
 }
 
