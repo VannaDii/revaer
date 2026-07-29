@@ -18,7 +18,7 @@
 - Keep the media conversion fixture job present on every PR, but publish an explicit not-applicable report in early stack layers before the fixture integration test target exists.
 - Install Playwright's `chromium-headless-shell` alongside `chromium` whenever Chromium UI tests are requested, because headless UI tests can launch the shell executable even when CI also asks for a system browser channel. A partial browser cache must fail during installation rather than at test start.
 - Keep PR UI E2E readiness bounded but long enough for cold Rust and Trunk setup to complete before declaring the UI server unavailable.
-- Validate and fetch the actual pull request base branch before Sonar analysis so normally chained PRs retain strict new-code SCM context instead of skipping the scan or assuming `main`.
+- Validate and fetch the actual pull request base branch before Sonar analysis, and fail if the fetched ref does not resolve to the pull request's reviewed base SHA, so manually stacked PRs retain strict new-code SCM context instead of skipping the scan or assuming `main`.
 - Retry factory reset on PostgreSQL deadlock SQLSTATE `40P01` so reset can safely converge when active background jobs briefly hold conflicting locks during PR E2E setup.
 - Reject every npm advisory severity in both lockfiles and every Cargo advisory warning.
 - Keep `.secignore` and `deny.toml` advisory ignores empty. Remove vulnerable crates from the resolved lock graph by upgrading or replacing dependencies.
@@ -41,7 +41,7 @@
   - The Justfile remains the only build/test/lint/audit command surface.
   - The media conversion job detects the fixture test target before fixture preparation so lower stack layers have visible check evidence without claiming absent tests ran.
   - `just ui-e2e` expands Chromium installs to include `chromium-headless-shell` and uses Playwright's installer for browser targets plus operating-system dependencies in CI.
-  - PR Sonar setup validates the pull request base ref with Git's branch-name parser, fetches that exact base from origin, and fails before scanning if the ref is missing or invalid.
+  - PR Sonar setup validates the pull request base ref with Git's branch-name parser, fetches that base from origin, and fails before scanning if the ref is missing, invalid, or does not resolve to `github.event.pull_request.base.sha`.
   - PR UI E2E sets a 900-second readiness budget so cold CI runner setup does not fail before browser tests can exercise the app.
   - Factory reset retries only database deadlocks with a bounded attempt count; non-deadlock reset failures still propagate immediately.
 - Test coverage summary:
@@ -58,6 +58,12 @@
   - Sonar JavaScript/TypeScript LCOV is generated from executed Playwright and
     release-tooling code, merged into `coverage/js-lcov.info`, and verified for
     source and line records before every scan.
+  - Playwright coverage JSON emitted from the compiled coverage harness is copied
+    back into `tests/test-results` so `just ui-e2e-coverage` and CI artifact
+    upload validate the same route and OpenAPI operation evidence.
+  - The coverage harness switches Playwright's spec matcher to compiled
+    JavaScript when `JS_COVERAGE_DIR` is set, so LCOV and route/API coverage are
+    emitted from the same executed shard tests.
 - Observability updates:
   - CI exposes tool installation, cache restoration, advisory refresh, and each canonical gate as separate log steps.
 - Risk and rollback plan:
@@ -66,6 +72,7 @@
 - Dependency rationale:
   - No runtime dependency was added. Tool versions are pinned CI dependencies; lockfile upgrades remove vulnerable transitive packages.
   - `vendor/semantic-release-npm-stub` is a release-tooling-only replacement for the unused npm publish plugin that semantic-release depends on by default; the active release config publishes GitHub assets through `@semantic-release/github`, not npm.
+  - A local `flume` patch was rejected because the registry version is advisory-clean and duplicate-clean, while committing the dependency source would add uncovered third-party code to Sonar's main-code scope.
   - `c8`, `typescript`, and `@types/node` are dev-only test harness dependencies used to compile the Playwright TypeScript harness with source maps and emit Sonar-compatible JavaScript/TypeScript LCOV from executed CI code.
 - Stale-policy check:
   - Reviewed `AGENTS.md` and `.github/instructions/devops.instructions.md`.

@@ -2,6 +2,7 @@ use std::iter::once;
 use std::mem::take;
 
 use proc_macro2::{Span, TokenStream};
+use proc_macro_error3::emit_error;
 use quote::{quote, ToTokens};
 use syn::punctuated::{Pair, Punctuated};
 use syn::spanned::Spanned;
@@ -96,16 +97,11 @@ fn add_hook_bound(
 #[derive(Default)]
 pub struct CollectArgs {
     needs_boxing: bool,
-    errors: Vec<syn::Error>,
 }
 
 impl CollectArgs {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    fn into_errors(self) -> Vec<syn::Error> {
-        self.errors
     }
 }
 
@@ -117,8 +113,7 @@ impl VisitMut for CollectArgs {
     }
 
     fn visit_receiver_mut(&mut self, recv: &mut Receiver) {
-        self.errors
-            .push(syn::Error::new_spanned(&mut *recv, "methods cannot be hooks"));
+        emit_error!(recv, "methods cannot be hooks");
 
         visit_mut::visit_receiver_mut(self, recv);
     }
@@ -168,13 +163,11 @@ impl HookSignature {
     }
 
     /// Rewrites a Hook Signature and extracts information.
-    pub fn rewrite(sig: &Signature) -> syn::Result<Self> {
+    pub fn rewrite(sig: &Signature) -> Self {
         let mut sig = sig.clone();
 
         let mut arg_info = CollectArgs::new();
         arg_info.visit_signature_mut(&mut sig);
-        let needs_boxing = arg_info.needs_boxing;
-        crate::join_errors(arg_info.into_errors().into_iter())?;
 
         let elided_lifetimes = collect_argument_lifetimes(&mut sig);
 
@@ -208,12 +201,12 @@ impl HookSignature {
         let (output, output_type) = Self::rewrite_return_type(&hook_lifetime, return_type);
         sig.output = output;
 
-        Ok(Self {
+        Self {
             hook_lifetime,
             sig,
             output_type,
-            needs_boxing,
-        })
+            needs_boxing: arg_info.needs_boxing,
+        }
     }
 
     pub fn phantom_types(&self) -> Vec<Ident> {

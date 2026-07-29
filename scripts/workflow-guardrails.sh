@@ -411,6 +411,8 @@ report_missing "PR workflow must define a separate Sonar scan job" '^  sonar:' .
 report_missing "Main Sonar workflow must define a separate Sonar scan job" '^  sonar:' .github/workflows/sonar.yml
 report_missing "PR Sonar scan must download only prepared coverage inputs" 'Download Sonar coverage inputs' .github/workflows/pr.yml
 report_missing "Main Sonar scan must download only prepared coverage inputs" 'Download Sonar coverage inputs' .github/workflows/sonar.yml
+report_missing "PR Sonar scan must verify the exact reviewed base SHA" 'SONAR_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}' .github/workflows/pr.yml
+report_missing "PR Sonar scan must compare the fetched base ref to the reviewed base SHA" 'actual_base_sha="\$\(git rev-parse "refs/remotes/origin/\$\{SONAR_BASE_REF\}"\)"' .github/workflows/pr.yml
 report_missing "PR Sonar inputs must include the staged native CXX runtime bridge header" 'coverage/cxxbridge/include/rust/cxx\.h' .github/workflows/pr.yml
 report_missing "Main Sonar inputs must include the staged native CXX runtime bridge header" 'coverage/cxxbridge/include/rust/cxx\.h' .github/workflows/sonar.yml
 report_missing "PR Sonar inputs must include the staged native crate bridge header" 'coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge\.rs\.h' .github/workflows/pr.yml

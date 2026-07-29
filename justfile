@@ -267,8 +267,7 @@ sonar-verify-result:
     test -d .scannerwork/scanner-report
     tar -cJf .scannerwork/scanner-report.tar.xz -C .scannerwork scanner-report
     test -s .scannerwork/scanner-report.tar.xz
-    tar -tf .scannerwork/scanner-report.tar.xz > .scannerwork/scanner-report.entries
-    grep -q '^scanner-report/' .scannerwork/scanner-report.entries
+    tar -tf .scannerwork/scanner-report.tar.xz | grep -q '^scanner-report/'
     bash scripts/sonar-result-guardrails.sh
 
 sbom:
@@ -382,7 +381,11 @@ ui-e2e: trunk-install
         playwright_install_browsers="${playwright_install_browsers} chromium-headless-shell"; \
     fi; \
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
-        cd tests && npx playwright install --with-deps ${playwright_install_browsers}; \
+        if [ -n "${E2E_BROWSER_CHANNEL:-}" ]; then \
+            cd tests && npx playwright install-deps ${playwright_install_browsers}; \
+        else \
+            cd tests && npx playwright install --with-deps ${playwright_install_browsers}; \
+        fi; \
     else \
         cd tests && npx playwright install ${playwright_install_browsers}; \
     fi
@@ -395,12 +398,17 @@ ui-e2e: trunk-install
         (cd tests && npx tsc -p tsconfig.coverage.json); \
         NODE_PATH="${PWD}/tests/node_modules" \
         E2E_ENV_DIR="${PWD}/tests" \
-            tests/node_modules/.bin/c8 \
+        tests/node_modules/.bin/c8 \
             --reporter=lcovonly \
             --reports-dir "${JS_COVERAGE_DIR}" \
             tests/node_modules/.bin/playwright test \
                 --config target/js-coverage-tests/playwright.config.js \
                 ${shard_arg}; \
+        rm -f tests/test-results/api-coverage-*.json tests/test-results/ui-coverage-*.json; \
+        mkdir -p tests/test-results; \
+        find target/js-coverage-tests/test-results \
+            \( -name 'api-coverage-*.json' -o -name 'ui-coverage-*.json' \) \
+            -exec cp {} tests/test-results/ \;; \
     else \
         cd tests && npx playwright test ${shard_arg}; \
     fi

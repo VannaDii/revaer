@@ -148,19 +148,6 @@ jobs:
           SONAR_PROJECT_KEY: VannaDii_Revaer
         run: just sonar-verify-result
 
-      - name: Package Sonar analysis evidence
-        if: always()
-        run: |
-          set -euo pipefail
-          if [ ! -f .scannerwork/report-task.txt ]; then
-            exit 0
-          fi
-          test -d .scannerwork/scanner-report
-          tar -cJf .scannerwork/scanner-report.tar.xz -C .scannerwork scanner-report
-          test -s .scannerwork/scanner-report.tar.xz
-          tar -tf .scannerwork/scanner-report.tar.xz > .scannerwork/scanner-report.entries
-          grep -q '^scanner-report/' .scannerwork/scanner-report.entries
-
       - name: Upload Sonar analysis evidence
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
