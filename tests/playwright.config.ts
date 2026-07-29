@@ -2,10 +2,7 @@ import { defineConfig } from '@playwright/test';
 import dotenv from 'dotenv';
 import path from 'node:path';
 
-const envDir = path.resolve(process.env.E2E_ENV_DIR ?? __dirname);
-const testResultsDir = path.join(envDir, 'test-results');
-
-dotenv.config({ path: path.join(envDir, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 type BrowserName = 'chromium' | 'firefox' | 'webkit';
 
@@ -21,6 +18,9 @@ const viewportHeight = parseNumber(process.env.E2E_VIEWPORT_HEIGHT, 900);
 const retries = parseNumber(process.env.E2E_RETRIES, process.env.CI ? 2 : 0);
 const workers = parseOptionalNumber(process.env.E2E_WORKERS);
 const uiWorkers = parseOptionalNumber(process.env.E2E_UI_WORKERS) ?? 1;
+const specExtensionPattern = process.env.JS_COVERAGE_DIR ? 'js' : 'ts';
+const apiSpecPattern = new RegExp(String.raw`api/.*\.spec\.${specExtensionPattern}`);
+const uiSpecPattern = new RegExp(String.raw`ui/.*\.spec\.${specExtensionPattern}`);
 const coverageShardSuffix = shardSuffix();
 
 const testTimeout = parseNumber(process.env.E2E_TEST_TIMEOUT_MS, 30_000);
@@ -38,7 +38,7 @@ const chromiumChannel = trimmedValue(process.env.E2E_BROWSER_CHANNEL);
 
 export default defineConfig({
   testDir: './specs',
-  outputDir: testResultsDir,
+  outputDir: 'test-results',
   timeout: testTimeout,
   fullyParallel: true,
   retries,
@@ -65,49 +65,40 @@ export default defineConfig({
   projects: [
     {
       name: 'api-none',
-      testMatch: /api\/.*\.spec\.(ts|js)/,
+      testMatch: apiSpecPattern,
       use: {
         baseURL: apiBaseURL,
       },
       metadata: {
         authMode: 'none',
         keepActive: false,
-        coverageFile: path.join(
-          testResultsDir,
-          `api-coverage-api-none${coverageShardSuffix}.json`,
-        ),
+        coverageFile: `test-results/api-coverage-api-none${coverageShardSuffix}.json`,
       },
       workers: 1,
     },
     {
       name: 'api-api-key',
       dependencies: ['api-none'],
-      testMatch: /api\/.*\.spec\.(ts|js)/,
+      testMatch: apiSpecPattern,
       use: {
         baseURL: apiBaseURL,
       },
       metadata: {
         authMode: 'api_key',
         keepActive: true,
-        coverageFile: path.join(
-          testResultsDir,
-          `api-coverage-api-key${coverageShardSuffix}.json`,
-        ),
+        coverageFile: `test-results/api-coverage-api-key${coverageShardSuffix}.json`,
       },
       workers: 1,
     },
     ...browsers.map((name) => ({
       name: `ui-${name}`,
       dependencies: ['api-api-key'],
-      testMatch: /ui\/.*\.spec\.(ts|js)/,
+      testMatch: uiSpecPattern,
       use: browserUseOptions(name, chromiumChannel),
       workers: uiWorkers,
       metadata: {
         authMode: 'api_key',
-        coverageFile: path.join(
-          testResultsDir,
-          `ui-coverage-ui-${name}${coverageShardSuffix}.json`,
-        ),
+        coverageFile: `test-results/ui-coverage-ui-${name}${coverageShardSuffix}.json`,
       },
     })),
   ],

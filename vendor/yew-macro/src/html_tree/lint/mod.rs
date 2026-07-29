@@ -1,21 +1,16 @@
 //! Lints to catch possible misuse of the `html!` macro use. At the moment these are mostly focused
 //! on accessibility.
 
+use proc_macro_error3::emit_warning;
 use syn::spanned::Spanned;
 
 use super::html_element::{HtmlElement, TagName};
 use super::HtmlTree;
 use crate::props::{ElementProps, Prop};
 
-macro_rules! emit_warning {
-    ($span:expr, $message:expr $(,)?) => {{
-        let _ = &$span;
-        let _ = &$message;
-    }};
-}
-
 /// Lints HTML elements to check if they are well formed. If the element is not well-formed, then
-/// keep the diagnostic non-fatal so stable builds do not reject valid HTML macro input.
+/// use `proc-macro-error` (and the `emit_warning!` macro) to produce a warning. At present, these
+/// are only emitted on nightly.
 pub trait Lint {
     #[cfg_attr(not(yew_lints), allow(dead_code))]
     fn lint(element: &HtmlElement);
