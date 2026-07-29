@@ -45,14 +45,15 @@ use crate::models::{
     MediaDiscoveryWatcherListResponse, MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse,
     MediaJobCompactAuditListResponse, MediaJobCreateRequest, MediaJobCreateResponse,
     MediaJobListResponse, MediaJobOperationListResponse, MediaJobPhaseAppendRequest,
-    MediaJobPlanReasonListResponse, MediaJobResponse, MediaJobRetentionResponse,
-    MediaJobRetentionUpdateRequest, MediaJobVerificationCheckListResponse,
-    MediaJobViolationListResponse, MediaPlanningPreviewRequest, MediaPlanningPreviewResponse,
-    MediaPolicyListResponse, MediaPolicyResponse, MediaPolicyUpsertRequest,
-    MediaProfileDesiredTargetRequest, MediaProfileListResponse, MediaProfilePatchRequest,
-    MediaProfileResponse, MediaProfileUpsertRequest, MediaProfileValidationResponse,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlIssueResponse, MediaYamlValidationResponse,
+    MediaJobPhaseListResponse, MediaJobPlanReasonListResponse, MediaJobResponse,
+    MediaJobRetentionResponse, MediaJobRetentionUpdateRequest,
+    MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
+    MediaPlanningPreviewRequest, MediaPlanningPreviewResponse, MediaPolicyListResponse,
+    MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileDesiredTargetRequest,
+    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
+    MediaProfileUpsertRequest, MediaProfileValidationResponse, MediaYamlApplyResponse,
+    MediaYamlExportResponse, MediaYamlImportRequest, MediaYamlIssueResponse,
+    MediaYamlValidationResponse,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -70,6 +71,7 @@ const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
 const MEDIA_JOB_CANCEL_FAILED: &str = "failed to cancel media job";
 const MEDIA_JOB_RETRY_FAILED: &str = "failed to retry media job";
 const MEDIA_JOB_PHASE_APPEND_FAILED: &str = "failed to append media job phase";
+const MEDIA_JOB_PHASE_LIST_FAILED: &str = "failed to list media job phases";
 const MEDIA_JOB_OPERATION_LIST_FAILED: &str = "failed to list media job operations";
 const MEDIA_JOB_VIOLATION_LIST_FAILED: &str = "failed to list media job violations";
 const MEDIA_JOB_PLAN_REASON_LIST_FAILED: &str = "failed to list media job plan reasons";
@@ -1047,6 +1049,21 @@ pub(crate) async fn append_media_job_phase(
         })?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn list_media_job_phases(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<Json<MediaJobPhaseListResponse>, ApiError> {
+    let phases = state
+        .media
+        .media_job_phase_list(media_job_public_id)
+        .await
+        .map_err(|err| map_media_error("media_job_phase_list", MEDIA_JOB_PHASE_LIST_FAILED, &err))?
+        .into_iter()
+        .collect();
+
+    Ok(Json(MediaJobPhaseListResponse { phases }))
 }
 
 pub(crate) async fn list_media_job_operations(
@@ -2922,6 +2939,15 @@ mod tests {
             .expect_err("invalid phase status should fail validation");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_media_job_phases_returns_empty_payload_with_default_facade() -> anyhow::Result<()>
+    {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let Json(response) = list_media_job_phases(State(state), Path(Uuid::new_v4())).await?;
+        assert!(response.phases.is_empty());
         Ok(())
     }
 

@@ -3,6 +3,7 @@ import path from 'path';
 
 export const REQUIRED_UI_ROUTES = [
   '/',
+  '/media',
   '/torrents',
   '/torrents/:id',
   '/settings',

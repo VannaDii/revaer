@@ -1015,6 +1015,29 @@ pub struct MediaJobListResponse {
     pub jobs: Vec<MediaJobResponse>,
 }
 
+/// Media job phase response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPhaseResponse {
+    /// Phase order index.
+    pub phase_index: i32,
+    /// Phase name.
+    pub phase_name: String,
+    /// Phase status.
+    pub phase_status: String,
+    /// Optional phase detail text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details_text: Option<String>,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job phase list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPhaseListResponse {
+    /// Ordered lifecycle phases.
+    pub phases: Vec<MediaJobPhaseResponse>,
+}
+
 /// Media job operation response row payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobOperationResponse {

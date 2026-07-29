@@ -389,13 +389,40 @@ ui-e2e: trunk-install
     else \
         cd tests && npx playwright install ${playwright_install_browsers}; \
     fi
-    shard_arg=""; \
+    set -e; \
+    playwright_args=(); \
+    project_tokens="$(printf "%s" "${E2E_PLAYWRIGHT_PROJECTS:-}" | tr "," " ")"; \
+    if [ -n "${project_tokens}" ]; then \
+        for playwright_project in ${project_tokens}; do \
+            if ! [[ "${playwright_project}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then \
+                echo "Invalid Playwright project name: ${playwright_project}" >&2; \
+                exit 1; \
+            fi; \
+            playwright_args+=("--project=${playwright_project}"); \
+        done; \
+    fi; \
+    case "${E2E_PLAYWRIGHT_NO_DEPS:-}" in \
+        1|true|TRUE|yes|YES|on|ON) \
+            playwright_args+=("--no-deps"); \
+            ;; \
+        ""|0|false|FALSE|no|NO|off|OFF) \
+            ;; \
+        *) \
+            echo "E2E_PLAYWRIGHT_NO_DEPS must be a boolean value." >&2; \
+            exit 1; \
+            ;; \
+    esac; \
     if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \
-        shard_arg="--shard=${PLAYWRIGHT_SHARD_INDEX}/${PLAYWRIGHT_SHARD_TOTAL}"; \
+        if ! [[ "${PLAYWRIGHT_SHARD_INDEX}" =~ ^[1-9][0-9]*$ ]] || ! [[ "${PLAYWRIGHT_SHARD_TOTAL}" =~ ^[1-9][0-9]*$ ]]; then \
+            echo "Playwright shard index and total must be positive integers." >&2; \
+            exit 1; \
+        fi; \
+        playwright_args+=("--shard=${PLAYWRIGHT_SHARD_INDEX}/${PLAYWRIGHT_SHARD_TOTAL}"); \
     fi; \
     if [ -n "${JS_COVERAGE_DIR:-}" ]; then \
         rm -rf target/js-coverage-tests "${JS_COVERAGE_DIR}"; \
         (cd tests && npx tsc -p tsconfig.coverage.json); \
+        playwright_status=0; \
         NODE_PATH="${PWD}/tests/node_modules" \
         E2E_ENV_DIR="${PWD}/tests" \
         tests/node_modules/.bin/c8 \
@@ -403,14 +430,15 @@ ui-e2e: trunk-install
             --reports-dir "${JS_COVERAGE_DIR}" \
             tests/node_modules/.bin/playwright test \
                 --config target/js-coverage-tests/playwright.config.js \
-                ${shard_arg}; \
+                "${playwright_args[@]}" || playwright_status=$?; \
         rm -f tests/test-results/api-coverage-*.json tests/test-results/ui-coverage-*.json; \
         mkdir -p tests/test-results; \
         find target/js-coverage-tests/test-results \
             \( -name 'api-coverage-*.json' -o -name 'ui-coverage-*.json' \) \
             -exec cp {} tests/test-results/ \;; \
+        exit "${playwright_status}"; \
     else \
-        cd tests && npx playwright test ${shard_arg}; \
+        cd tests && npx playwright test "${playwright_args[@]}"; \
     fi
 
 ui-e2e-coverage:

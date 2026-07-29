@@ -514,7 +514,9 @@ impl ApiServer {
             )
             .route(
                 "/v1/media/jobs/{media_job_public_id}/phases",
-                post(media_handlers::append_media_job_phase).route_layer(require_api.clone()),
+                get(media_handlers::list_media_job_phases)
+                    .post(media_handlers::append_media_job_phase)
+                    .route_layer(require_api.clone()),
             )
             .route(
                 "/v1/media/discovery/preview",

@@ -629,17 +629,28 @@ fn media_job_lifecycle_paths() -> Vec<(&'static str, Value)> {
                 MediaParameterSet::PathUuid("media_job_public_id"),
             ),
         ),
-        media_single_path(
+        media_path(
             "/v1/media/jobs/{media_job_public_id}/phases",
-            media_op(
-                "post",
-                "Append a media job phase",
-                "204",
-                "Media job phase appended",
-                None,
-                Some("MediaJobPhaseAppendRequest"),
-                MediaParameterSet::PathUuid("media_job_public_id"),
-            ),
+            [
+                media_op(
+                    "get",
+                    "List media job phases",
+                    "200",
+                    "Media job phases",
+                    Some("MediaJobPhaseListResponse"),
+                    None,
+                    MediaParameterSet::PathUuid("media_job_public_id"),
+                ),
+                media_op(
+                    "post",
+                    "Append a media job phase",
+                    "204",
+                    "Media job phase appended",
+                    None,
+                    Some("MediaJobPhaseAppendRequest"),
+                    MediaParameterSet::PathUuid("media_job_public_id"),
+                ),
+            ],
         ),
     ]
 }
@@ -1472,6 +1483,7 @@ fn media_discovery_watcher_schemas() -> Vec<(&'static str, Value)> {
 fn media_job_schemas() -> Vec<(&'static str, Value)> {
     let mut schemas = Vec::new();
     schemas.extend(media_job_core_schemas());
+    schemas.extend(media_job_phase_schemas());
     schemas.extend(media_job_operation_schemas());
     schemas.extend(media_job_violation_schemas());
     schemas.extend(media_job_plan_reason_schemas());
@@ -1508,19 +1520,23 @@ fn media_job_core_schemas() -> Vec<(&'static str, Value)> {
             "MediaJobListResponse",
             object_schema(&["jobs"], [("jobs", array_ref_schema("MediaJobResponse"))]),
         ),
-        (
-            "MediaJobPhaseAppendRequest",
-            object_schema(
-                &["phase_index", "phase_name", "phase_status"],
-                [
-                    ("phase_index", integer_schema()),
-                    ("phase_name", string_schema()),
-                    ("phase_status", media_status_schema()),
-                    ("details_text", string_schema()),
-                ],
-            ),
-        ),
     ]
+}
+
+fn media_job_phase_schemas() -> Vec<(&'static str, Value)> {
+    media_job_append_record_schemas(
+        "MediaJobPhaseAppendRequest",
+        "MediaJobPhaseResponse",
+        "MediaJobPhaseListResponse",
+        "phases",
+        &["phase_index", "phase_name", "phase_status"],
+        [
+            schema_property("phase_index", SchemaKind::Integer),
+            schema_property("phase_name", SchemaKind::String),
+            schema_property("phase_status", SchemaKind::MediaStatus),
+            schema_property("details_text", SchemaKind::String),
+        ],
+    )
 }
 
 fn media_job_operation_schemas() -> Vec<(&'static str, Value)> {
@@ -1919,6 +1935,7 @@ enum SchemaKind {
     Integer,
     Boolean,
     DateTime,
+    MediaStatus,
     OperationKind,
     ViolationSeverity,
     VerificationStatus,
@@ -1931,6 +1948,7 @@ impl SchemaKind {
             Self::Integer => integer_schema(),
             Self::Boolean => bool_schema(),
             Self::DateTime => date_time_schema(),
+            Self::MediaStatus => media_status_schema(),
             Self::OperationKind => operation_kind_schema(),
             Self::ViolationSeverity => violation_severity_schema(),
             Self::VerificationStatus => verification_check_status_schema(),
@@ -2287,6 +2305,8 @@ mod tests {
             "MediaJobListResponse",
             "MediaJobResponse",
             "MediaJobPhaseAppendRequest",
+            "MediaJobPhaseListResponse",
+            "MediaJobPhaseResponse",
             "MediaJobOperationAppendRequest",
             "MediaJobOperationListResponse",
             "MediaJobOperationResponse",
