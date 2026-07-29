@@ -644,7 +644,6 @@ mod tests {
                 field_order: Some("progressive".to_string()),
                 metadata: Vec::new(),
                 side_data_types: Vec::new(),
-                side_data: Vec::new(),
             }],
             chapters: Vec::new(),
             sidecars: Vec::new(),
