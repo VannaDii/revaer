@@ -6,8 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use sqlx::postgres::PgPoolOptions;
-use sqlx::{AssertSqlSafe, raw_sql};
+use sqlx::{Connection, postgres::PgConnection};
 use url::Url;
 
 const TEST_DATABASE_URL_IS_REQUIRED: &str = "test database url is required";
@@ -65,7 +64,7 @@ fn local_docker_host_fallback(base_url: &Url) -> Option<Url> { match base_url.ho
 fn admin_urls(base_url: &Url) -> Vec<String> { let mut admin_url = base_url.clone(); admin_url.set_path("/postgres"); if admin_url.path() == base_url.path() { vec![admin_url.to_string()] } else { vec![admin_url.to_string(), base_url.to_string()] } }
 
 #[rustfmt::skip]
-fn run_admin_operation(connection_string: &str, sql: &str, error_context: &'static str) -> Result<()> { let connection_string = connection_string.to_owned(); let sql = sql.to_owned(); thread::spawn(move || { let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().context("failed to create postgres admin runtime")?; runtime.block_on(async move { let pool = PgPoolOptions::new().max_connections(1).connect(&connection_string).await?; raw_sql(AssertSqlSafe(sql)).execute(&pool).await.map(|_| ()).context(error_context) }) }).join().map_err(|_| anyhow::Error::msg("postgres admin worker panicked"))? }
+fn run_admin_operation(connection_string: &str, sql: &str, error_context: &'static str) -> Result<()> { let connection_string = connection_string.to_owned(); let sql = sql.to_owned(); thread::spawn(move || { let runtime = tokio::runtime::Builder::new_current_thread().enable_io().enable_time().build().context("failed to build postgres admin runtime")?; runtime.block_on(async move { let mut connection = PgConnection::connect(&connection_string).await?; sqlx::query(sqlx::AssertSqlSafe(sql)).execute(&mut connection).await.map(|_| ()).context(error_context) }) }).join().map_err(|_| anyhow::Error::msg("postgres admin worker panicked"))? }
 
 #[cfg(test)]
 mod tests {

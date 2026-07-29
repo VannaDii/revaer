@@ -24,7 +24,7 @@ use revaer_media_core::classify::SemanticRole;
 use revaer_media_core::model::{
     DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind,
 };
-use revaer_media_core::normalize::normalize_container_format;
+use revaer_media_core::normalize::{normalize_audio_channel_layout, normalize_container_format};
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_core::target::{
     CompiledDesiredTarget, DesiredSidecarOutput, DesiredTarget, ImageSubtitleAction, LanguageToken,
@@ -3328,7 +3328,7 @@ fn desired_channel_layout_matches(actual: Option<&str>, desired: Option<&str>) -
 }
 
 fn normalized_channel_layout(value: Option<&str>) -> Option<String> {
-    normalized_optional_text(value).map(|item| item.to_ascii_lowercase())
+    value.and_then(|item| normalize_audio_channel_layout(item).map(str::to_string))
 }
 
 fn normalized_optional_text(value: Option<&str>) -> Option<String> {
