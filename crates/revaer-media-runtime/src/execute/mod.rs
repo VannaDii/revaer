@@ -9,12 +9,15 @@ use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_core::target::{DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource};
 use revaer_media_core::verify::{verify_plan, verify_unique_stream_ids};
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, ChildStderr, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 use thiserror::Error;
+
+const MAX_EXECUTION_DETAIL_CHARS: usize = 2_048;
+const EXECUTION_TRUNCATION_MARKER: &str = "...[truncated]";
 
 /// Build error for command arguments.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -85,12 +88,14 @@ pub enum ExecuteStepError {
     #[error("verified output is empty: {0}")]
     OutputEmpty(PathBuf),
     /// Command exited unsuccessfully.
-    #[error("command {bin} exited unsuccessfully with status {status_code:?}")]
+    #[error("command {bin} exited unsuccessfully with status {status_code:?}: {stderr}")]
     CommandFailed {
         /// Binary that exited unsuccessfully.
         bin: String,
         /// Process exit status code when available.
         status_code: Option<i32>,
+        /// Bounded stderr detail captured from the failed command.
+        stderr: String,
     },
     /// Filesystem operation failed.
     #[error("filesystem operation {operation} failed for {path}: {source}")]
@@ -183,33 +188,31 @@ impl CommandRunner for ProcessCommandRunner {
         if control.cancellation_requested() {
             return Err(ExecuteStepError::Cancelled);
         }
-        let mut child =
-            Command::new(bin)
-                .args(argv)
-                .spawn()
-                .map_err(|source| ExecuteStepError::Io {
-                    operation: "execution.command_spawn",
-                    path: PathBuf::from(bin),
-                    source,
-                })?;
+        let mut child = Command::new(bin)
+            .args(argv)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|source| ExecuteStepError::Io {
+                operation: "execution.command_spawn",
+                path: PathBuf::from(bin),
+                source,
+            })?;
+        let Some(stderr) = child.stderr.take() else {
+            terminate_command(&mut child, bin)?;
+            return Err(ExecuteStepError::Io {
+                operation: "execution.command_stderr_pipe",
+                path: PathBuf::from(bin),
+                source: io::Error::other("stderr pipe unavailable"),
+            });
+        };
+        let stderr_reader = thread::spawn(move || read_bounded_stderr(stderr));
+
         loop {
             if control.cancellation_requested() {
-                match child.kill() {
-                    Ok(()) => {}
-                    Err(source) if source.kind() == io::ErrorKind::InvalidInput => {}
-                    Err(source) => {
-                        return Err(ExecuteStepError::Io {
-                            operation: "execution.command_kill",
-                            path: PathBuf::from(bin),
-                            source,
-                        });
-                    }
-                }
-                child.wait().map_err(|source| ExecuteStepError::Io {
-                    operation: "execution.command_reap",
-                    path: PathBuf::from(bin),
-                    source,
-                })?;
+                terminate_command(&mut child, bin)?;
+                let _stderr = join_stderr_reader(stderr_reader, bin)?;
                 return Err(ExecuteStepError::Cancelled);
             }
             if let Some(status) = child.try_wait().map_err(|source| ExecuteStepError::Io {
@@ -217,18 +220,89 @@ impl CommandRunner for ProcessCommandRunner {
                 path: PathBuf::from(bin),
                 source,
             })? {
+                let stderr = join_stderr_reader(stderr_reader, bin)?;
                 return if status.success() {
                     Ok(())
                 } else {
                     Err(ExecuteStepError::CommandFailed {
                         bin: bin.to_string(),
                         status_code: status.code(),
+                        stderr,
                     })
                 };
             }
             thread::sleep(Duration::from_millis(100));
         }
     }
+}
+
+fn terminate_command(child: &mut Child, bin: &str) -> Result<(), ExecuteStepError> {
+    match child.kill() {
+        Ok(()) => {}
+        Err(source) if source.kind() == io::ErrorKind::InvalidInput => {}
+        Err(source) => {
+            return Err(ExecuteStepError::Io {
+                operation: "execution.command_kill",
+                path: PathBuf::from(bin),
+                source,
+            });
+        }
+    }
+    child.wait().map_err(|source| ExecuteStepError::Io {
+        operation: "execution.command_reap",
+        path: PathBuf::from(bin),
+        source,
+    })?;
+    Ok(())
+}
+
+fn join_stderr_reader(
+    stderr_reader: thread::JoinHandle<io::Result<String>>,
+    bin: &str,
+) -> Result<String, ExecuteStepError> {
+    stderr_reader
+        .join()
+        .map_err(|_| ExecuteStepError::Io {
+            operation: "execution.command_stderr_join",
+            path: PathBuf::from(bin),
+            source: io::Error::other("stderr reader thread panicked"),
+        })?
+        .map_err(|source| ExecuteStepError::Io {
+            operation: "execution.command_stderr_read",
+            path: PathBuf::from(bin),
+            source,
+        })
+}
+
+fn read_bounded_stderr(mut stderr: ChildStderr) -> io::Result<String> {
+    let mut bytes = Vec::with_capacity(MAX_EXECUTION_DETAIL_CHARS);
+    let mut scratch = [0_u8; 1024];
+    let mut truncated = false;
+    loop {
+        let read = stderr.read(&mut scratch)?;
+        if read == 0 {
+            break;
+        }
+        let remaining = MAX_EXECUTION_DETAIL_CHARS.saturating_sub(bytes.len());
+        if remaining == 0 {
+            truncated = true;
+            continue;
+        }
+        let retained = read.min(remaining);
+        bytes.extend_from_slice(&scratch[..retained]);
+        if retained < read {
+            truncated = true;
+        }
+    }
+    let mut detail = String::from_utf8_lossy(&bytes).trim().to_string();
+    if detail.chars().count() > MAX_EXECUTION_DETAIL_CHARS {
+        detail = detail.chars().take(MAX_EXECUTION_DETAIL_CHARS).collect();
+        truncated = true;
+    }
+    if truncated {
+        detail.push_str(EXECUTION_TRUNCATION_MARKER);
+    }
+    Ok(detail)
 }
 
 const DEFAULT_VIDEO_ENCODER: &str = "libx265";
@@ -1972,8 +2046,9 @@ const fn is_recovery_step(step: &ExecutionStep) -> bool {
 mod tests {
     use super::{
         AudioStreamConstraints, BuildArgsError, CommandRunner, DesiredGraphBuildContext,
-        ExecutionControl, ExecutionStep, HdrColorPolicy, ProcessCommandRunner,
-        SubtitleArtifactPlan, VideoStreamConstraints, VideoTranscodeIntent, VideoTranscodePolicy,
+        EXECUTION_TRUNCATION_MARKER, ExecutionControl, ExecutionStep, HdrColorPolicy,
+        MAX_EXECUTION_DETAIL_CHARS, ProcessCommandRunner, SubtitleArtifactPlan,
+        VideoStreamConstraints, VideoTranscodeIntent, VideoTranscodePolicy,
         build_desired_graph_execution_steps, build_desired_graph_execution_steps_with_sidecars,
         build_desired_graph_ffmpeg_argv, build_desired_graph_ffmpeg_argv_with_sidecars,
         build_execution_steps, build_execution_steps_with_capabilities,
@@ -2557,16 +2632,41 @@ mod tests {
     }
 
     #[test]
-    fn process_command_runner_reports_nonzero_status() {
-        let result = ProcessCommandRunner.run("/usr/bin/false", &[]);
+    fn process_command_runner_reports_nonzero_status_with_bounded_stderr() {
+        let result = ProcessCommandRunner.run(
+            "/bin/sh",
+            &[
+                "-c".to_string(),
+                "printf failure-detail >&2; exit 7".to_string(),
+            ],
+        );
 
         assert!(matches!(
             result,
             Err(super::ExecuteStepError::CommandFailed {
                 bin,
-                status_code: Some(1)
-            }) if bin == "/usr/bin/false"
+                status_code: Some(7),
+                stderr
+            }) if bin == "/bin/sh" && stderr == "failure-detail"
         ));
+    }
+
+    #[test]
+    fn process_command_runner_truncates_noisy_stderr() {
+        let result = ProcessCommandRunner.run(
+            "/bin/sh",
+            &[
+                "-c".to_string(),
+                "i=0; while [ \"$i\" -lt 3000 ]; do printf x >&2; i=$((i + 1)); done; exit 9"
+                    .to_string(),
+            ],
+        );
+
+        let Err(super::ExecuteStepError::CommandFailed { stderr, .. }) = result else {
+            panic!("expected command failure with bounded stderr");
+        };
+        assert!(stderr.ends_with(EXECUTION_TRUNCATION_MARKER));
+        assert!(stderr.len() <= MAX_EXECUTION_DETAIL_CHARS + EXECUTION_TRUNCATION_MARKER.len());
     }
 
     #[test]

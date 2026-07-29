@@ -350,3 +350,5 @@
     -   [318: Media transcoding foundation](adr/318-media-transcoding-foundation.md)
     -   [322: Supply Chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)
     -   [323: Media review closeout](adr/323-media-review-closeout.md)
+    -   [338: Media command process boundary](adr/338-media-command-process-boundary.md)
+    -   [339: Media audio analysis process boundary](adr/339-media-audio-analysis-process-boundary.md)
