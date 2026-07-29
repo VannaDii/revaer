@@ -1,0 +1,74 @@
+# Media job phase read model
+
+- Status: Accepted
+- Date: 2026-07-29
+- Context:
+  - Media jobs already persist ordered lifecycle phases through `media_job_phase_append_v1`.
+  - Operators and API clients could inspect operations, violations, plan reasons, checks, artifacts, and compact audits, but not the persisted phase timeline.
+  - The missing read path made job lifecycle state less auditable and forced callers to infer phase progress from other records.
+- Decision:
+  - Add `media_job_phase_list_v1` as the stored-procedure read model for ordered phase rows.
+  - Expose the phase list through the runtime media store, app media facade, HTTP handler, router, and shared API response models.
+  - Document `GET /v1/media/jobs/{media_job_public_id}/phases` in OpenAPI beside the existing append endpoint.
+  - Move `ApiState` tests into a test-only submodule so affected-crate Clippy can run with the repository's strict `items_after_test_module` rule.
+  - Keep PR UI E2E coverage deterministic by making the workflow shard the `ui-chromium` Playwright project explicitly through the Justfile's validated project selector, without running the API projects as Playwright dependencies.
+  - Add a dedicated PR API E2E coverage job so API route coverage stays mandatory while UI shards remain UI-only and deterministic. Construct both database client URLs from the same run-scoped credentials as that job's Postgres service.
+  - Count `/media` as a required UI route now that PR UI sharding runs the media page test directly instead of relying on broad dependency-project execution.
+  - Keep the media UI smoke assertions independent of pre-existing catalog seed rows; the test now verifies empty catalogs are attached and then creates its own compatibility target and policy for visible readback coverage.
+- Consequences:
+  - Clients can read persisted phase history directly through the public API.
+  - The read path stays consistent with the existing job record endpoints and stored-procedure boundary.
+  - The PR includes a small unrelated test-layout cleanup required by strict local linting.
+
+## Task Record
+
+- Motivation:
+  - Close the review gap where phase mutation existed without public phase readback.
+- Design notes:
+  - The SQL function joins from public job id to internal job id and orders phases by `phase_index`.
+  - Response DTOs use explicit phase fields rather than leaking storage rows across crates.
+  - The route keeps the existing append path and adds `GET` on the same endpoint instead of adding a duplicate merged route.
+  - The API E2E job derives its database URLs from the run id, run attempt, and job identity used by `POSTGRES_PASSWORD`; mutable repository variables cannot drift from the service credential.
+- Test coverage summary:
+  - Added a database round-trip assertion that appended phases can be listed with the expected index, name, status, and details.
+  - Added an API handler test proving the default facade returns an empty `phases` payload.
+  - Regenerated `docs/api/openapi.json` with `just api-export`.
+  - Ran `cargo test -p revaer-data create_and_list_media_job --no-default-features`.
+  - Ran `cargo test -p revaer-api list_media_job_phases_returns_empty_payload_with_default_facade --no-default-features`.
+  - Ran `cargo test -p revaer-api openapi_document_exports_media_routes --no-default-features`.
+  - Ran `cargo test -p revaer-api openapi_document_exports_media_schemas --no-default-features`.
+  - Ran `cargo test -p revaer-api app::state::state_tests --no-default-features`.
+  - Ran `cargo test -p revaer-runtime media::tests::media_store_methods_surface_query_errors_without_database --no-default-features`.
+  - Ran `cargo test -p revaer-app media::tests::media_service_round_trips_profile_job_yaml_and_capability_paths --no-default-features`.
+  - Ran `cargo clippy -p revaer-data -p revaer-runtime -p revaer-api-models -p revaer-api -p revaer-app --no-default-features --all-targets -- -D warnings`.
+  - Ran `cargo fmt --all --check`, `git diff --check`, `just policy`, and `just instruction-drift`.
+  - Ran `cd tests && npm run gen:api-client`.
+  - Ran `cd tests && npm test -- --list`.
+  - Ran `cd tests && npx tsc -p tsconfig.coverage.json --noEmit`.
+  - Ran `cd tests && npx playwright test --list --project ui-chromium --shard=1/3`.
+  - Ran `cd tests && npx playwright test --list --project ui-chromium --shard=2/3`.
+  - Ran `cd tests && npx playwright test --list --project ui-chromium --shard=3/3`.
+  - Ran `cd tests && npx playwright test --list --project ui-chromium --no-deps --shard=1/3`.
+  - Ran `cd tests && npx playwright test --list --project ui-chromium --no-deps --shard=2/3`.
+  - Ran `cd tests && npx playwright test --list --project ui-chromium --no-deps --shard=3/3`.
+  - Updated the media UI test after remote shard 2 proved the isolated UI shard does not guarantee preloaded media catalog rows, making empty catalog lists attached but not visibly sized.
+  - Split PR API route coverage into its own API E2E coverage job after remote UI E2E coverage proved UI-only shards correctly omit `api-coverage-*.json`.
+  - Updated the API media phase readback assertion to use a non-runtime phase index after the dedicated API E2E job showed background phase updates can reuse low indexes.
+  - Updated Playwright global teardown to validate coverage files from the active compiled test-results directory so JavaScript coverage runs still enforce API route coverage before artifact upload.
+  - Ran `sonar analyze secrets` on all changed source, SQL, docs, and generated OpenAPI files; the scan completed successfully.
+  - Ran `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table`; no issues were reported.
+  - `sonar verify --project VannaDii_Revaer --file crates/revaer-api/src/http/handlers/media.rs` was unavailable because Sonar Agentic Analysis returned HTTP 403 with Agentic Analysis disabled for the organization.
+  - `just ci` and `just ui-e2e` were attempted locally and blocked before project validation because Docker was unavailable and the managed local Postgres endpoint at `localhost:5432` did not become reachable.
+- Observability updates:
+  - No new telemetry was added; this change exposes existing persisted job phase state for operator inspection.
+- Status-doc validation:
+  - Updated `docs/adr/index.md`, `docs/SUMMARY.md`, and `docs/api/openapi.json`.
+- Stale-policy check:
+  - Reviewed instruction files: `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Drift found: the first API E2E draft used repository database URL variables despite provisioning run-scoped service credentials.
+  - Contradictions or stale references removed: the API E2E URLs now use the exact service identity required by the credential-coherence rule.
+- Risk & rollback plan:
+  - Risk: clients may begin depending on phase order and field names once the endpoint is published.
+  - Rollback: revert the migration, facade methods, handler, route, OpenAPI export, and API model additions; existing phase append behavior remains independent.
+- Dependency rationale:
+  - No dependencies were added.

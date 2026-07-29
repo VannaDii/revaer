@@ -472,13 +472,19 @@ test.describe('Media API', () => {
     const phase = await api.POST('/v1/media/jobs/{media_job_public_id}/phases', {
       params: { path: { media_job_public_id: jobId } },
       body: {
-        phase_index: 0,
+        phase_index: 90,
         phase_name: 'inspect',
         phase_status: 'running',
         details_text: 'inspection started',
       },
     });
     expect(phase.response.status).toBe(204);
+
+    const phases = await api.GET('/v1/media/jobs/{media_job_public_id}/phases', {
+      params: { path: { media_job_public_id: jobId } },
+    });
+    expect(phases.response.status).toBe(200);
+    expect(phases.data?.phases.some((item) => item.phase_name === 'inspect')).toBeTruthy();
 
     const operations = await api.GET('/v1/media/jobs/{media_job_public_id}/operations', {
       params: { path: { media_job_public_id: jobId } },

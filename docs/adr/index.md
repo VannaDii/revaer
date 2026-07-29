@@ -360,6 +360,7 @@
 -   [349](349-media-finalized-completion-boundary.md) – Media finalized completion boundary
 -   [351](351-media-runtime-cooperative-shutdown.md) – Media runtime cooperative shutdown
 -   [352](352-media-claim-shutdown-cancellation.md) – Media claim shutdown cancellation
+-   [353](353-media-job-phase-read-model.md) – Media job phase read model
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
@@ -392,3 +393,4 @@
 -   [470](470-pr85-media-runtime-fixtures.md) – PR 85 media runtime fixture correction
 -   [467](467-pr99-openapi-lint-boundary.md) – PR 99 OpenAPI lint boundary correction
 -   [468](468-pr99-native-watcher-test-stability.md) – PR 99 native watcher test stability
+-   [475](475-pr110-openapi-schema-catalogue.md) – PR 110 OpenAPI schema catalogue correction
