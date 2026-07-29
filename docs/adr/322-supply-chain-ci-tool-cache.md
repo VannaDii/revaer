@@ -7,7 +7,7 @@
 
 - PR validation repeatedly installed supply-chain tools and downloaded advisory data, delaying required checks and increasing runner pressure.
 - The dependency graph also contained RustSec findings that had to be removed from the lock graph rather than ignored.
-- This record consolidates the CI tool-cache decision and the RustSec lock-graph remediation previously recorded separately in ADR 357.
+- This record consolidates the CI tool-cache decision and the RustSec lock-graph remediation previously recorded in ADR 317.
 
 ## Decisions
 
@@ -71,7 +71,6 @@
   - `just deny`
   - `just udeps`
   - `just policy`
-  - `just ui-e2e` browser setup on CI runners through PR UI E2E shards.
   - `just ci`
   - `just workflow-guardrails-test`
   - `just trivy-sarif-policy-test`
