@@ -53,6 +53,9 @@ use revaer_data::media::profiles::{
     UpdateMediaProfileInput, UpsertMediaProfileInput, upsert_media_profile_with_executor,
 };
 use revaer_media_core::compile::{MediaProfile, validate_profiles};
+use revaer_media_core::normalize::{
+    audio_channel_count_for_layout, normalize_audio_channel_layout,
+};
 use revaer_media_runtime::capabilities::{
     CapabilityDetectError, CapabilityDetector, CapabilitySnapshot,
 };
@@ -2249,10 +2252,10 @@ fn validate_yaml_compatibility_rows(
             )
             || target.version <= 0
             || target.audio_channels.is_some_and(|channels| channels <= 0)
-            || target
-                .audio_channel_layout
-                .as_deref()
-                .is_some_and(|layout| layout.trim().is_empty())
+            || audio_layout_contract_invalid(
+                target.audio_channel_layout.as_deref(),
+                target.audio_channels,
+            )
         {
             push_yaml_issue(
                 issues,
@@ -2402,6 +2405,10 @@ fn yaml_audio_constraints_invalid(
 ) -> bool {
     if stream_kind == "audio" {
         return stream.channel_count.is_some_and(|count| count <= 0)
+            || audio_layout_contract_invalid(
+                stream.channel_layout.as_deref(),
+                stream.channel_count,
+            )
             || stream.audio_bitrate_bps.is_some_and(|bitrate| bitrate <= 0)
             || stream
                 .audio_sample_rate_hz
@@ -2415,10 +2422,28 @@ fn yaml_audio_constraints_invalid(
             });
     }
 
-    stream.audio_bitrate_bps.is_some()
+    stream.channel_count.is_some()
+        || stream.channel_layout.is_some()
+        || stream.audio_bitrate_bps.is_some()
         || stream.audio_sample_rate_hz.is_some()
         || stream.audio_loudness_profile.is_some()
         || stream.audio_dynamic_range.is_some()
+}
+
+fn audio_layout_contract_invalid(layout: Option<&str>, channels: Option<i32>) -> bool {
+    let Some(layout) = layout else {
+        return false;
+    };
+    let Some(canonical_layout) = normalize_audio_channel_layout(layout) else {
+        return true;
+    };
+    let Some(layout_channels) = audio_channel_count_for_layout(canonical_layout) else {
+        return true;
+    };
+    let Ok(layout_channels) = i32::try_from(layout_channels) else {
+        return true;
+    };
+    channels.is_some_and(|channel_count| channel_count != layout_channels)
 }
 
 fn yaml_subtitle_constraints_invalid(
@@ -3420,6 +3445,26 @@ mod tests {
             issues
                 .iter()
                 .any(|issue| issue.code == "media_yaml_profile_roots_overlap")
+        );
+    }
+
+    #[test]
+    fn validate_yaml_bundle_rejects_invalid_audio_layout_contracts() {
+        let bundle = parse_yaml_bundle(
+            "format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Invalid audio layouts\ncompatibility_targets:\n  - compatibility_target_key: bad-compat\n    version: 1\n    display_name: Bad compat\n    video_codec: hevc\n    audio_codec: opus\n    audio_channels: 2\n    audio_channel_layout: 5.1(side)\n    subtitle_policy: selected\ntargets:\n  - target_key: bad-target\n    version: 1\n    display_name: Bad target\n    container_format: matroska\n    streams:\n      - stream_key: audio-main\n        stream_kind: audio\n        semantic_role: primary\n        language_code: eng\n        optional: false\n        sort_order: 0\n        codec: opus\n        channel_count: 2\n        channel_layout: ambisonic\n        default_disposition: true\n        forced_disposition: false\n",
+        )
+        .expect("bundle");
+        let issues = validate_yaml_bundle(&bundle, &[], &[], &[]);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == "media_yaml_compatibility_target_invalid")
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == "media_yaml_desired_target_stream_invalid")
         );
     }
 
