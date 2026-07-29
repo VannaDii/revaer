@@ -2331,6 +2331,11 @@ fn desired_target_from_job(
         .into_iter()
         .map(target_stream_from_snapshot)
         .collect::<Result<Vec<_>, _>>()?;
+    if streams.is_empty() {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_desired_target_snapshot_empty",
+        ));
+    }
     Ok(Some(DesiredTargetSnapshot {
         target: DesiredTarget {
             target_key: target_key.to_ascii_lowercase(),
@@ -4289,8 +4294,8 @@ mod tests {
         RuntimeAudioAnalyzer, RuntimeCapacityProbe, RuntimeCommandRunner, RuntimeInspector,
         RuntimeReplacementCommitter, RuntimeSourceFingerprintProbe, RuntimeVerificationExecutor,
         SystemFfmpegAudioAnalysisAdapter, SystemSourceFingerprintProbe, VideoStreamConstraints,
-        audio_measurement_mismatch, expected_audio_constraints, parse_ebur128_summary,
-        read_bounded_audio_analysis_stderr, run_audio_analysis_process,
+        audio_measurement_mismatch, desired_target_from_job, expected_audio_constraints,
+        parse_ebur128_summary, read_bounded_audio_analysis_stderr, run_audio_analysis_process,
         validate_claimed_source_fingerprint, verification_policy_from_job,
         video_constraint_stream_mismatch, video_policy_from_policy_intent,
         video_policy_from_target_snapshot,
@@ -7695,5 +7700,26 @@ Integrated loudness:
         if let Err(error) = result {
             assert_eq!(error.code(), "media_job_verification_checks_invalid");
         }
+    }
+
+    #[test]
+    fn desired_target_snapshot_rejects_empty_stream_rows() {
+        let mut job = claimed_job_with_paths(
+            "/input/movie.mkv",
+            Some("/output/movie.mkv".to_string()),
+            false,
+            "/input",
+            "/output",
+        );
+        job.desired_target_key = Some("living-room-output".to_string());
+        job.desired_target_version = Some(1);
+        job.desired_container_format = Some("matroska".to_string());
+
+        let result = desired_target_from_job(&job, Vec::new());
+
+        let Err(error) = result else {
+            panic!("empty desired-target stream snapshot should fail");
+        };
+        assert_eq!(error.code(), "media_job_desired_target_snapshot_empty");
     }
 }

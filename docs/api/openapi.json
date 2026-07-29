@@ -1022,6 +1022,8 @@
             "items": {
               "$ref": "#/components/schemas/MediaDesiredTargetStream"
             },
+            "maxItems": 1024,
+            "minItems": 1,
             "type": "array"
           },
           "target_key": {
