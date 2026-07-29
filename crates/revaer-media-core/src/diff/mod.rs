@@ -1,7 +1,7 @@
 //! Media graph diffing.
 
 use crate::model::{DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind};
-use crate::normalize::normalize_container_format;
+use crate::normalize::{normalize_audio_channel_layout, normalize_container_format};
 
 /// Stream requiring codec-level recode.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -271,10 +271,7 @@ fn normalized_language(value: Option<&str>) -> Option<String> {
 }
 
 fn normalize_channel_layout(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(str::to_ascii_lowercase)
+    value.and_then(|item| normalize_audio_channel_layout(item).map(str::to_string))
 }
 
 fn normalized_optional_text(value: Option<&str>) -> Option<String> {
