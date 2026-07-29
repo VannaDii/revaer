@@ -360,6 +360,7 @@
 -   [349](349-media-finalized-completion-boundary.md) – Media finalized completion boundary
 -   [350](350-media-finalized-audit-ordering.md) – Media finalized audit ordering
 -   [351](351-media-runtime-cooperative-shutdown.md) – Media runtime cooperative shutdown
+-   [352](352-media-claim-shutdown-cancellation.md) – Media claim shutdown cancellation
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
