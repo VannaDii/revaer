@@ -2,8 +2,17 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::io::{self, Read};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 use thiserror::Error;
+
+const CAPABILITY_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
+const MAX_CAPABILITY_PROBE_STDOUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_CAPABILITY_PROBE_STDERR_BYTES: usize = 64 * 1024;
+const CAPABILITY_PROBE_TRUNCATION_MARKER: &str = "...[truncated]";
 
 /// Runtime snapshot of media tool capabilities.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,18 +193,211 @@ pub struct SystemCapabilityProbeExecutor;
 
 impl CapabilityProbeExecutor for SystemCapabilityProbeExecutor {
     fn run(&self, program: &str, args: &[&str]) -> Result<String, CapabilityDetectError> {
-        let output = std::process::Command::new(program)
-            .args(args)
-            .output()
-            .map_err(|err| CapabilityDetectError::CommandFailed(err.to_string()))?;
-        if !output.status.success() {
+        let output = run_system_probe(program, args, CAPABILITY_PROBE_TIMEOUT)?;
+        if !output.status_success {
             return Err(CapabilityDetectError::CommandFailed(format!(
-                "{program} {:?} exited with status {}",
-                args, output.status
+                "{program} {:?} exited with status {}{}",
+                args,
+                output.status,
+                stderr_suffix(&output.stderr)
             )));
         }
-        String::from_utf8(output.stdout)
+        if output.stdout.truncated {
+            return Err(CapabilityDetectError::OutputMalformed(format!(
+                "{program} {args:?} stdout exceeded {MAX_CAPABILITY_PROBE_STDOUT_BYTES} bytes",
+            )));
+        }
+        String::from_utf8(output.stdout.bytes)
             .map_err(|err| CapabilityDetectError::OutputMalformed(err.to_string()))
+    }
+}
+
+#[derive(Debug)]
+struct SystemProbeOutput {
+    status_success: bool,
+    status: std::process::ExitStatus,
+    stdout: BoundedProbeOutput,
+    stderr: BoundedProbeOutput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BoundedProbeOutput {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+fn run_system_probe(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<SystemProbeOutput, CapabilityDetectError> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| CapabilityDetectError::CommandFailed(err.to_string()))?;
+    let Some(stdout) = child.stdout.take() else {
+        terminate_probe(&mut child, program)?;
+        return Err(CapabilityDetectError::CommandFailed(format!(
+            "{program} probe stdout pipe unavailable"
+        )));
+    };
+    let Some(stderr) = child.stderr.take() else {
+        terminate_probe(&mut child, program)?;
+        return Err(CapabilityDetectError::CommandFailed(format!(
+            "{program} probe stderr pipe unavailable"
+        )));
+    };
+    let stdout_reader =
+        thread::spawn(move || read_bounded_stdout(stdout, MAX_CAPABILITY_PROBE_STDOUT_BYTES));
+    let stderr_reader =
+        thread::spawn(move || read_bounded_tail(stderr, MAX_CAPABILITY_PROBE_STDERR_BYTES));
+    let started = Instant::now();
+
+    loop {
+        if started.elapsed() >= timeout {
+            terminate_probe(&mut child, program)?;
+            let output = join_probe_readers(program, stdout_reader, stderr_reader)?;
+            return Err(CapabilityDetectError::CommandFailed(format!(
+                "{program} {:?} timed out after {}ms{}",
+                args,
+                timeout.as_millis(),
+                stderr_suffix(&output.stderr)
+            )));
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let output = join_probe_readers(program, stdout_reader, stderr_reader)?;
+                return Ok(SystemProbeOutput {
+                    status_success: status.success(),
+                    status,
+                    stdout: output.stdout,
+                    stderr: output.stderr,
+                });
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(err) => {
+                terminate_probe(&mut child, program)?;
+                let _output = join_probe_readers(program, stdout_reader, stderr_reader)?;
+                return Err(CapabilityDetectError::CommandFailed(format!(
+                    "{program} wait failed: {err}"
+                )));
+            }
+        }
+    }
+}
+
+fn terminate_probe(child: &mut Child, program: &str) -> Result<(), CapabilityDetectError> {
+    match child.kill() {
+        Ok(()) => {}
+        Err(err) if err.kind() == io::ErrorKind::InvalidInput => {}
+        Err(err) => {
+            return Err(CapabilityDetectError::CommandFailed(format!(
+                "{program} kill failed: {err}"
+            )));
+        }
+    }
+    child.wait().map_err(|err| {
+        CapabilityDetectError::CommandFailed(format!("{program} reap failed: {err}"))
+    })?;
+    Ok(())
+}
+
+#[derive(Debug)]
+struct JoinedProbeOutput {
+    stdout: BoundedProbeOutput,
+    stderr: BoundedProbeOutput,
+}
+
+fn join_probe_readers(
+    program: &str,
+    stdout_reader: thread::JoinHandle<io::Result<BoundedProbeOutput>>,
+    stderr_reader: thread::JoinHandle<io::Result<BoundedProbeOutput>>,
+) -> Result<JoinedProbeOutput, CapabilityDetectError> {
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| {
+            CapabilityDetectError::CommandFailed(format!("{program} stdout reader panicked"))
+        })?
+        .map_err(|err| {
+            CapabilityDetectError::CommandFailed(format!("{program} stdout read failed: {err}"))
+        })?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| {
+            CapabilityDetectError::CommandFailed(format!("{program} stderr reader panicked"))
+        })?
+        .map_err(|err| {
+            CapabilityDetectError::CommandFailed(format!("{program} stderr read failed: {err}"))
+        })?;
+    Ok(JoinedProbeOutput { stdout, stderr })
+}
+
+fn read_bounded_stdout(mut reader: impl Read, max_bytes: usize) -> io::Result<BoundedProbeOutput> {
+    let mut bytes = Vec::with_capacity(max_bytes);
+    let mut scratch = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        let read = reader.read(&mut scratch)?;
+        if read == 0 {
+            break;
+        }
+        let remaining = max_bytes.saturating_sub(bytes.len());
+        if remaining == 0 {
+            truncated = true;
+            continue;
+        }
+        let retained = read.min(remaining);
+        bytes.extend_from_slice(&scratch[..retained]);
+        if retained < read {
+            truncated = true;
+        }
+    }
+    Ok(BoundedProbeOutput { bytes, truncated })
+}
+
+fn read_bounded_tail(mut reader: impl Read, max_bytes: usize) -> io::Result<BoundedProbeOutput> {
+    let mut bytes = Vec::with_capacity(max_bytes);
+    let mut scratch = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        let read = reader.read(&mut scratch)?;
+        if read == 0 {
+            break;
+        }
+        retain_probe_tail(&mut bytes, &scratch[..read], max_bytes, &mut truncated);
+    }
+    Ok(BoundedProbeOutput { bytes, truncated })
+}
+
+fn retain_probe_tail(retained: &mut Vec<u8>, chunk: &[u8], max_bytes: usize, truncated: &mut bool) {
+    if chunk.len() >= max_bytes {
+        retained.clear();
+        retained.extend_from_slice(&chunk[chunk.len() - max_bytes..]);
+        *truncated = true;
+        return;
+    }
+    let overflow = retained
+        .len()
+        .saturating_add(chunk.len())
+        .saturating_sub(max_bytes);
+    if overflow > 0 {
+        retained.drain(..overflow);
+        *truncated = true;
+    }
+    retained.extend_from_slice(chunk);
+}
+
+fn stderr_suffix(stderr: &BoundedProbeOutput) -> String {
+    let detail = String::from_utf8_lossy(&stderr.bytes).trim().to_string();
+    if detail.is_empty() {
+        String::new()
+    } else if stderr.truncated {
+        format!(": {CAPABILITY_PROBE_TRUNCATION_MARKER}{detail}")
+    } else {
+        format!(": {detail}")
     }
 }
 
@@ -479,10 +681,13 @@ fn compliance_links() -> Vec<String> {
 mod tests {
     use super::{
         CapabilityDetectError, CapabilityDetector, CapabilityProbeExecutor, CapabilitySnapshot,
-        CodecCapability, FfmpegCapabilityDetector, UnavailableCapabilityDetector,
+        CodecCapability, FfmpegCapabilityDetector, SystemCapabilityProbeExecutor,
+        UnavailableCapabilityDetector,
     };
     use std::collections::HashMap;
+    use std::io::Cursor;
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     #[derive(Debug)]
     struct StaticDetector;
@@ -612,6 +817,66 @@ mod tests {
             return;
         };
         assert!(snapshot.is_valid());
+    }
+
+    #[test]
+    fn system_probe_stdout_reader_is_bounded() -> Result<(), Box<dyn std::error::Error>> {
+        let output = super::read_bounded_stdout(Cursor::new(vec![b'x'; 128]), 32)?;
+
+        assert!(output.truncated);
+        assert_eq!(output.bytes.len(), 32);
+        Ok(())
+    }
+
+    #[test]
+    fn system_probe_stderr_reader_retains_tail() -> Result<(), Box<dyn std::error::Error>> {
+        let mut bytes = vec![b'x'; 128];
+        bytes.extend_from_slice(b"probe-summary");
+
+        let output = super::read_bounded_tail(Cursor::new(bytes), 32)?;
+
+        assert!(output.truncated);
+        assert!(String::from_utf8(output.bytes)?.ends_with("probe-summary"));
+        Ok(())
+    }
+
+    #[test]
+    fn system_probe_stderr_reader_keeps_exact_limit_without_marker()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let output = super::read_bounded_tail(Cursor::new(b"probe-summary".to_vec()), 32)?;
+
+        assert!(!output.truncated);
+        assert_eq!(super::stderr_suffix(&output), ": probe-summary");
+        Ok(())
+    }
+
+    #[test]
+    fn system_probe_reports_nonzero_status_with_bounded_stderr_tail() {
+        let result = SystemCapabilityProbeExecutor.run(
+            "/bin/sh",
+            &[
+                "-c",
+                "i=0; while [ \"$i\" -lt 70000 ]; do printf x >&2; i=$((i + 1)); done; printf probe-summary >&2; exit 7",
+            ],
+        );
+
+        let Err(CapabilityDetectError::CommandFailed(detail)) = result else {
+            panic!("expected command failure with stderr detail");
+        };
+        assert!(detail.contains(super::CAPABILITY_PROBE_TRUNCATION_MARKER));
+        assert!(detail.contains("probe-summary"));
+    }
+
+    #[test]
+    fn system_probe_times_out_active_child() {
+        let started = Instant::now();
+        let result = super::run_system_probe("/bin/sleep", &["30"], Duration::from_millis(150));
+
+        let Err(CapabilityDetectError::CommandFailed(detail)) = result else {
+            panic!("expected timeout failure");
+        };
+        assert!(detail.contains("timed out"));
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[derive(Default)]

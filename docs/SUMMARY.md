@@ -369,3 +369,4 @@
     -   [340: API no-compat router lint](adr/340-api-no-compat-router-lint.md)
     -   [341: Media verifier process boundary](adr/341-media-verifier-process-boundary.md)
     -   [342: Media desired target stream count contract](adr/342-media-desired-target-stream-count-contract.md)
+    -   [343: Media capability probe process boundary](adr/343-media-capability-probe-process-boundary.md)
