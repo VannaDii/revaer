@@ -3,6 +3,7 @@
 use revaer_media_core::model::{MediaGraph, MediaStream, StreamKind};
 use revaer_media_core::normalize::{normalize_graph, normalize_subtitle_codec};
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
@@ -54,12 +55,21 @@ pub trait InspectAdapter {
 }
 
 /// One normalized metadata key/value pair.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MetadataEntry {
     /// Lowercase metadata key.
     pub key: String,
     /// Trimmed metadata value.
     pub value: String,
+}
+
+/// One normalized stream side-data record.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SideDataInspection {
+    /// Lowercase side-data type.
+    pub side_data_type: String,
+    /// Normalized side-data payload fields.
+    pub metadata: Vec<MetadataEntry>,
 }
 
 /// Normalized container-level inspection state.
@@ -133,6 +143,8 @@ pub struct StreamInspection {
     pub metadata: Vec<MetadataEntry>,
     /// Normalized side-data type names, including HDR and Dolby Vision descriptors.
     pub side_data_types: Vec<String>,
+    /// Normalized side-data records, including HDR value payloads when reported.
+    pub side_data: Vec<SideDataInspection>,
 }
 
 /// Complete normalized media inspection report.
@@ -494,6 +506,7 @@ fn normalize_stream_inspection(stream: &FfprobeStream) -> Result<StreamInspectio
             .as_ref()
             .map_or_else(Vec::new, metadata_from_stream_tags),
         side_data_types: normalize_side_data(&stream.side_data_list),
+        side_data: normalize_side_data_records(&stream.side_data_list),
     })
 }
 
@@ -573,6 +586,45 @@ fn normalize_side_data(values: &[FfprobeSideData]) -> Vec<String> {
     normalized.sort();
     normalized.dedup();
     normalized
+}
+
+fn normalize_side_data_records(values: &[FfprobeSideData]) -> Vec<SideDataInspection> {
+    let mut normalized = values
+        .iter()
+        .filter_map(|value| {
+            normalize_lowercase_text(Some(&value.side_data_type)).map(|side_data_type| {
+                SideDataInspection {
+                    side_data_type,
+                    metadata: normalize_side_data_metadata(&value.extra),
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    normalized.sort_by(|left, right| {
+        left.side_data_type
+            .cmp(&right.side_data_type)
+            .then_with(|| left.metadata.cmp(&right.metadata))
+    });
+    normalized.dedup();
+    normalized
+}
+
+fn normalize_side_data_metadata(values: &BTreeMap<String, Value>) -> Vec<MetadataEntry> {
+    values
+        .iter()
+        .filter_map(|(key, value)| {
+            side_data_scalar_text(value).and_then(|text| metadata_entry(key, &text))
+        })
+        .collect()
+}
+
+fn side_data_scalar_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::Number(value) => Some(value.to_string()),
+        Value::Bool(value) => Some(value.to_string()),
+        Value::Null | Value::Array(_) | Value::Object(_) => None,
+    }
 }
 
 fn normalize_optional_text(value: Option<&str>) -> Option<String> {
@@ -781,6 +833,8 @@ struct FfprobeChapter {
 #[derive(Debug, Deserialize)]
 struct FfprobeSideData {
     side_data_type: String,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
 }
 
 #[cfg(test)]
@@ -1277,15 +1331,7 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn ffprobe_adapter_normalizes_complete_container_timeline_and_hdr_state() {
-        let key =
-            "ffprobe -v error -show_streams -show_format -show_chapters -of json /input/hdr.mkv"
-                .to_string();
-        let mut outputs = HashMap::new();
-        outputs.insert(
-            key,
-            r#"{
+    const COMPLETE_HDR_PROBE_OUTPUT: &str = r#"{
                 "streams": [
                     {
                         "index": 0,
@@ -1309,8 +1355,24 @@ mod tests {
                         "disposition": {"default": 1},
                         "tags": {"language": "eng", "BPS": "4000000"},
                         "side_data_list": [
-                            {"side_data_type": "Mastering display metadata"},
-                            {"side_data_type": "Content light level metadata"}
+                            {
+                                "side_data_type": "Mastering display metadata",
+                                "red_x": "34000/50000",
+                                "red_y": "16000/50000",
+                                "green_x": "13250/50000",
+                                "green_y": "34500/50000",
+                                "blue_x": "7500/50000",
+                                "blue_y": "3000/50000",
+                                "white_point_x": "15635/50000",
+                                "white_point_y": "16450/50000",
+                                "min_luminance": "50/10000",
+                                "max_luminance": "10000000/10000"
+                            },
+                            {
+                                "side_data_type": "Content light level metadata",
+                                "max_content": 1000,
+                                "max_average": 400
+                            }
                         ]
                     },
                     {
@@ -1335,9 +1397,15 @@ mod tests {
                     "bit_rate": "4008316",
                     "tags": {"TITLE": "HDR Fixture", "TMDB": "123"}
                 }
-            }"#
-            .to_string(),
-        );
+            }"#;
+
+    #[test]
+    fn ffprobe_adapter_normalizes_complete_container_timeline_and_hdr_state() {
+        let key =
+            "ffprobe -v error -show_streams -show_format -show_chapters -of json /input/hdr.mkv"
+                .to_string();
+        let mut outputs = HashMap::new();
+        outputs.insert(key, COMPLETE_HDR_PROBE_OUTPUT.to_string());
         let adapter = test_adapter(
             Arc::new(StubInspectExecutor {
                 outputs,
@@ -1369,6 +1437,28 @@ mod tests {
                 "mastering display metadata".to_string()
             ]
         );
+        assert!(inspection.streams[0].side_data.iter().any(|side_data| {
+            side_data.side_data_type == "content light level metadata"
+                && side_data
+                    .metadata
+                    .iter()
+                    .any(|entry| entry.key == "max_content" && entry.value == "1000")
+                && side_data
+                    .metadata
+                    .iter()
+                    .any(|entry| entry.key == "max_average" && entry.value == "400")
+        }));
+        assert!(inspection.streams[0].side_data.iter().any(|side_data| {
+            side_data.side_data_type == "mastering display metadata"
+                && side_data
+                    .metadata
+                    .iter()
+                    .any(|entry| entry.key == "red_x" && entry.value == "34000/50000")
+                && side_data
+                    .metadata
+                    .iter()
+                    .any(|entry| entry.key == "max_luminance" && entry.value == "10000000/10000")
+        }));
         assert!(
             inspection
                 .container

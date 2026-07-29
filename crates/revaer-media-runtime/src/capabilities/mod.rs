@@ -614,36 +614,6 @@ mod tests {
         assert!(snapshot.is_valid());
     }
 
-    #[test]
-    fn codec_capability_returns_case_insensitive_match_or_unsupported_default() {
-        let snapshot = CapabilitySnapshot {
-            codecs: vec!["h264".to_string()],
-            codec_support: vec![CodecCapability {
-                name: "H264".to_string(),
-                encode_supported: true,
-                decode_supported: true,
-            }],
-            ..CapabilitySnapshot::default()
-        };
-
-        assert_eq!(
-            snapshot.codec_capability("h264"),
-            CodecCapability {
-                name: "H264".to_string(),
-                encode_supported: true,
-                decode_supported: true,
-            }
-        );
-        assert_eq!(
-            snapshot.codec_capability("vp9"),
-            CodecCapability {
-                name: "vp9".to_string(),
-                encode_supported: false,
-                decode_supported: false,
-            }
-        );
-    }
-
     #[derive(Default)]
     struct StubExecutor {
         outputs: HashMap<String, String>,

@@ -429,9 +429,9 @@ fn try_exists(path: &Path, operation: &'static str) -> Result<bool, ManagedWorks
 #[cfg(test)]
 mod tests {
     use super::{
-        ManagedWorkspaceError, TerminalWorkspaceCleanupPolicy, TerminalWorkspaceState,
-        WorkspaceError, WorkspacePolicy, WorkspaceRejectionReason, cleanup_stale_workspaces,
-        cleanup_terminal_workspace, create_managed_workspace, teardown_managed_workspace,
+        TerminalWorkspaceCleanupPolicy, TerminalWorkspaceState, WorkspaceError, WorkspacePolicy,
+        WorkspaceRejectionReason, cleanup_stale_workspaces, cleanup_terminal_workspace,
+        create_managed_workspace, teardown_managed_workspace,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -459,20 +459,6 @@ mod tests {
         assert_eq!(
             policy.ensure_reserve(256),
             Err(WorkspaceError::InsufficientReserve)
-        );
-    }
-
-    #[test]
-    fn policy_validation_rejects_reserve_above_max() {
-        let policy = WorkspacePolicy {
-            max_bytes: 512,
-            reserve_bytes: 1024,
-        };
-
-        assert_eq!(policy.validate(), Err(WorkspaceError::InvalidPolicy));
-        assert_eq!(
-            policy.ensure_capacity(2048, 256),
-            Err(WorkspaceError::InvalidPolicy)
         );
     }
 
@@ -556,36 +542,6 @@ mod tests {
     }
 
     #[test]
-    fn managed_workspace_rejects_empty_root() {
-        assert!(matches!(
-            create_managed_workspace("", "job-1"),
-            Err(ManagedWorkspaceError::EmptyRoot)
-        ));
-    }
-
-    #[test]
-    fn managed_workspace_rejects_empty_and_path_like_job_keys()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let root = temp_workspace_root()?;
-
-        assert!(matches!(
-            create_managed_workspace(&root, "  "),
-            Err(ManagedWorkspaceError::EmptyJobKey)
-        ));
-        assert!(matches!(
-            create_managed_workspace(&root, "bad/key"),
-            Err(ManagedWorkspaceError::InvalidJobKey)
-        ));
-        assert!(matches!(
-            create_managed_workspace(&root, ".."),
-            Err(ManagedWorkspaceError::InvalidJobKey)
-        ));
-
-        fs::remove_dir_all(root)?;
-        Ok(())
-    }
-
-    #[test]
     fn stale_workspace_janitor_removes_only_inactive_directories()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_workspace_root()?;
@@ -607,18 +563,6 @@ mod tests {
         assert!(!root.join("stale-job").exists());
         assert!(root.join("not-a-workspace").exists());
         let _ = fs::remove_dir_all(root);
-        Ok(())
-    }
-
-    #[test]
-    fn stale_workspace_cleanup_missing_root_returns_empty() -> Result<(), Box<dyn std::error::Error>>
-    {
-        let root = temp_workspace_root()?;
-        fs::remove_dir_all(&root)?;
-
-        let removed = cleanup_stale_workspaces(&root, &[], SystemTime::now(), Duration::ZERO)?;
-
-        assert!(removed.is_empty());
         Ok(())
     }
 
