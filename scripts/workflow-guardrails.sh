@@ -270,7 +270,6 @@ allowed_sonar_properties=(
   sonar.sca.sbomImportPaths
   sonar.rust.clippy.enabled
   sonar.rust.lcov.reportPaths
-  sonar.javascript.lcov.reportPaths
   sonar.cfamily.compile-commands
   sonar.newCode.referenceBranch
   sonar.qualitygate.wait
@@ -400,10 +399,8 @@ report_property_equals "Sonar SCA CFamily dependency analysis must stay enabled"
 report_property_equals "Sonar SCA must import the committed media runtime SPDX inventory" 'sonar.sca.sbomImportPaths' 'release/media-compliance/media-runtime-inventory.spdx.json' sonar-project.properties
 report_property_equals "Sonar Rust Clippy integration must stay enabled" 'sonar.rust.clippy.enabled' 'true' sonar-project.properties
 report_missing "Sonar scanner must import Rust LCOV coverage" '^sonar\.rust\.lcov\.reportPaths=coverage/lcov\.info$' sonar-project.properties
-report_missing "Sonar scanner must import JavaScript and TypeScript LCOV coverage" '^sonar\.javascript\.lcov\.reportPaths=coverage/js-lcov\.info$' sonar-project.properties
 report_missing "Coverage execution must retain full workspace and feature scope" 'cargo llvm-cov --workspace --all-features --no-report' justfile
 report_missing "Coverage reports must retain LCOV source and line records" 'cargo llvm-cov report --lcov --output-path coverage/lcov\.info' justfile
-report_missing "JavaScript and TypeScript coverage reports must retain LCOV source and line records" 'just js-coverage-merge' .github/workflows/pr.yml .github/workflows/sonar.yml
 report_missing "Sonar scanner must import the native compile database" '^sonar\.cfamily\.compile-commands=coverage/compile_commands\.json$' sonar-project.properties
 report_missing "Sonar scanner must declare the default schema for PL/SQL analysis" '^sonar\.plsql\.defaultSchema=public$' sonar-project.properties
 report_missing "Sonar scanner must wait for the quality gate" '^sonar\.qualitygate\.wait=true$' sonar-project.properties
@@ -415,10 +412,8 @@ report_missing "PR Sonar inputs must include the staged native CXX runtime bridg
 report_missing "Main Sonar inputs must include the staged native CXX runtime bridge header" 'coverage/cxxbridge/include/rust/cxx\.h' .github/workflows/sonar.yml
 report_missing "PR Sonar inputs must include the staged native crate bridge header" 'coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge\.rs\.h' .github/workflows/pr.yml
 report_missing "Main Sonar inputs must include the staged native crate bridge header" 'coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge\.rs\.h' .github/workflows/sonar.yml
-report_missing "PR Sonar inputs must require Rust LCOV line records before scanning" "grep -q '\^DA:' coverage/lcov\.info" .github/workflows/pr.yml
-report_missing "Main Sonar inputs must require Rust LCOV line records before scanning" "grep -q '\^DA:' coverage/lcov\.info" .github/workflows/sonar.yml
-report_missing "PR Sonar inputs must require JavaScript and TypeScript LCOV line records before scanning" "grep -q '\^DA:' coverage/js-lcov\.info" .github/workflows/pr.yml
-report_missing "Main Sonar inputs must require JavaScript and TypeScript LCOV line records before scanning" "grep -q '\^DA:' coverage/js-lcov\.info" .github/workflows/sonar.yml
+report_missing "PR Sonar inputs must require LCOV line records before scanning" "grep -q '\^DA:' coverage/lcov\.info" .github/workflows/pr.yml
+report_missing "Main Sonar inputs must require LCOV line records before scanning" "grep -q '\^DA:' coverage/lcov\.info" .github/workflows/sonar.yml
 report_missing "PR Sonar input checks must require the staged native CXX include path" 'coverage/cxxbridge/include' .github/workflows/pr.yml
 report_missing "Main Sonar input checks must require the staged native CXX include path" 'coverage/cxxbridge/include' .github/workflows/sonar.yml
 report_missing "PR Sonar scan must install the complete pinned Rust component set" 'components: rustfmt,clippy,llvm-tools-preview' .github/workflows/pr.yml

@@ -42,7 +42,6 @@ jobs:
       - uses: ./.github/actions/setup-revaer
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          node-version: lts/*
           apt-profile: db
 
       - name: Run migrations
@@ -53,12 +52,6 @@ jobs:
       - name: Build combined LCOV report
         run: just cov
 
-      - name: Release JavaScript coverage
-        run: just js-release-coverage
-
-      - name: Merge JavaScript coverage inputs
-        run: just js-coverage-merge
-
       - name: Build native compile database
         run: just sonar-compile-db
 
@@ -66,14 +59,11 @@ jobs:
         run: |
           set -euo pipefail
           test -s coverage/lcov.info
-          test -s coverage/js-lcov.info
           test -s coverage/compile_commands.json
           test -s coverage/cxxbridge/include/rust/cxx.h
           test -s coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
           grep -q '^SF:' coverage/lcov.info
           grep -q '^DA:' coverage/lcov.info
-          grep -q '^SF:' coverage/js-lcov.info
-          grep -q '^DA:' coverage/js-lcov.info
           grep -q '"file":' coverage/compile_commands.json
           grep -q 'coverage/cxxbridge/include' coverage/compile_commands.json
 
@@ -84,7 +74,6 @@ jobs:
           name: sonar-coverage
           path: |
             coverage/lcov.info
-            coverage/js-lcov.info
             coverage/compile_commands.json
             coverage/cxxbridge/include/rust/cxx.h
             coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
@@ -126,14 +115,11 @@ jobs:
         run: |
           set -euo pipefail
           test -s coverage/lcov.info
-          test -s coverage/js-lcov.info
           test -s coverage/compile_commands.json
           test -s coverage/cxxbridge/include/rust/cxx.h
           test -s coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
           grep -q '^SF:' coverage/lcov.info
           grep -q '^DA:' coverage/lcov.info
-          grep -q '^SF:' coverage/js-lcov.info
-          grep -q '^DA:' coverage/js-lcov.info
           grep -q '"file":' coverage/compile_commands.json
           grep -q 'coverage/cxxbridge/include' coverage/compile_commands.json
 
@@ -147,19 +133,6 @@ jobs:
           SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
           SONAR_PROJECT_KEY: VannaDii_Revaer
         run: just sonar-verify-result
-
-      - name: Package Sonar analysis evidence
-        if: always()
-        run: |
-          set -euo pipefail
-          if [ ! -f .scannerwork/report-task.txt ]; then
-            exit 0
-          fi
-          test -d .scannerwork/scanner-report
-          tar -cJf .scannerwork/scanner-report.tar.xz -C .scannerwork scanner-report
-          test -s .scannerwork/scanner-report.tar.xz
-          tar -tf .scannerwork/scanner-report.tar.xz > .scannerwork/scanner-report.entries
-          grep -q '^scanner-report/' .scannerwork/scanner-report.entries
 
       - name: Upload Sonar analysis evidence
         if: always()

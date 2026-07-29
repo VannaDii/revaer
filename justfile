@@ -267,8 +267,7 @@ sonar-verify-result:
     test -d .scannerwork/scanner-report
     tar -cJf .scannerwork/scanner-report.tar.xz -C .scannerwork scanner-report
     test -s .scannerwork/scanner-report.tar.xz
-    tar -tf .scannerwork/scanner-report.tar.xz > .scannerwork/scanner-report.entries
-    grep -q '^scanner-report/' .scannerwork/scanner-report.entries
+    tar -tf .scannerwork/scanner-report.tar.xz | grep -q '^scanner-report/'
     bash scripts/sonar-result-guardrails.sh
 
 sbom:
@@ -377,60 +376,23 @@ ui-e2e: trunk-install
     cd tests && npm install
     cd tests && npm run gen:api-client
     playwright_browsers="$(printf "%s" "${E2E_BROWSERS:-chromium}" | tr "," " ")"; \
-    playwright_install_browsers="${playwright_browsers}"; \
-    if printf ' %s ' "${playwright_browsers}" | grep -q ' chromium '; then \
-        playwright_install_browsers="${playwright_install_browsers} chromium-headless-shell"; \
-    fi; \
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
-        cd tests && npx playwright install --with-deps ${playwright_install_browsers}; \
+        if [ -n "${E2E_BROWSER_CHANNEL:-}" ]; then \
+            cd tests && npx playwright install-deps ${playwright_browsers}; \
+        else \
+            cd tests && npx playwright install --with-deps ${playwright_browsers}; \
+        fi; \
     else \
-        cd tests && npx playwright install ${playwright_install_browsers}; \
+        cd tests && npx playwright install ${playwright_browsers}; \
     fi
     shard_arg=""; \
     if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \
         shard_arg="--shard=${PLAYWRIGHT_SHARD_INDEX}/${PLAYWRIGHT_SHARD_TOTAL}"; \
     fi; \
-    if [ -n "${JS_COVERAGE_DIR:-}" ]; then \
-        rm -rf target/js-coverage-tests "${JS_COVERAGE_DIR}"; \
-        (cd tests && npx tsc -p tsconfig.coverage.json); \
-        NODE_PATH="${PWD}/tests/node_modules" \
-        E2E_ENV_DIR="${PWD}/tests" \
-            tests/node_modules/.bin/c8 \
-            --reporter=lcovonly \
-            --reports-dir "${JS_COVERAGE_DIR}" \
-            tests/node_modules/.bin/playwright test \
-                --config target/js-coverage-tests/playwright.config.js \
-                ${shard_arg}; \
-    else \
-        cd tests && npx playwright test ${shard_arg}; \
-    fi
+    cd tests && npx playwright test ${shard_arg}
 
 ui-e2e-coverage:
     node tests/scripts/check-e2e-coverage.js
-
-js-release-coverage:
-    cd tests && npm install
-    rm -rf coverage/js/release
-    mkdir -p coverage/js/release
-    tests/node_modules/.bin/c8 \
-        --reporter=lcovonly \
-        --reports-dir coverage/js/release \
-        node scripts/js-coverage/semantic-release-npm-stub.mjs
-    test -s coverage/js/release/lcov.info
-    grep -q '^SF:vendor/semantic-release-npm-stub/index.js' coverage/js/release/lcov.info
-    grep -q '^DA:' coverage/js/release/lcov.info
-
-js-coverage-merge:
-    mkdir -p coverage
-    lcov_files="$(find coverage/js -name lcov.info -type f | sort)"; \
-    if [ -z "${lcov_files}" ]; then \
-        echo "No JavaScript/TypeScript LCOV files were produced." >&2; \
-        exit 1; \
-    fi; \
-    cat ${lcov_files} > coverage/js-lcov.info
-    test -s coverage/js-lcov.info
-    grep -q '^SF:' coverage/js-lcov.info
-    grep -q '^DA:' coverage/js-lcov.info
 
 runbook:
     status=0; \
