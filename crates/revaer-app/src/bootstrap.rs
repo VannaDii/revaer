@@ -13,6 +13,7 @@ use crate::media::MediaService;
 use crate::media_discovery_runtime::MediaDiscoveryRuntime;
 use crate::media_job_runtime::MediaJobRuntime;
 use crate::media_retention_runtime::MediaRetentionRuntime;
+use crate::runtime_shutdown;
 use revaer_api::TorrentHandles;
 use revaer_api::app::media::{MediaCapabilityRefreshParams, MediaFacade};
 use revaer_config::{AppMode, ConfigService, ConfigSnapshot, DbSessionConfig};
@@ -33,6 +34,7 @@ use crate::orchestrator::{
 use revaer_torrent_core::{TorrentEngine, TorrentInspector, TorrentWorkflow};
 
 const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
+const MEDIA_RUNTIME_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 
 /// Dependencies required to bootstrap the Revaer application.
 pub(crate) struct BootstrapDependencies {
@@ -313,27 +315,14 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
     let import_job_runtime_task =
         ImportJobRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
-    let media_discovery_runtime_task =
-        MediaDiscoveryRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
-            .spawn();
-    let media_job_runtime_task = MediaJobRuntime::new(
-        MediaStore::new(config.pool().clone()),
-        events.clone(),
-        telemetry.clone(),
-    )
-    .spawn();
-    let media_retention_runtime_task =
-        MediaRetentionRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
-            .spawn();
+    let media_runtime_tasks = spawn_media_runtime_tasks(&config, &events, &telemetry);
     info!(addr = %addr, "Launching API listener");
 
     let serve_result = api.serve(addr).await;
 
     stop_runtime_task(indexer_runtime_task, "indexer").await;
     stop_runtime_task(import_job_runtime_task, "import_job").await;
-    stop_runtime_task(media_discovery_runtime_task, "media_discovery").await;
-    stop_runtime_task(media_job_runtime_task, "media_job").await;
-    stop_runtime_task(media_retention_runtime_task, "media_retention").await;
+    stop_media_runtime_tasks(media_runtime_tasks).await;
 
     #[cfg(feature = "libtorrent")]
     {
@@ -359,12 +348,94 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     Ok(())
 }
 
+struct MediaRuntimeTasks {
+    shutdown: runtime_shutdown::RuntimeShutdownSender,
+    discovery: tokio::task::JoinHandle<()>,
+    job: tokio::task::JoinHandle<()>,
+    retention: tokio::task::JoinHandle<()>,
+}
+
+fn spawn_media_runtime_tasks(
+    config: &ConfigService,
+    events: &EventBus,
+    telemetry: &Metrics,
+) -> MediaRuntimeTasks {
+    let (shutdown, receiver) = runtime_shutdown::channel();
+    let discovery =
+        MediaDiscoveryRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
+            .spawn(receiver.clone());
+    let job = MediaJobRuntime::new(
+        MediaStore::new(config.pool().clone()),
+        events.clone(),
+        telemetry.clone(),
+    )
+    .spawn(receiver.clone());
+    let retention =
+        MediaRetentionRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
+            .spawn(receiver);
+    MediaRuntimeTasks {
+        shutdown,
+        discovery,
+        job,
+        retention,
+    }
+}
+
+async fn stop_media_runtime_tasks(tasks: MediaRuntimeTasks) {
+    if runtime_shutdown::request(&tasks.shutdown) {
+        info!("media runtime shutdown requested");
+    } else {
+        warn!("media runtime shutdown requested after receivers closed");
+    }
+    stop_runtime_task_gracefully(
+        tasks.discovery,
+        "media_discovery",
+        MEDIA_RUNTIME_SHUTDOWN_GRACE,
+    )
+    .await;
+    stop_runtime_task_gracefully(tasks.job, "media_job", MEDIA_RUNTIME_SHUTDOWN_GRACE).await;
+    stop_runtime_task_gracefully(
+        tasks.retention,
+        "media_retention",
+        MEDIA_RUNTIME_SHUTDOWN_GRACE,
+    )
+    .await;
+}
+
 async fn stop_runtime_task<T>(task: tokio::task::JoinHandle<T>, task_name: &'static str) {
     if !task.is_finished() {
         task.abort();
     }
     if let Err(err) = task.await {
         warn!(error = %err, task = task_name, "runtime task join failed");
+    }
+}
+
+async fn stop_runtime_task_gracefully<T>(
+    mut task: tokio::task::JoinHandle<T>,
+    task_name: &'static str,
+    grace: Duration,
+) {
+    if task.is_finished() {
+        if let Err(err) = task.await {
+            warn!(error = %err, task = task_name, "runtime task join failed");
+        }
+        return;
+    }
+
+    if let Ok(result) = tokio::time::timeout(grace, &mut task).await {
+        if let Err(err) = result {
+            warn!(error = %err, task = task_name, "runtime task join failed");
+        }
+    } else {
+        task.abort();
+        warn!(
+            task = task_name,
+            "runtime task aborted after graceful shutdown timeout"
+        );
+        if let Err(err) = task.await {
+            warn!(error = %err, task = task_name, "runtime task join failed");
+        }
     }
 }
 
