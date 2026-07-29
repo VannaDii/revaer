@@ -856,6 +856,7 @@ mod tests {
         assert_eq!(target.video_codec, "av1");
         assert_eq!(target.audio_channels, Some(2));
         assert_eq!(target.audio_channel_layout.as_deref(), Some("stereo"));
+        assert_invalid_compatibility_audio_layout_rejected(&db, actor).await?;
 
         let policy = upsert_media_policy_profile(
             db.pool(),
@@ -1048,7 +1049,42 @@ mod tests {
         assert_invalid_subtitle_placement_rejected(&db, target_id).await?;
         assert_cross_kind_subtitle_fields_rejected(&db, target_id).await?;
         assert_unknown_hdr_format_rejected(&db, target_id).await?;
+        assert_unknown_video_color_rejected(&db, target_id).await?;
+        assert_unknown_video_level_rejected(&db, target_id).await?;
+        assert_invalid_audio_channel_layout_rejected(&db, target_id).await?;
+        assert_audio_channel_layout_count_mismatch_rejected(&db, target_id).await?;
         assert_unsupported_target_stream_kinds_rejected(&db, target_id).await
+    }
+
+    async fn assert_invalid_compatibility_audio_layout_rejected(
+        db: &MediaTestDb,
+        actor: Uuid,
+    ) -> anyhow::Result<()> {
+        let invalid_audio_layout = upsert_media_compatibility_target(
+            db.pool(),
+            UpsertMediaCompatibilityTargetInput {
+                actor_public_id: actor,
+                compatibility_target_key: "invalid-audio-layout",
+                version: 1,
+                display_name: "Invalid audio layout",
+                video_codec: "av1",
+                audio_codec: "opus",
+                audio_channels: Some(2),
+                audio_channel_layout: Some("5.1(side)"),
+                subtitle_policy: "all",
+            },
+        )
+        .await;
+        let Err(invalid_audio_layout) = invalid_audio_layout else {
+            return Err(anyhow::anyhow!(
+                "compatibility target audio layout/count mismatch was accepted"
+            ));
+        };
+        assert_eq!(
+            invalid_audio_layout.database_detail(),
+            Some("media_compatibility_target_audio_shape_invalid")
+        );
+        Ok(())
     }
 
     async fn create_subtitle_shape_validation_target(db: &MediaTestDb) -> anyhow::Result<Uuid> {
@@ -1154,6 +1190,148 @@ mod tests {
         assert_eq!(
             unknown_hdr.database_detail(),
             Some("media_desired_target_video_shape_invalid")
+        );
+        Ok(())
+    }
+
+    async fn assert_unknown_video_color_rejected(
+        db: &MediaTestDb,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let unknown_color = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-unknown-color",
+                sort_order: 0,
+                color_transfer: Some("make-it-pop"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(unknown_color) = unknown_color else {
+            return Err(anyhow::anyhow!("unknown video color was accepted"));
+        };
+        assert_eq!(
+            unknown_color.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+        Ok(())
+    }
+
+    async fn assert_unknown_video_level_rejected(
+        db: &MediaTestDb,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let unknown_level = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-unknown-level",
+                sort_order: 0,
+                video_level: Some("7.9"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(unknown_level) = unknown_level else {
+            return Err(anyhow::anyhow!("unknown video level was accepted"));
+        };
+        assert_eq!(
+            unknown_level.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+
+        let av1_target_id = create_media_desired_target(
+            db.pool(),
+            CreateMediaDesiredTargetInput {
+                actor_public_id: db.system_user_public_id,
+                target_key: "av1-level-validation",
+                version: 1,
+                display_name: "AV1 level validation",
+                container_format: "matroska",
+            },
+        )
+        .await?;
+
+        append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-av1-level",
+                sort_order: 0,
+                codec: "av1",
+                video_level: Some("7.3"),
+                ..video_target_stream(av1_target_id)
+            },
+        )
+        .await?;
+
+        let unknown_av1_level = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-unknown-av1-level",
+                sort_order: 1,
+                codec: "libaom-av1",
+                video_level: Some("7.9"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(unknown_av1_level) = unknown_av1_level else {
+            return Err(anyhow::anyhow!("unknown AV1 video level was accepted"));
+        };
+        assert_eq!(
+            unknown_av1_level.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+        Ok(())
+    }
+
+    async fn assert_invalid_audio_channel_layout_rejected(
+        db: &MediaTestDb,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let invalid_layout = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "audio-unknown-layout",
+                sort_order: 0,
+                channel_layout: Some("ambisonic"),
+                ..audio_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(invalid_layout) = invalid_layout else {
+            return Err(anyhow::anyhow!("unknown audio channel layout was accepted"));
+        };
+        assert_eq!(
+            invalid_layout.database_detail(),
+            Some("media_desired_target_audio_shape_invalid")
+        );
+        Ok(())
+    }
+
+    async fn assert_audio_channel_layout_count_mismatch_rejected(
+        db: &MediaTestDb,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let count_mismatch = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "audio-layout-count-mismatch",
+                sort_order: 0,
+                channel_count: Some(6),
+                channel_layout: Some("stereo"),
+                ..audio_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(count_mismatch) = count_mismatch else {
+            return Err(anyhow::anyhow!(
+                "audio channel layout/count mismatch was accepted"
+            ));
+        };
+        assert_eq!(
+            count_mismatch.database_detail(),
+            Some("media_desired_target_audio_shape_invalid")
         );
         Ok(())
     }
