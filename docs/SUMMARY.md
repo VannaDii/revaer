@@ -374,3 +374,4 @@
     -   [345: Media replacement recovery manifest validation](adr/345-media-replacement-recovery-manifest-validation.md)
     -   [346: Media inspect probe timeout boundary](adr/346-media-inspect-probe-timeout-boundary.md)
     -   [347: Media stale worker recovery](adr/347-media-stale-worker-recovery.md)
+    -   [348: Media execution timeout boundary](adr/348-media-execution-timeout-boundary.md)
