@@ -86,6 +86,7 @@ const DIALOG_NORMALIZED_TRUE_PEAK_MAX_DBFS: f64 = -1.0;
 const SPEECH_DYNAMIC_RANGE_MAX_LU: f64 = 12.0;
 const MAX_AUDIO_ANALYSIS_STDERR_BYTES: usize = 64 * 1024;
 const AUDIO_ANALYSIS_TRUNCATION_MARKER: &str = "...[truncated]\n";
+const AUDIO_ANALYSIS_TIMEOUT: Duration = Duration::from_mins(30);
 
 type RuntimeInspector = dyn InspectAdapter + Send + Sync;
 type RuntimeCommandRunner = dyn CommandRunner + Send + Sync;
@@ -225,6 +226,14 @@ fn run_audio_analysis_process(
     ffmpeg_bin: &str,
     args: &[String],
 ) -> Result<AudioAnalysisProcessOutput, String> {
+    run_audio_analysis_process_with_timeout(ffmpeg_bin, args, AUDIO_ANALYSIS_TIMEOUT)
+}
+
+fn run_audio_analysis_process_with_timeout(
+    ffmpeg_bin: &str,
+    args: &[String],
+    timeout: Duration,
+) -> Result<AudioAnalysisProcessOutput, String> {
     let mut child = Command::new(ffmpeg_bin)
         .args(args)
         .stdin(Stdio::null())
@@ -233,19 +242,51 @@ fn run_audio_analysis_process(
         .spawn()
         .map_err(|error| format!("audio analyzer command spawn failed: {error}"))?;
     let Some(stderr) = child.stderr.take() else {
-        let _killed = child.kill();
-        let _reaped = child.wait();
+        terminate_audio_analysis_process(&mut child)?;
         return Err("audio analyzer stderr pipe unavailable".to_string());
     };
     let stderr_reader = thread::spawn(move || read_bounded_audio_analysis_stderr(stderr));
-    let status = child
+    let started_at = Instant::now();
+    let status = loop {
+        if started_at.elapsed() >= timeout {
+            terminate_audio_analysis_process(&mut child)?;
+            let _stderr = join_audio_analysis_stderr_reader(stderr_reader)?;
+            return Err(format!(
+                "audio analyzer command timed out after {timeout:?}"
+            ));
+        }
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("audio analyzer command wait failed: {error}"))?
+        {
+            break status;
+        }
+        thread::sleep(Duration::from_millis(100));
+    };
+    let stderr = join_audio_analysis_stderr_reader(stderr_reader)?;
+    Ok(AudioAnalysisProcessOutput { status, stderr })
+}
+
+fn terminate_audio_analysis_process(child: &mut std::process::Child) -> Result<(), String> {
+    match child.kill() {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::InvalidInput => {}
+        Err(error) => return Err(format!("audio analyzer command kill failed: {error}")),
+    }
+    child
         .wait()
-        .map_err(|error| format!("audio analyzer command wait failed: {error}"))?;
+        .map_err(|error| format!("audio analyzer command reap failed: {error}"))?;
+    Ok(())
+}
+
+fn join_audio_analysis_stderr_reader(
+    stderr_reader: thread::JoinHandle<io::Result<String>>,
+) -> Result<String, String> {
     let stderr = stderr_reader
         .join()
         .map_err(|_| "audio analyzer stderr reader thread panicked".to_string())?
         .map_err(|error| format!("audio analyzer stderr read failed: {error}"))?;
-    Ok(AudioAnalysisProcessOutput { status, stderr })
+    Ok(stderr)
 }
 
 fn read_bounded_audio_analysis_stderr(mut stderr: impl Read) -> io::Result<String> {
@@ -3686,7 +3727,8 @@ mod tests {
         RuntimeReplacementCommitter, RuntimeVerificationExecutor, SystemFfmpegAudioAnalysisAdapter,
         VideoStreamConstraints, audio_measurement_mismatch, desired_target_from_job,
         expected_audio_constraints, parse_ebur128_summary, read_bounded_audio_analysis_stderr,
-        run_audio_analysis_process, verification_policy_from_job, video_constraint_stream_mismatch,
+        run_audio_analysis_process, run_audio_analysis_process_with_timeout,
+        verification_policy_from_job, video_constraint_stream_mismatch,
         video_policy_from_policy_intent, video_policy_from_target_snapshot,
     };
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -5482,6 +5524,24 @@ Integrated loudness:
                 <= MAX_AUDIO_ANALYSIS_STDERR_BYTES + AUDIO_ANALYSIS_TRUNCATION_MARKER.len()
         );
         Ok(())
+    }
+
+    #[test]
+    fn audio_analysis_process_terminates_active_child_on_timeout() {
+        let started = Instant::now();
+
+        let error = run_audio_analysis_process_with_timeout(
+            "/bin/sleep",
+            &["30".to_string()],
+            Duration::from_millis(150),
+        )
+        .expect_err("sleeping analyzer should time out");
+
+        assert_eq!(
+            error,
+            "audio analyzer command timed out after 150ms".to_string()
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[tokio::test]
