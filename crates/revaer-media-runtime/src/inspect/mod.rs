@@ -5,15 +5,23 @@ use revaer_media_core::normalize::{normalize_graph, normalize_subtitle_codec};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::io::{self, Read};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 use crate::sidecar::{
     FilesystemSidecarDiscoverer, SidecarDiscoverer, SidecarDiscoveryError, SidecarFormat,
     SidecarSubtitle,
 };
+
+const INSPECT_PROBE_TIMEOUT: Duration = Duration::from_mins(1);
+const MAX_INSPECT_PROBE_STDOUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_INSPECT_PROBE_STDERR_BYTES: usize = 64 * 1024;
+const INSPECT_PROBE_TRUNCATION_MARKER: &str = "...[truncated]";
 
 /// Error emitted by inspect adapters.
 #[derive(Debug, Error)]
@@ -198,21 +206,216 @@ pub struct SystemInspectProbeExecutor;
 
 impl InspectProbeExecutor for SystemInspectProbeExecutor {
     fn run(&self, bin: &str, args: &[&str]) -> Result<String, InspectError> {
-        let output = Command::new(bin)
-            .args(args)
-            .output()
-            .map_err(|err| InspectError::ProbeFailed(err.to_string()))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let output = run_system_inspect_probe(bin, args, INSPECT_PROBE_TIMEOUT)?;
+        if !output.status_success {
+            let stderr = String::from_utf8_lossy(&output.stderr.bytes)
+                .trim()
+                .to_string();
             let message = if stderr.is_empty() {
                 format!("{bin} exited with status {}", output.status)
+            } else if output.stderr.truncated {
+                format!(
+                    "{bin} exited with status {}: {INSPECT_PROBE_TRUNCATION_MARKER}{stderr}",
+                    output.status
+                )
             } else {
                 format!("{bin} exited with status {}: {stderr}", output.status)
             };
             return Err(InspectError::ProbeFailed(message));
         }
-        String::from_utf8(output.stdout)
+        if output.stdout.truncated {
+            return Err(InspectError::OutputMalformed(format!(
+                "{bin} {args:?} stdout exceeded {MAX_INSPECT_PROBE_STDOUT_BYTES} bytes"
+            )));
+        }
+        String::from_utf8(output.stdout.bytes)
             .map_err(|err| InspectError::OutputMalformed(err.to_string()))
+    }
+}
+
+#[derive(Debug)]
+struct SystemInspectProbeOutput {
+    status_success: bool,
+    status: std::process::ExitStatus,
+    stdout: BoundedInspectProbeOutput,
+    stderr: BoundedInspectProbeOutput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BoundedInspectProbeOutput {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+fn run_system_inspect_probe(
+    bin: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<SystemInspectProbeOutput, InspectError> {
+    let mut child = Command::new(bin)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| InspectError::ProbeFailed(error.to_string()))?;
+    let Some(stdout) = child.stdout.take() else {
+        terminate_inspect_probe(&mut child, bin)?;
+        return Err(InspectError::ProbeFailed(format!(
+            "{bin} probe stdout pipe unavailable"
+        )));
+    };
+    let Some(stderr) = child.stderr.take() else {
+        terminate_inspect_probe(&mut child, bin)?;
+        return Err(InspectError::ProbeFailed(format!(
+            "{bin} probe stderr pipe unavailable"
+        )));
+    };
+    let stdout_reader = thread::spawn(move || {
+        read_bounded_output(
+            stdout,
+            MAX_INSPECT_PROBE_STDOUT_BYTES,
+            ProbeOutputRetention::Head,
+        )
+    });
+    let stderr_reader = thread::spawn(move || {
+        read_bounded_output(
+            stderr,
+            MAX_INSPECT_PROBE_STDERR_BYTES,
+            ProbeOutputRetention::Tail,
+        )
+    });
+    let started = Instant::now();
+
+    loop {
+        if started.elapsed() >= timeout {
+            terminate_inspect_probe(&mut child, bin)?;
+            let output = join_inspect_probe_readers(bin, stdout_reader, stderr_reader)?;
+            let stderr = String::from_utf8_lossy(&output.stderr.bytes)
+                .trim()
+                .to_string();
+            let detail = if stderr.is_empty() {
+                String::new()
+            } else if output.stderr.truncated {
+                format!(": {INSPECT_PROBE_TRUNCATION_MARKER}{stderr}")
+            } else {
+                format!(": {stderr}")
+            };
+            return Err(InspectError::ProbeFailed(format!(
+                "{bin} {args:?} timed out after {}ms{detail}",
+                timeout.as_millis()
+            )));
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let output = join_inspect_probe_readers(bin, stdout_reader, stderr_reader)?;
+                return Ok(SystemInspectProbeOutput {
+                    status_success: status.success(),
+                    status,
+                    stdout: output.stdout,
+                    stderr: output.stderr,
+                });
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(error) => {
+                terminate_inspect_probe(&mut child, bin)?;
+                let _output = join_inspect_probe_readers(bin, stdout_reader, stderr_reader)?;
+                return Err(InspectError::ProbeFailed(format!(
+                    "{bin} wait failed: {error}"
+                )));
+            }
+        }
+    }
+}
+
+fn terminate_inspect_probe(child: &mut Child, bin: &str) -> Result<(), InspectError> {
+    match child.kill() {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::InvalidInput => {}
+        Err(error) => {
+            return Err(InspectError::ProbeFailed(format!(
+                "{bin} kill failed: {error}"
+            )));
+        }
+    }
+    child
+        .wait()
+        .map_err(|error| InspectError::ProbeFailed(format!("{bin} reap failed: {error}")))?;
+    Ok(())
+}
+
+#[derive(Debug)]
+struct JoinedInspectProbeOutput {
+    stdout: BoundedInspectProbeOutput,
+    stderr: BoundedInspectProbeOutput,
+}
+
+fn join_inspect_probe_readers(
+    bin: &str,
+    stdout_reader: thread::JoinHandle<io::Result<BoundedInspectProbeOutput>>,
+    stderr_reader: thread::JoinHandle<io::Result<BoundedInspectProbeOutput>>,
+) -> Result<JoinedInspectProbeOutput, InspectError> {
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| InspectError::ProbeFailed(format!("{bin} stdout reader panicked")))?
+        .map_err(|error| InspectError::ProbeFailed(format!("{bin} stdout read failed: {error}")))?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| InspectError::ProbeFailed(format!("{bin} stderr reader panicked")))?
+        .map_err(|error| InspectError::ProbeFailed(format!("{bin} stderr read failed: {error}")))?;
+    Ok(JoinedInspectProbeOutput { stdout, stderr })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProbeOutputRetention {
+    Head,
+    Tail,
+}
+
+fn read_bounded_output(
+    mut reader: impl Read,
+    max_bytes: usize,
+    retention: ProbeOutputRetention,
+) -> io::Result<BoundedInspectProbeOutput> {
+    let mut bytes = Vec::with_capacity(max_bytes);
+    let mut scratch = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        let read = reader.read(&mut scratch)?;
+        if read == 0 {
+            break;
+        }
+        match retention {
+            ProbeOutputRetention::Head => {
+                retain_probe_head(&mut bytes, &scratch[..read], max_bytes, &mut truncated);
+            }
+            ProbeOutputRetention::Tail => {
+                retain_probe_tail(&mut bytes, &scratch[..read], max_bytes, &mut truncated);
+            }
+        }
+    }
+    Ok(BoundedInspectProbeOutput { bytes, truncated })
+}
+
+fn retain_probe_head(retained: &mut Vec<u8>, chunk: &[u8], max_bytes: usize, truncated: &mut bool) {
+    let remaining = max_bytes.saturating_sub(retained.len());
+    if remaining == 0 {
+        *truncated = true;
+        return;
+    }
+    let retained_len = chunk.len().min(remaining);
+    retained.extend_from_slice(&chunk[..retained_len]);
+    if retained_len < chunk.len() {
+        *truncated = true;
+    }
+}
+
+fn retain_probe_tail(retained: &mut Vec<u8>, chunk: &[u8], max_bytes: usize, truncated: &mut bool) {
+    retained.extend_from_slice(chunk);
+    let overflow = retained.len().saturating_sub(max_bytes);
+    if overflow > 0 {
+        retained.drain(..overflow);
+        *truncated = true;
     }
 }
 
@@ -902,13 +1105,15 @@ struct FfprobeSideData {
 #[cfg(test)]
 mod tests {
     use super::{
-        FfprobeInspectAdapter, InspectAdapter, InspectError, InspectProbeExecutor, ProbeGraph,
-        ProbeStream, SystemInspectProbeExecutor, normalize_probe_graph,
+        FfprobeInspectAdapter, InspectAdapter, InspectError, InspectProbeExecutor,
+        MAX_INSPECT_PROBE_STDOUT_BYTES, ProbeGraph, ProbeStream, SystemInspectProbeExecutor,
+        normalize_probe_graph, run_system_inspect_probe,
     };
     use revaer_media_core::model::StreamKind;
     use std::collections::HashMap;
     use std::path::Path;
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
     use tempfile::tempdir;
 
     use crate::sidecar::{SidecarDiscoverer, SidecarDiscoveryError, SidecarSubtitle};
@@ -1841,5 +2046,38 @@ mod tests {
             &["-c", "import sys; sys.stdout.buffer.write(b'\\xff')"],
         );
         assert!(matches!(result, Err(InspectError::OutputMalformed(_))));
+    }
+
+    #[test]
+    fn system_probe_executor_terminates_timed_out_probe() {
+        let result = run_system_inspect_probe(
+            "sh",
+            &["-c", "printf 'still probing' 1>&2; sleep 5"],
+            Duration::from_millis(100),
+        );
+
+        assert!(matches!(
+            result,
+            Err(InspectError::ProbeFailed(message))
+            if message.contains("timed out after 100ms")
+                && message.contains("still probing")
+        ));
+    }
+
+    #[test]
+    fn system_probe_executor_rejects_oversized_stdout() {
+        let executor = SystemInspectProbeExecutor;
+        let script = format!(
+            "import sys; sys.stdout.buffer.write(b'a' * {})",
+            MAX_INSPECT_PROBE_STDOUT_BYTES + 1
+        );
+
+        let result = executor.run("python3", &["-c", &script]);
+
+        assert!(matches!(
+            result,
+            Err(InspectError::OutputMalformed(message))
+            if message.contains("stdout exceeded")
+        ));
     }
 }

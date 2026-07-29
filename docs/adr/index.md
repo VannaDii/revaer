@@ -354,3 +354,4 @@
 -   [343](343-media-capability-probe-process-boundary.md) - Media capability probe process boundary
 -   [344](344-media-verifier-timeout-boundary.md) - Media verifier timeout boundary
 -   [345](345-media-replacement-recovery-manifest-validation.md) - Media replacement recovery manifest validation
+-   [346](346-media-inspect-probe-timeout-boundary.md) - Media inspect probe timeout boundary
