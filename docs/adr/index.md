@@ -357,3 +357,4 @@
 -   [346](346-media-inspect-probe-timeout-boundary.md) - Media inspect probe timeout boundary
 -   [347](347-media-stale-worker-recovery.md) - Media stale worker recovery
 -   [348](348-media-execution-timeout-boundary.md) - Media execution timeout boundary
+-   [349](349-media-finalized-completion-boundary.md) - Media finalized completion boundary

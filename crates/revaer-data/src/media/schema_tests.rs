@@ -102,6 +102,7 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_job_worker_poll_control_v1",
     "media_job_worker_acknowledge_cancel_v1",
     "media_job_worker_complete_v1",
+    "media_job_worker_complete_finalized_v1",
     "media_job_worker_recover_stale_v1",
     "media_job_mark_completed_v1",
     "media_job_cleanup_completed_v1",
