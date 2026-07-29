@@ -45,6 +45,8 @@ mod media_workspace_retention;
 /// Torrent orchestrator wiring.
 #[cfg(feature = "libtorrent")]
 pub mod orchestrator;
+/// Cooperative background runtime shutdown helpers.
+pub mod runtime_shutdown;
 
 pub use bootstrap::{run_app, run_app_with_database_url};
 pub use error::{AppError, AppResult};

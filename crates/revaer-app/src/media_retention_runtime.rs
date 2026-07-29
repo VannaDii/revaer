@@ -18,6 +18,7 @@ use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
 
 use crate::media_workspace_retention::{WorkspaceRetentionError, WorkspaceRetentionRunner};
+use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 
 const DEFAULT_RETENTION_TICK_INTERVAL: Duration = Duration::from_hours(1);
 
@@ -94,21 +95,30 @@ impl MediaRetentionRuntime {
     }
 
     /// Spawn the janitor loop.
-    pub(crate) fn spawn(self) -> JoinHandle<()> {
+    pub(crate) fn spawn(self, shutdown: RuntimeShutdownReceiver) -> JoinHandle<()> {
         tokio::spawn(async move {
-            self.run_loop().await;
+            self.run_loop(shutdown).await;
         })
     }
 
-    async fn run_loop(self) {
+    async fn run_loop(self, mut shutdown: RuntimeShutdownReceiver) {
+        if runtime_shutdown::requested(&shutdown) {
+            return;
+        }
         let mut ticker = interval(self.tick_interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
-            ticker.tick().await;
-            if let Err(error) = self.run_tick().await {
-                self.telemetry.inc_media_retention_run("failed");
-                warn!(error = %error, "media retention janitor tick failed");
+            tokio::select! {
+                _ = ticker.tick() => {
+                    if let Err(error) = self.run_tick().await {
+                        self.telemetry.inc_media_retention_run("failed");
+                        warn!(error = %error, "media retention janitor tick failed");
+                    }
+                }
+                () = runtime_shutdown::changed(&mut shutdown) => {
+                    return;
+                }
             }
         }
     }
@@ -355,6 +365,7 @@ mod tests {
             runs: AtomicUsize::new(0),
         });
 
+        let (first_shutdown_tx, first_shutdown_rx) = runtime_shutdown::channel();
         let first = MediaRetentionRuntime::with_dependencies(
             repository.clone(),
             Arc::new(FixedClock(fixed_time()?)),
@@ -362,10 +373,12 @@ mod tests {
             telemetry.clone(),
             Duration::from_mins(1),
         )
-        .spawn();
+        .spawn(first_shutdown_rx);
         wait_for_observations(&repository, 1).await?;
-        first.abort();
+        assert!(runtime_shutdown::request(&first_shutdown_tx));
+        tokio::time::timeout(Duration::from_secs(5), first).await??;
 
+        let (restart_shutdown_tx, restart_shutdown_rx) = runtime_shutdown::channel();
         let restarted = MediaRetentionRuntime::with_dependencies(
             repository.clone(),
             Arc::new(FixedClock(fixed_time()?)),
@@ -373,9 +386,10 @@ mod tests {
             telemetry,
             Duration::from_mins(1),
         )
-        .spawn();
+        .spawn(restart_shutdown_rx);
         wait_for_observations(&repository, 2).await?;
-        restarted.abort();
+        assert!(runtime_shutdown::request(&restart_shutdown_tx));
+        tokio::time::timeout(Duration::from_secs(5), restarted).await??;
         assert_eq!(workspace_retention.runs.load(Ordering::Relaxed), 2);
         Ok(())
     }

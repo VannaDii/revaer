@@ -70,13 +70,14 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tokio::time::{MissedTickBehavior, interval, sleep};
+use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::media_discovery_fingerprint::{
     FingerprintError, MediaAggregateFingerprint, fingerprint_media_aggregate,
 };
+use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 
 const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(1);
 const DEFAULT_WORKSPACE_MAX_BYTES: u64 = 20 * 1024 * 1024 * 1024;
@@ -133,6 +134,7 @@ struct PreflightReadyContext<'a> {
     planning_outcome: Option<&'a PlanningOutcome>,
     source_fingerprint: &'a MediaAggregateFingerprint,
     managed_workspace: Option<&'a revaer_media_runtime::workspace::ManagedWorkspace>,
+    shutdown: Option<&'a RuntimeShutdownReceiver>,
 }
 
 struct RuntimePreflightBuildInput {
@@ -447,31 +449,44 @@ impl MediaJobRuntime {
     }
 
     /// Spawn the media worker loop.
-    pub(crate) fn spawn(self) -> JoinHandle<()> {
+    pub(crate) fn spawn(self, shutdown: RuntimeShutdownReceiver) -> JoinHandle<()> {
         tokio::spawn(async move {
-            self.run_loop().await;
+            self.run_loop(shutdown).await;
         })
     }
 
-    async fn run_loop(self) {
+    async fn run_loop(self, mut shutdown: RuntimeShutdownReceiver) {
+        if runtime_shutdown::requested(&shutdown) {
+            return;
+        }
         while let Err(error) = self.recover_interrupted_replacements().await {
             warn!(error = %error, "media job replacement recovery failed; worker remains paused");
-            sleep(self.tick_interval).await;
+            if runtime_shutdown::sleep_or_requested(self.tick_interval, &mut shutdown).await {
+                return;
+            }
         }
         while let Err(error) = self
             .recover_stale_worker_jobs(STALE_WORKER_RECOVERY_AFTER_SECONDS)
             .await
         {
             warn!(error = %error, "media job stale-worker recovery failed; worker remains paused");
-            sleep(self.tick_interval).await;
+            if runtime_shutdown::sleep_or_requested(self.tick_interval, &mut shutdown).await {
+                return;
+            }
         }
         let mut ticker = interval(self.tick_interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
-            ticker.tick().await;
-            if let Err(error) = self.run_tick().await {
-                warn!(error = %error, "media job runtime tick failed");
+            tokio::select! {
+                _ = ticker.tick() => {
+                    if let Err(error) = self.run_tick_with_shutdown(shutdown.clone()).await {
+                        warn!(error = %error, "media job runtime tick failed");
+                    }
+                }
+                () = runtime_shutdown::changed(&mut shutdown) => {
+                    return;
+                }
             }
         }
     }
@@ -541,12 +556,29 @@ impl MediaJobRuntime {
         Ok(())
     }
 
+    #[cfg(test)]
     async fn run_tick(&self) -> Result<(), MediaJobRuntimeError> {
         self.recover_stale_worker_jobs(STALE_WORKER_RECOVERY_AFTER_SECONDS)
             .await?;
         let claimed = self.store.claim_next_job().await?;
         if let Some(job) = claimed {
-            self.process_job(job).await;
+            self.process_job(job, None).await;
+        }
+        Ok(())
+    }
+
+    async fn run_tick_with_shutdown(
+        &self,
+        shutdown: RuntimeShutdownReceiver,
+    ) -> Result<(), MediaJobRuntimeError> {
+        self.recover_stale_worker_jobs(STALE_WORKER_RECOVERY_AFTER_SECONDS)
+            .await?;
+        if runtime_shutdown::requested(&shutdown) {
+            return Ok(());
+        }
+        let claimed = self.store.claim_next_job().await?;
+        if let Some(job) = claimed {
+            self.process_job(job, Some(shutdown)).await;
         }
         Ok(())
     }
@@ -585,7 +617,11 @@ impl MediaJobRuntime {
         Ok(())
     }
 
-    async fn process_job(&self, job: ClaimedMediaJobRow) {
+    async fn process_job(
+        &self,
+        job: ClaimedMediaJobRow,
+        shutdown: Option<RuntimeShutdownReceiver>,
+    ) {
         let started_at = Instant::now();
         let workspace = if job.dry_run {
             project_managed_workspace(&self.workspace_root, &job.media_job_public_id.to_string())
@@ -612,7 +648,12 @@ impl MediaJobRuntime {
         };
 
         let terminal_state = match self
-            .process_claimed_job(&job, &workspace_paths, managed_workspace.as_ref())
+            .process_claimed_job(
+                &job,
+                &workspace_paths,
+                managed_workspace.as_ref(),
+                shutdown.as_ref(),
+            )
             .await
         {
             Ok(state) => {
@@ -664,6 +705,7 @@ impl MediaJobRuntime {
         job: &ClaimedMediaJobRow,
         workspace: &WorkspacePaths,
         managed_workspace: Option<&revaer_media_runtime::workspace::ManagedWorkspace>,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
         self.append_phase(job, 0, "inspect_plan", "running", None)
@@ -679,7 +721,7 @@ impl MediaJobRuntime {
 
         let capabilities = self.load_capability_snapshot().await?;
         let preflight = self
-            .build_preflight_evaluation(job, output_path.clone(), workspace, capabilities)
+            .build_preflight_evaluation(job, output_path.clone(), workspace, capabilities, shutdown)
             .await?;
         self.ensure_not_cancelled(job).await?;
         self.publish_event(Event::MediaJobInspected {
@@ -710,6 +752,7 @@ impl MediaJobRuntime {
                         planning_outcome: planning_outcome.as_ref(),
                         source_fingerprint: &source_fingerprint,
                         managed_workspace,
+                        shutdown,
                     },
                 )
                 .await
@@ -780,7 +823,12 @@ impl MediaJobRuntime {
         managed_workspace.validate()?;
         if planned_job_is_noop(&report) {
             return self
-                .complete_noop_job(job, &verification_context, context.source_fingerprint)
+                .complete_noop_job(
+                    job,
+                    &verification_context,
+                    context.source_fingerprint,
+                    context.shutdown,
+                )
                 .await;
         }
 
@@ -810,6 +858,7 @@ impl MediaJobRuntime {
                     removals: &sidecar_removals,
                 },
                 context.source_fingerprint,
+                context.shutdown,
             )
             .await?;
         managed_workspace.validate()?;
@@ -892,6 +941,7 @@ impl MediaJobRuntime {
         job: &ClaimedMediaJobRow,
         verification_context: &DesiredVerificationContext<'_>,
         source_fingerprint: &MediaAggregateFingerprint,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         self.store
             .mark_job_status(
@@ -909,6 +959,7 @@ impl MediaJobRuntime {
             "source_graph",
             &job.source_path,
             verification_context,
+            shutdown,
         )
         .await?;
         self.append_phase(job, 1, "verify_noop", "completed", None)
@@ -965,6 +1016,7 @@ impl MediaJobRuntime {
         output_path: String,
         workspace: &WorkspacePaths,
         capabilities: CapabilitySnapshot,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<RuntimePreflightEvaluation, MediaJobRuntimeError> {
         let workspace_policy = self.workspace_policy.clone();
         let capacity_probe = Arc::clone(&self.capacity_probe);
@@ -978,7 +1030,9 @@ impl MediaJobRuntime {
             video_policy_from_policy_intent(job.policy_video_intent.as_deref())?;
         let workspace_output_path = workspace.output_path.clone();
         let diagnostics_root = path_to_string(&workspace.diagnostics_path, "diagnostics_path")?;
-        let inspection = self.inspect_media(job, source_path.clone()).await?;
+        let inspection = self
+            .inspect_media(job, source_path.clone(), shutdown)
+            .await?;
         tokio::task::spawn_blocking(move || {
             compile_runtime_preflight(RuntimePreflightBuildInput {
                 source_path,
@@ -1002,6 +1056,7 @@ impl MediaJobRuntime {
         job: &ClaimedMediaJobRow,
         steps: Vec<ExecutionStep>,
         workspace: &revaer_media_runtime::workspace::ManagedWorkspace,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<(), MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
         workspace.validate()?;
@@ -1019,6 +1074,7 @@ impl MediaJobRuntime {
             observed_cancel_generation,
             Arc::clone(&signal),
             stop_rx,
+            shutdown.cloned(),
         ));
         let execution = tokio::task::spawn_blocking(move || {
             execute_step_sequence_controlled(&steps, &*runner, &*execution_signal)
@@ -1060,10 +1116,11 @@ impl MediaJobRuntime {
         workspace: &revaer_media_runtime::workspace::ManagedWorkspace,
         sidecar_publication: &SidecarPublicationContext<'_>,
         source_fingerprint: &MediaAggregateFingerprint,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<CommittedReplacement, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
         let candidate_output_path = self
-            .execute_and_verify_candidate(job, &steps, verification_context, workspace)
+            .execute_and_verify_candidate(job, &steps, verification_context, workspace, shutdown)
             .await?;
         self.ensure_not_cancelled(job).await?;
         let replace_step = steps
@@ -1098,7 +1155,7 @@ impl MediaJobRuntime {
             )
             .await?;
         let verification = self
-            .verify_final_desired_state(job, verification_context, sidecar_publication)
+            .verify_final_desired_state(job, verification_context, sidecar_publication, shutdown)
             .await;
         let verification = match verification {
             Ok(()) => self.ensure_not_cancelled(job).await,
@@ -1126,9 +1183,12 @@ impl MediaJobRuntime {
         steps: &[ExecutionStep],
         verification_context: &DesiredVerificationContext<'_>,
         workspace: &revaer_media_runtime::workspace::ManagedWorkspace,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<String, MediaJobRuntimeError> {
         let candidate_output_path = replacement_output_path(steps)?;
-        let source_inspection = self.inspect_media(job, job.source_path.clone()).await?;
+        let source_inspection = self
+            .inspect_media(job, job.source_path.clone(), shutdown)
+            .await?;
         self.ensure_not_cancelled(job).await?;
         let pre_replace_steps = steps
             .iter()
@@ -1136,17 +1196,19 @@ impl MediaJobRuntime {
             .filter(|step| !matches!(step, ExecutionStep::QuarantineFailedOutput { .. }))
             .cloned()
             .collect::<Vec<_>>();
-        self.execute_steps(job, pre_replace_steps, workspace)
+        self.execute_steps(job, pre_replace_steps, workspace, shutdown)
             .await?;
         self.ensure_not_cancelled(job).await?;
-        let candidate_inspection =
-            match self.inspect_media(job, candidate_output_path.clone()).await {
-                Ok(inspection) => inspection,
-                Err(error) => {
-                    self.quarantine_candidate(steps).await?;
-                    return Err(error);
-                }
-            };
+        let candidate_inspection = match self
+            .inspect_media(job, candidate_output_path.clone(), shutdown)
+            .await
+        {
+            Ok(inspection) => inspection,
+            Err(error) => {
+                self.quarantine_candidate(steps).await?;
+                return Err(error);
+            }
+        };
         let graph_verification = self
             .verify_graph_inspection(
                 job,
@@ -1167,6 +1229,7 @@ impl MediaJobRuntime {
                 source_inspection,
                 candidate_inspection,
                 candidate_output_path.clone(),
+                shutdown,
             )
             .await?;
         if let Err(error) = self.persist_safety_verification(job, &safety_report).await {
@@ -1183,6 +1246,7 @@ impl MediaJobRuntime {
         source_inspection: MediaInspection,
         candidate_inspection: MediaInspection,
         candidate_output_path: String,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<VerificationReport, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
         let verification_policy = verification_policy_from_job(job)?;
@@ -1200,6 +1264,7 @@ impl MediaJobRuntime {
             observed_cancel_generation,
             Arc::clone(&signal),
             stop_rx,
+            shutdown.cloned(),
         ));
         let verification = tokio::task::spawn_blocking(move || {
             verify_candidate_controlled(
@@ -1332,8 +1397,11 @@ impl MediaJobRuntime {
         check_kind: &'static str,
         output_path: &str,
         verification_context: &DesiredVerificationContext<'_>,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<(), MediaJobRuntimeError> {
-        let inspection = self.inspect_media(job, output_path.to_string()).await?;
+        let inspection = self
+            .inspect_media(job, output_path.to_string(), shutdown)
+            .await?;
         self.verify_graph_inspection(
             job,
             check_index,
@@ -1349,8 +1417,11 @@ impl MediaJobRuntime {
         job: &ClaimedMediaJobRow,
         verification_context: &DesiredVerificationContext<'_>,
         sidecar_publication: &SidecarPublicationContext<'_>,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<(), MediaJobRuntimeError> {
-        let inspection = self.inspect_media(job, job.source_path.clone()).await?;
+        let inspection = self
+            .inspect_media(job, job.source_path.clone(), shutdown)
+            .await?;
         self.verify_graph_inspection(job, 20, "final_graph", &inspection, verification_context)
             .await?;
         let matched = sidecar_state_matches(
@@ -1638,6 +1709,7 @@ impl MediaJobRuntime {
         &self,
         job: &ClaimedMediaJobRow,
         source_path: String,
+        shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<MediaInspection, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
         let inspector = Arc::clone(&self.inspector);
@@ -1654,6 +1726,7 @@ impl MediaJobRuntime {
             observed_cancel_generation,
             Arc::clone(&signal),
             stop_rx,
+            shutdown.cloned(),
         ));
         let source_path = PathBuf::from(source_path);
         let inspection = tokio::task::spawn_blocking(move || {
@@ -2200,9 +2273,11 @@ async fn monitor_job_control(
     observed_cancel_generation: i64,
     signal: Arc<CancellationSignal>,
     mut stop: watch::Receiver<bool>,
+    shutdown: Option<RuntimeShutdownReceiver>,
 ) -> Result<bool, DataError> {
     let mut ticker = interval(CONTROL_POLL_INTERVAL);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    let mut shutdown = shutdown;
     loop {
         tokio::select! {
             _ = ticker.tick() => {
@@ -2232,7 +2307,18 @@ async fn monitor_job_control(
                     Err(_) => return Ok(false),
                 }
             }
+            () = monitor_runtime_shutdown(&mut shutdown), if shutdown.is_some() => {
+                store.cancel_job(media_job_public_id).await?;
+                signal.request();
+                return Ok(true);
+            }
         }
+    }
+}
+
+async fn monitor_runtime_shutdown(shutdown: &mut Option<RuntimeShutdownReceiver>) {
+    if let Some(receiver) = shutdown.as_mut() {
+        runtime_shutdown::changed(receiver).await;
     }
 }
 
@@ -4387,6 +4473,7 @@ mod tests {
         video_policy_from_target_snapshot,
     };
     use crate::media_discovery_fingerprint::MediaAggregateFingerprint;
+    use crate::runtime_shutdown;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::{
         RecordCapabilityEncoderInput, RecordCapabilityFeatureInput, RecordCapabilitySnapshotInput,
@@ -6429,6 +6516,27 @@ Integrated loudness:
     }
 
     #[tokio::test]
+    async fn media_job_runtime_spawn_exits_when_shutdown_already_requested() -> anyhow::Result<()> {
+        let Some(fixture) = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await? else {
+            return Ok(());
+        };
+        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
+        assert!(runtime_shutdown::request(&shutdown_tx));
+        let runtime_task = fixture.runtime.spawn(shutdown_rx);
+
+        tokio::time::timeout(Duration::from_secs(5), runtime_task).await??;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "queued");
+        assert_eq!(job.last_error, None);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn media_job_runtime_cancels_active_transcode_and_removes_candidate() -> anyhow::Result<()>
     {
         let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
@@ -6459,6 +6567,42 @@ Integrated loudness:
         store.cancel_job(job_id).await?;
         let tick_result = tokio::time::timeout(Duration::from_secs(5), tick).await??;
         tick_result?;
+
+        assert!(runner.cancellation_observed.load(Ordering::Acquire));
+        assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_shutdown_cancels_active_transcode_and_removes_candidate()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
+        let runner = Arc::new(CancellationAwareCommandRunner::default());
+        fixture.runtime.command_runner = Arc::clone(&runner) as Arc<RuntimeCommandRunner>;
+        let source_path = PathBuf::from(
+            fixture
+                .store
+                .get_job(fixture.job_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("media job missing"))?
+                .source_path,
+        );
+        let workspace_output = fixture
+            .runtime
+            .workspace_root
+            .join(fixture.job_id.to_string())
+            .join("output");
+        let store = fixture.store.clone();
+        let job_id = fixture.job_id;
+        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
+        let runtime_task = fixture.runtime.spawn(shutdown_rx);
+
+        wait_for_flag(&runner.started, "transcode start").await?;
+        assert!(runtime_shutdown::request(&shutdown_tx));
+        tokio::time::timeout(Duration::from_secs(5), runtime_task).await??;
 
         assert!(runner.cancellation_observed.load(Ordering::Acquire));
         assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
@@ -6497,6 +6641,43 @@ Integrated loudness:
         store.cancel_job(job_id).await?;
         let tick_result = tokio::time::timeout(Duration::from_secs(5), tick).await??;
         tick_result?;
+
+        assert!(verifier.cancellation_observed.load(Ordering::Acquire));
+        assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_shutdown_cancels_active_verification_before_replacement()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
+        let verifier = Arc::new(CancellationAwareVerificationExecutor::default());
+        fixture.runtime.verification_executor =
+            Arc::clone(&verifier) as Arc<RuntimeVerificationExecutor>;
+        let source_path = PathBuf::from(
+            fixture
+                .store
+                .get_job(fixture.job_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("media job missing"))?
+                .source_path,
+        );
+        let workspace_output = fixture
+            .runtime
+            .workspace_root
+            .join(fixture.job_id.to_string())
+            .join("output");
+        let store = fixture.store.clone();
+        let job_id = fixture.job_id;
+        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
+        let runtime_task = fixture.runtime.spawn(shutdown_rx);
+
+        wait_for_flag(&verifier.started, "verification start").await?;
+        assert!(runtime_shutdown::request(&shutdown_tx));
+        tokio::time::timeout(Duration::from_secs(5), runtime_task).await??;
 
         assert!(verifier.cancellation_observed.load(Ordering::Acquire));
         assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
