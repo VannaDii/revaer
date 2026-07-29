@@ -566,7 +566,13 @@ fn recover_transaction(
             transaction_path.to_path_buf(),
         ));
     }
+    validate_replacement_manifest(transaction_path, &manifest)?;
     let source_path = PathBuf::from(&manifest.source_path);
+    if path_has_relative_components(&source_path) {
+        return Err(ReplacementError::InvalidManifest(
+            transaction_path.to_path_buf(),
+        ));
+    }
     if !source_path.starts_with(source_root) {
         return Err(ReplacementError::SourceOutsideRoot(source_path));
     }
@@ -656,6 +662,68 @@ struct ReplacementManifestEntry {
     existed: bool,
 }
 
+fn validate_replacement_manifest(
+    transaction_path: &Path,
+    manifest: &ReplacementManifest,
+) -> Result<(), ReplacementError> {
+    validate_job_key(&manifest.job_key)?;
+    if manifest.committed_entries > manifest.entries.len() {
+        return Err(ReplacementError::InvalidManifest(
+            transaction_path.to_path_buf(),
+        ));
+    }
+    if manifest.entries.is_empty() {
+        return Ok(());
+    }
+    match manifest.phase {
+        ReplacementPhase::Prepared if manifest.committed_entries != 0 => {
+            return Err(ReplacementError::InvalidManifest(
+                transaction_path.to_path_buf(),
+            ));
+        }
+        ReplacementPhase::Committed if manifest.committed_entries == 0 => {
+            return Err(ReplacementError::InvalidManifest(
+                transaction_path.to_path_buf(),
+            ));
+        }
+        ReplacementPhase::Verified if manifest.committed_entries != manifest.entries.len() => {
+            return Err(ReplacementError::InvalidManifest(
+                transaction_path.to_path_buf(),
+            ));
+        }
+        ReplacementPhase::Prepared | ReplacementPhase::Committed | ReplacementPhase::Verified => {}
+    }
+    let mut destinations = std::collections::BTreeSet::new();
+    for entry in &manifest.entries {
+        validate_manifest_entry_shape(transaction_path, entry)?;
+        if !destinations.insert(&entry.destination_path) {
+            return Err(ReplacementError::InvalidManifest(
+                transaction_path.to_path_buf(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_manifest_entry_shape(
+    transaction_path: &Path,
+    entry: &ReplacementManifestEntry,
+) -> Result<(), ReplacementError> {
+    let has_stage = entry.staged_file_name.is_some();
+    let has_recovery = entry.recovery_file_name.is_some();
+    let valid = match (entry.existed, has_stage, has_recovery) {
+        (true, true | false, true) | (false, true, false) => true,
+        (true | false, _, _) => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(ReplacementError::InvalidManifest(
+            transaction_path.to_path_buf(),
+        ))
+    }
+}
+
 fn manifest_entries(entries: &[PreparedEntry]) -> Vec<ReplacementManifestEntry> {
     entries
         .iter()
@@ -683,6 +751,11 @@ fn prepared_entries_from_manifest(
         .iter()
         .map(|entry| {
             let destination = PathBuf::from(&entry.destination_path);
+            if path_has_relative_components(&destination) {
+                return Err(ReplacementError::InvalidManifest(
+                    transaction_path.to_path_buf(),
+                ));
+            }
             if !destination.starts_with(source_root) {
                 return Err(ReplacementError::SourceOutsideRoot(destination));
             }
@@ -697,6 +770,15 @@ fn prepared_entries_from_manifest(
             })
         })
         .collect()
+}
+
+fn path_has_relative_components(path: &Path) -> bool {
+    path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::CurDir | std::path::Component::ParentDir
+        )
+    })
 }
 
 fn manifest_entry_path(
@@ -961,8 +1043,9 @@ fn sync_directory(path: &Path, operation: &'static str) -> Result<(), Replacemen
 mod tests {
     use super::{
         ReplacementArtifactRequest, ReplacementBundleRequest, ReplacementCommitter,
-        ReplacementManifest, ReplacementPhase, ReplacementRecoveryAction, ReplacementRequest,
-        SystemReplacementCommitter, manifest_entries, transaction_job_key, write_manifest,
+        ReplacementError, ReplacementManifest, ReplacementPhase, ReplacementRecoveryAction,
+        ReplacementRequest, SystemReplacementCommitter, manifest_entries, transaction_job_key,
+        write_manifest,
     };
     use std::fs;
 
@@ -1193,6 +1276,92 @@ mod tests {
         assert_eq!(recovered.len(), 1);
         assert_eq!(recovered[0].action, ReplacementRecoveryAction::Finalized);
         assert_eq!(fs::read(&source)?, b"verified");
+        Ok(())
+    }
+
+    #[test]
+    fn startup_recovery_rejects_manifest_without_required_recovery() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidate_root = tempfile::tempdir()?;
+        let source = root.path().join("movie.mkv");
+        let candidate = candidate_root.path().join("movie.mkv");
+        fs::write(&source, b"original")?;
+        fs::write(&candidate, b"candidate")?;
+        let committer = SystemReplacementCommitter;
+        let prepared = committer.prepare(ReplacementRequest {
+            job_key: "bad-recovery-manifest",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+        let transaction_dir = prepared.transaction_dir.clone();
+        let mut entries = manifest_entries(&prepared.entries);
+        entries[0].recovery_file_name = None;
+        write_manifest(
+            &transaction_dir,
+            &ReplacementManifest {
+                job_key: transaction_job_key(&transaction_dir)?,
+                source_path: prepared.source.to_string_lossy().into_owned(),
+                phase: ReplacementPhase::Committed,
+                entries,
+                committed_entries: 1,
+            },
+        )?;
+
+        let recovery = committer.recover(root.path());
+
+        assert!(matches!(
+            recovery,
+            Err(ReplacementError::InvalidManifest(path)) if path == transaction_dir
+        ));
+        assert_eq!(fs::read(&source)?, b"original");
+        Ok(())
+    }
+
+    #[test]
+    fn startup_recovery_rejects_manifest_destination_with_parent_component() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidate_root = tempfile::tempdir()?;
+        let library = root.path().join("library");
+        fs::create_dir_all(&library)?;
+        let source = library.join("movie.mkv");
+        let candidate = candidate_root.path().join("movie.mkv");
+        fs::write(&source, b"original")?;
+        fs::write(&candidate, b"candidate")?;
+        let committer = SystemReplacementCommitter;
+        let prepared = committer.prepare(ReplacementRequest {
+            job_key: "bad-path-manifest",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+        let transaction_dir = prepared.transaction_dir.clone();
+        let mut entries = manifest_entries(&prepared.entries);
+        entries[0].destination_path = root
+            .path()
+            .join("library")
+            .join("..")
+            .join("movie.mkv")
+            .to_string_lossy()
+            .into_owned();
+        write_manifest(
+            &transaction_dir,
+            &ReplacementManifest {
+                job_key: transaction_job_key(&transaction_dir)?,
+                source_path: prepared.source.to_string_lossy().into_owned(),
+                phase: ReplacementPhase::Committed,
+                entries,
+                committed_entries: 1,
+            },
+        )?;
+
+        let recovery = committer.recover(root.path());
+
+        assert!(matches!(
+            recovery,
+            Err(ReplacementError::InvalidManifest(path)) if path == transaction_dir
+        ));
+        assert_eq!(fs::read(&source)?, b"original");
         Ok(())
     }
 }
