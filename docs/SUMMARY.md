@@ -358,4 +358,6 @@
     -   [409: Portable Helm annotation rendering](adr/409-portable-helm-annotation-rendering.md)
     -   [410: Libtorrent 2.1 compatibility foundation](adr/410-libtorrent-21-compatibility.md)
     -   [411: Untracked generated API schema](adr/411-untracked-generated-api-schema.md)
+    -   [417: Cargo lock dependency integrity](adr/417-cargo-lock-dependency-integrity.md)
+    -   [418: CI Postgres credential coherence](adr/418-ci-postgres-credential-coherence.md)
     -   [420: Media text input contract](adr/420-media-text-input-contract.md)

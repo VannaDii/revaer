@@ -140,6 +140,8 @@ run_image_case() {
 
 run_case pass valid.yml
 run_case pass decoys.yml
+run_case pass postgres-credentials.yml
+run_case fail postgres-credential-drift.yml
 run_case fail unpinned-action.yml
 run_case fail input-in-run.yml
 run_case fail unknown-just.yml

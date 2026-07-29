@@ -19,8 +19,8 @@ jobs:
     name: Sonar Coverage Inputs
     runs-on: ubuntu-latest
     env:
-      REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL }}
-      DATABASE_URL: ${{ vars.REVAER_DATABASE_URL }}
+      REVAER_TEST_DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
+      DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
     services:
       postgres:
         image: postgres:16-alpine
@@ -137,19 +137,6 @@ jobs:
           SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
           SONAR_PROJECT_KEY: VannaDii_Revaer
         run: just sonar-verify-result
-
-      - name: Package Sonar analysis evidence
-        if: always()
-        run: |
-          set -euo pipefail
-          if [ ! -f .scannerwork/report-task.txt ]; then
-            exit 0
-          fi
-          test -d .scannerwork/scanner-report
-          tar -cJf .scannerwork/scanner-report.tar.xz -C .scannerwork scanner-report
-          test -s .scannerwork/scanner-report.tar.xz
-          tar -tf .scannerwork/scanner-report.tar.xz > .scannerwork/scanner-report.entries
-          grep -q '^scanner-report/' .scannerwork/scanner-report.entries
 
       - name: Upload Sonar analysis evidence
         if: always()
