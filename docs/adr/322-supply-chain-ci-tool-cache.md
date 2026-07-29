@@ -7,7 +7,7 @@
 
 - PR validation repeatedly installed supply-chain tools and downloaded advisory data, delaying required checks and increasing runner pressure.
 - The dependency graph also contained RustSec findings that had to be removed from the lock graph rather than ignored.
-- This record consolidates the CI tool-cache decision and the RustSec lock-graph remediation previously recorded separately in ADR 357.
+- This record consolidates the CI tool-cache decision and the RustSec lock-graph remediation previously recorded in ADR 317.
 
 ## Decisions
 
@@ -23,7 +23,6 @@
 - Reject every npm advisory severity in both lockfiles and every Cargo advisory warning.
 - Keep `.secignore` and `deny.toml` advisory ignores empty. Remove vulnerable crates from the resolved lock graph by upgrading or replacing dependencies.
 - Keep duplicate-crate allowances exact-version scoped and remove them when the lock graph no longer needs them.
-- Replace semantic-release's unused npm publish plugin with a local no-op package so release tooling does not pull a vulnerable bundled npm CLI into the audited lockfile.
 
 ## Consequences
 
@@ -49,7 +48,6 @@
   - `just deny`
   - `just udeps`
   - `just policy`
-  - `just ui-e2e` browser setup on CI runners through PR UI E2E shards.
   - `just ci`
   - Remote Supply Chain Checks and Trivy jobs.
   - Remote SonarQube PR checks on normally chained branches.
