@@ -1098,7 +1098,10 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("version", integer_schema()),
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
-                    ("streams", array_ref_schema("MediaDesiredTargetStream")),
+                    (
+                        "streams",
+                        array_ref_min_items_schema("MediaDesiredTargetStream", 1),
+                    ),
                 ],
             ),
         ),
@@ -2048,6 +2051,10 @@ fn array_ref_schema(schema: &'static str) -> Value {
     serde_json::json!({ "type": "array", "items": schema_ref(schema) })
 }
 
+fn array_ref_min_items_schema(schema: &'static str, min_items: usize) -> Value {
+    serde_json::json!({ "type": "array", "minItems": min_items, "items": schema_ref(schema) })
+}
+
 fn array_string_schema() -> Value {
     serde_json::json!({ "type": "array", "items": string_schema() })
 }
@@ -2316,6 +2323,15 @@ mod tests {
                 "missing media OpenAPI schema {schema}"
             );
         }
+
+        let desired_target_streams_min_items = schemas
+            .get("MediaDesiredTargetCreateRequest")
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+            .and_then(|properties| properties.get("streams"))
+            .and_then(|streams| streams.get("minItems"))
+            .and_then(Value::as_u64);
+        assert_eq!(desired_target_streams_min_items, Some(1));
 
         Ok(())
     }

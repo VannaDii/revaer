@@ -487,6 +487,10 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaDesiredTargetCreateParams,
     ) -> Result<AppMediaDesiredTargetResponse, MediaServiceError> {
+        if params.streams.is_empty() {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_desired_target_streams_required"));
+        }
         let mut transaction = self
             .store
             .pool()
@@ -2629,7 +2633,8 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
             "media_profile_roots_overlap"
             | "media_profile_discovery_root_overlap"
             | "media_compatibility_target_not_found"
-            | "media_policy_profile_not_found",
+            | "media_policy_profile_not_found"
+            | "media_desired_target_streams_required",
         ) => MediaServiceErrorKind::Invalid,
         _ => MediaServiceErrorKind::Storage,
     };
@@ -3098,6 +3103,37 @@ mod tests {
 
         assert_eq!(err.kind(), MediaServiceErrorKind::Invalid);
         assert_eq!(err.code(), Some("media_job_replace_confirmation_required"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_desired_target_create_rejects_empty_stream_contract() -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+
+        let result = service
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id,
+                target_key: "empty-target".to_string(),
+                version: 1,
+                display_name: "Empty target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: Vec::new(),
+            })
+            .await;
+
+        let err = result.expect_err("empty desired target should fail before persistence");
+        assert_eq!(err.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(err.code(), Some("media_desired_target_streams_required"));
+        assert!(
+            service
+                .media_desired_target_list()
+                .await?
+                .iter()
+                .all(|target| target.target_key != "empty-target")
+        );
         Ok(())
     }
 

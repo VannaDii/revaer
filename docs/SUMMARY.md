@@ -368,3 +368,4 @@
     -   [339: Media audio analysis process boundary](adr/339-media-audio-analysis-process-boundary.md)
     -   [340: API no-compat router lint](adr/340-api-no-compat-router-lint.md)
     -   [341: Media verifier process boundary](adr/341-media-verifier-process-boundary.md)
+    -   [342: Media desired target stream count contract](adr/342-media-desired-target-stream-count-contract.md)
