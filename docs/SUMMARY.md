@@ -377,3 +377,4 @@
     -   [348: Media execution timeout boundary](adr/348-media-execution-timeout-boundary.md)
     -   [349: Media finalized completion boundary](adr/349-media-finalized-completion-boundary.md)
     -   [350: Media finalized audit ordering](adr/350-media-finalized-audit-ordering.md)
+    -   [351: Media runtime cooperative shutdown](adr/351-media-runtime-cooperative-shutdown.md)
