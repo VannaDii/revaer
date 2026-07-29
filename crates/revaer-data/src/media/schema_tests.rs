@@ -104,25 +104,26 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_job_worker_poll_control_v1",
     "media_job_worker_acknowledge_cancel_v1",
     "media_job_worker_complete_v1",
+    "media_job_worker_recover_stale_v1",
     "media_job_mark_completed_v1",
     "media_job_cleanup_completed_v1",
     "media_job_cleanup_failed_terminal_diagnostics_v1",
 ];
 const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
 
-pub(crate) struct MediaTestDb {
+pub(super) struct MediaTestDb {
     _db: revaer_test_support::postgres::TestDatabase,
     pool: PgPool,
-    pub(crate) system_user_public_id: Uuid,
+    pub(super) system_user_public_id: Uuid,
 }
 
 impl MediaTestDb {
-    pub(crate) const fn pool(&self) -> &PgPool {
+    pub(super) const fn pool(&self) -> &PgPool {
         &self.pool
     }
 }
 
-pub(crate) async fn setup_media_db(label: &str) -> anyhow::Result<Option<MediaTestDb>> {
+pub(super) async fn setup_media_db(label: &str) -> anyhow::Result<Option<MediaTestDb>> {
     let postgres = match start_postgres() {
         Ok(db) => db,
         Err(err) => {
