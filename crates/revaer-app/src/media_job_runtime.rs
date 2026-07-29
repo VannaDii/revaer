@@ -434,7 +434,8 @@ impl MediaJobRuntime {
                     MediaJobRuntimeError::InvalidRecoveryJobKey(transaction.job_key.clone())
                 })?;
                 if transaction.action == ReplacementRecoveryAction::Finalized {
-                    self.store.mark_job_completed(media_job_public_id).await?;
+                    self.complete_finalized_media_job(media_job_public_id)
+                        .await?;
                     self.publish_event(Event::MediaJobCompleted {
                         media_job_public_id,
                     });
@@ -727,7 +728,7 @@ impl MediaJobRuntime {
             details_text: None,
         })
         .await?;
-        self.complete_or_cancel(job).await?;
+        self.complete_finalized_replacement(job).await?;
         self.publish_event(Event::MediaJobCompleted {
             media_job_public_id: job.media_job_public_id,
         });
@@ -1738,6 +1739,39 @@ impl MediaJobRuntime {
         } else {
             Ok(())
         }
+    }
+
+    async fn complete_finalized_replacement(
+        &self,
+        job: &ClaimedMediaJobRow,
+    ) -> Result<(), MediaJobRuntimeError> {
+        self.complete_finalized_media_job(job.media_job_public_id)
+            .await
+    }
+
+    async fn complete_finalized_media_job(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<(), MediaJobRuntimeError> {
+        let late_cancel_acknowledged = self
+            .store
+            .complete_finalized_job(media_job_public_id)
+            .await?;
+        if late_cancel_acknowledged {
+            self.append_verification_check(&AppendMediaJobVerificationCheckInput {
+                media_job_public_id,
+                check_index: 25,
+                check_kind: "late_cancel_after_finalized_replace",
+                check_status: "passed",
+                expected_value: Some("finalized_replacement_remains_completed"),
+                actual_value: Some("late_cancel_acknowledged"),
+                details_text: Some(
+                    "operator cancellation arrived after finalized replacement boundary",
+                ),
+            })
+            .await?;
+        }
+        Ok(())
     }
 
     async fn persist_cancellation(
@@ -4468,6 +4502,54 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Default)]
+    struct PostFinalizeCancellationCommitter {
+        inner: SystemReplacementCommitter,
+        finalized: AtomicBool,
+        release_finalize: AtomicBool,
+    }
+
+    impl ReplacementCommitter for PostFinalizeCancellationCommitter {
+        fn prepare(
+            &self,
+            request: ReplacementRequest<'_>,
+        ) -> Result<PreparedReplacement, ReplacementError> {
+            self.inner.prepare(request)
+        }
+
+        fn commit(
+            &self,
+            prepared: PreparedReplacement,
+        ) -> Result<CommittedReplacement, ReplacementError> {
+            self.inner.commit(prepared)
+        }
+
+        fn discard_prepared(&self, prepared: PreparedReplacement) -> Result<(), ReplacementError> {
+            self.inner.discard_prepared(prepared)
+        }
+
+        fn rollback(&self, committed: CommittedReplacement) -> Result<(), ReplacementError> {
+            self.inner.rollback(committed)
+        }
+
+        fn finalize(&self, committed: CommittedReplacement) -> Result<(), ReplacementError> {
+            self.inner.finalize(committed)?;
+            self.finalized.store(true, Ordering::Release);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !self.release_finalize.load(Ordering::Acquire) && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Ok(())
+        }
+
+        fn recover(
+            &self,
+            source_root: &Path,
+        ) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
+            self.inner.recover(source_root)
+        }
+    }
+
     #[derive(Debug)]
     struct FinalizedRecoveryCommitter {
         inner: SystemReplacementCommitter,
@@ -5660,6 +5742,72 @@ Integrated loudness:
     }
 
     #[tokio::test]
+    async fn media_job_runtime_completes_finalized_replacement_after_late_cancel()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
+        let committer = Arc::new(PostFinalizeCancellationCommitter::default());
+        fixture.runtime.replacement_committer =
+            Arc::clone(&committer) as Arc<RuntimeReplacementCommitter>;
+        let source_path = PathBuf::from(
+            fixture
+                .store
+                .get_job(fixture.job_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("media job missing"))?
+                .source_path,
+        );
+        let mut stream = fixture.events.subscribe(None);
+        let store = fixture.store.clone();
+        let job_id = fixture.job_id;
+        let runtime = fixture.runtime;
+        let tick = tokio::spawn(async move { runtime.run_tick().await });
+
+        wait_for_flag(&committer.finalized, "replacement finalization").await?;
+        assert_eq!(fs::read(&source_path)?, b"output");
+        store.cancel_job(job_id).await?;
+        committer.release_finalize.store(true, Ordering::Release);
+        let tick_result = tokio::time::timeout(Duration::from_secs(5), tick).await??;
+        tick_result?;
+
+        let job = store
+            .get_job(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("completed media job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+        assert!(
+            store
+                .list_job_verification_checks(job_id)
+                .await?
+                .iter()
+                .any(|check| {
+                    check.check_kind == "late_cancel_after_finalized_replace"
+                        && check.check_status == "passed"
+                        && check.actual_value.as_deref() == Some("late_cancel_acknowledged")
+                })
+        );
+
+        let mut completed_event_seen = false;
+        while !completed_event_seen {
+            let envelope = tokio::time::timeout(Duration::from_secs(1), stream.next())
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("event stream closed"))??;
+            if matches!(
+                envelope.event,
+                CoreEvent::MediaJobCompleted {
+                    media_job_public_id
+                } if media_job_public_id == job_id
+            ) {
+                completed_event_seen = true;
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn media_job_runtime_completes_non_dry_run_noop_without_command_execution()
     -> anyhow::Result<()> {
         let Some(fixture) = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await? else {
@@ -5962,6 +6110,11 @@ Integrated loudness:
             .await?
             .ok_or_else(|| anyhow::anyhow!("media job was not claimed"))?;
         assert_eq!(claimed.media_job_public_id, fixture.job_id);
+        fixture
+            .store
+            .mark_job_status(fixture.job_id, "verifying", None)
+            .await?;
+        fixture.store.cancel_job(fixture.job_id).await?;
         fixture.runtime.replacement_committer = Arc::new(FinalizedRecoveryCommitter {
             inner: SystemReplacementCommitter,
             recovered: RecoveredReplacement {
@@ -5982,6 +6135,18 @@ Integrated loudness:
             .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
         assert_eq!(job.status_text, "completed");
         assert_eq!(job.last_error, None);
+        assert!(
+            fixture
+                .store
+                .list_job_verification_checks(fixture.job_id)
+                .await?
+                .iter()
+                .any(|check| {
+                    check.check_kind == "late_cancel_after_finalized_replace"
+                        && check.check_status == "passed"
+                        && check.actual_value.as_deref() == Some("late_cancel_acknowledged")
+                })
+        );
         Ok(())
     }
 
