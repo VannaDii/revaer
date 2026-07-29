@@ -11,6 +11,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 const MAX_VERIFICATION_DETAIL_CHARS: usize = 2_048;
+const MAX_VERIFICATION_STDERR_BYTES: usize = 64 * 1024;
 const TRUNCATION_MARKER: &str = "...[truncated]";
 const BITRATE_TOLERANCE_BASIS_POINTS: u64 = 100;
 
@@ -330,17 +331,24 @@ impl VerificationExecutor for SystemVerificationExecutor {
         if status.success() {
             return Ok(());
         }
-        let detail = String::from_utf8_lossy(&stderr).trim().to_string();
-        if detail.is_empty() {
+        if stderr.detail.is_empty() {
             Err(VerificationExecutionError::Failed(bounded_detail(
                 &format!("{bin} exited with status {status}"),
             )))
         } else {
-            Err(VerificationExecutionError::Failed(bounded_detail(
-                &format!("{bin} exited with status {status}: {detail}"),
+            Err(VerificationExecutionError::Failed(bounded_prefixed_detail(
+                &format!("{bin} exited with status {status}: "),
+                &stderr.detail,
+                stderr.truncated,
             )))
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BoundedVerificationStderr {
+    detail: String,
+    truncated: bool,
 }
 
 fn verifier_failure(bin: &str, operation: &str, detail: &str) -> VerificationExecutionError {
@@ -362,20 +370,72 @@ fn terminate_verifier(
     Ok(())
 }
 
-fn read_stderr(mut stderr: std::process::ChildStderr) -> io::Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    stderr.read_to_end(&mut bytes)?;
-    Ok(bytes)
+fn read_stderr(mut stderr: impl Read) -> io::Result<BoundedVerificationStderr> {
+    let mut bytes = Vec::with_capacity(MAX_VERIFICATION_STDERR_BYTES);
+    let mut scratch = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        let read = stderr.read(&mut scratch)?;
+        if read == 0 {
+            break;
+        }
+        retain_verification_stderr_tail(&mut bytes, &scratch[..read], &mut truncated);
+    }
+    Ok(BoundedVerificationStderr {
+        detail: String::from_utf8_lossy(&bytes).trim().to_string(),
+        truncated,
+    })
+}
+
+fn retain_verification_stderr_tail(retained: &mut Vec<u8>, chunk: &[u8], truncated: &mut bool) {
+    if chunk.len() >= MAX_VERIFICATION_STDERR_BYTES {
+        retained.clear();
+        retained.extend_from_slice(&chunk[chunk.len() - MAX_VERIFICATION_STDERR_BYTES..]);
+        *truncated = true;
+        return;
+    }
+    let overflow = retained
+        .len()
+        .saturating_add(chunk.len())
+        .saturating_sub(MAX_VERIFICATION_STDERR_BYTES);
+    if overflow > 0 {
+        retained.drain(..overflow);
+        *truncated = true;
+    }
+    retained.extend_from_slice(chunk);
 }
 
 fn join_stderr(
-    reader: thread::JoinHandle<io::Result<Vec<u8>>>,
+    reader: thread::JoinHandle<io::Result<BoundedVerificationStderr>>,
     bin: &str,
-) -> Result<Vec<u8>, VerificationExecutionError> {
+) -> Result<BoundedVerificationStderr, VerificationExecutionError> {
     reader
         .join()
         .map_err(|_| verifier_failure(bin, "stderr reader panicked", "thread join failed"))?
         .map_err(|error| verifier_failure(bin, "stderr read failed", &error.to_string()))
+}
+
+fn bounded_prefixed_detail(prefix: &str, detail: &str, truncated: bool) -> String {
+    let prefix_chars = prefix.chars().count();
+    if prefix_chars >= MAX_VERIFICATION_DETAIL_CHARS {
+        return bounded_detail(prefix);
+    }
+    let marker_chars = if truncated {
+        TRUNCATION_MARKER.chars().count()
+    } else {
+        0
+    };
+    let remaining = MAX_VERIFICATION_DETAIL_CHARS - prefix_chars;
+    let detail_chars = detail.chars().count();
+    if detail_chars + marker_chars <= remaining {
+        let marker = if truncated { TRUNCATION_MARKER } else { "" };
+        return format!("{prefix}{marker}{detail}");
+    }
+    let tail_budget = remaining.saturating_sub(marker_chars);
+    let tail_reversed = detail.chars().rev().take(tail_budget).collect::<String>();
+    let tail = tail_reversed.chars().rev().collect::<String>();
+    let marker = if truncated { TRUNCATION_MARKER } else { "" };
+    format!("{prefix}{marker}{tail}")
 }
 
 fn bounded_detail(detail: &str) -> String {
@@ -635,6 +695,7 @@ mod tests {
     use crate::execute::ExecutionControl;
     use crate::inspect::{ContainerInspection, MediaInspection, MetadataEntry, StreamInspection};
     use revaer_media_core::model::{MediaGraph, MediaStream, StreamKind};
+    use std::io::Cursor;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
     use std::thread;
@@ -812,6 +873,38 @@ mod tests {
         let bounded = bounded_detail(&detail);
         assert_eq!(bounded.chars().count(), MAX_VERIFICATION_DETAIL_CHARS);
         assert!(bounded.ends_with(TRUNCATION_MARKER));
+    }
+
+    #[test]
+    fn verifier_stderr_reader_retains_bounded_tail() -> Result<(), Box<dyn std::error::Error>> {
+        let mut bytes = vec![b'x'; super::MAX_VERIFICATION_STDERR_BYTES + 128];
+        bytes.extend_from_slice(b"verification-summary");
+
+        let stderr = super::read_stderr(Cursor::new(bytes))?;
+
+        assert!(stderr.truncated);
+        assert!(stderr.detail.ends_with("verification-summary"));
+        assert!(stderr.detail.len() <= super::MAX_VERIFICATION_STDERR_BYTES);
+        Ok(())
+    }
+
+    #[test]
+    fn system_verifier_reports_failure_with_bounded_stderr_tail() {
+        let result = SystemVerificationExecutor.run(
+            "/bin/sh",
+            &[
+                "-c".to_string(),
+                "i=0; while [ \"$i\" -lt 70000 ]; do printf x >&2; i=$((i + 1)); done; printf verification-summary >&2; exit 11"
+                    .to_string(),
+            ],
+        );
+
+        let Err(detail) = result else {
+            panic!("expected verifier failure with bounded stderr");
+        };
+        assert!(detail.contains(TRUNCATION_MARKER));
+        assert!(detail.contains("verification-summary"));
+        assert!(detail.chars().count() <= MAX_VERIFICATION_DETAIL_CHARS);
     }
 
     #[test]
