@@ -366,21 +366,47 @@ api-test-client:
 ui-e2e: trunk-install
     just api-test-client
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
-        cd tests && npx playwright install --with-deps; \
+        if [ -n "${E2E_BROWSER_CHANNEL:-}" ]; then \
+            cd tests && npx playwright install-deps; \
+        else \
+            cd tests && npx playwright install --with-deps; \
+        fi; \
     else \
         cd tests && npx playwright install; \
     fi
     tests/node_modules/.bin/tsc --project tests/tsconfig.coverage.json
-    shard_arg=""; \
+    set -e; \
+    playwright_args=(); \
+    project_tokens="$(printf "%s" "${E2E_PLAYWRIGHT_PROJECTS:-}" | tr "," " ")"; \
+    if [ -n "${project_tokens}" ]; then \
+        for playwright_project in ${project_tokens}; do \
+            if ! [[ "${playwright_project}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then \
+                echo "Invalid Playwright project name: ${playwright_project}" >&2; \
+                exit 1; \
+            fi; \
+            playwright_args+=("--project=${playwright_project}"); \
+        done; \
+    fi; \
+    case "${E2E_PLAYWRIGHT_NO_DEPS:-}" in \
+        1|true|TRUE|yes|YES|on|ON) playwright_args+=("--no-deps") ;; \
+        ""|0|false|FALSE|no|NO|off|OFF) ;; \
+        *) echo "E2E_PLAYWRIGHT_NO_DEPS must be a boolean value." >&2; exit 1 ;; \
+    esac; \
     coverage_suffix=""; \
     if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \
-        shard_arg="--shard=${PLAYWRIGHT_SHARD_INDEX}/${PLAYWRIGHT_SHARD_TOTAL}"; \
+        if ! [[ "${PLAYWRIGHT_SHARD_INDEX}" =~ ^[1-9][0-9]*$ ]] || ! [[ "${PLAYWRIGHT_SHARD_TOTAL}" =~ ^[1-9][0-9]*$ ]]; then \
+            echo "Playwright shard index and total must be positive integers." >&2; \
+            exit 1; \
+        fi; \
+        playwright_args+=("--shard=${PLAYWRIGHT_SHARD_INDEX}/${PLAYWRIGHT_SHARD_TOTAL}"); \
         coverage_suffix="-shard-${PLAYWRIGHT_SHARD_INDEX}"; \
     fi; \
-    coverage_dir="coverage/js/playwright${coverage_suffix}"; \
+    coverage_dir="${JS_COVERAGE_DIR:-coverage/js/playwright${coverage_suffix}}"; \
     state_key="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")"; \
     rm -rf "${coverage_dir}"; \
+    playwright_status=0; \
     REVAER_E2E_STATE_KEY="${state_key}" \
+    JS_COVERAGE_DIR="${coverage_dir}" \
     E2E_ENV_DIR="${PWD}/tests" \
     NODE_PATH="${PWD}/tests/node_modules" tests/node_modules/.bin/c8 \
         --reporter=lcovonly \
@@ -389,12 +415,18 @@ ui-e2e: trunk-install
         --exclude-after-remap=false \
         tests/node_modules/.bin/playwright test \
         --config target/js-coverage-tests/playwright.config.js \
-        ${shard_arg}; \
+        "${playwright_args[@]}" || playwright_status=$?; \
+    rm -f tests/test-results/api-coverage-*.json tests/test-results/ui-coverage-*.json; \
+    mkdir -p tests/test-results; \
+    find target/js-coverage-tests/test-results \
+        \( -name 'api-coverage-*.json' -o -name 'ui-coverage-*.json' \) \
+        -exec cp {} tests/test-results/ \;; \
     test -s "${coverage_dir}/lcov.info"; \
     grep -q '^SF:tests/' "${coverage_dir}/lcov.info"; \
     test "$(grep -c '^DA:' "${coverage_dir}/lcov.info")" -ge 1000; \
     grep -Eq '^DA:[0-9]+,[1-9][0-9]*(,|$)' "${coverage_dir}/lcov.info"; \
-    grep -Eq '^DA:[0-9]+,0(,|$)' "${coverage_dir}/lcov.info"
+    grep -Eq '^DA:[0-9]+,0(,|$)' "${coverage_dir}/lcov.info"; \
+    exit "${playwright_status}"
 
 ui-e2e-coverage:
     node tests/scripts/check-e2e-coverage.js

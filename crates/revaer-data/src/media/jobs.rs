@@ -8,6 +8,7 @@ use super::configuration::MediaVerificationToggle;
 
 const MEDIA_JOB_CREATE_V1: &str = "SELECT media_job_create_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, dry_run_input => $5)";
 const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1(media_job_public_id_input => $1, phase_index_input => $2, phase_name_input => $3, phase_status_input => $4, details_text_input => $5)";
+const MEDIA_JOB_PHASE_LIST_V1: &str = "SELECT phase_index, phase_name, phase_status::text AS phase_status, details_text, created_at FROM media_job_phase_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_OPERATION_APPEND_V1: &str = "SELECT media_job_operation_append_v1(media_job_public_id_input => $1, operation_index_input => $2, operation_kind_input => $3, stream_id_input => $4, command_bin_input => $5, arg_1_input => $6, arg_2_input => $7, arg_3_input => $8, arg_4_input => $9, arg_5_input => $10)";
 const MEDIA_JOB_OPERATION_LIST_V1: &str = "SELECT operation_index, operation_kind, stream_id, command_bin, arg_1, arg_2, arg_3, arg_4, arg_5, created_at FROM media_job_operation_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_VIOLATION_APPEND_V1: &str = "SELECT media_job_violation_append_v1(media_job_public_id_input => $1, violation_index_input => $2, violation_kind_input => $3, severity_input => $4, stream_id_input => $5)";
@@ -144,6 +145,21 @@ pub struct MediaJobRow {
     pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Last error text.
     pub last_error: Option<String>,
+}
+
+/// Media job phase row.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobPhaseRow {
+    /// Phase ordering index.
+    pub phase_index: i32,
+    /// Phase name.
+    pub phase_name: String,
+    /// Phase status.
+    pub phase_status: String,
+    /// Optional phase details.
+    pub details_text: Option<String>,
+    /// Row creation timestamp.
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Media job operation row.
@@ -477,6 +493,22 @@ pub async fn append_media_job_phase(
         .map_err(try_op("media job phase append"))?;
 
     Ok(())
+}
+
+/// List media job phases for one job.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_phases(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Vec<MediaJobPhaseRow>> {
+    sqlx::query_as::<_, MediaJobPhaseRow>(MEDIA_JOB_PHASE_LIST_V1)
+        .bind(media_job_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job phase list"))
 }
 
 /// Append or update a media job operation row.
@@ -962,12 +994,12 @@ mod tests {
         append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
         append_media_job_violation, cancel_media_job, create_media_job,
         enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
-        list_media_job_compact_audits, list_media_job_operations, list_media_job_plan_reasons,
-        list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
-        mark_media_job_completed, media_job_worker_acknowledge_cancel, media_job_worker_claim_next,
-        media_job_worker_complete_finalized, media_job_worker_mark_status,
-        media_job_worker_poll_control, media_job_worker_recover_stale, retry_media_job,
-        run_media_job_retention,
+        list_media_job_compact_audits, list_media_job_operations, list_media_job_phases,
+        list_media_job_plan_reasons, list_media_job_verification_checks, list_media_job_violations,
+        list_media_jobs, mark_media_job_completed, media_job_worker_acknowledge_cancel,
+        media_job_worker_claim_next, media_job_worker_complete_finalized,
+        media_job_worker_mark_status, media_job_worker_poll_control,
+        media_job_worker_recover_stale, retry_media_job, run_media_job_retention,
     };
     use crate::DataError;
     use crate::media::configuration::{
@@ -1431,6 +1463,13 @@ mod tests {
             return Ok(());
         };
         assert_eq!(job.media_job_public_id, job_id);
+
+        let phases = list_media_job_phases(db.pool(), job_id).await?;
+        assert_eq!(phases.len(), 1);
+        assert_eq!(phases[0].phase_index, 0);
+        assert_eq!(phases[0].phase_name, "planning");
+        assert_eq!(phases[0].phase_status, "queued");
+        assert_eq!(phases[0].details_text.as_deref(), Some("scheduled"));
 
         let operations = list_media_job_operations(db.pool(), job_id).await?;
         assert_eq!(operations.len(), 1);

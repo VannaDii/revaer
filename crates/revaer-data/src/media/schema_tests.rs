@@ -45,6 +45,7 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_job_create_v1",
     "media_discovery_job_enqueue_v1",
     "media_job_phase_append_v1",
+    "media_job_phase_list_v1",
     "media_job_operation_append_v1",
     "media_job_operation_list_v1",
     "media_job_violation_append_v1",

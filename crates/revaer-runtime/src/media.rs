@@ -22,19 +22,19 @@ use revaer_data::media::jobs::{
     AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
     AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow, CreateMediaJobInput,
     EnqueueDiscoveredMediaJobInput, MediaJobArtifactRow, MediaJobCompactAuditRow,
-    MediaJobControlRow, MediaJobDesiredTargetStreamRow, MediaJobOperationRow,
+    MediaJobControlRow, MediaJobDesiredTargetStreamRow, MediaJobOperationRow, MediaJobPhaseRow,
     MediaJobPlanReasonRow, MediaJobRetentionRunRow, MediaJobRow, MediaJobVerificationCheckRow,
     MediaJobViolationRow, RecoveredMediaJobRow, append_media_job_artifact,
     append_media_job_compact_audit, append_media_job_operation, append_media_job_phase,
     append_media_job_plan_reason, append_media_job_verification_check, append_media_job_violation,
     cancel_media_job, create_media_job, enqueue_discovered_media_job, get_media_job,
     list_media_job_artifacts, list_media_job_compact_audits, list_media_job_desired_target_streams,
-    list_media_job_operations, list_media_job_plan_reasons, list_media_job_verification_checks,
-    list_media_job_violations, list_media_jobs, mark_media_job_completed,
-    media_job_worker_acknowledge_cancel, media_job_worker_claim_next, media_job_worker_complete,
-    media_job_worker_complete_finalized, media_job_worker_heartbeat, media_job_worker_mark_status,
-    media_job_worker_poll_control, media_job_worker_recover_stale, retry_media_job,
-    run_media_job_retention,
+    list_media_job_operations, list_media_job_phases, list_media_job_plan_reasons,
+    list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
+    mark_media_job_completed, media_job_worker_acknowledge_cancel, media_job_worker_claim_next,
+    media_job_worker_complete, media_job_worker_complete_finalized, media_job_worker_heartbeat,
+    media_job_worker_mark_status, media_job_worker_poll_control, media_job_worker_recover_stale,
+    retry_media_job, run_media_job_retention,
 };
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput, get_media_profile,
@@ -332,6 +332,18 @@ impl MediaStore {
         status_text: Option<&str>,
     ) -> DataResult<Vec<MediaJobRow>> {
         list_media_jobs(&self.pool, media_profile_public_id, status_text).await
+    }
+
+    /// List persisted lifecycle phases for one media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn list_job_phases(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<MediaJobPhaseRow>> {
+        list_media_job_phases(&self.pool, media_job_public_id).await
     }
 
     /// List persisted execution operations for one media job.
@@ -1164,6 +1176,7 @@ mod tests {
         );
         assert!(store.list_jobs(profile_id, Some("queued")).await.is_err());
         assert!(store.get_job(job_id).await.is_err());
+        assert!(store.list_job_phases(job_id).await.is_err());
         assert!(store.list_job_operations(job_id).await.is_err());
         assert!(store.recover_stale_jobs(0).await.is_err());
         assert!(

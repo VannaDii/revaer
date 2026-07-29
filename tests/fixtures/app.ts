@@ -1,7 +1,8 @@
 import { test as base, expect } from '@playwright/test';
 import path from 'path';
 import { AppShell } from '../pages/app-shell';
-import { readState } from '../support/e2e-state';
+import { configureAuthMode } from '../support/api/setup';
+import { mergeState, readState } from '../support/e2e-state';
 import { setUiCoveragePath } from '../support/ui-coverage';
 
 type AppFixtures = {
@@ -12,6 +13,10 @@ type CoverageFixture = {
   _uiCoverage: void;
 };
 
+type SessionFixture = {
+  _uiSession: void;
+};
+
 function withWorkerSuffix(filePath: string, workerIndex: number): string {
   const parsed = path.parse(filePath);
   const suffix = `worker-${workerIndex}`;
@@ -20,7 +25,7 @@ function withWorkerSuffix(filePath: string, workerIndex: number): string {
   return path.join(parsed.dir, `${name}${ext}`);
 }
 
-export const test = base.extend<AppFixtures & CoverageFixture>({
+export const test = base.extend<AppFixtures & CoverageFixture & SessionFixture>({
   _uiCoverage: [
     async ({}, use, testInfo) => {
       const metadata = testInfo.project.metadata as { coverageFile?: string };
@@ -33,7 +38,18 @@ export const test = base.extend<AppFixtures & CoverageFixture>({
     },
     { scope: 'worker' },
   ],
-  app: async ({ page, _uiCoverage }, use, testInfo) => {
+  _uiSession: [
+    async ({}, use) => {
+      if (!readState()?.apiSession) {
+        const baseUrl = process.env.E2E_API_BASE_URL ?? 'http://localhost:7070';
+        const session = await configureAuthMode({ baseUrl, authMode: 'api_key' });
+        mergeState({ apiSession: session });
+      }
+      await use();
+    },
+    { scope: 'worker' },
+  ],
+  app: async ({ page, _uiCoverage, _uiSession }, use, testInfo) => {
     const apiSession = readState()?.apiSession;
     if (!apiSession) {
       throw new Error(`Missing API session in E2E runtime state for ${testInfo.project.name}.`);

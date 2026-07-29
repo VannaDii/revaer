@@ -15,7 +15,7 @@
   - The immediately following phase-history layer must replace its stale `supply-chain` dependency with the existing `audit`, `deny`, and `udeps` jobs before it can pass policy or schedule on GitHub.
   - Future job renames or deletions fail `just policy` when downstream dependencies are not updated.
 - Follow-up:
-  - Correct the stale dependency in the phase-history layer and confirm a pull-request event schedules every required job.
+  - Confirm a pull-request event schedules every required job after the phase-history layer replaces the stale dependency.
 
 ## Task Record
 
@@ -26,7 +26,7 @@
   - Dependency cycles remain GitHub-schema concerns; this repair addresses the observed missing-reference failure without adding a second workflow engine.
 - Test coverage summary:
   - Added an unknown-job fixture to the workflow guardrail regression suite.
-  - `actionlint` and the repository policy suite validate the corrected workflow.
+  - `actionlint` and the repository policy suite validate that API E2E now depends on the existing `audit`, `deny`, and `udeps` jobs.
 - Observability updates:
   - No runtime telemetry changes. Invalid workflow dependencies now produce a local policy diagnostic before GitHub would emit a jobless failure.
 - Status-doc validation:
