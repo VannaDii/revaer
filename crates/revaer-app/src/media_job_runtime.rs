@@ -82,6 +82,7 @@ const FAILURE_CHECK_INDEX: i32 = 99;
 const CANCELLATION_PHASE_INDEX: i32 = 98;
 const CANCELLATION_CHECK_INDEX: i32 = 98;
 const CONTROL_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const STALE_WORKER_RECOVERY_AFTER_SECONDS: i32 = 60 * 60;
 const DIALOG_NORMALIZED_TARGET_LUFS: f64 = -16.0;
 const DIALOG_NORMALIZED_LUFS_TOLERANCE: f64 = 1.0;
 const DIALOG_NORMALIZED_TRUE_PEAK_MAX_DBFS: f64 = -1.0;
@@ -385,6 +386,13 @@ impl MediaJobRuntime {
             warn!(error = %error, "media job replacement recovery failed; worker remains paused");
             sleep(self.tick_interval).await;
         }
+        while let Err(error) = self
+            .recover_stale_worker_jobs(STALE_WORKER_RECOVERY_AFTER_SECONDS)
+            .await
+        {
+            warn!(error = %error, "media job stale-worker recovery failed; worker remains paused");
+            sleep(self.tick_interval).await;
+        }
         let mut ticker = interval(self.tick_interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -418,17 +426,21 @@ impl MediaJobRuntime {
             .await
             .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
             for transaction in recovered {
-                if transaction.action == ReplacementRecoveryAction::Finalized {
-                    info!(
-                        media_job_public_id = transaction.job_key,
-                        source_path = %transaction.source_path.display(),
-                        "media job replacement recovery finalized verified transaction"
-                    );
-                    continue;
-                }
                 let media_job_public_id = Uuid::parse_str(&transaction.job_key).map_err(|_| {
                     MediaJobRuntimeError::InvalidRecoveryJobKey(transaction.job_key.clone())
                 })?;
+                if transaction.action == ReplacementRecoveryAction::Finalized {
+                    self.store.mark_job_completed(media_job_public_id).await?;
+                    self.publish_event(Event::MediaJobCompleted {
+                        media_job_public_id,
+                    });
+                    info!(
+                        %media_job_public_id,
+                        source_path = %transaction.source_path.display(),
+                        "media job replacement recovery finalized verified transaction and completed job"
+                    );
+                    continue;
+                }
                 let detail = "media_job_recovered_interrupted_replacement";
                 self.store
                     .mark_job_status(media_job_public_id, "failed", Some(detail))
@@ -457,10 +469,46 @@ impl MediaJobRuntime {
         Ok(())
     }
 
-    async fn run_tick(&self) -> Result<(), DataError> {
+    async fn run_tick(&self) -> Result<(), MediaJobRuntimeError> {
+        self.recover_stale_worker_jobs(STALE_WORKER_RECOVERY_AFTER_SECONDS)
+            .await?;
         let claimed = self.store.claim_next_job().await?;
         if let Some(job) = claimed {
             self.process_job(job).await;
+        }
+        Ok(())
+    }
+
+    async fn recover_stale_worker_jobs(
+        &self,
+        stale_after_seconds: i32,
+    ) -> Result<(), MediaJobRuntimeError> {
+        let recovered = self.store.recover_stale_jobs(stale_after_seconds).await?;
+        for job in recovered {
+            match job.status_text.as_str() {
+                "failed" => {
+                    let error_code = job
+                        .last_error
+                        .as_deref()
+                        .unwrap_or("media_job_worker_heartbeat_stale");
+                    self.publish_event(Event::MediaJobFailed {
+                        media_job_public_id: job.media_job_public_id,
+                        error_code: error_code.to_string(),
+                    });
+                    warn!(
+                        media_job_public_id = %job.media_job_public_id,
+                        error_code,
+                        "media job stale-worker recovery marked job failed"
+                    );
+                }
+                "cancelled" => {
+                    info!(
+                        media_job_public_id = %job.media_job_public_id,
+                        "media job stale-worker recovery acknowledged pending cancellation"
+                    );
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
@@ -4059,7 +4107,8 @@ mod tests {
     use revaer_media_runtime::jobs::{JobPreflightReport, PlannedJob, PlannedJobSummary};
     use revaer_media_runtime::replacement::{
         CommittedReplacement, PreparedReplacement, RecoveredReplacement, ReplacementCommitter,
-        ReplacementError, ReplacementRequest, SystemReplacementCommitter,
+        ReplacementError, ReplacementRecoveryAction, ReplacementRequest,
+        SystemReplacementCommitter,
     };
     use revaer_media_runtime::sidecar::{SidecarFormat, SidecarRole, SidecarSubtitle};
     use revaer_media_runtime::verification::{VerificationExecutionError, VerificationExecutor};
@@ -4769,6 +4818,55 @@ mod tests {
         ) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
             self.inner
                 .recover_with_terminal_jobs(source_root, terminal_job_keys)
+        }
+    }
+
+    #[derive(Debug)]
+    struct FinalizedRecoveryCommitter {
+        inner: SystemReplacementCommitter,
+        recovered: RecoveredReplacement,
+    }
+
+    impl ReplacementCommitter for FinalizedRecoveryCommitter {
+        fn prepare(
+            &self,
+            request: ReplacementRequest<'_>,
+        ) -> Result<PreparedReplacement, ReplacementError> {
+            self.inner.prepare(request)
+        }
+
+        fn commit(
+            &self,
+            prepared: PreparedReplacement,
+        ) -> Result<CommittedReplacement, ReplacementError> {
+            self.inner.commit(prepared)
+        }
+
+        fn discard_prepared(&self, prepared: PreparedReplacement) -> Result<(), ReplacementError> {
+            self.inner.discard_prepared(prepared)
+        }
+
+        fn rollback(&self, committed: CommittedReplacement) -> Result<(), ReplacementError> {
+            self.inner.rollback(committed)
+        }
+
+        fn finalize(&self, committed: CommittedReplacement) -> Result<(), ReplacementError> {
+            self.inner.finalize(committed)
+        }
+
+        fn recover(
+            &self,
+            _source_root: &Path,
+        ) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
+            Ok(vec![self.recovered.clone()])
+        }
+
+        fn recover_with_terminal_jobs(
+            &self,
+            _source_root: &Path,
+            _terminal_job_keys: &BTreeSet<String>,
+        ) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
+            Ok(vec![self.recovered.clone()])
         }
     }
 
@@ -6208,6 +6306,110 @@ Integrated loudness:
         assert!(checks.iter().any(
             |check| check.check_kind == "final_chapters" && check.check_status == "failed"
         ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_completes_finalized_replacement_before_stale_recovery()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        let claimed = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job was not claimed"))?;
+        assert_eq!(claimed.media_job_public_id, fixture.job_id);
+        fixture.runtime.replacement_committer = Arc::new(FinalizedRecoveryCommitter {
+            inner: SystemReplacementCommitter,
+            recovered: RecoveredReplacement {
+                job_key: fixture.job_id.to_string(),
+                source_path: PathBuf::from(&claimed.source_path),
+                action: ReplacementRecoveryAction::Finalized,
+                error: None,
+            },
+        }) as Arc<RuntimeReplacementCommitter>;
+
+        fixture.runtime.recover_interrupted_replacements().await?;
+        let recovered = fixture.store.recover_stale_jobs(0).await?;
+
+        assert!(recovered.is_empty());
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_publishes_stale_worker_failure_event() -> anyhow::Result<()> {
+        let Some(fixture) = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await? else {
+            return Ok(());
+        };
+        let claimed = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job was not claimed"))?;
+        assert_eq!(claimed.media_job_public_id, fixture.job_id);
+        let mut stream = fixture.events.subscribe(None);
+
+        fixture.runtime.recover_stale_worker_jobs(0).await?;
+
+        let envelope = tokio::time::timeout(Duration::from_secs(1), stream.next())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("event stream closed"))??;
+        assert!(matches!(
+            envelope.event,
+            CoreEvent::MediaJobFailed {
+                media_job_public_id,
+                ref error_code,
+            } if media_job_public_id == fixture.job_id
+                && error_code == "media_job_worker_heartbeat_stale"
+        ));
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "failed");
+        assert_eq!(
+            job.last_error.as_deref(),
+            Some("media_job_worker_heartbeat_stale")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_recovers_stale_cancelled_job_without_failure_event()
+    -> anyhow::Result<()> {
+        let Some(fixture) = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await? else {
+            return Ok(());
+        };
+        let claimed = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job was not claimed"))?;
+        assert_eq!(claimed.media_job_public_id, fixture.job_id);
+        fixture.store.cancel_job(fixture.job_id).await?;
+        let mut stream = fixture.events.subscribe(None);
+
+        fixture.runtime.recover_stale_worker_jobs(0).await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "cancelled");
+        assert_eq!(job.last_error, None);
+        let event = tokio::time::timeout(Duration::from_millis(100), stream.next()).await;
+        assert!(event.is_err());
         Ok(())
     }
 
