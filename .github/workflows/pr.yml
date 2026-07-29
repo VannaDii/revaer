@@ -138,7 +138,12 @@ jobs:
             git fetch --no-tags --prune --unshallow origin
           fi
           git fetch --no-tags --prune origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+          shallow_file="$(git rev-parse --git-path shallow)"
+          if [ -e "${shallow_file}" ] && [ ! -s "${shallow_file}" ]; then
+            rm -f -- "${shallow_file}"
+          fi
           test "$(git rev-parse --is-shallow-repository)" = "false"
+          test ! -e "${shallow_file}"
           git show-ref --verify --quiet "refs/remotes/origin/${GITHUB_BASE_REF}"
 
       - name: Run migrations

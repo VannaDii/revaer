@@ -49,7 +49,7 @@ class StrictYaml
 end
 
 class JavaProperties
-  Entry = Data.define(:key, :value, :line)
+  Entry = Struct.new(:key, :value, :line, keyword_init: true)
   PROPERTY_WHITESPACE = /[ \t\f]/
 
   def initialize(path)
@@ -262,6 +262,7 @@ class WorkflowStructureGuardrails
       end
     end
     validate_pr_sonar_result_scope(path, jobs) if File.basename(path) == "pr.yml"
+    validate_sonar_scm_context(path, jobs) if %w[pr.yml sonar.yml].include?(File.basename(path))
     validate_build_images(path, jobs) if File.basename(path) == "build-images.yml"
   end
 
@@ -275,6 +276,25 @@ class WorkflowStructureGuardrails
     return if verifier.is_a?(Hash) && verifier.dig("env", "SONAR_PULL_REQUEST") == expected
 
     @errors << "#{path}: PR Sonar result verification must query the submitted pull request"
+  end
+
+  def validate_sonar_scm_context(path, jobs)
+    job_name = File.basename(path) == "pr.yml" ? "coverage" : "sonar"
+    job = jobs[job_name]
+    steps = job.is_a?(Hash) ? job["steps"] : nil
+    preparation = steps&.find do |step|
+      step.is_a?(Hash) && step["name"] == "Prepare Sonar SCM context"
+    end
+    command = preparation.is_a?(Hash) ? preparation["run"] : nil
+    required_fragments = [
+      'git rev-parse --git-path shallow',
+      '[ ! -s "${shallow_file}" ]',
+      'rm -f -- "${shallow_file}"',
+      'test ! -e "${shallow_file}"'
+    ]
+    return if command.is_a?(String) && required_fragments.all? { |fragment| command.include?(fragment) }
+
+    @errors << "#{path}: Sonar SCM preparation must remove an empty shallow marker and reject remaining shallow state"
   end
 
   def validate_action(path, document)

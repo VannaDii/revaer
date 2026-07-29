@@ -123,7 +123,10 @@ audit:
             esac; \
         done < .secignore; \
     fi; \
-    cargo audit --deny warnings $ignore_args
+    cargo audit --deny warnings $ignore_args; \
+    for npm_workspace in tests release; do \
+        (cd "${npm_workspace}" && npm audit --audit-level=info); \
+    done
 
 deny:
     required_deny_version="0.18.9"; \
