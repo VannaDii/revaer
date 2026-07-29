@@ -1,6 +1,6 @@
 # Security Dependency Refresh For PR 25
 
-- Status: Superseded by ADR 357
+- Status: Superseded by ADR 322
 - Date: 2026-04-16
 - Context:
   - PR 25 was failing `Run Audit` on new `rustls-webpki` advisories and `Check Deny` on stale exception state.
@@ -16,7 +16,7 @@
 - Follow-up:
   - Keep monitoring `sqlx` updates for a release that removes the remaining `rand 0.8.5` path.
   - Remove `RUSTSEC-2026-0097` from `.secignore` once the workspace no longer resolves that version.
-  - Completed by ADR 357: the lock graph was converged and all advisory exceptions were removed.
+  - Completed by ADR 322: the lock graph was converged and all advisory exceptions were removed.
 
 ## Task Record
 
