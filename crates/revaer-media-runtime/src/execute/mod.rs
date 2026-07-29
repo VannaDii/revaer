@@ -14,11 +14,12 @@ use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, Command, Stdio};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 const MAX_EXECUTION_DETAIL_CHARS: usize = 2_048;
 const EXECUTION_TRUNCATION_MARKER: &str = "...[truncated]";
+const DEFAULT_PROCESS_COMMAND_TIMEOUT: Duration = Duration::from_hours(12);
 
 /// Build error for command arguments.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -100,6 +101,14 @@ pub enum ExecuteStepError {
         status_code: Option<i32>,
         /// Bounded stderr detail captured from the failed command.
         stderr: String,
+    },
+    /// Command exceeded the configured wall-clock execution deadline.
+    #[error("command {bin} exceeded execution timeout after {timeout:?}")]
+    CommandTimedOut {
+        /// Binary that exceeded the deadline.
+        bin: String,
+        /// Configured wall-clock timeout.
+        timeout: Duration,
     },
     /// Filesystem operation failed.
     #[error("filesystem operation {operation} failed for {path}: {source}")]
@@ -214,6 +223,24 @@ impl CommandRunner for ProcessCommandRunner {
         argv: &[String],
         control: &dyn ExecutionControl,
     ) -> Result<(), ExecuteStepError> {
+        self.run_controlled_with_timeout(bin, argv, control, DEFAULT_PROCESS_COMMAND_TIMEOUT)
+    }
+}
+
+impl ProcessCommandRunner {
+    /// Run a binary while observing cooperative cancellation and a wall-clock timeout.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExecuteStepError`] when execution fails, cancellation is requested, or the
+    /// command exceeds `timeout`.
+    pub fn run_controlled_with_timeout(
+        &self,
+        bin: &str,
+        argv: &[String],
+        control: &dyn ExecutionControl,
+        timeout: Duration,
+    ) -> Result<(), ExecuteStepError> {
         if control.cancellation_requested() {
             return Err(ExecuteStepError::Cancelled);
         }
@@ -237,6 +264,7 @@ impl CommandRunner for ProcessCommandRunner {
             });
         };
         let stderr_reader = thread::spawn(move || read_bounded_stderr(stderr));
+        let started_at = Instant::now();
 
         loop {
             if let Some(breach) = control.limit_breach() {
@@ -248,6 +276,14 @@ impl CommandRunner for ProcessCommandRunner {
                 terminate_command(&mut child, bin)?;
                 let _stderr = join_stderr_reader(stderr_reader, bin)?;
                 return Err(ExecuteStepError::Cancelled);
+            }
+            if started_at.elapsed() >= timeout {
+                terminate_command(&mut child, bin)?;
+                let _stderr = join_stderr_reader(stderr_reader, bin)?;
+                return Err(ExecuteStepError::CommandTimedOut {
+                    bin: bin.to_string(),
+                    timeout,
+                });
             }
             if let Some(status) = child.try_wait().map_err(|source| ExecuteStepError::Io {
                 operation: "execution.command_wait",
@@ -2956,6 +2992,30 @@ mod tests {
         assert_eq!(fs::read(&quarantine)?, b"partial-output");
         fs::remove_dir_all(root)?;
         Ok(())
+    }
+
+    #[test]
+    fn process_command_runner_terminates_active_child_on_timeout() {
+        let control = AtomicExecutionControl {
+            requested: Arc::new(AtomicBool::new(false)),
+        };
+        let started = Instant::now();
+
+        let result = ProcessCommandRunner.run_controlled_with_timeout(
+            "/bin/sleep",
+            &["30".to_string()],
+            &control,
+            Duration::from_millis(150),
+        );
+
+        assert!(matches!(
+            result,
+            Err(super::ExecuteStepError::CommandTimedOut {
+                bin,
+                timeout
+            }) if bin == "/bin/sleep" && timeout == Duration::from_millis(150)
+        ));
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]
