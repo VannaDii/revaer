@@ -370,3 +370,4 @@
     -   [341: Media verifier process boundary](adr/341-media-verifier-process-boundary.md)
     -   [342: Media desired target stream count contract](adr/342-media-desired-target-stream-count-contract.md)
     -   [343: Media capability probe process boundary](adr/343-media-capability-probe-process-boundary.md)
+    -   [344: Media verifier timeout boundary](adr/344-media-verifier-timeout-boundary.md)
