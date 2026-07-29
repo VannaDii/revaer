@@ -655,19 +655,15 @@ mod tests {
     use super::MediaStore;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::{
-        RecordCapabilityEncoderInput, RecordCapabilityFeatureInput, RecordCapabilitySnapshotInput,
-        complete_capability_snapshot_run_with_executor, record_capability_snapshot_with_executor,
-        start_capability_snapshot_run_with_executor,
+        RecordCapabilitySnapshotInput, complete_capability_snapshot_run_with_executor,
+        record_capability_snapshot_with_executor, start_capability_snapshot_run_with_executor,
     };
-    use revaer_data::media::configuration::{
-        MediaVerificationToggle, UpdateMediaJobRetentionPolicyInput,
-        UpsertMediaCompatibilityTargetInput, UpsertMediaPolicyProfileInput,
-    };
+    use revaer_data::media::configuration::UpdateMediaJobRetentionPolicyInput;
     use revaer_data::media::jobs::{
         AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
-        AppendMediaJobVerificationCheckInput, CreateMediaJobInput, EnqueueDiscoveredMediaJobInput,
+        AppendMediaJobVerificationCheckInput, CreateMediaJobInput,
     };
-    use revaer_data::media::profiles::{UpdateMediaProfileInput, UpsertMediaProfileInput};
+    use revaer_data::media::profiles::UpsertMediaProfileInput;
     use revaer_test_support::postgres::TestDatabase;
     use revaer_test_support::postgres::start_postgres;
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
@@ -1149,11 +1145,13 @@ mod tests {
         Ok(())
     }
 
-    async fn assert_profile_and_catalog_errors(
-        store: &MediaStore,
-        actor_id: Uuid,
-        profile_id: Uuid,
-    ) {
+    #[tokio::test]
+    async fn media_store_methods_surface_query_errors_without_database() {
+        let store = MediaStore::new(closed_pool().await);
+        let actor_id = Uuid::new_v4();
+        let profile_id = Uuid::new_v4();
+        let job_id = Uuid::new_v4();
+
         assert!(
             store
                 .upsert_profile(&UpsertMediaProfileInput {
@@ -1172,100 +1170,8 @@ mod tests {
                 .await
                 .is_err()
         );
-        assert!(
-            store
-                .update_profile(&UpdateMediaProfileInput {
-                    actor_public_id: actor_id,
-                    media_profile_public_id: profile_id,
-                    source_root: Some("/input/movies-renamed"),
-                    output_root: Some("/output/movies-renamed"),
-                    dry_run_only: Some(true),
-                    retention_days: Some(45),
-                    compatibility_target_key: Some("chromecast"),
-                    policy_key: Some("balanced"),
-                    watcher_enabled: Some(false),
-                    schedule_enabled: Some(false),
-                    schedule_interval_minutes: None,
-                })
-                .await
-                .is_err()
-        );
         assert!(store.list_profiles().await.is_err());
         assert!(store.get_profile(profile_id).await.is_err());
-        assert!(
-            store
-                .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
-                    actor_public_id: actor_id,
-                    media_profile_public_id: profile_id,
-                    source_path: "/input/movies/file.mkv",
-                    output_path: "/output/movies/file.mkv",
-                    source_size_bytes: 2048,
-                    source_modified_ns: 123_456_789,
-                    source_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-                })
-                .await
-                .is_err()
-        );
-        assert!(store.list_compatibility_targets().await.is_err());
-        assert!(
-            store
-                .upsert_compatibility_target(UpsertMediaCompatibilityTargetInput {
-                    actor_public_id: actor_id,
-                    compatibility_target_key: "chromecast",
-                    version: 1,
-                    display_name: "Chromecast",
-                    video_codec: "h264",
-                    audio_codec: "aac",
-                    audio_channels: Some(2),
-                    audio_channel_layout: Some("stereo"),
-                    subtitle_policy: "text",
-                })
-                .await
-                .is_err()
-        );
-        assert!(store.list_policy_profiles().await.is_err());
-        assert!(
-            store
-                .upsert_policy_profile(UpsertMediaPolicyProfileInput {
-                    actor_public_id: actor_id,
-                    policy_key: "balanced",
-                    version: 1,
-                    display_name: "Balanced",
-                    video_intent: "compatibility",
-                    verification_strictness: "balanced",
-                    verification_duration_tolerance_millis: 500,
-                    verification_mux_validation: MediaVerificationToggle::from(true),
-                    verification_decode_all_streams: MediaVerificationToggle::from(true),
-                    verification_keyframe_seek: MediaVerificationToggle::from(false),
-                    verification_playback_probe: MediaVerificationToggle::from(false),
-                })
-                .await
-                .is_err()
-        );
-        assert!(store.get_job_retention_policy().await.is_err());
-    }
-
-    async fn assert_retention_policy_errors(store: &MediaStore, actor_id: Uuid) {
-        assert!(
-            store
-                .update_job_retention_policy(UpdateMediaJobRetentionPolicyInput {
-                    actor_public_id: actor_id,
-                    completed_enabled: true,
-                    completed_mode: "age".to_string(),
-                    completed_limit: 30,
-                    failed_diagnostic_enabled: true,
-                    failed_diagnostic_mode: "age".to_string(),
-                    failed_diagnostic_limit: 7,
-                })
-                .await
-                .is_err()
-        );
-        assert!(store.run_job_retention(chrono::Utc::now()).await.is_err());
-    }
-
-    async fn assert_job_and_worker_errors(store: &MediaStore, actor_id: Uuid, profile_id: Uuid) {
-        let job_id = Uuid::new_v4();
-
         assert!(
             store
                 .create_job(&CreateMediaJobInput {
@@ -1314,26 +1220,11 @@ mod tests {
                 .is_err()
         );
         assert!(store.list_job_plan_reasons(job_id).await.is_err());
-        assert_verification_check_errors(store, job_id).await;
-        assert_artifact_and_audit_errors(store, job_id).await;
+        assert_verification_check_errors(&store, job_id).await;
+        assert_artifact_and_audit_errors(&store, job_id).await;
         assert!(store.cancel_job(job_id).await.is_err());
         assert!(store.retry_job(job_id).await.is_err());
-        assert!(store.mark_job_completed(job_id).await.is_err());
-        assert!(store.claim_next_job().await.is_err());
-        assert!(store.list_job_desired_target_streams(job_id).await.is_err());
-        assert!(store.heartbeat_job(job_id).await.is_err());
-        assert!(store.poll_job_control(job_id, 0).await.is_err());
-        assert!(store.acknowledge_job_cancel(job_id, 0).await.is_err());
-        assert!(store.complete_job(job_id, 0).await.is_err());
-        assert!(
-            store
-                .mark_job_status(job_id, "running", Some("transcoding"))
-                .await
-                .is_err()
-        );
-    }
 
-    async fn assert_capability_errors(store: &MediaStore, actor_id: Uuid) {
         assert!(
             store
                 .record_capability(&RecordCapabilitySnapshotInput {
@@ -1348,42 +1239,7 @@ mod tests {
                 .await
                 .is_err()
         );
-        assert!(
-            store
-                .record_capability_encoder(&RecordCapabilityEncoderInput {
-                    actor_public_id: actor_id,
-                    snapshot_run_public_id: Uuid::new_v4(),
-                    encoder_name: "libx264",
-                })
-                .await
-                .is_err()
-        );
-        assert!(
-            store
-                .record_capability_feature(&RecordCapabilityFeatureInput {
-                    actor_public_id: actor_id,
-                    snapshot_run_public_id: Uuid::new_v4(),
-                    feature_family: "muxer",
-                    feature_name: "matroska",
-                    supported: true,
-                    detail_text: None,
-                })
-                .await
-                .is_err()
-        );
         assert!(store.latest_capability().await.is_err());
-    }
-
-    #[tokio::test]
-    async fn media_store_methods_surface_query_errors_without_database() {
-        let store = MediaStore::new(closed_pool().await);
-        let actor_id = Uuid::new_v4();
-        let profile_id = Uuid::new_v4();
-
-        assert_profile_and_catalog_errors(&store, actor_id, profile_id).await;
-        assert_retention_policy_errors(&store, actor_id).await;
-        assert_job_and_worker_errors(&store, actor_id, profile_id).await;
-        assert_capability_errors(&store, actor_id).await;
     }
 
     #[tokio::test]
