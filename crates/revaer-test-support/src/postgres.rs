@@ -40,6 +40,61 @@ pub fn start_postgres() -> Result<TestDatabase> { std::env::var("REVAER_TEST_DAT
 #[rustfmt::skip]
 pub fn start_postgres_at(base_url: &str) -> Result<TestDatabase> { let parsed = Url::parse(base_url).context("invalid postgres connection url")?; let mut last_error = anyhow::Error::msg("failed to create database"); for candidate in postgres_url_candidates(&parsed) { match create_test_database(&candidate) { Ok(db) => return Ok(db), Err(err) => last_error = err, } } Err(last_error.context("failed to create database")) }
 
+#[doc = "Install failing media job audit append procedures in a disposable test database."]
+#[doc = ""]
+#[doc = "# Errors"]
+#[doc = "Returns an error when the procedure replacement fails."]
+pub fn install_failing_media_job_audit_appenders(connection_string: &str) -> Result<()> {
+    run_admin_operation(
+        connection_string,
+        r"
+        CREATE OR REPLACE FUNCTION media_job_phase_append_v1(
+            media_job_public_id_input UUID,
+            phase_index_input INT,
+            phase_name_input TEXT,
+            phase_status_input TEXT,
+            details_text_input TEXT
+        )
+        RETURNS VOID
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = public, pg_temp
+        AS $$
+        BEGIN
+            RAISE EXCEPTION 'injected finalized audit failure'
+                USING ERRCODE = media_app_error_code_v1(), DETAIL = 'injected_finalized_phase_audit_failure';
+        END;
+        $$;
+        ",
+        "failed to install failing media job phase appender",
+    )?;
+    run_admin_operation(
+        connection_string,
+        r"
+        CREATE OR REPLACE FUNCTION media_job_verification_check_append_v1(
+            media_job_public_id_input UUID,
+            check_index_input INT,
+            check_kind_input TEXT,
+            check_status_input TEXT,
+            expected_value_input TEXT DEFAULT NULL,
+            actual_value_input TEXT DEFAULT NULL,
+            details_text_input TEXT DEFAULT NULL
+        )
+        RETURNS VOID
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = public, pg_temp
+        AS $$
+        BEGIN
+            RAISE EXCEPTION 'injected finalized audit failure'
+                USING ERRCODE = media_app_error_code_v1(), DETAIL = 'injected_finalized_check_audit_failure';
+        END;
+        $$;
+        ",
+        "failed to install failing media job verification check appender",
+    )
+}
+
 #[rustfmt::skip]
 fn create_test_database(parsed: &Url) -> Result<TestDatabase> { let database = unique_database_name(); let connection_string = database_connection_string(parsed, &database); let create_sql = format!("CREATE DATABASE \"{database}\""); let mut last_error = anyhow::Error::msg("failed to create database"); for admin_url in admin_urls(parsed) { if let Err(err) = run_admin_operation(&admin_url, &create_sql, "failed to issue CREATE DATABASE") { last_error = err; continue; } run_admin_operation(&connection_string, "SELECT 1", "failed to probe test database")?; return Ok(TestDatabase { connection_string, admin_url, database }); } Err(last_error) }
 
