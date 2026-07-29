@@ -352,3 +352,4 @@
     -   [323: Media review closeout](adr/323-media-review-closeout.md)
     -   [338: Media command process boundary](adr/338-media-command-process-boundary.md)
     -   [339: Media audio analysis process boundary](adr/339-media-audio-analysis-process-boundary.md)
+    -   [340: API no-compat router lint](adr/340-api-no-compat-router-lint.md)
