@@ -2,10 +2,7 @@ import { defineConfig } from '@playwright/test';
 import dotenv from 'dotenv';
 import path from 'node:path';
 
-const envDir = path.resolve(process.env.E2E_ENV_DIR ?? __dirname);
-const testResultsDir = path.join(envDir, 'test-results');
-
-dotenv.config({ path: path.join(envDir, '.env') });
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 type BrowserName = 'chromium' | 'firefox' | 'webkit';
 
@@ -38,7 +35,7 @@ const chromiumChannel = trimmedValue(process.env.E2E_BROWSER_CHANNEL);
 
 export default defineConfig({
   testDir: './specs',
-  outputDir: testResultsDir,
+  outputDir: 'test-results',
   timeout: testTimeout,
   fullyParallel: true,
   retries,
@@ -62,49 +59,40 @@ export default defineConfig({
   projects: [
     {
       name: 'api-none',
-      testMatch: /api\/.*\.spec\.(ts|js)/,
+      testMatch: /api\/.*\.spec\.ts/,
       use: {
         baseURL: apiBaseURL,
       },
       metadata: {
         authMode: 'none',
         keepActive: false,
-        coverageFile: path.join(
-          testResultsDir,
-          `api-coverage-api-none${coverageShardSuffix}.json`,
-        ),
+        coverageFile: `test-results/api-coverage-api-none${coverageShardSuffix}.json`,
       },
       workers: 1,
     },
     {
       name: 'api-api-key',
       dependencies: ['api-none'],
-      testMatch: /api\/.*\.spec\.(ts|js)/,
+      testMatch: /api\/.*\.spec\.ts/,
       use: {
         baseURL: apiBaseURL,
       },
       metadata: {
         authMode: 'api_key',
         keepActive: true,
-        coverageFile: path.join(
-          testResultsDir,
-          `api-coverage-api-key${coverageShardSuffix}.json`,
-        ),
+        coverageFile: `test-results/api-coverage-api-key${coverageShardSuffix}.json`,
       },
       workers: 1,
     },
     ...browsers.map((name) => ({
       name: `ui-${name}`,
       dependencies: ['api-api-key'],
-      testMatch: /ui\/.*\.spec\.(ts|js)/,
+      testMatch: /ui\/.*\.spec\.ts/,
       use: browserUseOptions(name, chromiumChannel),
       workers: uiWorkers,
       metadata: {
         authMode: 'api_key',
-        coverageFile: path.join(
-          testResultsDir,
-          `ui-coverage-ui-${name}${coverageShardSuffix}.json`,
-        ),
+        coverageFile: `test-results/ui-coverage-ui-${name}${coverageShardSuffix}.json`,
       },
     })),
   ],

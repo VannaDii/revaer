@@ -4,7 +4,7 @@ import path from 'path';
 export function repoRoot(): string {
   let current = path.resolve(__dirname, '..');
   for (let i = 0; i < 8; i += 1) {
-    if (fs.existsSync(path.join(current, 'AGENTS.md'))) {
+    if (fs.existsSync(path.join(current, 'AGENT.md'))) {
       return current;
     }
     current = path.resolve(current, '..');
