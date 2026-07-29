@@ -351,6 +351,8 @@
     -   [322: Supply chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)
     -   [323: Core planner review repair](adr/323-core-planner-review-repair.md)
     -   [324: Media review closeout](adr/324-media-review-closeout.md)
+    -   [338: Media command process boundary](adr/338-media-command-process-boundary.md)
+    -   [339: Media audio analysis process boundary](adr/339-media-audio-analysis-process-boundary.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [404: Doc indexer fixture isolation](adr/404-doc-indexer-fixture-isolation.md)

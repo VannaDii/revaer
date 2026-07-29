@@ -7,11 +7,13 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::{self, Read};
 use std::num::TryFromIntError;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use revaer_data::DataError;
@@ -24,7 +26,7 @@ use revaer_media_core::classify::SemanticRole;
 use revaer_media_core::model::{
     DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind,
 };
-use revaer_media_core::normalize::normalize_container_format;
+use revaer_media_core::normalize::{normalize_audio_channel_layout, normalize_container_format};
 use revaer_media_core::pipeline::{PlanningConstraints, PlanningOutcome, compile_and_plan};
 use revaer_media_core::plan::{CandidateRejectionReason, OperationKind, PlannedOperation};
 use revaer_media_core::target::{
@@ -88,6 +90,8 @@ const DIALOG_NORMALIZED_TARGET_LUFS: f64 = -16.0;
 const DIALOG_NORMALIZED_LUFS_TOLERANCE: f64 = 1.0;
 const DIALOG_NORMALIZED_TRUE_PEAK_MAX_DBFS: f64 = -1.0;
 const SPEECH_DYNAMIC_RANGE_MAX_LU: f64 = 12.0;
+const MAX_AUDIO_ANALYSIS_STDERR_BYTES: usize = 64 * 1024;
+const AUDIO_ANALYSIS_TRUNCATION_MARKER: &str = "...[truncated]\n";
 
 type RuntimeInspector = dyn InspectAdapter + Send + Sync;
 type RuntimeCommandRunner = dyn CommandRunner + Send + Sync;
@@ -226,6 +230,12 @@ struct SystemFfmpegAudioAnalysisAdapter {
     ffmpeg_bin: String,
 }
 
+#[derive(Debug, Clone)]
+struct AudioAnalysisProcessOutput {
+    status: ExitStatus,
+    stderr: String,
+}
+
 impl Default for SystemFfmpegAudioAnalysisAdapter {
     fn default() -> Self {
         Self {
@@ -250,22 +260,80 @@ impl AudioAnalysisAdapter for SystemFfmpegAudioAnalysisAdapter {
             "null".to_string(),
             "-".to_string(),
         ];
-        let output = Command::new(&self.ffmpeg_bin)
-            .args(&args)
-            .output()
-            .map_err(|error| format!("audio analyzer command spawn failed: {error}"))?;
+        let output = run_audio_analysis_process(&self.ffmpeg_bin, &args)?;
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let detail = if stderr.is_empty() {
+            let detail = if output.stderr.is_empty() {
                 format!("status {}", output.status)
             } else {
-                format!("status {}: {stderr}", output.status)
+                format!("status {}: {}", output.status, output.stderr)
             };
             return Err(format!("audio analyzer command failed: {detail}"));
         }
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        parse_ebur128_summary(&stderr)
+        parse_ebur128_summary(&output.stderr)
     }
+}
+
+fn run_audio_analysis_process(
+    ffmpeg_bin: &str,
+    args: &[String],
+) -> Result<AudioAnalysisProcessOutput, String> {
+    let mut child = Command::new(ffmpeg_bin)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("audio analyzer command spawn failed: {error}"))?;
+    let Some(stderr) = child.stderr.take() else {
+        let _killed = child.kill();
+        let _reaped = child.wait();
+        return Err("audio analyzer stderr pipe unavailable".to_string());
+    };
+    let stderr_reader = thread::spawn(move || read_bounded_audio_analysis_stderr(stderr));
+    let status = child
+        .wait()
+        .map_err(|error| format!("audio analyzer command wait failed: {error}"))?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "audio analyzer stderr reader thread panicked".to_string())?
+        .map_err(|error| format!("audio analyzer stderr read failed: {error}"))?;
+    Ok(AudioAnalysisProcessOutput { status, stderr })
+}
+
+fn read_bounded_audio_analysis_stderr(mut stderr: impl Read) -> io::Result<String> {
+    let mut retained = Vec::with_capacity(MAX_AUDIO_ANALYSIS_STDERR_BYTES);
+    let mut scratch = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        let read = stderr.read(&mut scratch)?;
+        if read == 0 {
+            break;
+        }
+        retain_audio_analysis_tail(&mut retained, &scratch[..read], &mut truncated);
+    }
+    let mut detail = String::from_utf8_lossy(&retained).trim().to_string();
+    if truncated {
+        detail.insert_str(0, AUDIO_ANALYSIS_TRUNCATION_MARKER);
+    }
+    Ok(detail)
+}
+
+fn retain_audio_analysis_tail(retained: &mut Vec<u8>, chunk: &[u8], truncated: &mut bool) {
+    if chunk.len() >= MAX_AUDIO_ANALYSIS_STDERR_BYTES {
+        retained.clear();
+        retained.extend_from_slice(&chunk[chunk.len() - MAX_AUDIO_ANALYSIS_STDERR_BYTES..]);
+        *truncated = true;
+        return;
+    }
+    let overflow = retained
+        .len()
+        .saturating_add(chunk.len())
+        .saturating_sub(MAX_AUDIO_ANALYSIS_STDERR_BYTES);
+    if overflow > 0 {
+        retained.drain(..overflow);
+        *truncated = true;
+    }
+    retained.extend_from_slice(chunk);
 }
 
 /// Runtime worker that progresses queued media jobs to terminal status.
@@ -3821,7 +3889,7 @@ fn desired_channel_layout_matches(actual: Option<&str>, desired: Option<&str>) -
 }
 
 fn normalized_channel_layout(value: Option<&str>) -> Option<String> {
-    normalized_optional_text(value).map(|item| item.to_ascii_lowercase())
+    value.and_then(|item| normalize_audio_channel_layout(item).map(str::to_string))
 }
 
 fn normalized_optional_text(value: Option<&str>) -> Option<String> {
@@ -4215,12 +4283,14 @@ const fn filesystem_step_kind(step: &ExecutionStep) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        AudioAnalysisAdapter, AudioMeasurement, AudioStreamConstraints, DesiredTargetSnapshot,
-        FilesystemCapacityProbe, MediaJobRuntime, MediaJobRuntimeComponents, RuntimeAudioAnalyzer,
-        RuntimeCapacityProbe, RuntimeCommandRunner, RuntimeInspector, RuntimeReplacementCommitter,
-        RuntimeSourceFingerprintProbe, RuntimeVerificationExecutor,
+        AUDIO_ANALYSIS_TRUNCATION_MARKER, AudioAnalysisAdapter, AudioMeasurement,
+        AudioStreamConstraints, DesiredTargetSnapshot, FilesystemCapacityProbe,
+        MAX_AUDIO_ANALYSIS_STDERR_BYTES, MediaJobRuntime, MediaJobRuntimeComponents,
+        RuntimeAudioAnalyzer, RuntimeCapacityProbe, RuntimeCommandRunner, RuntimeInspector,
+        RuntimeReplacementCommitter, RuntimeSourceFingerprintProbe, RuntimeVerificationExecutor,
         SystemFfmpegAudioAnalysisAdapter, SystemSourceFingerprintProbe, VideoStreamConstraints,
         audio_measurement_mismatch, expected_audio_constraints, parse_ebur128_summary,
+        read_bounded_audio_analysis_stderr, run_audio_analysis_process,
         validate_claimed_source_fingerprint, verification_policy_from_job,
         video_constraint_stream_mismatch, video_policy_from_policy_intent,
         video_policy_from_target_snapshot,
@@ -4836,6 +4906,7 @@ mod tests {
             Err(ExecuteStepError::CommandFailed {
                 bin: format!("uncontrolled_test_runner:{bin}"),
                 status_code: None,
+                stderr: String::new(),
             })
         }
 
@@ -4857,6 +4928,7 @@ mod tests {
             Err(ExecuteStepError::CommandFailed {
                 bin: format!("cancellation_timeout:{bin}"),
                 status_code: None,
+                stderr: String::new(),
             })
         }
     }
@@ -5059,6 +5131,7 @@ mod tests {
                     return Err(ExecuteStepError::CommandFailed {
                         bin: format!("mutex_poisoned:{error}"),
                         status_code: None,
+                        stderr: String::new(),
                     });
                 }
             }
@@ -5996,6 +6069,33 @@ True peak:
     }
 
     #[test]
+    fn audio_analysis_stderr_reader_retains_bounded_summary_tail() -> anyhow::Result<()> {
+        let summary = "
+Integrated loudness:
+    I:         -16.2 LUFS
+Loudness range:
+    LRA:         8.5 LU
+True peak:
+    Peak:       -1.4 dBFS
+";
+        let mut output = "x".repeat(MAX_AUDIO_ANALYSIS_STDERR_BYTES + 128);
+        output.push_str(summary);
+
+        let retained = read_bounded_audio_analysis_stderr(output.as_bytes())?;
+        assert!(retained.starts_with(AUDIO_ANALYSIS_TRUNCATION_MARKER));
+        assert!(
+            retained.len()
+                <= MAX_AUDIO_ANALYSIS_STDERR_BYTES + AUDIO_ANALYSIS_TRUNCATION_MARKER.len()
+        );
+
+        let measurement = parse_ebur128_summary(&retained).map_err(anyhow::Error::msg)?;
+        assert!((measurement.integrated_lufs - -16.2).abs() < 0.01);
+        assert!((measurement.loudness_range_lu - 8.5).abs() < 0.01);
+        assert_eq!(measurement.true_peak_dbfs, Some(-1.4));
+        Ok(())
+    }
+
+    #[test]
     fn ebur128_summary_parser_requires_integrated_loudness_and_range() {
         let missing_lufs = parse_ebur128_summary(
             "
@@ -6076,6 +6176,40 @@ Integrated loudness:
             .expect_err("missing analyzer binary should fail closed");
 
         assert!(error.starts_with("audio analyzer command spawn failed:"));
+    }
+
+    #[test]
+    fn audio_analysis_process_uses_bounded_stderr_for_failure_detail() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let script = root.path().join("audio-analyzer-fixture.sh");
+        let mut script_body = "#!/bin/sh\ncat >&2 <<'EOF'\n".to_string();
+        script_body.push_str(&"x".repeat(70_000));
+        script_body.push_str("\nterminal-error\nEOF\nexit 7\n");
+        fs::write(&script, script_body)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&script)?.permissions();
+            permissions.set_mode(0o700);
+            fs::set_permissions(&script, permissions)?;
+        }
+
+        let output = run_audio_analysis_process(
+            script
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("script path is not UTF-8"))?,
+            &[],
+        )
+        .map_err(anyhow::Error::msg)?;
+
+        assert_eq!(output.status.code(), Some(7));
+        assert!(output.stderr.starts_with(AUDIO_ANALYSIS_TRUNCATION_MARKER));
+        assert!(output.stderr.ends_with("terminal-error"));
+        assert!(
+            output.stderr.len()
+                <= MAX_AUDIO_ANALYSIS_STDERR_BYTES + AUDIO_ANALYSIS_TRUNCATION_MARKER.len()
+        );
+        Ok(())
     }
 
     #[tokio::test]

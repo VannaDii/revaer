@@ -675,20 +675,16 @@ mod tests {
     use super::MediaStore;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::{
-        RecordCapabilityEncoderInput, RecordCapabilityFeatureInput, RecordCapabilitySnapshotInput,
-        complete_capability_snapshot_run_with_executor, record_capability_snapshot_with_executor,
-        start_capability_snapshot_run_with_executor,
+        RecordCapabilitySnapshotInput, complete_capability_snapshot_run_with_executor,
+        record_capability_snapshot_with_executor, start_capability_snapshot_run_with_executor,
     };
-    use revaer_data::media::configuration::{
-        MediaVerificationToggle, UpdateMediaJobRetentionPolicyInput,
-        UpsertMediaCompatibilityTargetInput, UpsertMediaPolicyProfileInput,
-    };
+    use revaer_data::media::configuration::UpdateMediaJobRetentionPolicyInput;
     use revaer_data::media::jobs::{
         AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput, AppendMediaJobOperationInput,
         AppendMediaJobPlanReasonInput, AppendMediaJobVerificationCheckInput, CreateMediaJobInput,
         EnqueueDiscoveredMediaJobInput,
     };
-    use revaer_data::media::profiles::{UpdateMediaProfileInput, UpsertMediaProfileInput};
+    use revaer_data::media::profiles::UpsertMediaProfileInput;
     use revaer_test_support::postgres::TestDatabase;
     use revaer_test_support::postgres::start_postgres;
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
