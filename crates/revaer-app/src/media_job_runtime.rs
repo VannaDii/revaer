@@ -701,31 +701,42 @@ impl MediaJobRuntime {
             },
         )
         .await?;
-        self.append_phase(job.media_job_public_id, 1, "execute", "completed", None)
-            .await?;
-        self.append_phase(
-            job.media_job_public_id,
-            2,
-            "verify_replace",
-            "completed",
-            None,
-        )
-        .await?;
-        self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-            media_job_public_id: job.media_job_public_id,
-            check_index: 0,
-            check_kind: "output_replacement",
-            check_status: "passed",
-            expected_value: Some("verified_atomic_replace"),
-            actual_value: Some("completed"),
-            details_text: None,
-        })
-        .await?;
         self.complete_finalized_replacement(job).await?;
+        self.record_finalized_replacement_audit(job.media_job_public_id)
+            .await;
         self.publish_event(Event::MediaJobCompleted {
             media_job_public_id: job.media_job_public_id,
         });
         Ok(TerminalWorkspaceState::Completed)
+    }
+
+    async fn record_finalized_replacement_audit(&self, media_job_public_id: Uuid) {
+        if let Err(error) = self
+            .append_phase(media_job_public_id, 1, "execute", "completed", None)
+            .await
+        {
+            warn!(media_job_public_id = %media_job_public_id, error = %error, "media job runtime failed to persist post-finalization execute phase");
+        }
+        if let Err(error) = self
+            .append_phase(media_job_public_id, 2, "verify_replace", "completed", None)
+            .await
+        {
+            warn!(media_job_public_id = %media_job_public_id, error = %error, "media job runtime failed to persist post-finalization replacement phase");
+        }
+        if let Err(error) = self
+            .append_verification_check(&AppendMediaJobVerificationCheckInput {
+                media_job_public_id,
+                check_index: 0,
+                check_kind: "output_replacement",
+                check_status: "passed",
+                expected_value: Some("verified_atomic_replace"),
+                actual_value: Some("completed"),
+                details_text: None,
+            })
+            .await
+        {
+            warn!(media_job_public_id = %media_job_public_id, error = %error, "media job runtime failed to persist post-finalization replacement check");
+        }
     }
 
     async fn complete_dry_run(&self, job: &ClaimedMediaJobRow) -> Result<(), MediaJobRuntimeError> {
@@ -1729,7 +1740,15 @@ impl MediaJobRuntime {
             .complete_finalized_job(media_job_public_id)
             .await?;
         if late_cancel_acknowledged {
-            self.append_verification_check(&AppendMediaJobVerificationCheckInput {
+            self.record_late_cancel_after_finalized_audit(media_job_public_id)
+                .await;
+        }
+        Ok(())
+    }
+
+    async fn record_late_cancel_after_finalized_audit(&self, media_job_public_id: Uuid) {
+        if let Err(error) = self
+            .append_verification_check(&AppendMediaJobVerificationCheckInput {
                 media_job_public_id,
                 check_index: 25,
                 check_kind: "late_cancel_after_finalized_replace",
@@ -1740,9 +1759,10 @@ impl MediaJobRuntime {
                     "operator cancellation arrived after finalized replacement boundary",
                 ),
             })
-            .await?;
+            .await
+        {
+            warn!(media_job_public_id = %media_job_public_id, error = %error, "media job runtime failed to persist late-cancel finalized replacement check");
         }
-        Ok(())
     }
 
     async fn persist_cancellation(
@@ -3847,6 +3867,7 @@ mod tests {
     use revaer_runtime::media::MediaStore;
     use revaer_telemetry::Metrics;
     use revaer_test_support::postgres::TestDatabase;
+    use revaer_test_support::postgres::install_failing_media_job_audit_appenders;
     use revaer_test_support::postgres::start_postgres;
     use sqlx::postgres::PgPoolOptions;
     use std::fs;
@@ -4801,7 +4822,7 @@ mod tests {
     }
 
     struct RuntimeFixture {
-        _postgres: TestDatabase,
+        postgres: TestDatabase,
         _temp: TempDir,
         runtime: MediaJobRuntime,
         store: MediaStore,
@@ -5051,7 +5072,7 @@ mod tests {
             workspace_root,
         );
         Ok(Some(RuntimeFixture {
-            _postgres: postgres,
+            postgres,
             _temp: temp,
             runtime,
             store,
@@ -5976,6 +5997,48 @@ Integrated loudness:
                 completed_event_seen = true;
             }
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_keeps_finalized_replacement_completed_when_audit_fails()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
+        let committer = Arc::new(PostFinalizeCancellationCommitter::default());
+        fixture.runtime.replacement_committer =
+            Arc::clone(&committer) as Arc<RuntimeReplacementCommitter>;
+        let source_path = PathBuf::from(
+            fixture
+                .store
+                .get_job(fixture.job_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("media job missing"))?
+                .source_path,
+        );
+        let store = fixture.store.clone();
+        let job_id = fixture.job_id;
+        let connection_string = fixture.postgres.connection_string().to_string();
+        let runtime = fixture.runtime;
+        let tick = tokio::spawn(async move { runtime.run_tick().await });
+
+        wait_for_flag(&committer.finalized, "replacement finalization").await?;
+        assert_eq!(fs::read(&source_path)?, b"output");
+        store.cancel_job(job_id).await?;
+        install_failing_media_job_audit_appenders(&connection_string)?;
+        committer.release_finalize.store(true, Ordering::Release);
+        let tick_result = tokio::time::timeout(Duration::from_secs(5), tick).await??;
+        tick_result?;
+
+        let job = store
+            .get_job(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("completed media job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+        assert_eq!(fs::read(&source_path)?, b"output");
         Ok(())
     }
 

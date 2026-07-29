@@ -376,3 +376,4 @@
     -   [347: Media stale worker recovery](adr/347-media-stale-worker-recovery.md)
     -   [348: Media execution timeout boundary](adr/348-media-execution-timeout-boundary.md)
     -   [349: Media finalized completion boundary](adr/349-media-finalized-completion-boundary.md)
+    -   [350: Media finalized audit ordering](adr/350-media-finalized-audit-ordering.md)
