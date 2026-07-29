@@ -9,6 +9,16 @@ use axum::{
     http::StatusCode,
 };
 use revaer_events::Event as CoreEvent;
+use revaer_media_core::{
+    normalize::{
+        audio_channel_count_for_layout,
+        normalize_audio_channel_layout as normalize_supported_audio_channel_layout,
+    },
+    target::{
+        is_known_color_primaries, is_known_color_space, is_known_color_transfer,
+        is_known_video_level,
+    },
+};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -1052,7 +1062,9 @@ pub(crate) async fn list_media_job_operations(
                 MEDIA_JOB_OPERATION_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .collect();
 
     Ok(Json(MediaJobOperationListResponse { operations }))
 }
@@ -1071,7 +1083,9 @@ pub(crate) async fn list_media_job_violations(
                 MEDIA_JOB_VIOLATION_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .collect();
 
     Ok(Json(MediaJobViolationListResponse { violations }))
 }
@@ -1090,7 +1104,9 @@ pub(crate) async fn list_media_job_plan_reasons(
                 MEDIA_JOB_PLAN_REASON_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .collect();
 
     Ok(Json(MediaJobPlanReasonListResponse { reasons }))
 }
@@ -1109,7 +1125,9 @@ pub(crate) async fn list_media_job_verification_checks(
                 MEDIA_JOB_VERIFICATION_CHECK_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .collect();
 
     Ok(Json(MediaJobVerificationCheckListResponse { checks }))
 }
@@ -1128,7 +1146,9 @@ pub(crate) async fn list_media_job_artifacts(
                 MEDIA_JOB_ARTIFACT_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .collect();
 
     Ok(Json(MediaJobArtifactListResponse { artifacts }))
 }
@@ -1147,7 +1167,9 @@ pub(crate) async fn list_media_job_compact_audits(
                 MEDIA_JOB_COMPACT_AUDIT_LIST_FAILED,
                 &err,
             )
-        })?;
+        })?
+        .into_iter()
+        .collect();
 
     Ok(Json(MediaJobCompactAuditListResponse { audits }))
 }
@@ -1375,7 +1397,8 @@ fn map_desired_target_stream_params(
         codec: stream.codec.trim().to_ascii_lowercase(),
         channel_count: stream.channel_count,
         channel_layout: trim_and_filter_empty(stream.channel_layout.as_deref())
-            .map(str::to_ascii_lowercase),
+            .and_then(normalize_supported_audio_channel_layout)
+            .map(str::to_string),
         audio_bitrate_bps: stream.audio_bitrate_bps,
         audio_sample_rate_hz: stream.audio_sample_rate_hz,
         audio_loudness_profile: trim_and_filter_empty(stream.audio_loudness_profile.as_deref())
@@ -1599,6 +1622,15 @@ fn validate_desired_target_stream_shape(
     stream: &MediaDesiredTargetStream,
     kind: &str,
 ) -> Result<(), ApiError> {
+    validate_target_scalar_values(stream)?;
+    validate_audio_target_shape_scope(stream, kind)?;
+    validate_video_target_shape_scope(stream, kind)?;
+    validate_subtitle_target_shape_scope(stream, kind)?;
+    validate_subtitle_target_shape(stream, kind)?;
+    Ok(())
+}
+
+fn validate_target_scalar_values(stream: &MediaDesiredTargetStream) -> Result<(), ApiError> {
     if stream.channel_count.is_some_and(|channels| channels <= 0) {
         return Err(ApiError::bad_request(
             "channel_count must be greater than zero",
@@ -1629,18 +1661,67 @@ fn validate_desired_target_stream_shape(
     }) {
         return Err(ApiError::bad_request("audio_dynamic_range is invalid"));
     }
-    if kind != "audio"
-        && (stream.channel_count.is_some()
-            || stream.channel_layout.is_some()
-            || stream.audio_bitrate_bps.is_some()
-            || stream.audio_sample_rate_hz.is_some()
-            || stream.audio_loudness_profile.is_some()
-            || stream.audio_dynamic_range.is_some())
-    {
+    if stream.video_bitrate_bps.is_some_and(|bitrate| bitrate <= 0) {
+        return Err(ApiError::bad_request(
+            "video_bitrate_bps must be greater than zero",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_audio_target_shape_scope(
+    stream: &MediaDesiredTargetStream,
+    kind: &str,
+) -> Result<(), ApiError> {
+    if kind != "audio" && has_audio_target_shape_fields(stream) {
         return Err(ApiError::bad_request(
             "audio shape is only valid for audio streams",
         ));
     }
+    if kind == "audio" {
+        validate_audio_target_layout(stream)?;
+    }
+    Ok(())
+}
+
+const fn has_audio_target_shape_fields(stream: &MediaDesiredTargetStream) -> bool {
+    stream.channel_count.is_some()
+        || stream.channel_layout.is_some()
+        || stream.audio_bitrate_bps.is_some()
+        || stream.audio_sample_rate_hz.is_some()
+        || stream.audio_loudness_profile.is_some()
+        || stream.audio_dynamic_range.is_some()
+}
+
+fn validate_video_target_shape_scope(
+    stream: &MediaDesiredTargetStream,
+    kind: &str,
+) -> Result<(), ApiError> {
+    if kind != "video" && has_video_target_shape_fields(stream) {
+        return Err(ApiError::bad_request(
+            "video shape is only valid for video streams",
+        ));
+    }
+    if kind == "video" {
+        validate_video_target_shape(stream)?;
+    }
+    Ok(())
+}
+
+const fn has_video_target_shape_fields(stream: &MediaDesiredTargetStream) -> bool {
+    stream.video_profile.is_some()
+        || stream.video_level.is_some()
+        || stream.video_bitrate_bps.is_some()
+        || stream.color_primaries.is_some()
+        || stream.color_transfer.is_some()
+        || stream.color_space.is_some()
+        || stream.hdr_format.is_some()
+}
+
+fn validate_subtitle_target_shape_scope(
+    stream: &MediaDesiredTargetStream,
+    kind: &str,
+) -> Result<(), ApiError> {
     if stream.forced_disposition && kind != "subtitle" {
         return Err(ApiError::bad_request(
             "forced disposition is only valid for subtitle streams",
@@ -1654,8 +1735,69 @@ fn validate_desired_target_stream_shape(
             "descriptive_audio is not a subtitle semantic role",
         ));
     }
-    validate_subtitle_target_shape(stream, kind)?;
     Ok(())
+}
+
+fn validate_audio_target_layout(stream: &MediaDesiredTargetStream) -> Result<(), ApiError> {
+    let Some(raw_layout) = trim_and_filter_empty(stream.channel_layout.as_deref()) else {
+        return Ok(());
+    };
+    let Some(canonical_layout) = normalize_supported_audio_channel_layout(raw_layout) else {
+        return Err(ApiError::bad_request("channel_layout is invalid"));
+    };
+    let Some(layout_channels) = audio_channel_count_for_layout(canonical_layout) else {
+        return Err(ApiError::bad_request("channel_layout is invalid"));
+    };
+    if let Some(channels) = stream.channel_count
+        && u32::try_from(channels).ok() != Some(layout_channels)
+    {
+        return Err(ApiError::bad_request(
+            "channel_count must match channel_layout",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_video_target_shape(stream: &MediaDesiredTargetStream) -> Result<(), ApiError> {
+    validate_video_level(stream)?;
+    validate_video_color_value("color_primaries", stream.color_primaries.as_deref())?;
+    validate_video_color_value("color_transfer", stream.color_transfer.as_deref())?;
+    validate_video_color_value("color_space", stream.color_space.as_deref())?;
+    if trim_and_filter_empty(stream.hdr_format.as_deref())
+        .is_some_and(|format| !format.eq_ignore_ascii_case("hdr10"))
+    {
+        return Err(ApiError::bad_request("hdr_format is invalid"));
+    }
+    Ok(())
+}
+
+fn validate_video_level(stream: &MediaDesiredTargetStream) -> Result<(), ApiError> {
+    let Some(video_level) = trim_and_filter_empty(stream.video_level.as_deref()) else {
+        return Ok(());
+    };
+    let codec = normalize_required_str_field(&stream.codec, "codec is required")?;
+    if is_known_video_level(codec, video_level) {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request("video_level is invalid"))
+    }
+}
+
+fn validate_video_color_value(field: &'static str, value: Option<&str>) -> Result<(), ApiError> {
+    let Some(value) = trim_and_filter_empty(value) else {
+        return Ok(());
+    };
+    let valid = match field {
+        "color_primaries" => is_known_color_primaries(value),
+        "color_transfer" => is_known_color_transfer(value),
+        "color_space" => is_known_color_space(value),
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(ApiError::bad_request(format!("{field} is invalid")))
+    }
 }
 
 fn validate_subtitle_target_shape(
@@ -2097,6 +2239,7 @@ mod tests {
         .await;
         assert!(unavailable_pin.is_err());
         assert_desired_target_audio_validation_rejects_invalid_shapes(&valid_stream);
+        assert_desired_target_video_validation_rejects_invalid_shapes(&valid_stream);
         assert_desired_target_subtitle_validation_rejects_invalid_shapes(valid_stream);
         Ok(())
     }
@@ -2155,6 +2298,49 @@ mod tests {
         let mut cross_kind_audio_sample_rate = valid_stream.clone();
         cross_kind_audio_sample_rate.audio_sample_rate_hz = Some(48_000);
         assert!(validate_desired_target_streams(&[cross_kind_audio_sample_rate]).is_err());
+
+        let mut unsupported_layout = valid_stream.clone();
+        unsupported_layout.stream_kind = "audio".to_string();
+        unsupported_layout.channel_layout = Some("ambisonic".to_string());
+        assert!(validate_desired_target_streams(&[unsupported_layout]).is_err());
+
+        let mut mismatched_layout = valid_stream.clone();
+        mismatched_layout.stream_kind = "audio".to_string();
+        mismatched_layout.channel_count = Some(2);
+        mismatched_layout.channel_layout = Some("5.1".to_string());
+        assert!(validate_desired_target_streams(&[mismatched_layout]).is_err());
+    }
+
+    fn assert_desired_target_video_validation_rejects_invalid_shapes(
+        valid_stream: &MediaDesiredTargetStream,
+    ) {
+        let mut cross_kind_video_level = valid_stream.clone();
+        cross_kind_video_level.stream_kind = "audio".to_string();
+        assert!(validate_desired_target_streams(&[cross_kind_video_level]).is_err());
+
+        let mut invalid_video_bitrate = valid_stream.clone();
+        invalid_video_bitrate.video_bitrate_bps = Some(0);
+        assert!(validate_desired_target_streams(&[invalid_video_bitrate]).is_err());
+
+        let mut invalid_video_level = valid_stream.clone();
+        invalid_video_level.video_level = Some("7.9".to_string());
+        assert!(validate_desired_target_streams(&[invalid_video_level]).is_err());
+
+        let mut invalid_color_primaries = valid_stream.clone();
+        invalid_color_primaries.color_primaries = Some("unknown".to_string());
+        assert!(validate_desired_target_streams(&[invalid_color_primaries]).is_err());
+
+        let mut invalid_color_transfer = valid_stream.clone();
+        invalid_color_transfer.color_transfer = Some("unknown".to_string());
+        assert!(validate_desired_target_streams(&[invalid_color_transfer]).is_err());
+
+        let mut invalid_color_space = valid_stream.clone();
+        invalid_color_space.color_space = Some("unknown".to_string());
+        assert!(validate_desired_target_streams(&[invalid_color_space]).is_err());
+
+        let mut invalid_hdr_format = valid_stream.clone();
+        invalid_hdr_format.hdr_format = Some("dolby_vision".to_string());
+        assert!(validate_desired_target_streams(&[invalid_hdr_format]).is_err());
     }
 
     fn assert_desired_target_subtitle_validation_rejects_invalid_shapes(
@@ -2209,6 +2395,22 @@ mod tests {
         for stream in unsupported {
             assert!(validate_desired_target_streams(&[stream]).is_err());
         }
+    }
+
+    #[test]
+    fn desired_target_stream_deserialization_rejects_unknown_fields() {
+        let payload = r#"{
+            "stream_key": "video-main",
+            "stream_kind": "video",
+            "sort_order": 0,
+            "codec": "hevc",
+            "video_profile": "main10",
+            "video_levle": "5.1"
+        }"#;
+
+        let result = serde_json::from_str::<MediaDesiredTargetStream>(payload);
+
+        assert!(result.is_err());
     }
 
     #[test]

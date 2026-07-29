@@ -353,6 +353,7 @@
     -   [324: Media review closeout](adr/324-media-review-closeout.md)
     -   [338: Media command process boundary](adr/338-media-command-process-boundary.md)
     -   [339: Media audio analysis process boundary](adr/339-media-audio-analysis-process-boundary.md)
+    -   [340: API no-compat router lint](adr/340-api-no-compat-router-lint.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)

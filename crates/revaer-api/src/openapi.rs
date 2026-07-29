@@ -73,9 +73,14 @@ fn add_media_openapi(document: &mut Value) {
     for path in STALE_MEDIA_PATHS {
         paths.remove(path);
     }
-    for (path, path_item) in media_paths() {
+    let mut media_paths = media_paths();
+    media_paths.sort_by_key(|(path, _)| *path);
+    for (path, path_item) in media_paths {
+        let mut path_item = path_item;
+        sort_openapi_value(&mut path_item);
         paths.insert(path.to_string(), path_item);
     }
+    sort_openapi_map(paths);
 
     let components = root
         .entry("components")
@@ -92,9 +97,36 @@ fn add_media_openapi(document: &mut Value) {
     for name in STALE_MEDIA_SCHEMAS {
         schemas.remove(name);
     }
-    for (name, schema) in media_schemas() {
+    let mut media_schemas = media_schemas();
+    media_schemas.sort_by_key(|(name, _)| *name);
+    for (name, schema) in media_schemas {
+        let mut schema = schema;
+        sort_openapi_value(&mut schema);
         schemas.insert(name.to_string(), schema);
     }
+}
+
+fn sort_openapi_value(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            sort_openapi_map(map);
+        }
+        Value::Array(values) => {
+            for child in values {
+                sort_openapi_value(child);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+fn sort_openapi_map(map: &mut Map<String, Value>) {
+    for child in map.values_mut() {
+        sort_openapi_value(child);
+    }
+    let mut entries = std::mem::take(map).into_iter().collect::<Vec<_>>();
+    entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    map.extend(entries);
 }
 
 fn media_paths() -> Vec<(&'static str, Value)> {
@@ -612,49 +644,66 @@ fn media_job_lifecycle_paths() -> Vec<(&'static str, Value)> {
     ]
 }
 
-fn media_job_record_paths() -> Vec<(&'static str, Value)> {
-    [
-        (
+macro_rules! media_job_record_path_item {
+    (operations) => {
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/operations",
             "List media job operations",
             "Media job operations",
             "MediaJobOperationListResponse",
-        ),
-        (
+        )
+    };
+    (violations) => {
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/violations",
             "List media job violations",
             "Media job violations",
             "MediaJobViolationListResponse",
-        ),
-        (
+        )
+    };
+    (plan_reasons) => {
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/plan-reasons",
             "List media job plan reasons",
             "Media job plan reasons",
             "MediaJobPlanReasonListResponse",
-        ),
-        (
+        )
+    };
+    (verification_checks) => {
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/verification-checks",
             "List media job verification checks",
             "Media job verification checks",
             "MediaJobVerificationCheckListResponse",
-        ),
-        (
+        )
+    };
+    (artifacts) => {
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/artifacts",
             "List media job artifacts",
             "Media job artifacts",
             "MediaJobArtifactListResponse",
-        ),
-        (
+        )
+    };
+    (compact_audits) => {
+        media_job_record_path(
             "/v1/media/jobs/{media_job_public_id}/compact-audits",
             "List media job compact audits",
             "Media job compact audits",
             "MediaJobCompactAuditListResponse",
-        ),
+        )
+    };
+}
+
+fn media_job_record_paths() -> Vec<(&'static str, Value)> {
+    vec![
+        media_job_record_path_item!(operations),
+        media_job_record_path_item!(violations),
+        media_job_record_path_item!(plan_reasons),
+        media_job_record_path_item!(verification_checks),
+        media_job_record_path_item!(artifacts),
+        media_job_record_path_item!(compact_audits),
     ]
-    .map(|(path, summary, description, schema)| {
-        media_job_record_path(path, summary, description, schema)
-    })
-    .into()
 }
 
 fn media_job_record_path(
@@ -677,63 +726,58 @@ fn media_job_record_path(
     )
 }
 
+macro_rules! media_capability_path_item {
+    ($method:literal, $path:literal, $summary:literal, $status:literal, $description:literal, $schema:literal) => {
+        media_single_path(
+            $path,
+            media_op(
+                $method,
+                $summary,
+                $status,
+                $description,
+                Some($schema),
+                None,
+                MediaParameterSet::None,
+            ),
+        )
+    };
+}
+
 fn media_capability_paths() -> Vec<(&'static str, Value)> {
     vec![
-        media_capability_path(
-            "/v1/media/capabilities",
+        media_capability_path_item!(
             "get",
+            "/v1/media/capabilities",
             "Read latest media capability snapshot",
             "200",
             "Latest media capability snapshot",
-            "MediaCapabilityLatestResponse",
+            "MediaCapabilityLatestResponse"
         ),
-        media_capability_path(
-            "/v1/media/capabilities/readiness",
+        media_capability_path_item!(
             "get",
+            "/v1/media/capabilities/readiness",
             "Read media capability readiness",
             "200",
             "Media capability readiness",
-            "MediaCapabilityReadinessResponse",
+            "MediaCapabilityReadinessResponse"
         ),
-        media_capability_path(
-            "/v1/media/capabilities/refresh",
+        media_capability_path_item!(
             "post",
+            "/v1/media/capabilities/refresh",
             "Refresh media capabilities",
             "201",
             "Media capability snapshot refreshed",
-            "MediaCapabilityRefreshResponse",
+            "MediaCapabilityRefreshResponse"
         ),
-        media_capability_path(
-            "/v1/media/compliance",
+        media_capability_path_item!(
             "get",
+            "/v1/media/compliance",
             "Read media runtime compliance artifacts",
             "200",
             "Media runtime compliance artifacts",
-            "MediaComplianceResponse",
+            "MediaComplianceResponse"
         ),
     ]
-}
-
-fn media_capability_path(
-    path: &'static str,
-    method: &'static str,
-    summary: &'static str,
-    success_status: &'static str,
-    success_description: &'static str,
-    response_schema: &'static str,
-) -> (&'static str, Value) {
-    media_single_path(
-        path,
-        media_op(
-            method,
-            summary,
-            success_status,
-            success_description,
-            Some(response_schema),
-            None,
-            MediaParameterSet::None,
-        ),
-    )
 }
 
 fn media_yaml_paths() -> Vec<(&'static str, Value)> {
@@ -1103,7 +1147,7 @@ fn media_compatibility_target_schemas() -> Vec<(&'static str, Value)> {
     vec![
         (
             "MediaCompatibilityTargetResponse",
-            media_compatibility_target_schema(),
+            media_compatibility_target_object_schema(),
         ),
         (
             "MediaCompatibilityTargetListResponse",
@@ -1117,12 +1161,12 @@ fn media_compatibility_target_schemas() -> Vec<(&'static str, Value)> {
         ),
         (
             "MediaCompatibilityTargetUpsertRequest",
-            media_compatibility_target_schema(),
+            media_compatibility_target_object_schema(),
         ),
     ]
 }
 
-fn media_compatibility_target_schema() -> Value {
+fn media_compatibility_target_object_schema() -> Value {
     object_schema(
         &[
             "compatibility_target_key",
@@ -1146,20 +1190,8 @@ fn media_compatibility_target_schema() -> Value {
 }
 
 fn media_policy_profile_schemas() -> Vec<(&'static str, Value)> {
-    let required = [
-        "policy_key",
-        "version",
-        "display_name",
-        "video_intent",
-        "verification_strictness",
-        "verification_duration_tolerance_millis",
-        "verification_mux_validation",
-        "verification_decode_all_streams",
-        "verification_keyframe_seek",
-        "verification_playback_probe",
-    ];
     vec![
-        ("MediaPolicyResponse", media_policy_schema(&required)),
+        ("MediaPolicyResponse", media_policy_object_schema()),
         (
             "MediaPolicyListResponse",
             object_schema(
@@ -1167,27 +1199,24 @@ fn media_policy_profile_schemas() -> Vec<(&'static str, Value)> {
                 [("policies", array_ref_schema("MediaPolicyResponse"))],
             ),
         ),
-        ("MediaPolicyUpsertRequest", media_policy_schema(&required)),
+        ("MediaPolicyUpsertRequest", media_policy_object_schema()),
     ]
 }
 
-fn media_policy_schema(required: &[&'static str]) -> Value {
-    let verification_strictness_schema = || {
-        serde_json::json!({
-            "type": "string",
-            "enum": ["strict", "balanced", "fast"]
-        })
-    };
-    let verification_duration_tolerance_schema = || {
-        serde_json::json!({
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0,
-            "maximum": 60000
-        })
-    };
+fn media_policy_object_schema() -> Value {
     object_schema(
-        required,
+        &[
+            "policy_key",
+            "version",
+            "display_name",
+            "video_intent",
+            "verification_strictness",
+            "verification_duration_tolerance_millis",
+            "verification_mux_validation",
+            "verification_decode_all_streams",
+            "verification_keyframe_seek",
+            "verification_playback_probe",
+        ],
         [
             ("policy_key", string_schema()),
             ("version", integer_schema()),
@@ -1206,23 +1235,36 @@ fn media_policy_schema(required: &[&'static str]) -> Value {
     )
 }
 
+fn verification_strictness_schema() -> Value {
+    serde_json::json!({
+        "type": "string",
+        "enum": ["strict", "balanced", "fast"]
+    })
+}
+
+fn verification_duration_tolerance_schema() -> Value {
+    serde_json::json!({
+        "type": "integer",
+        "format": "int64",
+        "minimum": 0,
+        "maximum": 60000
+    })
+}
+
 fn media_job_retention_schemas() -> Vec<(&'static str, Value)> {
     vec![
-        ("MediaJobRetentionResponse", media_job_retention_schema()),
+        (
+            "MediaJobRetentionResponse",
+            media_job_retention_object_schema(),
+        ),
         (
             "MediaJobRetentionUpdateRequest",
-            media_job_retention_schema(),
+            media_job_retention_object_schema(),
         ),
     ]
 }
 
-fn media_job_retention_schema() -> Value {
-    let retention_mode_schema = || {
-        serde_json::json!({
-            "type": "string",
-            "enum": ["age", "count"]
-        })
-    };
+fn media_job_retention_object_schema() -> Value {
     object_schema(
         &[
             "completed_enabled",
@@ -1241,6 +1283,13 @@ fn media_job_retention_schema() -> Value {
             ("failed_diagnostic_limit", integer_schema()),
         ],
     )
+}
+
+fn retention_mode_schema() -> Value {
+    serde_json::json!({
+        "type": "string",
+        "enum": ["age", "count"]
+    })
 }
 
 fn media_discovery_schemas() -> Vec<(&'static str, Value)> {
