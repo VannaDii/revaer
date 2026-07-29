@@ -57,6 +57,7 @@ use revaer_media_core::compile::{MediaProfile, validate_profiles};
 use revaer_media_core::normalize::{
     audio_channel_count_for_layout, normalize_audio_channel_layout,
 };
+use revaer_media_core::target::MAX_DESIRED_TARGET_STREAMS;
 use revaer_media_runtime::capabilities::{
     CapabilityDetectError, CapabilityDetector, CapabilitySnapshot,
 };
@@ -499,6 +500,14 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaDesiredTargetCreateParams,
     ) -> Result<AppMediaDesiredTargetResponse, MediaServiceError> {
+        if params.streams.is_empty() {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_desired_target_streams_required"));
+        }
+        if params.streams.len() > MAX_DESIRED_TARGET_STREAMS {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_desired_target_stream_limit_exceeded"));
+        }
         let mut transaction = self
             .store
             .pool()
@@ -2452,6 +2461,7 @@ fn yaml_desired_target_shape_invalid(target: &MediaYamlDesiredTarget) -> bool {
         || target.container_format.trim().is_empty()
         || target.version <= 0
         || target.streams.is_empty()
+        || target.streams.len() > MAX_DESIRED_TARGET_STREAMS
 }
 
 fn yaml_desired_stream_invalid(
@@ -2709,7 +2719,9 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
             "media_profile_roots_overlap"
             | "media_profile_discovery_root_overlap"
             | "media_compatibility_target_not_found"
-            | "media_policy_profile_not_found",
+            | "media_policy_profile_not_found"
+            | "media_desired_target_streams_required"
+            | "media_desired_target_stream_limit_exceeded",
         ) => MediaServiceErrorKind::Invalid,
         _ => MediaServiceErrorKind::Storage,
     };
@@ -2919,7 +2931,7 @@ mod tests {
     use super::{
         DiscoveryRunMode, MediaService, ensure_discovery_mode_enabled,
         ensure_execution_capability_snapshot, map_data_error, map_detect_error, parse_yaml_bundle,
-        path_is_within_root, validate_yaml_bundle,
+        path_is_within_root, validate_yaml_bundle, yaml_desired_target_shape_invalid,
     };
     use revaer_api::app::media::MediaServiceErrorKind;
     use revaer_api::app::media::{
@@ -2931,11 +2943,16 @@ mod tests {
         MediaJobPlanReasonAppendParams, MediaJobRetentionUpdateParams,
         MediaJobVerificationCheckAppendParams, MediaJobViolationAppendParams,
         MediaPolicyUpsertParams, MediaProfileDesiredTargetParams, MediaProfileUpsertParams,
+        MediaYamlDesiredTarget,
     };
     use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::CapabilitySnapshotRow;
+    use revaer_data::media::configuration::{
+        AppendMediaDesiredTargetStreamInput, append_media_desired_target_stream_with_executor,
+    };
     use revaer_data::media::imports::list_media_profile_import_drafts;
+    use revaer_media_core::target::MAX_DESIRED_TARGET_STREAMS;
     use revaer_media_runtime::capabilities::CapabilityDetectError;
     use revaer_media_runtime::capabilities::CapabilityDetector;
     use revaer_media_runtime::capabilities::{CapabilitySnapshot, CodecCapability};
@@ -3178,6 +3195,195 @@ mod tests {
 
         assert_eq!(err.kind(), MediaServiceErrorKind::Invalid);
         assert_eq!(err.code(), Some("media_job_replace_confirmation_required"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_desired_target_create_rejects_empty_stream_contract() -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+
+        let result = service
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id,
+                target_key: "empty-target".to_string(),
+                version: 1,
+                display_name: "Empty target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: Vec::new(),
+            })
+            .await;
+
+        let err = result.expect_err("empty desired target should fail before persistence");
+        assert_eq!(err.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(err.code(), Some("media_desired_target_streams_required"));
+        assert!(
+            service
+                .media_desired_target_list()
+                .await?
+                .iter()
+                .all(|target| target.target_key != "empty-target")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn media_yaml_desired_target_shape_enforces_stream_count_boundaries() {
+        fn target(stream_count: usize) -> MediaYamlDesiredTarget {
+            MediaYamlDesiredTarget {
+                target_key: "bounded-target".to_string(),
+                version: 1,
+                display_name: "Bounded target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: desired_target_streams(stream_count),
+            }
+        }
+
+        assert!(yaml_desired_target_shape_invalid(&target(0)));
+        assert!(!yaml_desired_target_shape_invalid(&target(1)));
+        assert!(!yaml_desired_target_shape_invalid(&target(
+            MAX_DESIRED_TARGET_STREAMS
+        )));
+        assert!(yaml_desired_target_shape_invalid(&target(
+            MAX_DESIRED_TARGET_STREAMS + 1
+        )));
+    }
+
+    #[tokio::test]
+    async fn media_desired_target_create_enforces_stream_count_boundaries() -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+
+        for (target_key, stream_count) in [
+            ("one-stream-target", 1),
+            ("maximum-stream-target", MAX_DESIRED_TARGET_STREAMS),
+        ] {
+            let created = service
+                .media_desired_target_create(MediaDesiredTargetCreateParams {
+                    actor_user_public_id,
+                    target_key: target_key.to_string(),
+                    version: 1,
+                    display_name: target_key.to_string(),
+                    container_format: "matroska".to_string(),
+                    streams: desired_target_streams(stream_count),
+                })
+                .await?;
+            assert_eq!(created.streams.len(), stream_count);
+        }
+
+        let maximum_target = service
+            .media_desired_target_list()
+            .await?
+            .into_iter()
+            .find(|target| target.target_key == "maximum-stream-target")
+            .ok_or_else(|| anyhow::anyhow!("maximum desired target missing"))?;
+        let over_limit_sort_order = i32::try_from(MAX_DESIRED_TARGET_STREAMS)?;
+        let database_error = append_media_desired_target_stream_with_executor(
+            service.store.pool(),
+            append_audio_stream_input(
+                maximum_target.media_desired_target_profile_public_id,
+                "over-limit-audio",
+                over_limit_sort_order,
+            ),
+        )
+        .await
+        .expect_err("database must reject the stream after the domain maximum");
+        assert_eq!(
+            database_error.database_detail(),
+            Some("media_desired_target_stream_limit_exceeded")
+        );
+
+        let error = service
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id,
+                target_key: "over-limit-target".to_string(),
+                version: 1,
+                display_name: "Over limit target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: desired_target_streams(MAX_DESIRED_TARGET_STREAMS + 1),
+            })
+            .await
+            .expect_err("over-limit desired target should fail before persistence");
+        assert_eq!(
+            error.code(),
+            Some("media_desired_target_stream_limit_exceeded")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_creation_rejects_concurrent_target_append() -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+        let target = service
+            .media_desired_target_create(MediaDesiredTargetCreateParams {
+                actor_user_public_id,
+                target_key: "concurrent-snapshot-target".to_string(),
+                version: 1,
+                display_name: "Concurrent snapshot target".to_string(),
+                container_format: "matroska".to_string(),
+                streams: desired_target_streams(1),
+            })
+            .await?;
+        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+        service
+            .media_profile_desired_target_set(MediaProfileDesiredTargetParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                target_key: Some(target.target_key.clone()),
+                version: Some(target.version),
+            })
+            .await?;
+
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let job_barrier = Arc::clone(&barrier);
+        let job_service = service.service.clone();
+        let job_task = tokio::spawn(async move {
+            job_barrier.wait().await;
+            job_service
+                .media_job_create(MediaJobCreateParams {
+                    actor_user_public_id,
+                    media_profile_public_id: profile_id,
+                    source_path: "/input/app-media/concurrent.mkv",
+                    output_path: Some("/output/app-media/concurrent.mkv"),
+                    dry_run: true,
+                    replace_confirmation: None,
+                })
+                .await
+        });
+
+        let append_barrier = Arc::clone(&barrier);
+        let append_pool = service.store.pool().clone();
+        let target_public_id = target.media_desired_target_profile_public_id;
+        let append_task = tokio::spawn(async move {
+            append_barrier.wait().await;
+            append_media_desired_target_stream_with_executor(
+                &append_pool,
+                append_audio_stream_input(target_public_id, "late-audio", 1),
+            )
+            .await
+        });
+
+        let media_job_public_id = job_task.await??;
+        let append_error = append_task
+            .await?
+            .expect_err("activated desired target must reject concurrent append");
+        assert_eq!(
+            append_error.database_detail(),
+            Some("media_desired_target_immutable")
+        );
+        let snapshot = service
+            .store
+            .list_job_desired_target_streams(media_job_public_id)
+            .await?;
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].stream_key, "video-0");
         Ok(())
     }
 
@@ -4011,6 +4217,53 @@ mod tests {
         );
         assert_eq!(profile.desired_target_version, Some(1));
         Ok(())
+    }
+
+    fn desired_target_streams(count: usize) -> Vec<MediaDesiredTargetStreamParams> {
+        (0_i32..)
+            .zip(0..count)
+            .map(|(sort_order, index)| {
+                let mut stream = desired_video_stream();
+                stream.stream_key = format!("video-{index}");
+                stream.sort_order = sort_order;
+                stream
+            })
+            .collect()
+    }
+
+    fn append_audio_stream_input(
+        target_public_id: Uuid,
+        stream_key: &str,
+        sort_order: i32,
+    ) -> AppendMediaDesiredTargetStreamInput<'_> {
+        AppendMediaDesiredTargetStreamInput {
+            media_desired_target_profile_public_id: target_public_id,
+            stream_key,
+            stream_kind: "audio",
+            semantic_role: None,
+            language_code: None,
+            optional: true,
+            sort_order,
+            codec: "aac",
+            channel_count: Some(2),
+            channel_layout: Some("stereo"),
+            audio_bitrate_bps: None,
+            audio_sample_rate_hz: None,
+            audio_loudness_profile: None,
+            audio_dynamic_range: None,
+            video_profile: None,
+            video_level: None,
+            video_bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            title: None,
+            default_disposition: false,
+            forced_disposition: false,
+            subtitle_placement: None,
+            image_subtitle_action: None,
+        }
     }
 
     fn desired_video_stream() -> MediaDesiredTargetStreamParams {

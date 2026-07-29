@@ -17,8 +17,8 @@ use revaer_media_core::{
         normalize_audio_channel_layout as normalize_supported_audio_channel_layout,
     },
     target::{
-        is_known_color_primaries, is_known_color_space, is_known_color_transfer,
-        is_known_video_level,
+        MAX_DESIRED_TARGET_STREAMS, is_known_color_primaries, is_known_color_space,
+        is_known_color_transfer, is_known_video_level,
     },
 };
 use serde::Deserialize;
@@ -444,9 +444,6 @@ pub(crate) async fn create_media_desired_target(
     let display_name = normalize_media_display(&request.display_name, "display_name")?;
     let container_format =
         normalize_required_str_field(&request.container_format, CONTAINER_FORMAT_REQUIRED)?;
-    if request.streams.is_empty() {
-        return Err(ApiError::bad_request(DESIRED_TARGET_STREAMS_REQUIRED));
-    }
     validate_desired_target_streams(&request.streams)?;
     let params = MediaDesiredTargetCreateParams {
         actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
@@ -1679,6 +1676,14 @@ fn validate_positive_version(value: i32) -> Result<(), ApiError> {
 }
 
 fn validate_desired_target_streams(streams: &[MediaDesiredTargetStream]) -> Result<(), ApiError> {
+    if streams.is_empty() {
+        return Err(ApiError::bad_request(DESIRED_TARGET_STREAMS_REQUIRED));
+    }
+    if streams.len() > MAX_DESIRED_TARGET_STREAMS {
+        return Err(ApiError::bad_request(
+            "streams exceeds the maximum desired target stream count",
+        ));
+    }
     let mut keys = BTreeSet::new();
     let mut orders = BTreeSet::new();
     for stream in streams {
@@ -2403,6 +2408,26 @@ mod tests {
         assert_desired_target_video_validation_rejects_invalid_shapes(&valid_stream);
         assert_desired_target_subtitle_validation_rejects_invalid_shapes(valid_stream);
         Ok(())
+    }
+
+    #[test]
+    fn desired_target_stream_validation_enforces_count_boundaries() {
+        fn streams(count: usize) -> Vec<MediaDesiredTargetStream> {
+            (0_i32..)
+                .zip(0..count)
+                .map(|(sort_order, index)| {
+                    let mut stream = desired_target_valid_video_stream();
+                    stream.stream_key = format!("video-{index}");
+                    stream.sort_order = sort_order;
+                    stream
+                })
+                .collect()
+        }
+
+        assert!(validate_desired_target_streams(&[]).is_err());
+        assert!(validate_desired_target_streams(&streams(1)).is_ok());
+        assert!(validate_desired_target_streams(&streams(MAX_DESIRED_TARGET_STREAMS)).is_ok());
+        assert!(validate_desired_target_streams(&streams(MAX_DESIRED_TARGET_STREAMS + 1)).is_err());
     }
 
     fn desired_target_valid_video_stream() -> MediaDesiredTargetStream {

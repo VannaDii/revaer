@@ -1111,6 +1111,57 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn desired_target_pin_rejects_empty_stream_graph() -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("desired_target_empty_stream_graph").await? else {
+            return Ok(());
+        };
+        let actor = db.system_user_public_id;
+        create_media_desired_target(
+            db.pool(),
+            CreateMediaDesiredTargetInput {
+                actor_public_id: actor,
+                target_key: "empty-stream-target",
+                version: 1,
+                display_name: "Empty stream target",
+                container_format: "matroska",
+            },
+        )
+        .await?;
+        let profile_id = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: actor,
+                profile_key: "empty-stream-profile",
+                source_root: "/input/empty-stream",
+                output_root: "/output/empty-stream",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+
+        let err = set_media_profile_desired_target(
+            db.pool(),
+            actor,
+            profile_id,
+            Some("empty-stream-target"),
+            Some(1),
+        )
+        .await
+        .expect_err("empty desired-target stream graph should not be pinnable");
+        assert_eq!(
+            err.database_detail(),
+            Some("media_desired_target_streams_required")
+        );
+        Ok(())
+    }
+
     fn assert_job_desired_target_stream_snapshot(
         job_streams: &[crate::media::jobs::MediaJobDesiredTargetStreamRow],
     ) {

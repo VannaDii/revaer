@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use revaer_media_core::target::MAX_DESIRED_TARGET_STREAMS;
 use serde_json::{Map, Value};
 use tracing::error;
 
@@ -1128,7 +1129,14 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("version", integer_schema()),
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
-                    ("streams", array_ref_schema("MediaDesiredTargetStream")),
+                    (
+                        "streams",
+                        array_ref_items_schema(
+                            "MediaDesiredTargetStream",
+                            1,
+                            MAX_DESIRED_TARGET_STREAMS,
+                        ),
+                    ),
                 ],
             ),
         ),
@@ -2164,6 +2172,15 @@ fn array_ref_schema(schema: &'static str) -> Value {
     serde_json::json!({ "type": "array", "items": schema_ref(schema) })
 }
 
+fn array_ref_items_schema(schema: &'static str, min_items: usize, max_items: usize) -> Value {
+    serde_json::json!({
+        "type": "array",
+        "minItems": min_items,
+        "maxItems": max_items,
+        "items": schema_ref(schema),
+    })
+}
+
 fn array_string_schema() -> Value {
     serde_json::json!({ "type": "array", "items": string_schema() })
 }
@@ -2228,6 +2245,79 @@ pub fn openapi_output_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MEDIA_SCHEMA_NAMES: &[&str] = &[
+        "MediaProfileUpsertRequest",
+        "MediaProfilePatchRequest",
+        "MediaProfileListResponse",
+        "MediaProfileResponse",
+        "MediaProfileValidationResponse",
+        "MediaCompatibilityTargetResponse",
+        "MediaCompatibilityTargetListResponse",
+        "MediaCompatibilityTargetUpsertRequest",
+        "MediaDesiredTargetStream",
+        "MediaDesiredTargetCreateRequest",
+        "MediaDesiredTargetResponse",
+        "MediaDesiredTargetListResponse",
+        "MediaProfileDesiredTargetRequest",
+        "MediaPolicyResponse",
+        "MediaPolicyListResponse",
+        "MediaPolicyUpsertRequest",
+        "MediaJobRetentionResponse",
+        "MediaJobRetentionUpdateRequest",
+        "MediaPlanningPreviewRequest",
+        "MediaPlanningPreviewResponse",
+        "MediaDiscoveryPreviewRequest",
+        "MediaDiscoveryPreviewItemResponse",
+        "MediaDiscoveryPreviewResponse",
+        "MediaDiscoveryRunRequest",
+        "MediaDiscoveryQueuedJobResponse",
+        "MediaDiscoverySkippedItemResponse",
+        "MediaDiscoveryRunResponse",
+        "MediaDiscoveryScheduleResponse",
+        "MediaDiscoveryScheduleListResponse",
+        "MediaDiscoveryWatcherResponse",
+        "MediaDiscoveryWatcherListResponse",
+        "MediaJobCreateRequest",
+        "MediaJobCreateResponse",
+        "MediaJobListResponse",
+        "MediaJobResponse",
+        "MediaRecentJobPageResponse",
+        "MediaRecentJobSummaryResponse",
+        "MediaJobDiagnosticCounts",
+        "MediaJobDiagnosticsResponse",
+        "MediaJobPhaseAppendRequest",
+        "MediaJobOperationAppendRequest",
+        "MediaJobOperationListResponse",
+        "MediaJobOperationResponse",
+        "MediaJobViolationAppendRequest",
+        "MediaJobViolationListResponse",
+        "MediaJobViolationResponse",
+        "MediaJobPlanReasonAppendRequest",
+        "MediaJobPlanReasonListResponse",
+        "MediaJobPlanReasonResponse",
+        "MediaJobVerificationCheckAppendRequest",
+        "MediaJobVerificationCheckListResponse",
+        "MediaJobVerificationCheckResponse",
+        "MediaJobArtifactAppendRequest",
+        "MediaJobArtifactListResponse",
+        "MediaJobArtifactResponse",
+        "MediaJobCompactAuditAppendRequest",
+        "MediaJobCompactAuditListResponse",
+        "MediaJobCompactAuditResponse",
+        "MediaCapabilityRefreshResponse",
+        "MediaCapabilityCodecResponse",
+        "MediaCapabilityFeatureResponse",
+        "MediaCapabilityLatestResponse",
+        "MediaCapabilityReadinessResponse",
+        "MediaCapabilitySnapshotResponse",
+        "MediaComplianceResponse",
+        "MediaYamlExportResponse",
+        "MediaYamlImportRequest",
+        "MediaYamlIssueResponse",
+        "MediaYamlValidationResponse",
+        "MediaYamlApplyResponse",
+    ];
     use crate::openapi_assets::OPENAPI_FILENAME;
     use serde_json::json;
     use std::io;
@@ -2359,83 +2449,32 @@ mod tests {
             .and_then(Value::as_object)
             .ok_or_else(|| io::Error::other("expected component schemas object"))?;
 
-        for schema in [
-            "MediaProfileUpsertRequest",
-            "MediaProfilePatchRequest",
-            "MediaProfileListResponse",
-            "MediaProfileResponse",
-            "MediaProfileValidationResponse",
-            "MediaCompatibilityTargetResponse",
-            "MediaCompatibilityTargetListResponse",
-            "MediaCompatibilityTargetUpsertRequest",
-            "MediaDesiredTargetStream",
-            "MediaDesiredTargetCreateRequest",
-            "MediaDesiredTargetResponse",
-            "MediaDesiredTargetListResponse",
-            "MediaProfileDesiredTargetRequest",
-            "MediaPolicyResponse",
-            "MediaPolicyListResponse",
-            "MediaPolicyUpsertRequest",
-            "MediaJobRetentionResponse",
-            "MediaJobRetentionUpdateRequest",
-            "MediaPlanningPreviewRequest",
-            "MediaPlanningPreviewResponse",
-            "MediaDiscoveryPreviewRequest",
-            "MediaDiscoveryPreviewItemResponse",
-            "MediaDiscoveryPreviewResponse",
-            "MediaDiscoveryRunRequest",
-            "MediaDiscoveryQueuedJobResponse",
-            "MediaDiscoverySkippedItemResponse",
-            "MediaDiscoveryRunResponse",
-            "MediaDiscoveryScheduleResponse",
-            "MediaDiscoveryScheduleListResponse",
-            "MediaDiscoveryWatcherResponse",
-            "MediaDiscoveryWatcherListResponse",
-            "MediaJobCreateRequest",
-            "MediaJobCreateResponse",
-            "MediaJobListResponse",
-            "MediaJobResponse",
-            "MediaRecentJobPageResponse",
-            "MediaRecentJobSummaryResponse",
-            "MediaJobDiagnosticCounts",
-            "MediaJobDiagnosticsResponse",
-            "MediaJobPhaseAppendRequest",
-            "MediaJobOperationAppendRequest",
-            "MediaJobOperationListResponse",
-            "MediaJobOperationResponse",
-            "MediaJobViolationAppendRequest",
-            "MediaJobViolationListResponse",
-            "MediaJobViolationResponse",
-            "MediaJobPlanReasonAppendRequest",
-            "MediaJobPlanReasonListResponse",
-            "MediaJobPlanReasonResponse",
-            "MediaJobVerificationCheckAppendRequest",
-            "MediaJobVerificationCheckListResponse",
-            "MediaJobVerificationCheckResponse",
-            "MediaJobArtifactAppendRequest",
-            "MediaJobArtifactListResponse",
-            "MediaJobArtifactResponse",
-            "MediaJobCompactAuditAppendRequest",
-            "MediaJobCompactAuditListResponse",
-            "MediaJobCompactAuditResponse",
-            "MediaCapabilityRefreshResponse",
-            "MediaCapabilityCodecResponse",
-            "MediaCapabilityFeatureResponse",
-            "MediaCapabilityLatestResponse",
-            "MediaCapabilityReadinessResponse",
-            "MediaCapabilitySnapshotResponse",
-            "MediaComplianceResponse",
-            "MediaYamlExportResponse",
-            "MediaYamlImportRequest",
-            "MediaYamlIssueResponse",
-            "MediaYamlValidationResponse",
-            "MediaYamlApplyResponse",
-        ] {
+        for schema in MEDIA_SCHEMA_NAMES {
             assert!(
-                schemas.contains_key(schema),
+                schemas.contains_key(*schema),
                 "missing media OpenAPI schema {schema}"
             );
         }
+
+        let desired_target_streams_min_items = schemas
+            .get("MediaDesiredTargetCreateRequest")
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+            .and_then(|properties| properties.get("streams"))
+            .and_then(|streams| streams.get("minItems"))
+            .and_then(Value::as_u64);
+        assert_eq!(desired_target_streams_min_items, Some(1));
+        let desired_target_streams_max_items = schemas
+            .get("MediaDesiredTargetCreateRequest")
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+            .and_then(|properties| properties.get("streams"))
+            .and_then(|streams| streams.get("maxItems"))
+            .and_then(Value::as_u64);
+        assert_eq!(
+            desired_target_streams_max_items,
+            u64::try_from(MAX_DESIRED_TARGET_STREAMS).ok()
+        );
 
         Ok(())
     }
