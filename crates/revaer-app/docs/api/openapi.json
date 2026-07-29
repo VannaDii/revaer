@@ -3240,6 +3240,7 @@
             "items": {
               "$ref": "#/components/schemas/MediaDesiredTargetStream"
             },
+            "minItems": 1,
             "type": "array"
           },
           "target_key": {

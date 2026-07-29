@@ -350,6 +350,7 @@
 -   [339](339-media-audio-analysis-process-boundary.md) – Media audio analysis process boundary
 -   [340](340-api-no-compat-router-lint.md) – API no-compat router lint
 -   [341](341-media-verifier-process-boundary.md) – Media verifier process boundary
+-   [342](342-media-desired-target-stream-count-contract.md) – Media desired target stream count contract
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
