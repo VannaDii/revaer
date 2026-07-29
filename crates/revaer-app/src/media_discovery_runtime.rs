@@ -29,6 +29,7 @@ use uuid::Uuid;
 
 use crate::media::{build_discovery_previews, ensure_execution_capability_snapshot};
 use crate::media_discovery_watcher::{MediaWatchEvent, MediaWatcher, NotifyMediaWatcher};
+use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 
 const DEFAULT_DISCOVERY_TICK_INTERVAL: Duration = Duration::from_mins(1);
 const WATCH_DEBOUNCE_INTERVAL: Duration = Duration::from_secs(1);
@@ -74,13 +75,16 @@ impl MediaDiscoveryRuntime {
     }
 
     /// Spawn the discovery loop.
-    pub(crate) fn spawn(self) -> JoinHandle<()> {
+    pub(crate) fn spawn(self, shutdown: RuntimeShutdownReceiver) -> JoinHandle<()> {
         tokio::spawn(async move {
-            self.run_loop().await;
+            self.run_loop(shutdown).await;
         })
     }
 
-    async fn run_loop(mut self) {
+    async fn run_loop(mut self, mut shutdown: RuntimeShutdownReceiver) {
+        if runtime_shutdown::requested(&shutdown) {
+            return;
+        }
         let mut ticker = interval(self.tick_interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut debounce_ticker = interval(WATCH_DEBOUNCE_TICK_INTERVAL);
@@ -102,6 +106,9 @@ impl MediaDiscoveryRuntime {
                     if let Err(error) = self.flush_watch_events().await {
                         warn!(error = %error, "media watcher debounce flush failed");
                     }
+                }
+                () = runtime_shutdown::changed(&mut shutdown) => {
+                    return;
                 }
             }
         }
@@ -484,6 +491,7 @@ mod tests {
         MediaDiscoveryRuntime, discover_media_source_paths, fingerprint_media_file, is_media_file,
         rebase_watch_event_path,
     };
+    use crate::runtime_shutdown;
     use chrono::Utc;
     use revaer_data::DataError;
     use revaer_data::media::jobs::list_media_jobs;
@@ -694,7 +702,8 @@ mod tests {
             Metrics::new()?,
             Duration::from_millis(100),
         );
-        let runtime_task = runtime.spawn();
+        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
+        let runtime_task = runtime.spawn(shutdown_rx);
         sleep(Duration::from_millis(500)).await;
 
         let source_path = source_root.join("movie.webm");
@@ -713,8 +722,8 @@ mod tests {
         assert_eq!(jobs.len(), 2);
         assert!(jobs.iter().all(|job| job.dry_run));
 
-        runtime_task.abort();
-        assert!(runtime_task.await.is_err());
+        assert!(runtime_shutdown::request(&shutdown_tx));
+        timeout(Duration::from_secs(5), runtime_task).await??;
         Ok(())
     }
 

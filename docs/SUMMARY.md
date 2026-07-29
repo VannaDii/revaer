@@ -377,6 +377,7 @@
     -   [348: Media execution timeout boundary](adr/348-media-execution-timeout-boundary.md)
     -   [349: Media finalized completion boundary](adr/349-media-finalized-completion-boundary.md)
     -   [350: Media finalized audit ordering](adr/350-media-finalized-audit-ordering.md)
+    -   [351: Media runtime cooperative shutdown](adr/351-media-runtime-cooperative-shutdown.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
