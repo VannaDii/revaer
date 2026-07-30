@@ -1,0 +1,57 @@
+# Media Worker-Owned Phase History
+
+- Status: Accepted
+- Date: 2026-07-30
+- Context:
+  - Media jobs persist ordered lifecycle phases for operators and API readers.
+  - The public API also exposed `POST /v1/media/jobs/{media_job_public_id}/phases`, which let API clients append or overwrite worker-owned phase records.
+  - The underlying stored procedure upserts on `(media_job_id, phase_index)`, so a public client could reuse a phase index and replace a runtime phase row.
+- Decision:
+  - Remove the public phase append route, handler, request model, OpenAPI operation, and API-facing facade method.
+  - Keep `GET /v1/media/jobs/{media_job_public_id}/phases` as the read model for persisted worker phase history.
+  - Keep the internal store/runtime phase append path intact so the media worker remains responsible for writing lifecycle phases.
+- Consequences:
+  - Public clients can no longer forge or overwrite worker phase history.
+  - Existing clients that depended on the public phase append endpoint must move to job create/cancel/retry plus read-only phase history.
+  - The OpenAPI generator must remove stale embedded schema components when public media schemas are retired.
+- Follow-up:
+  - Continue auditing job record append surfaces where public writes might overlap with worker-owned execution evidence.
+  - Re-run full CI and UI E2E on the stacked PR after GitHub starts the checks.
+
+## Task Record
+
+- Motivation:
+  - Close a public mutation surface that was inconsistent with worker-owned media job execution state.
+  - Prevent API clients from overwriting lifecycle evidence at a reused `phase_index`.
+- Design notes:
+  - The router now exposes only `GET` for the job phases path.
+  - The API handler, request DTO, and `MediaFacade::media_job_phase_append` method were removed instead of returning a synthetic conflict, so the public contract cannot drift back into generated clients.
+  - Runtime phase persistence remains available through `MediaJobRuntime` and the injected store, preserving worker-owned phase writes.
+  - The OpenAPI stale-schema list now removes the retired phase append request from embedded base documents during generation.
+- Test coverage summary:
+  - `just api-export`
+  - `just sync-assets`
+  - `cd tests && npm install`
+  - `cd tests && npm run gen:api-client`
+  - `cargo fmt --all`
+  - `cargo --config 'build.rustflags=["-Dwarnings"]' check -p revaer-api --tests --all-features`
+  - `cargo --config 'build.rustflags=["-Dwarnings"]' check -p revaer-app --no-default-features --lib --bins --tests`
+  - `cd tests && npx tsc -p tsconfig.coverage.json`
+  - `cargo test -p revaer-api openapi_document_exports_media --all-features -- --nocapture`
+  - `cargo test -p revaer-api list_media_job_phases_returns_empty_payload_with_default_facade --all-features -- --nocapture`
+  - `cargo --config 'build.rustflags=["-Dwarnings"]' check -p revaer-app --tests --all-features` was attempted but blocked by the local Homebrew libtorrent headers requiring `TORRENT_USE_OPENSSL` or `TORRENT_USE_GNUTLS` for `TORRENT_USE_RTC`.
+- Observability updates:
+  - No new metrics, events, or logs were added.
+  - Existing phase history observability remains available through the read-only phase list endpoint.
+- Status-doc validation:
+  - `docs/api/openapi.json` and `crates/revaer-app/docs/api/openapi.json` were regenerated to remove the public phase append operation.
+  - No README or operator-guide text advertised the removed phase append endpoint in the files inspected for this slice.
+- Risk & rollback plan:
+  - Risk: external users of the public phase append endpoint receive `405 Method Not Allowed`.
+  - Rollback: restore the route, handler, request model, facade method, OpenAPI operation, generated docs, and API spec assertion from the previous stack branch.
+- Dependency rationale:
+  - No new dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No policy contradictions were found.
+  - No quality gate, Sonar setting, lint setting, workflow criterion, or dependency rule was relaxed.

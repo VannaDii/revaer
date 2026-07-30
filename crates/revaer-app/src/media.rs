@@ -13,11 +13,10 @@ use revaer_api::app::media::{
     MediaDiscoverySkippedItemResponse, MediaFacade, MediaJobArtifactAppendParams,
     MediaJobArtifactResponse, MediaJobCompactAuditAppendParams, MediaJobCompactAuditResponse,
     MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobOperationResponse,
-    MediaJobPhaseAppendParams, MediaJobPhaseResponse, MediaJobPlanReasonAppendParams,
-    MediaJobPlanReasonResponse, MediaJobResponse,
-    MediaJobRetentionResponse as AppMediaJobRetentionResponse, MediaJobRetentionUpdateParams,
-    MediaJobVerificationCheckAppendParams, MediaJobVerificationCheckResponse,
-    MediaJobViolationAppendParams, MediaJobViolationResponse,
+    MediaJobPhaseResponse, MediaJobPlanReasonAppendParams, MediaJobPlanReasonResponse,
+    MediaJobResponse, MediaJobRetentionResponse as AppMediaJobRetentionResponse,
+    MediaJobRetentionUpdateParams, MediaJobVerificationCheckAppendParams,
+    MediaJobVerificationCheckResponse, MediaJobViolationAppendParams, MediaJobViolationResponse,
     MediaPolicyResponse as AppMediaPolicyResponse, MediaPolicyUpsertParams,
     MediaProfileDesiredTargetParams, MediaProfilePatchParams,
     MediaProfileReadinessResponse as AppMediaProfileReadinessResponse, MediaProfileResponse,
@@ -1078,23 +1077,6 @@ impl MediaFacade for MediaService {
     async fn media_job_retry(&self, media_job_public_id: Uuid) -> Result<(), MediaServiceError> {
         self.store
             .retry_job(media_job_public_id)
-            .await
-            .map_err(|err| map_data_error(&err))
-    }
-
-    async fn media_job_phase_append(
-        &self,
-        params: MediaJobPhaseAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        self.store
-            .append_job_phase(
-                params.media_job_public_id,
-                params.claim_generation,
-                params.phase_index,
-                params.phase_name,
-                params.phase_status,
-                params.details_text,
-            )
             .await
             .map_err(|err| map_data_error(&err))
     }
@@ -3466,11 +3448,10 @@ mod tests {
         MediaDesiredTargetCreateParams, MediaDesiredTargetStreamParams,
         MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
         MediaFacade, MediaJobArtifactAppendParams, MediaJobCompactAuditAppendParams,
-        MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobPhaseAppendParams,
-        MediaJobPlanReasonAppendParams, MediaJobRetentionUpdateParams,
-        MediaJobVerificationCheckAppendParams, MediaJobViolationAppendParams,
-        MediaPolicyUpsertParams, MediaProfileDesiredTargetParams, MediaProfileUpsertParams,
-        MediaYamlDesiredTarget,
+        MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobPlanReasonAppendParams,
+        MediaJobRetentionUpdateParams, MediaJobVerificationCheckAppendParams,
+        MediaJobViolationAppendParams, MediaPolicyUpsertParams, MediaProfileDesiredTargetParams,
+        MediaProfileUpsertParams, MediaYamlDesiredTarget,
     };
     use revaer_api::app::media::{MediaServiceError, MediaServiceErrorKind};
     use revaer_data::DataError;
@@ -5719,14 +5700,8 @@ mod tests {
         claim_generation: i64,
     ) -> anyhow::Result<()> {
         service
-            .media_job_phase_append(MediaJobPhaseAppendParams {
-                media_job_public_id: job_id,
-                claim_generation,
-                phase_index: 0,
-                phase_name: "plan",
-                phase_status: "running",
-                details_text: Some("ok"),
-            })
+            .store
+            .append_job_phase(job_id, claim_generation, 0, "plan", "running", Some("ok"))
             .await?;
         service
             .media_job_operation_append(MediaJobOperationAppendParams {

@@ -8,11 +8,12 @@ trap 'rm -rf "${temporary_root}"' EXIT
 
 write_fake_tool() {
   local binary_path="$1"
+  local version_prefix="${2:-}"
 
-  cat >"${binary_path}" <<'SCRIPT'
+  cat >"${binary_path}" <<SCRIPT
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'direct-tool %s\n' "$(<"${FAKE_VERSION_FILE}")"
+printf 'direct-tool ${version_prefix}%s\n' "\$(<"\${FAKE_VERSION_FILE}")"
 SCRIPT
   chmod +x "${binary_path}"
 }
@@ -84,12 +85,27 @@ PATH="${direct_root}/bin:${PATH}" \
   FAKE_VERSION_FILE="${direct_root}/version" \
   bash "${helper}" direct-tool direct-crate 2.0.0
 
-grep -Fq 'required_udeps_version="0.1.57"' "${repo_root}/justfile"
-grep -Fq 'required_udeps_toolchain="nightly-2026-06-13"' "${repo_root}/justfile"
-grep -Fq 'cargo +"${udeps_toolchain}" udeps --workspace --all-targets' "${repo_root}/justfile"
+write_fake_tool "${direct_root}/bin/direct-tool" v
+PATH="${direct_root}/bin:${PATH}" \
+  FAKE_VERSION_FILE="${direct_root}/version" \
+  bash "${helper}" direct-tool direct-crate 2.0.0
+
+quality="${repo_root}/just/quality.just"
+docs="${repo_root}/just/docs.just"
+grep -Fq 'required_udeps_version="0.1.57"' "${quality}"
+grep -Fq 'required_udeps_toolchain="nightly-2026-06-13"' "${quality}"
+grep -Fq 'cargo +"${udeps_toolchain}" udeps --workspace --all-targets' "${quality}"
 grep -Fq 'REVAER_UDEPS_VERSION: "0.1.57"' "${repo_root}/.github/workflows/pr.yml"
 grep -Fq 'REVAER_UDEPS_TOOLCHAIN: "nightly-2026-06-13"' "${repo_root}/.github/workflows/pr.yml"
 grep -Fq 'set shell := ["bash", "-c"]' "${repo_root}/justfile"
+grep -Fq 'ensure-exact-cargo-tool.sh mdbook mdbook 0.5.0' "${docs}"
+grep -Fq 'ensure-exact-cargo-tool.sh mdbook-mermaid mdbook-mermaid 0.17.0' "${docs}"
+grep -Fq 'ensure-exact-cargo-tool.sh lychee lychee 0.24.2' "${docs}"
+
+if grep -Fq 'lychee --verbose --no-progress docs || true' "${docs}"; then
+  echo "docs-link-check silently suppresses Lychee failures" >&2
+  exit 1
+fi
 
 if (cd "${repo_root}" && REVAER_UDEPS_VERSION=0.1.58 just udeps >/dev/null 2>&1); then
   echo "just udeps accepted a mismatched cargo-udeps version" >&2

@@ -25,7 +25,10 @@ read_installed_version() {
   elif ! version_output="$("${binary}" --version 2>/dev/null)"; then
     return 0
   fi
-  installed_version="$(printf '%s\n' "${version_output}" | awk 'NR == 1 { print $2 }')"
+  installed_version="$(
+    printf '%s\n' "${version_output}" | \
+      awk 'NR == 1 { version = $2; sub(/^v/, "", version); print version }'
+  )"
 }
 
 read_installed_version

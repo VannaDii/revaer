@@ -1808,6 +1808,27 @@
         ],
         "type": "object"
       },
+      "MediaProfileReadinessResponse": {
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/MediaProfileResponse"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/MediaCapabilitySnapshotResponse"
+          }
+        },
+        "required": [
+          "ready",
+          "profile"
+        ],
+        "type": "object"
+      },
       "MediaJobPlanReasonAppendRequest": {
         "properties": {
           "candidate_index": {
@@ -4828,50 +4849,6 @@
         ],
         "type": "object"
       },
-      "MediaJobPhaseAppendRequest": {
-        "properties": {
-          "details_text": {
-            "type": "string"
-          },
-          "phase_index": {
-            "type": "integer"
-          },
-          "phase_name": {
-            "type": "string"
-          },
-          "phase_status": {
-            "enum": [
-              "queued",
-              "running",
-              "verifying",
-              "completed",
-              "failed",
-              "cancelled"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "phase_index",
-          "phase_name",
-          "phase_status"
-        ],
-        "type": "object"
-      },
-      "MediaJobPhaseListResponse": {
-        "properties": {
-          "phases": {
-            "items": {
-              "$ref": "#/components/schemas/MediaJobPhaseResponse"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "phases"
-        ],
-        "type": "object"
-      },
       "MediaJobPhaseResponse": {
         "properties": {
           "created_at": {
@@ -4907,24 +4884,17 @@
         ],
         "type": "object"
       },
-      "MediaProfileReadinessResponse": {
+      "MediaJobPhaseListResponse": {
         "properties": {
-          "profile": {
-            "$ref": "#/components/schemas/MediaProfileResponse"
-          },
-          "ready": {
-            "type": "boolean"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "snapshot": {
-            "$ref": "#/components/schemas/MediaCapabilitySnapshotResponse"
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobPhaseResponse"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "ready",
-          "profile"
+          "phases"
         ],
         "type": "object"
       }
