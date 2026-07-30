@@ -381,3 +381,4 @@
     -   [352: Media claim shutdown cancellation](adr/352-media-claim-shutdown-cancellation.md)
     -   [353: Media job phase read model](adr/353-media-job-phase-read-model.md)
     -   [354: Media direct job source fingerprint](adr/354-media-direct-job-source-fingerprint.md)
+    -   [355: Media compatibility target admission](adr/355-media-compatibility-target-admission.md)
