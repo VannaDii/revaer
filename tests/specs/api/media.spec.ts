@@ -23,8 +23,6 @@ test.describe('Media API', () => {
     const watcherPath = `${sourceRoot}/watcher-${suffix}.mkv`;
     const manualPath = `${sourceRoot}/manual-${suffix}.mkv`;
     const schedulePath = `${sourceRoot}/schedule-${suffix}.mkv`;
-    const directPath = `${sourceRoot}/direct-${suffix}.source`;
-    const directOutputPath = `${outputRoot}/direct-${suffix}.mkv`;
 
     await mkdir(sourceRoot, { recursive: true });
     await mkdir(outputRoot, { recursive: true });
@@ -33,7 +31,6 @@ test.describe('Media API', () => {
       writeFile(watcherPath, Buffer.from(`watcher-${suffix}`)),
       writeFile(manualPath, Buffer.from(`manual-${suffix}`)),
       writeFile(schedulePath, Buffer.from(`schedule-${suffix}`)),
-      writeFile(directPath, Buffer.from(`direct-${suffix}`)),
     ]);
 
     const createdProfile = await api.POST('/v1/media/profiles', {
@@ -516,16 +513,7 @@ test.describe('Media API', () => {
     });
     expect(scheduleRun.response.status).toBe(201);
 
-    const createdJob = await api.POST('/v1/media/jobs', {
-      body: {
-        media_profile_public_id: profileId,
-        source_path: directPath,
-        output_path: directOutputPath,
-        dry_run: true,
-      },
-    });
-    expect(createdJob.response.status).toBe(201);
-    const jobId = createdJob.data?.media_job_public_id;
+    const jobId = [discoveryRun, scheduleRun, watcherRun].flatMap((run) => run.data?.queued_jobs ?? [])[0]?.media_job_public_id;
     if (!jobId) {
       throw new Error('Missing media job public id');
     }
@@ -540,7 +528,7 @@ test.describe('Media API', () => {
       params: { path: { media_job_public_id: jobId } },
     });
     expect(job.response.status).toBe(200);
-    expect(job.data?.source_path).toBe(directPath);
+    expect([manualPath, schedulePath, watcherPath]).toContain(job.data?.source_path);
 
     const phases = await api.GET('/v1/media/jobs/{media_job_public_id}/phases', {
       params: { path: { media_job_public_id: jobId } },

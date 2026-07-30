@@ -11,11 +11,13 @@ use crate::openapi_assets::OPENAPI_EMBEDDED_JSON;
 
 const MEDIA_DISCOVERY_SOURCE_PATHS_MAX_LEN: usize = 1024;
 const MEDIA_DISCOVERY_SOURCE_PATH_MAX_BYTES: usize = 4096;
-const STALE_MEDIA_SCHEMAS: [&str; 9] = [
+const STALE_MEDIA_SCHEMAS: [&str; 11] = [
     "MediaCapabilityRecordRequest",
     "MediaCapabilityRecordResponse",
     "MediaJobArtifactAppendRequest",
     "MediaJobCompactAuditAppendRequest",
+    "MediaJobCreateRequest",
+    "MediaJobCreateResponse",
     "MediaJobOperationAppendRequest",
     "MediaJobPhaseAppendRequest",
     "MediaJobPlanReasonAppendRequest",
@@ -593,26 +595,15 @@ fn media_job_core_paths() -> Vec<(&'static str, Value)> {
     vec![
         media_path(
             "/v1/media/jobs",
-            [
-                media_op(
-                    "get",
-                    "List media jobs",
-                    "200",
-                    "Media job collection",
-                    Some("MediaJobListResponse"),
-                    None,
-                    MediaParameterSet::JobListQuery,
-                ),
-                media_op(
-                    "post",
-                    "Create a media job",
-                    "201",
-                    "Media job created",
-                    Some("MediaJobCreateResponse"),
-                    Some("MediaJobCreateRequest"),
-                    MediaParameterSet::None,
-                ),
-            ],
+            [media_op(
+                "get",
+                "List media jobs",
+                "200",
+                "Media job collection",
+                Some("MediaJobListResponse"),
+                None,
+                MediaParameterSet::JobListQuery,
+            )],
         ),
         media_single_path(
             "/v1/media/jobs/{media_job_public_id}",
@@ -1551,26 +1542,6 @@ fn media_job_schemas() -> Vec<(&'static str, Value)> {
 
 fn media_job_core_schemas() -> Vec<(&'static str, Value)> {
     vec![
-        (
-            "MediaJobCreateRequest",
-            object_schema(
-                &["media_profile_public_id", "source_path", "dry_run"],
-                [
-                    ("media_profile_public_id", uuid_schema()),
-                    ("source_path", string_schema()),
-                    ("output_path", string_schema()),
-                    ("dry_run", bool_schema()),
-                    ("replace_confirmation", string_schema()),
-                ],
-            ),
-        ),
-        (
-            "MediaJobCreateResponse",
-            object_schema(
-                &["media_job_public_id"],
-                [("media_job_public_id", uuid_schema())],
-            ),
-        ),
         ("MediaJobResponse", media_job_response_schema()),
         (
             "MediaJobListResponse",

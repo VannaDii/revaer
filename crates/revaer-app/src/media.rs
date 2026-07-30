@@ -11,8 +11,8 @@ use revaer_api::app::media::{
     MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryPreviewResponse,
     MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunParams, MediaDiscoveryRunResponse,
     MediaDiscoverySkippedItemResponse, MediaFacade, MediaJobArtifactResponse,
-    MediaJobCompactAuditResponse, MediaJobCreateParams, MediaJobOperationResponse,
-    MediaJobPhaseResponse, MediaJobPlanReasonResponse, MediaJobResponse,
+    MediaJobCompactAuditResponse, MediaJobOperationResponse, MediaJobPhaseResponse,
+    MediaJobPlanReasonResponse, MediaJobResponse,
     MediaJobRetentionResponse as AppMediaJobRetentionResponse, MediaJobRetentionUpdateParams,
     MediaJobVerificationCheckResponse, MediaJobViolationResponse,
     MediaPolicyResponse as AppMediaPolicyResponse, MediaPolicyUpsertParams,
@@ -71,8 +71,6 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::media_discovery_fingerprint::{FingerprintError, fingerprint_media_aggregate};
-
-const REPLACE_CONFIRMATION_PHRASE: &str = "replace";
 
 #[derive(Debug, Clone, Copy)]
 enum DiscoveryRunMode {
@@ -828,72 +826,6 @@ impl MediaFacade for MediaService {
                 failed_diagnostic_limit: row.failed_diagnostic_limit,
             })
             .map_err(|err| map_data_error(&err))
-    }
-
-    async fn media_job_create(
-        &self,
-        params: MediaJobCreateParams<'_>,
-    ) -> Result<Uuid, MediaServiceError> {
-        let profile = self
-            .store
-            .get_profile(params.media_profile_public_id)
-            .await
-            .map_err(|err| map_data_error(&err))?
-            .ok_or_else(|| {
-                MediaServiceError::new(MediaServiceErrorKind::NotFound)
-                    .with_code("media_profile_not_found")
-            })?;
-        ensure_media_job_paths_within_profile(
-            params.source_path,
-            params.output_path,
-            &profile.source_root,
-            &profile.output_root,
-        )?;
-
-        if !params.dry_run {
-            if profile.dry_run_only
-                && params.replace_confirmation != Some(REPLACE_CONFIRMATION_PHRASE)
-            {
-                return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
-                    .with_code("media_job_replace_confirmation_required"));
-            }
-
-            self.ensure_profile_ready_for_execution(&profile).await?;
-        }
-
-        let fingerprint = fingerprint_source_candidate(params.source_path, &profile.source_root)
-            .await?
-            .ok_or_else(|| {
-                MediaServiceError::new(MediaServiceErrorKind::Invalid)
-                    .with_code("media_discovery_source_unstable")
-            })?;
-        let create_result = self
-            .store
-            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
-                actor_public_id: params.actor_user_public_id,
-                media_profile_public_id: params.media_profile_public_id,
-                source_path: params.source_path,
-                output_path: params.output_path,
-                source_identity: &fingerprint.identity,
-                source_size_bytes: fingerprint.size_bytes,
-                source_modified_ns: fingerprint.modified_ns,
-                source_changed_ns: fingerprint.changed_ns,
-                source_sha256: &fingerprint.sha256,
-            })
-            .await;
-        match create_result {
-            Ok(Some(media_job_public_id)) => {
-                self.telemetry
-                    .inc_media_job_queued("direct", params.dry_run);
-                Ok(media_job_public_id)
-            }
-            Ok(None) => Err(MediaServiceError::new(MediaServiceErrorKind::Conflict)
-                .with_code("media_discovery_source_unchanged")),
-            Err(err) => {
-                self.telemetry.inc_media_job_failure("queue");
-                Err(map_data_error(&err))
-            }
-        }
     }
 
     async fn media_discovery_preview(
@@ -3111,25 +3043,6 @@ fn snapshot_has_supported_feature(snapshot: &CapabilitySnapshotRow, family: &str
     })
 }
 
-fn ensure_media_job_paths_within_profile(
-    source_path: &str,
-    output_path: Option<&str>,
-    source_root: &str,
-    output_root: &str,
-) -> Result<(), MediaServiceError> {
-    if !path_is_within_root(source_path, source_root) {
-        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
-            .with_code("media_job_source_path_outside_profile_root"));
-    }
-
-    if output_path.is_some_and(|path| !path_is_within_root(path, output_root)) {
-        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
-            .with_code("media_job_output_path_outside_profile_root"));
-    }
-
-    Ok(())
-}
-
 fn ensure_discovery_mode_enabled(
     mode: DiscoveryRunMode,
     schedule_enabled: bool,
@@ -3144,16 +3057,6 @@ fn ensure_discovery_mode_enabled(
         DiscoveryRunMode::Watcher => Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
             .with_code("media_discovery_watcher_disabled")),
     }
-}
-
-fn path_is_within_root(path: &str, root: &str) -> bool {
-    let Some(normalized_path) = clean_absolute_path(path) else {
-        return false;
-    };
-    let Some(normalized_root) = clean_absolute_path(root) else {
-        return false;
-    };
-    normalized_path == normalized_root || normalized_path.starts_with(normalized_root)
 }
 
 fn normalize_path_text(path: &str) -> String {
@@ -3247,15 +3150,15 @@ mod tests {
         DiscoveryRunMode, MediaService, ensure_discovery_mode_enabled,
         ensure_execution_capability_snapshot, ensure_profile_compatibility_target_readiness,
         ensure_profile_desired_target_readiness, map_data_error, map_detect_error,
-        parse_yaml_bundle, path_is_within_root, validate_yaml_bundle,
-        yaml_desired_target_shape_invalid,
+        parse_yaml_bundle, validate_yaml_bundle, yaml_desired_target_shape_invalid,
     };
+    use anyhow::Context as _;
     use revaer_api::app::media::MediaServiceErrorKind;
     use revaer_api::app::media::{
         MediaCapabilityRefreshParams, MediaCompatibilityTargetUpsertParams,
         MediaDesiredTargetCreateParams, MediaDesiredTargetStreamParams,
         MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
-        MediaFacade, MediaJobCreateParams, MediaJobRetentionUpdateParams, MediaPolicyUpsertParams,
+        MediaFacade, MediaJobRetentionUpdateParams, MediaPolicyUpsertParams,
         MediaProfileDesiredTargetParams, MediaProfileUpsertParams, MediaYamlDesiredTarget,
     };
     use revaer_data::DataError;
@@ -3747,62 +3650,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn path_is_within_root_rejects_sibling_prefixes() {
-        assert!(path_is_within_root(
-            "/input/app-media/video.mkv",
-            "/input/app-media"
-        ));
-        assert!(!path_is_within_root(
-            "/input/app-media-other/video.mkv",
-            "/input/app-media"
-        ));
-    }
-
-    #[test]
-    fn path_is_within_root_rejects_traversal_and_relative_paths() {
-        assert!(!path_is_within_root(
-            "/media/source/../outside/movie.mkv",
-            "/media/source"
-        ));
-        assert!(!path_is_within_root(
-            "/media/source/movie.mkv",
-            "/media/source/../outside"
-        ));
-        assert!(!path_is_within_root(
-            "media/source/movie.mkv",
-            "/media/source"
-        ));
-    }
-
-    #[tokio::test]
-    async fn media_job_create_requires_replace_confirmation_for_dry_run_profile_override()
-    -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
-        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
-
-        let result = service
-            .media_job_create(MediaJobCreateParams {
-                actor_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/app-media/video.mkv",
-                output_path: Some("/output/app-media/video.mkv"),
-                dry_run: false,
-                replace_confirmation: None,
-            })
-            .await;
-        let Err(err) = result else {
-            panic!("expected dry-run override without confirmation to be rejected");
-        };
-
-        assert_eq!(err.kind(), MediaServiceErrorKind::Invalid);
-        assert_eq!(err.code(), Some("media_job_replace_confirmation_required"));
-        Ok(())
-    }
-
     #[tokio::test]
     async fn media_desired_target_create_rejects_empty_stream_contract() -> anyhow::Result<()> {
         let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
@@ -3921,142 +3768,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn media_job_creation_rejects_concurrent_target_append() -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
-        let target = service
-            .media_desired_target_create(MediaDesiredTargetCreateParams {
-                actor_user_public_id,
-                target_key: "concurrent-snapshot-target".to_string(),
-                version: 1,
-                display_name: "Concurrent snapshot target".to_string(),
-                container_format: "matroska".to_string(),
-                streams: desired_target_streams(1),
-            })
-            .await?;
-        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
-        service
-            .media_profile_desired_target_set(MediaProfileDesiredTargetParams {
-                actor_user_public_id,
-                media_profile_public_id: profile_id,
-                target_key: Some(target.target_key.clone()),
-                version: Some(target.version),
-            })
-            .await?;
-
-        let barrier = Arc::new(tokio::sync::Barrier::new(2));
-        let job_barrier = Arc::clone(&barrier);
-        let job_service = service.service.clone();
-        let job_task = tokio::spawn(async move {
-            job_barrier.wait().await;
-            job_service
-                .media_job_create(MediaJobCreateParams {
-                    actor_user_public_id,
-                    media_profile_public_id: profile_id,
-                    source_path: "/input/app-media/concurrent.mkv",
-                    output_path: Some("/output/app-media/concurrent.mkv"),
-                    dry_run: true,
-                    replace_confirmation: None,
-                })
-                .await
-        });
-
-        let append_barrier = Arc::clone(&barrier);
-        let append_pool = service.store.pool().clone();
-        let target_public_id = target.media_desired_target_profile_public_id;
-        let append_task = tokio::spawn(async move {
-            append_barrier.wait().await;
-            append_media_desired_target_stream_with_executor(
-                &append_pool,
-                append_audio_stream_input(target_public_id, "late-audio", 1),
-            )
-            .await
-        });
-
-        let media_job_public_id = job_task.await??;
-        let append_error = append_task
-            .await?
-            .expect_err("activated desired target must reject concurrent append");
-        assert_eq!(
-            append_error.database_detail(),
-            Some("media_desired_target_immutable")
-        );
-        let snapshot = service
-            .store
-            .list_job_desired_target_streams(media_job_public_id)
-            .await?;
-        assert_eq!(snapshot.len(), 1);
-        assert_eq!(snapshot[0].stream_key, "video-0");
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn media_job_create_rejects_unsupported_profile_compatibility_target()
-    -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
-        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
-        service
-            .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
-                actor_user_public_id,
-                compatibility_target_key: "hevc-aac",
-                version: 1,
-                display_name: "HEVC AAC",
-                video_codec: "hevc",
-                audio_codec: "aac",
-                audio_channels: Some(2),
-                audio_channel_layout: Some("stereo"),
-                subtitle_policy: "selected",
-            })
-            .await?;
-        let media_source = create_test_media_source("video.mkv")?;
-        let profile_id = service
-            .media_profile_upsert(MediaProfileUpsertParams {
-                actor_user_public_id,
-                profile_key: "profile-readiness",
-                source_root: &media_source.source_root,
-                output_root: &media_source.output_root,
-                dry_run_only: false,
-                retention_days: 30,
-                compatibility_target_key: Some("hevc-aac"),
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            })
-            .await?;
-
-        let error = service
-            .media_job_create(MediaJobCreateParams {
-                actor_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: &media_source.source_path,
-                output_path: Some(&media_source.output_path),
-                dry_run: false,
-                replace_confirmation: Some("replace"),
-            })
-            .await
-            .expect_err("profile compatibility target should fail before queueing");
-
-        assert_eq!(error.kind(), MediaServiceErrorKind::Invalid);
-        assert_eq!(
-            error.code(),
-            Some("media_profile_compatibility_target_unsupported")
-        );
-        assert!(
-            service
-                .media_job_list(profile_id, Some("queued"))
-                .await?
-                .is_empty()
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn media_profile_readiness_returns_none_for_missing_profile() -> anyhow::Result<()> {
         let Some((service, _actor_user_public_id)) = setup_media_service(static_detector()).await?
         else {
@@ -4155,92 +3866,6 @@ mod tests {
         );
         assert_eq!(readiness.profile.media_profile_public_id, profile_id);
         assert!(readiness.snapshot.is_some());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn media_job_create_rejects_paths_outside_profile_roots() -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
-        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
-
-        let source_result = service
-            .media_job_create(MediaJobCreateParams {
-                actor_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/other/video.mkv",
-                output_path: Some("/output/app-media/video.mkv"),
-                dry_run: true,
-                replace_confirmation: None,
-            })
-            .await;
-        let source_error = source_result.expect_err("outside source root should be rejected");
-        assert_eq!(source_error.kind(), MediaServiceErrorKind::Invalid);
-        assert_eq!(
-            source_error.code(),
-            Some("media_job_source_path_outside_profile_root")
-        );
-
-        let output_result = service
-            .media_job_create(MediaJobCreateParams {
-                actor_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/app-media/video.mkv",
-                output_path: Some("/output/other/video.mkv"),
-                dry_run: true,
-                replace_confirmation: None,
-            })
-            .await;
-        let output_error = output_result.expect_err("outside output root should be rejected");
-        assert_eq!(output_error.kind(), MediaServiceErrorKind::Invalid);
-        assert_eq!(
-            output_error.code(),
-            Some("media_job_output_path_outside_profile_root")
-        );
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn media_job_create_rejects_traversal_outside_profile_roots() -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
-        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
-
-        let source_result = service
-            .media_job_create(MediaJobCreateParams {
-                actor_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/app-media/../outside/video.mkv",
-                output_path: Some("/output/app-media/video.mkv"),
-                dry_run: true,
-                replace_confirmation: None,
-            })
-            .await;
-        let source_error = source_result.expect_err("source traversal should be rejected");
-        assert_eq!(
-            source_error.code(),
-            Some("media_job_source_path_outside_profile_root")
-        );
-
-        let output_result = service
-            .media_job_create(MediaJobCreateParams {
-                actor_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/app-media/video.mkv",
-                output_path: Some("/output/app-media/../outside/video.mkv"),
-                dry_run: true,
-                replace_confirmation: None,
-            })
-            .await;
-        let output_error = output_result.expect_err("output traversal should be rejected");
-        assert_eq!(
-            output_error.code(),
-            Some("media_job_output_path_outside_profile_root")
-        );
         Ok(())
     }
 
@@ -5276,17 +4901,18 @@ mod tests {
         profile_id: Uuid,
         media_source: &TestMediaSource,
     ) -> anyhow::Result<Uuid> {
-        service
-            .media_job_create(MediaJobCreateParams {
+        let response = service
+            .media_discovery_run(MediaDiscoveryRunParams {
                 actor_user_public_id,
                 media_profile_public_id: profile_id,
-                source_path: &media_source.source_path,
-                output_path: Some(&media_source.output_path),
-                dry_run: true,
-                replace_confirmation: None,
+                source_paths: std::slice::from_ref(&media_source.source_path),
             })
-            .await
-            .map_err(Into::into)
+            .await?;
+        let job = response
+            .queued_jobs
+            .first()
+            .context("manual discovery did not queue a job")?;
+        Ok(job.media_job_public_id)
     }
 
     async fn assert_job_records_round_trip(
