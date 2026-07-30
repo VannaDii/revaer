@@ -3746,41 +3746,48 @@
         ],
         "type": "object"
       },
-      "MediaJobCreateRequest": {
+      "MediaYamlApplyResponse": {
         "properties": {
-          "dry_run": {
+          "forced_dry_run": {
             "type": "boolean"
           },
-          "media_profile_public_id": {
-            "format": "uuid",
-            "type": "string"
+          "media_profile_import_draft_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
           },
-          "output_path": {
-            "type": "string"
-          },
-          "replace_confirmation": {
-            "type": "string"
-          },
-          "source_path": {
-            "type": "string"
+          "media_profile_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "media_profile_public_id",
-          "source_path",
-          "dry_run"
+          "forced_dry_run",
+          "media_profile_public_ids",
+          "media_profile_import_draft_public_ids"
         ],
         "type": "object"
       },
-      "MediaJobCreateResponse": {
+      "MediaProfileValidationResponse": {
         "properties": {
-          "media_job_public_id": {
-            "format": "uuid",
-            "type": "string"
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "valid": {
+            "type": "boolean"
           }
         },
         "required": [
-          "media_job_public_id"
+          "valid",
+          "issues"
         ],
         "type": "object"
       },
@@ -4549,51 +4556,6 @@
           "output_root",
           "dry_run_only",
           "retention_days"
-        ],
-        "type": "object"
-      },
-      "MediaProfileValidationResponse": {
-        "properties": {
-          "issues": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "valid": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "valid",
-          "issues"
-        ],
-        "type": "object"
-      },
-      "MediaYamlApplyResponse": {
-        "properties": {
-          "forced_dry_run": {
-            "type": "boolean"
-          },
-          "media_profile_import_draft_public_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "media_profile_public_ids": {
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "forced_dry_run",
-          "media_profile_public_ids",
-          "media_profile_import_draft_public_ids"
         ],
         "type": "object"
       }
@@ -12749,106 +12711,6 @@
           }
         ],
         "summary": "List media jobs"
-      },
-      "post": {
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MediaJobCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MediaJobCreateResponse"
-                }
-              }
-            },
-            "description": "Media job created"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Invalid media request"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Authentication failed"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Media resource not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Media workflow conflict"
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Rate limit exceeded"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Server error"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            },
-            "description": "Media workflow unavailable"
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "summary": "Create a media job"
       }
     },
     "/v1/media/jobs/{media_job_public_id}": {

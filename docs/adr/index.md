@@ -370,3 +370,4 @@
 -   [359](359-media-worker-owned-phase-history.md) - Media worker-owned phase history
 -   [360](360-ci-cargo-install-retry.md) - CI Cargo install retry
 -   [361](361-media-worker-owned-job-records.md) - Media worker-owned job records
+-   [362](362-media-worker-owned-job-creation.md) - Media worker-owned job creation
