@@ -1433,28 +1433,38 @@
         ],
         "type": "object"
       },
-      "MediaJobArtifactAppendRequest": {
+      "MediaJobPhaseResponse": {
         "properties": {
-          "artifact_index": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "details_text": {
+            "type": "string"
+          },
+          "phase_index": {
             "type": "integer"
           },
-          "artifact_kind": {
+          "phase_name": {
             "type": "string"
           },
-          "artifact_path": {
+          "phase_status": {
+            "enum": [
+              "queued",
+              "running",
+              "verifying",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
             "type": "string"
-          },
-          "content_type": {
-            "type": "string"
-          },
-          "size_bytes": {
-            "type": "integer"
           }
         },
         "required": [
-          "artifact_index",
-          "artifact_kind",
-          "artifact_path"
+          "phase_index",
+          "phase_name",
+          "phase_status",
+          "created_at"
         ],
         "type": "object"
       },
@@ -1502,22 +1512,17 @@
         ],
         "type": "object"
       },
-      "MediaJobCompactAuditAppendRequest": {
+      "MediaJobPhaseListResponse": {
         "properties": {
-          "audit_index": {
-            "type": "integer"
-          },
-          "fact_kind": {
-            "type": "string"
-          },
-          "fact_text": {
-            "type": "string"
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobPhaseResponse"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "audit_index",
-          "fact_kind",
-          "fact_text"
+          "phases"
         ],
         "type": "object"
       },
@@ -1691,49 +1696,20 @@
         ],
         "type": "object"
       },
-      "MediaJobOperationAppendRequest": {
+      "TrackerView": {
         "properties": {
-          "arg_1": {
+          "message": {
             "type": "string"
           },
-          "arg_2": {
+          "status": {
             "type": "string"
           },
-          "arg_3": {
+          "url": {
             "type": "string"
-          },
-          "arg_4": {
-            "type": "string"
-          },
-          "arg_5": {
-            "type": "string"
-          },
-          "command_bin": {
-            "type": "string"
-          },
-          "operation_index": {
-            "type": "integer"
-          },
-          "operation_kind": {
-            "enum": [
-              "remux",
-              "metadata_rewrite",
-              "disposition_rewrite",
-              "label_rewrite",
-              "stream_reorder",
-              "audio_transcode",
-              "video_transcode"
-            ],
-            "type": "string"
-          },
-          "stream_id": {
-            "type": "integer"
           }
         },
         "required": [
-          "operation_index",
-          "operation_kind",
-          "command_bin"
+          "url"
         ],
         "type": "object"
       },
@@ -1823,29 +1799,30 @@
         ],
         "type": "object"
       },
-      "MediaJobPlanReasonAppendRequest": {
+      "TrackerCategoryMappingUpsertRequest": {
         "properties": {
-          "candidate_index": {
-            "type": "integer"
-          },
-          "reason_code": {
+          "indexer_definition_upstream_slug": {
             "type": "string"
           },
-          "reason_index": {
-            "type": "integer"
-          },
-          "reason_text": {
+          "media_domain_key": {
             "type": "string"
           },
-          "selected": {
-            "type": "boolean"
+          "torznab_cat_id": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tracker_category": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "tracker_subcategory": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "required": [
-          "reason_index",
-          "selected",
-          "reason_code",
-          "reason_text"
+          "tracker_category",
+          "torznab_cat_id"
         ],
         "type": "object"
       },
@@ -2023,36 +2000,22 @@
         ],
         "type": "object"
       },
-      "MediaJobVerificationCheckAppendRequest": {
+      "TrackerCategoryMappingDeleteRequest": {
         "properties": {
-          "actual_value": {
+          "indexer_definition_upstream_slug": {
             "type": "string"
           },
-          "check_index": {
+          "tracker_category": {
+            "format": "int32",
             "type": "integer"
           },
-          "check_kind": {
-            "type": "string"
-          },
-          "check_status": {
-            "enum": [
-              "passed",
-              "failed",
-              "skipped"
-            ],
-            "type": "string"
-          },
-          "details_text": {
-            "type": "string"
-          },
-          "expected_value": {
-            "type": "string"
+          "tracker_subcategory": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "required": [
-          "check_index",
-          "check_kind",
-          "check_status"
+          "tracker_category"
         ],
         "type": "object"
       },
@@ -2108,30 +2071,14 @@
         ],
         "type": "object"
       },
-      "MediaJobViolationAppendRequest": {
+      "TorznabInstanceStateRequest": {
         "properties": {
-          "severity": {
-            "enum": [
-              "low",
-              "medium",
-              "high"
-            ],
-            "type": "string"
-          },
-          "stream_id": {
-            "type": "integer"
-          },
-          "violation_index": {
-            "type": "integer"
-          },
-          "violation_kind": {
-            "type": "string"
+          "is_enabled": {
+            "type": "boolean"
           }
         },
         "required": [
-          "violation_index",
-          "violation_kind",
-          "severity"
+          "is_enabled"
         ],
         "type": "object"
       },
@@ -4766,129 +4713,6 @@
         "required": [
           "torznab_instance_public_id",
           "api_key_plaintext"
-        ],
-        "type": "object"
-      },
-      "TorznabInstanceStateRequest": {
-        "properties": {
-          "is_enabled": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "is_enabled"
-        ],
-        "type": "object"
-      },
-      "TrackerCategoryMappingDeleteRequest": {
-        "properties": {
-          "indexer_definition_upstream_slug": {
-            "type": "string"
-          },
-          "tracker_category": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "tracker_subcategory": {
-            "format": "int32",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "tracker_category"
-        ],
-        "type": "object"
-      },
-      "TrackerCategoryMappingUpsertRequest": {
-        "properties": {
-          "indexer_definition_upstream_slug": {
-            "type": "string"
-          },
-          "media_domain_key": {
-            "type": "string"
-          },
-          "torznab_cat_id": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "tracker_category": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "tracker_subcategory": {
-            "format": "int32",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "tracker_category",
-          "torznab_cat_id"
-        ],
-        "type": "object"
-      },
-      "TrackerView": {
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string"
-          },
-          "url": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "url"
-        ],
-        "type": "object"
-      },
-      "MediaJobPhaseListResponse": {
-        "properties": {
-          "phases": {
-            "items": {
-              "$ref": "#/components/schemas/MediaJobPhaseResponse"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "phases"
-        ],
-        "type": "object"
-      },
-      "MediaJobPhaseResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "details_text": {
-            "type": "string"
-          },
-          "phase_index": {
-            "type": "integer"
-          },
-          "phase_name": {
-            "type": "string"
-          },
-          "phase_status": {
-            "enum": [
-              "queued",
-              "running",
-              "verifying",
-              "completed",
-              "failed",
-              "cancelled"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "phase_index",
-          "phase_name",
-          "phase_status",
-          "created_at"
         ],
         "type": "object"
       }
