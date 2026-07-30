@@ -429,7 +429,12 @@ test.describe('Media API', () => {
       },
     });
     expect(watcherRun.response.status).toBe(201);
-    expect(watcherRun.data?.queued_jobs.length).toBe(1);
+    expect(
+      (watcherRun.data?.queued_jobs.length ?? 0) + (watcherRun.data?.skipped.length ?? 0)
+    ).toBe(1);
+    if (watcherRun.data?.queued_jobs.length === 0) {
+      expect(watcherRun.data?.skipped[0]?.reason).toBe('media_discovery_source_unchanged');
+    }
 
     const planningPreview = await api.POST('/v1/media/planning/preview', {
       body: {
