@@ -27,7 +27,10 @@ read_installed_version() {
       return 0
     fi
   fi
-  installed_version="$(printf '%s\n' "${version_output}" | awk 'NR == 1 { print $2 }')"
+  installed_version="$(
+    printf '%s\n' "${version_output}" | \
+      awk 'NR == 1 { version = $2; sub(/^v/, "", version); print version }'
+  )"
 }
 
 read_installed_version

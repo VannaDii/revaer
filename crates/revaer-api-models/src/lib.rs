@@ -957,20 +957,6 @@ pub struct MediaJobCreateRequest {
     pub replace_confirmation: Option<String>,
 }
 
-/// Request payload for appending a media job phase.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MediaJobPhaseAppendRequest {
-    /// Phase order index.
-    pub phase_index: i32,
-    /// Phase name.
-    pub phase_name: String,
-    /// Phase status text.
-    pub phase_status: String,
-    /// Optional details.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub details_text: Option<String>,
-}
-
 /// Request payload for appending a media job operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobOperationAppendRequest {

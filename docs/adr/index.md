@@ -366,6 +366,8 @@
 -   [356](356-media-profile-readiness-api.md) – Media profile readiness API
 -   [357](357-media-desired-target-readiness.md) – Media desired-target readiness
 -   [358](358-media-contextual-stream-rewrites.md) – Media Contextual Stream Rewrites
+-   [359](359-media-worker-owned-phase-history.md) – Media Worker-Owned Phase History
+-   [360](360-ci-cargo-install-retry.md) – CI Cargo Install Retry
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
@@ -378,6 +380,7 @@
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation
 -   [420](420-media-text-input-contract.md) – Media text input contract
+-   [422](422-exact-documentation-tools.md) – Exact documentation tools
 -   [423](423-media-source-identity-fence.md) – Media source identity fence
 -   [424](424-media-target-stream-limit-atomic-snapshot.md) – Media target stream limit and atomic snapshot
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening

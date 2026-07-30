@@ -8,11 +8,12 @@ trap 'rm -rf "${temporary_root}"' EXIT
 
 write_fake_tool() {
   local binary_path="$1"
+  local version_prefix="${2:-}"
 
-  cat >"${binary_path}" <<'SCRIPT'
+  cat >"${binary_path}" <<SCRIPT
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'direct-tool %s\n' "$(<"${FAKE_VERSION_FILE}")"
+printf 'direct-tool ${version_prefix}%s\n' "\$(<"\${FAKE_VERSION_FILE}")"
 SCRIPT
   chmod +x "${binary_path}"
 }
@@ -84,12 +85,54 @@ PATH="${direct_root}/bin:${PATH}" \
   FAKE_VERSION_FILE="${direct_root}/version" \
   bash "${helper}" direct-tool direct-crate 2.0.0
 
+write_fake_tool "${direct_root}/bin/direct-tool" v
+PATH="${direct_root}/bin:${PATH}" \
+  FAKE_VERSION_FILE="${direct_root}/version" \
+  bash "${helper}" direct-tool direct-crate 2.0.0
+
 grep -Fq 'required_udeps_version="0.1.57"' "${repo_root}/justfile"
 grep -Fq 'required_udeps_toolchain="nightly-2026-06-13"' "${repo_root}/justfile"
 grep -Fq 'cargo +"${udeps_toolchain}" udeps --workspace --all-targets' "${repo_root}/justfile"
 grep -Fq 'REVAER_UDEPS_VERSION: "0.1.57"' "${repo_root}/.github/workflows/pr.yml"
 grep -Fq 'REVAER_UDEPS_TOOLCHAIN: "nightly-2026-06-13"' "${repo_root}/.github/workflows/pr.yml"
 grep -Fq 'set shell := ["bash", "-c"]' "${repo_root}/justfile"
+grep -Fq 'required_mdbook_version="0.5.0"' "${repo_root}/justfile"
+grep -Fq 'required_mdbook_mermaid_version="0.17.0"' "${repo_root}/justfile"
+grep -Fq 'required_lychee_version="0.24.2"' "${repo_root}/justfile"
+
+assert_exact_recipe_tool() {
+  local recipe="$1"
+  local binary="$2"
+  local crate="$3"
+  local version_variable="$4"
+  local recipe_body
+
+  recipe_body="$(just --unstable --dump --dump-format json | \
+    jq -r --arg recipe "${recipe}" \
+      '[.recipes[$recipe].body[][]] | join("\n")')"
+  if ! grep -Fq \
+    "${binary} ${crate} \"\$${version_variable}\"" <<<"${recipe_body}"; then
+    echo "${recipe}: ${binary} is not installed through the exact-version helper" >&2
+    exit 1
+  fi
+  if grep -Eq '(^|[[:space:]])cargo[[:space:]]+install([[:space:]]|$)' <<<"${recipe_body}"; then
+    echo "${recipe}: direct cargo install bypasses exact version enforcement" >&2
+    exit 1
+  fi
+  if grep -Fq 'cargo-install-retry.sh' <<<"${recipe_body}"; then
+    echo "${recipe}: retry installer bypasses exact version verification" >&2
+    exit 1
+  fi
+}
+
+assert_exact_recipe_tool docs-install mdbook mdbook required_mdbook_version
+assert_exact_recipe_tool docs-install mdbook-mermaid mdbook-mermaid required_mdbook_mermaid_version
+assert_exact_recipe_tool docs-link-check lychee lychee required_lychee_version
+
+if grep -Fq 'lychee --verbose --no-progress docs || true' "${repo_root}/justfile"; then
+  echo "docs-link-check silently suppresses Lychee failures" >&2
+  exit 1
+fi
 
 if (cd "${repo_root}" && REVAER_UDEPS_VERSION=0.1.58 just udeps >/dev/null 2>&1); then
   echo "just udeps accepted a mismatched cargo-udeps version" >&2
