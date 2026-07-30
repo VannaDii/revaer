@@ -28,7 +28,7 @@ const MEDIA_JOB_RETRY_V1: &str = "SELECT media_job_retry_v1(media_job_public_id_
 const MEDIA_JOB_MARK_COMPLETED_V1: &str =
     "SELECT media_job_mark_completed_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_jobs_pruned, failed_detail_rows_deleted FROM media_job_retention_run_v1(as_of_input => $1)";
-const MEDIA_JOB_WORKER_CLAIM_NEXT_V2: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v2()";
+const MEDIA_JOB_WORKER_CLAIM_NEXT_V3: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, desired_container_metadata_policy, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v3()";
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str =
     "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, status_input => $2::media_job_status, last_error_input => $3)";
@@ -318,6 +318,8 @@ pub struct ClaimedMediaJobRow {
     pub desired_target_version: Option<i32>,
     /// Optional desired output container format snapshotted when queued.
     pub desired_container_format: Option<String>,
+    /// Optional desired container metadata policy snapshotted when queued.
+    pub desired_container_metadata_policy: Option<String>,
     /// Unmatched-stream policy snapshotted when queued.
     pub unmatched_stream_policy: Option<String>,
     /// Verification strictness snapshotted when queued.
@@ -852,7 +854,7 @@ pub async fn run_media_job_retention(
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn media_job_worker_claim_next(pool: &PgPool) -> Result<Option<ClaimedMediaJobRow>> {
-    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V2)
+    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V3)
         .fetch_optional(pool)
         .await
         .map_err(try_op("media job worker claim next"))
@@ -1026,6 +1028,20 @@ mod tests {
     use uuid::Uuid;
 
     static TEST_FINGERPRINT_VERSION: AtomicI64 = AtomicI64::new(1);
+
+    fn ordered_migration_text() -> String {
+        let migration_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let mut migration_entries = fs::read_dir(migration_root)
+            .expect("migration directory must be readable")
+            .collect::<std::io::Result<Vec<_>>>()
+            .expect("migration entries must be readable");
+        migration_entries.sort_by_key(std::fs::DirEntry::path);
+        migration_entries
+            .into_iter()
+            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
     async fn create_media_job(
         pool: &PgPool,
@@ -1381,13 +1397,7 @@ mod tests {
 
     #[test]
     fn migration_guards_media_job_path_bounds_validation() {
-        let migration_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-        let migration_text = fs::read_dir(migration_root)
-            .into_iter()
-            .flat_map(|entries| entries.filter_map(Result::ok))
-            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let migration_text = ordered_migration_text();
 
         assert!(
             migration_text.contains("media_job_normalized_absolute_path_v1"),
@@ -1409,13 +1419,7 @@ mod tests {
 
     #[test]
     fn migration_guards_media_job_fingerprint_requirement() {
-        let migration_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-        let migration_text = fs::read_dir(migration_root)
-            .into_iter()
-            .flat_map(|entries| entries.filter_map(Result::ok))
-            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let migration_text = ordered_migration_text();
 
         assert!(
             migration_text.contains("media_discovery_source_fingerprint"),
@@ -1424,6 +1428,39 @@ mod tests {
         assert!(
             migration_text.contains("media_job_source_fingerprint_required"),
             "direct job creation must require persisted source fingerprints"
+        );
+
+        let latest_create = migration_text
+            .rsplit_once("CREATE OR REPLACE FUNCTION media_job_create_v1")
+            .map(|(_, create)| create)
+            .expect("media_job_create_v1 must be replaced by migrations");
+        assert!(
+            latest_create.contains("media_discovery_source_fingerprint")
+                && latest_create.contains("media_job_source_fingerprint_required"),
+            "latest media_job_create_v1 replacement must preserve fingerprint enforcement"
+        );
+    }
+
+    #[test]
+    fn migration_guards_container_metadata_strip_policy() {
+        let migration_text = ordered_migration_text();
+        let latest_create = migration_text
+            .rsplit_once("CREATE OR REPLACE FUNCTION media_desired_target_create_v2")
+            .map(|(_, create)| create)
+            .expect("media_desired_target_create_v2 must be replaced by migrations");
+
+        assert!(
+            migration_text.contains("container_metadata_policy IN ('preserve', 'strip')"),
+            "desired-target container metadata constraint must accept preserve and strip"
+        );
+        assert!(
+            migration_text
+                .contains("intent_desired_container_metadata_policy IN ('preserve', 'strip')"),
+            "media job desired-target completeness constraint must snapshot preserve and strip"
+        );
+        assert!(
+            latest_create.contains("metadata_policy_value NOT IN ('preserve', 'strip')"),
+            "latest desired-target create procedure must reject policies other than preserve or strip"
         );
     }
 

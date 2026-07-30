@@ -373,3 +373,10 @@
 -   [362](362-media-worker-owned-job-creation.md) - Media worker-owned job creation
 -   [363](363-media-data-target-boundary-evidence.md) - Media data target boundary evidence
 -   [364](364-media-container-metadata-preservation.md) - Media container metadata preservation
+-   [365](365-media-container-metadata-policy.md) - Media container metadata policy
+-   [366](366-media-container-metadata-exact-preservation.md) - Media container metadata exact preservation
+-   [367](367-media-chapter-timeline-exact-preservation.md) - Media chapter timeline exact preservation
+-   [368](368-media-sidecar-state-exact-preservation.md) - Media sidecar state exact preservation
+-   [369](369-media-attachment-passthrough.md) - Media attachment passthrough
+-   [370](370-media-data-stream-passthrough.md) - Media data stream passthrough
+-   [371](371-media-container-metadata-strip-policy.md) - Media container metadata strip policy

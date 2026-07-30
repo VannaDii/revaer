@@ -106,6 +106,7 @@ pub fn generate_plan(diff: &GraphDiff) -> Vec<PlannedOperation> {
 
     append_recode_operations(&mut operations, diff);
     append_audio_channel_operations(&mut operations, diff);
+    append_container_metadata_operation(&mut operations, diff);
     append_stream_rewrite_operations(&mut operations, diff);
     append_remux_operations(&mut operations, diff);
     append_stream_reorder_operation(&mut operations, diff);
@@ -117,6 +118,7 @@ const fn diff_has_changes(diff: &GraphDiff) -> bool {
     !diff.removed_streams.is_empty()
         || !diff.missing_desired_streams.is_empty()
         || !diff.stream_metadata_mismatched_streams.is_empty()
+        || diff.container_metadata_mismatch
         || !diff.disposition_mismatched_streams.is_empty()
         || !diff.recoded_streams.is_empty()
         || !diff.audio_channel_mismatched_streams.is_empty()
@@ -146,6 +148,15 @@ fn append_audio_channel_operations(operations: &mut Vec<PlannedOperation>, diff:
                 stream_id: Some(*stream_id),
             });
         }
+    }
+}
+
+fn append_container_metadata_operation(operations: &mut Vec<PlannedOperation>, diff: &GraphDiff) {
+    if diff.container_metadata_mismatch {
+        operations.push(PlannedOperation {
+            kind: OperationKind::MetadataRewrite,
+            stream_id: None,
+        });
     }
 }
 
@@ -257,6 +268,22 @@ mod tests {
         };
 
         assert_eq!(candidate_plan_cost(&candidate), 25);
+    }
+
+    #[test]
+    fn generate_plan_selects_metadata_rewrite_for_strip_policy() {
+        let diff = GraphDiff {
+            container_metadata_mismatch: true,
+            ..GraphDiff::default()
+        };
+
+        assert_eq!(
+            generate_plan(&diff),
+            vec![PlannedOperation {
+                kind: OperationKind::MetadataRewrite,
+                stream_id: None,
+            }]
+        );
     }
 
     #[test]
@@ -511,6 +538,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            container_metadata_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 1,

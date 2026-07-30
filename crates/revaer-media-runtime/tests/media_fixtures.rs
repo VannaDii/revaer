@@ -347,6 +347,7 @@ fn noop_materialization_verifies_source_path_without_requesting_output_artifact(
     let desired = DesiredGraph {
         output_path: "target/media-fixture-integration/bbb-h264.mp4".to_string(),
         container_format: None,
+        container_metadata_policy: None,
         streams: Vec::new(),
     };
     let source_path = Path::new("test-fixtures/source/bbb-h264.mp4");
@@ -368,6 +369,7 @@ fn mutating_materialization_verifies_requested_output_artifact() {
     let desired = DesiredGraph {
         output_path: "target/media-fixture-integration/bbb-h264.mp4".to_string(),
         container_format: None,
+        container_metadata_policy: None,
         streams: Vec::new(),
     };
 
@@ -971,6 +973,7 @@ fn materialize_same_graph(
     let desired = DesiredGraph {
         output_path: path_text(&output_path)?,
         container_format: None,
+        container_metadata_policy: None,
         streams: graph.streams.clone(),
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
@@ -1185,6 +1188,7 @@ fn assert_transcode_case(
     let desired = DesiredGraph {
         output_path: path_text(&output_path)?,
         container_format: None,
+        container_metadata_policy: None,
         streams: desired_streams,
     };
 
@@ -1324,6 +1328,7 @@ fn assert_multi_audio_selection(
     let desired = DesiredGraph {
         output_path: path_text(&output_root.join("multi-audio-english-only.mkv"))?,
         container_format: None,
+        container_metadata_policy: None,
         streams: english_only,
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
@@ -1357,6 +1362,7 @@ fn assert_multi_audio_selection(
     let desired = DesiredGraph {
         output_path: path_text(&output_root.join("multi-audio-ordered.mkv"))?,
         container_format: None,
+        container_metadata_policy: None,
         streams: ordered,
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
@@ -1387,6 +1393,7 @@ fn assert_subtitle_selection(
     let desired_all = DesiredGraph {
         output_path: path_text(&output_root.join("subtitles-all.mkv"))?,
         container_format: None,
+        container_metadata_policy: None,
         streams: graph.streams.clone(),
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired_all)?;
@@ -1415,6 +1422,7 @@ fn assert_subtitle_selection(
     let desired_forced = DesiredGraph {
         output_path: path_text(&output_root.join("subtitles-forced.mkv"))?,
         container_format: None,
+        container_metadata_policy: None,
         streams: forced_only,
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired_forced)?;
@@ -1447,6 +1455,7 @@ fn assert_subtitle_selection(
     let desired_none = DesiredGraph {
         output_path: path_text(&output_root.join("subtitles-none.mkv"))?,
         container_format: None,
+        container_metadata_policy: None,
         streams: no_subtitles,
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired_none)?;

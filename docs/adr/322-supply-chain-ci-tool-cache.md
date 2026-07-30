@@ -23,6 +23,7 @@
 - Reject every npm advisory severity in both lockfiles and every Cargo advisory warning.
 - Keep `.secignore` and `deny.toml` advisory ignores empty. Remove vulnerable crates from the resolved lock graph by upgrading or replacing dependencies.
 - Keep duplicate-crate allowances exact-version scoped and remove them when the lock graph no longer needs them.
+- Remediate RUSTSEC-2026-0221 by updating the lock graph from `event-listener` 5.4.1 to 5.4.2 instead of adding an advisory ignore.
 
 ## Consequences
 
@@ -47,6 +48,8 @@
   - `just audit`
   - `just deny`
   - `just udeps`
+  - `cargo audit --deny warnings`
+  - `cargo tree -i event-listener --locked`
   - `just policy`
   - `just ci`
   - Remote Supply Chain Checks and Trivy jobs.

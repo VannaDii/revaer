@@ -549,6 +549,9 @@ pub struct MediaDesiredTargetCreateRequest {
     pub display_name: String,
     /// Desired output container format.
     pub container_format: String,
+    /// Desired container metadata policy. Implemented values are `preserve` and `strip`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_metadata_policy: Option<String>,
     /// Complete desired stream graph in final mux order.
     pub streams: Vec<MediaDesiredTargetStream>,
 }
@@ -566,6 +569,8 @@ pub struct MediaDesiredTargetResponse {
     pub display_name: String,
     /// Desired output container format.
     pub container_format: String,
+    /// Desired container metadata policy.
+    pub container_metadata_policy: String,
     /// Complete desired stream graph in final mux order.
     pub streams: Vec<MediaDesiredTargetStream>,
 }

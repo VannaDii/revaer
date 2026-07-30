@@ -62,6 +62,9 @@ pub struct DesiredGraph {
     /// Required output container muxer when a target selects one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_format: Option<String>,
+    /// Desired container metadata policy when a target selects one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_metadata_policy: Option<String>,
     /// Required streams in deterministic output order.
     pub streams: Vec<MediaStream>,
 }

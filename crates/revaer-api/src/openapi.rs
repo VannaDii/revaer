@@ -1120,6 +1120,7 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("version", integer_schema()),
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
+                    ("container_metadata_policy", string_schema()),
                     (
                         "streams",
                         array_ref_min_items_schema("MediaDesiredTargetStream", 1),
@@ -1136,6 +1137,7 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     "version",
                     "display_name",
                     "container_format",
+                    "container_metadata_policy",
                     "streams",
                 ],
                 [
@@ -1144,6 +1146,7 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("version", integer_schema()),
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
+                    ("container_metadata_policy", string_schema()),
                     ("streams", array_ref_schema("MediaDesiredTargetStream")),
                 ],
             ),

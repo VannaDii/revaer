@@ -1,0 +1,57 @@
+# Media Sidecar State Exact Preservation
+
+- Status: Accepted
+- Date: 2026-07-30
+- Context:
+  - The media worker verifies final adjacent sidecar subtitles after a replacement commits.
+  - Existing verification proved requested sidecar outputs existed and requested removals were gone, but it did not reject unrelated sidecar files that appeared beside the final media.
+  - Adjacent subtitle files are part of the playable media artifact, so additive sidecar creation must not pass a preservation boundary unless an explicit target output requested it.
+- Decision:
+  - Treat final sidecar state as exact path-set equality.
+  - Build the expected final set from source sidecars minus scheduled removals plus desired output sidecars and companions.
+  - Fail final verification and roll back the committed replacement when final inspection reports any extra, missing, or incorrectly retained sidecar path.
+  - Alternatives considered:
+    - Keep presence/absence checks only: rejected because unrelated sidecar artifacts could alter playback selection without detection.
+    - Ignore sidecar files not named by the target compiler: rejected because the inspector already treats adjacent sidecars as part of complete media inspection.
+- Consequences:
+  - Positive outcomes:
+    - Final replacement verification now proves no unrequested adjacent subtitle artifact was introduced.
+    - Existing unchanged sidecars remain allowed because they are derived from the inspected source baseline.
+  - Risks or trade-offs:
+    - Operators who intentionally create sidecars out of band during a job may see rollback until that behavior is modeled as an explicit desired-target output.
+- Follow-up:
+  - If future workflows need generated sidecars that are not derived from embedded or existing subtitle inputs, add a first-class generation policy with planning and verification evidence.
+
+## Task Record
+
+- Motivation:
+  - Move the media service closer to production correctness by closing an additive sidecar mutation gap in final replacement verification.
+- Design notes:
+  - `SidecarPublicationContext` now carries the source sidecar baseline captured during initial full inspection.
+  - `sidecar_state_matches` compares exact normalized `Path` sets instead of separate required-output and removed-path predicates.
+  - The expected set includes original source sidecars that were not scheduled for removal and every managed sidecar output destination, including companion files.
+- Test coverage summary:
+  - Added a helper-level test case proving an unrelated extra sidecar makes `sidecar_state_matches` fail.
+  - Added a runtime rollback test proving a committed replacement that reports an unexpected sidecar fails `final_sidecar_state`, restores the source bytes, and records `media_job_output_sidecar_mismatch`.
+  - Validation run:
+    - `cargo fmt --all`
+    - `cargo test -p revaer-app --no-default-features --lib sidecar -- --nocapture`
+    - `just fmt`
+    - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+    - `just policy`
+    - `just instruction-drift`
+    - `sonar analyze secrets crates/revaer-app/src/media_job_runtime.rs docs/adr/368-media-sidecar-state-exact-preservation.md docs/adr/index.md docs/SUMMARY.md`
+    - `git diff --check`
+  - Full local `just ci` and `just ui-e2e` were attempted but the local Docker/Postgres bootstrap failed before those gates could run because Docker was unreachable and `localhost:5432` did not become reachable.
+- Observability updates:
+  - No new metrics or event types were added. Existing `final_sidecar_state` verification checks and `media_job_output_sidecar_mismatch` failures now cover additive sidecar artifacts.
+- Status-doc validation:
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+  - Re-checked ADRs 327 and 367 and kept this change scoped to implemented sidecar-state verification rather than claiming complete attachment or generated-sidecar support.
+- Risk & rollback plan:
+  - Risk is stricter rollback when external tooling mutates adjacent subtitle files during a media job. Roll back this change only if an operator-approved workflow requires out-of-band sidecar creation, then replace it with an explicit generated-sidecar policy and verifier.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found.

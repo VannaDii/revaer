@@ -1,0 +1,71 @@
+# Media Data Stream Passthrough
+
+- Status: Accepted
+- Date: 2026-07-30
+- Context:
+  - Full media inspection retains opaque data streams so the planner can account for them.
+  - Desired-target rows for authored data behavior still fail closed because the schema does not model data payload semantics, muxer-specific support, rewrite rules, or verification beyond exact source retention.
+  - An unmatched-stream preserve policy must still be able to keep an existing data stream unchanged when another supported stream or container difference requires FFmpeg materialization.
+- Decision:
+  - Allow command materialization for data streams only when the desired stream is an exact clone of the inspected source stream.
+  - Keep authored data target rows rejected by desired-target validation.
+  - Keep chapter streams rejected by stream-map materialization; chapter preservation continues through the explicit chapter-preservation path.
+  - Skip explicit stream metadata and disposition rewrite arguments for passthrough data streams so stream-copy behavior owns preservation.
+  - Alternatives considered:
+    - Keep all data streams fail-closed: rejected because it prevents safe preservation of already-inspected data streams during otherwise supported rewrites.
+    - Accept authored data target rows now: rejected because the target schema still lacks a complete data payload, muxer, and verification contract.
+- Consequences:
+  - Positive outcomes:
+    - Supported jobs can preserve existing data streams unchanged instead of failing during command construction.
+    - Data mutation remains fail-closed until the authored data-stream contract exists.
+  - Risks or trade-offs:
+    - The preservation contract is intentionally narrow and graph-based; arbitrary data-stream authoring, insertion, removal, or metadata rewrite remains unsupported.
+- Follow-up:
+  - Add first-class authored data-stream semantics before allowing target rows to create, rewrite, or intentionally transform data streams.
+
+## Task Record
+
+- Motivation:
+  - Move the media service closer to the first-release retention contract for every unmatched source-stream family without pretending arbitrary data-stream semantics are implemented.
+- Design notes:
+  - `build_desired_graph_ffmpeg_argv_with_sidecars` now permits `StreamKind::Data` only when the desired graph carries the exact inspected source stream.
+  - Data passthrough uses the existing mapped-stream copy path and avoids stream metadata/disposition rewrite arguments.
+  - Desired target validation continues to reject `attachment`, `chapter`, and `data` target rows.
+  - App worker snapshot reconstruction remains authored-target-only; unmatched-stream `preserve` policy appends inspected data streams during target compilation instead of admitting authored data rows.
+- Test coverage summary:
+  - Extended core target coverage to prove preserve policy appends an unmatched data stream unchanged while authored data rows remain rejected.
+  - Added runtime command-builder coverage proving exact data passthrough maps the data stream and copies it.
+  - Added runtime command-builder coverage proving attempted data mutation still fails with `UnsupportedDesiredStreamKind`.
+  - Added app worker coverage proving persisted desired-target snapshots reconstruct with `preserve` policy and compile to a desired graph that keeps the inspected source data stream unchanged.
+  - Validation run:
+    - `cargo fmt --all`
+    - `cargo fmt --all --check`
+    - `cargo test -p revaer-app --no-default-features persisted_target_snapshot_preserves_unmatched_data_streams -- --nocapture`
+    - `cargo clippy -p revaer-app --no-default-features --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+    - `cargo test -p revaer-media-core --all-features target::tests -- --nocapture`
+    - `cargo test -p revaer-media-runtime --all-features desired_graph_ -- --nocapture`
+    - `cargo test -p revaer-media-core --all-features`
+    - `cargo test -p revaer-media-runtime --all-features`
+    - `cargo clippy -p revaer-media-core -p revaer-media-runtime --all-features --all-targets -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+    - `just fmt`
+    - `just policy`
+    - `just instruction-drift`
+    - `sonar analyze secrets crates/revaer-media-core/src/target.rs crates/revaer-media-runtime/src/execute/mod.rs docs/SUMMARY.md docs/adr/318-media-transcoding-foundation.md docs/adr/369-media-attachment-passthrough.md docs/adr/index.md docs/adr/370-media-data-stream-passthrough.md`
+    - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format json`
+    - `git diff --check`
+    - `just clean-test-fixtures`
+  - `sonar verify --project VannaDii_Revaer --file crates/revaer-media-core/src/target.rs` and `sonar verify --project VannaDii_Revaer --file crates/revaer-media-runtime/src/execute/mod.rs` were attempted, but SonarQube Agentic Analysis returned HTTP 403 because the organization does not have Agentic Analysis enabled.
+  - Full local `just ci` and `just ui-e2e` were attempted but the local Docker/Postgres bootstrap failed before those gates could run because Docker was unreachable and `localhost:5432` did not become reachable.
+  - `cargo test -p revaer-app --all-features persisted_target_snapshot_preserves_unmatched_data_streams -- --nocapture` was attempted for this app-boundary addition, but the local native libtorrent build failed before the test binary was produced because the installed `/opt/homebrew/include/libtorrent/config.hpp` requires `TORRENT_USE_RTC` with OpenSSL or GnuTLS.
+- Observability updates:
+  - No new metrics or event types were added. Unsupported data mutation continues to surface through the existing preflight build failure classification.
+- Status-doc validation:
+  - Updated `docs/adr/index.md`, `docs/SUMMARY.md`, and ADR 318.
+  - Re-checked `MEDIA_TRANSCODING.md`; no endpoint or operator-guide change was required for this runtime-only preservation contract.
+- Risk & rollback plan:
+  - Risk is limited to FFmpeg passthrough behavior for existing data streams in otherwise mutating jobs. Roll back by restoring broad data-stream rejection in command materialization and rerunning the focused core and runtime tests.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found.
