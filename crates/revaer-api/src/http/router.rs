@@ -462,6 +462,10 @@ impl ApiServer {
                     .route_layer(require_api.clone()),
             )
             .route(
+                "/v1/media/profiles/{media_profile_public_id}/readiness",
+                get(media_handlers::get_media_profile_readiness).route_layer(require_api.clone()),
+            )
+            .route(
                 "/v1/media/compatibility-targets",
                 get(media_handlers::list_media_compatibility_targets)
                     .post(media_handlers::upsert_media_compatibility_target)

@@ -382,6 +382,7 @@
     -   [353: Media job phase read model](adr/353-media-job-phase-read-model.md)
     -   [354: Media direct job source fingerprint](adr/354-media-direct-job-source-fingerprint.md)
     -   [355: Media compatibility target admission](adr/355-media-compatibility-target-admission.md)
+    -   [356: Media profile readiness API](adr/356-media-profile-readiness-api.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
