@@ -387,6 +387,7 @@
     -   [358: Media Contextual Stream Rewrites](adr/358-media-contextual-stream-rewrites.md)
     -   [359: Media Worker-Owned Phase History](adr/359-media-worker-owned-phase-history.md)
     -   [360: CI Cargo Install Retry](adr/360-ci-cargo-install-retry.md)
+    -   [361: Media worker-owned job records](adr/361-media-worker-owned-job-records.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)

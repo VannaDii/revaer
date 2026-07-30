@@ -10,13 +10,11 @@ use revaer_api::app::media::{
     MediaDesiredTargetResponse as AppMediaDesiredTargetResponse, MediaDesiredTargetStreamParams,
     MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryPreviewResponse,
     MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunParams, MediaDiscoveryRunResponse,
-    MediaDiscoverySkippedItemResponse, MediaFacade, MediaJobArtifactAppendParams,
-    MediaJobArtifactResponse, MediaJobCompactAuditAppendParams, MediaJobCompactAuditResponse,
-    MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobOperationResponse,
-    MediaJobPhaseResponse, MediaJobPlanReasonAppendParams, MediaJobPlanReasonResponse,
-    MediaJobResponse, MediaJobRetentionResponse as AppMediaJobRetentionResponse,
-    MediaJobRetentionUpdateParams, MediaJobVerificationCheckAppendParams,
-    MediaJobVerificationCheckResponse, MediaJobViolationAppendParams, MediaJobViolationResponse,
+    MediaDiscoverySkippedItemResponse, MediaFacade, MediaJobArtifactResponse,
+    MediaJobCompactAuditResponse, MediaJobCreateParams, MediaJobOperationResponse,
+    MediaJobPhaseResponse, MediaJobPlanReasonResponse, MediaJobResponse,
+    MediaJobRetentionResponse as AppMediaJobRetentionResponse, MediaJobRetentionUpdateParams,
+    MediaJobVerificationCheckResponse, MediaJobViolationResponse,
     MediaPolicyResponse as AppMediaPolicyResponse, MediaPolicyUpsertParams,
     MediaProfileDesiredTargetParams, MediaProfilePatchParams,
     MediaProfileReadinessResponse as AppMediaProfileReadinessResponse, MediaProfileResponse,
@@ -47,10 +45,7 @@ use revaer_data::media::imports::{
     delete_media_profile_import_draft_with_executor, list_media_profile_import_drafts,
     upsert_media_profile_import_draft_with_executor,
 };
-use revaer_data::media::jobs::{
-    AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
-    AppendMediaJobVerificationCheckInput, EnqueueDiscoveredMediaJobInput,
-};
+use revaer_data::media::jobs::EnqueueDiscoveredMediaJobInput;
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput,
     upsert_media_profile_with_executor,
@@ -1026,23 +1021,6 @@ impl MediaFacade for MediaService {
             .map_err(|err| map_data_error(&err))
     }
 
-    async fn media_job_operation_append(
-        &self,
-        params: MediaJobOperationAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        self.store
-            .append_job_operation(
-                params.media_job_public_id,
-                params.operation_index,
-                params.operation_kind,
-                params.stream_id,
-                params.command_bin,
-                params.args,
-            )
-            .await
-            .map_err(|err| map_data_error(&err))
-    }
-
     async fn media_job_operation_list(
         &self,
         media_job_public_id: Uuid,
@@ -1069,22 +1047,6 @@ impl MediaFacade for MediaService {
             .map_err(|err| map_data_error(&err))
     }
 
-    async fn media_job_violation_append(
-        &self,
-        params: MediaJobViolationAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        self.store
-            .append_job_violation(
-                params.media_job_public_id,
-                params.violation_index,
-                params.violation_kind,
-                params.severity,
-                params.stream_id,
-            )
-            .await
-            .map_err(|err| map_data_error(&err))
-    }
-
     async fn media_job_violation_list(
         &self,
         media_job_public_id: Uuid,
@@ -1103,23 +1065,6 @@ impl MediaFacade for MediaService {
                     })
                     .collect()
             })
-            .map_err(|err| map_data_error(&err))
-    }
-
-    async fn media_job_plan_reason_append(
-        &self,
-        params: MediaJobPlanReasonAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        self.store
-            .append_job_plan_reason(
-                params.media_job_public_id,
-                params.reason_index,
-                params.candidate_index,
-                params.selected,
-                params.reason_code,
-                params.reason_text,
-            )
-            .await
             .map_err(|err| map_data_error(&err))
     }
 
@@ -1142,24 +1087,6 @@ impl MediaFacade for MediaService {
                     })
                     .collect()
             })
-            .map_err(|err| map_data_error(&err))
-    }
-
-    async fn media_job_verification_check_append(
-        &self,
-        params: MediaJobVerificationCheckAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        self.store
-            .append_job_verification_check(&AppendMediaJobVerificationCheckInput {
-                media_job_public_id: params.media_job_public_id,
-                check_index: params.check_index,
-                check_kind: params.check_kind,
-                check_status: params.check_status,
-                expected_value: params.expected_value,
-                actual_value: params.actual_value,
-                details_text: params.details_text,
-            })
-            .await
             .map_err(|err| map_data_error(&err))
     }
 
@@ -1186,23 +1113,6 @@ impl MediaFacade for MediaService {
             .map_err(|err| map_data_error(&err))
     }
 
-    async fn media_job_artifact_append(
-        &self,
-        params: MediaJobArtifactAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        self.store
-            .append_job_artifact(&AppendMediaJobArtifactInput {
-                media_job_public_id: params.media_job_public_id,
-                artifact_index: params.artifact_index,
-                artifact_kind: params.artifact_kind,
-                artifact_path: params.artifact_path,
-                size_bytes: params.size_bytes,
-                content_type: params.content_type,
-            })
-            .await
-            .map_err(|err| map_data_error(&err))
-    }
-
     async fn media_job_artifact_list(
         &self,
         media_job_public_id: Uuid,
@@ -1222,21 +1132,6 @@ impl MediaFacade for MediaService {
                     })
                     .collect()
             })
-            .map_err(|err| map_data_error(&err))
-    }
-
-    async fn media_job_compact_audit_append(
-        &self,
-        params: MediaJobCompactAuditAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        self.store
-            .append_job_compact_audit(&AppendMediaJobCompactAuditInput {
-                media_job_public_id: params.media_job_public_id,
-                audit_index: params.audit_index,
-                fact_kind: params.fact_kind,
-                fact_text: params.fact_text,
-            })
-            .await
             .map_err(|err| map_data_error(&err))
     }
 
@@ -3282,11 +3177,8 @@ mod tests {
         MediaCapabilityRefreshParams, MediaCompatibilityTargetUpsertParams,
         MediaDesiredTargetCreateParams, MediaDesiredTargetStreamParams,
         MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
-        MediaFacade, MediaJobArtifactAppendParams, MediaJobCompactAuditAppendParams,
-        MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobPlanReasonAppendParams,
-        MediaJobRetentionUpdateParams, MediaJobVerificationCheckAppendParams,
-        MediaJobViolationAppendParams, MediaPolicyUpsertParams, MediaProfileDesiredTargetParams,
-        MediaProfileUpsertParams,
+        MediaFacade, MediaJobCreateParams, MediaJobRetentionUpdateParams, MediaPolicyUpsertParams,
+        MediaProfileDesiredTargetParams, MediaProfileUpsertParams,
     };
     use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -3295,6 +3187,10 @@ mod tests {
     };
     use revaer_data::media::configuration::{MediaCompatibilityTargetRow, MediaPolicyProfileRow};
     use revaer_data::media::imports::list_media_profile_import_drafts;
+    use revaer_data::media::jobs::{
+        AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
+        AppendMediaJobVerificationCheckInput,
+    };
     use revaer_data::media::profiles::MediaProfileRow;
     use revaer_media_runtime::capabilities::CapabilityDetectError;
     use revaer_media_runtime::capabilities::CapabilityDetector;
@@ -5134,20 +5030,22 @@ mod tests {
         job_id: Uuid,
     ) -> anyhow::Result<()> {
         service
-            .media_job_plan_reason_append(MediaJobPlanReasonAppendParams {
-                media_job_public_id: job_id,
-                reason_index: 0,
-                candidate_index: Some(0),
-                selected: true,
-                reason_code: "least_cost_selected",
-                reason_text: "Selected the least-cost compliant candidate.",
-            })
+            .store
+            .append_job_plan_reason(
+                job_id,
+                0,
+                Some(0),
+                true,
+                "least_cost_selected",
+                "Selected the least-cost compliant candidate.",
+            )
             .await?;
         let plan_reasons = service.media_job_plan_reason_list(job_id).await?;
         assert_eq!(plan_reasons.len(), 1);
         assert_eq!(plan_reasons[0].reason_code, "least_cost_selected");
         service
-            .media_job_verification_check_append(MediaJobVerificationCheckAppendParams {
+            .store
+            .append_job_verification_check(&AppendMediaJobVerificationCheckInput {
                 media_job_public_id: job_id,
                 check_index: 0,
                 check_kind: "duration",
@@ -5169,7 +5067,8 @@ mod tests {
         job_id: Uuid,
     ) -> anyhow::Result<()> {
         service
-            .media_job_artifact_append(MediaJobArtifactAppendParams {
+            .store
+            .append_job_artifact(&AppendMediaJobArtifactInput {
                 media_job_public_id: job_id,
                 artifact_index: 0,
                 artifact_kind: "ffprobe_json",
@@ -5183,7 +5082,8 @@ mod tests {
         assert_eq!(artifacts[0].artifact_kind, "ffprobe_json");
         assert_eq!(artifacts[0].artifact_path, "jobs/abc/ffprobe.json");
         service
-            .media_job_compact_audit_append(MediaJobCompactAuditAppendParams {
+            .store
+            .append_job_compact_audit(&AppendMediaJobCompactAuditInput {
                 media_job_public_id: job_id,
                 audit_index: 0,
                 fact_kind: "replacement",
@@ -5297,27 +5197,23 @@ mod tests {
             .append_job_phase(job_id, 0, "plan", "queued", Some("ok"))
             .await?;
         service
-            .media_job_operation_append(MediaJobOperationAppendParams {
-                media_job_public_id: job_id,
-                operation_index: 0,
-                operation_kind: "remux",
-                stream_id: None,
-                command_bin: "ffmpeg",
-                args: [Some("-i"), Some("in.mkv"), Some("-c"), Some("copy"), None],
-            })
+            .store
+            .append_job_operation(
+                job_id,
+                0,
+                "remux",
+                None,
+                "ffmpeg",
+                [Some("-i"), Some("in.mkv"), Some("-c"), Some("copy"), None],
+            )
             .await?;
         Ok(())
     }
 
     async fn append_job_violation(service: &MediaService, job_id: Uuid) -> anyhow::Result<()> {
         service
-            .media_job_violation_append(MediaJobViolationAppendParams {
-                media_job_public_id: job_id,
-                violation_index: 0,
-                violation_kind: "video_codec_mismatch",
-                severity: "high",
-                stream_id: Some(0),
-            })
+            .store
+            .append_job_violation(job_id, 0, "video_codec_mismatch", "high", Some(0))
             .await?;
         Ok(())
     }
