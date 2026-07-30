@@ -23,8 +23,10 @@ const SIDECAR_EXTENSIONS: &[&str] = &["ass", "idx", "srt", "ssa", "sub", "sup", 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MediaAggregateFingerprint {
+    pub(crate) identity: String,
     pub(crate) size_bytes: i64,
     pub(crate) modified_ns: i64,
+    pub(crate) changed_ns: i64,
     pub(crate) sha256: String,
 }
 
@@ -88,6 +90,7 @@ pub(crate) fn fingerprint_media_aggregate(
     let mut aggregate = Sha256::new();
     let mut total_size = 0_u64;
     let mut latest_modified_ns = 0_i64;
+    let mut source_identity = None;
     let mut observed_identities = Vec::with_capacity(members.len());
     for member in &members {
         let display_path = media_path.parent().unwrap_or(root).join(member);
@@ -133,6 +136,9 @@ pub(crate) fn fingerprint_media_aggregate(
             .checked_add(after.size)
             .ok_or(FingerprintError::ValueTooLarge("size"))?;
         latest_modified_ns = latest_modified_ns.max(after.modified_ns);
+        if member == &opened.source_name {
+            source_identity = Some(after.clone());
+        }
         observed_identities.push((member, after));
     }
     if owned_member_names(&opened.directory, &opened.source_name)?.as_ref() != Some(&members) {
@@ -147,10 +153,17 @@ pub(crate) fn fingerprint_media_aggregate(
             return Ok(None);
         }
     }
+    let source_identity =
+        source_identity.ok_or_else(|| FingerprintError::InvalidPath(media_path.to_path_buf()))?;
     Ok(Some(MediaAggregateFingerprint {
+        identity: format!(
+            "{:016x}:{:016x}",
+            source_identity.device, source_identity.inode
+        ),
         size_bytes: i64::try_from(total_size)
             .map_err(|_| FingerprintError::ValueTooLarge("size"))?,
         modified_ns: latest_modified_ns,
+        changed_ns: source_identity.changed_ns,
         sha256: format!("{:x}", aggregate.finalize()),
     }))
 }
@@ -158,10 +171,9 @@ pub(crate) fn fingerprint_media_aggregate(
 pub(crate) fn revalidate_media_aggregate(
     media_path: &Path,
     root: &Path,
-    expected_sha256: &str,
+    expected: &MediaAggregateFingerprint,
 ) -> Result<bool, FingerprintError> {
-    Ok(fingerprint_media_aggregate(media_path, root)?
-        .is_some_and(|fingerprint| fingerprint.sha256 == expected_sha256))
+    Ok(fingerprint_media_aggregate(media_path, root)?.as_ref() == Some(expected))
 }
 
 fn open_media_parent(
@@ -447,8 +459,7 @@ mod tests {
         fs::write(&media, b"media")?;
         fs::write(&sidecar, b"subtitle")?;
         let expected = fingerprint_media_aggregate(&media, temp.path())?
-            .ok_or_else(|| anyhow::anyhow!("missing aggregate"))?
-            .sha256;
+            .ok_or_else(|| anyhow::anyhow!("missing aggregate"))?;
         assert!(revalidate_media_aggregate(&media, temp.path(), &expected)?);
 
         fs::rename(&sidecar, temp.path().join("movie.en.srt"))?;

@@ -65,76 +65,12 @@ BEGIN
 END;
 $$;
 
-ALTER TABLE media_job
-    ADD COLUMN discovery_source_size_bytes BIGINT,
-    ADD COLUMN discovery_source_modified_ns BIGINT,
-    ADD COLUMN discovery_source_sha256 TEXT,
-    ADD CONSTRAINT media_job_discovery_fingerprint_complete CHECK (
-        (discovery_source_size_bytes IS NULL AND discovery_source_modified_ns IS NULL
-         AND discovery_source_sha256 IS NULL)
-        OR (discovery_source_size_bytes >= 0 AND discovery_source_modified_ns >= 0
-            AND discovery_source_sha256 ~ '^[0-9a-f]{64}$')
-    );
-
-CREATE OR REPLACE FUNCTION media_discovery_job_enqueue_v2(
-    actor_public_id_input UUID, media_profile_public_id_input UUID,
-    source_path_input TEXT, output_path_input TEXT, source_size_bytes_input BIGINT,
-    source_modified_ns_input BIGINT, source_sha256_input TEXT
-)
-RETURNS UUID
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-    profile_row media_profile%ROWTYPE;
-    source_changed BOOLEAN;
-    media_job_public_id_out UUID;
-BEGIN
-    SELECT * INTO profile_row FROM media_profile
-     WHERE media_profile_public_id = media_profile_public_id_input AND deleted_at IS NULL
-     FOR UPDATE;
-    IF profile_row.media_profile_id IS NULL THEN
-        RAISE EXCEPTION 'profile not found'
-            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
-    END IF;
-    IF NULLIF(btrim(source_path_input), '') IS NULL OR COALESCE(source_size_bytes_input, -1) < 0
-       OR COALESCE(source_modified_ns_input, -1) < 0
-       OR COALESCE(lower(btrim(source_sha256_input)), '') !~ '^[0-9a-f]{64}$' THEN
-        RAISE EXCEPTION 'invalid discovery fingerprint'
-            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_discovery_fingerprint_invalid';
-    END IF;
-    WITH changed AS (
-        INSERT INTO media_discovery_source_fingerprint (
-            media_profile_id, source_path, source_size_bytes, source_modified_ns, source_sha256
-        ) VALUES (profile_row.media_profile_id, btrim(source_path_input), source_size_bytes_input,
-                  source_modified_ns_input, lower(btrim(source_sha256_input)))
-        ON CONFLICT (media_profile_id, source_path) DO UPDATE
-        SET source_size_bytes = EXCLUDED.source_size_bytes,
-            source_modified_ns = EXCLUDED.source_modified_ns,
-            source_sha256 = EXCLUDED.source_sha256, last_seen_at = now()
-        WHERE media_discovery_source_fingerprint.source_size_bytes IS DISTINCT FROM EXCLUDED.source_size_bytes
-           OR media_discovery_source_fingerprint.source_modified_ns IS DISTINCT FROM EXCLUDED.source_modified_ns
-           OR media_discovery_source_fingerprint.source_sha256 IS DISTINCT FROM EXCLUDED.source_sha256
-        RETURNING 1
-    ) SELECT EXISTS (SELECT 1 FROM changed) INTO source_changed;
-    IF NOT source_changed THEN RETURN NULL; END IF;
-    media_job_public_id_out := media_job_create_v1(actor_public_id_input,
-        media_profile_public_id_input, source_path_input, output_path_input, profile_row.dry_run_only);
-    UPDATE media_job SET discovery_source_size_bytes = source_size_bytes_input,
-        discovery_source_modified_ns = source_modified_ns_input,
-        discovery_source_sha256 = lower(btrim(source_sha256_input))
-     WHERE media_job_public_id = media_job_public_id_out;
-    UPDATE media_discovery_source_fingerprint SET last_media_job_public_id = media_job_public_id_out
-     WHERE media_profile_id = profile_row.media_profile_id AND source_path = btrim(source_path_input);
-    RETURN media_job_public_id_out;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION media_job_worker_claim_next_v3()
+CREATE FUNCTION media_job_worker_claim_next_v4()
 RETURNS TABLE (
     media_job_public_id UUID, media_profile_public_id UUID, source_path TEXT, output_path TEXT,
-    dry_run BOOLEAN, source_root TEXT, output_root TEXT, compatibility_target_key TEXT,
+    dry_run BOOLEAN, source_root TEXT, output_root TEXT,
+    source_identity TEXT, source_size_bytes BIGINT, source_modified_ns BIGINT,
+    source_changed_ns BIGINT, source_sha256 TEXT, compatibility_target_key TEXT,
     policy_key TEXT, target_video_codec TEXT, target_audio_codec TEXT,
     target_audio_channels INT, target_audio_channel_layout TEXT, target_subtitle_policy TEXT,
     policy_video_intent TEXT, desired_target_key TEXT, desired_target_version INT,
@@ -142,29 +78,77 @@ RETURNS TABLE (
     verification_duration_tolerance_millis BIGINT, verification_mux_validation BOOLEAN,
     verification_decode_all_streams BOOLEAN, verification_keyframe_seek BOOLEAN,
     verification_playback_probe BOOLEAN, attempt_number INT, claim_generation BIGINT,
-    discovery_source_size_bytes BIGINT, discovery_source_modified_ns BIGINT,
-    discovery_source_sha256 TEXT, cancel_generation BIGINT
+    cancel_generation BIGINT
 )
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
-    SELECT claimed.media_job_public_id, claimed.media_profile_public_id,
-           claimed.source_path, claimed.output_path, claimed.dry_run,
-           claimed.source_root, claimed.output_root, claimed.compatibility_target_key,
-           claimed.policy_key, claimed.target_video_codec, claimed.target_audio_codec,
-           claimed.target_audio_channels, claimed.target_audio_channel_layout,
-           claimed.target_subtitle_policy, claimed.policy_video_intent,
-           claimed.desired_target_key, claimed.desired_target_version,
-           claimed.desired_container_format, claimed.unmatched_stream_policy,
-           claimed.verification_strictness, claimed.verification_duration_tolerance_millis,
-           claimed.verification_mux_validation, claimed.verification_decode_all_streams,
-           claimed.verification_keyframe_seek, claimed.verification_playback_probe,
-           claimed.attempt_number, claimed.claim_generation,
-           job.discovery_source_size_bytes, job.discovery_source_modified_ns,
-           job.discovery_source_sha256, claimed.cancel_generation
-      FROM media_job_worker_claim_next_v2() claimed
-      JOIN media_job job ON job.media_job_public_id = claimed.media_job_public_id;
+BEGIN
+    RETURN QUERY
+    WITH claimed AS (
+        SELECT job.media_job_id, job.current_attempt_id
+          FROM media_job job
+          JOIN media_job_attempt attempt
+            ON attempt.media_job_attempt_id = job.current_attempt_id
+         WHERE job.status = media_job_status_queued_v1()
+           AND attempt.status = media_job_status_queued_v1()
+           AND job.intent_source_identity IS NOT NULL
+           AND job.intent_source_size_bytes IS NOT NULL
+           AND job.intent_source_modified_ns IS NOT NULL
+           AND job.intent_source_changed_ns IS NOT NULL
+           AND job.intent_source_sha256 IS NOT NULL
+         ORDER BY job.queued_at, job.media_job_id
+         FOR UPDATE OF job, attempt SKIP LOCKED
+         LIMIT 1
+    ),
+    updated_attempt AS (
+        UPDATE media_job_attempt attempt
+           SET status = media_job_status_running_v1(),
+               claimed_at = now(),
+               heartbeat_at = now(),
+               cancel_generation_at_claim = job.cancel_generation
+          FROM claimed
+          JOIN media_job job ON job.media_job_id = claimed.media_job_id
+         WHERE attempt.media_job_attempt_id = claimed.current_attempt_id
+        RETURNING attempt.*
+    ),
+    updated_job AS (
+        UPDATE media_job job
+           SET status = media_job_status_running_v1(),
+               started_at = now(),
+               heartbeat_at = now(),
+               completed_at = NULL,
+               last_error = NULL,
+               cancel_acknowledged_generation = job.cancel_generation
+          FROM updated_attempt attempt
+         WHERE job.media_job_id = attempt.media_job_id
+        RETURNING job.*
+    )
+    SELECT job.media_job_public_id, profile.media_profile_public_id,
+           job.source_path, job.output_path, job.dry_run,
+           job.intent_source_root, job.intent_output_root,
+           job.intent_source_identity, job.intent_source_size_bytes,
+           job.intent_source_modified_ns, job.intent_source_changed_ns,
+           job.intent_source_sha256,
+           job.intent_compatibility_target_key, job.intent_policy_key,
+           job.intent_target_video_codec, job.intent_target_audio_codec,
+           job.intent_target_audio_channels, job.intent_target_audio_channel_layout,
+           job.intent_target_subtitle_policy, job.intent_policy_video_intent,
+           job.intent_desired_target_key, job.intent_desired_target_version,
+           job.intent_desired_container_format, job.intent_unmatched_stream_policy,
+           job.intent_verification_strictness,
+           job.intent_verification_duration_tolerance_millis,
+           job.intent_verification_mux_validation,
+           job.intent_verification_decode_all_streams,
+           job.intent_verification_keyframe_seek,
+           job.intent_verification_playback_probe,
+           attempt.attempt_number, attempt.claim_generation,
+           job.cancel_generation
+      FROM updated_job job
+      JOIN updated_attempt attempt ON attempt.media_job_id = job.media_job_id
+      JOIN media_profile profile ON profile.media_profile_id = job.media_profile_id;
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION media_desired_target_graph_page_v1(limit_input INT)

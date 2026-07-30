@@ -161,6 +161,14 @@ struct SidecarPublicationContext<'a> {
     removals: &'a [String],
 }
 
+struct ReplacementExecutionContext<'a> {
+    verification: &'a DesiredVerificationContext<'a>,
+    workspace: &'a revaer_media_runtime::workspace::ManagedWorkspace,
+    sidecars: SidecarPublicationContext<'a>,
+    source_fingerprint: &'a MediaAggregateFingerprint,
+    shutdown: Option<&'a RuntimeShutdownReceiver>,
+}
+
 #[derive(Debug, Default)]
 struct CancellationSignal {
     requested: AtomicBool,
@@ -740,9 +748,9 @@ impl MediaJobRuntime {
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
+        let source_fingerprint = self.capture_source_fingerprint(job).await?;
         self.append_phase(job, 0, "inspect_plan", "running", None)
             .await?;
-        let source_fingerprint = self.capture_source_fingerprint(job).await?;
 
         let final_output_path = resolve_output_path(job)?;
         let output_path = resolve_workspace_output_path(&final_output_path, workspace)?;
@@ -883,14 +891,16 @@ impl MediaJobRuntime {
             .execute_verified_replacement(
                 job,
                 report.steps,
-                &verification_context,
-                managed_workspace,
-                &SidecarPublicationContext {
-                    outputs: &sidecar_outputs,
-                    removals: &sidecar_removals,
+                ReplacementExecutionContext {
+                    verification: &verification_context,
+                    workspace: managed_workspace,
+                    sidecars: SidecarPublicationContext {
+                        outputs: &sidecar_outputs,
+                        removals: &sidecar_removals,
+                    },
+                    source_fingerprint: context.source_fingerprint,
+                    shutdown: context.shutdown,
                 },
-                context.source_fingerprint,
-                context.shutdown,
             )
             .await?;
         managed_workspace.validate()?;
@@ -975,6 +985,8 @@ impl MediaJobRuntime {
         source_fingerprint: &MediaAggregateFingerprint,
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
+        self.revalidate_source_fingerprint(job, source_fingerprint)
+            .await?;
         self.store
             .mark_job_status(
                 job.media_job_public_id,
@@ -1088,10 +1100,13 @@ impl MediaJobRuntime {
         job: &ClaimedMediaJobRow,
         steps: Vec<ExecutionStep>,
         workspace: &revaer_media_runtime::workspace::ManagedWorkspace,
+        source_fingerprint: &MediaAggregateFingerprint,
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<(), MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
         workspace.validate()?;
+        self.revalidate_source_fingerprint(job, source_fingerprint)
+            .await?;
         let runner = Arc::clone(&self.command_runner);
         let signal = Arc::new(CancellationSignal::default());
         let execution_signal = Arc::clone(&signal);
@@ -1144,15 +1159,25 @@ impl MediaJobRuntime {
         &self,
         job: &ClaimedMediaJobRow,
         steps: Vec<ExecutionStep>,
-        verification_context: &DesiredVerificationContext<'_>,
-        workspace: &revaer_media_runtime::workspace::ManagedWorkspace,
-        sidecar_publication: &SidecarPublicationContext<'_>,
-        source_fingerprint: &MediaAggregateFingerprint,
-        shutdown: Option<&RuntimeShutdownReceiver>,
+        context: ReplacementExecutionContext<'_>,
     ) -> Result<CommittedReplacement, MediaJobRuntimeError> {
+        let ReplacementExecutionContext {
+            verification,
+            workspace,
+            sidecars,
+            source_fingerprint,
+            shutdown,
+        } = context;
         self.ensure_not_cancelled(job).await?;
         let candidate_output_path = self
-            .execute_and_verify_candidate(job, &steps, verification_context, workspace, shutdown)
+            .execute_and_verify_candidate(
+                job,
+                &steps,
+                verification,
+                workspace,
+                source_fingerprint,
+                shutdown,
+            )
             .await?;
         self.ensure_not_cancelled(job).await?;
         let replace_step = steps
@@ -1181,13 +1206,13 @@ impl MediaJobRuntime {
                 job,
                 source_path,
                 output_path,
-                sidecar_publication.outputs,
-                sidecar_publication.removals,
+                sidecars.outputs,
+                sidecars.removals,
                 source_fingerprint,
             )
             .await?;
         let verification = self
-            .verify_final_desired_state(job, verification_context, sidecar_publication, shutdown)
+            .verify_final_desired_state(job, verification, &sidecars, shutdown)
             .await;
         let verification = match verification {
             Ok(()) => self.ensure_not_cancelled(job).await,
@@ -1215,9 +1240,12 @@ impl MediaJobRuntime {
         steps: &[ExecutionStep],
         verification_context: &DesiredVerificationContext<'_>,
         workspace: &revaer_media_runtime::workspace::ManagedWorkspace,
+        source_fingerprint: &MediaAggregateFingerprint,
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<String, MediaJobRuntimeError> {
         let candidate_output_path = replacement_output_path(steps)?;
+        self.revalidate_source_fingerprint(job, source_fingerprint)
+            .await?;
         let source_inspection = self
             .inspect_media(job, job.source_path.clone(), shutdown)
             .await?;
@@ -1228,8 +1256,14 @@ impl MediaJobRuntime {
             .filter(|step| !matches!(step, ExecutionStep::QuarantineFailedOutput { .. }))
             .cloned()
             .collect::<Vec<_>>();
-        self.execute_steps(job, pre_replace_steps, workspace, shutdown)
-            .await?;
+        self.execute_steps(
+            job,
+            pre_replace_steps,
+            workspace,
+            source_fingerprint,
+            shutdown,
+        )
+        .await?;
         self.ensure_not_cancelled(job).await?;
         let candidate_inspection = match self
             .inspect_media(job, candidate_output_path.clone(), shutdown)
@@ -1337,6 +1371,8 @@ impl MediaJobRuntime {
         source_fingerprint: &MediaAggregateFingerprint,
     ) -> Result<CommittedReplacement, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
+        self.revalidate_source_fingerprint(job, source_fingerprint)
+            .await?;
         let replacement_backend = Arc::clone(&self.replacement_committer);
         let job_key = replacement_job_key(job.media_job_public_id, job.claim_generation);
         let source_root = PathBuf::from(&job.source_root);
@@ -2269,32 +2305,20 @@ fn validate_claimed_source_fingerprint(
     job: &ClaimedMediaJobRow,
     observed: Option<MediaAggregateFingerprint>,
 ) -> Result<MediaAggregateFingerprint, MediaJobRuntimeError> {
-    match (
-        job.discovery_source_size_bytes,
-        job.discovery_source_modified_ns,
-        job.discovery_source_sha256.as_deref(),
-    ) {
-        (None, None, None) => observed.ok_or(MediaJobRuntimeError::SourceFingerprint(
-            "media_job_source_fingerprint_unavailable",
-        )),
-        (Some(expected_size), Some(expected_modified), Some(expected_sha256)) => {
-            let observed = observed.ok_or(MediaJobRuntimeError::SourceFingerprint(
-                "media_job_source_fingerprint_unavailable",
-            ))?;
-            if observed.size_bytes == expected_size
-                && observed.modified_ns == expected_modified
-                && observed.sha256 == expected_sha256
-            {
-                Ok(observed)
-            } else {
-                Err(MediaJobRuntimeError::SourceFingerprint(
-                    "media_job_source_fingerprint_mismatch",
-                ))
-            }
-        }
-        _ => Err(MediaJobRuntimeError::SourceFingerprint(
-            "media_job_source_fingerprint_snapshot_incomplete",
-        )),
+    let observed = observed.ok_or(MediaJobRuntimeError::SourceFingerprint(
+        "media_job_source_fingerprint_unavailable",
+    ))?;
+    if observed.identity == job.source_identity
+        && observed.size_bytes == job.source_size_bytes
+        && observed.modified_ns == job.source_modified_ns
+        && observed.changed_ns == job.source_changed_ns
+        && observed.sha256 == job.source_sha256
+    {
+        Ok(observed)
+    } else {
+        Err(MediaJobRuntimeError::SourceFingerprint(
+            "media_job_source_fingerprint_mismatch",
+        ))
     }
 }
 
@@ -4518,7 +4542,7 @@ mod tests {
         append_media_desired_target_stream, create_media_desired_target,
         set_media_profile_desired_target,
     };
-    use revaer_data::media::jobs::{ClaimedMediaJobRow, CreateMediaJobInput};
+    use revaer_data::media::jobs::{ClaimedMediaJobRow, EnqueueDiscoveredMediaJobInput};
     use revaer_data::media::profiles::{UpdateMediaProfileInput, UpsertMediaProfileInput};
     use revaer_events::{Event as CoreEvent, EventBus};
     use revaer_media_core::classify::SemanticRole;
@@ -5649,7 +5673,6 @@ mod tests {
         let output_path = output_root.join("movie.mkv");
         let input_root_text = input_root.to_string_lossy().to_string();
         let output_root_text = output_root.to_string_lossy().to_string();
-        let source_path_text = source_path.to_string_lossy().to_string();
         let output_path_text = output_path.to_string_lossy().to_string();
         fs::write(&source_path, b"source")?;
 
@@ -5690,15 +5713,16 @@ mod tests {
                 })
                 .await?;
         }
-        let job_id = store
-            .create_job(&CreateMediaJobInput {
-                actor_public_id: actor,
-                media_profile_public_id: profile_id,
-                source_path: &source_path_text,
-                output_path: Some(&output_path_text),
-                dry_run,
-            })
-            .await?;
+        let job_id = enqueue_runtime_test_job(
+            &store,
+            actor,
+            profile_id,
+            &source_path,
+            &input_root,
+            &output_path_text,
+            dry_run,
+        )
+        .await?;
         if record_capability {
             record_runtime_capability(&store, actor).await?;
         }
@@ -5723,6 +5747,38 @@ mod tests {
             telemetry,
             command_runner,
         }))
+    }
+
+    async fn enqueue_runtime_test_job(
+        store: &MediaStore,
+        actor: Uuid,
+        profile_id: Uuid,
+        source_path: &Path,
+        source_root: &Path,
+        output_path: &str,
+        dry_run: bool,
+    ) -> anyhow::Result<Uuid> {
+        let fingerprint = crate::media_discovery_fingerprint::fingerprint_media_aggregate(
+            source_path,
+            source_root,
+        )?
+        .ok_or_else(|| anyhow::anyhow!("media runtime test source fingerprint was unstable"))?;
+        store
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
+                actor_public_id: actor,
+                media_profile_public_id: profile_id,
+                source_path: &source_path.to_string_lossy(),
+                output_path: Some(output_path),
+                dry_run,
+                source_identity: &fingerprint.identity,
+                source_size_bytes: fingerprint.size_bytes,
+                source_modified_ns: fingerprint.modified_ns,
+                source_changed_ns: fingerprint.changed_ns,
+                source_sha256: &fingerprint.sha256,
+            })
+            .await?
+            .map(|job| job.media_job_public_id)
+            .ok_or_else(|| anyhow::anyhow!("media runtime test job should be queued"))
     }
 
     fn test_runtime(
@@ -5836,23 +5892,15 @@ mod tests {
     }
 
     #[test]
-    fn claimed_source_fingerprint_accepts_manual_and_exact_discovery_baselines() {
-        let mut job =
-            claimed_job_with_paths("/library/movie.mkv", None, true, "/library", "/output");
+    fn claimed_source_fingerprint_accepts_exact_snapshot() {
+        let job = claimed_job_with_paths("/library/movie.mkv", None, true, "/library", "/output");
         let fingerprint = MediaAggregateFingerprint {
-            size_bytes: 42,
-            modified_ns: 84,
-            sha256: "a".repeat(64),
+            identity: job.source_identity.clone(),
+            size_bytes: job.source_size_bytes,
+            modified_ns: job.source_modified_ns,
+            changed_ns: job.source_changed_ns,
+            sha256: job.source_sha256.clone(),
         };
-        assert_eq!(
-            validate_claimed_source_fingerprint(&job, Some(fingerprint.clone()))
-                .map_err(|error| error.code()),
-            Ok(fingerprint.clone())
-        );
-
-        job.discovery_source_size_bytes = Some(fingerprint.size_bytes);
-        job.discovery_source_modified_ns = Some(fingerprint.modified_ns);
-        job.discovery_source_sha256 = Some(fingerprint.sha256.clone());
         assert_eq!(
             validate_claimed_source_fingerprint(&job, Some(fingerprint.clone()))
                 .map_err(|error| error.code()),
@@ -5861,23 +5909,15 @@ mod tests {
     }
 
     #[test]
-    fn claimed_source_fingerprint_rejects_partial_missing_and_mismatched_snapshots() {
-        let mut job =
-            claimed_job_with_paths("/library/movie.mkv", None, true, "/library", "/output");
+    fn claimed_source_fingerprint_rejects_missing_and_mismatched_observations() {
+        let job = claimed_job_with_paths("/library/movie.mkv", None, true, "/library", "/output");
         let fingerprint = MediaAggregateFingerprint {
-            size_bytes: 42,
-            modified_ns: 84,
-            sha256: "a".repeat(64),
+            identity: job.source_identity.clone(),
+            size_bytes: job.source_size_bytes,
+            modified_ns: job.source_modified_ns,
+            changed_ns: job.source_changed_ns,
+            sha256: job.source_sha256.clone(),
         };
-        job.discovery_source_size_bytes = Some(fingerprint.size_bytes);
-        assert_eq!(
-            validate_claimed_source_fingerprint(&job, Some(fingerprint.clone()))
-                .map_err(|error| error.code()),
-            Err("media_job_source_fingerprint_snapshot_incomplete")
-        );
-
-        job.discovery_source_modified_ns = Some(fingerprint.modified_ns);
-        job.discovery_source_sha256 = Some(fingerprint.sha256.clone());
         assert_eq!(
             validate_claimed_source_fingerprint(&job, None).map_err(|error| error.code()),
             Err("media_job_source_fingerprint_unavailable")
@@ -8288,9 +8328,11 @@ Integrated loudness:
             dry_run,
             source_root: source_root.to_string(),
             output_root: output_root.to_string(),
-            discovery_source_size_bytes: None,
-            discovery_source_modified_ns: None,
-            discovery_source_sha256: None,
+            source_identity: "0000000000000001:0000000000000001".to_string(),
+            source_size_bytes: 1,
+            source_modified_ns: 1,
+            source_changed_ns: 1,
+            source_sha256: "1".repeat(64),
             compatibility_target_key: None,
             policy_key: "safe_dry_run".to_string(),
             target_video_codec: None,

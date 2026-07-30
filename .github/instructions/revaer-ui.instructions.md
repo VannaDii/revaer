@@ -36,6 +36,7 @@ applyTo:
 # UI And E2E Maintenance
 
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
+- API E2E media tests must create real source files beneath private per-test temporary profile roots and remove the complete temporary tree in `afterEach`, including when an assertion fails. Synthetic paths may be used only for routes whose contract explicitly rejects or never reads the filesystem.
 - Treat generated API clients and synchronized assets as generated artifacts; regenerate them intentionally and keep authored wrappers separate.
 - Run every Node command through `scripts/with-node.sh`. The wrapper must select and verify the exact `.nvmrc` version so an operator's NVM-managed Node remains active rather than being replaced by a login shell.
 - Every PR UI E2E shard must upload nonempty API and UI coverage with `if-no-files-found: error`. The aggregate must download all three exact named shard artifacts and run `just ui-e2e-shard-coverage` before evaluating combined route coverage; a missing shard or record is a failed gate.

@@ -1,17 +1,26 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicI64, Ordering},
+    time::Duration as StdDuration,
+};
 
 use super::{
     MediaRootIdentity, MediaRootIdentityError, MediaRootIdentityResolver,
     StdMediaRootIdentityResolver,
 };
 use crate::config::run_migrations;
+use crate::media::jobs::{
+    EnqueueDiscoveredMediaJobInput, enqueue_discovered_media_job, get_media_job,
+    media_job_worker_claim_next,
+};
 use chrono::{DateTime, Duration, Utc};
 use revaer_test_support::postgres::{TestDatabase, start_postgres};
-use sqlx::postgres::PgPoolOptions;
-use sqlx::{PgPool, Row};
+use sqlx::postgres::{PgDatabaseError, PgPoolOptions};
+use sqlx::{Executor, PgPool, Postgres, Row};
 use uuid::Uuid;
 
 const ACTOR_ID: &str = "00000000-0000-0000-0000-000000000000";
+static TEST_FINGERPRINT_VERSION: AtomicI64 = AtomicI64::new(1);
 
 struct TestDb {
     _database: TestDatabase,
@@ -102,6 +111,32 @@ async fn create_profile(pool: &PgPool, key: &str, roots: &TestRoots) -> anyhow::
     Ok(profile_id)
 }
 
+async fn set_profile_dry_run_only<'e, E>(
+    executor: E,
+    profile_id: Uuid,
+    dry_run_only: bool,
+) -> anyhow::Result<Uuid>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        "SELECT media_profile_update_v1($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+    )
+    .bind(actor_id()?)
+    .bind(profile_id)
+    .bind(Option::<&str>::None)
+    .bind(Option::<&str>::None)
+    .bind(dry_run_only)
+    .bind(Option::<i32>::None)
+    .bind(Option::<&str>::None)
+    .bind(Option::<&str>::None)
+    .bind(Option::<bool>::None)
+    .bind(Option::<bool>::None)
+    .bind(Option::<i32>::None)
+    .fetch_one(executor)
+    .await?)
+}
+
 async fn create_job(
     pool: &PgPool,
     profile_id: Uuid,
@@ -116,21 +151,97 @@ async fn create_job(
         .output
         .canonical_path()
         .join(format!("output-{sequence}.mkv"));
-    let job_id = sqlx::query_scalar::<_, Uuid>("SELECT media_job_create_v1($1,$2,$3,$4,$5)")
-        .bind(actor_id()?)
-        .bind(profile_id)
-        .bind(path_text(&source)?)
-        .bind(path_text(&output)?)
-        .bind(true)
-        .fetch_one(pool)
-        .await?;
-    Ok(job_id)
+    let version = TEST_FINGERPRINT_VERSION.fetch_add(1, Ordering::Relaxed);
+    let source_identity = format!("{version:016x}:{version:016x}");
+    let source_sha256 = format!("{version:064x}");
+    enqueue_discovered_media_job(
+        pool,
+        &EnqueueDiscoveredMediaJobInput {
+            actor_public_id: actor_id()?,
+            media_profile_public_id: profile_id,
+            source_path: path_text(&source)?,
+            output_path: Some(path_text(&output)?),
+            dry_run: true,
+            source_identity: &source_identity,
+            source_size_bytes: version,
+            source_modified_ns: version,
+            source_changed_ns: version,
+            source_sha256: &source_sha256,
+        },
+    )
+    .await?
+    .map(|job| job.media_job_public_id)
+    .ok_or_else(|| anyhow::anyhow!("test media job fingerprint was unchanged"))
 }
 
 fn database_message(error: &sqlx::Error) -> Option<&str> {
     error
         .as_database_error()
         .map(sqlx::error::DatabaseError::message)
+}
+
+fn database_detail(error: &sqlx::Error) -> Option<&str> {
+    error
+        .as_database_error()
+        .and_then(|database_error| database_error.try_downcast_ref::<PgDatabaseError>())
+        .and_then(PgDatabaseError::detail)
+}
+
+fn assert_configuration_immutable<T>(result: Result<T, sqlx::Error>) -> anyhow::Result<()> {
+    let Err(error) = result else {
+        return Err(anyhow::anyhow!(
+            "media job configuration mutation unexpectedly succeeded"
+        ));
+    };
+    assert_eq!(
+        database_detail(&error),
+        Some("media_job_configuration_immutable")
+    );
+    Ok(())
+}
+
+struct DryRunAdmissionCase<'a> {
+    profile_id: Uuid,
+    roots: &'a TestRoots,
+    source_name: &'a str,
+    requested_dry_run: bool,
+    expected_dry_run: bool,
+    source_identity: &'a str,
+    fingerprint_version: i64,
+    sha256_seed: &'a str,
+}
+
+async fn assert_dry_run_admission(
+    pool: &PgPool,
+    case: DryRunAdmissionCase<'_>,
+) -> anyhow::Result<()> {
+    let source_path = case.roots.source.canonical_path().join(case.source_name);
+    let output_path = case.roots.output.canonical_path().join(case.source_name);
+    let source_sha256 = case.sha256_seed.repeat(64);
+    let enqueued = enqueue_discovered_media_job(
+        pool,
+        &EnqueueDiscoveredMediaJobInput {
+            actor_public_id: actor_id()?,
+            media_profile_public_id: case.profile_id,
+            source_path: path_text(&source_path)?,
+            output_path: Some(path_text(&output_path)?),
+            dry_run: case.requested_dry_run,
+            source_identity: case.source_identity,
+            source_size_bytes: case.fingerprint_version,
+            source_modified_ns: case.fingerprint_version + 10,
+            source_changed_ns: case.fingerprint_version + 20,
+            source_sha256: &source_sha256,
+        },
+    )
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("{} was not enqueued", case.source_name))?;
+    assert_eq!(enqueued.dry_run, case.expected_dry_run);
+
+    let persisted = get_media_job(pool, enqueued.media_job_public_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("{} was not persisted", case.source_name))?;
+    assert_eq!(persisted.dry_run, case.expected_dry_run);
+    Ok(())
 }
 
 async fn claim_job(pool: &PgPool) -> anyhow::Result<(Uuid, i32, i64)> {
@@ -543,6 +654,225 @@ async fn job_snapshots_and_selected_policy_are_immutable() -> anyhow::Result<()>
     .execute(&test_db.pool)
     .await;
     assert!(selected_policy_mutation.is_err());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn admitted_dry_run_mode_follows_complete_or_truth_table() -> anyhow::Result<()> {
+    let Some(test_db) = setup_db("admitted_dry_run_mode_truth_table").await? else {
+        return Ok(());
+    };
+
+    let normal_roots = make_test_roots()?;
+    let normal_profile = create_profile(&test_db.pool, "normal-profile", &normal_roots).await?;
+    set_profile_dry_run_only(&test_db.pool, normal_profile, false).await?;
+    assert_dry_run_admission(
+        &test_db.pool,
+        DryRunAdmissionCase {
+            profile_id: normal_profile,
+            roots: &normal_roots,
+            source_name: "execution-request.mkv",
+            requested_dry_run: false,
+            expected_dry_run: false,
+            source_identity: "0000000000000009:0000000000000019",
+            fingerprint_version: 9,
+            sha256_seed: "9",
+        },
+    )
+    .await?;
+    assert_dry_run_admission(
+        &test_db.pool,
+        DryRunAdmissionCase {
+            profile_id: normal_profile,
+            roots: &normal_roots,
+            source_name: "explicit-dry-run.mkv",
+            requested_dry_run: true,
+            expected_dry_run: true,
+            source_identity: "000000000000000a:000000000000001a",
+            fingerprint_version: 10,
+            sha256_seed: "a",
+        },
+    )
+    .await?;
+
+    let forced_roots = make_test_roots()?;
+    let forced_profile =
+        create_profile(&test_db.pool, "profile-forced-dry-run", &forced_roots).await?;
+    assert_dry_run_admission(
+        &test_db.pool,
+        DryRunAdmissionCase {
+            profile_id: forced_profile,
+            roots: &forced_roots,
+            source_name: "profile-forced-dry-run.mkv",
+            requested_dry_run: false,
+            expected_dry_run: true,
+            source_identity: "000000000000000b:000000000000001b",
+            fingerprint_version: 11,
+            sha256_seed: "b",
+        },
+    )
+    .await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn enqueue_uses_profile_mode_selected_under_row_lock() -> anyhow::Result<()> {
+    let Some(test_db) = setup_db("enqueue_profile_mode_lock").await? else {
+        return Ok(());
+    };
+    let roots = make_test_roots()?;
+    let profile_id = create_profile(&test_db.pool, "profile-mode-lock", &roots).await?;
+    set_profile_dry_run_only(&test_db.pool, profile_id, false).await?;
+
+    let mut profile_update = test_db.pool.begin().await?;
+    set_profile_dry_run_only(&mut *profile_update, profile_id, true).await?;
+
+    let pool = test_db.pool.clone();
+    let actor_public_id = actor_id()?;
+    let source_path = path_text(&roots.source.canonical_path().join("lock-race.mkv"))?.to_string();
+    let output_path = path_text(&roots.output.canonical_path().join("lock-race.mkv"))?.to_string();
+    let mut enqueue_task = tokio::spawn(async move {
+        let source_sha256 = "c".repeat(64);
+        enqueue_discovered_media_job(
+            &pool,
+            &EnqueueDiscoveredMediaJobInput {
+                actor_public_id,
+                media_profile_public_id: profile_id,
+                source_path: &source_path,
+                output_path: Some(&output_path),
+                dry_run: false,
+                source_identity: "000000000000000c:000000000000001c",
+                source_size_bytes: 12,
+                source_modified_ns: 22,
+                source_changed_ns: 32,
+                source_sha256: &source_sha256,
+            },
+        )
+        .await
+    });
+
+    let early_result = tokio::time::timeout(StdDuration::from_millis(200), &mut enqueue_task).await;
+    profile_update.commit().await?;
+    let enqueued = match early_result {
+        Ok(join_result) => {
+            let completed = join_result?;
+            return Err(anyhow::anyhow!(
+                "enqueue completed before the profile-row lock was released: {completed:?}"
+            ));
+        }
+        Err(_) => enqueue_task.await??,
+    }
+    .ok_or_else(|| anyhow::anyhow!("profile mode race did not enqueue a job"))?;
+
+    assert!(enqueued.dry_run);
+    let job = get_media_job(&test_db.pool, enqueued.media_job_public_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("profile mode race job was not persisted"))?;
+    assert!(job.dry_run);
+    Ok(())
+}
+
+#[tokio::test]
+async fn source_fingerprint_intent_is_immutable_and_claim_returns_original() -> anyhow::Result<()> {
+    let Some(test_db) = setup_db("source_fingerprint_intent_immutable").await? else {
+        return Ok(());
+    };
+    let roots = make_test_roots()?;
+    let profile_id = create_profile(&test_db.pool, "immutable-fingerprint", &roots).await?;
+    let source_path = roots.source.canonical_path().join("immutable.mkv");
+    let output_path = roots.output.canonical_path().join("immutable.mkv");
+    let source_identity = "000000000000000d:000000000000001d";
+    let source_size_bytes = 4_096_i64;
+    let source_modified_ns = 5_000_i64;
+    let source_changed_ns = 6_000_i64;
+    let source_sha256 = "d".repeat(64);
+    let enqueued = enqueue_discovered_media_job(
+        &test_db.pool,
+        &EnqueueDiscoveredMediaJobInput {
+            actor_public_id: actor_id()?,
+            media_profile_public_id: profile_id,
+            source_path: path_text(&source_path)?,
+            output_path: Some(path_text(&output_path)?),
+            dry_run: true,
+            source_identity,
+            source_size_bytes,
+            source_modified_ns,
+            source_changed_ns,
+            source_sha256: &source_sha256,
+        },
+    )
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("immutable fingerprint job was not enqueued"))?;
+
+    assert_configuration_immutable(
+        sqlx::query("UPDATE media_job SET intent_source_identity=$2 WHERE media_job_public_id=$1")
+            .bind(enqueued.media_job_public_id)
+            .bind("000000000000000e:000000000000001e")
+            .execute(&test_db.pool)
+            .await,
+    )?;
+    assert_configuration_immutable(
+        sqlx::query(
+            "UPDATE media_job SET intent_source_size_bytes=$2 WHERE media_job_public_id=$1",
+        )
+        .bind(enqueued.media_job_public_id)
+        .bind(source_size_bytes + 1)
+        .execute(&test_db.pool)
+        .await,
+    )?;
+    assert_configuration_immutable(
+        sqlx::query(
+            "UPDATE media_job SET intent_source_modified_ns=$2 WHERE media_job_public_id=$1",
+        )
+        .bind(enqueued.media_job_public_id)
+        .bind(source_modified_ns + 1)
+        .execute(&test_db.pool)
+        .await,
+    )?;
+    assert_configuration_immutable(
+        sqlx::query(
+            "UPDATE media_job SET intent_source_changed_ns=$2 WHERE media_job_public_id=$1",
+        )
+        .bind(enqueued.media_job_public_id)
+        .bind(source_changed_ns + 1)
+        .execute(&test_db.pool)
+        .await,
+    )?;
+    let replacement_sha256 = "e".repeat(64);
+    assert_configuration_immutable(
+        sqlx::query("UPDATE media_job SET intent_source_sha256=$2 WHERE media_job_public_id=$1")
+            .bind(enqueued.media_job_public_id)
+            .bind(&replacement_sha256)
+            .execute(&test_db.pool)
+            .await,
+    )?;
+    assert_configuration_immutable(
+        sqlx::query(
+            "UPDATE media_job SET intent_source_identity=$2, intent_source_size_bytes=$3, \
+             intent_source_modified_ns=$4, intent_source_changed_ns=$5, intent_source_sha256=$6 \
+             WHERE media_job_public_id=$1",
+        )
+        .bind(enqueued.media_job_public_id)
+        .bind("000000000000000f:000000000000001f")
+        .bind(source_size_bytes + 2)
+        .bind(source_modified_ns + 2)
+        .bind(source_changed_ns + 2)
+        .bind("f".repeat(64))
+        .execute(&test_db.pool)
+        .await,
+    )?;
+
+    let claimed = media_job_worker_claim_next(&test_db.pool)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("immutable fingerprint job was not claimable"))?;
+    assert_eq!(claimed.media_job_public_id, enqueued.media_job_public_id);
+    assert_eq!(claimed.source_identity, source_identity);
+    assert_eq!(claimed.source_size_bytes, source_size_bytes);
+    assert_eq!(claimed.source_modified_ns, source_modified_ns);
+    assert_eq!(claimed.source_changed_ns, source_changed_ns);
+    assert_eq!(claimed.source_sha256, source_sha256);
 
     Ok(())
 }

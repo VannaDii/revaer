@@ -2222,6 +2222,77 @@ AS $$
        AND job.status = attempt.status;
 $$;
 
+CREATE OR REPLACE FUNCTION media_job_worker_recover_stale_v1(
+    stale_after_seconds_input INT
+)
+RETURNS TABLE (
+    media_job_public_id UUID,
+    status media_job_status,
+    last_error TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    IF stale_after_seconds_input IS NULL OR stale_after_seconds_input < 0 THEN
+        RAISE EXCEPTION 'stale worker recovery interval invalid'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_stale_after_invalid';
+    END IF;
+
+    RETURN QUERY
+    WITH stale_attempt AS (
+        SELECT job.media_job_id,
+               attempt.media_job_attempt_id,
+               CASE
+                   WHEN job.cancel_generation > job.cancel_acknowledged_generation
+                       THEN media_job_status_cancelled_v1()
+                   ELSE media_job_status_failed_v1()
+               END AS terminal_status
+          FROM media_job job
+          JOIN media_job_attempt attempt
+            ON attempt.media_job_attempt_id = job.current_attempt_id
+         WHERE job.status IN (
+                   media_job_status_running_v1(),
+                   media_job_status_verifying_v1()
+               )
+           AND attempt.status = job.status
+           AND COALESCE(job.heartbeat_at, job.started_at, job.queued_at)
+               <= now() - make_interval(secs => stale_after_seconds_input)
+         FOR UPDATE OF job, attempt SKIP LOCKED
+    ),
+    terminal_attempt AS (
+        UPDATE media_job_attempt attempt
+           SET status = stale_attempt.terminal_status,
+               completed_at = now(),
+               last_error = CASE
+                   WHEN stale_attempt.terminal_status = media_job_status_cancelled_v1()
+                       THEN NULL
+                   ELSE 'media_job_worker_heartbeat_stale'
+               END
+          FROM stale_attempt
+         WHERE attempt.media_job_attempt_id = stale_attempt.media_job_attempt_id
+        RETURNING attempt.media_job_id,
+                  attempt.status,
+                  attempt.last_error
+    )
+    UPDATE media_job job
+       SET status = terminal_attempt.status,
+           cancel_acknowledged_generation = CASE
+               WHEN terminal_attempt.status = media_job_status_cancelled_v1()
+                   THEN job.cancel_generation
+               ELSE job.cancel_acknowledged_generation
+           END,
+           completed_at = now(),
+           last_error = terminal_attempt.last_error
+      FROM terminal_attempt
+     WHERE job.media_job_id = terminal_attempt.media_job_id
+    RETURNING job.media_job_public_id,
+              job.status,
+              job.last_error;
+END;
+$$;
+
 DROP FUNCTION media_job_retry_v1(UUID);
 CREATE FUNCTION media_job_retry_v1(media_job_public_id_input UUID)
 RETURNS INT

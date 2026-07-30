@@ -49,7 +49,8 @@ use revaer_data::media::imports::{
 };
 use revaer_data::media::jobs::{
     AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput, AppendMediaJobOperationInput,
-    AppendMediaJobPlanReasonInput, AppendMediaJobVerificationCheckInput, CreateMediaJobInput,
+    AppendMediaJobPlanReasonInput, AppendMediaJobVerificationCheckInput,
+    EnqueueDiscoveredMediaJobInput,
 };
 use revaer_data::media::profiles::{
     UpdateMediaProfileInput, UpsertMediaProfileInput, upsert_media_profile_with_executor,
@@ -68,6 +69,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::media_discovery_fingerprint::{FingerprintError, fingerprint_media_aggregate};
 
 const REPLACE_CONFIRMATION_PHRASE: &str = "replace";
 
@@ -148,6 +151,7 @@ impl MediaService {
         self.queue_discovery_previews(
             actor_user_public_id,
             media_profile_public_id,
+            &profile.source_root,
             profile.dry_run_only,
             previews,
             mode.metric_source(),
@@ -159,6 +163,7 @@ impl MediaService {
         &self,
         actor_user_public_id: Uuid,
         media_profile_public_id: Uuid,
+        source_root: &str,
         dry_run: bool,
         previews: Vec<MediaDiscoveryPreviewResponse>,
         source: &'static str,
@@ -179,18 +184,43 @@ impl MediaService {
                         });
                         continue;
                     }
+                    let fingerprint =
+                        fingerprint_source_candidate(&preview.source_path, source_root).await?;
+                    let Some(fingerprint) = fingerprint else {
+                        self.telemetry
+                            .inc_media_discovery_candidate(source, "unstable");
+                        skipped.push(MediaDiscoverySkippedItemResponse {
+                            source_path: preview.source_path,
+                            reason: Some("media_discovery_source_unstable".to_string()),
+                        });
+                        continue;
+                    };
                     let create_result = self
                         .store
-                        .create_job(&CreateMediaJobInput {
+                        .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                             actor_public_id: actor_user_public_id,
                             media_profile_public_id,
                             source_path: &preview.source_path,
                             output_path: Some(output_path.as_str()),
                             dry_run,
+                            source_identity: &fingerprint.identity,
+                            source_size_bytes: fingerprint.size_bytes,
+                            source_modified_ns: fingerprint.modified_ns,
+                            source_changed_ns: fingerprint.changed_ns,
+                            source_sha256: &fingerprint.sha256,
                         })
                         .await;
-                    let media_job_public_id = match create_result {
-                        Ok(media_job_public_id) => media_job_public_id,
+                    let enqueued_job = match create_result {
+                        Ok(Some(enqueued_job)) => enqueued_job,
+                        Ok(None) => {
+                            self.telemetry
+                                .inc_media_discovery_candidate(source, "deduplicated");
+                            skipped.push(MediaDiscoverySkippedItemResponse {
+                                source_path: preview.source_path,
+                                reason: Some("media_discovery_source_unchanged".to_string()),
+                            });
+                            continue;
+                        }
                         Err(err) => {
                             self.telemetry
                                 .inc_media_discovery_candidate(source, "queue_failed");
@@ -199,12 +229,13 @@ impl MediaService {
                     };
                     self.telemetry
                         .inc_media_discovery_candidate(source, "queued");
-                    self.telemetry.inc_media_job_queued(source, dry_run);
+                    self.telemetry
+                        .inc_media_job_queued(source, enqueued_job.dry_run);
                     queued_jobs.push(MediaDiscoveryQueuedJobResponse {
-                        media_job_public_id,
+                        media_job_public_id: enqueued_job.media_job_public_id,
                         source_path: preview.source_path,
                         output_path,
-                        dry_run,
+                        dry_run: enqueued_job.dry_run,
                     });
                 }
                 (_, output_path) => {
@@ -747,22 +778,35 @@ impl MediaFacade for MediaService {
             ensure_execution_capability_snapshot(latest.as_ref())?;
         }
 
+        let fingerprint = fingerprint_source_candidate(params.source_path, &profile.source_root)
+            .await?
+            .ok_or_else(|| {
+                MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                    .with_code("media_discovery_source_unstable")
+            })?;
         let create_result = self
             .store
-            .create_job(&CreateMediaJobInput {
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: params.actor_user_public_id,
                 media_profile_public_id: params.media_profile_public_id,
                 source_path: params.source_path,
                 output_path: params.output_path,
                 dry_run: params.dry_run,
+                source_identity: &fingerprint.identity,
+                source_size_bytes: fingerprint.size_bytes,
+                source_modified_ns: fingerprint.modified_ns,
+                source_changed_ns: fingerprint.changed_ns,
+                source_sha256: &fingerprint.sha256,
             })
             .await;
         match create_result {
-            Ok(media_job_public_id) => {
+            Ok(Some(enqueued_job)) => {
                 self.telemetry
-                    .inc_media_job_queued("direct", params.dry_run);
-                Ok(media_job_public_id)
+                    .inc_media_job_queued("direct", enqueued_job.dry_run);
+                Ok(enqueued_job.media_job_public_id)
             }
+            Ok(None) => Err(MediaServiceError::new(MediaServiceErrorKind::Conflict)
+                .with_code("media_discovery_source_unchanged")),
             Err(err) => {
                 self.telemetry.inc_media_job_failure("queue");
                 Err(map_data_error(&err))
@@ -2811,6 +2855,31 @@ fn map_desired_target_stream(row: MediaDesiredTargetStreamRow) -> MediaDesiredTa
     }
 }
 
+async fn fingerprint_source_candidate(
+    source_path: &str,
+    source_root: &str,
+) -> Result<Option<crate::media_discovery_fingerprint::MediaAggregateFingerprint>, MediaServiceError>
+{
+    let source_path = PathBuf::from(source_path);
+    let source_root = PathBuf::from(source_root);
+    tokio::task::spawn_blocking(move || fingerprint_media_aggregate(&source_path, &source_root))
+        .await
+        .map_err(|_| {
+            MediaServiceError::new(MediaServiceErrorKind::Storage)
+                .with_code("media_discovery_fingerprint_join_failed")
+        })?
+        .map_err(|error| map_fingerprint_error(&error))
+}
+
+fn map_fingerprint_error(error: &FingerprintError) -> MediaServiceError {
+    MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code(match error {
+        FingerprintError::Io { .. } => "media_discovery_fingerprint_io",
+        FingerprintError::InvalidPath(_) => "media_discovery_fingerprint_path_invalid",
+        FingerprintError::ResourceLimit(_) => "media_discovery_fingerprint_resource_limit",
+        FingerprintError::ValueTooLarge(_) => "media_discovery_fingerprint_overflow",
+    })
+}
+
 fn map_data_error(error: &DataError) -> MediaServiceError {
     let sqlstate = error.database_code();
     let detail = error.database_detail().map(ToOwned::to_owned);
@@ -2829,7 +2898,8 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
             | "media_compatibility_target_not_found"
             | "media_policy_profile_not_found"
             | "media_desired_target_streams_required"
-            | "media_desired_target_stream_limit_exceeded",
+            | "media_desired_target_stream_limit_exceeded"
+            | "media_job_source_fingerprint_required",
         ) => MediaServiceErrorKind::Invalid,
         _ => MediaServiceErrorKind::Storage,
     };
@@ -3068,7 +3138,9 @@ mod tests {
     use revaer_telemetry::Metrics;
     use revaer_test_support::postgres::{TestDatabase, start_postgres};
     use sqlx::postgres::PgPoolOptions;
+    use std::fs;
     use std::sync::Arc;
+    use tempfile::TempDir;
     use uuid::Uuid;
 
     #[derive(Clone)]
@@ -3094,6 +3166,14 @@ mod tests {
     struct TestMediaService {
         service: MediaService,
         _postgres: TestDatabase,
+    }
+
+    struct TestMediaSource {
+        _temp_dir: TempDir,
+        source_root: String,
+        output_root: String,
+        source_path: String,
+        output_path: String,
     }
 
     impl std::ops::Deref for TestMediaService {
@@ -3307,6 +3387,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn media_job_create_preserves_explicit_dry_run_for_execution_profile()
+    -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+        let media_source = create_test_media_source("explicit-dry-run.mkv")?;
+        let profile_id = upsert_app_media_profile_with_roots(
+            &service,
+            actor_user_public_id,
+            &media_source.source_root,
+            &media_source.output_root,
+            false,
+            false,
+        )
+        .await?;
+
+        let media_job_public_id = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: &media_source.source_path,
+                output_path: Some(&media_source.output_path),
+                dry_run: true,
+                replace_confirmation: None,
+            })
+            .await?;
+        let job = service
+            .store
+            .get_job(media_job_public_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("explicit dry-run job was not persisted"))?;
+        assert!(job.dry_run);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn media_desired_target_create_rejects_empty_stream_contract() -> anyhow::Result<()> {
         let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
         else {
@@ -3439,7 +3556,16 @@ mod tests {
                 streams: desired_target_streams(1),
             })
             .await?;
-        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+        let media_source = create_test_media_source("concurrent.mkv")?;
+        let profile_id = upsert_app_media_profile_with_roots(
+            &service,
+            actor_user_public_id,
+            &media_source.source_root,
+            &media_source.output_root,
+            false,
+            false,
+        )
+        .await?;
         service
             .media_profile_desired_target_set(MediaProfileDesiredTargetParams {
                 actor_user_public_id,
@@ -3452,14 +3578,16 @@ mod tests {
         let barrier = Arc::new(tokio::sync::Barrier::new(2));
         let job_barrier = Arc::clone(&barrier);
         let job_service = service.service.clone();
+        let source_path = media_source.source_path.clone();
+        let output_path = media_source.output_path.clone();
         let job_task = tokio::spawn(async move {
             job_barrier.wait().await;
             job_service
                 .media_job_create(MediaJobCreateParams {
                     actor_user_public_id,
                     media_profile_public_id: profile_id,
-                    source_path: "/input/app-media/concurrent.mkv",
-                    output_path: Some("/output/app-media/concurrent.mkv"),
+                    source_path: &source_path,
+                    output_path: Some(&output_path),
                     dry_run: true,
                     replace_confirmation: None,
                 })
@@ -3629,11 +3757,20 @@ mod tests {
         else {
             return Ok(());
         };
-        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+        let media_source = create_test_media_source("show/episode.mkv")?;
+        let profile_id = upsert_app_media_profile_with_roots(
+            &service,
+            actor_user_public_id,
+            &media_source.source_root,
+            &media_source.output_root,
+            false,
+            false,
+        )
+        .await?;
         let source_paths = vec![
-            "/input/app-media/show/episode.mkv".to_string(),
-            "/input/app-media/show/episode.mkv".to_string(),
-            "/input/app-media-other/show/episode.mkv".to_string(),
+            media_source.source_path.clone(),
+            media_source.source_path.clone(),
+            format!("{}-other/show/episode.mkv", media_source.source_root),
         ];
 
         let response = service
@@ -3648,11 +3785,11 @@ mod tests {
         assert_eq!(response.skipped.len(), 2);
         assert_eq!(
             response.queued_jobs[0].source_path,
-            "/input/app-media/show/episode.mkv"
+            media_source.source_path
         );
         assert_eq!(
             response.queued_jobs[0].output_path,
-            "/output/app-media/show/episode.mkv"
+            media_source.output_path
         );
         assert!(response.queued_jobs[0].dry_run);
         assert_eq!(
@@ -3666,6 +3803,19 @@ mod tests {
         let jobs = service.media_job_list(profile_id, Some("queued")).await?;
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].source_path, response.queued_jobs[0].source_path);
+        let repeated = service
+            .media_discovery_run(MediaDiscoveryRunParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_paths: std::slice::from_ref(&media_source.source_path),
+            })
+            .await?;
+        assert!(repeated.queued_jobs.is_empty());
+        assert_eq!(repeated.skipped.len(), 1);
+        assert_eq!(
+            repeated.skipped[0].reason.as_deref(),
+            Some("media_discovery_source_unchanged")
+        );
         let rendered = service.telemetry.render()?;
         assert!(rendered_has_metric_labels(
             &rendered,
@@ -3987,11 +4137,21 @@ mod tests {
             return Ok(());
         };
 
-        let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
+        let media_source = create_test_media_source("video.mkv")?;
+        let profile_id = upsert_app_media_profile_with_roots(
+            &service,
+            actor_user_public_id,
+            &media_source.source_root,
+            &media_source.output_root,
+            false,
+            false,
+        )
+        .await?;
         assert_profile_is_listed(&service, profile_id).await?;
         assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
 
-        let job_id = create_app_media_job(&service, actor_user_public_id, profile_id).await?;
+        let job_id =
+            create_app_media_job(&service, actor_user_public_id, profile_id, &media_source).await?;
         let (claim_generation, cancel_generation) =
             assert_job_records_round_trip(&service, profile_id, job_id).await?;
         assert_job_cancel_retry(&service, job_id, claim_generation, cancel_generation).await?;
@@ -4540,13 +4700,14 @@ mod tests {
         service: &MediaService,
         actor_user_public_id: Uuid,
         profile_id: Uuid,
+        media_source: &TestMediaSource,
     ) -> anyhow::Result<Uuid> {
         service
             .media_job_create(MediaJobCreateParams {
                 actor_user_public_id,
                 media_profile_public_id: profile_id,
-                source_path: "/input/app-media/video.mkv",
-                output_path: Some("/output/app-media/video.mkv"),
+                source_path: &media_source.source_path,
+                output_path: Some(&media_source.output_path),
                 dry_run: true,
                 replace_confirmation: None,
             })
@@ -4696,6 +4857,53 @@ mod tests {
                 schedule_interval_minutes: schedule_enabled.then_some(60),
             })
             .await
+    }
+
+    async fn upsert_app_media_profile_with_roots(
+        service: &MediaService,
+        actor_user_public_id: Uuid,
+        source_root: &str,
+        output_root: &str,
+        watcher_enabled: bool,
+        schedule_enabled: bool,
+    ) -> anyhow::Result<Uuid> {
+        let profile_key = format!("app-media-{}", Uuid::new_v4());
+        service
+            .media_profile_upsert(MediaProfileUpsertParams {
+                actor_user_public_id,
+                profile_key: &profile_key,
+                source_root,
+                output_root,
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled,
+                schedule_enabled,
+                schedule_interval_minutes: schedule_enabled.then_some(60),
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    fn create_test_media_source(relative_path: &str) -> anyhow::Result<TestMediaSource> {
+        let temp_dir = tempfile::tempdir()?;
+        let source_root_path = temp_dir.path().join("source");
+        let output_root_path = temp_dir.path().join("output");
+        let source_path = source_root_path.join(relative_path);
+        let output_path = output_root_path.join(relative_path);
+        if let Some(parent) = source_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::create_dir_all(&output_root_path)?;
+        fs::write(&source_path, b"stable media test bytes")?;
+        Ok(TestMediaSource {
+            _temp_dir: temp_dir,
+            source_root: source_root_path.to_string_lossy().into_owned(),
+            output_root: output_root_path.to_string_lossy().into_owned(),
+            source_path: source_path.to_string_lossy().into_owned(),
+            output_path: output_path.to_string_lossy().into_owned(),
+        })
     }
 
     async fn assert_profile_is_listed(

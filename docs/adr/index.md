@@ -361,6 +361,7 @@
 -   [351](351-media-runtime-cooperative-shutdown.md) – Media runtime cooperative shutdown
 -   [352](352-media-claim-shutdown-cancellation.md) – Media claim shutdown cancellation
 -   [353](353-media-job-phase-read-model.md) – Media job phase read model
+-   [354](354-media-direct-job-source-fingerprint.md) – Media direct job source fingerprint
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [404](404-doc-indexer-fixture-isolation.md) – Doc indexer fixture isolation
@@ -374,6 +375,7 @@
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation
 -   [420](420-media-text-input-contract.md) – Media text input contract
+-   [423](423-media-source-identity-fence.md) – Media source identity fence
 -   [424](424-media-target-stream-limit-atomic-snapshot.md) – Media target stream limit and atomic snapshot
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
 -   [428](428-sonar-pr-result-scope.md) – Sonar pull-request result scope
@@ -413,3 +415,4 @@
 -   [500](500-attempt-scoped-replacement-reconciliation.md) – Attempt-scoped replacement reconciliation
 -   [501](501-bounded-native-media-process-envelope.md) – Bounded native media process envelope
 -   [530](530-cataloged-task-record-restoration.md) – Cataloged task-record restoration
+-   [532](532-admitted-media-source-intent-preservation.md) – Admitted media source intent preservation

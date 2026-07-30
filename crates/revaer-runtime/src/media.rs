@@ -21,7 +21,7 @@ use revaer_data::media::configuration::{
 use revaer_data::media::jobs::{
     AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput, AppendMediaJobOperationInput,
     AppendMediaJobPlanReasonInput, AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow,
-    CreateMediaJobInput, EnqueueDiscoveredMediaJobInput, MediaJobArtifactRow,
+    CreateMediaJobInput, EnqueueDiscoveredMediaJobInput, EnqueuedMediaJobRow, MediaJobArtifactRow,
     MediaJobCompactAuditRow, MediaJobControlRow, MediaJobDesiredTargetStreamRow,
     MediaJobOperationRow, MediaJobPhaseRow, MediaJobPlanReasonRow, MediaJobRetentionRunRow,
     MediaJobRow, MediaJobTerminalOutboxRow, MediaJobVerificationCheckRow, MediaJobViolationRow,
@@ -127,7 +127,7 @@ impl MediaStore {
     pub async fn enqueue_discovered_job(
         &self,
         input: &EnqueueDiscoveredMediaJobInput<'_>,
-    ) -> DataResult<Option<Uuid>> {
+    ) -> DataResult<Option<EnqueuedMediaJobRow>> {
         enqueue_discovered_media_job(&self.pool, input).await
     }
 
@@ -1064,14 +1064,21 @@ mod tests {
         );
 
         let job_id = store
-            .create_job(&CreateMediaJobInput {
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: actor,
                 media_profile_public_id: profile_id,
                 source_path: "/input/tv/show.mkv",
                 output_path: Some("/output/tv/show.mkv"),
                 dry_run: true,
+                source_identity: "0000000000000001:0000000000000001",
+                source_size_bytes: 1,
+                source_modified_ns: 1,
+                source_changed_ns: 1,
+                source_sha256: &"1".repeat(64),
             })
-            .await?;
+            .await?
+            .map(|job| job.media_job_public_id)
+            .ok_or_else(|| anyhow::anyhow!("runtime test job should be queued"))?;
         let claim_generation = claim_job(&store, job_id).await?;
         append_and_assert_job_records(&store, profile_id, job_id, claim_generation).await?;
 
@@ -1135,14 +1142,21 @@ mod tests {
             })
             .await?;
         let job_id = store
-            .create_job(&CreateMediaJobInput {
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: actor,
                 media_profile_public_id: profile_id,
                 source_path: "/input/runtime/finished.mkv",
                 output_path: Some("/output/runtime/finished.mkv"),
                 dry_run: true,
+                source_identity: "0000000000000002:0000000000000002",
+                source_size_bytes: 2,
+                source_modified_ns: 2,
+                source_changed_ns: 2,
+                source_sha256: &"2".repeat(64),
             })
-            .await?;
+            .await?
+            .map(|job| job.media_job_public_id)
+            .ok_or_else(|| anyhow::anyhow!("completed runtime test job should be queued"))?;
 
         store.mark_job_completed(job_id).await?;
         store
@@ -1257,14 +1271,21 @@ mod tests {
             })
             .await?;
         let job_id = store
-            .create_job(&CreateMediaJobInput {
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: actor,
                 media_profile_public_id: profile_id,
                 source_path: "/input/diagnostic-runtime/cancelled.mkv",
                 output_path: Some("/output/diagnostic-runtime/cancelled.mkv"),
                 dry_run: true,
+                source_identity: "0000000000000003:0000000000000003",
+                source_size_bytes: 3,
+                source_modified_ns: 3,
+                source_changed_ns: 3,
+                source_sha256: &"3".repeat(64),
             })
-            .await?;
+            .await?
+            .map(|job| job.media_job_public_id)
+            .ok_or_else(|| anyhow::anyhow!("diagnostic runtime test job should be queued"))?;
         let claim_generation = claim_job(&store, job_id).await?;
         append_cleanup_diagnostics(&store, job_id, claim_generation).await?;
         store.cancel_job(job_id).await?;
@@ -1336,9 +1357,12 @@ mod tests {
                     actor_public_id: actor_id,
                     media_profile_public_id: profile_id,
                     source_path: "/input/movies/file.mkv",
-                    output_path: "/output/movies/file.mkv",
+                    output_path: Some("/output/movies/file.mkv"),
+                    dry_run: true,
+                    source_identity: "0000000000000004:0000000000000004",
                     source_size_bytes: 2048,
                     source_modified_ns: 123_456_789,
+                    source_changed_ns: 123_456_789,
                     source_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 })
                 .await

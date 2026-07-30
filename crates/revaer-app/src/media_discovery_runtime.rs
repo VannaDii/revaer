@@ -276,9 +276,9 @@ impl MediaDiscoveryRuntime {
             };
             let validation_path = PathBuf::from(&preview.source_path);
             let validation_root = PathBuf::from(&profile.source_root);
-            let expected_sha256 = fingerprint.sha256.clone();
+            let expected = fingerprint.clone();
             let valid = tokio::task::spawn_blocking(move || {
-                revalidate_media_aggregate(&validation_path, &validation_root, &expected_sha256)
+                revalidate_media_aggregate(&validation_path, &validation_root, &expected)
             })
             .await
             .map_err(|error| MediaDiscoveryRuntimeError::Join(error.to_string()))??;
@@ -293,18 +293,21 @@ impl MediaDiscoveryRuntime {
                     actor_public_id: SYSTEM_USER_PUBLIC_ID,
                     media_profile_public_id: profile.media_profile_public_id,
                     source_path: &preview.source_path,
-                    output_path: &output_path,
+                    output_path: Some(output_path.as_str()),
+                    dry_run: profile.dry_run_only,
+                    source_identity: &fingerprint.identity,
                     source_size_bytes: fingerprint.size_bytes,
                     source_modified_ns: fingerprint.modified_ns,
+                    source_changed_ns: fingerprint.changed_ns,
                     source_sha256: &fingerprint.sha256,
                 })
                 .await;
             match create_result {
-                Ok(Some(_)) => {
+                Ok(Some(enqueued_job)) => {
                     self.telemetry
                         .inc_media_discovery_candidate(origin, "queued");
                     self.telemetry
-                        .inc_media_job_queued(origin, profile.dry_run_only);
+                        .inc_media_job_queued(origin, enqueued_job.dry_run);
                 }
                 Ok(None) => {
                     self.telemetry
