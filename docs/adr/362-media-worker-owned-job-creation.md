@@ -1,0 +1,61 @@
+# Media worker-owned job creation
+
+- Status: Accepted
+- Date: 2026-07-30
+- Context:
+  - The media API already made job evidence records read-only, but `/v1/media/jobs` still accepted direct caller-created job records.
+  - Direct job creation lets API callers bypass the discovery ownership model that fingerprints stable files and atomically queues inherited dry-run work.
+  - Public contracts should expose job reads, cancellation, retry, discovery preview, and discovery runs while keeping job creation worker/discovery-owned.
+- Decision:
+  - Remove `POST /v1/media/jobs` from the router, handler layer, facade boundary, API models, generated OpenAPI documents, and generated test client contract.
+  - Keep stored-procedure-backed job creation primitives in the data/runtime layers for discovery, tests, retry, and worker-owned persistence.
+  - Update the media API E2E flow to read a job queued by discovery instead of manually posting a job record.
+  - Alternatives considered:
+    - Keeping the route and documenting it as manual queueing was rejected because the public contract would still imply caller-owned job creation.
+    - Removing lower-level repository creation primitives was rejected because discovery and durable internal tests still need the stored procedure boundary.
+- Consequences:
+  - Public API clients can no longer directly enqueue a media job through `/v1/media/jobs`; they must use discovery preview/run or automation.
+  - OpenAPI consumers receive a smaller, stricter job contract with no `MediaJobCreateRequest` or `MediaJobCreateResponse` schemas.
+  - The change is a deliberate public API break for an endpoint that conflicted with the worker-owned runtime model.
+- Follow-up:
+  - Continue auditing media API surfaces for contracts that imply caller-owned runtime state.
+  - Recheck remote PR reviews and Sonar after the stacked PR is opened because local scanner ingestion is not a substitute for PR analysis.
+
+## Task Record
+
+- Motivation:
+  - Close the remaining public mutation surface that allowed API callers to create media job records directly.
+- Design notes:
+  - The HTTP route now exposes only `GET /v1/media/jobs`.
+  - The API facade no longer includes direct job creation parameters or methods.
+  - The application service no longer carries direct-job-only confirmation and path-check helper code; discovery remains responsible for queueing stable, fingerprinted source paths.
+  - Generated root and app-bundled OpenAPI documents are synchronized with the source generator.
+- Test coverage summary:
+  - `just api-export`
+  - `npm run gen:api-client` from `tests/`
+  - `just sync-assets`
+  - `just fmt`
+  - `cargo check -p revaer-api --lib --bins`
+  - `cargo check -p revaer-app --lib --no-default-features`
+  - `cargo test -p revaer-api --lib media::tests -- --nocapture`
+  - `cargo test -p revaer-app --lib --no-default-features media::tests::media_service_round_trips_profile_job_yaml_and_capability_paths -- --nocapture`
+  - `npm test -- --list tests/specs/api/media.spec.ts`
+  - `sonar analyze secrets crates/revaer-app/src/media.rs tests/specs/api/media.spec.ts`
+  - Remote PR coverage originally reported 68.8% new-code coverage; the helper and API spec were tightened so changed executable lines stay covered without relaxing Sonar scope or quality-gate criteria.
+  - `sonar verify --file crates/revaer-app/src/media.rs --project VannaDii_Revaer` was attempted, but the organization rejected Agentic Analysis with HTTP 403 because the feature is not enabled.
+  - `just lint` was attempted after the coverage remediation, but this local machine's Homebrew libtorrent headers fail during `revaer-torrent-libt` C++ compilation with `TORRENT_USE_RTC requires TORRENT_USE_OPENSSL or TORRENT_USE_GNUTLS`; the remote lint job remains the authoritative lint result for this PR.
+  - `cargo check -p revaer-api -p revaer-app --all-targets` was attempted, but this local machine's Homebrew libtorrent headers fail before app checking completes with `TORRENT_USE_RTC requires TORRENT_USE_OPENSSL or TORRENT_USE_GNUTLS`.
+- Observability updates:
+  - No new runtime logs, metrics, or events were added.
+  - Queue events remain emitted from discovery run handlers for jobs accepted by manual, scheduled, and watcher discovery.
+- Status-doc validation:
+  - API generated documentation was regenerated and the app-bundled OpenAPI copy was synchronized.
+  - No README, roadmap, or operator guide change was needed because the operator-facing queueing path remains discovery.
+- Risk & rollback plan:
+  - Risk: external clients that manually posted `/v1/media/jobs` must move to discovery run endpoints.
+  - Rollback: restore the route, DTOs, facade method, generated OpenAPI schemas, and E2E direct create path from the previous commit.
+- Dependency rationale:
+  - No new dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No policy drift or contradictory instruction was found for this API contract change.
