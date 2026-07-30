@@ -316,6 +316,18 @@ fn media_profile_core_paths() -> Vec<(&'static str, Value)> {
                 MediaParameterSet::None,
             ),
         ),
+        media_single_path(
+            "/v1/media/profiles/{media_profile_public_id}/readiness",
+            media_op(
+                "get",
+                "Read media profile readiness",
+                "200",
+                "Media profile readiness",
+                Some("MediaProfileReadinessResponse"),
+                None,
+                MediaParameterSet::PathUuid("media_profile_public_id"),
+            ),
+        ),
     ]
 }
 
@@ -1055,6 +1067,18 @@ fn media_profile_support_schemas() -> Vec<(&'static str, Value)> {
             [("valid", bool_schema()), ("issues", array_string_schema())],
         ),
     )];
+    schemas.push((
+        "MediaProfileReadinessResponse",
+        object_schema(
+            &["ready", "profile"],
+            [
+                ("ready", bool_schema()),
+                ("reason", string_schema()),
+                ("profile", schema_ref("MediaProfileResponse")),
+                ("snapshot", schema_ref("MediaCapabilitySnapshotResponse")),
+            ],
+        ),
+    ));
     schemas.extend(media_configuration_schemas());
     schemas.extend([
         (
@@ -2302,6 +2326,7 @@ mod tests {
         for route in [
             "/v1/media/profiles",
             "/v1/media/profiles/{media_profile_public_id}",
+            "/v1/media/profiles/{media_profile_public_id}/readiness",
             "/v1/media/profiles/validate",
             "/v1/media/compatibility-targets",
             "/v1/media/targets",
@@ -2386,6 +2411,7 @@ mod tests {
         "MediaProfilePatchRequest",
         "MediaProfileListResponse",
         "MediaProfileResponse",
+        "MediaProfileReadinessResponse",
         "MediaProfileValidationResponse",
         "MediaCompatibilityTargetResponse",
         "MediaCompatibilityTargetListResponse",
