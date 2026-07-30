@@ -82,23 +82,6 @@ pub struct MediaProfilePatchParams<'a> {
     pub schedule_interval_minutes: Option<i32>,
 }
 
-/// Create media job parameters.
-#[derive(Debug, Clone)]
-pub struct MediaJobCreateParams<'a> {
-    /// Actor performing the operation.
-    pub actor_user_public_id: Uuid,
-    /// Owning profile id.
-    pub media_profile_public_id: Uuid,
-    /// Source path.
-    pub source_path: &'a str,
-    /// Output path (optional).
-    pub output_path: Option<&'a str>,
-    /// Dry-run flag.
-    pub dry_run: bool,
-    /// Exact confirmation phrase required to override a dry-run profile.
-    pub replace_confirmation: Option<&'a str>,
-}
-
 /// Preview media discovery for source paths under one profile association.
 #[derive(Debug, Clone)]
 pub struct MediaDiscoveryPreviewParams<'a> {
@@ -777,12 +760,6 @@ pub trait MediaFacade: Send + Sync {
         params: MediaJobRetentionUpdateParams,
     ) -> Result<MediaJobRetentionResponse, MediaServiceError>;
 
-    /// Create media job.
-    async fn media_job_create(
-        &self,
-        params: MediaJobCreateParams<'_>,
-    ) -> Result<Uuid, MediaServiceError>;
-
     /// Preview manual discovery for candidate source paths.
     async fn media_discovery_preview(
         &self,
@@ -992,13 +969,6 @@ impl MediaFacade for NoopMedia {
     async fn media_profile_patch(
         &self,
         _params: MediaProfilePatchParams<'_>,
-    ) -> Result<Uuid, MediaServiceError> {
-        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
-    }
-
-    async fn media_job_create(
-        &self,
-        _params: MediaJobCreateParams<'_>,
     ) -> Result<Uuid, MediaServiceError> {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
