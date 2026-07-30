@@ -366,3 +366,4 @@
 -   [355](355-media-compatibility-target-admission.md) - Media compatibility target admission
 -   [356](356-media-profile-readiness-api.md) - Media profile readiness API
 -   [357](357-media-desired-target-readiness.md) - Media desired-target readiness
+-   [358](358-media-contextual-stream-rewrites.md) - Media contextual stream rewrites
