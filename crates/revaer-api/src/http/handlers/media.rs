@@ -50,14 +50,15 @@ use crate::models::{
     MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
     MediaPlanningPreviewRequest, MediaPlanningPreviewResponse, MediaPolicyListResponse,
     MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileDesiredTargetRequest,
-    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
-    MediaProfileUpsertRequest, MediaProfileValidationResponse, MediaYamlApplyResponse,
-    MediaYamlExportResponse, MediaYamlImportRequest, MediaYamlIssueResponse,
-    MediaYamlValidationResponse,
+    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileReadinessResponse,
+    MediaProfileResponse, MediaProfileUpsertRequest, MediaProfileValidationResponse,
+    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
+    MediaYamlIssueResponse, MediaYamlValidationResponse,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
 const MEDIA_PROFILE_LIST_FAILED: &str = "failed to list media profiles";
+const MEDIA_PROFILE_READINESS_FAILED: &str = "failed to determine media profile readiness";
 const MEDIA_PROFILE_NOT_FOUND: &str = "media profile not found";
 const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_DISCOVERY_PREVIEW_FAILED: &str = "failed to preview media discovery";
@@ -298,6 +299,26 @@ pub(crate) async fn get_media_profile(
         .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
 
     Ok(Json(map_profile(profile)))
+}
+
+pub(crate) async fn get_media_profile_readiness(
+    State(state): State<Arc<ApiState>>,
+    Path(media_profile_public_id): Path<Uuid>,
+) -> Result<Json<MediaProfileReadinessResponse>, ApiError> {
+    let readiness = state
+        .media
+        .media_profile_readiness(media_profile_public_id)
+        .await
+        .map_err(|err| {
+            map_media_error(
+                "media_profile_readiness",
+                MEDIA_PROFILE_READINESS_FAILED,
+                &err,
+            )
+        })?
+        .ok_or_else(|| ApiError::not_found(MEDIA_PROFILE_NOT_FOUND))?;
+
+    Ok(Json(readiness))
 }
 
 pub(crate) async fn validate_media_profile(
@@ -3040,6 +3061,17 @@ mod tests {
             Some("media_capability_snapshot_missing")
         );
         assert!(response.snapshot.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_profile_readiness_returns_not_found_for_missing_profile() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let err = get_media_profile_readiness(State(state), Path(Uuid::new_v4()))
+            .await
+            .expect_err("missing profile readiness should return not found");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
         Ok(())
     }
 

@@ -19,7 +19,8 @@ use revaer_api::app::media::{
     MediaJobVerificationCheckAppendParams, MediaJobVerificationCheckResponse,
     MediaJobViolationAppendParams, MediaJobViolationResponse,
     MediaPolicyResponse as AppMediaPolicyResponse, MediaPolicyUpsertParams,
-    MediaProfileDesiredTargetParams, MediaProfilePatchParams, MediaProfileResponse,
+    MediaProfileDesiredTargetParams, MediaProfilePatchParams,
+    MediaProfileReadinessResponse as AppMediaProfileReadinessResponse, MediaProfileResponse,
     MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind, MediaYamlApplyResult,
     MediaYamlBundle, MediaYamlCompatibilityTarget, MediaYamlDesiredTarget, MediaYamlIssue,
     MediaYamlMetadata, MediaYamlPolicy, MediaYamlProfile, MediaYamlValidationResult,
@@ -433,27 +434,60 @@ impl MediaFacade for MediaService {
         self.store
             .list_profiles()
             .await
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|row| MediaProfileResponse {
-                        media_profile_public_id: row.media_profile_public_id,
-                        profile_key: row.profile_key,
-                        source_root: row.source_root,
-                        output_root: row.output_root,
-                        dry_run_only: row.dry_run_only,
-                        retention_days: row.retention_days,
-                        compatibility_target_key: row.compatibility_target_key,
-                        desired_target_key: row.desired_target_key,
-                        desired_target_version: row.desired_target_version,
-                        policy_key: row.policy_key,
-                        watcher_enabled: row.watcher_enabled,
-                        schedule_enabled: row.schedule_enabled,
-                        schedule_interval_minutes: row.schedule_interval_minutes,
-                        updated_at: row.updated_at,
-                    })
-                    .collect()
-            })
+            .map(|rows| rows.into_iter().map(media_profile_response).collect())
             .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_profile_readiness(
+        &self,
+        media_profile_public_id: Uuid,
+    ) -> Result<Option<AppMediaProfileReadinessResponse>, MediaServiceError> {
+        let Some(profile) = self
+            .store
+            .get_profile(media_profile_public_id)
+            .await
+            .map_err(|err| map_data_error(&err))?
+        else {
+            return Ok(None);
+        };
+        let latest = self
+            .store
+            .latest_capability()
+            .await
+            .map_err(|err| map_data_error(&err))?;
+        let reason = if let Some(code) = capability_snapshot_readiness_code(latest.as_ref()) {
+            Some(code.to_string())
+        } else if profile
+            .compatibility_target_key
+            .as_deref()
+            .and_then(trim_nonempty)
+            .is_some()
+        {
+            let targets = self
+                .store
+                .list_compatibility_targets()
+                .await
+                .map_err(|err| map_data_error(&err))?;
+            latest.as_ref().and_then(|snapshot| {
+                ensure_profile_compatibility_target_readiness(&profile, snapshot, &targets)
+                    .err()
+                    .map(|error| {
+                        error
+                            .code()
+                            .unwrap_or("media_profile_readiness_failed")
+                            .to_string()
+                    })
+            })
+        } else {
+            None
+        };
+
+        Ok(Some(AppMediaProfileReadinessResponse {
+            ready: reason.is_none(),
+            reason,
+            profile: shared_media_profile_response(profile),
+            snapshot: latest.map(media_capability_snapshot_response),
+        }))
     }
 
     async fn media_compatibility_target_list(
@@ -1220,76 +1254,7 @@ impl MediaFacade for MediaService {
         self.store
             .latest_capability()
             .await
-            .map(|row_opt| {
-                row_opt.map(|row| AppMediaCapabilitySnapshotResponse {
-                    media_capability_snapshot_id: row.media_capability_snapshot_id,
-                    snapshot_run_public_id: row.snapshot_run_public_id,
-                    ffmpeg_version: row.ffmpeg_version,
-                    ffprobe_version: row.ffprobe_version,
-                    codecs: row
-                        .codecs
-                        .into_iter()
-                        .map(
-                            |codec| revaer_api::app::media::MediaCapabilityCodecResponse {
-                                codec_name: codec.codec_name,
-                                encode_supported: codec.encode_supported,
-                                decode_supported: codec.decode_supported,
-                            },
-                        )
-                        .collect(),
-                    encoders: row.encoders,
-                    decoders: feature_names(&row.features, "decoder", true),
-                    muxers: feature_names(&row.features, "muxer", true),
-                    demuxers: feature_names(&row.features, "demuxer", true),
-                    subtitle_support: feature_names(&row.features, "subtitle", true),
-                    hardware_accelerators: feature_names(&row.features, "hardware", true),
-                    filesystem_utilities: feature_names(&row.features, "filesystem", true),
-                    utility_capabilities: feature_names(&row.features, "utility", true),
-                    license_mode: feature_names(&row.features, "license", true)
-                        .into_iter()
-                        .next()
-                        .unwrap_or_default(),
-                    ffmpeg_license_mode: feature_names(&row.features, "ffmpeg_license", true)
-                        .into_iter()
-                        .next()
-                        .unwrap_or_else(|| {
-                            feature_names(&row.features, "license", true)
-                                .into_iter()
-                                .next()
-                                .unwrap_or_default()
-                        }),
-                    ffmpeg_enable_gpl: feature_supported(
-                        &row.features,
-                        "ffmpeg_build_flag",
-                        "--enable-gpl",
-                    ),
-                    ffmpeg_enable_version3: feature_supported(
-                        &row.features,
-                        "ffmpeg_build_flag",
-                        "--enable-version3",
-                    ),
-                    ffmpeg_enable_nonfree: feature_supported(
-                        &row.features,
-                        "ffmpeg_build_flag",
-                        "--enable-nonfree",
-                    ),
-                    compliance_links: feature_names(&row.features, "compliance", true),
-                    absent_capabilities: feature_names(&row.features, "absent", false),
-                    features: row
-                        .features
-                        .into_iter()
-                        .map(
-                            |feature| revaer_api::app::media::MediaCapabilityFeatureResponse {
-                                feature_family: feature.feature_family,
-                                feature_name: feature.feature_name,
-                                supported: feature.supported,
-                                detail_text: feature.detail_text,
-                            },
-                        )
-                        .collect(),
-                    observed_at: row.observed_at,
-                })
-            })
+            .map(|row_opt| row_opt.map(media_capability_snapshot_response))
             .map_err(|err| map_data_error(&err))
     }
 
@@ -1297,31 +1262,16 @@ impl MediaFacade for MediaService {
         &self,
     ) -> Result<AppMediaCapabilityReadinessResponse, MediaServiceError> {
         let snapshot = self.media_capability_latest().await?;
-        let (ready, reason) = match snapshot.as_ref() {
-            None => (false, Some("media_capability_snapshot_missing".to_string())),
-            Some(item)
-                if item.ffmpeg_version.trim().is_empty()
-                    || item.ffprobe_version.trim().is_empty()
-                    || item.codecs.is_empty()
-                    || item.encoders.is_empty()
-                    || item.decoders.is_empty()
-                    || item.muxers.is_empty()
-                    || item.demuxers.is_empty()
-                    || item.filesystem_utilities.is_empty()
-                    || item.utility_capabilities.is_empty()
-                    || item.license_mode.trim().is_empty()
-                    || item
-                        .codecs
-                        .iter()
-                        .any(|codec| codec.codec_name.trim().is_empty()) =>
-            {
-                (false, Some("media_capability_snapshot_invalid".to_string()))
+        let reason = match snapshot.as_ref() {
+            None => Some("media_capability_snapshot_missing".to_string()),
+            Some(item) if media_capability_snapshot_response_invalid(item) => {
+                Some("media_capability_snapshot_invalid".to_string())
             }
-            Some(_) => (true, None),
+            Some(_) => None,
         };
 
         Ok(AppMediaCapabilityReadinessResponse {
-            ready,
+            ready: reason.is_none(),
             reason,
             snapshot,
         })
@@ -2774,37 +2724,180 @@ fn map_detect_error(error: &CapabilityDetectError) -> MediaServiceError {
 pub(crate) fn ensure_execution_capability_snapshot(
     snapshot: Option<&CapabilitySnapshotRow>,
 ) -> Result<(), MediaServiceError> {
-    let Some(snapshot) = snapshot else {
-        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
-            .with_code("media_capability_snapshot_missing"));
+    let Some(code) = capability_snapshot_readiness_code(snapshot) else {
+        return Ok(());
     };
 
-    let utilities = feature_names(&snapshot.features, "utility", true);
-    let valid = !snapshot.ffmpeg_version.trim().is_empty()
-        && !snapshot.ffprobe_version.trim().is_empty()
-        && !snapshot.codecs.is_empty()
-        && !snapshot.encoders.is_empty()
-        && snapshot_has_supported_feature(snapshot, "decoder")
-        && snapshot_has_supported_feature(snapshot, "muxer")
-        && snapshot_has_supported_feature(snapshot, "demuxer")
-        && snapshot_has_supported_feature(snapshot, "filesystem")
-        && ["ffmpeg", "ffprobe", "ffplay"]
-            .iter()
-            .all(|required| utilities.iter().any(|actual| actual == required))
-        && snapshot_has_supported_feature(snapshot, "license")
-        && snapshot
-            .codecs
-            .iter()
-            .all(|codec| !codec.codec_name.trim().is_empty());
-    if !valid {
-        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
-            .with_code("media_capability_snapshot_invalid"));
-    }
-
-    Ok(())
+    Err(MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code(code))
 }
 
-fn ensure_profile_compatibility_target_readiness(
+fn capability_snapshot_readiness_code(
+    snapshot: Option<&CapabilitySnapshotRow>,
+) -> Option<&'static str> {
+    let Some(snapshot) = snapshot else {
+        return Some("media_capability_snapshot_missing");
+    };
+
+    if media_capability_snapshot_row_invalid(snapshot) {
+        return Some("media_capability_snapshot_invalid");
+    }
+
+    None
+}
+
+fn media_capability_snapshot_row_invalid(snapshot: &CapabilitySnapshotRow) -> bool {
+    let utilities = feature_names(&snapshot.features, "utility", true);
+    snapshot.ffmpeg_version.trim().is_empty()
+        || snapshot.ffprobe_version.trim().is_empty()
+        || snapshot.codecs.is_empty()
+        || snapshot.encoders.is_empty()
+        || !snapshot_has_supported_feature(snapshot, "decoder")
+        || !snapshot_has_supported_feature(snapshot, "muxer")
+        || !snapshot_has_supported_feature(snapshot, "demuxer")
+        || !snapshot_has_supported_feature(snapshot, "filesystem")
+        || !["ffmpeg", "ffprobe", "ffplay"]
+            .iter()
+            .all(|required| utilities.iter().any(|actual| actual == required))
+        || !snapshot_has_supported_feature(snapshot, "license")
+        || snapshot
+            .codecs
+            .iter()
+            .any(|codec| codec.codec_name.trim().is_empty())
+}
+
+fn media_capability_snapshot_response_invalid(
+    snapshot: &AppMediaCapabilitySnapshotResponse,
+) -> bool {
+    snapshot.ffmpeg_version.trim().is_empty()
+        || snapshot.ffprobe_version.trim().is_empty()
+        || snapshot.codecs.is_empty()
+        || snapshot.encoders.is_empty()
+        || snapshot.decoders.is_empty()
+        || snapshot.muxers.is_empty()
+        || snapshot.demuxers.is_empty()
+        || snapshot.filesystem_utilities.is_empty()
+        || snapshot.utility_capabilities.is_empty()
+        || !["ffmpeg", "ffprobe", "ffplay"].iter().all(|required| {
+            snapshot
+                .utility_capabilities
+                .iter()
+                .any(|actual| actual == required)
+        })
+        || snapshot.license_mode.trim().is_empty()
+        || snapshot
+            .codecs
+            .iter()
+            .any(|codec| codec.codec_name.trim().is_empty())
+}
+
+fn media_profile_response(row: MediaProfileRow) -> MediaProfileResponse {
+    MediaProfileResponse {
+        media_profile_public_id: row.media_profile_public_id,
+        profile_key: row.profile_key,
+        source_root: row.source_root,
+        output_root: row.output_root,
+        dry_run_only: row.dry_run_only,
+        retention_days: row.retention_days,
+        compatibility_target_key: row.compatibility_target_key,
+        desired_target_key: row.desired_target_key,
+        desired_target_version: row.desired_target_version,
+        policy_key: row.policy_key,
+        watcher_enabled: row.watcher_enabled,
+        schedule_enabled: row.schedule_enabled,
+        schedule_interval_minutes: row.schedule_interval_minutes,
+        updated_at: row.updated_at,
+    }
+}
+
+fn shared_media_profile_response(row: MediaProfileRow) -> revaer_api::models::MediaProfileResponse {
+    revaer_api::models::MediaProfileResponse {
+        media_profile_public_id: row.media_profile_public_id,
+        profile_key: row.profile_key,
+        source_root: row.source_root,
+        output_root: row.output_root,
+        dry_run_only: row.dry_run_only,
+        retention_days: row.retention_days,
+        compatibility_target_key: row.compatibility_target_key,
+        desired_target_key: row.desired_target_key,
+        desired_target_version: row.desired_target_version,
+        policy_key: row.policy_key,
+        watcher_enabled: row.watcher_enabled,
+        schedule_enabled: row.schedule_enabled,
+        schedule_interval_minutes: row.schedule_interval_minutes,
+        updated_at: row.updated_at,
+    }
+}
+
+fn media_capability_snapshot_response(
+    row: CapabilitySnapshotRow,
+) -> AppMediaCapabilitySnapshotResponse {
+    AppMediaCapabilitySnapshotResponse {
+        media_capability_snapshot_id: row.media_capability_snapshot_id,
+        snapshot_run_public_id: row.snapshot_run_public_id,
+        ffmpeg_version: row.ffmpeg_version,
+        ffprobe_version: row.ffprobe_version,
+        codecs: row
+            .codecs
+            .into_iter()
+            .map(
+                |codec| revaer_api::app::media::MediaCapabilityCodecResponse {
+                    codec_name: codec.codec_name,
+                    encode_supported: codec.encode_supported,
+                    decode_supported: codec.decode_supported,
+                },
+            )
+            .collect(),
+        encoders: row.encoders,
+        decoders: feature_names(&row.features, "decoder", true),
+        muxers: feature_names(&row.features, "muxer", true),
+        demuxers: feature_names(&row.features, "demuxer", true),
+        subtitle_support: feature_names(&row.features, "subtitle", true),
+        hardware_accelerators: feature_names(&row.features, "hardware", true),
+        filesystem_utilities: feature_names(&row.features, "filesystem", true),
+        utility_capabilities: feature_names(&row.features, "utility", true),
+        license_mode: feature_names(&row.features, "license", true)
+            .into_iter()
+            .next()
+            .unwrap_or_default(),
+        ffmpeg_license_mode: feature_names(&row.features, "ffmpeg_license", true)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| {
+                feature_names(&row.features, "license", true)
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default()
+            }),
+        ffmpeg_enable_gpl: feature_supported(&row.features, "ffmpeg_build_flag", "--enable-gpl"),
+        ffmpeg_enable_version3: feature_supported(
+            &row.features,
+            "ffmpeg_build_flag",
+            "--enable-version3",
+        ),
+        ffmpeg_enable_nonfree: feature_supported(
+            &row.features,
+            "ffmpeg_build_flag",
+            "--enable-nonfree",
+        ),
+        compliance_links: feature_names(&row.features, "compliance", true),
+        absent_capabilities: feature_names(&row.features, "absent", false),
+        features: row
+            .features
+            .into_iter()
+            .map(
+                |feature| revaer_api::app::media::MediaCapabilityFeatureResponse {
+                    feature_family: feature.feature_family,
+                    feature_name: feature.feature_name,
+                    supported: feature.supported,
+                    detail_text: feature.detail_text,
+                },
+            )
+            .collect(),
+        observed_at: row.observed_at,
+    }
+}
+
+pub(crate) fn ensure_profile_compatibility_target_readiness(
     profile: &MediaProfileRow,
     snapshot: &CapabilitySnapshotRow,
     compatibility_targets: &[MediaCompatibilityTargetRow],
@@ -3463,6 +3556,108 @@ mod tests {
                 .await?
                 .is_empty()
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_profile_readiness_returns_none_for_missing_profile() -> anyhow::Result<()> {
+        let Some((service, _actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+
+        let readiness = service.media_profile_readiness(Uuid::new_v4()).await?;
+
+        assert!(readiness.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_profile_readiness_reports_missing_capability_snapshot() -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+        let profile_id = service
+            .media_profile_upsert(MediaProfileUpsertParams {
+                actor_user_public_id,
+                profile_key: "profile-readiness-missing-snapshot",
+                source_root: "/input/profile-readiness-missing-snapshot",
+                output_root: "/output/profile-readiness-missing-snapshot",
+                dry_run_only: false,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            })
+            .await?;
+
+        let readiness = service
+            .media_profile_readiness(profile_id)
+            .await?
+            .expect("profile readiness should exist");
+
+        assert!(!readiness.ready);
+        assert_eq!(
+            readiness.reason.as_deref(),
+            Some("media_capability_snapshot_missing")
+        );
+        assert_eq!(readiness.profile.media_profile_public_id, profile_id);
+        assert!(readiness.snapshot.is_none());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_profile_readiness_reports_unsupported_compatibility_target() -> anyhow::Result<()>
+    {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
+        service
+            .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
+                actor_user_public_id,
+                compatibility_target_key: "hevc-aac",
+                version: 1,
+                display_name: "HEVC AAC",
+                video_codec: "hevc",
+                audio_codec: "aac",
+                audio_channels: Some(2),
+                audio_channel_layout: Some("stereo"),
+                subtitle_policy: "selected",
+            })
+            .await?;
+        let profile_id = service
+            .media_profile_upsert(MediaProfileUpsertParams {
+                actor_user_public_id,
+                profile_key: "profile-readiness-api",
+                source_root: "/input/profile-readiness-api",
+                output_root: "/output/profile-readiness-api",
+                dry_run_only: false,
+                retention_days: 30,
+                compatibility_target_key: Some("hevc-aac"),
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            })
+            .await?;
+
+        let readiness = service
+            .media_profile_readiness(profile_id)
+            .await?
+            .expect("profile readiness should exist");
+
+        assert!(!readiness.ready);
+        assert_eq!(
+            readiness.reason.as_deref(),
+            Some("media_profile_compatibility_target_unsupported")
+        );
+        assert_eq!(readiness.profile.media_profile_public_id, profile_id);
+        assert!(readiness.snapshot.is_some());
         Ok(())
     }
 

@@ -24,7 +24,8 @@ use revaer_api_models::{
     MediaJobPhaseResponse as SharedMediaJobPhaseResponse,
     MediaJobPlanReasonResponse as SharedMediaJobPlanReasonResponse,
     MediaJobVerificationCheckResponse as SharedMediaJobVerificationCheckResponse,
-    MediaJobViolationResponse as SharedMediaJobViolationResponse, MediaVerificationToggle,
+    MediaJobViolationResponse as SharedMediaJobViolationResponse,
+    MediaProfileReadinessResponse as SharedMediaProfileReadinessResponse, MediaVerificationToggle,
 };
 
 /// Create/update media profile parameters.
@@ -743,6 +744,9 @@ pub type MediaCapabilitySnapshotResponse = SharedMediaCapabilitySnapshotResponse
 /// Media capability readiness response.
 pub type MediaCapabilityReadinessResponse = SharedMediaCapabilityReadinessResponse;
 
+/// Media profile execution readiness response.
+pub type MediaProfileReadinessResponse = SharedMediaProfileReadinessResponse;
+
 /// Media service error kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaServiceErrorKind {
@@ -833,6 +837,12 @@ pub trait MediaFacade: Send + Sync {
 
     /// List active profiles.
     async fn media_profile_list(&self) -> Result<Vec<MediaProfileResponse>, MediaServiceError>;
+
+    /// Read one profile's current execution readiness.
+    async fn media_profile_readiness(
+        &self,
+        media_profile_public_id: Uuid,
+    ) -> Result<Option<MediaProfileReadinessResponse>, MediaServiceError>;
 
     /// List active compatibility target versions.
     async fn media_compatibility_target_list(
@@ -1063,6 +1073,13 @@ impl MediaFacade for NoopMedia {
 
     async fn media_profile_list(&self) -> Result<Vec<MediaProfileResponse>, MediaServiceError> {
         Ok(Vec::new())
+    }
+
+    async fn media_profile_readiness(
+        &self,
+        _media_profile_public_id: Uuid,
+    ) -> Result<Option<MediaProfileReadinessResponse>, MediaServiceError> {
+        Ok(None)
     }
 
     async fn media_compatibility_target_list(

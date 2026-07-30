@@ -364,3 +364,4 @@
 -   [353](353-media-job-phase-read-model.md) - Media job phase read model
 -   [354](354-media-direct-job-source-fingerprint.md) - Media direct job source fingerprint
 -   [355](355-media-compatibility-target-admission.md) - Media compatibility target admission
+-   [356](356-media-profile-readiness-api.md) - Media profile readiness API
