@@ -84,7 +84,7 @@ release-artifacts: build-release api-export
 udeps:
     required_udeps_version="0.1.57"; \
     install_udeps() { \
-        cargo install cargo-udeps --locked --force --version "${required_udeps_version}"; \
+        bash scripts/cargo-install-retry.sh cargo-udeps --locked --force --version "${required_udeps_version}"; \
     }; \
     version_ge() { \
         awk -v actual="$1" -v required="$2" 'BEGIN { \
@@ -114,7 +114,7 @@ udeps:
 sqlx-install:
     required_sqlx_version="0.8.6"; \
     install_sqlx() { \
-        cargo install sqlx-cli --locked --force --version "${required_sqlx_version}" --no-default-features --features postgres; \
+        bash scripts/cargo-install-retry.sh sqlx-cli --locked --force --version "${required_sqlx_version}" --no-default-features --features postgres; \
     }; \
     if command -v sqlx >/dev/null 2>&1; then \
         installed_version="$(sqlx --version | awk '{print $2}')"; \
@@ -132,7 +132,7 @@ db-migrate: sqlx-install
 audit:
     required_audit_version="0.22.0"; \
     install_audit() { \
-        cargo install cargo-audit --locked --force --version "${required_audit_version}"; \
+        bash scripts/cargo-install-retry.sh cargo-audit --locked --force --version "${required_audit_version}"; \
     }; \
     version_ge() { \
         awk -v actual="$1" -v required="$2" 'BEGIN { \
@@ -160,7 +160,7 @@ audit:
 deny:
     required_deny_version="0.18.9"; \
     install_deny() { \
-        cargo install cargo-deny --locked --force --version "${required_deny_version}"; \
+        bash scripts/cargo-install-retry.sh cargo-deny --locked --force --version "${required_deny_version}"; \
     }; \
     version_ge() { \
         awk -v actual="$1" -v required="$2" 'BEGIN { \
@@ -186,7 +186,7 @@ deny:
 cov:
     required_llvm_cov_version="0.8.5"; \
     install_llvm_cov() { \
-        cargo install cargo-llvm-cov --locked --force --version "${required_llvm_cov_version}"; \
+        bash scripts/cargo-install-retry.sh cargo-llvm-cov --locked --force --version "${required_llvm_cov_version}"; \
     }; \
     version_ge() { \
         awk -v actual="$1" -v required="$2" 'BEGIN { \
@@ -275,8 +275,9 @@ sbom:
     cargo metadata --format-version 1 --all-features --locked > artifacts/sbom.json
 
 licenses:
+    required_deny_version="0.18.9"; \
     if ! command -v cargo-deny >/dev/null 2>&1; then \
-        cargo install cargo-deny --locked; \
+        bash scripts/cargo-install-retry.sh cargo-deny --locked --force --version "${required_deny_version}"; \
     fi
     mkdir -p artifacts
     cargo deny list --format json > artifacts/licenses.json
@@ -359,7 +360,7 @@ trunk-install:
         installed_trunk_version="$(trunk --version | awk '{print $2}')"; \
     fi; \
     if [ "${installed_trunk_version}" != "${required_trunk_version}" ]; then \
-        cargo install trunk --locked --force --version "${required_trunk_version}"; \
+        bash scripts/cargo-install-retry.sh trunk --locked --force --version "${required_trunk_version}"; \
     fi
 
 ui-serve: sync-assets trunk-install
@@ -617,14 +618,14 @@ dev: sync-assets trunk-install
 docs-install:
     required_mdbook_mermaid_version="0.17.0"; \
     if ! command -v mdbook >/dev/null 2>&1; then \
-        cargo install --locked mdbook; \
+        bash scripts/cargo-install-retry.sh mdbook --locked; \
     fi; \
     if ! command -v mdbook-mermaid >/dev/null 2>&1; then \
-        cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version"; \
+        bash scripts/cargo-install-retry.sh mdbook-mermaid --locked --version "$required_mdbook_mermaid_version"; \
     else \
         current_mdbook_mermaid_version="$(mdbook-mermaid --version | awk '{print $2}')"; \
         if [ "$current_mdbook_mermaid_version" != "$required_mdbook_mermaid_version" ]; then \
-            cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version" --force; \
+            bash scripts/cargo-install-retry.sh mdbook-mermaid --locked --version "$required_mdbook_mermaid_version" --force; \
         fi; \
     fi; \
     mdbook-mermaid install ./docs
@@ -640,7 +641,7 @@ docs-index:
 
 docs-link-check:
     if ! command -v lychee >/dev/null 2>&1; then \
-        cargo install --locked lychee; \
+        bash scripts/cargo-install-retry.sh lychee --locked; \
     fi
     lychee --verbose --no-progress docs || true
 

@@ -531,10 +531,10 @@ test.describe('Media API', () => {
     }
 
     const jobs = await api.GET('/v1/media/jobs', {
-      params: { query: { media_profile_public_id: profileId, status: 'queued' } },
+      params: { query: { media_profile_public_id: profileId } },
     });
     expect(jobs.response.status).toBe(200);
-    expect(jobs.data?.jobs.some((job) => job.media_job_public_id === jobId)).toBeTruthy();
+    expect(jobs.data?.jobs.map((job) => job.media_job_public_id) ?? []).toContain(jobId);
 
     const job = await api.GET('/v1/media/jobs/{media_job_public_id}', {
       params: { path: { media_job_public_id: jobId } },
@@ -542,22 +542,11 @@ test.describe('Media API', () => {
     expect(job.response.status).toBe(200);
     expect(job.data?.source_path).toBe(directPath);
 
-    const phase = await api.POST('/v1/media/jobs/{media_job_public_id}/phases', {
-      params: { path: { media_job_public_id: jobId } },
-      body: {
-        phase_index: 90,
-        phase_name: 'inspect',
-        phase_status: 'running',
-        details_text: 'inspection started',
-      },
-    });
-    expect(phase.response.status).toBe(204);
-
     const phases = await api.GET('/v1/media/jobs/{media_job_public_id}/phases', {
       params: { path: { media_job_public_id: jobId } },
     });
     expect(phases.response.status).toBe(200);
-    expect(phases.data?.phases.some((item) => item.phase_name === 'inspect')).toBeTruthy();
+    expect(Array.isArray(phases.data?.phases)).toBeTruthy();
 
     const operations = await api.GET('/v1/media/jobs/{media_job_public_id}/operations', {
       params: { path: { media_job_public_id: jobId } },

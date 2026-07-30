@@ -385,3 +385,5 @@
     -   [356: Media profile readiness API](adr/356-media-profile-readiness-api.md)
     -   [357: Media desired-target readiness](adr/357-media-desired-target-readiness.md)
     -   [358: Media contextual stream rewrites](adr/358-media-contextual-stream-rewrites.md)
+    -   [359: Media worker-owned phase history](adr/359-media-worker-owned-phase-history.md)
+    -   [360: CI Cargo install retry](adr/360-ci-cargo-install-retry.md)
