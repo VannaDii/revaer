@@ -1436,6 +1436,23 @@ mod tests {
                 "unsupported chapter target stream was accepted"
             ));
         }
+
+        let unsupported_data = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "opaque-data",
+                stream_kind: "data",
+                codec: "bin_data",
+                sort_order: 0,
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        if unsupported_data.is_ok() {
+            return Err(anyhow::anyhow!(
+                "unsupported data target stream was accepted"
+            ));
+        }
         Ok(())
     }
 }

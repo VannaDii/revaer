@@ -389,3 +389,4 @@
     -   [360: CI Cargo install retry](adr/360-ci-cargo-install-retry.md)
     -   [361: Media worker-owned job records](adr/361-media-worker-owned-job-records.md)
     -   [362: Media worker-owned job creation](adr/362-media-worker-owned-job-creation.md)
+    -   [363: Media data target boundary evidence](adr/363-media-data-target-boundary-evidence.md)
