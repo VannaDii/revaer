@@ -34,7 +34,7 @@ use revaer_data::media::capabilities::{
 };
 use revaer_data::media::configuration::{
     AppendMediaDesiredTargetStreamInput, CreateMediaDesiredTargetInput,
-    MediaDesiredTargetStreamRow, UpdateMediaJobRetentionPolicyInput,
+    MediaCompatibilityTargetRow, MediaDesiredTargetStreamRow, UpdateMediaJobRetentionPolicyInput,
     UpsertMediaCompatibilityTargetInput, UpsertMediaPolicyProfileInput,
     append_media_desired_target_stream_with_executor, create_media_desired_target_with_executor,
     list_media_desired_target_streams, list_media_desired_targets,
@@ -51,7 +51,8 @@ use revaer_data::media::jobs::{
     AppendMediaJobVerificationCheckInput, EnqueueDiscoveredMediaJobInput,
 };
 use revaer_data::media::profiles::{
-    UpdateMediaProfileInput, UpsertMediaProfileInput, upsert_media_profile_with_executor,
+    MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput,
+    upsert_media_profile_with_executor,
 };
 use revaer_media_core::compile::{MediaProfile, validate_profiles};
 use revaer_media_core::normalize::{
@@ -131,12 +132,7 @@ impl MediaService {
         ensure_discovery_mode_enabled(mode, profile.schedule_enabled, profile.watcher_enabled)?;
 
         if !profile.dry_run_only {
-            let latest = self
-                .store
-                .latest_capability()
-                .await
-                .map_err(|err| map_data_error(&err))?;
-            ensure_execution_capability_snapshot(latest.as_ref())?;
+            self.ensure_profile_ready_for_execution(&profile).await?;
         }
 
         let previews = build_discovery_previews(
@@ -354,6 +350,36 @@ impl MediaService {
                 .telemetry
                 .inc_media_capability_refresh(error.code().unwrap_or("failed")),
         }
+    }
+
+    async fn ensure_profile_ready_for_execution(
+        &self,
+        profile: &MediaProfileRow,
+    ) -> Result<(), MediaServiceError> {
+        let latest = self
+            .store
+            .latest_capability()
+            .await
+            .map_err(|err| map_data_error(&err))?;
+        ensure_execution_capability_snapshot(latest.as_ref())?;
+        let Some(snapshot) = latest.as_ref() else {
+            return Ok(());
+        };
+        if profile
+            .compatibility_target_key
+            .as_deref()
+            .and_then(trim_nonempty)
+            .is_none()
+        {
+            return Ok(());
+        }
+
+        let compatibility_targets = self
+            .store
+            .list_compatibility_targets()
+            .await
+            .map_err(|err| map_data_error(&err))?;
+        ensure_profile_compatibility_target_readiness(profile, snapshot, &compatibility_targets)
     }
 }
 
@@ -748,12 +774,7 @@ impl MediaFacade for MediaService {
                     .with_code("media_job_replace_confirmation_required"));
             }
 
-            let latest = self
-                .store
-                .latest_capability()
-                .await
-                .map_err(|err| map_data_error(&err))?;
-            ensure_execution_capability_snapshot(latest.as_ref())?;
+            self.ensure_profile_ready_for_execution(&profile).await?;
         }
 
         let fingerprint = fingerprint_source_candidate(params.source_path, &profile.source_root)
@@ -2799,6 +2820,47 @@ pub(crate) fn ensure_execution_capability_snapshot(
     Ok(())
 }
 
+fn ensure_profile_compatibility_target_readiness(
+    profile: &MediaProfileRow,
+    snapshot: &CapabilitySnapshotRow,
+    compatibility_targets: &[MediaCompatibilityTargetRow],
+) -> Result<(), MediaServiceError> {
+    let Some(target_key) = profile
+        .compatibility_target_key
+        .as_deref()
+        .and_then(trim_nonempty)
+    else {
+        return Ok(());
+    };
+    let normalized_target_key = normalize_catalog_key(target_key);
+    let target = compatibility_targets
+        .iter()
+        .filter(|target| {
+            normalize_catalog_key(&target.compatibility_target_key) == normalized_target_key
+        })
+        .max_by_key(|target| target.version)
+        .ok_or_else(|| {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_profile_compatibility_target_not_found")
+        })?;
+
+    for codec in [&target.video_codec, &target.audio_codec] {
+        if !snapshot_supports_encoding(snapshot, codec) {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_profile_compatibility_target_unsupported"));
+        }
+    }
+    Ok(())
+}
+
+fn snapshot_supports_encoding(snapshot: &CapabilitySnapshotRow, codec_name: &str) -> bool {
+    let normalized = codec_name.trim();
+    normalized.eq_ignore_ascii_case("copy")
+        || snapshot.codecs.iter().any(|codec| {
+            codec.codec_name.eq_ignore_ascii_case(normalized) && codec.encode_supported
+        })
+}
+
 fn snapshot_has_supported_feature(snapshot: &CapabilitySnapshotRow, family: &str) -> bool {
     snapshot.features.iter().any(|feature| {
         feature.supported
@@ -2941,8 +3003,9 @@ pub(crate) fn build_discovery_previews(
 mod tests {
     use super::{
         DiscoveryRunMode, MediaService, ensure_discovery_mode_enabled,
-        ensure_execution_capability_snapshot, map_data_error, map_detect_error, parse_yaml_bundle,
-        path_is_within_root, validate_yaml_bundle,
+        ensure_execution_capability_snapshot, ensure_profile_compatibility_target_readiness,
+        map_data_error, map_detect_error, parse_yaml_bundle, path_is_within_root,
+        validate_yaml_bundle,
     };
     use revaer_api::app::media::MediaServiceErrorKind;
     use revaer_api::app::media::{
@@ -2957,8 +3020,12 @@ mod tests {
     };
     use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
-    use revaer_data::media::capabilities::CapabilitySnapshotRow;
+    use revaer_data::media::capabilities::{
+        CapabilityCodecRow, CapabilityFeatureRow, CapabilitySnapshotRow,
+    };
+    use revaer_data::media::configuration::MediaCompatibilityTargetRow;
     use revaer_data::media::imports::list_media_profile_import_drafts;
+    use revaer_data::media::profiles::MediaProfileRow;
     use revaer_media_runtime::capabilities::CapabilityDetectError;
     use revaer_media_runtime::capabilities::CapabilityDetector;
     use revaer_media_runtime::capabilities::{CapabilitySnapshot, CodecCapability};
@@ -3080,7 +3147,7 @@ mod tests {
         })
     }
 
-    fn valid_capability_features() -> Vec<revaer_data::media::capabilities::CapabilityFeatureRow> {
+    fn valid_capability_features() -> Vec<CapabilityFeatureRow> {
         [
             ("decoder", "hevc", true),
             ("muxer", "matroska", true),
@@ -3096,14 +3163,14 @@ mod tests {
             ("ffmpeg_build_flag", "--enable-nonfree", false),
         ]
         .into_iter()
-        .map(|(feature_family, feature_name, supported)| {
-            revaer_data::media::capabilities::CapabilityFeatureRow {
+        .map(
+            |(feature_family, feature_name, supported)| CapabilityFeatureRow {
                 feature_family: feature_family.to_string(),
                 feature_name: feature_name.to_string(),
                 supported,
                 detail_text: None,
-            }
-        })
+            },
+        )
         .collect()
     }
 
@@ -3156,6 +3223,112 @@ mod tests {
             observed_at: chrono::Utc::now(),
         };
         assert!(ensure_execution_capability_snapshot(Some(&row)).is_ok());
+    }
+
+    #[test]
+    fn profile_compatibility_readiness_rejects_missing_encode_support() {
+        let profile = media_profile_with_compatibility_target("hevc-aac");
+        let snapshot = capability_snapshot_with_codecs(&[
+            capability_codec("hevc", true, true),
+            capability_codec("aac", false, true),
+        ]);
+        let targets = vec![compatibility_target("hevc-aac", 1, "hevc", "aac")];
+
+        let result = ensure_profile_compatibility_target_readiness(&profile, &snapshot, &targets);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_compatibility_target_unsupported".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_compatibility_readiness_accepts_supported_codecs() {
+        let profile = media_profile_with_compatibility_target("hevc-aac");
+        let snapshot = capability_snapshot_with_codecs(&[
+            capability_codec("hevc", true, true),
+            capability_codec("aac", true, true),
+        ]);
+        let targets = vec![compatibility_target("hevc-aac", 1, "hevc", "aac")];
+
+        assert!(
+            ensure_profile_compatibility_target_readiness(&profile, &snapshot, &targets).is_ok()
+        );
+    }
+
+    #[test]
+    fn profile_compatibility_readiness_rejects_missing_target() {
+        let profile = media_profile_with_compatibility_target("hevc-aac");
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+
+        let result = ensure_profile_compatibility_target_readiness(&profile, &snapshot, &[]);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_compatibility_target_not_found".to_string())
+        );
+    }
+
+    fn capability_snapshot_with_codecs(codecs: &[CapabilityCodecRow]) -> CapabilitySnapshotRow {
+        CapabilitySnapshotRow {
+            media_capability_snapshot_id: 1,
+            snapshot_run_public_id: Uuid::new_v4(),
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: codecs.to_vec(),
+            encoders: vec!["libx265".to_string()],
+            features: valid_capability_features(),
+            observed_at: chrono::Utc::now(),
+        }
+    }
+
+    fn capability_codec(
+        codec_name: &str,
+        encode_supported: bool,
+        decode_supported: bool,
+    ) -> CapabilityCodecRow {
+        CapabilityCodecRow {
+            codec_name: codec_name.to_string(),
+            encode_supported,
+            decode_supported,
+        }
+    }
+
+    fn media_profile_with_compatibility_target(target_key: &str) -> MediaProfileRow {
+        MediaProfileRow {
+            media_profile_public_id: Uuid::new_v4(),
+            profile_key: "app-media".to_string(),
+            source_root: "/input/app-media".to_string(),
+            output_root: "/output/app-media".to_string(),
+            dry_run_only: false,
+            retention_days: 30,
+            compatibility_target_key: Some(target_key.to_string()),
+            policy_key: "safe_dry_run".to_string(),
+            watcher_enabled: false,
+            schedule_enabled: false,
+            schedule_interval_minutes: None,
+            desired_target_key: None,
+            desired_target_version: None,
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    fn compatibility_target(
+        compatibility_target_key: &str,
+        version: i32,
+        video_codec: &str,
+        audio_codec: &str,
+    ) -> MediaCompatibilityTargetRow {
+        MediaCompatibilityTargetRow {
+            compatibility_target_key: compatibility_target_key.to_string(),
+            version,
+            display_name: "Compatibility target".to_string(),
+            video_codec: video_codec.to_string(),
+            audio_codec: audio_codec.to_string(),
+            audio_channels: Some(2),
+            audio_channel_layout: Some("stereo".to_string()),
+            subtitle_policy: "selected".to_string(),
+        }
     }
 
     #[test]
@@ -3241,6 +3414,70 @@ mod tests {
                 .await?
                 .iter()
                 .all(|target| target.target_key != "empty-target")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_create_rejects_unsupported_profile_compatibility_target()
+    -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+        assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
+        service
+            .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
+                actor_user_public_id,
+                compatibility_target_key: "hevc-aac",
+                version: 1,
+                display_name: "HEVC AAC",
+                video_codec: "hevc",
+                audio_codec: "aac",
+                audio_channels: Some(2),
+                audio_channel_layout: Some("stereo"),
+                subtitle_policy: "selected",
+            })
+            .await?;
+        let media_source = create_test_media_source("video.mkv")?;
+        let profile_id = service
+            .media_profile_upsert(MediaProfileUpsertParams {
+                actor_user_public_id,
+                profile_key: "profile-readiness",
+                source_root: &media_source.source_root,
+                output_root: &media_source.output_root,
+                dry_run_only: false,
+                retention_days: 30,
+                compatibility_target_key: Some("hevc-aac"),
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            })
+            .await?;
+
+        let error = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: &media_source.source_path,
+                output_path: Some(&media_source.output_path),
+                dry_run: false,
+                replace_confirmation: Some("replace"),
+            })
+            .await
+            .expect_err("profile compatibility target should fail before queueing");
+
+        assert_eq!(error.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            error.code(),
+            Some("media_profile_compatibility_target_unsupported")
+        );
+        assert!(
+            service
+                .media_job_list(profile_id, Some("queued"))
+                .await?
+                .is_empty()
         );
         Ok(())
     }
