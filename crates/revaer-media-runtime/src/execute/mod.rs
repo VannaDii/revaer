@@ -693,9 +693,19 @@ pub fn build_sidecar_embed_argv(
         "-c:s".to_string(),
         "copy".to_string(),
     ];
-    append_chapter_preservation_args(&mut args);
+    append_input_preservation_args(&mut args);
     args.push(output_path.to_string());
     args
+}
+
+fn append_input_preservation_args(args: &mut Vec<String>) {
+    append_container_metadata_preservation_args(args);
+    append_chapter_preservation_args(args);
+}
+
+fn append_container_metadata_preservation_args(args: &mut Vec<String>) {
+    args.push("-map_metadata".to_string());
+    args.push("0".to_string());
 }
 
 fn append_chapter_preservation_args(args: &mut Vec<String>) {
@@ -775,7 +785,7 @@ fn build_ffmpeg_argv_with_video_policy(
         }
     }
 
-    append_chapter_preservation_args(&mut args);
+    append_input_preservation_args(&mut args);
     args.push(output_path.to_string());
     Ok(args)
 }
@@ -1136,7 +1146,7 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
         args.push(normalize_container_format(container_format));
     }
 
-    append_chapter_preservation_args(&mut args);
+    append_input_preservation_args(&mut args);
     args.push(output_path.to_string());
     Ok(args)
 }
@@ -2400,6 +2410,7 @@ mod tests {
         assert!(args_result.is_ok());
         let args = args_result.ok().unwrap_or_default();
         assert!(args.iter().any(|item| item == "copy"));
+        assert!(args.windows(2).any(|pair| pair == ["-map_metadata", "0"]));
         assert!(args.windows(2).any(|pair| pair == ["-map_chapters", "0"]));
     }
 
@@ -2714,6 +2725,8 @@ mod tests {
                 "0",
                 "-c",
                 "copy",
+                "-map_metadata",
+                "0",
                 "-map_chapters",
                 "0",
                 "/out.stage0.tmp.mkv",
@@ -2732,6 +2745,8 @@ mod tests {
                 "copy",
                 "-c:1",
                 "aac",
+                "-map_metadata",
+                "0",
                 "-map_chapters",
                 "0",
                 "/out.stage1.tmp.mkv",
@@ -2754,6 +2769,8 @@ mod tests {
                 "medium",
                 "-crf",
                 "22",
+                "-map_metadata",
+                "0",
                 "-map_chapters",
                 "0",
                 "/out.mkv",
@@ -2951,6 +2968,8 @@ mod tests {
                 "copy",
                 "-c:s",
                 "copy",
+                "-map_metadata",
+                "0",
                 "-map_chapters",
                 "0",
                 "/work/movie.with-subs.mkv"
@@ -3329,13 +3348,22 @@ mod tests {
         let Ok(argv) = argv else {
             return;
         };
+        assert!(argv.windows(2).any(|pair| pair == ["-map_metadata", "0"]));
         assert!(argv.windows(2).any(|pair| pair == ["-map_chapters", "0"]));
         assert_eq!(
-            argv.get(argv.len().saturating_sub(5)..),
+            argv.get(argv.len().saturating_sub(7)..),
             Some(
-                ["-f", "matroska", "-map_chapters", "0", "/workspace/in.mp4"]
-                    .map(String::from)
-                    .as_slice()
+                [
+                    "-f",
+                    "matroska",
+                    "-map_metadata",
+                    "0",
+                    "-map_chapters",
+                    "0",
+                    "/workspace/in.mp4",
+                ]
+                .map(String::from)
+                .as_slice()
             )
         );
     }
@@ -4796,6 +4824,7 @@ mod tests {
         );
         assert!(argv.windows(2).any(|pair| pair == ["-map", "1:0"]));
         assert!(argv.windows(2).any(|pair| pair == ["-c:1", "copy"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-map_metadata", "0"]));
         assert!(argv.windows(2).any(|pair| pair == ["-map_chapters", "0"]));
     }
 
