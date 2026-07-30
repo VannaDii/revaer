@@ -9,12 +9,15 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::media_discovery_runtime::is_media_file;
+use crate::media_source_fingerprint::{MediaSourceFingerprintError, fingerprint_media_file};
 
 const SIDECAR_EXTENSIONS: &[&str] = &["ass", "idx", "srt", "ssa", "sub", "sup", "vtt"];
 
 pub(crate) struct MediaAggregateFingerprint {
+    pub(crate) identity: String,
     pub(crate) size_bytes: i64,
     pub(crate) modified_ns: i64,
+    pub(crate) changed_ns: i64,
     pub(crate) sha256: String,
 }
 
@@ -26,6 +29,8 @@ pub(crate) enum FingerprintError {
     TimeBeforeEpoch,
     #[error("media discovery fingerprint value is too large: {0}")]
     ValueTooLarge(&'static str),
+    #[error(transparent)]
+    Source(#[from] MediaSourceFingerprintError),
 }
 
 pub(crate) fn owner_for_changed_path(path: &Path, root: &Path) -> Option<PathBuf> {
@@ -68,6 +73,9 @@ pub(crate) fn fingerprint_media_aggregate(
     media_path: &Path,
     root: &Path,
 ) -> Result<Option<MediaAggregateFingerprint>, FingerprintError> {
+    let Some(source_fingerprint) = fingerprint_media_file(media_path, root)? else {
+        return Ok(None);
+    };
     let canonical_root = canonical(root)?;
     let canonical_media = match media_path.canonicalize() {
         Ok(path) if path.starts_with(&canonical_root) => path,
@@ -150,6 +158,7 @@ pub(crate) fn fingerprint_media_aggregate(
         latest_modified = latest_modified.max(modified);
     }
     Ok(Some(MediaAggregateFingerprint {
+        identity: source_fingerprint.identity,
         size_bytes: i64::try_from(total_size)
             .map_err(|_| FingerprintError::ValueTooLarge("size"))?,
         modified_ns: i64::try_from(
@@ -159,6 +168,7 @@ pub(crate) fn fingerprint_media_aggregate(
                 .as_nanos(),
         )
         .map_err(|_| FingerprintError::ValueTooLarge("modified_ns"))?,
+        changed_ns: source_fingerprint.changed_ns,
         sha256: format!("{:x}", aggregate.finalize()),
     }))
 }

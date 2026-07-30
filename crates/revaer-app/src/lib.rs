@@ -41,6 +41,7 @@ mod media_discovery_watcher;
 pub mod media_job_runtime;
 /// In-process policy-driven media retention janitor wiring.
 pub mod media_retention_runtime;
+mod media_source_fingerprint;
 mod media_workspace_retention;
 /// Torrent orchestrator wiring.
 #[cfg(feature = "libtorrent")]

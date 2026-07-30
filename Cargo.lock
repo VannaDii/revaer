@@ -2807,6 +2807,7 @@ dependencies = [
  "revaer-test-support",
  "revaer-torrent-core",
  "revaer-torrent-libt",
+ "rustix",
  "serde",
  "serde_json",
  "serde_yaml",
