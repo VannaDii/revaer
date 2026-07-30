@@ -1,0 +1,61 @@
+# Media Contextual Stream Rewrites
+
+- Status: Accepted
+- Date: 2026-07-30
+- Context:
+  - Desired stream title, language, disposition, and ordering changes are only safe when command construction has the complete desired graph.
+  - The legacy single-operation FFmpeg builder accepted `LabelRewrite`, `DispositionRewrite`, and `StreamReorder` without desired-state context.
+  - That path could clear stream titles or dispositions, or apply a generic family ordering, without proving the requested target state.
+- Decision:
+  - Add a first-class `ContextlessStreamRewrite` build error for stream rewrite operations that reach the legacy builder without the complete desired graph.
+  - Keep the desired-graph execution builder as the supported materialization path for stream labels, languages, dispositions, and stream order.
+  - Surface the failure through a stable preflight code: `preflight_build_contextless_stream_rewrite`.
+  - Alternatives considered:
+    - Keep clearing stream labels/dispositions in the legacy builder: rejected because it mutates retained metadata without a desired-state contract.
+    - Teach the legacy builder additional optional desired fields: rejected because it would duplicate the desired-graph command path and preserve an incomplete API.
+- Consequences:
+  - Runtime callers must use complete desired-target execution context for stream rewrites.
+  - Contextless stream rewrites now fail before command execution instead of producing potentially destructive FFmpeg arguments.
+  - Arbitrary container metadata rewrite remains fail-closed under ADR 332 until a full metadata contract exists.
+
+## Task Record
+
+- Motivation:
+  - Close a false-success path in media execution by ensuring stream rewrites are only materialized from a verified desired graph.
+- Design notes:
+  - `BuildArgsError::ContextlessStreamRewrite` is returned for `LabelRewrite`, `DispositionRewrite`, and `StreamReorder` in the legacy operation builder.
+  - Desired-graph command construction still appends target stream `language`, `title`, and disposition arguments from the desired graph.
+  - Preflight classification maps the build failure to deterministic operator-facing code and detail.
+- Test coverage summary:
+  - Added runtime tests proving contextless label, disposition, and stream-order rewrites with explicit output identities fail closed.
+  - Added preflight classification coverage for `preflight_build_contextless_stream_rewrite`.
+  - Hardened the media API E2E fixture so the direct job source is not pre-queued by background discovery before the direct-create assertion.
+  - Focused validation:
+    - `npm ci` in `tests`
+    - `cd tests && npx tsc -p tsconfig.coverage.json`
+    - `cargo fmt --all --check`
+    - `cargo check -p revaer-media-runtime --tests`
+    - `cargo clippy -p revaer-media-runtime --tests -- -D warnings`
+    - `cargo test -p revaer-media-runtime without_desired_graph_fails_closed -- --nocapture`
+    - `cargo test -p revaer-media-runtime desired_graph_metadata_rewrite_operations_emit_target_stream_tags -- --nocapture`
+    - `cargo test -p revaer-media-runtime contextless_stream_rewrite_preflight_classification_is_stable -- --nocapture`
+    - `cargo test -p revaer-media-runtime -- --nocapture`
+    - `just instruction-drift`
+    - `git diff --check`
+    - `sonar analyze secrets crates/revaer-media-runtime/src/execute/mod.rs crates/revaer-media-runtime/src/jobs/mod.rs tests/specs/api/media.spec.ts docs/adr/358-media-contextual-stream-rewrites.md docs/adr/index.md docs/SUMMARY.md`
+    - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table`
+- Observability updates:
+  - Preflight reports now expose `preflight_build_contextless_stream_rewrite` when a stream rewrite lacks complete desired graph context.
+- Risk and rollback plan:
+  - Risk is limited to callers using the legacy builder for stream rewrite operations. Those callers now receive a deterministic preflight failure and can migrate to desired-graph execution.
+  - Rollback would restore contextless FFmpeg rewrites, but that would reintroduce destructive metadata mutation risk.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No drift or contradictions were found.
+- Follow-up queue:
+  - Runtime replacement steps still need a managed committer execution path with rollback/final-verification coverage.
+  - Planned sidecar removals still need execution-step materialization and final sidecar-state verification.
+  - Backup/quarantine paths and workspace estimates still need collision-safe path modeling and reserve accounting.
+  - Public API phase mutation, API discovery fingerprint dedupe, and the default 20% disk reserve remain separate app/API/runtime slices.

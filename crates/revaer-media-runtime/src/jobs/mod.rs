@@ -637,6 +637,10 @@ const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata 
             code: "preflight_build_unsupported_metadata_rewrite",
             detail: "metadata rewrite requires a verified desired metadata contract",
         },
+        BuildArgsError::ContextlessStreamRewrite => PreflightErrorMetadata {
+            code: "preflight_build_contextless_stream_rewrite",
+            detail: "stream rewrite requires complete desired graph context",
+        },
         BuildArgsError::UnsupportedDesiredStreamKind { .. } => PreflightErrorMetadata {
             code: "preflight_build_unsupported_desired_stream_kind",
             detail: "desired graph stream kind requires an unsupported materialization contract",
@@ -2888,6 +2892,20 @@ mod tests {
         assert_eq!(
             preflight_error_detail(&err),
             "metadata rewrite requires a verified desired metadata contract"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+    }
+
+    #[test]
+    fn contextless_stream_rewrite_preflight_classification_is_stable() {
+        let err = JobPreflightError::Build(BuildArgsError::ContextlessStreamRewrite);
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_contextless_stream_rewrite"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "stream rewrite requires complete desired graph context"
         );
         assert_eq!(preflight_failed_stage(&err), "build_steps");
     }
