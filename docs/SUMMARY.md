@@ -389,6 +389,7 @@
     -   [361: Media worker-owned job records](adr/361-media-worker-owned-job-records.md)
     -   [362: Media worker-owned job creation](adr/362-media-worker-owned-job-creation.md)
     -   [363: Media data target boundary evidence](adr/363-media-data-target-boundary-evidence.md)
+    -   [364: Media container metadata preservation](adr/364-media-container-metadata-preservation.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
