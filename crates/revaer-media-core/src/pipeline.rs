@@ -134,6 +134,7 @@ mod tests {
             target_key: "matroska-remux".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![TargetStream {
                 stream_key: "main-audio".to_string(),
                 kind: StreamKind::Audio,
@@ -207,6 +208,7 @@ mod tests {
             target_key: "capability-fallback".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![TargetStream {
                 stream_key: "main-audio".to_string(),
                 kind: StreamKind::Audio,

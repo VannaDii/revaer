@@ -159,6 +159,8 @@ pub struct MediaDesiredTargetCreateParams {
     pub display_name: String,
     /// Desired output container format.
     pub container_format: String,
+    /// Desired container metadata policy.
+    pub container_metadata_policy: String,
     /// Complete ordered stream graph.
     pub streams: Vec<MediaDesiredTargetStreamParams>,
 }
@@ -306,6 +308,9 @@ pub struct MediaYamlDesiredTarget {
     pub display_name: String,
     /// Desired output container.
     pub container_format: String,
+    /// Desired container metadata policy.
+    #[serde(default = "default_container_metadata_policy")]
+    pub container_metadata_policy: String,
     /// Complete ordered stream graph.
     pub streams: Vec<MediaDesiredTargetStreamParams>,
 }
@@ -373,6 +378,10 @@ pub struct MediaYamlIssue {
 
 fn default_media_policy_key() -> String {
     "safe_dry_run".to_string()
+}
+
+fn default_container_metadata_policy() -> String {
+    "preserve".to_string()
 }
 
 /// Result of YAML validation.
@@ -466,6 +475,8 @@ pub struct MediaDesiredTargetResponse {
     pub display_name: String,
     /// Desired output container format.
     pub container_format: String,
+    /// Desired container metadata policy.
+    pub container_metadata_policy: String,
     /// Complete ordered stream graph.
     pub streams: Vec<MediaDesiredTargetStreamParams>,
 }

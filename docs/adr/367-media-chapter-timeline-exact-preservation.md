@@ -1,0 +1,56 @@
+# Media Chapter Timeline Exact Preservation
+
+- Status: Accepted
+- Date: 2026-07-30
+- Context:
+  - The media worker records the source chapter timeline during inspection and verifies candidate and final outputs against that snapshot.
+  - Existing verification rejected outputs that dropped source chapters, but it skipped the comparison when the source had no chapters.
+  - A muxer or replacement path that adds chapters to a chapterless source changes the preserved timeline and should not pass the same `preserve` boundary.
+- Decision:
+  - Treat chapter preservation as exact normalized timeline equality, including the empty timeline.
+  - Reject candidates that add chapters before replacement.
+  - Roll back committed replacements if final post-commit inspection contains added chapters.
+  - Alternatives considered:
+    - Keep the empty-source shortcut: rejected because it allows unrequested chapter injection.
+    - Permit generated chapters by default: rejected because that is a rewrite policy, not preservation.
+- Consequences:
+  - Positive outcomes:
+    - The media worker proves that chapterless sources remain chapterless after conversion.
+    - Candidate and final verification now use one symmetric preservation rule.
+  - Risks or trade-offs:
+    - Existing transcodes that intentionally generate chapters will fail until an explicit chapter rewrite policy exists.
+- Follow-up:
+  - If generated or normalized chapters are needed, add an explicit policy with schema, API, YAML, execution, and verification coverage.
+
+## Task Record
+
+- Motivation:
+  - Move the media service closer to production correctness by closing an additive chapter mutation gap in the implemented preservation contract.
+- Design notes:
+  - `chapter_timeline_matches_inspection` now normalizes and compares expected and actual chapter vectors for all cases, including empty vectors.
+  - The existing normalizer preserves start/end millisecond boundaries and normalized chapter metadata.
+  - Candidate and final graph verification both reuse the same exact chapter comparison.
+- Test coverage summary:
+  - Added a runtime test for candidates that add chapters before replacement.
+  - Added a runtime test for committed replacements that add chapters after replacement and must be rolled back.
+  - Validation run:
+    - `cargo fmt --all`
+    - `just fmt`
+    - `cargo test -p revaer-app --no-default-features --lib chapter -- --nocapture`
+    - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+    - `just policy`
+    - `just instruction-drift`
+    - `sonar analyze secrets crates/revaer-app/src/media_job_runtime.rs docs/adr/367-media-chapter-timeline-exact-preservation.md docs/adr/index.md docs/SUMMARY.md`
+    - `git diff --check`
+- Observability updates:
+  - No new metrics or events were added. Existing `media_job_output_chapter_timeline_mismatch` verification failures now also cover additive chapters.
+- Status-doc validation:
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+  - Re-checked ADR 334 and kept this change aligned with the existing chapter preservation boundary.
+- Risk & rollback plan:
+  - Risk is stricter rejection of outputs that add chapters. Roll back this change if exact preservation blocks a legitimate production workflow, then replace it with an explicit operator-approved chapter rewrite policy.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found.

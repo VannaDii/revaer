@@ -1,0 +1,64 @@
+# Media Attachment Passthrough
+
+- Status: Accepted
+- Date: 2026-07-30
+- Supersession note:
+  - ADR 370 narrows the data-stream portion of this record by permitting exact inspected data-stream passthrough. Chapter stream-map materialization remains rejected.
+- Context:
+  - The media graph already retains inspected attachment streams such as Matroska font attachments.
+  - Desired-target rows for authored attachment behavior still fail closed because the schema does not model attachment payloads, MIME types, filenames, or verification semantics.
+  - A preserve policy should still be able to keep an existing attachment stream unchanged when another stream forces remux or transcoding.
+- Decision:
+  - Allow command materialization for attachment streams only when the desired stream is an exact clone of the inspected source stream.
+  - Keep authored attachment target rows rejected by desired-target validation.
+  - In this slice, keep chapter and data streams rejected by command materialization until a separate exact-preservation contract is added.
+  - Skip explicit stream metadata and disposition rewrite arguments for passthrough attachments so stream-copy behavior owns preservation.
+  - Alternatives considered:
+    - Keep all attachment streams fail-closed: rejected because it prevents safe preservation of already-inspected Matroska font attachments during otherwise supported rewrites.
+    - Accept authored attachment target rows now: rejected because the target schema still lacks a complete payload and verification contract.
+- Consequences:
+  - Positive outcomes:
+    - Supported jobs can preserve existing attachment streams unchanged instead of failing during command construction.
+    - Attachment mutation remains fail-closed until the authored attachment contract exists.
+  - Risks or trade-offs:
+    - The preservation contract is intentionally narrow and graph-based; arbitrary attachment authoring, insertion, removal, or metadata rewrite remains unsupported.
+- Follow-up:
+  - Add first-class authored attachment payload and verification support before allowing target rows to create, rewrite, or remove attachments intentionally.
+
+## Task Record
+
+- Motivation:
+  - Move the media service closer to the first-release contract by replacing one overly broad fail-closed runtime boundary with a verified passthrough contract.
+- Design notes:
+  - `build_desired_graph_ffmpeg_argv_with_sidecars` now verifies stream identity first, then permits `StreamKind::Attachment` only when the desired graph carries the exact inspected source stream.
+  - Attachment command output uses the existing mapped-stream copy path and avoids stream metadata/disposition rewrite arguments.
+  - Desired target validation continues to reject `attachment`, `chapter`, and `data` target rows.
+- Test coverage summary:
+  - Extended core target coverage to prove preserve policy appends an unmatched attachment stream unchanged while authored attachment, chapter, and data rows remain rejected.
+  - Added runtime command-builder coverage proving exact attachment passthrough maps the attachment stream and copies it.
+  - Added runtime command-builder coverage proving attempted attachment mutation still fails with `UnsupportedDesiredStreamKind`.
+  - Validation run:
+    - `cargo fmt --all`
+    - `cargo test -p revaer-media-core --all-features optional_rows_skip_and_preserve_policy_appends_unmatched_streams -- --nocapture`
+    - `cargo test -p revaer-media-core --all-features target_validation_rejects_duplicate_keys_and_cross_kind_shapes -- --nocapture`
+    - `cargo test -p revaer-media-runtime --all-features desired_graph_ -- --nocapture`
+    - `cargo clippy -p revaer-media-core -p revaer-media-runtime --all-features --all-targets -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+    - `just fmt`
+    - `just policy`
+    - `just instruction-drift`
+    - `sonar analyze secrets crates/revaer-media-core/src/target.rs crates/revaer-media-runtime/src/execute/mod.rs docs/adr/318-media-transcoding-foundation.md docs/adr/369-media-attachment-passthrough.md docs/adr/index.md docs/SUMMARY.md`
+    - `git diff --check`
+  - `sonar verify --project VannaDii_Revaer --file crates/revaer-media-runtime/src/execute/mod.rs` and `sonar verify --project VannaDii_Revaer --file crates/revaer-media-core/src/target.rs` were attempted, but SonarQube Agentic Analysis returned HTTP 403 because the organization does not have Agentic Analysis enabled.
+  - Full local `just ci` and `just ui-e2e` were attempted but the local Docker/Postgres bootstrap failed before those gates could run because Docker was unreachable and `localhost:5432` did not become reachable.
+- Observability updates:
+  - No new metrics or event types were added. Unsupported attachment mutation continues to surface through the existing preflight build failure classification.
+- Status-doc validation:
+  - Updated `docs/adr/index.md`, `docs/SUMMARY.md`, and ADR 318.
+  - Re-checked `MEDIA_TRANSCODING.md` and kept the service-level open gaps explicit for authored attachment behavior, chapter edits, data streams, arbitrary metadata rewrites, and broader technical-property verification.
+- Risk & rollback plan:
+  - Risk is limited to FFmpeg passthrough behavior for existing attachment streams in otherwise mutating jobs. Roll back by restoring the broad attachment rejection in command materialization and rerunning the focused core and runtime tests.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found.

@@ -68,6 +68,7 @@ fn one_source_compiles_and_plans_two_independent_outputs() -> Result<(), Box<dyn
         target_key: "fanout-fixture".to_string(),
         version: 1,
         container: "matroska".to_string(),
+        container_metadata_policy: "preserve".to_string(),
         streams: vec![
             audio_target("stereo", "aac", 2, "stereo", &language),
             audio_target("surround", "eac3", 6, "5.1", &language),
