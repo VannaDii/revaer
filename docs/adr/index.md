@@ -364,6 +364,7 @@
 -   [354](354-media-direct-job-source-fingerprint.md) – Media direct job source fingerprint
 -   [355](355-media-compatibility-target-admission.md) – Media compatibility target admission
 -   [356](356-media-profile-readiness-api.md) – Media profile readiness API
+-   [357](357-media-desired-target-readiness.md) – Media desired-target readiness
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [404](404-doc-indexer-fixture-isolation.md) – Doc indexer fixture isolation

@@ -16,7 +16,7 @@
   - Background automation now fails closed when non-dry-run profiles lack a ready capability snapshot or compatible target encoder support.
   - The endpoint is still a profile compatibility readiness surface, not a proof that every desired-target and source-dependent runtime preflight will pass.
 - Follow-up:
-  - Extend the evaluator to desired-target muxer and concrete encoder selection.
+  - Extend the evaluator with source-inspection-aware preflight when a concrete source path is available.
   - Add CLI surface for profile readiness when the media command group is introduced.
   - Keep scheduler, watcher, direct job, and manual discovery admission wired to the same evaluator as it grows.
 
