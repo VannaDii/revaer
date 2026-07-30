@@ -114,13 +114,23 @@ struct RuntimePreflightEvaluation {
     evaluation: JobPreflightEvaluation,
     desired: DesiredGraph,
     desired_target: Option<DesiredTargetSnapshot>,
+    expected_container_metadata: Vec<MetadataEntry>,
     expected_chapters: Vec<ChapterInspection>,
 }
 
 struct DesiredVerificationContext<'a> {
     desired: &'a DesiredGraph,
     desired_target: Option<&'a DesiredTargetSnapshot>,
+    expected_container_metadata: &'a [MetadataEntry],
     expected_chapters: &'a [ChapterInspection],
+}
+
+struct VerificationCheckOutcome<'a> {
+    matched: bool,
+    expected: &'a str,
+    actual: &'a str,
+    details: Option<&'a str>,
+    error_code: &'static str,
 }
 
 struct SidecarPublicationContext<'a> {
@@ -668,6 +678,7 @@ impl MediaJobRuntime {
             evaluation,
             desired,
             desired_target,
+            expected_container_metadata,
             expected_chapters,
         } = preflight;
 
@@ -676,15 +687,14 @@ impl MediaJobRuntime {
                 self.handle_preflight_failed(job, report).await
             }
             JobPreflightEvaluation::Ready(report) => {
-                self.handle_preflight_ready(
-                    job,
-                    *report,
-                    &desired,
-                    desired_target.as_ref(),
-                    &expected_chapters,
-                    shutdown,
-                )
-                .await
+                let verification_context = DesiredVerificationContext {
+                    desired: &desired,
+                    desired_target: desired_target.as_ref(),
+                    expected_container_metadata: &expected_container_metadata,
+                    expected_chapters: &expected_chapters,
+                };
+                self.handle_preflight_ready(job, *report, &verification_context, shutdown)
+                    .await
             }
         }
     }
@@ -721,16 +731,9 @@ impl MediaJobRuntime {
         &self,
         job: &ClaimedMediaJobRow,
         report: JobPreflightReport,
-        desired: &DesiredGraph,
-        desired_target: Option<&DesiredTargetSnapshot>,
-        expected_chapters: &[ChapterInspection],
+        verification_context: &DesiredVerificationContext<'_>,
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
-        let verification_context = DesiredVerificationContext {
-            desired,
-            desired_target,
-            expected_chapters,
-        };
         self.append_phase(
             job.media_job_public_id,
             0,
@@ -751,7 +754,7 @@ impl MediaJobRuntime {
             return Ok(TerminalWorkspaceState::Completed);
         }
         if planned_job_is_noop(&report) {
-            self.complete_noop_job(job, &verification_context).await?;
+            self.complete_noop_job(job, verification_context).await?;
             return Ok(TerminalWorkspaceState::Completed);
         }
 
@@ -768,7 +771,7 @@ impl MediaJobRuntime {
         self.execute_verified_replacement(
             job,
             report.steps,
-            &verification_context,
+            verification_context,
             &SidecarPublicationContext {
                 outputs: &sidecar_outputs,
                 removals: &sidecar_removals,
@@ -883,6 +886,7 @@ impl MediaJobRuntime {
             let inspection = inspector
                 .inspect_full(&source_path)
                 .map_err(|error| MediaJobRuntimeError::Inspect(error.to_string()))?;
+            let expected_container_metadata = inspection.container.metadata.clone();
             let expected_chapters = inspection.chapters.clone();
             let source_file_bytes = source_artifact_bytes(&source_path, &inspection.sidecars)?;
             let source_graph = inspection.graph;
@@ -944,6 +948,7 @@ impl MediaJobRuntime {
                 evaluation,
                 desired: compiled.graph,
                 desired_target,
+                expected_container_metadata,
                 expected_chapters,
             })
         })
@@ -1383,6 +1388,14 @@ impl MediaJobRuntime {
                 verification_context.desired_target,
             )
             .await?;
+            self.verify_container_metadata_inspection(
+                media_job_public_id,
+                container_metadata_check_index(check_kind, check_index),
+                container_metadata_check_kind(check_kind),
+                inspection,
+                verification_context.expected_container_metadata,
+            )
+            .await?;
             self.verify_chapter_timeline_inspection(
                 media_job_public_id,
                 chapter_timeline_check_index(check_kind, check_index),
@@ -1404,6 +1417,30 @@ impl MediaJobRuntime {
         }
     }
 
+    async fn verify_container_metadata_inspection(
+        &self,
+        media_job_public_id: Uuid,
+        check_index: i32,
+        check_kind: &'static str,
+        inspection: &MediaInspection,
+        expected_metadata: &[MetadataEntry],
+    ) -> Result<(), MediaJobRuntimeError> {
+        let verification = container_metadata_matches_inspection(inspection, expected_metadata);
+        self.complete_verification_check(
+            media_job_public_id,
+            check_index,
+            check_kind,
+            VerificationCheckOutcome {
+                matched: verification.matched,
+                expected: verification.expected.as_str(),
+                actual: verification.actual.as_str(),
+                details: verification.details.as_deref(),
+                error_code: "media_job_output_container_metadata_mismatch",
+            },
+        )
+        .await
+    }
+
     async fn verify_video_constraints_inspection(
         &self,
         media_job_public_id: Uuid,
@@ -1414,34 +1451,19 @@ impl MediaJobRuntime {
         desired_target: Option<&DesiredTargetSnapshot>,
     ) -> Result<(), MediaJobRuntimeError> {
         let verification = video_constraints_match_inspection(inspection, desired, desired_target);
-        let check_status = if verification.matched {
-            "passed"
-        } else {
-            "failed"
-        };
-        self.append_verification_check(&AppendMediaJobVerificationCheckInput {
+        self.complete_verification_check(
             media_job_public_id,
             check_index,
             check_kind,
-            check_status,
-            expected_value: Some(verification.expected.as_str()),
-            actual_value: Some(verification.actual.as_str()),
-            details_text: verification.details.as_deref(),
-        })
-        .await?;
-        if verification.matched {
-            Ok(())
-        } else {
-            self.telemetry.inc_media_job_failure("verification");
-            self.publish_event(Event::MediaJobVerificationFailed {
-                media_job_public_id,
-                check_kind: check_kind.to_string(),
-                error_code: "media_job_output_video_constraints_mismatch".to_string(),
-            });
-            Err(MediaJobRuntimeError::Verification(
-                "media_job_output_video_constraints_mismatch",
-            ))
-        }
+            VerificationCheckOutcome {
+                matched: verification.matched,
+                expected: verification.expected.as_str(),
+                actual: verification.actual.as_str(),
+                details: verification.details.as_deref(),
+                error_code: "media_job_output_video_constraints_mismatch",
+            },
+        )
+        .await
     }
 
     async fn verify_audio_constraints_inspection(
@@ -1456,34 +1478,19 @@ impl MediaJobRuntime {
         let verification = self
             .audio_constraints_match_inspection(inspection, desired, desired_target)
             .await?;
-        let check_status = if verification.matched {
-            "passed"
-        } else {
-            "failed"
-        };
-        self.append_verification_check(&AppendMediaJobVerificationCheckInput {
+        self.complete_verification_check(
             media_job_public_id,
             check_index,
             check_kind,
-            check_status,
-            expected_value: Some(verification.expected.as_str()),
-            actual_value: Some(verification.actual.as_str()),
-            details_text: verification.details.as_deref(),
-        })
-        .await?;
-        if verification.matched {
-            Ok(())
-        } else {
-            self.telemetry.inc_media_job_failure("verification");
-            self.publish_event(Event::MediaJobVerificationFailed {
-                media_job_public_id,
-                check_kind: check_kind.to_string(),
-                error_code: "media_job_output_audio_constraints_mismatch".to_string(),
-            });
-            Err(MediaJobRuntimeError::Verification(
-                "media_job_output_audio_constraints_mismatch",
-            ))
-        }
+            VerificationCheckOutcome {
+                matched: verification.matched,
+                expected: verification.expected.as_str(),
+                actual: verification.actual.as_str(),
+                details: verification.details.as_deref(),
+                error_code: "media_job_output_audio_constraints_mismatch",
+            },
+        )
+        .await
     }
 
     async fn verify_chapter_timeline_inspection(
@@ -1495,32 +1502,48 @@ impl MediaJobRuntime {
         expected_chapters: &[ChapterInspection],
     ) -> Result<(), MediaJobRuntimeError> {
         let verification = chapter_timeline_matches_inspection(inspection, expected_chapters);
+        self.complete_verification_check(
+            media_job_public_id,
+            check_index,
+            check_kind,
+            VerificationCheckOutcome {
+                matched: verification.matched,
+                expected: verification.expected.as_str(),
+                actual: verification.actual.as_str(),
+                details: verification.details.as_deref(),
+                error_code: "media_job_output_chapter_timeline_mismatch",
+            },
+        )
+        .await
+    }
+
+    async fn complete_verification_check(
+        &self,
+        media_job_public_id: Uuid,
+        check_index: i32,
+        check_kind: &'static str,
+        outcome: VerificationCheckOutcome<'_>,
+    ) -> Result<(), MediaJobRuntimeError> {
         self.append_verification_check(&AppendMediaJobVerificationCheckInput {
             media_job_public_id,
             check_index,
             check_kind,
-            check_status: if verification.matched {
-                "passed"
-            } else {
-                "failed"
-            },
-            expected_value: Some(verification.expected.as_str()),
-            actual_value: Some(verification.actual.as_str()),
-            details_text: verification.details.as_deref(),
+            check_status: if outcome.matched { "passed" } else { "failed" },
+            expected_value: Some(outcome.expected),
+            actual_value: Some(outcome.actual),
+            details_text: outcome.details,
         })
         .await?;
-        if verification.matched {
+        if outcome.matched {
             Ok(())
         } else {
             self.telemetry.inc_media_job_failure("verification");
             self.publish_event(Event::MediaJobVerificationFailed {
                 media_job_public_id,
                 check_kind: check_kind.to_string(),
-                error_code: "media_job_output_chapter_timeline_mismatch".to_string(),
+                error_code: outcome.error_code.to_string(),
             });
-            Err(MediaJobRuntimeError::Verification(
-                "media_job_output_chapter_timeline_mismatch",
-            ))
+            Err(MediaJobRuntimeError::Verification(outcome.error_code))
         }
     }
 
@@ -3340,6 +3363,24 @@ fn audio_constraint_check_index(graph_check_kind: &'static str, fallback: i32) -
     }
 }
 
+fn container_metadata_check_kind(graph_check_kind: &'static str) -> &'static str {
+    match graph_check_kind {
+        "source_graph" => "source_container_metadata",
+        "candidate_graph" => "candidate_container_metadata",
+        "final_graph" => "final_container_metadata",
+        _ => "container_metadata",
+    }
+}
+
+fn container_metadata_check_index(graph_check_kind: &'static str, fallback: i32) -> i32 {
+    match graph_check_kind {
+        "source_graph" => 5,
+        "candidate_graph" => 19,
+        "final_graph" => 26,
+        _ => fallback,
+    }
+}
+
 const fn target_stream_has_audio_constraints(stream: &TargetStream) -> bool {
     stream.audio_bitrate_bps.is_some()
         || stream.audio_sample_rate_hz.is_some()
@@ -3347,19 +3388,55 @@ const fn target_stream_has_audio_constraints(stream: &TargetStream) -> bool {
         || stream.audio_dynamic_range.is_some()
 }
 
-struct ChapterTimelineVerification {
+struct InspectionVerification {
     matched: bool,
     expected: String,
     actual: String,
     details: Option<String>,
 }
 
+fn container_metadata_matches_inspection(
+    inspection: &MediaInspection,
+    expected_metadata: &[MetadataEntry],
+) -> InspectionVerification {
+    if expected_metadata.is_empty() {
+        return InspectionVerification {
+            matched: true,
+            expected: "source_container_metadata".to_string(),
+            actual: "not_present".to_string(),
+            details: None,
+        };
+    }
+    let expected = normalized_metadata_entries(expected_metadata);
+    let actual = normalized_metadata_entries(&inspection.container.metadata);
+    let matched = expected
+        .iter()
+        .all(|entry| actual.iter().any(|actual_entry| actual_entry == entry));
+    InspectionVerification {
+        matched,
+        expected: format!("{} source_container_metadata_entries", expected.len()),
+        actual: if matched {
+            "matched".to_string()
+        } else {
+            format!("{} output_container_metadata_entries", actual.len())
+        },
+        details: (!matched).then(|| {
+            format!(
+                "container metadata mismatch for {}; expected {} source entries but found {} output entries",
+                inspection.graph.source_path,
+                expected.len(),
+                actual.len()
+            )
+        }),
+    }
+}
+
 fn chapter_timeline_matches_inspection(
     inspection: &MediaInspection,
     expected_chapters: &[ChapterInspection],
-) -> ChapterTimelineVerification {
+) -> InspectionVerification {
     if expected_chapters.is_empty() {
-        return ChapterTimelineVerification {
+        return InspectionVerification {
             matched: true,
             expected: "source_chapters".to_string(),
             actual: "not_present".to_string(),
@@ -3369,7 +3446,7 @@ fn chapter_timeline_matches_inspection(
     let expected = normalized_chapter_timeline(expected_chapters);
     let actual = normalized_chapter_timeline(&inspection.chapters);
     let matched = expected == actual;
-    ChapterTimelineVerification {
+    InspectionVerification {
         matched,
         expected: format!("{} source_chapters", expected.len()),
         actual: if matched {
@@ -4059,6 +4136,28 @@ mod tests {
     }
 
     #[derive(Clone)]
+    struct CandidateDropsContainerMetadataInspector;
+
+    impl InspectAdapter for CandidateDropsContainerMetadataInspector {
+        fn inspect(&self, source_path: &str) -> Result<MediaGraph, InspectError> {
+            let codec = match fs::read(source_path) {
+                Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
+                Ok(_) | Err(_) => "h264",
+            };
+            Ok(video_graph(source_path, codec))
+        }
+
+        fn inspect_full(&self, source_path: &str) -> Result<MediaInspection, InspectError> {
+            let inspection = self.inspect(source_path).map(complete_test_inspection)?;
+            if source_path.contains("/workspace/") {
+                Ok(inspection)
+            } else {
+                Ok(with_test_container_metadata(inspection))
+            }
+        }
+    }
+
+    #[derive(Clone)]
     struct PostCommitDropsChaptersInspector;
 
     impl InspectAdapter for PostCommitDropsChaptersInspector {
@@ -4080,6 +4179,34 @@ mod tests {
                 || fs::read(source_path).is_ok_and(|bytes| bytes.as_slice() == b"source")
             {
                 Ok(with_test_chapters(inspection))
+            } else {
+                Ok(inspection)
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct PostCommitDropsContainerMetadataInspector;
+
+    impl InspectAdapter for PostCommitDropsContainerMetadataInspector {
+        fn inspect(&self, source_path: &str) -> Result<MediaGraph, InspectError> {
+            let codec = if source_path.contains("/workspace/") {
+                "hevc"
+            } else {
+                match fs::read(source_path) {
+                    Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
+                    Ok(_) | Err(_) => "h264",
+                }
+            };
+            Ok(video_graph(source_path, codec))
+        }
+
+        fn inspect_full(&self, source_path: &str) -> Result<MediaInspection, InspectError> {
+            let inspection = self.inspect(source_path).map(complete_test_inspection)?;
+            if source_path.contains("/workspace/")
+                || fs::read(source_path).is_ok_and(|bytes| bytes.as_slice() == b"source")
+            {
+                Ok(with_test_container_metadata(inspection))
             } else {
                 Ok(inspection)
             }
@@ -4275,6 +4402,20 @@ mod tests {
                     key: "title".to_string(),
                     value: "Main".to_string(),
                 }],
+            },
+        ];
+        inspection
+    }
+
+    fn with_test_container_metadata(mut inspection: MediaInspection) -> MediaInspection {
+        inspection.container.metadata = vec![
+            MetadataEntry {
+                key: "title".to_string(),
+                value: "Source Master".to_string(),
+            },
+            MetadataEntry {
+                key: "REVAER_TEST_TAG".to_string(),
+                value: "metadata-boundary".to_string(),
             },
         ];
         inspection
@@ -6458,6 +6599,39 @@ Integrated loudness:
     }
 
     #[tokio::test]
+    async fn media_job_runtime_rejects_candidate_that_drops_source_container_metadata()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        fixture.runtime.inspector =
+            Arc::new(CandidateDropsContainerMetadataInspector) as Arc<RuntimeInspector>;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "failed");
+        assert_eq!(
+            job.last_error.as_deref(),
+            Some("media_job_output_container_metadata_mismatch")
+        );
+        assert_eq!(fs::read(&job.source_path)?, b"source");
+        let checks = fixture
+            .store
+            .list_job_verification_checks(fixture.job_id)
+            .await?;
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "candidate_container_metadata" && check.check_status == "failed"
+        }));
+        assert!(checks.iter().all(|check| check.check_kind != "final_graph"));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn media_job_runtime_rejects_probeable_truncated_candidate_before_replacement()
     -> anyhow::Result<()> {
         let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
@@ -6560,6 +6734,41 @@ Integrated loudness:
         assert!(checks.iter().any(
             |check| check.check_kind == "final_chapters" && check.check_status == "failed"
         ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_rolls_back_committed_replacement_that_drops_container_metadata()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        fixture.runtime.inspector =
+            Arc::new(PostCommitDropsContainerMetadataInspector) as Arc<RuntimeInspector>;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "failed");
+        assert_eq!(
+            job.last_error.as_deref(),
+            Some("media_job_output_container_metadata_mismatch")
+        );
+        assert_eq!(fs::read(&job.source_path)?, b"source");
+        let checks = fixture
+            .store
+            .list_job_verification_checks(fixture.job_id)
+            .await?;
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "candidate_container_metadata" && check.check_status == "passed"
+        }));
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "final_container_metadata" && check.check_status == "failed"
+        }));
         Ok(())
     }
 

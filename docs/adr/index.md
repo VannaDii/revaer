@@ -372,3 +372,4 @@
 -   [361](361-media-worker-owned-job-records.md) - Media worker-owned job records
 -   [362](362-media-worker-owned-job-creation.md) - Media worker-owned job creation
 -   [363](363-media-data-target-boundary-evidence.md) - Media data target boundary evidence
+-   [364](364-media-container-metadata-preservation.md) - Media container metadata preservation
