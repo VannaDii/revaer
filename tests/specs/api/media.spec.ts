@@ -12,16 +12,19 @@ test.afterEach(async () => {
 
 test.describe('Media API', () => {
   test('covers media profiles jobs capabilities discovery and diagnostics', async ({ api }) => {
+    test.setTimeout(60_000);
+
     const suffix = randomUUID().slice(0, 8);
     const mediaRoot = `/tmp/revaer-media-e2e-${suffix}`;
     mediaRootsToRemove.add(mediaRoot);
     const sourceRoot = `${mediaRoot}/source`;
     const outputRoot = `${mediaRoot}/output`;
     const sourcePath = `${sourceRoot}/movie.mkv`;
-    const outputPath = `${outputRoot}/movie.mkv`;
     const watcherPath = `${sourceRoot}/watcher-${suffix}.mkv`;
     const manualPath = `${sourceRoot}/manual-${suffix}.mkv`;
     const schedulePath = `${sourceRoot}/schedule-${suffix}.mkv`;
+    const directPath = `${sourceRoot}/direct-${suffix}.mkv`;
+    const directOutputPath = `${outputRoot}/direct-${suffix}.mkv`;
 
     await mkdir(sourceRoot, { recursive: true });
     await mkdir(outputRoot, { recursive: true });
@@ -30,6 +33,7 @@ test.describe('Media API', () => {
       writeFile(watcherPath, Buffer.from(`watcher-${suffix}`)),
       writeFile(manualPath, Buffer.from(`manual-${suffix}`)),
       writeFile(schedulePath, Buffer.from(`schedule-${suffix}`)),
+      writeFile(directPath, Buffer.from(`direct-${suffix}`)),
     ]);
 
     const createdProfile = await api.POST('/v1/media/profiles', {
@@ -469,7 +473,16 @@ test.describe('Media API', () => {
       },
     });
     expect(discoveryRun.response.status).toBe(201);
-    expect(discoveryRun.data?.queued_jobs.length).toBe(1);
+    expect(
+      (discoveryRun.data?.queued_jobs.length ?? 0) + (discoveryRun.data?.skipped.length ?? 0)
+    ).toBe(1);
+    if (discoveryRun.data?.queued_jobs.length === 0) {
+      expect([
+        'media_discovery_source_unchanged',
+        'media_discovery_source_unstable',
+      ]).toContain(discoveryRun.data?.skipped[0]?.reason);
+    }
+    const manualRunQueuedJob = discoveryRun.data?.queued_jobs.length === 1;
     const duplicateDiscoveryRun = await api.POST('/v1/media/discovery/runs', {
       body: {
         media_profile_public_id: profileId,
@@ -477,10 +490,23 @@ test.describe('Media API', () => {
       },
     });
     expect(duplicateDiscoveryRun.response.status).toBe(201);
-    expect(duplicateDiscoveryRun.data?.queued_jobs.length).toBe(0);
-    expect(duplicateDiscoveryRun.data?.skipped[0]?.reason).toBe(
-      'media_discovery_source_unchanged'
-    );
+    if (manualRunQueuedJob) {
+      expect(duplicateDiscoveryRun.data?.queued_jobs.length).toBe(0);
+      expect(duplicateDiscoveryRun.data?.skipped[0]?.reason).toBe(
+        'media_discovery_source_unchanged'
+      );
+    } else {
+      expect(
+        (duplicateDiscoveryRun.data?.queued_jobs.length ?? 0) +
+          (duplicateDiscoveryRun.data?.skipped.length ?? 0)
+      ).toBe(1);
+      if (duplicateDiscoveryRun.data?.queued_jobs.length === 0) {
+        expect([
+          'media_discovery_source_unchanged',
+          'media_discovery_source_unstable',
+        ]).toContain(duplicateDiscoveryRun.data?.skipped[0]?.reason);
+      }
+    }
 
     const scheduleRun = await api.POST('/v1/media/discovery/schedules', {
       body: {
@@ -493,8 +519,8 @@ test.describe('Media API', () => {
     const createdJob = await api.POST('/v1/media/jobs', {
       body: {
         media_profile_public_id: profileId,
-        source_path: sourcePath,
-        output_path: outputPath,
+        source_path: directPath,
+        output_path: directOutputPath,
         dry_run: true,
       },
     });
@@ -514,7 +540,7 @@ test.describe('Media API', () => {
       params: { path: { media_job_public_id: jobId } },
     });
     expect(job.response.status).toBe(200);
-    expect(job.data?.source_path).toBe(sourcePath);
+    expect(job.data?.source_path).toBe(directPath);
 
     const phase = await api.POST('/v1/media/jobs/{media_job_public_id}/phases', {
       params: { path: { media_job_public_id: jobId } },

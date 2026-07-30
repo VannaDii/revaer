@@ -1057,11 +1057,28 @@ fn validate_muxer_capability(
     let Some(container_format) = desired
         .container_format
         .as_deref()
-        .map(normalize_container_format)
+        .map(str::trim)
         .filter(|format| !format.is_empty())
     else {
         return Ok(());
     };
+    validate_container_muxer_capability(container_format, capabilities)
+}
+
+/// Validate that a declared output container can be muxed by the supplied capability snapshot.
+///
+/// # Errors
+///
+/// Returns [`BuildArgsError::UnsupportedMuxer`] when the normalized container has no matching
+/// muxer in the snapshot.
+pub fn validate_container_muxer_capability(
+    container_format: &str,
+    capabilities: &CapabilitySnapshot,
+) -> Result<(), BuildArgsError> {
+    let container_format = normalize_container_format(container_format);
+    if container_format.is_empty() {
+        return Ok(());
+    }
     if capabilities
         .muxers
         .iter()
@@ -1072,6 +1089,38 @@ fn validate_muxer_capability(
     } else {
         Err(BuildArgsError::UnsupportedMuxer(container_format))
     }
+}
+
+/// Validate source-independent encoder support for a declared desired-target stream.
+///
+/// This intentionally ignores source-copy shortcuts because profile readiness has no concrete
+/// source graph. Runtime preflight can still choose `copy` for a specific source later.
+///
+/// # Errors
+///
+/// Returns [`BuildArgsError::UnsupportedCodec`] when the stream kind or desired codec cannot be
+/// materialized by the supplied capability snapshot and video policy.
+pub fn validate_declared_stream_codec_capability(
+    stream_kind: StreamKind,
+    codec: &str,
+    capabilities: &CapabilitySnapshot,
+    policy: &VideoTranscodePolicy,
+) -> Result<(), BuildArgsError> {
+    let codec = codec.trim().to_ascii_lowercase();
+    if codec == "copy" {
+        return Ok(());
+    }
+    let selected_video_encoder =
+        select_video_encoder_for_policy(capabilities, policy).unwrap_or(DEFAULT_VIDEO_ENCODER);
+    let output_codec = match stream_kind {
+        StreamKind::Video => video_encoder_for_codec(&codec, selected_video_encoder)?,
+        StreamKind::Audio => audio_encoder_for_codec(&codec)?,
+        StreamKind::Subtitle => subtitle_encoder_for_codec(&codec)?,
+        StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data => {
+            return Err(BuildArgsError::UnsupportedCodec("stream"));
+        }
+    };
+    validate_output_codec_capability(capabilities, &output_codec)
 }
 
 /// Build execution steps for materializing an explicit desired stream graph.
@@ -2095,6 +2144,7 @@ mod tests {
         build_execution_steps_with_replacement, build_execution_steps_with_replacement_policy,
         build_execution_steps_with_video_policy, build_extract_subtitle_argv, build_ffmpeg_argv,
         build_sidecar_embed_argv, execute_filesystem_step, execute_step, execute_step_sequence,
+        validate_container_muxer_capability, validate_declared_stream_codec_capability,
     };
     use crate::capabilities::CapabilitySnapshot;
     use revaer_media_core::model::{
@@ -2261,6 +2311,51 @@ mod tests {
         assert!(args.windows(2).any(|pair| pair == ["-map", "0"]));
         assert!(args.windows(2).any(|pair| pair == ["-c", "copy"]));
         assert!(args.windows(2).any(|pair| pair == ["-c:3", "aac"]));
+    }
+
+    #[test]
+    fn declared_muxer_capability_accepts_normalized_supported_container() {
+        let capabilities = CapabilitySnapshot {
+            muxers: vec!["matroska".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+
+        assert!(validate_container_muxer_capability("Matroska", &capabilities).is_ok());
+    }
+
+    #[test]
+    fn declared_muxer_capability_rejects_missing_container() {
+        let capabilities = CapabilitySnapshot {
+            muxers: vec!["matroska".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+
+        assert_eq!(
+            validate_container_muxer_capability("mp4", &capabilities),
+            Err(BuildArgsError::UnsupportedMuxer("mp4".to_string()))
+        );
+    }
+
+    #[test]
+    fn declared_stream_capability_uses_policy_encoder_fallbacks() {
+        let capabilities = CapabilitySnapshot {
+            encoders: vec!["hevc_nvenc".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+        let policy = VideoTranscodePolicy {
+            intent: VideoTranscodeIntent::Archival,
+            ..VideoTranscodePolicy::default()
+        };
+
+        assert_eq!(
+            validate_declared_stream_codec_capability(
+                StreamKind::Video,
+                "hevc",
+                &capabilities,
+                &policy,
+            ),
+            Err(BuildArgsError::UnsupportedCodec("libx265"))
+        );
     }
 
     #[test]

@@ -35,11 +35,12 @@ use revaer_data::media::capabilities::{
 };
 use revaer_data::media::configuration::{
     AppendMediaDesiredTargetStreamInput, CreateMediaDesiredTargetInput,
-    MediaCompatibilityTargetRow, MediaDesiredTargetStreamRow, UpdateMediaJobRetentionPolicyInput,
-    UpsertMediaCompatibilityTargetInput, UpsertMediaPolicyProfileInput,
-    append_media_desired_target_stream_with_executor, create_media_desired_target_with_executor,
-    list_media_desired_target_streams, list_media_desired_targets,
-    set_media_profile_desired_target, set_media_profile_desired_target_with_executor,
+    MediaCompatibilityTargetRow, MediaDesiredTargetStreamRow, MediaPolicyProfileRow,
+    UpdateMediaJobRetentionPolicyInput, UpsertMediaCompatibilityTargetInput,
+    UpsertMediaPolicyProfileInput, append_media_desired_target_stream_with_executor,
+    create_media_desired_target_with_executor, list_media_desired_target_streams,
+    list_media_desired_targets, set_media_profile_desired_target,
+    set_media_profile_desired_target_with_executor,
     upsert_media_compatibility_target_with_executor, upsert_media_policy_profile_with_executor,
 };
 use revaer_data::media::imports::{
@@ -56,11 +57,16 @@ use revaer_data::media::profiles::{
     upsert_media_profile_with_executor,
 };
 use revaer_media_core::compile::{MediaProfile, validate_profiles};
+use revaer_media_core::model::StreamKind;
 use revaer_media_core::normalize::{
     audio_channel_count_for_layout, normalize_audio_channel_layout,
 };
 use revaer_media_runtime::capabilities::{
-    CapabilityDetectError, CapabilityDetector, CapabilitySnapshot,
+    CapabilityDetectError, CapabilityDetector, CapabilitySnapshot, CodecCapability,
+};
+use revaer_media_runtime::execute::{
+    BuildArgsError, VideoTranscodeIntent, VideoTranscodePolicy,
+    validate_container_muxer_capability, validate_declared_stream_codec_capability,
 };
 use revaer_runtime::media::MediaStore;
 use revaer_telemetry::Metrics;
@@ -362,25 +368,80 @@ impl MediaService {
             .latest_capability()
             .await
             .map_err(|err| map_data_error(&err))?;
-        ensure_execution_capability_snapshot(latest.as_ref())?;
-        let Some(snapshot) = latest.as_ref() else {
-            return Ok(());
+        if let Some(code) = self
+            .profile_execution_readiness_failure_code(profile, latest.as_ref())
+            .await?
+        {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code(&code));
+        }
+        Ok(())
+    }
+
+    async fn profile_execution_readiness_failure_code(
+        &self,
+        profile: &MediaProfileRow,
+        latest: Option<&CapabilitySnapshotRow>,
+    ) -> Result<Option<String>, MediaServiceError> {
+        if let Some(code) = capability_snapshot_readiness_code(latest) {
+            return Ok(Some(code.to_string()));
+        }
+        let Some(snapshot) = latest else {
+            return Ok(None);
         };
+
         if profile
             .compatibility_target_key
             .as_deref()
             .and_then(trim_nonempty)
-            .is_none()
+            .is_some()
         {
-            return Ok(());
+            let compatibility_targets = self
+                .store
+                .list_compatibility_targets()
+                .await
+                .map_err(|err| map_data_error(&err))?;
+            if let Err(error) = ensure_profile_compatibility_target_readiness(
+                profile,
+                snapshot,
+                &compatibility_targets,
+            ) {
+                return Ok(Some(
+                    error
+                        .code()
+                        .unwrap_or("media_profile_readiness_failed")
+                        .to_string(),
+                ));
+            }
         }
 
-        let compatibility_targets = self
-            .store
-            .list_compatibility_targets()
-            .await
-            .map_err(|err| map_data_error(&err))?;
-        ensure_profile_compatibility_target_readiness(profile, snapshot, &compatibility_targets)
+        if profile
+            .desired_target_key
+            .as_deref()
+            .and_then(trim_nonempty)
+            .is_some()
+        {
+            let desired_targets = self.media_desired_target_list().await?;
+            let policies = self
+                .store
+                .list_policy_profiles()
+                .await
+                .map_err(|err| map_data_error(&err))?;
+            if let Err(error) = ensure_profile_desired_target_readiness(
+                profile,
+                snapshot,
+                &desired_targets,
+                &policies,
+            ) {
+                return Ok(Some(
+                    error
+                        .code()
+                        .unwrap_or("media_profile_readiness_failed")
+                        .to_string(),
+                ));
+            }
+        }
+
+        Ok(None)
     }
 }
 
@@ -455,32 +516,9 @@ impl MediaFacade for MediaService {
             .latest_capability()
             .await
             .map_err(|err| map_data_error(&err))?;
-        let reason = if let Some(code) = capability_snapshot_readiness_code(latest.as_ref()) {
-            Some(code.to_string())
-        } else if profile
-            .compatibility_target_key
-            .as_deref()
-            .and_then(trim_nonempty)
-            .is_some()
-        {
-            let targets = self
-                .store
-                .list_compatibility_targets()
-                .await
-                .map_err(|err| map_data_error(&err))?;
-            latest.as_ref().and_then(|snapshot| {
-                ensure_profile_compatibility_target_readiness(&profile, snapshot, &targets)
-                    .err()
-                    .map(|error| {
-                        error
-                            .code()
-                            .unwrap_or("media_profile_readiness_failed")
-                            .to_string()
-                    })
-            })
-        } else {
-            None
-        };
+        let reason = self
+            .profile_execution_readiness_failure_code(&profile, latest.as_ref())
+            .await?;
 
         Ok(Some(AppMediaProfileReadinessResponse {
             ready: reason.is_none(),
@@ -2946,6 +2984,162 @@ pub(crate) fn ensure_profile_compatibility_target_readiness(
     Ok(())
 }
 
+fn ensure_profile_desired_target_readiness(
+    profile: &MediaProfileRow,
+    snapshot: &CapabilitySnapshotRow,
+    desired_targets: &[AppMediaDesiredTargetResponse],
+    policies: &[MediaPolicyProfileRow],
+) -> Result<(), MediaServiceError> {
+    let Some(target_key) = profile
+        .desired_target_key
+        .as_deref()
+        .and_then(trim_nonempty)
+    else {
+        return Ok(());
+    };
+    let version = profile.desired_target_version.ok_or_else(|| {
+        MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_profile_desired_target_reference_incomplete")
+    })?;
+    let normalized_target_key = normalize_catalog_key(target_key);
+    let target = desired_targets
+        .iter()
+        .find(|target| {
+            normalize_catalog_key(&target.target_key) == normalized_target_key
+                && target.version == version
+        })
+        .ok_or_else(|| {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_profile_desired_target_not_found")
+        })?;
+    let capabilities = runtime_capability_snapshot(snapshot);
+    validate_container_muxer_capability(&target.container_format, &capabilities)
+        .map_err(|error| map_desired_target_capability_error(&error))?;
+    let policy = video_policy_for_profile(profile, policies)?;
+    for stream in &target.streams {
+        validate_declared_stream_codec_capability(
+            desired_target_stream_kind(&stream.stream_kind)?,
+            &stream.codec,
+            &capabilities,
+            &policy,
+        )
+        .map_err(|error| map_desired_target_capability_error(&error))?;
+    }
+    Ok(())
+}
+
+fn runtime_capability_snapshot(snapshot: &CapabilitySnapshotRow) -> CapabilitySnapshot {
+    CapabilitySnapshot {
+        ffmpeg_version: snapshot.ffmpeg_version.clone(),
+        ffprobe_version: snapshot.ffprobe_version.clone(),
+        codecs: snapshot
+            .codecs
+            .iter()
+            .map(|codec| codec.codec_name.clone())
+            .collect(),
+        codec_support: snapshot
+            .codecs
+            .iter()
+            .map(|codec| CodecCapability {
+                name: codec.codec_name.clone(),
+                encode_supported: codec.encode_supported,
+                decode_supported: codec.decode_supported,
+            })
+            .collect(),
+        encoders: snapshot.encoders.clone(),
+        decoders: feature_names(&snapshot.features, "decoder", true),
+        muxers: feature_names(&snapshot.features, "muxer", true),
+        demuxers: feature_names(&snapshot.features, "demuxer", true),
+        hardware_accelerators: feature_names(&snapshot.features, "hardware", true),
+        subtitle_support: feature_names(&snapshot.features, "subtitle", true),
+        filesystem_utilities: feature_names(&snapshot.features, "filesystem", true),
+        utility_capabilities: feature_names(&snapshot.features, "utility", true),
+        license_mode: feature_names(&snapshot.features, "license", true)
+            .into_iter()
+            .next()
+            .unwrap_or_default(),
+        ffmpeg_license_mode: feature_names(&snapshot.features, "ffmpeg_license", true)
+            .into_iter()
+            .next()
+            .unwrap_or_default(),
+        ffmpeg_enable_gpl: feature_supported(
+            &snapshot.features,
+            "ffmpeg_build_flag",
+            "--enable-gpl",
+        ),
+        ffmpeg_enable_version3: feature_supported(
+            &snapshot.features,
+            "ffmpeg_build_flag",
+            "--enable-version3",
+        ),
+        ffmpeg_enable_nonfree: feature_supported(
+            &snapshot.features,
+            "ffmpeg_build_flag",
+            "--enable-nonfree",
+        ),
+        compliance_links: feature_names(&snapshot.features, "compliance", true),
+        absent_capabilities: feature_names(&snapshot.features, "absent", false),
+    }
+}
+
+fn video_policy_for_profile(
+    profile: &MediaProfileRow,
+    policies: &[MediaPolicyProfileRow],
+) -> Result<VideoTranscodePolicy, MediaServiceError> {
+    let normalized_policy_key = normalize_catalog_key(&profile.policy_key);
+    let policy = policies
+        .iter()
+        .filter(|policy| normalize_catalog_key(&policy.policy_key) == normalized_policy_key)
+        .max_by_key(|policy| policy.version)
+        .ok_or_else(|| {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_profile_policy_profile_not_found")
+        })?;
+    let intent = match policy.video_intent.trim().to_ascii_lowercase().as_str() {
+        "general" => VideoTranscodeIntent::General,
+        "anime" => VideoTranscodeIntent::Anime,
+        "audiobook" => VideoTranscodeIntent::Audiobook,
+        "archival" => VideoTranscodeIntent::Archival,
+        _ => {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_profile_policy_profile_invalid"));
+        }
+    };
+    Ok(VideoTranscodePolicy {
+        intent,
+        ..VideoTranscodePolicy::default()
+    })
+}
+
+fn desired_target_stream_kind(stream_kind: &str) -> Result<StreamKind, MediaServiceError> {
+    match stream_kind.trim().to_ascii_lowercase().as_str() {
+        "video" => Ok(StreamKind::Video),
+        "audio" => Ok(StreamKind::Audio),
+        "subtitle" => Ok(StreamKind::Subtitle),
+        _ => Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_profile_desired_target_stream_unsupported")),
+    }
+}
+
+fn map_desired_target_capability_error(error: &BuildArgsError) -> MediaServiceError {
+    match error {
+        BuildArgsError::UnsupportedMuxer(_) => {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_profile_desired_target_muxer_unsupported")
+        }
+        BuildArgsError::UnsupportedCodec(_) => {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_profile_desired_target_encoder_unsupported")
+        }
+        BuildArgsError::UnsupportedDesiredStreamKind { .. } => {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_profile_desired_target_stream_unsupported")
+        }
+        _ => MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_profile_desired_target_unsupported"),
+    }
+}
+
 fn snapshot_supports_encoding(snapshot: &CapabilitySnapshotRow, codec_name: &str) -> bool {
     let normalized = codec_name.trim();
     normalized.eq_ignore_ascii_case("copy")
@@ -3097,8 +3291,8 @@ mod tests {
     use super::{
         DiscoveryRunMode, MediaService, ensure_discovery_mode_enabled,
         ensure_execution_capability_snapshot, ensure_profile_compatibility_target_readiness,
-        map_data_error, map_detect_error, parse_yaml_bundle, path_is_within_root,
-        validate_yaml_bundle,
+        ensure_profile_desired_target_readiness, map_data_error, map_detect_error,
+        parse_yaml_bundle, path_is_within_root, validate_yaml_bundle,
     };
     use revaer_api::app::media::MediaServiceErrorKind;
     use revaer_api::app::media::{
@@ -3116,7 +3310,7 @@ mod tests {
     use revaer_data::media::capabilities::{
         CapabilityCodecRow, CapabilityFeatureRow, CapabilitySnapshotRow,
     };
-    use revaer_data::media::configuration::MediaCompatibilityTargetRow;
+    use revaer_data::media::configuration::{MediaCompatibilityTargetRow, MediaPolicyProfileRow};
     use revaer_data::media::imports::list_media_profile_import_drafts;
     use revaer_data::media::profiles::MediaProfileRow;
     use revaer_media_runtime::capabilities::CapabilityDetectError;
@@ -3362,6 +3556,136 @@ mod tests {
         );
     }
 
+    #[test]
+    fn profile_desired_target_readiness_rejects_missing_muxer() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let target = desired_target_response("mp4", vec![desired_video_stream()]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result =
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_muxer_unsupported".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_missing_encoder() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("opus", true, true)]);
+        let target = desired_target_response("matroska", vec![desired_audio_stream()]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result =
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_encoder_unsupported".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_accepts_unpinned_profile() {
+        let profile = media_profile_with_compatibility_target("hevc-aac");
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+
+        assert!(ensure_profile_desired_target_readiness(&profile, &snapshot, &[], &[]).is_ok());
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_incomplete_reference() {
+        let mut profile = media_profile_with_desired_target("living-room-output", 1);
+        profile.desired_target_version = None;
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result = ensure_profile_desired_target_readiness(&profile, &snapshot, &[], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_reference_incomplete".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_missing_target() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result = ensure_profile_desired_target_readiness(&profile, &snapshot, &[], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_not_found".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_missing_policy() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let target = desired_target_response("matroska", vec![desired_video_stream()]);
+
+        let result = ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &[]);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_policy_profile_not_found".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_invalid_policy_intent() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let target = desired_target_response("matroska", vec![desired_video_stream()]);
+        let policies = vec![policy_profile("safe_dry_run", "invalid")];
+
+        let result =
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_policy_profile_invalid".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_rejects_unsupported_stream_kind() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let mut stream = desired_video_stream();
+        stream.stream_kind = "data".to_string();
+        let target = desired_target_response("matroska", vec![stream]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        let result =
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies);
+
+        assert_eq!(
+            result.err().and_then(|err| err.code().map(str::to_owned)),
+            Some("media_profile_desired_target_stream_unsupported".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_accepts_supported_contract() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let target = desired_target_response("matroska", vec![desired_video_stream()]);
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        assert!(
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies)
+                .is_ok()
+        );
+    }
+
     fn capability_snapshot_with_codecs(codecs: &[CapabilityCodecRow]) -> CapabilitySnapshotRow {
         CapabilitySnapshotRow {
             media_capability_snapshot_id: 1,
@@ -3406,6 +3730,15 @@ mod tests {
         }
     }
 
+    fn media_profile_with_desired_target(target_key: &str, version: i32) -> MediaProfileRow {
+        MediaProfileRow {
+            compatibility_target_key: None,
+            desired_target_key: Some(target_key.to_string()),
+            desired_target_version: Some(version),
+            ..media_profile_with_compatibility_target("unused")
+        }
+    }
+
     fn compatibility_target(
         compatibility_target_key: &str,
         version: i32,
@@ -3421,6 +3754,35 @@ mod tests {
             audio_channels: Some(2),
             audio_channel_layout: Some("stereo".to_string()),
             subtitle_policy: "selected".to_string(),
+        }
+    }
+
+    fn desired_target_response(
+        container_format: &str,
+        streams: Vec<MediaDesiredTargetStreamParams>,
+    ) -> super::AppMediaDesiredTargetResponse {
+        super::AppMediaDesiredTargetResponse {
+            media_desired_target_profile_public_id: Uuid::new_v4(),
+            target_key: "living-room-output".to_string(),
+            version: 1,
+            display_name: "Living room output".to_string(),
+            container_format: container_format.to_string(),
+            streams,
+        }
+    }
+
+    fn policy_profile(policy_key: &str, video_intent: &str) -> MediaPolicyProfileRow {
+        MediaPolicyProfileRow {
+            policy_key: policy_key.to_string(),
+            version: 1,
+            display_name: "Policy".to_string(),
+            video_intent: video_intent.to_string(),
+            verification_strictness: "balanced".to_string(),
+            verification_duration_tolerance_millis: 250,
+            verification_mux_validation: true.into(),
+            verification_decode_all_streams: true.into(),
+            verification_keyframe_seek: true.into(),
+            verification_playback_probe: true.into(),
         }
     }
 
