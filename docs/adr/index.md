@@ -362,6 +362,7 @@
 -   [351](351-media-runtime-cooperative-shutdown.md) – Media runtime cooperative shutdown
 -   [352](352-media-claim-shutdown-cancellation.md) – Media claim shutdown cancellation
 -   [353](353-media-job-phase-read-model.md) – Media job phase read model
+-   [354](354-media-direct-job-source-fingerprint.md) – Media direct job source fingerprint
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools

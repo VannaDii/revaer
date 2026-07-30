@@ -7,11 +7,11 @@
 //! - Atomically persists stable source fingerprints with job creation for restart-safe de-duplication.
 
 use std::collections::BTreeMap;
-use std::fs::{self, File};
-use std::io::{self, Read};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use revaer_api::app::media::MediaDiscoveryPreviewResponse;
 use revaer_data::DataError;
@@ -19,7 +19,6 @@ use revaer_data::media::jobs::EnqueueDiscoveredMediaJobInput;
 use revaer_data::media::profiles::MediaProfileRow;
 use revaer_runtime::media::MediaStore;
 use revaer_telemetry::Metrics;
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 use tokio::task::JoinHandle;
@@ -29,6 +28,7 @@ use uuid::Uuid;
 
 use crate::media::{build_discovery_previews, ensure_execution_capability_snapshot};
 use crate::media_discovery_watcher::{MediaWatchEvent, MediaWatcher, NotifyMediaWatcher};
+use crate::media_source_fingerprint::{MediaSourceFingerprintError, fingerprint_media_file};
 use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 
 const DEFAULT_DISCOVERY_TICK_INTERVAL: Duration = Duration::from_mins(1);
@@ -243,7 +243,7 @@ impl MediaDiscoveryRuntime {
                     actor_public_id: SYSTEM_USER_PUBLIC_ID,
                     media_profile_public_id: profile.media_profile_public_id,
                     source_path: &preview.source_path,
-                    output_path,
+                    output_path: Some(output_path),
                     source_size_bytes: fingerprint.size_bytes,
                     source_modified_ns: fingerprint.modified_ns,
                     source_sha256: &fingerprint.sha256,
@@ -334,104 +334,8 @@ enum MediaDiscoveryRuntimeError {
     Join(String),
     #[error("media discovery runtime schedule interval invalid")]
     InvalidInterval,
-    #[error("media discovery fingerprint timestamp predates the Unix epoch")]
-    FingerprintTimeBeforeEpoch,
-    #[error("media discovery fingerprint value is too large: {0}")]
-    FingerprintValueTooLarge(&'static str),
-}
-
-struct MediaFileFingerprint {
-    size_bytes: i64,
-    modified_ns: i64,
-    sha256: String,
-}
-
-fn fingerprint_media_file(
-    path: &Path,
-    source_root: &Path,
-) -> Result<Option<MediaFileFingerprint>, MediaDiscoveryRuntimeError> {
-    let canonical_root =
-        source_root
-            .canonicalize()
-            .map_err(|source| MediaDiscoveryRuntimeError::Io {
-                path: source_root.to_path_buf(),
-                source,
-            })?;
-    let canonical_path = match path.canonicalize() {
-        Ok(value) => value,
-        Err(source) if source.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(source) => {
-            return Err(MediaDiscoveryRuntimeError::Io {
-                path: path.to_path_buf(),
-                source,
-            });
-        }
-    };
-    if !canonical_path.starts_with(&canonical_root) {
-        return Ok(None);
-    }
-    let before =
-        fs::metadata(&canonical_path).map_err(|source| MediaDiscoveryRuntimeError::Io {
-            path: canonical_path.clone(),
-            source,
-        })?;
-    if !before.is_file() {
-        return Ok(None);
-    }
-    let before_modified = before
-        .modified()
-        .map_err(|source| MediaDiscoveryRuntimeError::Io {
-            path: canonical_path.clone(),
-            source,
-        })?;
-    let mut file =
-        File::open(&canonical_path).map_err(|source| MediaDiscoveryRuntimeError::Io {
-            path: canonical_path.clone(),
-            source,
-        })?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
-    loop {
-        let read = file
-            .read(&mut buffer)
-            .map_err(|source| MediaDiscoveryRuntimeError::Io {
-                path: canonical_path.clone(),
-                source,
-            })?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    let after = fs::metadata(&canonical_path).map_err(|source| MediaDiscoveryRuntimeError::Io {
-        path: canonical_path.clone(),
-        source,
-    })?;
-    let after_modified = after
-        .modified()
-        .map_err(|source| MediaDiscoveryRuntimeError::Io {
-            path: canonical_path.clone(),
-            source,
-        })?;
-    if before.len() != after.len() || before_modified != after_modified {
-        return Ok(None);
-    }
-    let size_bytes = i64::try_from(after.len())
-        .map_err(|_| MediaDiscoveryRuntimeError::FingerprintValueTooLarge("size_bytes"))?;
-    let modified_ns = system_time_ns(after_modified)?;
-    Ok(Some(MediaFileFingerprint {
-        size_bytes,
-        modified_ns,
-        sha256: format!("{:x}", hasher.finalize()),
-    }))
-}
-
-fn system_time_ns(value: SystemTime) -> Result<i64, MediaDiscoveryRuntimeError> {
-    let duration = value
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| MediaDiscoveryRuntimeError::FingerprintTimeBeforeEpoch)?;
-    i64::try_from(duration.as_nanos())
-        .map_err(|_| MediaDiscoveryRuntimeError::FingerprintValueTooLarge("modified_ns"))
+    #[error("media discovery runtime fingerprint error: {0}")]
+    Fingerprint(#[from] MediaSourceFingerprintError),
 }
 
 fn discover_media_source_paths(

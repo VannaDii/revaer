@@ -66,7 +66,7 @@ pub struct EnqueueDiscoveredMediaJobInput<'a> {
     /// Canonical source path.
     pub source_path: &'a str,
     /// Derived output path.
-    pub output_path: &'a str,
+    pub output_path: Option<&'a str>,
     /// Stable file size observed while hashing.
     pub source_size_bytes: i64,
     /// Stable nanosecond modification timestamp observed while hashing.
@@ -444,7 +444,7 @@ pub async fn enqueue_discovered_media_job(
         .bind(input.actor_public_id)
         .bind(input.media_profile_public_id)
         .bind(input.source_path)
-        .bind(input.output_path)
+        .bind(input.output_path.unwrap_or_default())
         .bind(input.source_size_bytes)
         .bind(input.source_modified_ns)
         .bind(input.source_sha256)
@@ -992,14 +992,15 @@ mod tests {
         AppendMediaJobVerificationCheckInput, CreateMediaJobInput, EnqueueDiscoveredMediaJobInput,
         append_media_job_artifact, append_media_job_compact_audit, append_media_job_operation,
         append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
-        append_media_job_violation, cancel_media_job, create_media_job,
-        enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
-        list_media_job_compact_audits, list_media_job_operations, list_media_job_phases,
-        list_media_job_plan_reasons, list_media_job_verification_checks, list_media_job_violations,
-        list_media_jobs, mark_media_job_completed, media_job_worker_acknowledge_cancel,
-        media_job_worker_claim_next, media_job_worker_complete_finalized,
-        media_job_worker_mark_status, media_job_worker_poll_control,
-        media_job_worker_recover_stale, retry_media_job, run_media_job_retention,
+        append_media_job_violation, cancel_media_job,
+        create_media_job as create_unfingerprinted_media_job, enqueue_discovered_media_job,
+        get_media_job, list_media_job_artifacts, list_media_job_compact_audits,
+        list_media_job_operations, list_media_job_phases, list_media_job_plan_reasons,
+        list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
+        mark_media_job_completed, media_job_worker_acknowledge_cancel, media_job_worker_claim_next,
+        media_job_worker_complete_finalized, media_job_worker_mark_status,
+        media_job_worker_poll_control, media_job_worker_recover_stale, retry_media_job,
+        run_media_job_retention,
     };
     use crate::DataError;
     use crate::media::configuration::{
@@ -1017,8 +1018,36 @@ mod tests {
         PgPool,
         postgres::{PgConnectOptions, PgPoolOptions},
     };
-    use std::{fs, path::Path};
+    use std::{
+        fs,
+        path::Path,
+        sync::atomic::{AtomicI64, Ordering},
+    };
     use uuid::Uuid;
+
+    static TEST_FINGERPRINT_VERSION: AtomicI64 = AtomicI64::new(1);
+
+    async fn create_media_job(
+        pool: &PgPool,
+        input: &CreateMediaJobInput<'_>,
+    ) -> anyhow::Result<Uuid> {
+        let version = TEST_FINGERPRINT_VERSION.fetch_add(1, Ordering::Relaxed);
+        let source_sha256 = format!("{version:064x}");
+        enqueue_discovered_media_job(
+            pool,
+            &EnqueueDiscoveredMediaJobInput {
+                actor_public_id: input.actor_public_id,
+                media_profile_public_id: input.media_profile_public_id,
+                source_path: input.source_path,
+                output_path: input.output_path,
+                source_size_bytes: version,
+                source_modified_ns: version,
+                source_sha256: &source_sha256,
+            },
+        )
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("test media job fingerprint was unchanged"))
+    }
 
     fn closed_pool_options() -> PgConnectOptions {
         PgConnectOptions::new()
@@ -1238,7 +1267,7 @@ mod tests {
         output_path: Option<&str>,
         expected_detail: &str,
     ) -> anyhow::Result<()> {
-        let err = create_media_job(
+        let err = create_unfingerprinted_media_job(
             pool,
             &CreateMediaJobInput {
                 actor_public_id,
@@ -1376,6 +1405,59 @@ mod tests {
             migration_text.contains("media_job_output_path_outside_profile_root"),
             "output-path rejection detail must be present in migrations"
         );
+    }
+
+    #[test]
+    fn migration_guards_media_job_fingerprint_requirement() {
+        let migration_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let migration_text = fs::read_dir(migration_root)
+            .into_iter()
+            .flat_map(|entries| entries.filter_map(Result::ok))
+            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            migration_text.contains("media_discovery_source_fingerprint"),
+            "source fingerprint table must be present in migrations"
+        );
+        assert!(
+            migration_text.contains("media_job_source_fingerprint_required"),
+            "direct job creation must require persisted source fingerprints"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_media_job_requires_persisted_source_fingerprint() -> anyhow::Result<()> {
+        let db = match setup_media_db("create_media_job_requires_source_fingerprint").await {
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
+            Err(err) => {
+                return Err(err);
+            }
+        };
+
+        let profile_id =
+            upsert_retention_profile(&db, "fingerprint-required", "fingerprint-required").await?;
+        let err = create_unfingerprinted_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/fingerprint-required/video.mkv",
+                output_path: Some("/output/fingerprint-required/video.mkv"),
+                dry_run: true,
+            },
+        )
+        .await
+        .expect_err("direct job creation without fingerprint should fail");
+
+        assert!(matches!(err, DataError::QueryFailed { .. }));
+        assert_eq!(
+            err.database_detail(),
+            Some("media_job_source_fingerprint_required")
+        );
+        Ok(())
     }
 
     #[tokio::test]
@@ -2305,7 +2387,7 @@ mod tests {
             actor_public_id: db.system_user_public_id,
             media_profile_public_id: profile_id,
             source_path,
-            output_path,
+            output_path: Some(output_path),
             source_size_bytes: 10,
             source_modified_ns: 100,
             source_sha256: &"a".repeat(64),
@@ -2339,7 +2421,7 @@ mod tests {
 
         let failed_claim = EnqueueDiscoveredMediaJobInput {
             source_modified_ns: 102,
-            output_path: "/outside/movie.webm",
+            output_path: Some("/outside/movie.webm"),
             ..modified_content.clone()
         };
         assert!(
@@ -2348,7 +2430,7 @@ mod tests {
                 .is_err()
         );
         let retry = EnqueueDiscoveredMediaJobInput {
-            output_path,
+            output_path: Some(output_path),
             ..failed_claim
         };
         assert!(

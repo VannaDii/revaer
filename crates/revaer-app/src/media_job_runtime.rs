@@ -3911,7 +3911,7 @@ mod tests {
         append_media_desired_target_stream, create_media_desired_target,
         set_media_profile_desired_target,
     };
-    use revaer_data::media::jobs::{ClaimedMediaJobRow, CreateMediaJobInput};
+    use revaer_data::media::jobs::{ClaimedMediaJobRow, EnqueueDiscoveredMediaJobInput};
     use revaer_data::media::profiles::{UpdateMediaProfileInput, UpsertMediaProfileInput};
     use revaer_events::{Event as CoreEvent, EventBus};
     use revaer_media_core::classify::SemanticRole;
@@ -4991,14 +4991,17 @@ mod tests {
                 .await?;
         }
         let job_id = store
-            .create_job(&CreateMediaJobInput {
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: actor,
                 media_profile_public_id: profile_id,
                 source_path: &source_path_text,
                 output_path: Some(&output_path_text),
-                dry_run,
+                source_size_bytes: 100,
+                source_modified_ns: 100,
+                source_sha256: &"4".repeat(64),
             })
-            .await?;
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media runtime test job should be queued"))?;
         if record_capability {
             record_runtime_capability(&store, actor).await?;
         }
