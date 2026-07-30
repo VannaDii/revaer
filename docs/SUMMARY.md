@@ -387,3 +387,4 @@
     -   [358: Media contextual stream rewrites](adr/358-media-contextual-stream-rewrites.md)
     -   [359: Media worker-owned phase history](adr/359-media-worker-owned-phase-history.md)
     -   [360: CI Cargo install retry](adr/360-ci-cargo-install-retry.md)
+    -   [361: Media worker-owned job records](adr/361-media-worker-owned-job-records.md)

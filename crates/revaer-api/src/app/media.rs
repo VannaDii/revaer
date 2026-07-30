@@ -130,104 +130,6 @@ pub struct MediaDiscoveryAutomationRunParams<'a> {
     pub source_paths: &'a [String],
 }
 
-/// Append media job operation parameters.
-#[derive(Debug, Clone)]
-pub struct MediaJobOperationAppendParams<'a> {
-    /// Job id.
-    pub media_job_public_id: Uuid,
-    /// Ordered operation index.
-    pub operation_index: i32,
-    /// Operation kind.
-    pub operation_kind: &'a str,
-    /// Optional stream id.
-    pub stream_id: Option<i32>,
-    /// Command binary.
-    pub command_bin: &'a str,
-    /// Up to five deterministic arguments.
-    pub args: [Option<&'a str>; 5],
-}
-
-/// Append media job violation parameters.
-#[derive(Debug, Clone)]
-pub struct MediaJobViolationAppendParams<'a> {
-    /// Job id.
-    pub media_job_public_id: Uuid,
-    /// Ordered violation index.
-    pub violation_index: i32,
-    /// Violation kind.
-    pub violation_kind: &'a str,
-    /// Violation severity.
-    pub severity: &'a str,
-    /// Optional stream id.
-    pub stream_id: Option<i32>,
-}
-
-/// Append media job plan-reason parameters.
-#[derive(Debug, Clone)]
-pub struct MediaJobPlanReasonAppendParams<'a> {
-    /// Job id.
-    pub media_job_public_id: Uuid,
-    /// Ordered reason index.
-    pub reason_index: i32,
-    /// Optional candidate index.
-    pub candidate_index: Option<i32>,
-    /// Whether this reason describes the selected plan.
-    pub selected: bool,
-    /// Stable reason code.
-    pub reason_code: &'a str,
-    /// Human-readable reason text.
-    pub reason_text: &'a str,
-}
-
-/// Append media job verification-check parameters.
-#[derive(Debug, Clone)]
-pub struct MediaJobVerificationCheckAppendParams<'a> {
-    /// Job id.
-    pub media_job_public_id: Uuid,
-    /// Ordered check index.
-    pub check_index: i32,
-    /// Verification check kind.
-    pub check_kind: &'a str,
-    /// Verification check status.
-    pub check_status: &'a str,
-    /// Expected value text.
-    pub expected_value: Option<&'a str>,
-    /// Actual value text.
-    pub actual_value: Option<&'a str>,
-    /// Optional detail text.
-    pub details_text: Option<&'a str>,
-}
-
-/// Append media job artifact parameters.
-#[derive(Debug, Clone)]
-pub struct MediaJobArtifactAppendParams<'a> {
-    /// Job id.
-    pub media_job_public_id: Uuid,
-    /// Ordered artifact index.
-    pub artifact_index: i32,
-    /// Artifact kind.
-    pub artifact_kind: &'a str,
-    /// Managed artifact path.
-    pub artifact_path: &'a str,
-    /// Artifact size in bytes.
-    pub size_bytes: Option<i64>,
-    /// Optional content type.
-    pub content_type: Option<&'a str>,
-}
-
-/// Append media job compact-audit parameters.
-#[derive(Debug, Clone)]
-pub struct MediaJobCompactAuditAppendParams<'a> {
-    /// Job id.
-    pub media_job_public_id: Uuid,
-    /// Ordered audit index.
-    pub audit_index: i32,
-    /// Audit fact kind.
-    pub fact_kind: &'a str,
-    /// Audit fact text.
-    pub fact_text: &'a str,
-}
-
 /// Refresh capability snapshot parameters.
 #[derive(Debug, Clone)]
 pub struct MediaCapabilityRefreshParams {
@@ -930,23 +832,11 @@ pub trait MediaFacade: Send + Sync {
         media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobPhaseResponse>, MediaServiceError>;
 
-    /// Append media job operation.
-    async fn media_job_operation_append(
-        &self,
-        params: MediaJobOperationAppendParams<'_>,
-    ) -> Result<(), MediaServiceError>;
-
     /// List persisted media job operations.
     async fn media_job_operation_list(
         &self,
         media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobOperationResponse>, MediaServiceError>;
-
-    /// Append media job violation.
-    async fn media_job_violation_append(
-        &self,
-        params: MediaJobViolationAppendParams<'_>,
-    ) -> Result<(), MediaServiceError>;
 
     /// List persisted media job violations.
     async fn media_job_violation_list(
@@ -954,23 +844,11 @@ pub trait MediaFacade: Send + Sync {
         media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobViolationResponse>, MediaServiceError>;
 
-    /// Append media job plan reason.
-    async fn media_job_plan_reason_append(
-        &self,
-        params: MediaJobPlanReasonAppendParams<'_>,
-    ) -> Result<(), MediaServiceError>;
-
     /// List persisted media job plan reasons.
     async fn media_job_plan_reason_list(
         &self,
         media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobPlanReasonResponse>, MediaServiceError>;
-
-    /// Append media job verification check.
-    async fn media_job_verification_check_append(
-        &self,
-        params: MediaJobVerificationCheckAppendParams<'_>,
-    ) -> Result<(), MediaServiceError>;
 
     /// List persisted media job verification checks.
     async fn media_job_verification_check_list(
@@ -978,23 +856,11 @@ pub trait MediaFacade: Send + Sync {
         media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobVerificationCheckResponse>, MediaServiceError>;
 
-    /// Append media job artifact reference.
-    async fn media_job_artifact_append(
-        &self,
-        params: MediaJobArtifactAppendParams<'_>,
-    ) -> Result<(), MediaServiceError>;
-
     /// List persisted media job artifact references.
     async fn media_job_artifact_list(
         &self,
         media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobArtifactResponse>, MediaServiceError>;
-
-    /// Append media job compact audit fact.
-    async fn media_job_compact_audit_append(
-        &self,
-        params: MediaJobCompactAuditAppendParams<'_>,
-    ) -> Result<(), MediaServiceError>;
 
     /// List persisted media job compact audit facts.
     async fn media_job_compact_audit_list(
@@ -1195,25 +1061,11 @@ impl MediaFacade for NoopMedia {
         Ok(Vec::new())
     }
 
-    async fn media_job_operation_append(
-        &self,
-        _params: MediaJobOperationAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
-    }
-
     async fn media_job_operation_list(
         &self,
         _media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobOperationResponse>, MediaServiceError> {
         Ok(Vec::new())
-    }
-
-    async fn media_job_violation_append(
-        &self,
-        _params: MediaJobViolationAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 
     async fn media_job_violation_list(
@@ -1223,25 +1075,11 @@ impl MediaFacade for NoopMedia {
         Ok(Vec::new())
     }
 
-    async fn media_job_plan_reason_append(
-        &self,
-        _params: MediaJobPlanReasonAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
-    }
-
     async fn media_job_plan_reason_list(
         &self,
         _media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobPlanReasonResponse>, MediaServiceError> {
         Ok(Vec::new())
-    }
-
-    async fn media_job_verification_check_append(
-        &self,
-        _params: MediaJobVerificationCheckAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 
     async fn media_job_verification_check_list(
@@ -1251,25 +1089,11 @@ impl MediaFacade for NoopMedia {
         Ok(Vec::new())
     }
 
-    async fn media_job_artifact_append(
-        &self,
-        _params: MediaJobArtifactAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
-    }
-
     async fn media_job_artifact_list(
         &self,
         _media_job_public_id: Uuid,
     ) -> Result<Vec<MediaJobArtifactResponse>, MediaServiceError> {
         Ok(Vec::new())
-    }
-
-    async fn media_job_compact_audit_append(
-        &self,
-        _params: MediaJobCompactAuditAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
-        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 
     async fn media_job_compact_audit_list(

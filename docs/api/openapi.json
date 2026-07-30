@@ -3615,28 +3615,38 @@
         ],
         "type": "object"
       },
-      "MediaJobArtifactAppendRequest": {
+      "MediaJobPhaseResponse": {
         "properties": {
-          "artifact_index": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "details_text": {
+            "type": "string"
+          },
+          "phase_index": {
             "type": "integer"
           },
-          "artifact_kind": {
+          "phase_name": {
             "type": "string"
           },
-          "artifact_path": {
+          "phase_status": {
+            "enum": [
+              "queued",
+              "running",
+              "verifying",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
             "type": "string"
-          },
-          "content_type": {
-            "type": "string"
-          },
-          "size_bytes": {
-            "type": "integer"
           }
         },
         "required": [
-          "artifact_index",
-          "artifact_kind",
-          "artifact_path"
+          "phase_index",
+          "phase_name",
+          "phase_status",
+          "created_at"
         ],
         "type": "object"
       },
@@ -3684,22 +3694,17 @@
         ],
         "type": "object"
       },
-      "MediaJobCompactAuditAppendRequest": {
+      "MediaJobPhaseListResponse": {
         "properties": {
-          "audit_index": {
-            "type": "integer"
-          },
-          "fact_kind": {
-            "type": "string"
-          },
-          "fact_text": {
-            "type": "string"
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobPhaseResponse"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "audit_index",
-          "fact_kind",
-          "fact_text"
+          "phases"
         ],
         "type": "object"
       },
@@ -3793,49 +3798,29 @@
         ],
         "type": "object"
       },
-      "MediaJobOperationAppendRequest": {
+      "MediaYamlValidationResponse": {
         "properties": {
-          "arg_1": {
-            "type": "string"
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/MediaYamlIssueResponse"
+            },
+            "type": "array"
           },
-          "arg_2": {
-            "type": "string"
-          },
-          "arg_3": {
-            "type": "string"
-          },
-          "arg_4": {
-            "type": "string"
-          },
-          "arg_5": {
-            "type": "string"
-          },
-          "command_bin": {
-            "type": "string"
-          },
-          "operation_index": {
+          "profile_count": {
             "type": "integer"
           },
-          "operation_kind": {
-            "enum": [
-              "remux",
-              "metadata_rewrite",
-              "disposition_rewrite",
-              "label_rewrite",
-              "stream_reorder",
-              "audio_transcode",
-              "video_transcode"
-            ],
-            "type": "string"
+          "valid": {
+            "type": "boolean"
           },
-          "stream_id": {
-            "type": "integer"
+          "version": {
+            "type": "string"
           }
         },
         "required": [
-          "operation_index",
-          "operation_kind",
-          "command_bin"
+          "version",
+          "valid",
+          "issues",
+          "profile_count"
         ],
         "type": "object"
       },
@@ -3925,29 +3910,22 @@
         ],
         "type": "object"
       },
-      "MediaJobPlanReasonAppendRequest": {
+      "MediaYamlIssueResponse": {
         "properties": {
-          "candidate_index": {
-            "type": "integer"
-          },
-          "reason_code": {
-            "type": "string"
-          },
-          "reason_index": {
-            "type": "integer"
-          },
-          "reason_text": {
-            "type": "string"
-          },
-          "selected": {
+          "blocking": {
             "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "pointer": {
+            "type": "string"
           }
         },
         "required": [
-          "reason_index",
-          "selected",
-          "reason_code",
-          "reason_text"
+          "code",
+          "pointer",
+          "blocking"
         ],
         "type": "object"
       },
@@ -4125,36 +4103,14 @@
         ],
         "type": "object"
       },
-      "MediaJobVerificationCheckAppendRequest": {
+      "MediaYamlImportRequest": {
         "properties": {
-          "actual_value": {
-            "type": "string"
-          },
-          "check_index": {
-            "type": "integer"
-          },
-          "check_kind": {
-            "type": "string"
-          },
-          "check_status": {
-            "enum": [
-              "passed",
-              "failed",
-              "skipped"
-            ],
-            "type": "string"
-          },
-          "details_text": {
-            "type": "string"
-          },
-          "expected_value": {
+          "yaml_payload": {
             "type": "string"
           }
         },
         "required": [
-          "check_index",
-          "check_kind",
-          "check_status"
+          "yaml_payload"
         ],
         "type": "object"
       },
@@ -4210,30 +4166,18 @@
         ],
         "type": "object"
       },
-      "MediaJobViolationAppendRequest": {
+      "MediaYamlExportResponse": {
         "properties": {
-          "severity": {
-            "enum": [
-              "low",
-              "medium",
-              "high"
-            ],
+          "version": {
             "type": "string"
           },
-          "stream_id": {
-            "type": "integer"
-          },
-          "violation_index": {
-            "type": "integer"
-          },
-          "violation_kind": {
+          "yaml_payload": {
             "type": "string"
           }
         },
         "required": [
-          "violation_index",
-          "violation_kind",
-          "severity"
+          "version",
+          "yaml_payload"
         ],
         "type": "object"
       },
@@ -4650,126 +4594,6 @@
           "forced_dry_run",
           "media_profile_public_ids",
           "media_profile_import_draft_public_ids"
-        ],
-        "type": "object"
-      },
-      "MediaYamlExportResponse": {
-        "properties": {
-          "version": {
-            "type": "string"
-          },
-          "yaml_payload": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "version",
-          "yaml_payload"
-        ],
-        "type": "object"
-      },
-      "MediaYamlImportRequest": {
-        "properties": {
-          "yaml_payload": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "yaml_payload"
-        ],
-        "type": "object"
-      },
-      "MediaYamlIssueResponse": {
-        "properties": {
-          "blocking": {
-            "type": "boolean"
-          },
-          "code": {
-            "type": "string"
-          },
-          "pointer": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "pointer",
-          "blocking"
-        ],
-        "type": "object"
-      },
-      "MediaYamlValidationResponse": {
-        "properties": {
-          "issues": {
-            "items": {
-              "$ref": "#/components/schemas/MediaYamlIssueResponse"
-            },
-            "type": "array"
-          },
-          "profile_count": {
-            "type": "integer"
-          },
-          "valid": {
-            "type": "boolean"
-          },
-          "version": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "version",
-          "valid",
-          "issues",
-          "profile_count"
-        ],
-        "type": "object"
-      },
-      "MediaJobPhaseListResponse": {
-        "properties": {
-          "phases": {
-            "items": {
-              "$ref": "#/components/schemas/MediaJobPhaseResponse"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "phases"
-        ],
-        "type": "object"
-      },
-      "MediaJobPhaseResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "details_text": {
-            "type": "string"
-          },
-          "phase_index": {
-            "type": "integer"
-          },
-          "phase_name": {
-            "type": "string"
-          },
-          "phase_status": {
-            "enum": [
-              "queued",
-              "running",
-              "verifying",
-              "completed",
-              "failed",
-              "cancelled"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "phase_index",
-          "phase_name",
-          "phase_status",
-          "created_at"
         ],
         "type": "object"
       }
