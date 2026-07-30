@@ -24,7 +24,10 @@ use tokio::time::{MissedTickBehavior, interval};
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::media::{build_discovery_previews, ensure_execution_capability_snapshot};
+use crate::media::{
+    build_discovery_previews, ensure_execution_capability_snapshot,
+    ensure_profile_compatibility_target_readiness,
+};
 use crate::media_discovery_fingerprint::{
     fingerprint_media_aggregate, owner_for_changed_path, revalidate_media_aggregate,
 };
@@ -182,18 +185,8 @@ impl MediaDiscoveryRuntime {
         profile: MediaProfileRow,
         origin: &'static str,
     ) -> Result<(), MediaDiscoveryRuntimeError> {
-        if !profile.dry_run_only {
-            let latest = self.store.latest_capability().await?;
-            if let Err(error) = ensure_execution_capability_snapshot(latest.as_ref()) {
-                warn!(
-                    media_profile_public_id = %profile.media_profile_public_id,
-                    error = %error,
-                    "media discovery skipped profile without ready execution capability"
-                );
-                self.telemetry
-                    .inc_media_discovery_candidate(origin, "capability_not_ready");
-                return Ok(());
-            }
+        if !self.profile_ready_for_execution(&profile, origin).await? {
+            return Ok(());
         }
 
         let profile_id = profile.media_profile_public_id;
@@ -215,6 +208,50 @@ impl MediaDiscoveryRuntime {
             self.scan_cursors.insert(profile_id, cursor);
         }
         self.queue_source_paths(&profile, batch.paths, origin).await
+    }
+
+    async fn profile_ready_for_execution(
+        &self,
+        profile: &MediaProfileRow,
+        origin: &'static str,
+    ) -> Result<bool, MediaDiscoveryRuntimeError> {
+        if profile.dry_run_only {
+            return Ok(true);
+        }
+
+        let latest = self.store.latest_capability().await?;
+        let Some(snapshot) = latest.as_ref() else {
+            self.record_not_ready(profile, origin, "media_capability_snapshot_missing");
+            return Ok(false);
+        };
+        if let Err(error) = ensure_execution_capability_snapshot(Some(snapshot)) {
+            self.record_not_ready(profile, origin, error.code().unwrap_or("media_not_ready"));
+            return Ok(false);
+        }
+        if profile
+            .compatibility_target_key
+            .as_deref()
+            .is_some_and(|target_key| !target_key.trim().is_empty())
+        {
+            let targets = self.store.list_compatibility_targets().await?;
+            if let Err(error) =
+                ensure_profile_compatibility_target_readiness(profile, snapshot, &targets)
+            {
+                self.record_not_ready(profile, origin, error.code().unwrap_or("media_not_ready"));
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn record_not_ready(&self, profile: &MediaProfileRow, origin: &'static str, reason: &str) {
+        warn!(
+            media_profile_public_id = %profile.media_profile_public_id,
+            reason,
+            "media discovery skipped profile without ready execution capability"
+        );
+        self.telemetry
+            .inc_media_discovery_candidate(origin, "capability_not_ready");
     }
 
     async fn queue_source_paths(
@@ -370,6 +407,12 @@ impl MediaDiscoveryRuntime {
                     .inc_media_discovery_candidate("watcher", "skipped");
                 continue;
             };
+            if !self
+                .profile_ready_for_execution(&profile, "watcher")
+                .await?
+            {
+                continue;
+            }
             self.queue_source_paths(&profile, vec![path_text], "watcher")
                 .await?;
         }
@@ -473,8 +516,18 @@ mod tests {
     use crate::runtime_shutdown;
     use chrono::Utc;
     use revaer_api::app::media::MediaDiscoveryPreviewResponse;
-    use revaer_data::media::profiles::MediaProfileRow;
-    use revaer_data::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
+    use revaer_data::media::capabilities::{
+        RecordCapabilityEncoderInput, RecordCapabilityFeatureInput, RecordCapabilitySnapshotInput,
+        complete_capability_snapshot_run_with_executor, record_capability_encoder,
+        record_capability_feature, record_capability_snapshot,
+        start_capability_snapshot_run_with_executor,
+    };
+    use revaer_data::media::configuration::{
+        UpsertMediaCompatibilityTargetInput, upsert_media_compatibility_target,
+    };
+    use revaer_data::media::profiles::{
+        MediaProfileRow, UpsertMediaProfileInput, upsert_media_profile,
+    };
     use revaer_runtime::media::MediaStore;
     use revaer_telemetry::Metrics;
     use revaer_test_support::postgres::start_postgres;
@@ -686,6 +739,110 @@ mod tests {
             error.database_detail(),
             Some("media_profile_filesystem_identity_required")
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn non_dry_run_profile_is_not_ready_for_unsupported_target() -> anyhow::Result<()> {
+        let Ok(postgres) = start_postgres() else {
+            return Ok(());
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .connect(postgres.connection_string())
+            .await?;
+        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
+        migrator.set_ignore_missing(true);
+        migrator.run(&pool).await?;
+        let store = MediaStore::new(pool);
+        record_unsupported_hevc_aac_capability(store.pool()).await?;
+        upsert_media_compatibility_target(
+            store.pool(),
+            UpsertMediaCompatibilityTargetInput {
+                actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
+                compatibility_target_key: "watcher-unavailable-codec-target",
+                version: 1,
+                display_name: "Watcher unavailable codec target",
+                video_codec: "watcher-unavailable-video-codec",
+                audio_codec: "watcher-unavailable-audio-codec",
+                audio_channels: None,
+                audio_channel_layout: None,
+                subtitle_policy: "selected",
+            },
+        )
+        .await?;
+        let mut profile = media_profile(true, false, None);
+        profile.dry_run_only = false;
+        profile.compatibility_target_key = Some("watcher-unavailable-codec-target".to_string());
+        let runtime = MediaDiscoveryRuntime::with_tick_interval(
+            store,
+            Metrics::new()?,
+            Duration::from_millis(100),
+        );
+        assert!(
+            !runtime
+                .profile_ready_for_execution(&profile, "watcher")
+                .await?
+        );
+        Ok(())
+    }
+
+    async fn record_unsupported_hevc_aac_capability(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+        let snapshot_run_public_id = Uuid::new_v4();
+        start_capability_snapshot_run_with_executor(
+            pool,
+            super::SYSTEM_USER_PUBLIC_ID,
+            snapshot_run_public_id,
+        )
+        .await?;
+        for codec_name in ["h264", "mp3"] {
+            record_capability_snapshot(
+                pool,
+                &RecordCapabilitySnapshotInput {
+                    actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
+                    snapshot_run_public_id: Some(snapshot_run_public_id),
+                    ffmpeg_version: "7.0",
+                    ffprobe_version: "7.0",
+                    codec_name,
+                    encode_supported: true,
+                    decode_supported: true,
+                },
+            )
+            .await?;
+        }
+        record_capability_encoder(
+            pool,
+            &RecordCapabilityEncoderInput {
+                actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
+                snapshot_run_public_id,
+                encoder_name: "libx264",
+            },
+        )
+        .await?;
+        for (feature_family, feature_name) in [
+            ("decoder", "h264"),
+            ("muxer", "matroska"),
+            ("demuxer", "matroska"),
+            ("filesystem", "local"),
+            ("utility", "ffmpeg"),
+            ("utility", "ffprobe"),
+            ("utility", "ffplay"),
+            ("license", "gpl"),
+        ] {
+            record_capability_feature(
+                pool,
+                &RecordCapabilityFeatureInput {
+                    actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
+                    snapshot_run_public_id,
+                    feature_family,
+                    feature_name,
+                    supported: true,
+                    detail_text: None,
+                },
+            )
+            .await?;
+        }
+        complete_capability_snapshot_run_with_executor(pool, snapshot_run_public_id).await?;
         Ok(())
     }
 }

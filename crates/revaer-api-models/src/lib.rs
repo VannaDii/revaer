@@ -482,6 +482,21 @@ pub struct MediaProfileValidationResponse {
     pub issues: Vec<String>,
 }
 
+/// Media profile execution readiness response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileReadinessResponse {
+    /// Whether this profile can currently queue non-dry-run execution.
+    pub ready: bool,
+    /// Stable readiness reason code when not ready.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Profile evaluated for readiness.
+    pub profile: MediaProfileResponse,
+    /// Latest capability snapshot when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<MediaCapabilitySnapshotResponse>,
+}
+
 /// Compatibility target summary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaCompatibilityTargetResponse {
