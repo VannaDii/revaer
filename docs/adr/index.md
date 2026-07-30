@@ -365,3 +365,4 @@
 -   [354](354-media-direct-job-source-fingerprint.md) - Media direct job source fingerprint
 -   [355](355-media-compatibility-target-admission.md) - Media compatibility target admission
 -   [356](356-media-profile-readiness-api.md) - Media profile readiness API
+-   [357](357-media-desired-target-readiness.md) - Media desired-target readiness
