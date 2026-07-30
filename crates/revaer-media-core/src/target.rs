@@ -4,7 +4,7 @@ use crate::classify::{SemanticRole, infer_role};
 use crate::model::{DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind};
 use crate::normalize::{
     audio_channel_count_for_layout, normalize_audio_channel_layout, normalize_container_format,
-    normalize_subtitle_codec,
+    normalize_container_metadata_policy, normalize_subtitle_codec,
 };
 use serde::{Deserialize, Deserializer};
 use std::collections::{BTreeMap, BTreeSet};
@@ -222,6 +222,8 @@ pub struct DesiredTarget {
     pub version: u32,
     /// Desired output container format.
     pub container: String,
+    /// Desired output container metadata policy.
+    pub container_metadata_policy: String,
     /// Desired streams in final mux order.
     pub streams: Vec<TargetStream>,
 }
@@ -246,6 +248,9 @@ pub enum TargetCompileError {
     /// Target container is blank.
     #[error("desired target container is empty")]
     EmptyContainer,
+    /// The target requested an unsupported container metadata policy.
+    #[error("unsupported desired target container metadata policy: {0}")]
+    UnsupportedContainerMetadataPolicy(String),
     /// A target stream key is blank.
     #[error("desired target stream key is empty")]
     EmptyStreamKey,
@@ -488,6 +493,7 @@ pub fn compile_desired_target(
     Ok(DesiredGraph {
         output_path: output_path.to_string(),
         container_format: Some(normalize_container_format(&target.container)),
+        container_metadata_policy: Some(normalized_container_metadata_policy(target)?),
         stream_bindings: desired_bindings,
         streams: desired_streams,
     })
@@ -657,6 +663,7 @@ pub fn compile_desired_target_with_sidecars_at(
         graph: DesiredGraph {
             output_path: output_path.to_string(),
             container_format: Some(normalize_container_format(&target.container)),
+            container_metadata_policy: Some(normalized_container_metadata_policy(target)?),
             stream_bindings: state.desired_bindings,
             streams: state.desired_streams,
         },
@@ -1055,6 +1062,7 @@ fn validate_target(target: &DesiredTarget) -> Result<(), TargetCompileError> {
     if target.container.trim().is_empty() {
         return Err(TargetCompileError::EmptyContainer);
     }
+    normalized_container_metadata_policy(target)?;
 
     let mut keys = BTreeSet::new();
     for stream in &target.streams {
@@ -1068,6 +1076,18 @@ fn validate_target(target: &DesiredTarget) -> Result<(), TargetCompileError> {
         validate_target_stream(stream, key)?;
     }
     Ok(())
+}
+
+fn normalized_container_metadata_policy(
+    target: &DesiredTarget,
+) -> Result<String, TargetCompileError> {
+    normalize_container_metadata_policy(&target.container_metadata_policy)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            TargetCompileError::UnsupportedContainerMetadataPolicy(
+                target.container_metadata_policy.clone(),
+            )
+        })
 }
 
 fn validate_target_stream(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
@@ -1686,6 +1706,7 @@ mod tests {
             target_key: "web-playback".to_string(),
             version: 4,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![
                 target_stream("video-cover", StreamKind::Video, None, None, "png"),
                 main_audio,
@@ -1717,6 +1738,10 @@ mod tests {
         )?;
 
         assert_eq!(desired.container_format.as_deref(), Some("matroska"));
+        assert_eq!(
+            desired.container_metadata_policy.as_deref(),
+            Some("preserve")
+        );
 
         assert_eq!(
             desired
@@ -1753,12 +1778,59 @@ mod tests {
     }
 
     #[test]
+    fn compiles_strip_container_metadata_policy() -> Result<(), TargetCompileError> {
+        let source = multistream_source();
+        let mut target = ordered_multistream_target();
+        target.container_metadata_policy = " Strip ".to_string();
+
+        let desired = compile_desired_target(
+            &source,
+            "/output/episode.mkv",
+            &target,
+            UnmatchedStreamPolicy::Remove,
+        )?;
+
+        assert_eq!(desired.container_metadata_policy.as_deref(), Some("strip"));
+        Ok(())
+    }
+
+    #[test]
+    fn target_validation_rejects_unknown_container_metadata_policy() {
+        let source = multistream_source();
+        let mut target = ordered_multistream_target();
+        target.container_metadata_policy = "rewrite".to_string();
+
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::UnsupportedContainerMetadataPolicy(
+                "rewrite".to_string()
+            ))
+        );
+    }
+
+    #[test]
     fn optional_rows_skip_and_preserve_policy_appends_unmatched_streams()
     -> Result<(), TargetCompileError> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
             container_formats: Vec::new(),
-            streams: vec![stream(2, StreamKind::Video, "h264", None, None, &[])],
+            streams: vec![
+                stream(2, StreamKind::Video, "h264", None, None, &[]),
+                stream(6, StreamKind::Attachment, "ttf", None, Some("Font"), &[]),
+                stream(
+                    7,
+                    StreamKind::Data,
+                    "bin_data",
+                    Some("eng"),
+                    Some("Timecode"),
+                    &["default"],
+                ),
+            ],
         };
         let mut optional_audio = target_stream(
             "audio-optional",
@@ -1772,6 +1844,7 @@ mod tests {
             target_key: "preserve".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![optional_audio],
         };
 
@@ -1800,6 +1873,7 @@ mod tests {
             target_key: "strict".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "audio-main",
                 StreamKind::Audio,
@@ -1848,6 +1922,7 @@ mod tests {
             target_key: "invalid".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![first, duplicate],
         };
         assert_eq!(
@@ -1915,27 +1990,27 @@ mod tests {
             })
         );
 
-        let unsupported_target = DesiredTarget {
-            streams: vec![target_stream(
-                "chapter-main",
-                StreamKind::Chapter,
-                None,
-                None,
-                "bin_data",
-            )],
-            ..invalid_shape_target
-        };
-        assert_eq!(
-            compile_desired_target(
-                &source,
-                "/output/movie.mkv",
-                &unsupported_target,
-                UnmatchedStreamPolicy::Remove,
-            ),
-            Err(TargetCompileError::UnsupportedDesiredStreamKind(
-                "chapter-main".to_string()
-            ))
-        );
+        for (key, kind) in [
+            ("attachment-font", StreamKind::Attachment),
+            ("chapter-main", StreamKind::Chapter),
+            ("data-main", StreamKind::Data),
+        ] {
+            let unsupported_target = DesiredTarget {
+                streams: vec![target_stream(key, kind, None, None, "bin_data")],
+                ..invalid_shape_target.clone()
+            };
+            assert_eq!(
+                compile_desired_target(
+                    &source,
+                    "/output/movie.mkv",
+                    &unsupported_target,
+                    UnmatchedStreamPolicy::Remove,
+                ),
+                Err(TargetCompileError::UnsupportedDesiredStreamKind(
+                    key.to_string()
+                ))
+            );
+        }
     }
 
     #[test]
@@ -1952,6 +2027,7 @@ mod tests {
             target_key: "invalid".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![invalid_audio_policy],
         };
         assert_eq!(
@@ -1978,6 +2054,7 @@ mod tests {
             target_key: "invalid".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
         };
 
@@ -2038,6 +2115,7 @@ mod tests {
             target_key: "invalid".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
         };
 
@@ -2081,6 +2159,7 @@ mod tests {
             target_key: "audio-layout".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "audio-main",
                 StreamKind::Audio,
@@ -2116,6 +2195,7 @@ mod tests {
             target_key: "invalid".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![invalid_video],
         };
 
@@ -2146,6 +2226,7 @@ mod tests {
             target_key: "invalid-color".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![unsupported_color],
         };
         assert_eq!(
@@ -2170,6 +2251,7 @@ mod tests {
             target_key: "sdr-color".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![supported_sdr_color],
         };
         assert_eq!(
@@ -2198,6 +2280,7 @@ mod tests {
             target_key: "invalid-level".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![unsupported_level],
         };
 
@@ -2221,6 +2304,7 @@ mod tests {
             target_key: "av1-level".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![supported_av1_level],
         };
 
@@ -2243,6 +2327,7 @@ mod tests {
             target_key: "invalid-av1-level".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![unsupported_av1_level],
         };
 
@@ -2272,6 +2357,7 @@ mod tests {
             target_key: "unsupported-data".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "opaque-data",
                 StreamKind::Data,
@@ -2304,6 +2390,7 @@ mod tests {
             target_key: "embed-sidecar".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![
                 target_stream("video", StreamKind::Video, None, None, "h264"),
                 target_stream(
@@ -2353,6 +2440,7 @@ mod tests {
             target_key: "video-only".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "video",
                 StreamKind::Video,
@@ -2436,6 +2524,7 @@ mod tests {
             target_key: "both".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
@@ -2487,6 +2576,7 @@ mod tests {
             target_key: "sidecar".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
@@ -2536,6 +2626,7 @@ mod tests {
             target_key: "invalid-sidecar".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
@@ -2573,6 +2664,7 @@ mod tests {
             target_key: "image".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
@@ -2611,6 +2703,7 @@ mod tests {
             target_key: "sidecar".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
@@ -2666,6 +2759,7 @@ mod tests {
             target_key: "audio-fanout".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![stereo, surround],
         };
 
@@ -2759,6 +2853,7 @@ mod tests {
             target_key: "forged-language".to_string(),
             version: 1,
             container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 

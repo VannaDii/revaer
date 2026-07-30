@@ -30,6 +30,8 @@ pub struct BoundStream {
 pub struct GraphDiff {
     /// Source container does not satisfy the selected desired muxer.
     pub container_mismatch: bool,
+    /// Source container metadata does not satisfy the selected desired policy.
+    pub container_metadata_mismatch: bool,
     /// Explicit desired-output to source bindings used by execution planning.
     pub stream_bindings: Vec<DesiredStreamBinding>,
     /// Bound output streams with the kind required for alternative generation.
@@ -62,12 +64,17 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
                 .iter()
                 .any(|source_format| container_formats_match(source_format, desired_format))
         });
+    let container_metadata_mismatch = desired
+        .container_metadata_policy
+        .as_deref()
+        .is_some_and(|policy| policy.trim().eq_ignore_ascii_case("strip"));
     let stream_diff = diff_source_streams(source, desired);
     let missing_desired_streams = missing_desired_streams(source, desired);
     let stream_order_changed = stream_order_changed(source, desired, &missing_desired_streams);
 
     GraphDiff {
         container_mismatch,
+        container_metadata_mismatch,
         stream_bindings: normalized_bindings(desired),
         bound_streams: bound_streams(desired),
         removed_streams: stream_diff.removed_ids,
@@ -307,6 +314,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("mkv".to_string()),
+            container_metadata_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -324,11 +332,39 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("mp4".to_string()),
+            container_metadata_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
 
         assert!(diff_graphs(&source, &desired).container_mismatch);
+    }
+
+    #[test]
+    fn diff_scores_strip_container_metadata_policy() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: Vec::new(),
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: Some("strip".to_string()),
+            stream_bindings: Vec::new(),
+            streams: Vec::new(),
+        };
+
+        let diff = diff_graphs(&source, &desired);
+        let report = score_diff(&diff);
+
+        assert!(diff.container_metadata_mismatch);
+        assert_eq!(report.status, Status::NonCompliant);
+        assert!(report.violations.iter().any(|violation| {
+            violation.kind == ViolationKind::ContainerMetadataMismatch
+                && violation.severity == Severity::Medium
+                && violation.stream_id.is_none()
+        }));
     }
 
     #[test]
@@ -362,6 +398,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            container_metadata_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -420,6 +457,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            container_metadata_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -472,6 +510,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            container_metadata_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -510,6 +549,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            container_metadata_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 2,
@@ -549,6 +589,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            container_metadata_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -588,6 +629,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            container_metadata_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -641,6 +683,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            container_metadata_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,

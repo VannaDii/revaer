@@ -23,6 +23,7 @@
 - Reject every npm advisory severity in both lockfiles and every Cargo advisory warning.
 - Keep `.secignore` and `deny.toml` advisory ignores empty. Remove vulnerable crates from the resolved lock graph by upgrading or replacing dependencies.
 - Keep duplicate-crate allowances exact-version scoped and remove them when the lock graph no longer needs them.
+- Remediate RUSTSEC-2026-0221 by updating the lock graph from `event-listener` 5.4.1 to 5.4.2 instead of adding an advisory ignore.
 - Replace semantic-release's unused npm publish plugin with a local no-op package so release tooling does not pull a vulnerable bundled npm CLI into the audited lockfile.
 - Parse workflow and composite-action YAML semantically, including duplicate-key detection, before enforcing jobs, steps, conditions, permissions, immutable action pins, direct-input shell boundaries, and known `just` recipes.
 - Parse `sonar-project.properties` as Java properties and reject noncanonical leading whitespace, escaped keys, continuations, duplicate logical keys, unknown keys, nonempty scope filters, and analyzer or SCM deactivation.
@@ -70,6 +71,8 @@
   - `just audit`
   - `just deny`
   - `just udeps`
+  - `cargo audit --deny warnings`
+  - `cargo tree -i event-listener --locked`
   - `just policy`
   - `just ci`
   - `just workflow-guardrails-test`

@@ -349,6 +349,7 @@ fn noop_materialization_verifies_source_path_without_requesting_output_artifact(
     let desired = DesiredGraph {
         output_path: "target/media-fixture-integration/bbb-h264.mp4".to_string(),
         container_format: None,
+        container_metadata_policy: None,
         stream_bindings: Vec::new(),
         streams: Vec::new(),
     };
@@ -372,6 +373,7 @@ fn mutating_materialization_verifies_requested_output_artifact() {
     let desired = DesiredGraph {
         output_path: "target/media-fixture-integration/bbb-h264.mp4".to_string(),
         container_format: None,
+        container_metadata_policy: None,
         stream_bindings: Vec::new(),
         streams: Vec::new(),
     };
@@ -1477,6 +1479,7 @@ fn desired_graph(output_path: String, streams: Vec<MediaStream>) -> TestResult<D
     Ok(DesiredGraph {
         output_path,
         container_format: None,
+        container_metadata_policy: None,
         stream_bindings,
         streams: desired_streams,
     })
