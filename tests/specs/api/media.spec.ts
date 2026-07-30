@@ -1,13 +1,36 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { test, expect } from '../../fixtures/api';
+
+const mediaRootsToRemove = new Set<string>();
+
+test.afterEach(async () => {
+  const roots = [...mediaRootsToRemove];
+  mediaRootsToRemove.clear();
+  await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
+});
 
 test.describe('Media API', () => {
   test('covers media profiles jobs capabilities discovery and diagnostics', async ({ api }) => {
     const suffix = randomUUID().slice(0, 8);
-    const sourceRoot = `/tmp/revaer-media-e2e-${suffix}/source`;
-    const outputRoot = `/tmp/revaer-media-e2e-${suffix}/output`;
+    const mediaRoot = `/tmp/revaer-media-e2e-${suffix}`;
+    mediaRootsToRemove.add(mediaRoot);
+    const sourceRoot = `${mediaRoot}/source`;
+    const outputRoot = `${mediaRoot}/output`;
     const sourcePath = `${sourceRoot}/movie.mkv`;
     const outputPath = `${outputRoot}/movie.mkv`;
+    const watcherPath = `${sourceRoot}/watcher-${suffix}.mkv`;
+    const manualPath = `${sourceRoot}/manual-${suffix}.mkv`;
+    const schedulePath = `${sourceRoot}/schedule-${suffix}.mkv`;
+
+    await mkdir(sourceRoot, { recursive: true });
+    await mkdir(outputRoot, { recursive: true });
+    await Promise.all([
+      writeFile(sourcePath, Buffer.from(`source-${suffix}`)),
+      writeFile(watcherPath, Buffer.from(`watcher-${suffix}`)),
+      writeFile(manualPath, Buffer.from(`manual-${suffix}`)),
+      writeFile(schedulePath, Buffer.from(`schedule-${suffix}`)),
+    ]);
 
     const createdProfile = await api.POST('/v1/media/profiles', {
       body: {
@@ -402,7 +425,7 @@ test.describe('Media API', () => {
     const watcherRun = await api.POST('/v1/media/discovery/watchers', {
       body: {
         media_profile_public_id: profileId,
-        source_paths: [`${sourceRoot}/watcher-${suffix}.mkv`],
+        source_paths: [watcherPath],
       },
     });
     expect(watcherRun.response.status).toBe(201);
@@ -429,16 +452,27 @@ test.describe('Media API', () => {
     const discoveryRun = await api.POST('/v1/media/discovery/runs', {
       body: {
         media_profile_public_id: profileId,
-        source_paths: [`${sourceRoot}/manual-${suffix}.mkv`],
+        source_paths: [manualPath],
       },
     });
     expect(discoveryRun.response.status).toBe(201);
     expect(discoveryRun.data?.queued_jobs.length).toBe(1);
+    const duplicateDiscoveryRun = await api.POST('/v1/media/discovery/runs', {
+      body: {
+        media_profile_public_id: profileId,
+        source_paths: [manualPath],
+      },
+    });
+    expect(duplicateDiscoveryRun.response.status).toBe(201);
+    expect(duplicateDiscoveryRun.data?.queued_jobs.length).toBe(0);
+    expect(duplicateDiscoveryRun.data?.skipped[0]?.reason).toBe(
+      'media_discovery_source_unchanged'
+    );
 
     const scheduleRun = await api.POST('/v1/media/discovery/schedules', {
       body: {
         media_profile_public_id: profileId,
-        source_paths: [`${sourceRoot}/schedule-${suffix}.mkv`],
+        source_paths: [schedulePath],
       },
     });
     expect(scheduleRun.response.status).toBe(201);

@@ -380,3 +380,4 @@
     -   [351: Media runtime cooperative shutdown](adr/351-media-runtime-cooperative-shutdown.md)
     -   [352: Media claim shutdown cancellation](adr/352-media-claim-shutdown-cancellation.md)
     -   [353: Media job phase read model](adr/353-media-job-phase-read-model.md)
+    -   [354: Media direct job source fingerprint](adr/354-media-direct-job-source-fingerprint.md)
