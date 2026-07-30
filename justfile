@@ -604,14 +604,14 @@ dev: sync-assets trunk-install
 docs-install:
     required_mdbook_mermaid_version="0.17.0"; \
     if ! command -v mdbook >/dev/null 2>&1; then \
-        cargo install --locked mdbook; \
+        bash scripts/cargo-install-retry.sh mdbook --locked; \
     fi; \
     if ! command -v mdbook-mermaid >/dev/null 2>&1; then \
-        cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version"; \
+        bash scripts/cargo-install-retry.sh mdbook-mermaid --locked --version "$required_mdbook_mermaid_version"; \
     else \
         current_mdbook_mermaid_version="$(mdbook-mermaid --version | awk '{print $2}')"; \
         if [ "$current_mdbook_mermaid_version" != "$required_mdbook_mermaid_version" ]; then \
-            cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version" --force; \
+            bash scripts/cargo-install-retry.sh mdbook-mermaid --locked --version "$required_mdbook_mermaid_version" --force; \
         fi; \
     fi; \
     mdbook-mermaid install ./docs
@@ -627,7 +627,7 @@ docs-index:
 
 docs-link-check:
     if ! command -v lychee >/dev/null 2>&1; then \
-        cargo install --locked lychee; \
+        bash scripts/cargo-install-retry.sh lychee --locked; \
     fi
     lychee --verbose --no-progress docs || true
 

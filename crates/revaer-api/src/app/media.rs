@@ -130,21 +130,6 @@ pub struct MediaDiscoveryAutomationRunParams<'a> {
     pub source_paths: &'a [String],
 }
 
-/// Append media job phase parameters.
-#[derive(Debug, Clone)]
-pub struct MediaJobPhaseAppendParams<'a> {
-    /// Job id.
-    pub media_job_public_id: Uuid,
-    /// Ordered phase index.
-    pub phase_index: i32,
-    /// Phase name.
-    pub phase_name: &'a str,
-    /// Phase status (`queued`,`running`,...).
-    pub phase_status: &'a str,
-    /// Optional detail text.
-    pub details_text: Option<&'a str>,
-}
-
 /// Append media job operation parameters.
 #[derive(Debug, Clone)]
 pub struct MediaJobOperationAppendParams<'a> {
@@ -939,12 +924,6 @@ pub trait MediaFacade: Send + Sync {
     /// Retry a failed or cancelled media job.
     async fn media_job_retry(&self, media_job_public_id: Uuid) -> Result<(), MediaServiceError>;
 
-    /// Append media job phase.
-    async fn media_job_phase_append(
-        &self,
-        params: MediaJobPhaseAppendParams<'_>,
-    ) -> Result<(), MediaServiceError>;
-
     /// List persisted media job phases.
     async fn media_job_phase_list(
         &self,
@@ -1206,13 +1185,6 @@ impl MediaFacade for NoopMedia {
     }
 
     async fn media_job_retry(&self, _media_job_public_id: Uuid) -> Result<(), MediaServiceError> {
-        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
-    }
-
-    async fn media_job_phase_append(
-        &self,
-        _params: MediaJobPhaseAppendParams<'_>,
-    ) -> Result<(), MediaServiceError> {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 

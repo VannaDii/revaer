@@ -10,9 +10,10 @@ use crate::openapi_assets::OPENAPI_EMBEDDED_JSON;
 
 const MEDIA_DISCOVERY_SOURCE_PATHS_MAX_LEN: usize = 1024;
 const MEDIA_DISCOVERY_SOURCE_PATH_MAX_BYTES: usize = 4096;
-const STALE_MEDIA_SCHEMAS: [&str; 2] = [
+const STALE_MEDIA_SCHEMAS: [&str; 3] = [
     "MediaCapabilityRecordRequest",
     "MediaCapabilityRecordResponse",
+    "MediaJobPhaseAppendRequest",
 ];
 const STALE_MEDIA_PATHS: [&str; 1] = ["/v1/media/desired-targets"];
 
@@ -641,28 +642,17 @@ fn media_job_lifecycle_paths() -> Vec<(&'static str, Value)> {
                 MediaParameterSet::PathUuid("media_job_public_id"),
             ),
         ),
-        media_path(
+        media_single_path(
             "/v1/media/jobs/{media_job_public_id}/phases",
-            [
-                media_op(
-                    "get",
-                    "List media job phases",
-                    "200",
-                    "Media job phases",
-                    Some("MediaJobPhaseListResponse"),
-                    None,
-                    MediaParameterSet::PathUuid("media_job_public_id"),
-                ),
-                media_op(
-                    "post",
-                    "Append a media job phase",
-                    "204",
-                    "Media job phase appended",
-                    None,
-                    Some("MediaJobPhaseAppendRequest"),
-                    MediaParameterSet::PathUuid("media_job_public_id"),
-                ),
-            ],
+            media_op(
+                "get",
+                "List media job phases",
+                "200",
+                "Media job phases",
+                Some("MediaJobPhaseListResponse"),
+                None,
+                MediaParameterSet::PathUuid("media_job_public_id"),
+            ),
         ),
     ]
 }
@@ -1548,19 +1538,25 @@ fn media_job_core_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_job_phase_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobPhaseAppendRequest",
-        "MediaJobPhaseResponse",
-        "MediaJobPhaseListResponse",
-        "phases",
-        &["phase_index", "phase_name", "phase_status"],
-        [
-            schema_property("phase_index", SchemaKind::Integer),
-            schema_property("phase_name", SchemaKind::String),
-            schema_property("phase_status", SchemaKind::MediaStatus),
-            schema_property("details_text", SchemaKind::String),
-        ],
-    )
+    vec![
+        (
+            "MediaJobPhaseResponse",
+            typed_object_schema_from_fields(
+                &["phase_index", "phase_name", "phase_status", "created_at"],
+                [
+                    schema_property("phase_index", SchemaKind::Integer),
+                    schema_property("phase_name", SchemaKind::String),
+                    schema_property("phase_status", SchemaKind::MediaStatus),
+                    schema_property("details_text", SchemaKind::String),
+                    schema_property("created_at", SchemaKind::DateTime),
+                ],
+            ),
+        ),
+        (
+            "MediaJobPhaseListResponse",
+            list_response_schema("phases", "MediaJobPhaseResponse"),
+        ),
+    ]
 }
 
 fn media_job_operation_schemas() -> Vec<(&'static str, Value)> {
@@ -2330,7 +2326,6 @@ mod tests {
             "MediaJobCreateResponse",
             "MediaJobListResponse",
             "MediaJobResponse",
-            "MediaJobPhaseAppendRequest",
             "MediaJobPhaseListResponse",
             "MediaJobPhaseResponse",
             "MediaJobOperationAppendRequest",
