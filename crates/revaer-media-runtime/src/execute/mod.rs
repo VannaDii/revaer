@@ -35,6 +35,9 @@ pub enum BuildArgsError {
     /// Arbitrary metadata rewrite is not implemented as a verified desired-state contract.
     #[error("metadata rewrite is not supported until desired metadata verification is implemented")]
     UnsupportedMetadataRewrite,
+    /// Stream metadata, disposition, and ordering rewrites require the complete desired graph.
+    #[error("stream rewrite requires complete desired graph context")]
+    ContextlessStreamRewrite,
     /// No operations were provided for execution planning.
     #[error("at least one operation is required")]
     EmptyOperations,
@@ -589,36 +592,9 @@ fn build_ffmpeg_argv_with_video_policy(
             args.push("copy".to_string());
         }
         OperationKind::MetadataRewrite => return Err(BuildArgsError::UnsupportedMetadataRewrite),
-        OperationKind::DispositionRewrite => {
-            let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
-            args.push("-map".to_string());
-            args.push("0".to_string());
-            args.push("-c".to_string());
-            args.push("copy".to_string());
-            args.push(format!("-disposition:{stream_id}"));
-            args.push("0".to_string());
-        }
-        OperationKind::LabelRewrite => {
-            let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
-            args.push("-map".to_string());
-            args.push("0".to_string());
-            args.push("-c".to_string());
-            args.push("copy".to_string());
-            args.push(format!("-metadata:s:{stream_id}"));
-            args.push("title=".to_string());
-        }
-        OperationKind::StreamReorder => {
-            args.push("-map".to_string());
-            args.push("0:v?".to_string());
-            args.push("-map".to_string());
-            args.push("0:a?".to_string());
-            args.push("-map".to_string());
-            args.push("0:s?".to_string());
-            args.push("-map".to_string());
-            args.push("0:t?".to_string());
-            args.push("-c".to_string());
-            args.push("copy".to_string());
-        }
+        OperationKind::DispositionRewrite
+        | OperationKind::LabelRewrite
+        | OperationKind::StreamReorder => return Err(BuildArgsError::ContextlessStreamRewrite),
         OperationKind::AudioTranscode => {
             let stream_id = operation.stream_id.ok_or(BuildArgsError::MissingStreamId)?;
             args.push("-map".to_string());
@@ -2266,6 +2242,19 @@ mod tests {
     }
 
     #[test]
+    fn disposition_rewrite_without_desired_graph_fails_closed() {
+        let op = PlannedOperation {
+            kind: OperationKind::DispositionRewrite,
+            stream_id: Some(1),
+            output_stream_id: Some(1),
+        };
+        assert_eq!(
+            build_ffmpeg_argv("/in.mkv", "/out.mkv", &op),
+            Err(BuildArgsError::ContextlessStreamRewrite)
+        );
+    }
+
+    #[test]
     fn label_rewrite_requires_stream_id() {
         let op = PlannedOperation {
             kind: OperationKind::LabelRewrite,
@@ -2279,21 +2268,29 @@ mod tests {
     }
 
     #[test]
-    fn stream_reorder_maps_ordered_families() {
+    fn label_rewrite_without_desired_graph_fails_closed() {
+        let op = PlannedOperation {
+            kind: OperationKind::LabelRewrite,
+            stream_id: Some(1),
+            output_stream_id: Some(1),
+        };
+        assert_eq!(
+            build_ffmpeg_argv("/in.mkv", "/out.mkv", &op),
+            Err(BuildArgsError::ContextlessStreamRewrite)
+        );
+    }
+
+    #[test]
+    fn stream_reorder_without_desired_graph_fails_closed() {
         let op = PlannedOperation {
             kind: OperationKind::StreamReorder,
             stream_id: None,
             output_stream_id: None,
         };
-        let args_result = build_ffmpeg_argv("/in.mkv", "/out.mkv", &op);
-        assert!(args_result.is_ok());
-        let Ok(args) = args_result else {
-            return;
-        };
-        assert!(args.windows(2).any(|pair| pair == ["-map", "0:v?"]));
-        assert!(args.windows(2).any(|pair| pair == ["-map", "0:a?"]));
-        assert!(args.windows(2).any(|pair| pair == ["-map", "0:s?"]));
-        assert!(args.windows(2).any(|pair| pair == ["-map", "0:t?"]));
+        assert_eq!(
+            build_ffmpeg_argv("/in.mkv", "/out.mkv", &op),
+            Err(BuildArgsError::ContextlessStreamRewrite)
+        );
     }
 
     #[test]

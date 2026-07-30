@@ -366,6 +366,7 @@
 -   [355](355-media-compatibility-target-admission.md) – Media compatibility target admission
 -   [356](356-media-profile-readiness-api.md) – Media profile readiness API
 -   [357](357-media-desired-target-readiness.md) – Media desired-target readiness
+-   [358](358-media-contextual-stream-rewrites.md) – Media Contextual Stream Rewrites
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools

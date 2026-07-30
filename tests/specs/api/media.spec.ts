@@ -23,7 +23,7 @@ test.describe('Media API', () => {
     const watcherPath = `${sourceRoot}/watcher-${suffix}.mkv`;
     const manualPath = `${sourceRoot}/manual-${suffix}.mkv`;
     const schedulePath = `${sourceRoot}/schedule-${suffix}.mkv`;
-    const directPath = `${sourceRoot}/direct-${suffix}.mkv`;
+    const directPath = `${sourceRoot}/direct-${suffix}.source`;
     const directOutputPath = `${outputRoot}/direct-${suffix}.mkv`;
 
     await mkdir(sourceRoot, { recursive: true });
