@@ -316,33 +316,30 @@ fn media_conversion_report_starts_with_summary_and_lists_actions() -> TestResult
     let mut report = MediaConversionReport::new(2);
     report.record_fixture_validation("bbb-h264-mp4", "passed", "MP4/H.264 graph matched");
     report.record_fixture_validation("multi-audio-mkv", "passed", "MKV multi-audio graph matched");
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "common MP4 input".to_string(),
-        fixture_id: "bbb-h264-mp4".to_string(),
-        input_path: "test-fixtures/source/bbb-h264.mp4".to_string(),
-        output_path: "target/media-fixture-integration/bbb-h264.mp4".to_string(),
-        operations: vec!["remux".to_string()],
-        outcome: "passed".to_string(),
-        details: "output probeable with expected streams".to_string(),
-    });
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "multi-audio ordered selection".to_string(),
-        fixture_id: "multi-audio-mkv".to_string(),
-        input_path: "test-fixtures/derived/multi-audio.mkv".to_string(),
-        output_path: "target/media-fixture-integration/multi-audio-ordered.mkv".to_string(),
-        operations: vec!["remux".to_string(), "stream_reorder".to_string()],
-        outcome: "passed".to_string(),
-        details: "preserved requested audio order spa,eng".to_string(),
-    });
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "WebM VP8/Vorbis to MP4 H.264/AAC".to_string(),
-        fixture_id: "chromium-bear-320x240-webm".to_string(),
-        input_path: "test-fixtures/chromium/bear-320x240.webm".to_string(),
-        output_path: "target/media-fixture-integration/webm-vp8-vorbis-to-h264-aac.mp4".to_string(),
-        operations: vec!["video_transcode".to_string(), "audio_transcode".to_string()],
-        outcome: "passed".to_string(),
-        details: "output codecs video=[h264] audio=[aac]".to_string(),
-    });
+    report.record_pipeline_action(pipeline_report_row(
+        "common MP4 input",
+        "bbb-h264-mp4",
+        "test-fixtures/source/bbb-h264.mp4",
+        "target/media-fixture-integration/bbb-h264.mp4",
+        &["remux"],
+        "output probeable with expected streams",
+    ));
+    report.record_pipeline_action(pipeline_report_row(
+        "multi-audio ordered selection",
+        "multi-audio-mkv",
+        "test-fixtures/derived/multi-audio.mkv",
+        "target/media-fixture-integration/multi-audio-ordered.mkv",
+        &["remux", "stream_reorder"],
+        "preserved requested audio order spa,eng",
+    ));
+    report.record_pipeline_action(pipeline_report_row(
+        "WebM VP8/Vorbis to MP4 H.264/AAC",
+        "chromium-bear-320x240-webm",
+        "test-fixtures/chromium/bear-320x240.webm",
+        "target/media-fixture-integration/webm-vp8-vorbis-to-h264-aac.mp4",
+        &["video_transcode", "audio_transcode"],
+        "output codecs video=[h264] audio=[aac]",
+    ));
 
     let markdown = report.render_markdown();
 
@@ -356,6 +353,28 @@ fn media_conversion_report_starts_with_summary_and_lists_actions() -> TestResult
     assert!(markdown.contains("| WebM VP8/Vorbis to MP4 H.264/AAC |"));
     assert!(markdown.contains("## Pipeline Actions\n"));
     Ok(())
+}
+
+fn pipeline_report_row(
+    case_name: &str,
+    fixture_id: &str,
+    input_path: &str,
+    output_path: &str,
+    operations: &[&str],
+    details: &str,
+) -> PipelineReportRow {
+    PipelineReportRow {
+        case_name: case_name.to_string(),
+        fixture_id: fixture_id.to_string(),
+        input_path: input_path.to_string(),
+        output_path: output_path.to_string(),
+        operations: operations
+            .iter()
+            .map(|operation| (*operation).to_string())
+            .collect(),
+        outcome: "passed".to_string(),
+        details: details.to_string(),
+    }
 }
 
 #[test]
@@ -1084,16 +1103,7 @@ fn materialize_same_graph(
             .file_name()
             .ok_or_else(|| std::io::Error::other("fixture output filename missing"))?,
     );
-    let desired = DesiredGraph {
-        output_path: path_text(&output_path)?,
-        container_format: None,
-        container_metadata_policy: None,
-        container_metadata: Vec::new(),
-        container_chapter_policy: None,
-        container_chapters: Vec::new(),
-        container_attachment_policy: None,
-        streams: graph.streams.clone(),
-    };
+    let desired = desired_graph_for_output(&output_path, graph.streams.clone())?;
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
     let output_graph = inspect_graph(&materialized.verified_output_path)?;
     assert_fixture_graph_matches(fixture, &output_graph)?;
@@ -1105,16 +1115,43 @@ fn materialize_same_graph(
             output_graph.streams.len()
         )
     };
+    record_passed_pipeline_action(root, report, fixture, case_name, &materialized, details);
+    Ok(())
+}
+
+fn desired_graph_for_output(
+    output_path: &Path,
+    streams: Vec<MediaStream>,
+) -> TestResult<DesiredGraph> {
+    Ok(DesiredGraph {
+        output_path: path_text(output_path)?,
+        container_format: None,
+        container_metadata_policy: None,
+        container_metadata: Vec::new(),
+        container_chapter_policy: None,
+        container_chapters: Vec::new(),
+        container_attachment_policy: None,
+        streams,
+    })
+}
+
+fn record_passed_pipeline_action(
+    root: &Path,
+    report: &mut MediaConversionReport,
+    fixture: &FixtureEntry,
+    case_name: &str,
+    materialized: &MaterializedGraph,
+    details: impl Into<String>,
+) {
     report.record_pipeline_action(PipelineReportRow {
         case_name: case_name.to_string(),
         fixture_id: fixture.id.clone(),
         input_path: fixture.path.clone(),
         output_path: report_path(root, &materialized.verified_output_path),
-        operations: materialized.operations,
+        operations: materialized.operations.clone(),
         outcome: "passed".to_string(),
-        details,
+        details: details.into(),
     });
-    Ok(())
 }
 
 fn assert_fixture_graph_matches(fixture: &FixtureEntry, graph: &MediaGraph) -> TestResult {
@@ -1359,16 +1396,7 @@ fn assert_transcode_case(
         item.video_codec,
         item.audio_codecs,
     )?;
-    let desired = DesiredGraph {
-        output_path: path_text(&output_path)?,
-        container_format: None,
-        container_metadata_policy: None,
-        container_metadata: Vec::new(),
-        container_chapter_policy: None,
-        container_chapters: Vec::new(),
-        container_attachment_policy: None,
-        streams: desired_streams,
-    };
+    let desired = desired_graph_for_output(&output_path, desired_streams)?;
 
     let materialized = materialize_desired_graph(&source_path, &source, &desired)?;
     assert_operations(
@@ -1391,19 +1419,18 @@ fn assert_transcode_case(
         item.expected_audio_codecs,
     )?;
 
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: item.case_name.to_string(),
-        fixture_id: fixture.id.clone(),
-        input_path: fixture.path.clone(),
-        output_path: report_path(root, &materialized.verified_output_path),
-        operations: materialized.operations,
-        outcome: "passed".to_string(),
-        details: format!(
+    record_passed_pipeline_action(
+        root,
+        report,
+        fixture,
+        item.case_name,
+        &materialized,
+        format!(
             "output codecs video=[{}] audio=[{}]",
             item.expected_video_codecs.join(","),
             item.expected_audio_codecs.join(",")
         ),
-    });
+    );
     Ok(())
 }
 
@@ -1503,29 +1530,21 @@ fn assert_multi_audio_selection(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let desired = DesiredGraph {
-        output_path: path_text(&output_root.join("multi-audio-english-only.mkv"))?,
-        container_format: None,
-        container_metadata_policy: None,
-        container_metadata: Vec::new(),
-        container_chapter_policy: None,
-        container_chapters: Vec::new(),
-        container_attachment_policy: None,
-        streams: english_only,
-    };
+    let desired = desired_graph_for_output(
+        &output_root.join("multi-audio-english-only.mkv"),
+        english_only,
+    )?;
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
     let output = inspect_graph(&materialized.verified_output_path)?;
     assert_audio_languages("multi-audio English only", &output, &["eng"])?;
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "multi-audio English-only selection".to_string(),
-        fixture_id: fixture.id.clone(),
-        input_path: fixture.path.clone(),
-        output_path: report_path(root, &materialized.verified_output_path),
-        operations: materialized.operations,
-        outcome: "passed".to_string(),
-        details: "selected only English audio and dropped non-English plus undeclared silent audio"
-            .to_string(),
-    });
+    record_passed_pipeline_action(
+        root,
+        report,
+        fixture,
+        "multi-audio English-only selection",
+        &materialized,
+        "selected only English audio and dropped non-English plus undeclared silent audio",
+    );
 
     let mut ordered = graph
         .streams
@@ -1541,28 +1560,18 @@ fn assert_multi_audio_selection(
         };
         ordered.push(stream.clone());
     }
-    let desired = DesiredGraph {
-        output_path: path_text(&output_root.join("multi-audio-ordered.mkv"))?,
-        container_format: None,
-        container_metadata_policy: None,
-        container_metadata: Vec::new(),
-        container_chapter_policy: None,
-        container_chapters: Vec::new(),
-        container_attachment_policy: None,
-        streams: ordered,
-    };
+    let desired = desired_graph_for_output(&output_root.join("multi-audio-ordered.mkv"), ordered)?;
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
     let output = inspect_graph(&materialized.verified_output_path)?;
     assert_audio_languages("multi-audio ordered", &output, &["spa", "eng"])?;
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "multi-audio ordered selection".to_string(),
-        fixture_id: fixture.id.clone(),
-        input_path: fixture.path.clone(),
-        output_path: report_path(root, &materialized.verified_output_path),
-        operations: materialized.operations,
-        outcome: "passed".to_string(),
-        details: "preserved requested audio order spa,eng".to_string(),
-    });
+    record_passed_pipeline_action(
+        root,
+        report,
+        fixture,
+        "multi-audio ordered selection",
+        &materialized,
+        "preserved requested audio order spa,eng",
+    );
     Ok(())
 }
 
@@ -1576,28 +1585,21 @@ fn assert_subtitle_selection(
     let source_path = root.join(&fixture.path);
     let graph = inspect_graph(&source_path)?;
 
-    let desired_all = DesiredGraph {
-        output_path: path_text(&output_root.join("subtitles-all.mkv"))?,
-        container_format: None,
-        container_metadata_policy: None,
-        container_metadata: Vec::new(),
-        container_chapter_policy: None,
-        container_chapters: Vec::new(),
-        container_attachment_policy: None,
-        streams: graph.streams.clone(),
-    };
+    let desired_all = desired_graph_for_output(
+        &output_root.join("subtitles-all.mkv"),
+        graph.streams.clone(),
+    )?;
     let materialized = materialize_desired_graph(&source_path, &graph, &desired_all)?;
     let all_output = inspect_graph(&materialized.verified_output_path)?;
     assert_eq!(streams_by_kind(&all_output, StreamKind::Subtitle).len(), 2);
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "keep all subtitles".to_string(),
-        fixture_id: fixture.id.clone(),
-        input_path: fixture.path.clone(),
-        output_path: report_path(root, &materialized.verified_output_path),
-        operations: materialized.operations,
-        outcome: "passed".to_string(),
-        details: "retained both subtitle streams".to_string(),
-    });
+    record_passed_pipeline_action(
+        root,
+        report,
+        fixture,
+        "keep all subtitles",
+        &materialized,
+        "retained both subtitle streams",
+    );
 
     let forced_only = graph
         .streams
@@ -1609,16 +1611,8 @@ fn assert_subtitle_selection(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let desired_forced = DesiredGraph {
-        output_path: path_text(&output_root.join("subtitles-forced.mkv"))?,
-        container_format: None,
-        container_metadata_policy: None,
-        container_metadata: Vec::new(),
-        container_chapter_policy: None,
-        container_chapters: Vec::new(),
-        container_attachment_policy: None,
-        streams: forced_only,
-    };
+    let desired_forced =
+        desired_graph_for_output(&output_root.join("subtitles-forced.mkv"), forced_only)?;
     let materialized = materialize_desired_graph(&source_path, &graph, &desired_forced)?;
     let forced_output = inspect_graph(&materialized.verified_output_path)?;
     let forced_subtitles = streams_by_kind(&forced_output, StreamKind::Subtitle);
@@ -1630,15 +1624,14 @@ fn assert_subtitle_selection(
             .iter()
             .any(|item| item == "forced")
     );
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "keep forced subtitles only".to_string(),
-        fixture_id: fixture.id.clone(),
-        input_path: fixture.path.clone(),
-        output_path: report_path(root, &materialized.verified_output_path),
-        operations: materialized.operations,
-        outcome: "passed".to_string(),
-        details: "retained one forced English subtitle stream".to_string(),
-    });
+    record_passed_pipeline_action(
+        root,
+        report,
+        fixture,
+        "keep forced subtitles only",
+        &materialized,
+        "retained one forced English subtitle stream",
+    );
 
     let no_subtitles = graph
         .streams
@@ -1646,28 +1639,19 @@ fn assert_subtitle_selection(
         .filter(|stream| stream.kind != StreamKind::Subtitle)
         .cloned()
         .collect::<Vec<_>>();
-    let desired_none = DesiredGraph {
-        output_path: path_text(&output_root.join("subtitles-none.mkv"))?,
-        container_format: None,
-        container_metadata_policy: None,
-        container_metadata: Vec::new(),
-        container_chapter_policy: None,
-        container_chapters: Vec::new(),
-        container_attachment_policy: None,
-        streams: no_subtitles,
-    };
+    let desired_none =
+        desired_graph_for_output(&output_root.join("subtitles-none.mkv"), no_subtitles)?;
     let materialized = materialize_desired_graph(&source_path, &graph, &desired_none)?;
     let none_output = inspect_graph(&materialized.verified_output_path)?;
     assert!(streams_by_kind(&none_output, StreamKind::Subtitle).is_empty());
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "drop all subtitles".to_string(),
-        fixture_id: fixture.id.clone(),
-        input_path: fixture.path.clone(),
-        output_path: report_path(root, &materialized.verified_output_path),
-        operations: materialized.operations,
-        outcome: "passed".to_string(),
-        details: "removed all subtitle streams".to_string(),
-    });
+    record_passed_pipeline_action(
+        root,
+        report,
+        fixture,
+        "drop all subtitles",
+        &materialized,
+        "removed all subtitle streams",
+    );
     Ok(())
 }
 
@@ -1965,15 +1949,14 @@ fn assert_container_metadata_replacement(
         &["metadata_rewrite", "remux"],
     )?;
     assert_output_container_metadata(&materialized.verified_output_path, &desired_metadata)?;
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "replace container metadata".to_string(),
-        fixture_id: fixture.id.clone(),
-        input_path: fixture.path.clone(),
-        output_path: report_path(root, &materialized.verified_output_path),
-        operations: materialized.operations,
-        outcome: "passed".to_string(),
-        details: "published exact authored metadata comment,title".to_string(),
-    });
+    record_passed_pipeline_action(
+        root,
+        report,
+        fixture,
+        "replace container metadata",
+        &materialized,
+        "published exact authored metadata comment,title",
+    );
     Ok(())
 }
 
@@ -2008,16 +1991,14 @@ fn assert_container_chapter_replacement(
         &["metadata_rewrite", "remux"],
     )?;
     assert_output_chapters(&materialized.verified_output_path, &desired_chapters)?;
-    report.record_pipeline_action(PipelineReportRow {
-        case_name: "replace container chapters".to_string(),
-        fixture_id: fixture.id.clone(),
-        input_path: fixture.path.clone(),
-        output_path: report_path(root, &materialized.verified_output_path),
-        operations: materialized.operations,
-        outcome: "passed".to_string(),
-        details: "published exact authored chapter timeline Fixture Opening,Fixture Main"
-            .to_string(),
-    });
+    record_passed_pipeline_action(
+        root,
+        report,
+        fixture,
+        "replace container chapters",
+        &materialized,
+        "published exact authored chapter timeline Fixture Opening,Fixture Main",
+    );
     Ok(())
 }
 
@@ -2176,7 +2157,7 @@ fn materialize_desired_graph(
     let operation_names = planned
         .operations
         .iter()
-        .map(|operation| operation_kind_name(operation.kind).to_string())
+        .map(|operation| operation_kind_name(operation.kind))
         .collect::<Vec<_>>();
     let steps =
         build_job_execution_steps(&path_text(source_path)?, &desired.output_path, &planned)?;
@@ -2199,7 +2180,7 @@ fn materialize_compiled_target(
     let operation_names = planned
         .operations
         .iter()
-        .map(|operation| operation_kind_name(operation.kind).to_string())
+        .map(|operation| operation_kind_name(operation.kind))
         .collect::<Vec<_>>();
     let steps = build_job_execution_steps(
         &path_text(source_path)?,
@@ -2229,24 +2210,21 @@ fn planned_operations_are_noop(operations: &[PlannedOperation]) -> bool {
 }
 
 fn assert_audio_languages(label: &str, graph: &MediaGraph, expected: &[&str]) -> TestResult {
-    let actual = streams_by_kind(graph, StreamKind::Audio)
-        .iter()
-        .map(|stream| stream.language.as_deref().unwrap_or("und").to_string())
-        .collect::<Vec<_>>();
-    let expected_values = expected
-        .iter()
-        .map(|item| (*item).to_string())
-        .collect::<Vec<_>>();
-    if actual != expected_values {
-        return fail(format!(
-            "{label} audio language mismatch: expected {expected_values:?}, got {actual:?}"
-        ));
-    }
-    Ok(())
+    assert_stream_languages(label, graph, StreamKind::Audio, "audio", expected)
 }
 
 fn assert_subtitle_languages(label: &str, graph: &MediaGraph, expected: &[&str]) -> TestResult {
-    let actual = streams_by_kind(graph, StreamKind::Subtitle)
+    assert_stream_languages(label, graph, StreamKind::Subtitle, "subtitle", expected)
+}
+
+fn assert_stream_languages(
+    label: &str,
+    graph: &MediaGraph,
+    kind: StreamKind,
+    kind_label: &str,
+    expected: &[&str],
+) -> TestResult {
+    let actual = streams_by_kind(graph, kind)
         .iter()
         .map(|stream| stream.language.as_deref().unwrap_or("und").to_string())
         .collect::<Vec<_>>();
@@ -2256,7 +2234,7 @@ fn assert_subtitle_languages(label: &str, graph: &MediaGraph, expected: &[&str])
         .collect::<Vec<_>>();
     if actual != expected_values {
         return fail(format!(
-            "{label} subtitle language mismatch: expected {expected_values:?}, got {actual:?}"
+            "{label} {kind_label} language mismatch: expected {expected_values:?}, got {actual:?}"
         ));
     }
     Ok(())
@@ -2424,32 +2402,46 @@ fn sidecar_input(sidecar: &SidecarSubtitle) -> TestResult<SidecarSubtitleInput> 
             .map(|path| path_text(path))
             .transpose()?,
         language: sidecar.language.clone(),
-        role: sidecar.role.map(sidecar_role),
-        codec: sidecar_codec(sidecar.format).to_string(),
+        role: sidecar.role.map(sidecar_role).transpose()?,
+        codec: sidecar_codec(sidecar.format)?.to_string(),
         image_based: sidecar.format.image_based(),
     })
 }
 
-const fn sidecar_role(role: SidecarRole) -> SemanticRole {
-    match role {
-        SidecarRole::Forced => SemanticRole::Forced,
-        SidecarRole::Commentary => SemanticRole::Commentary,
-        SidecarRole::Sdh => SemanticRole::Sdh,
-        SidecarRole::SignsSongs => SemanticRole::SignsSongs,
-        SidecarRole::Karaoke => SemanticRole::Karaoke,
+fn sidecar_role(role: SidecarRole) -> TestResult<SemanticRole> {
+    for (sidecar_role, semantic_role) in SIDECAR_ROLE_MAP {
+        if *sidecar_role == role {
+            return Ok(*semantic_role);
+        }
     }
+    fail(format!("unsupported sidecar role: {role:?}"))
 }
 
-const fn sidecar_codec(format: SidecarFormat) -> &'static str {
-    match format {
-        SidecarFormat::Srt => "subrip",
-        SidecarFormat::Ass => "ass",
-        SidecarFormat::Vtt => "webvtt",
-        SidecarFormat::Sup => "hdmv_pgs_subtitle",
-        SidecarFormat::Sub => "microdvd",
-        SidecarFormat::VobSub => "dvd_subtitle",
+const SIDECAR_ROLE_MAP: &[(SidecarRole, SemanticRole)] = &[
+    (SidecarRole::Forced, SemanticRole::Forced),
+    (SidecarRole::Commentary, SemanticRole::Commentary),
+    (SidecarRole::Sdh, SemanticRole::Sdh),
+    (SidecarRole::SignsSongs, SemanticRole::SignsSongs),
+    (SidecarRole::Karaoke, SemanticRole::Karaoke),
+];
+
+fn sidecar_codec(format: SidecarFormat) -> TestResult<&'static str> {
+    for (sidecar_format, codec) in SIDECAR_CODEC_MAP {
+        if *sidecar_format == format {
+            return Ok(codec);
+        }
     }
+    fail(format!("unsupported sidecar format: {format:?}"))
 }
+
+const SIDECAR_CODEC_MAP: &[(SidecarFormat, &str)] = &[
+    (SidecarFormat::Srt, "subrip"),
+    (SidecarFormat::Ass, "ass"),
+    (SidecarFormat::Vtt, "webvtt"),
+    (SidecarFormat::Sup, "hdmv_pgs_subtitle"),
+    (SidecarFormat::Sub, "microdvd"),
+    (SidecarFormat::VobSub, "dvd_subtitle"),
+];
 
 fn assert_single_sidecar<'a>(
     label: &str,
@@ -2522,22 +2514,23 @@ fn report_path(root: &Path, path: &Path) -> String {
     )
 }
 
-const fn operation_kind_name(kind: OperationKind) -> &'static str {
-    match kind {
-        OperationKind::NoOp => "no_op",
-        OperationKind::Remux => "remux",
-        OperationKind::MetadataRewrite => "metadata_rewrite",
-        OperationKind::DispositionRewrite => "disposition_rewrite",
-        OperationKind::LabelRewrite => "label_rewrite",
-        OperationKind::StreamReorder => "stream_reorder",
-        OperationKind::EmbedSubtitle => "embed_subtitle",
-        OperationKind::ExtractSubtitle => "extract_subtitle",
-        OperationKind::CopySidecarSubtitle => "copy_sidecar_subtitle",
-        OperationKind::RemoveSidecarSubtitle => "remove_sidecar_subtitle",
-        OperationKind::SubtitleTranscode => "subtitle_transcode",
-        OperationKind::AudioTranscode => "audio_transcode",
-        OperationKind::VideoTranscode => "video_transcode",
+fn operation_kind_name(kind: OperationKind) -> String {
+    lower_pascal_to_snake_case(&format!("{kind:?}"))
+}
+
+fn lower_pascal_to_snake_case(value: &str) -> String {
+    let mut snake_case = String::new();
+    for (index, character) in value.chars().enumerate() {
+        if character.is_ascii_uppercase() {
+            if index > 0 {
+                snake_case.push('_');
+            }
+            snake_case.push(character.to_ascii_lowercase());
+        } else {
+            snake_case.push(character);
+        }
     }
+    snake_case
 }
 
 fn markdown_cell(value: &str) -> String {

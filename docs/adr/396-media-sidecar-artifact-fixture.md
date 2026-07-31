@@ -6,11 +6,13 @@
   - ADR 318 describes sidecar embedding, extraction, copy, and removal as implemented runtime behavior.
   - Existing coverage proved sidecar discovery, compilation, command construction, replacement rollback, and final sidecar-state equality through unit and app-service tests.
   - The real media conversion fixture suite still did not execute explicit sidecar artifact operations through FFmpeg and FFprobe.
+  - The first PR 133 Sonar run failed the duplication quality gate because the new fixture integration assertions repeated the same desired-graph materialization and report-row construction shape.
 - Decision:
   - Generate a deterministic ignored SRT sidecar beside the existing generated video-only fixture.
   - Add fixture pipeline cases for embedding an existing sidecar, copying an existing sidecar to a managed output, planning removal of an unmatched sidecar, and extracting an embedded subtitle into a managed SRT sidecar.
   - Require the media conversion report to include `embed_subtitle`, `extract_subtitle`, `copy_sidecar_subtitle`, and `remove_sidecar_subtitle` operations.
   - Keep source-sidecar deletion and rollback verification in the app replacement tests because the fixture harness executes managed materialization, not the full source replacement transaction.
+  - Share common desired-graph defaults and passed pipeline report-row construction through local fixture-test helpers so Sonar's duplication gate stays strict without reducing the number of real FFmpeg/FFprobe fixture cases.
   - Alternatives considered:
     - Rely on existing command-builder and helper tests: rejected because they do not prove real FFmpeg execution against fixture media.
     - Add committed media binaries: rejected because the fixture policy keeps generated and downloaded media ignored and cache-backed.
@@ -40,7 +42,9 @@
   - `just test-media-conversion`
   - `cargo fmt --check`
   - `cargo test -p revaer-media-runtime --test media_fixtures media_conversion_report_starts_with_summary_and_lists_actions -- --nocapture`
+  - `cargo test -p revaer-media-runtime --test media_fixtures --all-features`
   - `cargo clippy -p revaer-media-runtime --all-features --test media_fixtures -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `sonar analyze secrets crates/revaer-media-runtime/tests/media_fixtures.rs`
   - The generated `target/media-conversion-report.md` records passed rows for `embed existing sidecar`, `copy existing sidecar`, `plan existing sidecar removal`, and `extract embedded subtitle`.
 - Observability updates:
   - No service metrics or logs changed. The media conversion report now records sidecar artifact operation rows.
