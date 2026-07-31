@@ -38,6 +38,7 @@ const MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1: &str = "SELECT media_job_worker_ac
 const MEDIA_JOB_WORKER_COMPLETE_V1: &str = "SELECT media_job_worker_complete_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
 const MEDIA_JOB_WORKER_COMPLETE_FINALIZED_V1: &str =
     "SELECT media_job_worker_complete_finalized_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, metadata_value FROM media_job_desired_target_metadata_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
 const MEDIA_DISCOVERY_JOB_ENQUEUE_V1: &str = "SELECT media_discovery_job_enqueue_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
 
@@ -415,6 +416,15 @@ pub struct MediaJobDesiredTargetStreamRow {
     pub image_subtitle_action: Option<String>,
 }
 
+/// Desired container metadata snapshotted for one job.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobDesiredTargetMetadataRow {
+    /// Lowercase metadata key.
+    pub metadata_key: String,
+    /// Trimmed metadata value.
+    pub metadata_value: String,
+}
+
 /// Create media job row.
 ///
 /// # Errors
@@ -471,6 +481,22 @@ pub async fn list_media_job_desired_target_streams(
         .fetch_all(pool)
         .await
         .map_err(try_op("media job desired target stream list"))
+}
+
+/// List immutable desired container metadata snapshotted for one job.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_desired_target_metadata(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Vec<MediaJobDesiredTargetMetadataRow>> {
+    sqlx::query_as::<_, MediaJobDesiredTargetMetadataRow>(MEDIA_JOB_DESIRED_TARGET_METADATA_LIST_V1)
+        .bind(media_job_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job desired target metadata list"))
 }
 
 /// Append or update a media job phase row.
@@ -1444,25 +1470,45 @@ mod tests {
     }
 
     #[test]
-    fn migration_guards_container_metadata_strip_policy() {
+    fn migration_guards_container_metadata_values_policy() {
         let migration_text = ordered_migration_text();
         let latest_create = migration_text
-            .rsplit_once("CREATE OR REPLACE FUNCTION media_desired_target_create_v2")
+            .rsplit_once("CREATE OR REPLACE FUNCTION media_desired_target_create_v3")
             .map(|(_, create)| create)
-            .expect("media_desired_target_create_v2 must be replaced by migrations");
+            .expect("media_desired_target_create_v3 must be replaced by migrations");
 
         assert!(
-            migration_text.contains("container_metadata_policy IN ('preserve', 'strip')"),
-            "desired-target container metadata constraint must accept preserve and strip"
-        );
-        assert!(
             migration_text
-                .contains("intent_desired_container_metadata_policy IN ('preserve', 'strip')"),
-            "media job desired-target completeness constraint must snapshot preserve and strip"
+                .contains("container_metadata_policy IN ('preserve', 'strip', 'replace')"),
+            "desired-target container metadata constraint must accept preserve, strip, and replace"
         );
         assert!(
-            latest_create.contains("metadata_policy_value NOT IN ('preserve', 'strip')"),
-            "latest desired-target create procedure must reject policies other than preserve or strip"
+            migration_text.contains(
+                "intent_desired_container_metadata_policy IN ('preserve', 'strip', 'replace')"
+            ),
+            "media job desired-target completeness constraint must snapshot preserve, strip, and replace"
+        );
+        assert!(
+            latest_create.contains("metadata_policy_value NOT IN ('preserve', 'strip', 'replace')"),
+            "latest desired-target create procedure must reject policies other than preserve, strip, or replace"
+        );
+        assert!(
+            migration_text.contains("media_desired_target_metadata_append_v1")
+                && migration_text.contains("media_job_desired_target_metadata_list_v1")
+                && migration_text.contains("media_desired_target_metadata_required"),
+            "metadata replacement policy must have append, snapshot list, and required-row guards"
+        );
+        assert!(
+            migration_text.contains("media_desired_target_metadata_policy_mismatch"),
+            "metadata rows must be rejected unless the selected container metadata policy is replace"
+        );
+        assert!(
+            migration_text.contains("media_desired_target_metadata_count_exceeded")
+                && migration_text.contains("media_desired_target_metadata_bytes_exceeded")
+                && migration_text.contains("octet_length(metadata_key_value) > 128")
+                && migration_text.contains("octet_length(metadata_value_value) > 4096")
+                && migration_text.contains("> 65536"),
+            "metadata append must bound row count, per-row UTF-8 bytes, and aggregate UTF-8 bytes"
         );
     }
 
@@ -1470,9 +1516,9 @@ mod tests {
     fn migration_guards_container_chapter_strip_policy() {
         let migration_text = ordered_migration_text();
         let latest_create = migration_text
-            .rsplit_once("CREATE FUNCTION media_desired_target_create_v3")
+            .rsplit_once("CREATE OR REPLACE FUNCTION media_desired_target_create_v3")
             .map(|(_, create)| create)
-            .expect("media_desired_target_create_v3 must be created by migrations");
+            .expect("media_desired_target_create_v3 must be replaced by migrations");
 
         assert!(
             migration_text.contains("container_chapter_policy IN ('preserve', 'strip')"),

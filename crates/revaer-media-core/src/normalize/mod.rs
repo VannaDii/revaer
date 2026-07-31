@@ -15,6 +15,7 @@ pub fn normalize_graph(graph: &MediaGraph) -> MediaGraph {
     container_formats.dedup();
     MediaGraph {
         source_path: graph.source_path.trim().to_string(),
+        container_metadata: normalize_container_metadata(&graph.container_metadata),
         container_formats,
         container_chapters: normalize_container_chapters(&graph.container_chapters),
         streams: graph.streams.iter().map(normalize_stream).collect(),
@@ -36,7 +37,11 @@ pub fn normalize_container_chapters(
         .collect()
 }
 
-fn normalize_container_metadata(entries: &[ContainerMetadataEntry]) -> Vec<ContainerMetadataEntry> {
+/// Normalize container metadata rows for deterministic graph comparison.
+#[must_use]
+pub fn normalize_container_metadata(
+    entries: &[ContainerMetadataEntry],
+) -> Vec<ContainerMetadataEntry> {
     let mut normalized = entries
         .iter()
         .filter_map(|entry| {
@@ -67,6 +72,7 @@ pub fn normalize_container_metadata_policy(value: &str) -> Option<&'static str> 
     match value.trim().to_ascii_lowercase().as_str() {
         "preserve" => Some("preserve"),
         "strip" => Some("strip"),
+        "replace" => Some("replace"),
         _ => None,
     }
 }
@@ -231,6 +237,7 @@ mod tests {
     fn normalize_aliases_and_whitespace() {
         let graph = MediaGraph {
             source_path: " /data/source.mkv ".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -290,6 +297,7 @@ mod tests {
     fn normalize_codec_aliases_from_tool_output() {
         let graph = MediaGraph {
             source_path: "/data/source.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -325,6 +333,7 @@ mod tests {
     fn normalize_language_region_aliases() {
         let graph = MediaGraph {
             source_path: "/data/source.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {

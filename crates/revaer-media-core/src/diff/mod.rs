@@ -3,6 +3,7 @@
 use crate::model::{DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind};
 use crate::normalize::{
     normalize_audio_channel_layout, normalize_container_chapters, normalize_container_format,
+    normalize_container_metadata,
 };
 
 /// Stream requiring codec-level recode.
@@ -86,10 +87,9 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
                 .iter()
                 .any(|source_format| container_formats_match(source_format, desired_format))
         });
-    let container_metadata_mismatch = desired
-        .container_metadata_policy
-        .as_deref()
-        .is_some_and(|policy| policy.trim().eq_ignore_ascii_case("strip"));
+    let container_metadata_mismatch = desired.container_metadata_policy.is_some()
+        && normalize_container_metadata(&source.container_metadata)
+            != normalize_container_metadata(&desired.container_metadata);
     let container_chapter_diff = if desired.container_chapter_policy.is_some()
         && normalize_container_chapters(&source.container_chapters)
             != normalize_container_chapters(&desired.container_chapters)
@@ -353,6 +353,10 @@ mod tests {
     fn diff_treats_container_aliases_as_the_same_muxer() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: vec![ContainerMetadataEntry {
+                key: "title".to_string(),
+                value: "Original".to_string(),
+            }],
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string(), "webm".to_string()],
             streams: Vec::new(),
@@ -362,6 +366,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: Some("mkv".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
@@ -374,6 +379,7 @@ mod tests {
     fn diff_detects_container_mismatch() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: Vec::new(),
@@ -383,6 +389,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: Some("mp4".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
@@ -395,6 +402,10 @@ mod tests {
     fn diff_scores_strip_container_metadata_policy() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: vec![ContainerMetadataEntry {
+                key: "title".to_string(),
+                value: "Original".to_string(),
+            }],
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: Vec::new(),
@@ -404,6 +415,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: Some("strip".to_string()),
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
@@ -422,9 +434,41 @@ mod tests {
     }
 
     #[test]
+    fn diff_compares_normalized_container_metadata_values() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_metadata: vec![ContainerMetadataEntry {
+                key: " TITLE ".to_string(),
+                value: " Canonical Cut ".to_string(),
+            }],
+            container_chapters: Vec::new(),
+            container_formats: vec!["matroska".to_string()],
+            streams: Vec::new(),
+        };
+        let mut desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: Some("replace".to_string()),
+            container_metadata: vec![ContainerMetadataEntry {
+                key: "title".to_string(),
+                value: "Canonical Cut".to_string(),
+            }],
+            container_chapter_policy: None,
+            stream_bindings: Vec::new(),
+            streams: Vec::new(),
+        };
+
+        assert!(!diff_graphs(&source, &desired).container_metadata_mismatch);
+        desired.container_metadata[0].value = "Different".to_string();
+        assert!(diff_graphs(&source, &desired).container_metadata_mismatch);
+    }
+
+    #[test]
     fn diff_scores_strip_container_chapter_policy() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: vec![test_chapter("Opening")],
             container_formats: vec!["matroska".to_string()],
             streams: Vec::new(),
@@ -434,6 +478,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
             stream_bindings: Vec::new(),
             streams: Vec::new(),
@@ -455,6 +500,7 @@ mod tests {
     fn diff_treats_already_stripped_chapters_as_satisfied() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: Vec::new(),
@@ -464,6 +510,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
             stream_bindings: Vec::new(),
             streams: Vec::new(),
@@ -484,6 +531,7 @@ mod tests {
         desired_chapter.metadata[0].value = " Opening ".to_string();
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: vec![chapter],
             container_formats: vec!["matroska".to_string()],
             streams: Vec::new(),
@@ -493,6 +541,7 @@ mod tests {
             container_chapters: vec![desired_chapter],
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: Some("preserve".to_string()),
             stream_bindings: Vec::new(),
             streams: Vec::new(),
@@ -509,6 +558,7 @@ mod tests {
     fn diff_replace_compares_the_normalized_chapter_value() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: vec![test_chapter("Opening")],
             container_formats: vec!["matroska".to_string()],
             streams: Vec::new(),
@@ -518,6 +568,7 @@ mod tests {
             container_chapters: vec![test_chapter("Replacement")],
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: Some("replace".to_string()),
             stream_bindings: Vec::new(),
             streams: Vec::new(),
@@ -534,6 +585,7 @@ mod tests {
     fn diff_removed_and_recoded_streams() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -564,6 +616,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
@@ -596,6 +649,7 @@ mod tests {
     fn diff_detects_desired_stream_order_change() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -626,6 +680,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![
@@ -664,6 +719,7 @@ mod tests {
     fn diff_detects_audio_channel_shape_changes() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -682,6 +738,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
@@ -706,6 +763,7 @@ mod tests {
     fn diff_detects_stream_language_and_title_metadata_changes() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -724,6 +782,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
@@ -749,6 +808,7 @@ mod tests {
     fn diff_detects_stream_disposition_changes_without_order_sensitivity() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -767,6 +827,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
@@ -792,6 +853,7 @@ mod tests {
     fn diff_detects_missing_desired_streams() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -810,6 +872,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![
@@ -849,6 +912,7 @@ mod tests {
     fn diff_reports_channel_shape_when_audio_codec_also_changes() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -867,6 +931,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {

@@ -23,7 +23,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::media::{
-    MediaCapabilityRefreshParams, MediaDesiredTargetCreateParams,
+    MediaCapabilityRefreshParams, MediaDesiredTargetCreateParams, MediaDesiredTargetMetadataParams,
     MediaDesiredTargetResponse as AppMediaDesiredTargetResponse, MediaDesiredTargetStreamParams,
     MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
     MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse, MediaProfileDesiredTargetParams,
@@ -37,7 +37,8 @@ use crate::models::{
     MediaCapabilityRefreshResponse, MediaCompatibilityTargetListResponse,
     MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
     MediaComplianceResponse, MediaDesiredTargetCreateRequest, MediaDesiredTargetListResponse,
-    MediaDesiredTargetResponse, MediaDesiredTargetStream, MediaDiscoveryPreviewItemResponse,
+    MediaDesiredTargetMetadataEntry, MediaDesiredTargetResponse, MediaDesiredTargetStream,
+    MediaDiscoveryPreviewItemResponse,
     MediaDiscoveryPreviewRequest, MediaDiscoveryPreviewResponse, MediaDiscoveryQueuedJobResponse,
     MediaDiscoveryRunRequest, MediaDiscoveryRunResponse, MediaDiscoveryScheduleListResponse,
     MediaDiscoveryScheduleResponse, MediaDiscoverySkippedItemResponse,
@@ -89,7 +90,9 @@ const OUTPUT_ROOT_REQUIRED: &str = "output_root is required";
 const SOURCE_PATH_REQUIRED: &str = "source_path is required";
 const CONTAINER_FORMAT_REQUIRED: &str = "container_format is required";
 const CONTAINER_METADATA_POLICY_INVALID: &str =
-    "container_metadata_policy must be preserve or strip";
+    "container_metadata_policy must be preserve, strip, or replace";
+const CONTAINER_METADATA_INVALID: &str =
+    "container_metadata must be non-empty only when container_metadata_policy is replace";
 const CONTAINER_CHAPTER_POLICY_INVALID: &str = "container_chapter_policy must be preserve or strip";
 const DESIRED_TARGET_STREAMS_REQUIRED: &str = "streams must contain at least one stream";
 const VIDEO_CODEC_REQUIRED: &str = "video_codec is required";
@@ -453,6 +456,8 @@ pub(crate) async fn create_media_desired_target(
         normalize_required_str_field(&request.container_format, CONTAINER_FORMAT_REQUIRED)?;
     let container_metadata_policy =
         normalize_container_metadata_policy(request.container_metadata_policy.as_deref())?;
+    let container_metadata =
+        normalize_container_metadata(&container_metadata_policy, &request.container_metadata)?;
     let container_chapter_policy =
         normalize_container_chapter_policy(request.container_chapter_policy.as_deref())?;
     if request.streams.is_empty() {
@@ -466,6 +471,7 @@ pub(crate) async fn create_media_desired_target(
         display_name: display_name.to_string(),
         container_format: container_format.to_ascii_lowercase(),
         container_metadata_policy,
+        container_metadata,
         container_chapter_policy,
         streams: request
             .streams
@@ -1412,6 +1418,7 @@ fn map_desired_target_response(
         display_name: target.display_name,
         container_format: target.container_format,
         container_metadata_policy: target.container_metadata_policy,
+        container_metadata: target.container_metadata,
         container_chapter_policy: target.container_chapter_policy,
         streams: target.streams,
     }
@@ -1513,25 +1520,48 @@ fn trim_and_filter_empty(value: Option<&str>) -> Option<&str> {
 }
 
 fn normalize_container_metadata_policy(value: Option<&str>) -> Result<String, ApiError> {
-    normalize_container_policy(value, CONTAINER_METADATA_POLICY_INVALID)
+    normalize_container_policy(value, CONTAINER_METADATA_POLICY_INVALID, true)
 }
 
 fn normalize_container_chapter_policy(value: Option<&str>) -> Result<String, ApiError> {
-    normalize_container_policy(value, CONTAINER_CHAPTER_POLICY_INVALID)
+    normalize_container_policy(value, CONTAINER_CHAPTER_POLICY_INVALID, false)
 }
 
 fn normalize_container_policy(
     value: Option<&str>,
     invalid_message: &'static str,
+    allow_replace: bool,
 ) -> Result<String, ApiError> {
     let policy = trim_and_filter_empty(value)
         .unwrap_or("preserve")
         .to_ascii_lowercase();
-    if matches!(policy.as_str(), "preserve" | "strip") {
+    if matches!(policy.as_str(), "preserve" | "strip") || (allow_replace && policy == "replace") {
         Ok(policy)
     } else {
         Err(ApiError::bad_request(invalid_message))
     }
+}
+
+fn normalize_container_metadata(
+    policy: &str,
+    metadata: &[MediaDesiredTargetMetadataEntry],
+) -> Result<Vec<MediaDesiredTargetMetadataParams>, ApiError> {
+    let replace = policy.eq_ignore_ascii_case("replace");
+    if replace == metadata.is_empty() {
+        return Err(ApiError::bad_request(CONTAINER_METADATA_INVALID));
+    }
+    let mut keys = BTreeSet::new();
+    let mut normalized = Vec::with_capacity(metadata.len());
+    for entry in metadata {
+        let key = entry.key.trim().to_ascii_lowercase();
+        let value = entry.value.trim().to_string();
+        if key.is_empty() || value.is_empty() || !keys.insert(key.clone()) {
+            return Err(ApiError::bad_request(CONTAINER_METADATA_INVALID));
+        }
+        normalized.push(MediaDesiredTargetMetadataParams { key, value });
+    }
+    normalized.sort_by(|left, right| left.key.cmp(&right.key));
+    Ok(normalized)
 }
 
 fn validate_retention_days(value: i32) -> Result<(), ApiError> {
@@ -2065,7 +2095,53 @@ mod tests {
             normalize_container_metadata_policy(Some(" Strip "))?,
             "strip"
         );
+        assert_eq!(
+            normalize_container_metadata_policy(Some(" Replace "))?,
+            "replace"
+        );
         assert!(normalize_container_metadata_policy(Some("rewrite")).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn container_metadata_values_normalize_only_for_replace_policy() -> anyhow::Result<()> {
+        let metadata = vec![
+            MediaDesiredTargetMetadataEntry {
+                key: " Title ".to_string(),
+                value: " Canonical Cut ".to_string(),
+            },
+            MediaDesiredTargetMetadataEntry {
+                key: "COMMENT".to_string(),
+                value: "Verified".to_string(),
+            },
+        ];
+        let normalized = normalize_container_metadata("replace", &metadata)?;
+        assert_eq!(
+            normalized
+                .iter()
+                .map(|entry| (entry.key.as_str(), entry.value.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("comment", "Verified"), ("title", "Canonical Cut")]
+        );
+        assert!(normalize_container_metadata("preserve", &metadata).is_err());
+        assert!(normalize_container_metadata("strip", &metadata).is_err());
+        assert!(normalize_container_metadata("replace", &[]).is_err());
+        assert!(
+            normalize_container_metadata(
+                "replace",
+                &[
+                    MediaDesiredTargetMetadataEntry {
+                        key: "title".to_string(),
+                        value: "one".to_string(),
+                    },
+                    MediaDesiredTargetMetadataEntry {
+                        key: " Title ".to_string(),
+                        value: "two".to_string(),
+                    },
+                ],
+            )
+            .is_err()
+        );
         Ok(())
     }
 
@@ -2223,6 +2299,7 @@ mod tests {
                 display_name: "Target".to_string(),
                 container_format: "matroska".to_string(),
                 container_metadata_policy: None,
+                container_metadata: Vec::new(),
                 container_chapter_policy: None,
                 streams: Vec::new(),
             }),
@@ -2238,6 +2315,7 @@ mod tests {
                 display_name: "Target".to_string(),
                 container_format: "matroska".to_string(),
                 container_metadata_policy: Some("rewrite".to_string()),
+                container_metadata: Vec::new(),
                 container_chapter_policy: None,
                 streams: vec![valid_stream.clone()],
             }),
@@ -2253,6 +2331,7 @@ mod tests {
                 display_name: " Target ".to_string(),
                 container_format: " Matroska ".to_string(),
                 container_metadata_policy: Some(" Preserve ".to_string()),
+                container_metadata: Vec::new(),
                 container_chapter_policy: Some(" Preserve ".to_string()),
                 streams: vec![valid_stream.clone()],
             }),
@@ -2511,6 +2590,7 @@ mod tests {
             display_name: "Living room".to_string(),
             container_format: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![params],
         });

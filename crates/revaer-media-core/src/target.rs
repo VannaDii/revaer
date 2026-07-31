@@ -1,10 +1,12 @@
 //! Desired-target compilation into a concrete output graph.
 
 use crate::classify::{SemanticRole, infer_role};
-use crate::model::{DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind};
+use crate::model::{
+    ContainerMetadataEntry, DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind,
+};
 use crate::normalize::{
     audio_channel_count_for_layout, normalize_audio_channel_layout,
-    normalize_container_chapter_policy, normalize_container_format,
+    normalize_container_chapter_policy, normalize_container_format, normalize_container_metadata,
     normalize_container_metadata_policy, normalize_subtitle_codec,
 };
 use serde::{Deserialize, Deserializer};
@@ -16,6 +18,10 @@ use thiserror::Error;
 pub const MAX_DESIRED_TARGET_YAML_BYTES: usize = 1_048_576;
 /// Maximum desired streams accepted in one target document.
 pub const MAX_DESIRED_TARGET_STREAMS: usize = 1_024;
+const MAX_CONTAINER_METADATA_ENTRIES: usize = 64;
+const MAX_CONTAINER_METADATA_KEY_BYTES: usize = 128;
+const MAX_CONTAINER_METADATA_VALUE_BYTES: usize = 4_096;
+const MAX_CONTAINER_METADATA_TOTAL_BYTES: usize = 65_536;
 
 /// Validated normalized ISO-639-3 language token used by desired targets.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +231,8 @@ pub struct DesiredTarget {
     pub container: String,
     /// Desired output container metadata policy.
     pub container_metadata_policy: String,
+    /// Desired exact container metadata rows for the `replace` metadata policy.
+    pub container_metadata: Vec<ContainerMetadataEntry>,
     /// Desired output container chapter policy.
     pub container_chapter_policy: String,
     /// Desired streams in final mux order.
@@ -254,6 +262,33 @@ pub enum TargetCompileError {
     /// The target requested an unsupported container metadata policy.
     #[error("unsupported desired target container metadata policy: {0}")]
     UnsupportedContainerMetadataPolicy(String),
+    /// A desired container metadata key is blank.
+    #[error("desired target container metadata key is empty")]
+    EmptyContainerMetadataKey,
+    /// A desired container metadata value is blank.
+    #[error("desired target container metadata value is empty: {0}")]
+    EmptyContainerMetadataValue(String),
+    /// A desired container metadata key occurs more than once.
+    #[error("duplicate desired target container metadata key: {0}")]
+    DuplicateContainerMetadataKey(String),
+    /// Desired container metadata rows are incompatible with the selected metadata policy.
+    #[error("desired target container metadata rows require replace policy")]
+    ContainerMetadataRequiresReplacePolicy,
+    /// Replace policy requires at least one desired container metadata row.
+    #[error("desired target container metadata replace policy requires metadata rows")]
+    ReplaceContainerMetadataRequiresRows,
+    /// A desired target carries too many container metadata rows.
+    #[error("desired target container metadata row count exceeds the accepted limit")]
+    TooManyContainerMetadataEntries,
+    /// A desired container metadata key exceeds the UTF-8 byte limit.
+    #[error("desired target container metadata key exceeds the accepted byte limit")]
+    ContainerMetadataKeyTooLong,
+    /// A desired container metadata value exceeds the UTF-8 byte limit.
+    #[error("desired target container metadata value exceeds the accepted byte limit: {0}")]
+    ContainerMetadataValueTooLong(String),
+    /// Aggregate desired container metadata exceeds the UTF-8 byte limit.
+    #[error("desired target container metadata exceeds the accepted aggregate byte limit")]
+    ContainerMetadataBytesExceeded,
     /// The target requested an unsupported container chapter policy.
     #[error("unsupported desired target container chapter policy: {0}")]
     UnsupportedContainerChapterPolicy(String),
@@ -501,6 +536,7 @@ pub fn compile_desired_target(
         output_path: output_path.to_string(),
         container_format: Some(normalize_container_format(&target.container)),
         container_metadata_policy: Some(normalized_container_metadata_policy(target)?),
+        container_metadata: desired_container_metadata(source, target)?,
         container_chapters: desired_container_chapters(source, &container_chapter_policy),
         container_chapter_policy: Some(container_chapter_policy),
         stream_bindings: desired_bindings,
@@ -674,6 +710,7 @@ pub fn compile_desired_target_with_sidecars_at(
             output_path: output_path.to_string(),
             container_format: Some(normalize_container_format(&target.container)),
             container_metadata_policy: Some(normalized_container_metadata_policy(target)?),
+            container_metadata: desired_container_metadata(source, target)?,
             container_chapters: desired_container_chapters(source, &container_chapter_policy),
             container_chapter_policy: Some(container_chapter_policy),
             stream_bindings: state.desired_bindings,
@@ -1074,7 +1111,9 @@ fn validate_target(target: &DesiredTarget) -> Result<(), TargetCompileError> {
     if target.container.trim().is_empty() {
         return Err(TargetCompileError::EmptyContainer);
     }
-    normalized_container_metadata_policy(target)?;
+    let metadata_policy = normalized_container_metadata_policy(target)?;
+    validate_container_metadata_policy(&metadata_policy, &target.container_metadata)?;
+    let _metadata = normalized_container_metadata(target)?;
     normalized_container_chapter_policy(target)?;
 
     let mut keys = BTreeSet::new();
@@ -1091,6 +1130,20 @@ fn validate_target(target: &DesiredTarget) -> Result<(), TargetCompileError> {
     Ok(())
 }
 
+fn validate_container_metadata_policy(
+    policy: &str,
+    entries: &[ContainerMetadataEntry],
+) -> Result<(), TargetCompileError> {
+    match policy {
+        "replace" if entries.is_empty() => {
+            Err(TargetCompileError::ReplaceContainerMetadataRequiresRows)
+        }
+        "replace" => Ok(()),
+        _ if entries.is_empty() => Ok(()),
+        _ => Err(TargetCompileError::ContainerMetadataRequiresReplacePolicy),
+    }
+}
+
 fn normalized_container_metadata_policy(
     target: &DesiredTarget,
 ) -> Result<String, TargetCompileError> {
@@ -1101,6 +1154,58 @@ fn normalized_container_metadata_policy(
                 target.container_metadata_policy.clone(),
             )
         })
+}
+
+fn normalized_container_metadata(
+    target: &DesiredTarget,
+) -> Result<Vec<ContainerMetadataEntry>, TargetCompileError> {
+    if target.container_metadata.len() > MAX_CONTAINER_METADATA_ENTRIES {
+        return Err(TargetCompileError::TooManyContainerMetadataEntries);
+    }
+    let mut seen = BTreeSet::new();
+    let mut entries = Vec::with_capacity(target.container_metadata.len());
+    let mut total_bytes = 0usize;
+    for entry in &target.container_metadata {
+        let key = entry.key.trim().to_ascii_lowercase();
+        if key.is_empty() {
+            return Err(TargetCompileError::EmptyContainerMetadataKey);
+        }
+        if key.len() > MAX_CONTAINER_METADATA_KEY_BYTES {
+            return Err(TargetCompileError::ContainerMetadataKeyTooLong);
+        }
+        if !seen.insert(key.clone()) {
+            return Err(TargetCompileError::DuplicateContainerMetadataKey(key));
+        }
+        let value = entry.value.trim().to_string();
+        if value.is_empty() {
+            return Err(TargetCompileError::EmptyContainerMetadataValue(key));
+        }
+        if value.len() > MAX_CONTAINER_METADATA_VALUE_BYTES {
+            return Err(TargetCompileError::ContainerMetadataValueTooLong(key));
+        }
+        total_bytes = total_bytes
+            .checked_add(key.len())
+            .and_then(|bytes| bytes.checked_add(value.len()))
+            .filter(|bytes| *bytes <= MAX_CONTAINER_METADATA_TOTAL_BYTES)
+            .ok_or(TargetCompileError::ContainerMetadataBytesExceeded)?;
+        entries.push(ContainerMetadataEntry { key, value });
+    }
+    entries.sort();
+    Ok(entries)
+}
+
+fn desired_container_metadata(
+    source: &MediaGraph,
+    target: &DesiredTarget,
+) -> Result<Vec<ContainerMetadataEntry>, TargetCompileError> {
+    match normalized_container_metadata_policy(target)?.as_str() {
+        "preserve" => Ok(normalize_container_metadata(&source.container_metadata)),
+        "strip" => Ok(Vec::new()),
+        "replace" => normalized_container_metadata(target),
+        policy => Err(TargetCompileError::UnsupportedContainerMetadataPolicy(
+            policy.to_string(),
+        )),
+    }
 }
 
 fn normalized_container_chapter_policy(
@@ -1598,14 +1703,17 @@ fn normalized_dispositions(dispositions: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DesiredTarget, ImageSubtitleAction, LanguageToken, SidecarOutputSource,
+        DesiredTarget, ImageSubtitleAction, LanguageToken, MAX_CONTAINER_METADATA_ENTRIES,
+        MAX_CONTAINER_METADATA_KEY_BYTES, MAX_CONTAINER_METADATA_VALUE_BYTES, SidecarOutputSource,
         SidecarSubtitleInput, SubtitlePlacement, TargetCompileError, TargetStream,
         UnmatchedStreamPolicy, compile_desired_target, compile_desired_target_with_sidecars,
         compile_desired_target_with_sidecars_at, is_single_path_component,
         parse_desired_target_yaml,
     };
     use crate::classify::SemanticRole;
-    use crate::model::{ContainerChapterEntry, MediaGraph, MediaStream, StreamKind};
+    use crate::model::{
+        ContainerChapterEntry, ContainerMetadataEntry, MediaGraph, MediaStream, StreamKind,
+    };
     use std::path::Path;
 
     fn stream(
@@ -1671,6 +1779,7 @@ mod tests {
     fn multistream_source() -> MediaGraph {
         MediaGraph {
             source_path: "/input/episode.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -1744,6 +1853,7 @@ mod tests {
             version: 4,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![
                 target_stream("video-cover", StreamKind::Video, None, None, "png"),
@@ -1829,6 +1939,75 @@ mod tests {
         )?;
 
         assert_eq!(desired.container_metadata_policy.as_deref(), Some("strip"));
+        assert!(desired.container_metadata.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn compiles_preserved_container_metadata_values() -> Result<(), TargetCompileError> {
+        let mut source = multistream_source();
+        source.container_metadata = vec![ContainerMetadataEntry {
+            key: " TITLE ".to_string(),
+            value: " Episode One ".to_string(),
+        }];
+
+        let desired = compile_desired_target(
+            &source,
+            "/output/episode.mkv",
+            &ordered_multistream_target(),
+            UnmatchedStreamPolicy::Remove,
+        )?;
+
+        assert_eq!(
+            desired.container_metadata,
+            vec![ContainerMetadataEntry {
+                key: "title".to_string(),
+                value: "Episode One".to_string(),
+            }]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn compiles_replace_container_metadata_policy() -> Result<(), TargetCompileError> {
+        let source = multistream_source();
+        let mut target = ordered_multistream_target();
+        target.container_metadata_policy = " Replace ".to_string();
+        target.container_metadata = vec![
+            ContainerMetadataEntry {
+                key: " TITLE ".to_string(),
+                value: " Episode One ".to_string(),
+            },
+            ContainerMetadataEntry {
+                key: "album".to_string(),
+                value: "Season One".to_string(),
+            },
+        ];
+
+        let desired = compile_desired_target(
+            &source,
+            "/output/episode.mkv",
+            &target,
+            UnmatchedStreamPolicy::Remove,
+        )?;
+
+        assert_eq!(
+            desired.container_metadata_policy.as_deref(),
+            Some("replace")
+        );
+        assert_eq!(
+            desired.container_metadata,
+            vec![
+                ContainerMetadataEntry {
+                    key: "album".to_string(),
+                    value: "Season One".to_string(),
+                },
+                ContainerMetadataEntry {
+                    key: "title".to_string(),
+                    value: "Episode One".to_string(),
+                },
+            ]
+        );
         Ok(())
     }
 
@@ -1900,6 +2079,113 @@ mod tests {
     }
 
     #[test]
+    fn target_validation_rejects_inconsistent_container_metadata_rows() {
+        let source = multistream_source();
+        let mut preserve_with_rows = ordered_multistream_target();
+        preserve_with_rows.container_metadata = vec![ContainerMetadataEntry {
+            key: "title".to_string(),
+            value: "Episode One".to_string(),
+        }];
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &preserve_with_rows,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::ContainerMetadataRequiresReplacePolicy)
+        );
+
+        let mut replace_without_rows = ordered_multistream_target();
+        replace_without_rows.container_metadata_policy = "replace".to_string();
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &replace_without_rows,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::ReplaceContainerMetadataRequiresRows)
+        );
+
+        let mut duplicate_rows = ordered_multistream_target();
+        duplicate_rows.container_metadata_policy = "replace".to_string();
+        duplicate_rows.container_metadata = vec![
+            ContainerMetadataEntry {
+                key: "title".to_string(),
+                value: "Episode One".to_string(),
+            },
+            ContainerMetadataEntry {
+                key: " TITLE ".to_string(),
+                value: "Duplicate".to_string(),
+            },
+        ];
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &duplicate_rows,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::DuplicateContainerMetadataKey(
+                "title".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn target_validation_bounds_container_metadata_resources() {
+        let source = multistream_source();
+        let mut target = ordered_multistream_target();
+        target.container_metadata_policy = "replace".to_string();
+        target.container_metadata = (0..=MAX_CONTAINER_METADATA_ENTRIES)
+            .map(|index| ContainerMetadataEntry {
+                key: format!("key-{index}"),
+                value: "value".to_string(),
+            })
+            .collect();
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::TooManyContainerMetadataEntries)
+        );
+
+        target.container_metadata = vec![ContainerMetadataEntry {
+            key: "é".repeat(MAX_CONTAINER_METADATA_KEY_BYTES / 2 + 1),
+            value: "value".to_string(),
+        }];
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::ContainerMetadataKeyTooLong)
+        );
+
+        target.container_metadata = (0..17)
+            .map(|index| ContainerMetadataEntry {
+                key: format!("key-{index}"),
+                value: "x".repeat(MAX_CONTAINER_METADATA_VALUE_BYTES),
+            })
+            .collect();
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::ContainerMetadataBytesExceeded)
+        );
+    }
+
+    #[test]
     fn target_validation_rejects_unknown_container_chapter_policy() {
         let source = multistream_source();
         let mut target = ordered_multistream_target();
@@ -1923,6 +2209,7 @@ mod tests {
     -> Result<(), TargetCompileError> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -1951,6 +2238,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![optional_audio],
         };
@@ -1973,6 +2261,7 @@ mod tests {
     fn missing_required_row_and_rejected_unmatched_stream_are_errors() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![stream(2, StreamKind::Video, "h264", None, None, &[])],
@@ -1982,6 +2271,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "audio-main",
@@ -2022,6 +2312,7 @@ mod tests {
     fn target_validation_rejects_duplicate_keys_and_cross_kind_shapes() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: Vec::new(),
@@ -2033,6 +2324,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![first, duplicate],
         };
@@ -2128,6 +2420,7 @@ mod tests {
     fn target_validation_prioritizes_invalid_audio_policy() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: Vec::new(),
@@ -2140,6 +2433,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![invalid_audio_policy],
         };
@@ -2160,6 +2454,7 @@ mod tests {
     fn target_validation_rejects_zero_audio_constraints() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: Vec::new(),
@@ -2169,6 +2464,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
         };
@@ -2223,6 +2519,7 @@ mod tests {
     fn target_validation_rejects_unsupported_audio_channel_layouts() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: Vec::new(),
@@ -2232,6 +2529,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
         };
@@ -2277,6 +2575,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "audio-main",
@@ -2304,6 +2603,7 @@ mod tests {
     fn target_validation_rejects_zero_video_bitrate() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: Vec::new(),
@@ -2315,6 +2615,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![invalid_video],
         };
@@ -2337,6 +2638,7 @@ mod tests {
     fn target_validation_rejects_unknown_video_color_values() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: Vec::new(),
@@ -2348,6 +2650,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![unsupported_color],
         };
@@ -2374,6 +2677,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![supported_sdr_color],
         };
@@ -2394,6 +2698,7 @@ mod tests {
     fn target_validation_rejects_unknown_video_level() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: Vec::new(),
@@ -2405,6 +2710,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![unsupported_level],
         };
@@ -2430,6 +2736,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![supported_av1_level],
         };
@@ -2454,6 +2761,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![unsupported_av1_level],
         };
@@ -2477,6 +2785,7 @@ mod tests {
     fn target_validation_rejects_explicit_data_stream_rows() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: Vec::new(),
@@ -2486,6 +2795,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "opaque-data",
@@ -2512,6 +2822,7 @@ mod tests {
     fn embeds_existing_sidecar_and_schedules_source_removal() -> Result<(), TargetCompileError> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: vec![stream(2, StreamKind::Video, "h264", None, None, &[])],
@@ -2521,6 +2832,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![
                 target_stream("video", StreamKind::Video, None, None, "h264"),
@@ -2564,6 +2876,7 @@ mod tests {
     -> Result<(), TargetCompileError> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: vec![stream(2, StreamKind::Video, "h264", None, None, &[])],
@@ -2573,6 +2886,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "video",
@@ -2635,6 +2949,7 @@ mod tests {
     -> Result<(), TargetCompileError> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: vec![stream(
@@ -2659,6 +2974,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -2689,6 +3005,7 @@ mod tests {
     -> Result<(), TargetCompileError> {
         let source = MediaGraph {
             source_path: "/library/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: vec![stream(
@@ -2713,6 +3030,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -2741,6 +3059,7 @@ mod tests {
     fn sidecar_compilation_rejects_unknown_output_codec() {
         let source = MediaGraph {
             source_path: "/library/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![stream(
@@ -2765,6 +3084,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -2787,6 +3107,7 @@ mod tests {
     fn image_subtitles_never_require_ocr() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![stream(
@@ -2805,6 +3126,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -2827,6 +3149,7 @@ mod tests {
     fn graph_only_compiler_rejects_sidecar_artifact_placement() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![stream(
@@ -2846,6 +3169,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -2868,6 +3192,7 @@ mod tests {
     -> Result<(), TargetCompileError> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: vec![stream(
@@ -2904,6 +3229,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![stereo, surround],
         };
@@ -2975,6 +3301,7 @@ mod tests {
     fn compiler_rejects_forged_language_before_sidecar_derivation() {
         let source = MediaGraph {
             source_path: "/library/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: vec![stream(
@@ -3000,6 +3327,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -3025,6 +3353,7 @@ mod tests {
         )?;
         let source = MediaGraph {
             source_path: "/library/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: vec![stream(

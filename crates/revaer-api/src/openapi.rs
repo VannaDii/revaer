@@ -1073,6 +1073,12 @@ fn media_configuration_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
+    let mut schemas = media_desired_target_stream_schemas();
+    schemas.extend(media_desired_target_profile_schemas());
+    schemas
+}
+
+fn media_desired_target_stream_schemas() -> Vec<(&'static str, Value)> {
     vec![
         (
             "MediaDesiredTargetStream",
@@ -1106,6 +1112,18 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
             ),
         ),
         (
+            "MediaDesiredTargetMetadataEntry",
+            object_schema(
+                &["key", "value"],
+                [("key", string_schema()), ("value", string_schema())],
+            ),
+        ),
+    ]
+}
+
+fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
             "MediaDesiredTargetCreateRequest",
             object_schema(
                 &[
@@ -1121,6 +1139,10 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
                     ("container_metadata_policy", string_schema()),
+                    (
+                        "container_metadata",
+                        array_ref_schema("MediaDesiredTargetMetadataEntry"),
+                    ),
                     ("container_chapter_policy", string_schema()),
                     (
                         "streams",
@@ -1149,6 +1171,10 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
                     ("container_metadata_policy", string_schema()),
+                    (
+                        "container_metadata",
+                        array_ref_schema("MediaDesiredTargetMetadataEntry"),
+                    ),
                     ("container_chapter_policy", string_schema()),
                     ("streams", array_ref_schema("MediaDesiredTargetStream")),
                 ],
@@ -2272,6 +2298,7 @@ mod tests {
             "MediaCompatibilityTargetListResponse",
             "MediaCompatibilityTargetUpsertRequest",
             "MediaDesiredTargetStream",
+            "MediaDesiredTargetMetadataEntry",
             "MediaDesiredTargetCreateRequest",
             "MediaDesiredTargetResponse",
             "MediaDesiredTargetListResponse",

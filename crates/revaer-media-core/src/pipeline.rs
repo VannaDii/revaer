@@ -118,6 +118,7 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let source = MediaGraph {
             source_path: "/library/movie.mp4".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["mov".to_string()],
             streams: vec![MediaStream {
@@ -136,6 +137,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![TargetStream {
                 stream_key: "main-audio".to_string(),
@@ -194,6 +196,7 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let source = MediaGraph {
             source_path: "/library/audio.mp4".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["mov".to_string()],
             streams: vec![MediaStream {
@@ -212,6 +215,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![TargetStream {
                 stream_key: "main-audio".to_string(),

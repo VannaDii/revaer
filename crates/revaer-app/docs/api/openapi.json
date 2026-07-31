@@ -3236,6 +3236,12 @@
           "container_format": {
             "type": "string"
           },
+          "container_metadata": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetMetadataEntry"
+            },
+            "type": "array"
+          },
           "container_metadata_policy": {
             "type": "string"
           },
@@ -3286,6 +3292,12 @@
           },
           "container_format": {
             "type": "string"
+          },
+          "container_metadata": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetMetadataEntry"
+            },
+            "type": "array"
           },
           "container_metadata_policy": {
             "type": "string"
@@ -4570,6 +4582,21 @@
           "output_root",
           "dry_run_only",
           "retention_days"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetMetadataEntry": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
         ],
         "type": "object"
       }

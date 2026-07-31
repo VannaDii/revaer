@@ -703,6 +703,7 @@ mod tests {
         MediaInspection {
             graph: MediaGraph {
                 source_path: path.to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: vec![MediaStream {

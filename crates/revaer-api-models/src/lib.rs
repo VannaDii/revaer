@@ -627,6 +627,15 @@ pub struct MediaDesiredTargetStream {
     pub image_subtitle_action: Option<String>,
 }
 
+/// Desired exact container metadata entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetMetadataEntry {
+    /// Container metadata key.
+    pub key: String,
+    /// Container metadata value.
+    pub value: String,
+}
+
 /// Request payload for creating an immutable desired-target version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaDesiredTargetCreateRequest {
@@ -638,9 +647,12 @@ pub struct MediaDesiredTargetCreateRequest {
     pub display_name: String,
     /// Desired output container format.
     pub container_format: String,
-    /// Desired container metadata policy. Implemented values are `preserve` and `strip`.
+    /// Desired container metadata policy. Implemented values are `preserve`, `strip`, and `replace`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_metadata_policy: Option<String>,
+    /// Exact desired container metadata rows when `container_metadata_policy` is `replace`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_metadata: Vec<MediaDesiredTargetMetadataEntry>,
     /// Desired container chapter policy. Implemented values are `preserve` and `strip`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_chapter_policy: Option<String>,
@@ -663,6 +675,9 @@ pub struct MediaDesiredTargetResponse {
     pub container_format: String,
     /// Desired container metadata policy.
     pub container_metadata_policy: String,
+    /// Exact desired container metadata rows when the policy is `replace`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_metadata: Vec<MediaDesiredTargetMetadataEntry>,
     /// Desired container chapter policy.
     pub container_chapter_policy: String,
     /// Complete desired stream graph in final mux order.

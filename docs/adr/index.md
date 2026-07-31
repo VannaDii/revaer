@@ -381,7 +381,7 @@
 -   [370](370-media-data-stream-passthrough.md) – Media data stream passthrough
 -   [371](371-media-container-metadata-strip-policy.md) – Media container metadata strip policy
 -   [372](372-media-container-chapter-strip-policy.md) – Media container chapter strip policy
--   [373](373-pr-123-chapter-idempotence-and-supply-chain.md) – PR 123 chapter idempotence and supply chain remediation
+-   [373](373-media-container-metadata-values.md) – Media container metadata values
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
@@ -390,6 +390,7 @@
 -   [410](410-libtorrent-21-compatibility.md) – Libtorrent 2.1 compatibility foundation
 -   [411](411-untracked-generated-api-schema.md) – Untracked generated API schema
 -   [412](412-core-planner-review-repair.md) – Core planner review repair
+-   [413](413-pr-123-chapter-idempotence-and-supply-chain.md) – PR 123 chapter idempotence and supply chain remediation
 -   [415](415-pr-workflow-dependency-validation.md) – PR workflow dependency validation
 -   [417](417-cargo-lock-dependency-integrity.md) – Cargo lock dependency integrity
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence

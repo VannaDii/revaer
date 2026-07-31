@@ -42,6 +42,14 @@ pub(super) fn parse_source(
     };
     let mut graph = normalize_probe_graph(graph_input)?;
     graph.container_formats.clone_from(&container.formats);
+    graph.container_metadata = container
+        .metadata
+        .iter()
+        .map(|entry| ContainerMetadataEntry {
+            key: entry.key.clone(),
+            value: entry.value.clone(),
+        })
+        .collect();
     technical_streams.sort_by_key(|stream| stream.stream_id);
     let mut chapters = parsed
         .chapters
@@ -136,6 +144,7 @@ pub fn normalize_probe_graph(input: ProbeGraph) -> Result<MediaGraph, InspectErr
     reject_duplicate_streams(&streams)?;
     Ok(normalize_graph(&MediaGraph {
         source_path: input.source_path,
+        container_metadata: Vec::new(),
         container_chapters: Vec::new(),
         container_formats: Vec::new(),
         streams,

@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-30
 - Context:
-  - The desired-target container metadata policy accepted only `preserve` when this ADR was written. ADR 371 later adds a separate `strip` policy without weakening exact `preserve` semantics.
+  - The desired-target container metadata policy accepted only `preserve` when this ADR was written. ADR 371 later adds a separate `strip` policy and ADR 373 later adds exact `replace` values without weakening exact `preserve` semantics.
   - Runtime verification already rejected outputs that dropped source container metadata, but it treated source metadata as a required subset instead of the complete expected set.
   - A transcoder or muxer that adds container metadata after conversion changes the preserved container facts even when all source entries remain present.
 - Decision:
