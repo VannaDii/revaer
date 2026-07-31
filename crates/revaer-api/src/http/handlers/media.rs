@@ -117,6 +117,8 @@ const AUDIO_CHANNELS_INVALID: &str = "audio_channels must be greater than zero";
 const AUDIO_CHANNEL_LAYOUT_INVALID: &str = "audio_channel_layout must not be empty";
 const SUBTITLE_POLICY_INVALID: &str = "subtitle_policy must be one of: selected, all, none";
 const VIDEO_INTENT_INVALID: &str = "video_intent must be one of: general, anime, archival";
+const UNMATCHED_ACTION_INVALID: &str =
+    "unmatched stream action must be one of: remove, preserve, fail";
 const VERIFICATION_STRICTNESS_REQUIRED: &str = "verification_strictness is required";
 const VERIFICATION_STRICTNESS_INVALID: &str =
     "verification_strictness must be one of: strict, balanced, fast";
@@ -558,6 +560,11 @@ pub(crate) async fn list_media_policies(
             version: policy.version,
             display_name: policy.display_name,
             video_intent: policy.video_intent,
+            unmatched_video_action: policy.unmatched_video_action,
+            unmatched_audio_action: policy.unmatched_audio_action,
+            unmatched_subtitle_action: policy.unmatched_subtitle_action,
+            unmatched_attachment_action: policy.unmatched_attachment_action,
+            unmatched_data_action: policy.unmatched_data_action,
             verification_strictness: policy.verification_strictness,
             verification_duration_tolerance_millis: policy.verification_duration_tolerance_millis,
             verification_mux_validation: policy.verification_mux_validation,
@@ -579,6 +586,16 @@ pub(crate) async fn upsert_media_policy(
     let video_intent_input =
         normalize_required_str_field(&request.video_intent, VIDEO_INTENT_REQUIRED)?;
     let video_intent = normalize_video_intent(video_intent_input)?;
+    let unmatched_video_action =
+        normalize_unmatched_action(request.unmatched_video_action.as_deref(), "fail")?;
+    let unmatched_audio_action =
+        normalize_unmatched_action(request.unmatched_audio_action.as_deref(), "preserve")?;
+    let unmatched_subtitle_action =
+        normalize_unmatched_action(request.unmatched_subtitle_action.as_deref(), "preserve")?;
+    let unmatched_attachment_action =
+        normalize_unmatched_action(request.unmatched_attachment_action.as_deref(), "preserve")?;
+    let unmatched_data_action =
+        normalize_unmatched_action(request.unmatched_data_action.as_deref(), "remove")?;
     let verification_strictness_input = normalize_required_str_field(
         &request.verification_strictness,
         VERIFICATION_STRICTNESS_REQUIRED,
@@ -595,6 +612,11 @@ pub(crate) async fn upsert_media_policy(
             version: request.version,
             display_name,
             video_intent: &video_intent,
+            unmatched_video_action: &unmatched_video_action,
+            unmatched_audio_action: &unmatched_audio_action,
+            unmatched_subtitle_action: &unmatched_subtitle_action,
+            unmatched_attachment_action: &unmatched_attachment_action,
+            unmatched_data_action: &unmatched_data_action,
             verification_strictness: &verification_strictness,
             verification_duration_tolerance_millis: request.verification_duration_tolerance_millis,
             verification_mux_validation: request.verification_mux_validation,
@@ -614,6 +636,11 @@ pub(crate) async fn upsert_media_policy(
             version: policy.version,
             display_name: policy.display_name,
             video_intent: policy.video_intent,
+            unmatched_video_action: policy.unmatched_video_action,
+            unmatched_audio_action: policy.unmatched_audio_action,
+            unmatched_subtitle_action: policy.unmatched_subtitle_action,
+            unmatched_attachment_action: policy.unmatched_attachment_action,
+            unmatched_data_action: policy.unmatched_data_action,
             verification_strictness: policy.verification_strictness,
             verification_duration_tolerance_millis: policy.verification_duration_tolerance_millis,
             verification_mux_validation: policy.verification_mux_validation,
@@ -1981,6 +2008,17 @@ fn normalize_video_intent(value: &str) -> Result<String, ApiError> {
     }
 }
 
+fn normalize_unmatched_action(value: Option<&str>, default: &str) -> Result<String, ApiError> {
+    let normalized = value.map_or_else(
+        || default.to_string(),
+        |item| item.trim().to_ascii_lowercase(),
+    );
+    match normalized.as_str() {
+        "remove" | "preserve" | "fail" => Ok(normalized),
+        _ => Err(ApiError::bad_request(UNMATCHED_ACTION_INVALID)),
+    }
+}
+
 fn normalize_verification_strictness(value: &str) -> Result<String, ApiError> {
     let normalized = value.trim().to_ascii_lowercase();
     match normalized.as_str() {
@@ -2403,18 +2441,7 @@ mod tests {
             StatusCode::BAD_REQUEST
         );
 
-        let policy_request = MediaPolicyUpsertRequest {
-            policy_key: "living-room".to_string(),
-            version: 1,
-            display_name: "Living room".to_string(),
-            video_intent: "lossless".to_string(),
-            verification_strictness: "strict".to_string(),
-            verification_duration_tolerance_millis: 100,
-            verification_mux_validation: true.into(),
-            verification_decode_all_streams: true.into(),
-            verification_keyframe_seek: true.into(),
-            verification_playback_probe: true.into(),
-        };
+        let policy_request = strict_policy_request("living-room", "Living room", "lossless", true);
         let policy_error = upsert_media_policy(State(state.clone()), Json(policy_request))
             .await
             .expect_err("unknown video intent should fail validation");
@@ -2423,18 +2450,8 @@ mod tests {
             StatusCode::BAD_REQUEST
         );
 
-        let relaxed_strict_policy = MediaPolicyUpsertRequest {
-            policy_key: "relaxed-strict".to_string(),
-            version: 1,
-            display_name: "Relaxed strict".to_string(),
-            video_intent: "general".to_string(),
-            verification_strictness: "strict".to_string(),
-            verification_duration_tolerance_millis: 100,
-            verification_mux_validation: true.into(),
-            verification_decode_all_streams: true.into(),
-            verification_keyframe_seek: true.into(),
-            verification_playback_probe: false.into(),
-        };
+        let relaxed_strict_policy =
+            strict_policy_request("relaxed-strict", "Relaxed strict", "general", false);
         let strict_error = upsert_media_policy(State(state.clone()), Json(relaxed_strict_policy))
             .await
             .expect_err("strict verification must require every strict check");
@@ -2459,6 +2476,31 @@ mod tests {
             StatusCode::BAD_REQUEST
         );
         Ok(())
+    }
+
+    fn strict_policy_request(
+        policy_key: &str,
+        display_name: &str,
+        video_intent: &str,
+        verification_playback_probe: bool,
+    ) -> MediaPolicyUpsertRequest {
+        MediaPolicyUpsertRequest {
+            policy_key: policy_key.to_string(),
+            version: 1,
+            display_name: display_name.to_string(),
+            video_intent: video_intent.to_string(),
+            unmatched_video_action: None,
+            unmatched_audio_action: None,
+            unmatched_subtitle_action: None,
+            unmatched_attachment_action: None,
+            unmatched_data_action: None,
+            verification_strictness: "strict".to_string(),
+            verification_duration_tolerance_millis: 100,
+            verification_mux_validation: true.into(),
+            verification_decode_all_streams: true.into(),
+            verification_keyframe_seek: true.into(),
+            verification_playback_probe: verification_playback_probe.into(),
+        }
     }
 
     #[tokio::test]
@@ -2842,6 +2884,11 @@ mod tests {
             version: 1,
             display_name: "  Living room  ".to_string(),
             video_intent: " General ".to_string(),
+            unmatched_video_action: None,
+            unmatched_audio_action: None,
+            unmatched_subtitle_action: None,
+            unmatched_attachment_action: None,
+            unmatched_data_action: None,
             verification_strictness: " Strict ".to_string(),
             verification_duration_tolerance_millis: 100,
             verification_mux_validation: true.into(),

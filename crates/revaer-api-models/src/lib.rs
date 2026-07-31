@@ -761,6 +761,16 @@ pub struct MediaPolicyResponse {
     pub display_name: String,
     /// Video transcode intent used by the worker.
     pub video_intent: String,
+    /// Action for unmatched source video streams.
+    pub unmatched_video_action: String,
+    /// Action for unmatched source audio streams.
+    pub unmatched_audio_action: String,
+    /// Action for unmatched source subtitle streams.
+    pub unmatched_subtitle_action: String,
+    /// Action for unmatched source attachment streams.
+    pub unmatched_attachment_action: String,
+    /// Action for unmatched source opaque data streams.
+    pub unmatched_data_action: String,
     /// Verification strictness (`strict`, `balanced`, or `fast`).
     pub verification_strictness: String,
     /// Maximum source/candidate duration delta in milliseconds.
@@ -793,6 +803,21 @@ pub struct MediaPolicyUpsertRequest {
     pub display_name: String,
     /// Worker video transcode intent.
     pub video_intent: String,
+    /// Action for unmatched source video streams.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmatched_video_action: Option<String>,
+    /// Action for unmatched source audio streams.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmatched_audio_action: Option<String>,
+    /// Action for unmatched source subtitle streams.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmatched_subtitle_action: Option<String>,
+    /// Action for unmatched source attachment streams.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmatched_attachment_action: Option<String>,
+    /// Action for unmatched source opaque data streams.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmatched_data_action: Option<String>,
     /// Verification strictness (`strict`, `balanced`, or `fast`).
     pub verification_strictness: String,
     /// Maximum source/candidate duration delta in milliseconds.
