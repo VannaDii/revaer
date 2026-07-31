@@ -139,6 +139,7 @@ mod tests {
             container_metadata_policy: "preserve".to_string(),
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
             streams: vec![TargetStream {
                 stream_key: "main-audio".to_string(),
                 kind: StreamKind::Audio,
@@ -217,6 +218,7 @@ mod tests {
             container_metadata_policy: "preserve".to_string(),
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
             streams: vec![TargetStream {
                 stream_key: "main-audio".to_string(),
                 kind: StreamKind::Audio,

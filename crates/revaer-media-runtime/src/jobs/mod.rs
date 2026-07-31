@@ -639,6 +639,10 @@ const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata 
             code: "preflight_build_unsupported_container_chapter_policy",
             detail: "required container chapter policy is unavailable",
         },
+        BuildArgsError::InvalidContainerChapterValues(_) => PreflightErrorMetadata {
+            code: "preflight_build_invalid_container_chapter_values",
+            detail: "desired container chapter values do not match the selected policy",
+        },
         BuildArgsError::UnsupportedMetadataRewrite => PreflightErrorMetadata {
             code: "preflight_build_unsupported_metadata_rewrite",
             detail: "metadata rewrite requires a verified desired metadata contract",
@@ -1644,12 +1648,12 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -1705,11 +1709,11 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
+            container_chapters: Vec::new(),
             stream_bindings: Vec::new(),
             streams: vec![stream.clone()],
         };
@@ -1774,12 +1778,12 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -1834,12 +1838,12 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -1912,12 +1916,12 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: source.streams[..2].to_vec(),
         };
         let planned_result = plan_job(&JobPreflightRequest {
@@ -1972,12 +1976,12 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 3,
                 kind: StreamKind::Attachment,
@@ -2019,12 +2023,12 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -2090,12 +2094,12 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -2137,12 +2141,12 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -2311,12 +2315,12 @@ mod tests {
         };
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -2352,12 +2356,12 @@ mod tests {
     fn plan_job_from_inspect_uses_inspected_graph() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -2401,12 +2405,12 @@ mod tests {
     fn plan_job_from_inspect_propagates_inspect_error() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -2477,12 +2481,12 @@ mod tests {
     fn build_preflight_report_returns_summary_and_steps() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -2560,12 +2564,12 @@ mod tests {
     fn build_preflight_report_for_compliant_graph_uses_noop_without_replacement_steps() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -2638,12 +2642,12 @@ mod tests {
     fn build_preflight_report_rejects_invalid_capabilities() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -2927,12 +2931,12 @@ mod tests {
     fn evaluate_preflight_returns_structured_failed_outcome() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3161,12 +3165,12 @@ mod tests {
     fn build_preflight_input_resolves_backup_path_from_policy() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
@@ -3205,12 +3209,12 @@ mod tests {
     fn owned_preflight_input_as_borrowed_exposes_managed_paths() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
@@ -3273,12 +3277,12 @@ mod tests {
     fn build_preflight_report_from_template_applies_video_policy_to_steps() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -3357,12 +3361,12 @@ mod tests {
     fn evaluate_preflight_from_template_builds_and_evaluates_ready_path() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -3440,12 +3444,12 @@ mod tests {
     fn evaluate_preflight_from_template_rejects_quarantine_path_matching_backup() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3495,12 +3499,12 @@ mod tests {
     fn evaluate_preflight_from_template_rejects_unresolvable_backup_path() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3550,12 +3554,12 @@ mod tests {
     fn evaluate_preflight_from_template_rejects_backup_path_matching_source() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3601,12 +3605,12 @@ mod tests {
     fn evaluate_preflight_from_template_rejects_backup_path_matching_output() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3652,12 +3656,12 @@ mod tests {
     fn build_preflight_report_from_template_returns_backup_path_error() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3705,12 +3709,12 @@ mod tests {
     fn build_preflight_report_from_template_rejects_backup_path_equal_to_source() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3757,12 +3761,12 @@ mod tests {
     fn build_preflight_report_from_template_rejects_backup_path_equal_to_output() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
-            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {

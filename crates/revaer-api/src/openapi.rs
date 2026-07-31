@@ -1118,6 +1118,20 @@ fn media_desired_target_stream_schemas() -> Vec<(&'static str, Value)> {
                 [("key", string_schema()), ("value", string_schema())],
             ),
         ),
+        (
+            "MediaDesiredTargetChapterEntry",
+            object_schema(
+                &["start_millis", "end_millis", "metadata"],
+                [
+                    ("start_millis", integer_schema()),
+                    ("end_millis", integer_schema()),
+                    (
+                        "metadata",
+                        array_ref_schema("MediaDesiredTargetMetadataEntry"),
+                    ),
+                ],
+            ),
+        ),
     ]
 }
 
@@ -1144,6 +1158,10 @@ fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
                         array_ref_schema("MediaDesiredTargetMetadataEntry"),
                     ),
                     ("container_chapter_policy", string_schema()),
+                    (
+                        "container_chapters",
+                        array_ref_schema("MediaDesiredTargetChapterEntry"),
+                    ),
                     (
                         "streams",
                         array_ref_min_items_schema("MediaDesiredTargetStream", 1),
@@ -1176,6 +1194,10 @@ fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
                         array_ref_schema("MediaDesiredTargetMetadataEntry"),
                     ),
                     ("container_chapter_policy", string_schema()),
+                    (
+                        "container_chapters",
+                        array_ref_schema("MediaDesiredTargetChapterEntry"),
+                    ),
                     ("streams", array_ref_schema("MediaDesiredTargetStream")),
                 ],
             ),
@@ -2161,6 +2183,71 @@ mod tests {
     use std::{fs, path::PathBuf};
     use uuid::Uuid;
 
+    const MEDIA_SCHEMA_NAMES: &[&str] = &[
+        "MediaProfileUpsertRequest",
+        "MediaProfilePatchRequest",
+        "MediaProfileListResponse",
+        "MediaProfileResponse",
+        "MediaProfileReadinessResponse",
+        "MediaProfileValidationResponse",
+        "MediaCompatibilityTargetResponse",
+        "MediaCompatibilityTargetListResponse",
+        "MediaCompatibilityTargetUpsertRequest",
+        "MediaDesiredTargetStream",
+        "MediaDesiredTargetMetadataEntry",
+        "MediaDesiredTargetChapterEntry",
+        "MediaDesiredTargetCreateRequest",
+        "MediaDesiredTargetResponse",
+        "MediaDesiredTargetListResponse",
+        "MediaProfileDesiredTargetRequest",
+        "MediaPolicyResponse",
+        "MediaPolicyListResponse",
+        "MediaPolicyUpsertRequest",
+        "MediaJobRetentionResponse",
+        "MediaJobRetentionUpdateRequest",
+        "MediaPlanningPreviewRequest",
+        "MediaPlanningPreviewResponse",
+        "MediaDiscoveryPreviewRequest",
+        "MediaDiscoveryPreviewItemResponse",
+        "MediaDiscoveryPreviewResponse",
+        "MediaDiscoveryRunRequest",
+        "MediaDiscoveryQueuedJobResponse",
+        "MediaDiscoverySkippedItemResponse",
+        "MediaDiscoveryRunResponse",
+        "MediaDiscoveryScheduleResponse",
+        "MediaDiscoveryScheduleListResponse",
+        "MediaDiscoveryWatcherResponse",
+        "MediaDiscoveryWatcherListResponse",
+        "MediaJobListResponse",
+        "MediaJobResponse",
+        "MediaJobPhaseListResponse",
+        "MediaJobPhaseResponse",
+        "MediaJobOperationListResponse",
+        "MediaJobOperationResponse",
+        "MediaJobViolationListResponse",
+        "MediaJobViolationResponse",
+        "MediaJobPlanReasonListResponse",
+        "MediaJobPlanReasonResponse",
+        "MediaJobVerificationCheckListResponse",
+        "MediaJobVerificationCheckResponse",
+        "MediaJobArtifactListResponse",
+        "MediaJobArtifactResponse",
+        "MediaJobCompactAuditListResponse",
+        "MediaJobCompactAuditResponse",
+        "MediaCapabilityRefreshResponse",
+        "MediaCapabilityCodecResponse",
+        "MediaCapabilityFeatureResponse",
+        "MediaCapabilityLatestResponse",
+        "MediaCapabilityReadinessResponse",
+        "MediaCapabilitySnapshotResponse",
+        "MediaComplianceResponse",
+        "MediaYamlExportResponse",
+        "MediaYamlImportRequest",
+        "MediaYamlIssueResponse",
+        "MediaYamlValidationResponse",
+        "MediaYamlApplyResponse",
+    ];
+
     fn repo_root() -> PathBuf {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         for ancestor in manifest_dir.ancestors() {
@@ -2287,71 +2374,9 @@ mod tests {
             .and_then(Value::as_object)
             .ok_or_else(|| io::Error::other("expected component schemas object"))?;
 
-        for schema in [
-            "MediaProfileUpsertRequest",
-            "MediaProfilePatchRequest",
-            "MediaProfileListResponse",
-            "MediaProfileResponse",
-            "MediaProfileReadinessResponse",
-            "MediaProfileValidationResponse",
-            "MediaCompatibilityTargetResponse",
-            "MediaCompatibilityTargetListResponse",
-            "MediaCompatibilityTargetUpsertRequest",
-            "MediaDesiredTargetStream",
-            "MediaDesiredTargetMetadataEntry",
-            "MediaDesiredTargetCreateRequest",
-            "MediaDesiredTargetResponse",
-            "MediaDesiredTargetListResponse",
-            "MediaProfileDesiredTargetRequest",
-            "MediaPolicyResponse",
-            "MediaPolicyListResponse",
-            "MediaPolicyUpsertRequest",
-            "MediaJobRetentionResponse",
-            "MediaJobRetentionUpdateRequest",
-            "MediaPlanningPreviewRequest",
-            "MediaPlanningPreviewResponse",
-            "MediaDiscoveryPreviewRequest",
-            "MediaDiscoveryPreviewItemResponse",
-            "MediaDiscoveryPreviewResponse",
-            "MediaDiscoveryRunRequest",
-            "MediaDiscoveryQueuedJobResponse",
-            "MediaDiscoverySkippedItemResponse",
-            "MediaDiscoveryRunResponse",
-            "MediaDiscoveryScheduleResponse",
-            "MediaDiscoveryScheduleListResponse",
-            "MediaDiscoveryWatcherResponse",
-            "MediaDiscoveryWatcherListResponse",
-            "MediaJobListResponse",
-            "MediaJobResponse",
-            "MediaJobPhaseListResponse",
-            "MediaJobPhaseResponse",
-            "MediaJobOperationListResponse",
-            "MediaJobOperationResponse",
-            "MediaJobViolationListResponse",
-            "MediaJobViolationResponse",
-            "MediaJobPlanReasonListResponse",
-            "MediaJobPlanReasonResponse",
-            "MediaJobVerificationCheckListResponse",
-            "MediaJobVerificationCheckResponse",
-            "MediaJobArtifactListResponse",
-            "MediaJobArtifactResponse",
-            "MediaJobCompactAuditListResponse",
-            "MediaJobCompactAuditResponse",
-            "MediaCapabilityRefreshResponse",
-            "MediaCapabilityCodecResponse",
-            "MediaCapabilityFeatureResponse",
-            "MediaCapabilityLatestResponse",
-            "MediaCapabilityReadinessResponse",
-            "MediaCapabilitySnapshotResponse",
-            "MediaComplianceResponse",
-            "MediaYamlExportResponse",
-            "MediaYamlImportRequest",
-            "MediaYamlIssueResponse",
-            "MediaYamlValidationResponse",
-            "MediaYamlApplyResponse",
-        ] {
+        for schema in MEDIA_SCHEMA_NAMES {
             assert!(
-                schemas.contains_key(schema),
+                schemas.contains_key(*schema),
                 "missing media OpenAPI schema {schema}"
             );
         }
@@ -2364,6 +2389,24 @@ mod tests {
             .and_then(|streams| streams.get("minItems"))
             .and_then(Value::as_u64);
         assert_eq!(desired_target_streams_min_items, Some(1));
+
+        for schema_name in [
+            "MediaDesiredTargetCreateRequest",
+            "MediaDesiredTargetResponse",
+        ] {
+            let chapter_schema = schemas
+                .get(schema_name)
+                .and_then(|schema| schema.get("properties"))
+                .and_then(Value::as_object)
+                .and_then(|properties| properties.get("container_chapters"))
+                .and_then(|chapters| chapters.get("items"))
+                .and_then(|items| items.get("$ref"))
+                .and_then(Value::as_str);
+            assert_eq!(
+                chapter_schema,
+                Some("#/components/schemas/MediaDesiredTargetChapterEntry")
+            );
+        }
 
         Ok(())
     }

@@ -3233,6 +3233,12 @@
           "container_chapter_policy": {
             "type": "string"
           },
+          "container_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetChapterEntry"
+            },
+            "type": "array"
+          },
           "container_format": {
             "type": "string"
           },
@@ -3289,6 +3295,12 @@
         "properties": {
           "container_chapter_policy": {
             "type": "string"
+          },
+          "container_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetChapterEntry"
+            },
+            "type": "array"
           },
           "container_format": {
             "type": "string"
@@ -4597,6 +4609,28 @@
         "required": [
           "key",
           "value"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetChapterEntry": {
+        "properties": {
+          "end_millis": {
+            "type": "integer"
+          },
+          "metadata": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetMetadataEntry"
+            },
+            "type": "array"
+          },
+          "start_millis": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_millis",
+          "end_millis",
+          "metadata"
         ],
         "type": "object"
       }
