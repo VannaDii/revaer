@@ -368,6 +368,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -391,6 +392,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -417,6 +419,7 @@ mod tests {
             container_metadata_policy: Some("strip".to_string()),
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -455,6 +458,7 @@ mod tests {
                 value: "Canonical Cut".to_string(),
             }],
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -480,6 +484,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -531,6 +536,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -563,6 +569,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -594,6 +601,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: Some("preserve".to_string()),
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -621,6 +629,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: Some("replace".to_string()),
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
@@ -669,6 +678,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -733,6 +743,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -791,6 +802,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -835,6 +847,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 2,
@@ -880,6 +893,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -925,6 +939,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -984,6 +999,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_attachment_policy: None,
             stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,

@@ -968,6 +968,13 @@ Reusable combinations:
 Retention rules define what happens to source streams not matched by target
 streams.
 
+Desired target container attachment policy is separate from generic unmatched
+stream behavior. `container_attachment_policy: preserve` keeps source
+attachments when unmatched stream behavior permits preservation.
+`container_attachment_policy: strip` is an explicit removal contract and drops
+source attachments even when generic unmatched streams would otherwise be
+preserved or rejected. Unsupported attachment policies fail before execution.
+
 Actions:
 
 - `preserve`
@@ -2440,6 +2447,9 @@ reason: image_subtitle_conversion_not_allowed
 ```
 
 Never silently drop subtitles, audio, attachments, video streams, or metadata.
+Attachment removal is allowed only when the desired target explicitly declares
+`container_attachment_policy: strip`; otherwise attachments are preserved or the
+job fails closed.
 
 Failure categories:
 

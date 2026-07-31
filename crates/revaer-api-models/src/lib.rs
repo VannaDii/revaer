@@ -671,6 +671,9 @@ pub struct MediaDesiredTargetCreateRequest {
     /// Exact desired chapter timeline rows when `container_chapter_policy` is `replace`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub container_chapters: Vec<MediaDesiredTargetChapterEntry>,
+    /// Desired container attachment policy. Implemented values are `preserve` and `strip`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_attachment_policy: Option<String>,
     /// Complete desired stream graph in final mux order.
     pub streams: Vec<MediaDesiredTargetStream>,
 }
@@ -698,6 +701,8 @@ pub struct MediaDesiredTargetResponse {
     /// Exact desired chapter timeline rows when the policy is `replace`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub container_chapters: Vec<MediaDesiredTargetChapterEntry>,
+    /// Desired container attachment policy.
+    pub container_attachment_policy: String,
     /// Complete desired stream graph in final mux order.
     pub streams: Vec<MediaDesiredTargetStream>,
 }
