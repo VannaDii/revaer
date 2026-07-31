@@ -1,0 +1,81 @@
+# Media Unmatched Stream Actions
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - `MEDIA_TRANSCODING.md` defines fallback behavior per stream family: video fails, audio preserves, subtitles preserve, attachments preserve, and opaque data removes.
+  - The implementation still snapshotted one generic `unmatched_stream_policy`, which cannot express the spec default mix and can silently apply the wrong action to unrelated stream families.
+  - Attachment stripping remains an explicit desired-target container policy and must continue to override attachment preservation.
+- Decision:
+  - Add policy-profile fields for `unmatched_video_action`, `unmatched_audio_action`, `unmatched_subtitle_action`, `unmatched_attachment_action`, and `unmatched_data_action`.
+  - Store public/API/YAML action values as `remove`, `preserve`, or `fail`; map `fail` to the existing internal reject behavior at runtime.
+  - Snapshot the five actions onto each media job at enqueue time and expose them from worker claim v6.
+  - Compile desired targets with a per-kind policy set, using subtitle action for sidecar subtitle files and preserving `container_attachment_policy: strip` as the highest-precedence attachment-removal rule.
+  - Expose the five actions in the media policy catalog UI using the spec defaults.
+  - Validate YAML action values before import and document the `remove | preserve | fail` vocabulary in OpenAPI.
+  - Keep the legacy generic column only for historical compatibility.
+  - Alternatives considered:
+    - Continue using one generic policy: rejected because it cannot represent the documented first-release defaults.
+    - Move the actions onto desired targets: rejected because unmatched stream handling is operational policy, not a target identity.
+- Consequences:
+  - Positive outcomes:
+    - The worker can now honor the spec default mix without broadening or weakening unrelated stream behavior.
+    - Queued jobs carry immutable per-kind fallback intent instead of reading mutable policy state later.
+  - Risks or trade-offs:
+    - Existing queued jobs with only the legacy snapshot still require compatibility parsing.
+    - The public action vocabulary now differs from the internal enum name, so boundary normalization must remain tested.
+- Follow-up:
+  - Continue closing advanced audio/video/runtime policy gaps before declaring the transcoding service complete against the full specification.
+
+## Task Record
+
+- Motivation:
+  - Replace the single unmatched-stream policy with the per-kind fallback contract required by the media transcoding specification.
+- Design notes:
+  - Core target compilation now has `UnmatchedStreamPolicies` plus per-kind compile entry points.
+  - Data migration 0176 adds the policy-profile columns, job snapshot columns, policy list/upsert v2, worker claim v6, and a trigger that snapshots per-kind actions for every job creation path.
+  - Existing policy profiles whose legacy value was the old implementation default move to the spec fallback mix; existing queued jobs keep their legacy immutable snapshot.
+  - API request fields are optional and default to the spec behavior; responses and YAML exports carry explicit normalized values.
+  - Runtime desired-target reconstruction maps `fail` and legacy `reject` to the internal reject behavior.
+  - The app data-preserve snapshot regression now asserts the per-kind `unmatched_data_action` path rather than the legacy generic snapshot field.
+- Test coverage summary:
+  - `cargo fmt --all`
+  - `just fmt`
+  - `just policy`
+  - `just instruction-drift`
+  - `just lint`
+  - `git diff --check`
+  - `cargo check -p revaer-media-core -p revaer-data -p revaer-api-models -p revaer-api --lib --tests`
+  - `cargo check -p revaer-app --no-default-features --lib --tests`
+  - `cargo check -p revaer-ui --target wasm32-unknown-unknown`
+  - `cargo clippy -p revaer-media-core -p revaer-data -p revaer-api-models -p revaer-api --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo test -p revaer-media-core --all-features per_kind_unmatched_policies_apply_independently -- --nocapture`
+  - `cargo test -p revaer-media-core --all-features unmatched -- --nocapture`
+  - `cargo test -p revaer-data --lib migration_guards_per_kind_unmatched_stream_actions -- --nocapture`
+  - `cargo test -p revaer-data --lib worker_claim_uses_enqueue_time_profile_intent -- --nocapture` (skipped database-backed assertions locally because no test database URL was configured)
+  - `cargo test -p revaer-api --lib media_configuration_writes_validate_request_shape -- --nocapture`
+  - `cargo test -p revaer-api --lib openapi_document_exports_media_schemas -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib validate_yaml_bundle_rejects_invalid_unmatched_policy_actions -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib map_data_error_projects_expected_kind_and_codes -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features persisted_target_snapshot_preserves_unmatched_data_streams -- --nocapture`
+  - `cargo test -p revaer-app --all-features unmatched -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib desired_target_snapshot -- --nocapture`
+  - `just test-features-min`
+  - `just api-export`
+  - `npm install` in `tests` completed with zero vulnerabilities and the existing `fsevents` install-script approval warning.
+  - `npm run gen:api-client` in `tests`
+  - `npx tsc -p tsconfig.coverage.json` in `tests`
+  - `sonar analyze secrets ...` on the changed files
+- Observability updates:
+  - No new metrics, logs, or events were added. This changes immutable policy shape and runtime compilation behavior.
+- Status-doc validation:
+  - Updated `MEDIA_TRANSCODING.md`, OpenAPI source and generated artifacts, API E2E coverage, media policy UI, `docs/adr/index.md`, and `docs/SUMMARY.md`.
+- Risk & rollback plan:
+  - Roll back migration 0176 and the Rust/API/YAML wiring if per-kind actions regress job planning.
+  - Do not remove job snapshot columns until queued jobs using them have drained or been migrated.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found for this slice.

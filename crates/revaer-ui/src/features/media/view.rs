@@ -61,6 +61,11 @@ struct PolicyCatalogFormHandles {
     version: UseStateHandle<String>,
     display_name: UseStateHandle<String>,
     video_intent: UseStateHandle<String>,
+    unmatched_video_action: UseStateHandle<String>,
+    unmatched_audio_action: UseStateHandle<String>,
+    unmatched_subtitle_action: UseStateHandle<String>,
+    unmatched_attachment_action: UseStateHandle<String>,
+    unmatched_data_action: UseStateHandle<String>,
     verification_strictness: UseStateHandle<String>,
     verification_duration_tolerance_millis: UseStateHandle<String>,
     verification_mux_validation: UseStateHandle<bool>,
@@ -122,6 +127,11 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
     let policy_catalog_version = use_state(|| "1".to_string());
     let policy_catalog_display_name = use_state(String::new);
     let policy_catalog_video_intent = use_state(|| "general".to_string());
+    let policy_unmatched_video_action = use_state(|| "fail".to_string());
+    let policy_unmatched_audio_action = use_state(|| "preserve".to_string());
+    let policy_unmatched_subtitle_action = use_state(|| "preserve".to_string());
+    let policy_unmatched_attachment_action = use_state(|| "preserve".to_string());
+    let policy_unmatched_data_action = use_state(|| "remove".to_string());
     let policy_verification_strictness = use_state(|| "strict".to_string());
     let policy_verification_duration_tolerance_millis = use_state(|| "100".to_string());
     let policy_verification_mux_validation = use_state(|| true);
@@ -152,6 +162,11 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
         version: policy_catalog_version.clone(),
         display_name: policy_catalog_display_name.clone(),
         video_intent: policy_catalog_video_intent.clone(),
+        unmatched_video_action: policy_unmatched_video_action.clone(),
+        unmatched_audio_action: policy_unmatched_audio_action.clone(),
+        unmatched_subtitle_action: policy_unmatched_subtitle_action.clone(),
+        unmatched_attachment_action: policy_unmatched_attachment_action.clone(),
+        unmatched_data_action: policy_unmatched_data_action.clone(),
         verification_strictness: policy_verification_strictness.clone(),
         verification_duration_tolerance_millis: policy_verification_duration_tolerance_millis
             .clone(),
@@ -422,6 +437,56 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
             );
         })
     };
+    let on_policy_unmatched_video_action_change = {
+        let value = policy_unmatched_video_action.clone();
+        Callback::from(move |event: Event| {
+            value.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlSelectElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_policy_unmatched_audio_action_change = {
+        let value = policy_unmatched_audio_action.clone();
+        Callback::from(move |event: Event| {
+            value.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlSelectElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_policy_unmatched_subtitle_action_change = {
+        let value = policy_unmatched_subtitle_action.clone();
+        Callback::from(move |event: Event| {
+            value.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlSelectElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_policy_unmatched_attachment_action_change = {
+        let value = policy_unmatched_attachment_action.clone();
+        Callback::from(move |event: Event| {
+            value.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlSelectElement>()
+                    .value(),
+            );
+        })
+    };
+    let on_policy_unmatched_data_action_change = {
+        let value = policy_unmatched_data_action.clone();
+        Callback::from(move |event: Event| {
+            value.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlSelectElement>()
+                    .value(),
+            );
+        })
+    };
     let on_policy_verification_strictness_change = {
         let value = policy_verification_strictness.clone();
         Callback::from(move |event: Event| {
@@ -617,7 +682,7 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                             {for state.policies.iter().map(|policy| html! {
                                 <li class="flex flex-wrap gap-2">
                                     <span class="font-medium">{policy.policy_key.clone()}</span>
-                                    <span class="opacity-70">{format!("v{} {} intent={} verification={} tolerance={}ms mux={} decode={} seek={} playback={}", policy.version, policy.display_name, policy.video_intent, policy.verification_strictness, policy.verification_duration_tolerance_millis, policy.verification_mux_validation, policy.verification_decode_all_streams, policy.verification_keyframe_seek, policy.verification_playback_probe)}</span>
+                                    <span class="opacity-70">{format!("v{} {} intent={} unmatched={}/{}/{}/{}/{} verification={} tolerance={}ms mux={} decode={} seek={} playback={}", policy.version, policy.display_name, policy.video_intent, policy.unmatched_video_action, policy.unmatched_audio_action, policy.unmatched_subtitle_action, policy.unmatched_attachment_action, policy.unmatched_data_action, policy.verification_strictness, policy.verification_duration_tolerance_millis, policy.verification_mux_validation, policy.verification_decode_all_streams, policy.verification_keyframe_seek, policy.verification_playback_probe)}</span>
                                 </li>
                             })}
                         </ul>
@@ -629,6 +694,31 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                                 <option value="general">{"General"}</option>
                                 <option value="anime">{"Anime"}</option>
                                 <option value="archival">{"Archival"}</option>
+                            </select>
+                            <select class="select select-bordered select-sm" aria-label="policy_unmatched_video_action" value={(*policy_unmatched_video_action).clone()} onchange={on_policy_unmatched_video_action_change}>
+                                <option value="fail">{"Fail unmatched video"}</option>
+                                <option value="preserve">{"Preserve unmatched video"}</option>
+                                <option value="remove">{"Remove unmatched video"}</option>
+                            </select>
+                            <select class="select select-bordered select-sm" aria-label="policy_unmatched_audio_action" value={(*policy_unmatched_audio_action).clone()} onchange={on_policy_unmatched_audio_action_change}>
+                                <option value="preserve">{"Preserve unmatched audio"}</option>
+                                <option value="fail">{"Fail unmatched audio"}</option>
+                                <option value="remove">{"Remove unmatched audio"}</option>
+                            </select>
+                            <select class="select select-bordered select-sm" aria-label="policy_unmatched_subtitle_action" value={(*policy_unmatched_subtitle_action).clone()} onchange={on_policy_unmatched_subtitle_action_change}>
+                                <option value="preserve">{"Preserve unmatched subtitles"}</option>
+                                <option value="fail">{"Fail unmatched subtitles"}</option>
+                                <option value="remove">{"Remove unmatched subtitles"}</option>
+                            </select>
+                            <select class="select select-bordered select-sm" aria-label="policy_unmatched_attachment_action" value={(*policy_unmatched_attachment_action).clone()} onchange={on_policy_unmatched_attachment_action_change}>
+                                <option value="preserve">{"Preserve unmatched attachments"}</option>
+                                <option value="fail">{"Fail unmatched attachments"}</option>
+                                <option value="remove">{"Remove unmatched attachments"}</option>
+                            </select>
+                            <select class="select select-bordered select-sm" aria-label="policy_unmatched_data_action" value={(*policy_unmatched_data_action).clone()} onchange={on_policy_unmatched_data_action_change}>
+                                <option value="remove">{"Remove unmatched data"}</option>
+                                <option value="preserve">{"Preserve unmatched data"}</option>
+                                <option value="fail">{"Fail unmatched data"}</option>
                             </select>
                             <select class="select select-bordered select-sm" aria-label="policy_verification_strictness" value={(*policy_verification_strictness).clone()} onchange={on_policy_verification_strictness_change}>
                                 <option value="strict">{"Strict"}</option>
@@ -1243,6 +1333,11 @@ fn build_save_policy_callback(
             version,
             display_name: (*form.display_name).clone(),
             video_intent: (*form.video_intent).clone(),
+            unmatched_video_action: Some((*form.unmatched_video_action).clone()),
+            unmatched_audio_action: Some((*form.unmatched_audio_action).clone()),
+            unmatched_subtitle_action: Some((*form.unmatched_subtitle_action).clone()),
+            unmatched_attachment_action: Some((*form.unmatched_attachment_action).clone()),
+            unmatched_data_action: Some((*form.unmatched_data_action).clone()),
             verification_strictness: (*form.verification_strictness).clone(),
             verification_duration_tolerance_millis,
             verification_mux_validation: (*form.verification_mux_validation).into(),

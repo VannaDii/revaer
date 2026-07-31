@@ -207,6 +207,16 @@ pub struct MediaPolicyUpsertParams<'a> {
     pub display_name: &'a str,
     /// Worker video intent.
     pub video_intent: &'a str,
+    /// Action for unmatched source video streams.
+    pub unmatched_video_action: &'a str,
+    /// Action for unmatched source audio streams.
+    pub unmatched_audio_action: &'a str,
+    /// Action for unmatched source subtitle streams.
+    pub unmatched_subtitle_action: &'a str,
+    /// Action for unmatched source attachment streams.
+    pub unmatched_attachment_action: &'a str,
+    /// Action for unmatched source opaque data streams.
+    pub unmatched_data_action: &'a str,
     /// Verification strictness.
     pub verification_strictness: &'a str,
     /// Maximum source/candidate duration delta in milliseconds.
@@ -355,6 +365,21 @@ pub struct MediaYamlPolicy {
     pub display_name: String,
     /// Video transcode intent.
     pub video_intent: String,
+    /// Action for unmatched source video streams.
+    #[serde(default = "default_unmatched_video_action")]
+    pub unmatched_video_action: String,
+    /// Action for unmatched source audio streams.
+    #[serde(default = "default_unmatched_audio_action")]
+    pub unmatched_audio_action: String,
+    /// Action for unmatched source subtitle streams.
+    #[serde(default = "default_unmatched_subtitle_action")]
+    pub unmatched_subtitle_action: String,
+    /// Action for unmatched source attachment streams.
+    #[serde(default = "default_unmatched_attachment_action")]
+    pub unmatched_attachment_action: String,
+    /// Action for unmatched source opaque data streams.
+    #[serde(default = "default_unmatched_data_action")]
+    pub unmatched_data_action: String,
     /// Verification strictness.
     pub verification_strictness: String,
     /// Maximum source/candidate duration delta in milliseconds.
@@ -418,6 +443,26 @@ fn default_container_chapter_policy() -> String {
 
 fn default_container_attachment_policy() -> String {
     "preserve".to_string()
+}
+
+fn default_unmatched_video_action() -> String {
+    "fail".to_string()
+}
+
+fn default_unmatched_audio_action() -> String {
+    "preserve".to_string()
+}
+
+fn default_unmatched_subtitle_action() -> String {
+    "preserve".to_string()
+}
+
+fn default_unmatched_attachment_action() -> String {
+    "preserve".to_string()
+}
+
+fn default_unmatched_data_action() -> String {
+    "remove".to_string()
 }
 
 /// Result of YAML validation.
@@ -536,6 +581,16 @@ pub struct MediaPolicyResponse {
     pub display_name: String,
     /// Video transcode intent.
     pub video_intent: String,
+    /// Action for unmatched source video streams.
+    pub unmatched_video_action: String,
+    /// Action for unmatched source audio streams.
+    pub unmatched_audio_action: String,
+    /// Action for unmatched source subtitle streams.
+    pub unmatched_subtitle_action: String,
+    /// Action for unmatched source attachment streams.
+    pub unmatched_attachment_action: String,
+    /// Action for unmatched source opaque data streams.
+    pub unmatched_data_action: String,
     /// Verification strictness.
     pub verification_strictness: String,
     /// Maximum source/candidate duration delta in milliseconds.

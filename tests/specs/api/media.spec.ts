@@ -204,6 +204,11 @@ test.describe('Media API', () => {
         version: 1,
         display_name: `E2E policy ${suffix}`,
         video_intent: 'general',
+        unmatched_video_action: 'fail',
+        unmatched_audio_action: 'preserve',
+        unmatched_subtitle_action: 'preserve',
+        unmatched_attachment_action: 'preserve',
+        unmatched_data_action: 'remove',
         verification_strictness: 'strict',
         verification_duration_tolerance_millis: 100,
         verification_mux_validation: true,
@@ -214,6 +219,8 @@ test.describe('Media API', () => {
     });
     expect(upsertedPolicy.response.status).toBe(201);
     expect(upsertedPolicy.data?.policy_key).toBe(`e2e-policy-${suffix}`);
+    expect(upsertedPolicy.data?.unmatched_video_action).toBe('fail');
+    expect(upsertedPolicy.data?.unmatched_data_action).toBe('remove');
     expect(upsertedPolicy.data?.verification_playback_probe).toBe(true);
 
     const invalidProfileValidation = await api.POST('/v1/media/profiles/validate', {

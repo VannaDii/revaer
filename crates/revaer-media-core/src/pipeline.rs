@@ -8,7 +8,8 @@ use crate::plan::{
     generate_candidates, prune_invalid_and_dominated_with, select_candidate,
 };
 use crate::target::{
-    DesiredTarget, TargetCompileError, UnmatchedStreamPolicy, compile_desired_target,
+    DesiredTarget, TargetCompileError, UnmatchedStreamPolicies, UnmatchedStreamPolicy,
+    compile_desired_target_with_unmatched_policies,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -83,7 +84,34 @@ pub fn compile_and_plan(
     unmatched_policy: UnmatchedStreamPolicy,
     constraints: &PlanningConstraints,
 ) -> Result<PlanningOutcome, PlanningPipelineError> {
-    let desired_graph = compile_desired_target(source, output_path, target, unmatched_policy)?;
+    compile_and_plan_with_unmatched_policies(
+        source,
+        output_path,
+        target,
+        UnmatchedStreamPolicies::from_single(unmatched_policy),
+        constraints,
+    )
+}
+
+/// Compile and plan with an independent action for every unmatched stream kind.
+///
+/// # Errors
+///
+/// Returns [`PlanningPipelineError`] when target compilation or least-cost candidate selection
+/// fails.
+pub fn compile_and_plan_with_unmatched_policies(
+    source: &MediaGraph,
+    output_path: &str,
+    target: &DesiredTarget,
+    unmatched_policies: UnmatchedStreamPolicies,
+    constraints: &PlanningConstraints,
+) -> Result<PlanningOutcome, PlanningPipelineError> {
+    let desired_graph = compile_desired_target_with_unmatched_policies(
+        source,
+        output_path,
+        target,
+        unmatched_policies,
+    )?;
     let generated = generate_candidates(&diff_graphs(source, &desired_graph))?;
     let pruned = prune_invalid_and_dominated_with(generated, |candidate| {
         if candidate
@@ -107,11 +135,80 @@ pub fn compile_and_plan(
 
 #[cfg(test)]
 mod tests {
-    use super::{PlanningConstraints, PlanningPipelineError, compile_and_plan};
+    use super::{
+        PlanningConstraints, PlanningPipelineError, compile_and_plan,
+        compile_and_plan_with_unmatched_policies,
+    };
     use crate::classify::SemanticRole;
     use crate::model::{MediaGraph, MediaStream, StreamKind};
     use crate::plan::{CandidateRejectionReason, OperationKind, PlanGenerationError};
-    use crate::target::{DesiredTarget, LanguageToken, TargetStream, UnmatchedStreamPolicy};
+    use crate::target::{
+        DesiredTarget, LanguageToken, TargetStream, UnmatchedStreamPolicies, UnmatchedStreamPolicy,
+    };
+
+    #[test]
+    fn production_pipeline_applies_per_kind_unmatched_policies()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let source = MediaGraph {
+            source_path: "/library/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![
+                MediaStream {
+                    stream_id: 4,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                MediaStream {
+                    stream_id: 7,
+                    kind: StreamKind::Data,
+                    codec: "bin_data".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: Some("Timecode".to_string()),
+                    dispositions: Vec::new(),
+                },
+            ],
+        };
+        let target = DesiredTarget {
+            target_key: "data-only".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
+            container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
+            streams: Vec::new(),
+        };
+
+        let outcome = compile_and_plan_with_unmatched_policies(
+            &source,
+            "/workspace/movie.mkv",
+            &target,
+            UnmatchedStreamPolicies {
+                video: UnmatchedStreamPolicy::Remove,
+                data: UnmatchedStreamPolicy::Preserve,
+                ..UnmatchedStreamPolicies::first_release_defaults()
+            },
+            &PlanningConstraints::all_supported(),
+        )?;
+
+        assert_eq!(outcome.desired_graph.streams.len(), 1);
+        assert_eq!(outcome.desired_graph.streams[0].kind, StreamKind::Data);
+        assert_eq!(
+            outcome.desired_graph.stream_bindings[0].source_stream_id,
+            Some(7)
+        );
+        Ok(())
+    }
 
     #[test]
     fn production_pipeline_selects_remux_and_retains_serializable_rejection()
