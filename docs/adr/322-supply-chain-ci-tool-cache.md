@@ -71,7 +71,9 @@
   - `just audit`
   - `just deny`
   - `just udeps`
+  - `LIBTORRENT_RASTERBAR_NO_PKG_CONFIG=1 just udeps`
   - `cargo audit --deny warnings`
+  - `cargo deny check advisories licenses bans sources`
   - `cargo tree -i event-listener --locked`
   - `just policy`
   - `just ci`

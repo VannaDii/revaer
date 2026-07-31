@@ -513,15 +513,32 @@ test.describe('Media API', () => {
     });
     expect(scheduleRun.response.status).toBe(201);
 
-    const jobId = [discoveryRun, scheduleRun, watcherRun].flatMap((run) => run.data?.queued_jobs ?? [])[0]?.media_job_public_id;
-    if (!jobId) {
-      throw new Error('Missing media job public id');
-    }
-
     const jobs = await api.GET('/v1/media/jobs', {
       params: { query: { media_profile_public_id: profileId } },
     });
     expect(jobs.response.status).toBe(200);
+
+    const expectedJobSources = new Set([manualPath, schedulePath, watcherPath]);
+    const queuedJobId = [discoveryRun, scheduleRun, watcherRun].flatMap(
+      (run) => run.data?.queued_jobs ?? []
+    )[0]?.media_job_public_id;
+    const existingJobId = jobs.data?.jobs.find((job) =>
+      expectedJobSources.has(job.source_path)
+    )?.media_job_public_id;
+    const jobId = queuedJobId ?? existingJobId;
+    if (!jobId) {
+      const runSummary = [discoveryRun, scheduleRun, watcherRun]
+        .map((run) => {
+          const queued = run.data?.queued_jobs.map((job) => job.source_path).join(',') ?? '';
+          const skipped = run.data?.skipped
+            .map((item) => `${item.source_path}:${item.reason ?? 'unknown'}`)
+            .join(',');
+          return `queued=[${queued}] skipped=[${skipped ?? ''}]`;
+        })
+        .join(' ');
+      throw new Error(`Missing media job public id; ${runSummary}`);
+    }
+
     expect(jobs.data?.jobs.map((job) => job.media_job_public_id) ?? []).toContain(jobId);
 
     const job = await api.GET('/v1/media/jobs/{media_job_public_id}', {

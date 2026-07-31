@@ -1,0 +1,73 @@
+# Media Container Chapter Strip Policy
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - ADR 367 made source chapter timeline preservation explicit and verified, but target-level chapter removal still had no persisted target policy, command construction, or candidate/final verification contract.
+  - The media specification treats chapters as part of the target container surface. Accepting a chapter-removal option without persisted job snapshots and output inspection would make the service trust FFmpeg argv instead of proving the published state.
+  - Authored chapter editing remains broader than removal because it requires a chapter schema, deterministic timeline validation, muxer support, and exact metadata verification.
+- Decision:
+  - Add `container_chapter_policy` with implemented values `preserve` and `strip` across API models, HTTP validation, YAML import/export, desired-target compilation, immutable job snapshots, and database constraints.
+  - Compile `strip` into the desired graph, diff it as a container-level mismatch, score it as a medium compliance violation, and plan it through the desired-graph `MetadataRewrite` operation path.
+  - Map `preserve` to FFmpeg `-map_chapters 0` and `strip` to `-map_chapters -1` in desired-graph command construction.
+  - Verify `strip` by expecting zero candidate and final chapters. A candidate or committed output that retains chapters fails the existing chapter-timeline mismatch boundary and cannot complete replacement.
+  - Keep authored chapter stream materialization and arbitrary chapter timeline edits unsupported until a full target schema and verification contract exist.
+  - Alternatives considered:
+    - Treat chapter stripping as an implicit side effect of metadata stripping: rejected because operators need independent control over tags and chapters.
+    - Accept authored chapter rows at the same time: rejected because timeline authoring is a larger contract than target-level removal and would exceed a reviewable slice.
+- Consequences:
+  - Positive outcomes:
+    - Operators can intentionally remove source chapters while preserving container metadata and stream state.
+    - Candidate and final inspections prove the requested chapter state before source replacement completes.
+  - Risks or trade-offs:
+    - `MetadataRewrite` now covers implemented target-level metadata/chapter policies when driven by a desired graph, while contextless arbitrary metadata rewrites still fail closed.
+    - Incorrectly selecting `strip` will remove chapters by design, so profile authors must choose the policy deliberately.
+- Follow-up:
+  - Add authored chapter timeline schema, execution, and verification before accepting chapter edit/create rows.
+
+## Task Record
+
+- Motivation:
+  - Close a first operator-facing chapter policy gap with a verified target-level strip contract.
+- Design notes:
+  - Chapter policy normalization is shared in `revaer-media-core`.
+  - `DesiredGraph` carries both container metadata and chapter policies, letting planning and execution derive the same mutation.
+  - Default chapter preservation appends the exact `-map_chapters 0` arguments directly instead of routing through a fallible policy helper and discarding the impossible error.
+  - API E2E setup retries factory reset with the already issued API session when Playwright restarts a worker against an active API-key instance after a test failure.
+  - The media API E2E job assertion accepts the persisted job list as evidence when the background watcher wins the enqueue race before explicit watcher, manual, or scheduled discovery calls return queued job identifiers.
+  - The worker derives expected chapters from the compiled graph: source timeline for `preserve`, empty timeline for `strip`.
+  - The migration preserves existing target and job rows as `preserve`, adds `media_desired_target_create_v3`, adds `media_desired_target_list_v3`, replaces `media_job_create_v1` to snapshot chapter policy, and exposes the widened claim row through `media_job_worker_claim_next_v4`.
+- Test coverage summary:
+  - `cargo check -p revaer-media-core -p revaer-media-runtime --all-targets`
+  - `cargo check -p revaer-api-models -p revaer-data -p revaer-api -p revaer-app --no-default-features --lib --tests`
+  - `cargo clippy -p revaer-media-core -p revaer-media-runtime --all-features --all-targets -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-api -p revaer-data --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo test -p revaer-media-core --all-features container_chapter -- --nocapture`
+  - `cargo test -p revaer-media-core --all-features strip_chapters -- --nocapture`
+  - `cargo test -p revaer-media-runtime --all-features desired_graph_strip_container_chapters -- --nocapture`
+  - `cargo test -p revaer-media-runtime --all-features unknown_container_chapter_policy -- --nocapture`
+  - `cargo test -p revaer-api --lib container_chapter_policy_normalizes_supported_values -- --nocapture`
+  - `cargo test -p revaer-data --lib migration_guards_container_chapter_strip_policy -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib container_chapter -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib retains_chapters -- --nocapture`
+  - `cargo test -p revaer-media-runtime --all-features remux_uses_copy_codec -- --nocapture`
+  - `cargo test -p revaer-media-runtime --all-features desired_graph_strip_container_chapters -- --nocapture`
+  - `npx tsc -p tsconfig.coverage.json` from `tests`
+  - `just fmt`, `just policy`, `just instruction-drift`, and `git diff --check`
+  - `sonar analyze secrets` across changed files completed successfully; `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --branch stack/media3-47-container-chapter-policy --format table` reported no issues. `sonar verify` and `sonar analyze sqaa` were attempted and returned the organization entitlement error `Agentic Analysis is not available for this organization`; no Sonar criteria were relaxed.
+  - `just ci` and `just ui-e2e` were attempted locally and both stopped at the environment dependency boundary because Docker/Postgres was not reachable at `localhost:5432`; remote PR checks remain the required full DB-backed proof.
+  - `just clean-test-fixtures` removed ignored media fixture directories, and a follow-up scan found no generated media or subtitle leftovers in temp or test fixture paths.
+- Observability updates:
+  - No new metrics, logs, or events were added. Existing operation counts and chapter-timeline verification diagnostics cover the new strip path.
+- Status-doc validation:
+  - Updated ADR 318 to identify target-level chapter stripping as implemented while keeping authored chapter edits open.
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+- Risk & rollback plan:
+  - Roll back this ADR, migration 0172, and the Rust/API/YAML wiring if target-level chapter removal proves unsafe.
+  - Do not remove `strip` validation without also migrating or rejecting persisted target versions that already carry it.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found for this slice.

@@ -40,6 +40,8 @@ pub enum ViolationKind {
     ContainerMismatch,
     /// Source container metadata differs from the desired output policy.
     ContainerMetadataMismatch,
+    /// Source chapter timeline differs from the desired output policy.
+    ContainerChapterMismatch,
     /// Source stream is absent from the desired output graph.
     RemovedStream,
     /// Desired stream is absent from the source graph.
@@ -100,6 +102,15 @@ pub fn score_diff(diff: &GraphDiff) -> Report {
     if diff.container_metadata_mismatch {
         violations.push(Violation {
             kind: ViolationKind::ContainerMetadataMismatch,
+            severity: Severity::Medium,
+            stream_id: None,
+        });
+        penalty += 10;
+    }
+
+    if diff.container_chapter_diff.is_mismatched() {
+        violations.push(Violation {
+            kind: ViolationKind::ContainerChapterMismatch,
             severity: Severity::Medium,
             stream_id: None,
         });
