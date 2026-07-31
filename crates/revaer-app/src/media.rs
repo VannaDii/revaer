@@ -12,8 +12,8 @@ use revaer_api::app::media::{
     MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryPreviewResponse,
     MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunParams, MediaDiscoveryRunResponse,
     MediaDiscoverySkippedItemResponse, MediaFacade, MediaJobArtifactResponse,
-    MediaJobCompactAuditResponse, MediaJobOperationResponse, MediaJobPhaseResponse,
-    MediaJobPlanReasonResponse, MediaJobResponse,
+    MediaJobCompactAuditResponse, MediaJobCreateParams, MediaJobOperationResponse,
+    MediaJobPhaseResponse, MediaJobPlanReasonResponse, MediaJobResponse,
     MediaJobRetentionResponse as AppMediaJobRetentionResponse, MediaJobRetentionUpdateParams,
     MediaJobVerificationCheckResponse, MediaJobViolationResponse,
     MediaPolicyResponse as AppMediaPolicyResponse, MediaPolicyUpsertParams,
@@ -51,7 +51,9 @@ use revaer_data::media::imports::{
     delete_media_profile_import_draft_with_executor, list_media_profile_import_drafts,
     upsert_media_profile_import_draft_with_executor,
 };
-use revaer_data::media::jobs::EnqueueDiscoveredMediaJobInput;
+use revaer_data::media::jobs::{
+    CreateManualMediaJobInput, EnqueueDiscoveredMediaJobInput, MediaJobRow,
+};
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput,
     upsert_media_profile_with_executor,
@@ -276,6 +278,91 @@ impl MediaService {
             queued_jobs,
             skipped,
         })
+    }
+
+    async fn create_manual_job(
+        &self,
+        params: MediaJobCreateParams<'_>,
+    ) -> Result<MediaJobResponse, MediaServiceError> {
+        let profile = self
+            .store
+            .get_profile(params.media_profile_public_id)
+            .await
+            .map_err(|err| map_data_error(&err))?
+            .ok_or_else(|| {
+                MediaServiceError::new(MediaServiceErrorKind::NotFound)
+                    .with_code("media_profile_not_found")
+            })?;
+        let effective_dry_run = params.dry_run.unwrap_or(profile.dry_run_only);
+        validate_manual_job_confirmation(
+            profile.dry_run_only,
+            effective_dry_run,
+            params.replace_confirmation,
+        )?;
+        if !effective_dry_run {
+            self.ensure_profile_ready_for_execution(&profile).await?;
+        }
+
+        let source_paths = vec![params.source_path.to_string()];
+        let preview = build_discovery_previews(
+            &source_paths,
+            &profile.source_root,
+            &profile.output_root,
+            effective_dry_run,
+        )
+        .into_iter()
+        .next()
+        .ok_or_else(|| {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_manual_job_source_path_required")
+        })?;
+        if !preview.accepted {
+            return Err(
+                MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code(
+                    preview
+                        .reason
+                        .as_deref()
+                        .unwrap_or("media_manual_job_source_path_rejected"),
+                ),
+            );
+        }
+        let Some(output_path) = preview.output_path else {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_manual_job_output_path_unavailable"));
+        };
+
+        let fingerprint =
+            fingerprint_source_candidate(&preview.source_path, &profile.source_root).await?;
+        let Some(fingerprint) = fingerprint else {
+            return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_manual_job_source_unstable"));
+        };
+        let media_job_public_id = self
+            .store
+            .create_manual_job(&CreateManualMediaJobInput {
+                actor_public_id: params.actor_user_public_id,
+                media_profile_public_id: params.media_profile_public_id,
+                source_path: &preview.source_path,
+                output_path: Some(&output_path),
+                source_size_bytes: fingerprint.size_bytes,
+                source_modified_ns: fingerprint.modified_ns,
+                source_sha256: &fingerprint.sha256,
+                dry_run: effective_dry_run,
+            })
+            .await
+            .map_err(|err| map_data_error(&err))?;
+        self.telemetry
+            .inc_media_job_queued("manual", effective_dry_run);
+        let job = self
+            .store
+            .get_job(media_job_public_id)
+            .await
+            .map_err(|err| map_data_error(&err))?
+            .ok_or_else(|| {
+                MediaServiceError::new(MediaServiceErrorKind::Storage)
+                    .with_code("media_manual_job_created_row_missing")
+            })?;
+        Ok(media_job_response(job))
     }
 
     async fn refresh_capability_snapshot(
@@ -898,29 +985,22 @@ impl MediaFacade for MediaService {
         .await
     }
 
+    async fn media_job_create(
+        &self,
+        params: MediaJobCreateParams<'_>,
+    ) -> Result<MediaJobResponse, MediaServiceError> {
+        self.create_manual_job(params).await
+    }
+
     async fn media_job_list(
         &self,
-        media_profile_public_id: Uuid,
+        media_profile_public_id: Option<Uuid>,
         status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError> {
         self.store
             .list_jobs(media_profile_public_id, status)
             .await
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|row| MediaJobResponse {
-                        media_job_public_id: row.media_job_public_id,
-                        source_path: row.source_path,
-                        output_path: row.output_path,
-                        status: row.status_text,
-                        dry_run: row.dry_run,
-                        queued_at: row.queued_at,
-                        started_at: row.started_at,
-                        completed_at: row.completed_at,
-                        last_error: row.last_error,
-                    })
-                    .collect()
-            })
+            .map(|rows| rows.into_iter().map(media_job_response).collect())
             .map_err(|err| map_data_error(&err))
     }
 
@@ -931,19 +1011,7 @@ impl MediaFacade for MediaService {
         self.store
             .get_job(media_job_public_id)
             .await
-            .map(|row_opt| {
-                row_opt.map(|row| MediaJobResponse {
-                    media_job_public_id: row.media_job_public_id,
-                    source_path: row.source_path,
-                    output_path: row.output_path,
-                    status: row.status_text,
-                    dry_run: row.dry_run,
-                    queued_at: row.queued_at,
-                    started_at: row.started_at,
-                    completed_at: row.completed_at,
-                    last_error: row.last_error,
-                })
-            })
+            .map(|row_opt| row_opt.map(media_job_response))
             .map_err(|err| map_data_error(&err))
     }
 
@@ -2837,6 +2905,18 @@ fn map_fingerprint_error(error: &MediaSourceFingerprintError) -> MediaServiceErr
     })
 }
 
+fn validate_manual_job_confirmation(
+    profile_dry_run: bool,
+    effective_dry_run: bool,
+    replace_confirmation: Option<&str>,
+) -> Result<(), MediaServiceError> {
+    if profile_dry_run && !effective_dry_run && replace_confirmation != Some("replace") {
+        return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_manual_replace_confirmation_required"));
+    }
+    Ok(())
+}
+
 fn map_data_error(error: &DataError) -> MediaServiceError {
     let sqlstate = error.database_code();
     let detail = error.database_detail().map(ToOwned::to_owned);
@@ -2855,7 +2935,8 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
             | "media_policy_profile_not_found"
             | "media_policy_unmatched_action_invalid"
             | "media_desired_target_streams_required"
-            | "media_job_source_fingerprint_required",
+            | "media_job_source_fingerprint_required"
+            | "media_manual_job_fingerprint_invalid",
         ) => MediaServiceErrorKind::Invalid,
         _ => MediaServiceErrorKind::Storage,
     };
@@ -2974,6 +3055,20 @@ fn media_profile_response(row: MediaProfileRow) -> MediaProfileResponse {
         schedule_enabled: row.schedule_enabled,
         schedule_interval_minutes: row.schedule_interval_minutes,
         updated_at: row.updated_at,
+    }
+}
+
+fn media_job_response(row: MediaJobRow) -> MediaJobResponse {
+    MediaJobResponse {
+        media_job_public_id: row.media_job_public_id,
+        source_path: row.source_path,
+        output_path: row.output_path,
+        status: row.status_text,
+        dry_run: row.dry_run,
+        queued_at: row.queued_at,
+        started_at: row.started_at,
+        completed_at: row.completed_at,
+        last_error: row.last_error,
     }
 }
 
@@ -3379,7 +3474,8 @@ mod tests {
         desired_target_chapters_shape_invalid, desired_target_metadata_shape_invalid,
         ensure_discovery_mode_enabled, ensure_execution_capability_snapshot,
         ensure_profile_compatibility_target_readiness, ensure_profile_desired_target_readiness,
-        map_data_error, map_detect_error, parse_yaml_bundle, validate_yaml_bundle,
+        map_data_error, map_detect_error, parse_yaml_bundle, validate_manual_job_confirmation,
+        validate_yaml_bundle,
     };
     use anyhow::Context as _;
     use revaer_api::app::media::MediaServiceErrorKind;
@@ -3388,7 +3484,7 @@ mod tests {
         MediaDesiredTargetChapterParams, MediaDesiredTargetCreateParams,
         MediaDesiredTargetMetadataParams, MediaDesiredTargetStreamParams,
         MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
-        MediaFacade, MediaJobRetentionUpdateParams, MediaPolicyUpsertParams,
+        MediaFacade, MediaJobCreateParams, MediaJobRetentionUpdateParams, MediaPolicyUpsertParams,
         MediaProfileDesiredTargetParams, MediaProfileUpsertParams,
     };
     use revaer_data::DataError;
@@ -3776,6 +3872,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn manual_replace_confirmation_must_be_exact_for_dry_run_override() {
+        assert!(validate_manual_job_confirmation(true, true, None).is_ok());
+        assert!(validate_manual_job_confirmation(false, false, None).is_ok());
+        assert!(validate_manual_job_confirmation(true, false, Some("replace")).is_ok());
+        assert!(validate_manual_job_confirmation(true, false, Some(" replace ")).is_err());
+        assert!(validate_manual_job_confirmation(true, false, None).is_err());
+    }
+
     fn capability_snapshot_with_codecs(codecs: &[CapabilityCodecRow]) -> CapabilitySnapshotRow {
         CapabilitySnapshotRow {
             media_capability_snapshot_id: 1,
@@ -4110,7 +4215,9 @@ mod tests {
             response.skipped[0].reason.as_deref(),
             Some("media_discovery_source_path_outside_profile_root")
         );
-        let jobs = service.media_job_list(profile_id, Some("queued")).await?;
+        let jobs = service
+            .media_job_list(Some(profile_id), Some("queued"))
+            .await?;
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].source_path, response.queued_jobs[0].source_path);
         let repeated = service
@@ -4142,6 +4249,86 @@ mod tests {
             "media_jobs_queued_total",
             &[("source", "manual"), ("dry_run", "true")]
         ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn manual_job_creation_allows_explicit_replace_override_without_mutating_profile()
+    -> anyhow::Result<()> {
+        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
+        else {
+            return Ok(());
+        };
+        let media_source = create_test_media_source("show/manual.mkv")?;
+        let profile_id = upsert_app_media_profile_with_roots(
+            &service,
+            actor_user_public_id,
+            &media_source.source_root,
+            &media_source.output_root,
+            false,
+            false,
+        )
+        .await?;
+
+        let dry_run_job = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: &media_source.source_path,
+                dry_run: None,
+                replace_confirmation: None,
+            })
+            .await?;
+        assert!(dry_run_job.dry_run);
+
+        let missing_confirmation = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: &media_source.source_path,
+                dry_run: Some(false),
+                replace_confirmation: None,
+            })
+            .await
+            .expect_err("destructive override of dry-run profile must require exact phrase");
+        assert_eq!(missing_confirmation.kind(), MediaServiceErrorKind::Invalid);
+        assert_eq!(
+            missing_confirmation.code(),
+            Some("media_manual_replace_confirmation_required")
+        );
+
+        service
+            .media_capability_refresh(MediaCapabilityRefreshParams {
+                actor_user_public_id,
+            })
+            .await?;
+        let destructive_job = service
+            .media_job_create(MediaJobCreateParams {
+                actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: &media_source.source_path,
+                dry_run: Some(false),
+                replace_confirmation: Some("replace"),
+            })
+            .await?;
+        assert!(!destructive_job.dry_run);
+
+        let jobs = service.media_job_list(None, Some("queued")).await?;
+        assert_eq!(jobs.len(), 2);
+        assert!(
+            jobs.iter()
+                .any(|job| job.media_job_public_id == dry_run_job.media_job_public_id)
+        );
+        assert!(
+            jobs.iter()
+                .any(|job| job.media_job_public_id == destructive_job.media_job_public_id)
+        );
+        let profiles = service.media_profile_list().await?;
+        let profile = profiles
+            .iter()
+            .find(|profile| profile.media_profile_public_id == profile_id)
+            .ok_or_else(|| anyhow::anyhow!("manual media profile missing"))?;
+        assert!(profile.dry_run_only);
         Ok(())
     }
 
@@ -4213,7 +4400,7 @@ mod tests {
             enabled_profile_id
         };
         let jobs = service
-            .media_job_list(enabled_profile_id, Some("queued"))
+            .media_job_list(Some(enabled_profile_id), Some("queued"))
             .await?;
         assert_eq!(jobs.len(), 1);
         Ok(())
@@ -4274,7 +4461,7 @@ mod tests {
             enabled_profile_id
         };
         let jobs = service
-            .media_job_list(enabled_profile_id, Some("queued"))
+            .media_job_list(Some(enabled_profile_id), Some("queued"))
             .await?;
         assert_eq!(jobs.len(), 1);
         Ok(())
@@ -5153,7 +5340,7 @@ mod tests {
         assert!(service.media_job_get(job_id).await?.is_some());
         assert!(
             !service
-                .media_job_list(profile_id, Some("queued"))
+                .media_job_list(Some(profile_id), Some("queued"))
                 .await?
                 .is_empty()
         );

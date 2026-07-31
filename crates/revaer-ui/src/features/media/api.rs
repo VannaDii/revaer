@@ -11,13 +11,13 @@ use crate::models::{
     MediaCapabilityRefreshResponse, MediaCompatibilityTargetListResponse,
     MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
     MediaComplianceResponse, MediaDiscoveryPreviewRequest, MediaDiscoveryPreviewResponse,
-    MediaJobArtifactListResponse, MediaJobCompactAuditListResponse, MediaJobListResponse,
-    MediaJobOperationListResponse, MediaJobPlanReasonListResponse, MediaJobResponse,
-    MediaJobVerificationCheckListResponse, MediaJobViolationListResponse, MediaPolicyListResponse,
-    MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileListResponse,
-    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlValidationResponse,
+    MediaJobArtifactListResponse, MediaJobCompactAuditListResponse, MediaJobCreateRequest,
+    MediaJobListResponse, MediaJobOperationListResponse, MediaJobPlanReasonListResponse,
+    MediaJobResponse, MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
+    MediaPolicyListResponse, MediaPolicyResponse, MediaPolicyUpsertRequest,
+    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
+    MediaProfileUpsertRequest, MediaYamlApplyResponse, MediaYamlExportResponse,
+    MediaYamlImportRequest, MediaYamlValidationResponse,
 };
 use crate::services::api::ApiClient;
 use uuid::Uuid;
@@ -53,18 +53,11 @@ pub(crate) async fn patch_profile(
         .map_err(|err| err.to_string())
 }
 
-pub(crate) async fn fetch_jobs_for_profiles(
-    client: &ApiClient,
-    profiles: &[MediaProfileResponse],
-) -> Result<MediaJobListResponse, String> {
-    let mut jobs = Vec::new();
-    for profile in profiles {
-        let path = media_jobs_path(Some(profile.media_profile_public_id));
-        let mut response: MediaJobListResponse =
-            client.get_api(&path).await.map_err(|err| err.to_string())?;
-        jobs.append(&mut response.jobs);
-    }
-    Ok(MediaJobListResponse { jobs })
+pub(crate) async fn fetch_jobs(client: &ApiClient) -> Result<MediaJobListResponse, String> {
+    client
+        .get_api(&media_jobs_path(None))
+        .await
+        .map_err(|err| err.to_string())
 }
 
 pub(crate) async fn fetch_diagnostics_for_jobs(
@@ -124,6 +117,16 @@ pub(crate) async fn preview_discovery(
 ) -> Result<MediaDiscoveryPreviewResponse, String> {
     client
         .post_api(media_discovery_preview_path(), request)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) async fn create_media_job(
+    client: &ApiClient,
+    request: &MediaJobCreateRequest,
+) -> Result<MediaJobResponse, String> {
+    client
+        .post_api(&media_jobs_path(None), request)
         .await
         .map_err(|err| err.to_string())
 }

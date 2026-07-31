@@ -385,3 +385,4 @@
 -   [374](374-media-container-chapter-values.md) - Media container chapter values
 -   [375](375-media-container-attachment-policy.md) - Media container attachment policy
 -   [376](376-media-unmatched-stream-actions.md) - Media unmatched stream actions
+-   [377](377-media-manual-operator-loop.md) - Media manual operator loop

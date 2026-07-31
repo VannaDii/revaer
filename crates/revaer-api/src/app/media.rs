@@ -115,6 +115,21 @@ pub struct MediaDiscoveryAutomationRunParams<'a> {
     pub source_paths: &'a [String],
 }
 
+/// Create one explicit manual media job.
+#[derive(Debug, Clone)]
+pub struct MediaJobCreateParams<'a> {
+    /// Actor performing the operation.
+    pub actor_user_public_id: Uuid,
+    /// Profile association used for execution.
+    pub media_profile_public_id: Uuid,
+    /// Candidate source path.
+    pub source_path: &'a str,
+    /// Optional dry-run override for this run only.
+    pub dry_run: Option<bool>,
+    /// Optional exact confirmation phrase for destructive dry-run overrides.
+    pub replace_confirmation: Option<&'a str>,
+}
+
 /// Refresh capability snapshot parameters.
 #[derive(Debug, Clone)]
 pub struct MediaCapabilityRefreshParams {
@@ -894,10 +909,16 @@ pub trait MediaFacade: Send + Sync {
         params: MediaDiscoveryAutomationRunParams<'_>,
     ) -> Result<MediaDiscoveryRunResponse, MediaServiceError>;
 
-    /// List media jobs for profile.
+    /// Create one explicit manual media job.
+    async fn media_job_create(
+        &self,
+        params: MediaJobCreateParams<'_>,
+    ) -> Result<MediaJobResponse, MediaServiceError>;
+
+    /// List media jobs, optionally scoped to one profile.
     async fn media_job_list(
         &self,
-        media_profile_public_id: Uuid,
+        media_profile_public_id: Option<Uuid>,
         status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError>;
 
@@ -1111,9 +1132,16 @@ impl MediaFacade for NoopMedia {
         Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
     }
 
+    async fn media_job_create(
+        &self,
+        _params: MediaJobCreateParams<'_>,
+    ) -> Result<MediaJobResponse, MediaServiceError> {
+        Err(MediaServiceError::new(MediaServiceErrorKind::Storage).with_code("media_unavailable"))
+    }
+
     async fn media_job_list(
         &self,
-        _media_profile_public_id: Uuid,
+        _media_profile_public_id: Option<Uuid>,
         _status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError> {
         Ok(Vec::new())

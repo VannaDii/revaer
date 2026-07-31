@@ -113,6 +113,7 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_job_desired_target_metadata_list_v1",
     "media_job_desired_target_chapter_list_v1",
     "media_job_desired_target_audio_constraints_snapshot_v1",
+    "media_manual_job_create_v1",
     "media_job_list_v1",
     "media_job_get_v1",
     "media_job_cancel_v1",

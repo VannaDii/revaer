@@ -1,0 +1,83 @@
+# Media Manual Operator Loop
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - Discovery preview exposed whether a profile would accept a source path, but operators still lacked a first-class manual path from previewed source to an explicitly queued media job.
+  - Destructive replacement must remain fail-closed. A one-off replacement request against a dry-run profile must not silently mutate the profile or accept loose confirmation text.
+  - Discovery deduplication is correct for automated filesystem events, but manual operator reruns need to create a new job for the same source fingerprint when the operator explicitly asks for another dry-run or replacement attempt.
+- Decision:
+  - Add `POST /v1/media/jobs` for manual media job creation.
+  - Keep `/v1/media/jobs` listable without a profile filter so the operator can see recently queued manual and discovered jobs together.
+  - Add stored procedure `media_manual_job_create_v1` to fingerprint the source and create a normal media job while allowing repeated manual runs for the same file identity.
+  - Route manual job creation through the same app-service planning preview, path validation, capability readiness, source fingerprinting, and job-store boundary used by discovery-owned work.
+  - Require exact `replace` confirmation before a dry-run profile can queue a destructive one-off replacement job.
+  - Add operator UI buttons on accepted discovery preview rows for explicit dry-run and replacement queueing.
+  - Alternatives considered:
+    - Reusing discovery enqueue directly: rejected because discovery deduplication would suppress deliberate manual reruns.
+    - Toggling the profile to replacement mode for one job: rejected because it would make destructive behavior mutable global profile state instead of an auditable per-job request.
+- Consequences:
+  - Positive outcomes:
+    - Operators can move from preview to queued job without relying on watcher or scheduled discovery timing.
+    - Manual dry-run and replacement attempts share the same persisted job diagnostics and worker pipeline as automated jobs.
+    - Dry-run profiles remain dry-run after one-off replacement queueing.
+  - Risks or trade-offs:
+    - Manual repeated queueing can intentionally create multiple queued jobs for the same source identity.
+    - The replacement confirmation string is intentionally strict and may require an extra operator retry when mistyped.
+- Follow-up:
+  - Verify full `just ci`, `just ui-e2e`, media conversion fixtures, and remote PR checks before treating this slice as merge-ready.
+  - Continue acceptance testing the merged stack against the full media transcoding specification before claiming production completeness.
+
+## Task Record
+
+- Motivation:
+  - Close the operator-control gap between discovery preview and actual queued transcoding work.
+- Design notes:
+  - `MediaJobCreateRequest` carries the profile, source path, optional dry-run override, and optional replacement confirmation.
+  - The app service computes effective dry-run mode from the request and profile, validates destructive override confirmation, proves replacement readiness before destructive queueing, runs single-source discovery preview, fingerprints the source, and creates the manual job through the store.
+  - The data layer adds a manual creation procedure instead of weakening discovery fingerprint deduplication.
+  - The UI keeps preview and queueing explicit: rejected preview rows remain read-only, while accepted rows expose dry-run and replacement buttons.
+- Test coverage summary:
+  - `cargo fmt --all`
+  - `just fmt`
+  - `git diff --check`
+  - `just policy`
+  - `just instruction-drift`
+  - `cargo check -p revaer-ui --target wasm32-unknown-unknown`
+  - `cargo check -p revaer-api-models -p revaer-data -p revaer-api -p revaer-runtime -p revaer-app -p revaer-media-runtime --no-default-features`
+  - `cargo test -p revaer-api --no-default-features create_media_job_rejects -- --nocapture`
+  - `cargo test -p revaer-api --no-default-features list_media_jobs_without_profile_filter_uses_collection_route -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features manual_replace_confirmation_must_be_exact_for_dry_run_override -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features manual_job_creation_allows_explicit_replace_override_without_mutating_profile -- --nocapture`
+  - `cargo test -p revaer-data manual_job_creation_refreshes_fingerprint_and_allows_repeated_runs -- --nocapture` ran locally, but database-backed assertions were skipped because no test database URL was configured for the direct invocation.
+  - `cargo test -p revaer-data media::schema_tests -- --nocapture` ran locally, but database-backed assertions were skipped because no test database URL was configured for the direct invocation.
+  - `cargo run -p revaer-api --bin generate_openapi`
+  - `npm install` in `tests` completed with zero vulnerabilities and the existing `fsevents` install-script approval warning.
+  - `npm run gen:api-client` in `tests`
+  - Added Playwright API E2E route coverage for `POST /v1/media/jobs` via both the manual-job validation path and a successful dry-run queueing path that verifies the created manual job is visible in the profile job list.
+  - Refactored manual-job UI queueing helpers after the PR Sonar scan reported cognitive complexity in `build_create_media_job_callback`.
+  - `just download-test-fixtures`
+  - `just generate-test-fixtures`
+  - `just test-media-conversion`
+  - `just clean-test-fixtures`
+  - A follow-up scan found no media files remaining under `test-fixtures` or `target`.
+  - `sonar verify --file crates/revaer-api-models/src/lib.rs --project VannaDii_Revaer` was attempted as the first changed-file Agentic Analysis check and failed with SonarQube API 403 because Agentic Analysis is not available for the organization.
+  - `sonar analyze secrets` ran over all changed and untracked files and completed successfully.
+  - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table` reported no issues.
+  - `just ci` was attempted locally and stopped in `db-start` because Docker was not reachable at `/Users/vanna/.docker/run/docker.sock` and no Postgres endpoint became reachable on `localhost:5432`.
+  - `just ui-e2e` installed dependencies, regenerated the API client, and then stopped at the same local Docker/Postgres boundary before Playwright API coverage files could be produced.
+- Observability updates:
+  - Manual queueing increments the existing bounded `media_jobs_queued_total` metric with `source="manual"` and the effective dry-run label.
+  - The HTTP route publishes the existing `MediaJobQueued` event for manually queued jobs.
+- Status-doc validation:
+  - Updated OpenAPI source and generated `docs/api/openapi.json` and `crates/revaer-app/docs/api/openapi.json`.
+  - Updated media operator UI and generated TypeScript API schema from the regenerated OpenAPI document.
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+- Risk & rollback plan:
+  - Roll back migration 0177 and the API/app/UI wiring if manual job creation bypasses operator safeguards.
+  - Keep discovery enqueue behavior unchanged so automated deduplication remains the fallback if the manual endpoint is disabled.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found for this slice.

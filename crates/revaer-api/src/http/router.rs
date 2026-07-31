@@ -500,7 +500,9 @@ impl ApiServer {
             )
             .route(
                 "/v1/media/jobs",
-                get(media_handlers::list_media_jobs).route_layer(require_api.clone()),
+                get(media_handlers::list_media_jobs)
+                    .post(media_handlers::create_media_job)
+                    .route_layer(require_api.clone()),
             )
             .route(
                 "/v1/media/jobs/{media_job_public_id}",

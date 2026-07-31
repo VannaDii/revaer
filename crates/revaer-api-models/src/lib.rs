@@ -877,6 +877,21 @@ pub struct MediaDiscoveryRunResponse {
     pub skipped: Vec<MediaDiscoverySkippedItemResponse>,
 }
 
+/// Request payload for explicit manual media job creation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCreateRequest {
+    /// Profile association used for execution.
+    pub media_profile_public_id: Uuid,
+    /// Candidate source path.
+    pub source_path: String,
+    /// Optional dry-run override for this run only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dry_run: Option<bool>,
+    /// Exact `replace` phrase required only for destructive dry-run overrides.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replace_confirmation: Option<String>,
+}
+
 /// Discovery schedule summary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaDiscoveryScheduleResponse {

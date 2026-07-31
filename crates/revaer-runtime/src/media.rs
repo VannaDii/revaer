@@ -20,15 +20,16 @@ use revaer_data::media::configuration::{
 };
 use revaer_data::media::jobs::{
     AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
-    AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow, CreateMediaJobInput,
-    EnqueueDiscoveredMediaJobInput, MediaJobArtifactRow, MediaJobCompactAuditRow,
-    MediaJobControlRow, MediaJobDesiredTargetChapterRow, MediaJobDesiredTargetMetadataRow,
-    MediaJobDesiredTargetStreamRow, MediaJobOperationRow, MediaJobPhaseRow, MediaJobPlanReasonRow,
-    MediaJobRetentionRunRow, MediaJobRow, MediaJobVerificationCheckRow, MediaJobViolationRow,
-    RecoveredMediaJobRow, append_media_job_artifact, append_media_job_compact_audit,
-    append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
-    append_media_job_verification_check, append_media_job_violation, cancel_media_job,
-    create_media_job, enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
+    AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow, CreateManualMediaJobInput,
+    CreateMediaJobInput, EnqueueDiscoveredMediaJobInput, MediaJobArtifactRow,
+    MediaJobCompactAuditRow, MediaJobControlRow, MediaJobDesiredTargetChapterRow,
+    MediaJobDesiredTargetMetadataRow, MediaJobDesiredTargetStreamRow, MediaJobOperationRow,
+    MediaJobPhaseRow, MediaJobPlanReasonRow, MediaJobRetentionRunRow, MediaJobRow,
+    MediaJobVerificationCheckRow, MediaJobViolationRow, RecoveredMediaJobRow,
+    append_media_job_artifact, append_media_job_compact_audit, append_media_job_operation,
+    append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
+    append_media_job_violation, cancel_media_job, create_manual_media_job, create_media_job,
+    enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
     list_media_job_compact_audits, list_media_job_desired_target_chapters,
     list_media_job_desired_target_metadata, list_media_job_desired_target_streams,
     list_media_job_operations, list_media_job_phases, list_media_job_plan_reasons,
@@ -187,6 +188,18 @@ impl MediaStore {
         create_media_job(&self.pool, input).await
     }
 
+    /// Create a manual operator media job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the fingerprint refresh or stored-procedure call fails.
+    pub async fn create_manual_job(
+        &self,
+        input: &CreateManualMediaJobInput<'_>,
+    ) -> DataResult<Uuid> {
+        create_manual_media_job(&self.pool, input).await
+    }
+
     /// Append a media job phase.
     ///
     /// # Errors
@@ -330,7 +343,7 @@ impl MediaStore {
     /// Returns an error when the underlying stored-procedure call fails.
     pub async fn list_jobs(
         &self,
-        media_profile_public_id: Uuid,
+        media_profile_public_id: Option<Uuid>,
         status_text: Option<&str>,
     ) -> DataResult<Vec<MediaJobRow>> {
         list_media_jobs(&self.pool, media_profile_public_id, status_text).await
@@ -959,7 +972,7 @@ mod tests {
         append_and_assert_verification_check(&store, job_id).await?;
         append_and_assert_artifact_and_audit(&store, job_id).await?;
 
-        let jobs = store.list_jobs(profile_id, Some("queued")).await?;
+        let jobs = store.list_jobs(Some(profile_id), Some("queued")).await?;
         assert!(jobs.iter().any(|job| job.media_job_public_id == job_id));
         let operations = store.list_job_operations(job_id).await?;
         assert_eq!(operations.len(), 1);
@@ -1209,7 +1222,12 @@ mod tests {
                 .await
                 .is_err()
         );
-        assert!(store.list_jobs(profile_id, Some("queued")).await.is_err());
+        assert!(
+            store
+                .list_jobs(Some(profile_id), Some("queued"))
+                .await
+                .is_err()
+        );
         assert!(store.get_job(job_id).await.is_err());
         assert!(store.list_job_phases(job_id).await.is_err());
         assert!(store.list_job_operations(job_id).await.is_err());
