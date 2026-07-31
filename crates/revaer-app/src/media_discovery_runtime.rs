@@ -735,14 +735,16 @@ mod tests {
         wait_for_job_count(&store, profile_id, 1).await?;
         sleep(Duration::from_secs(2)).await;
         assert_eq!(
-            list_media_jobs(store.pool(), profile_id, None).await?.len(),
+            list_media_jobs(store.pool(), Some(profile_id), None)
+                .await?
+                .len(),
             1
         );
 
         fs::write(&source_path, b"second-version")?;
         wait_for_job_count(&store, profile_id, 2).await?;
         sleep(Duration::from_secs(2)).await;
-        let jobs = list_media_jobs(store.pool(), profile_id, None).await?;
+        let jobs = list_media_jobs(store.pool(), Some(profile_id), None).await?;
         assert_eq!(jobs.len(), 2);
         assert!(jobs.iter().all(|job| job.dry_run));
 
@@ -839,7 +841,7 @@ mod tests {
         sleep(Duration::from_secs(2)).await;
 
         assert!(
-            list_media_jobs(store.pool(), profile_id, None)
+            list_media_jobs(store.pool(), Some(profile_id), None)
                 .await?
                 .is_empty()
         );
@@ -914,7 +916,7 @@ mod tests {
     ) -> anyhow::Result<()> {
         timeout(Duration::from_secs(10), async {
             loop {
-                let jobs = list_media_jobs(store.pool(), profile_id, None).await?;
+                let jobs = list_media_jobs(store.pool(), Some(profile_id), None).await?;
                 if jobs.len() == expected {
                     return Ok::<(), DataError>(());
                 }
