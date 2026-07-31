@@ -98,6 +98,8 @@ const CONTAINER_CHAPTER_POLICY_INVALID: &str =
     "container_chapter_policy must be preserve, strip, or replace";
 const CONTAINER_CHAPTERS_INVALID: &str =
     "container_chapters must be non-empty only when container_chapter_policy is replace";
+const CONTAINER_ATTACHMENT_POLICY_INVALID: &str =
+    "container_attachment_policy must be preserve or strip";
 const DESIRED_TARGET_STREAMS_REQUIRED: &str = "streams must contain at least one stream";
 const DISPLAY_NAME_REQUIRED: &str = "display_name is required";
 const VIDEO_CODEC_REQUIRED: &str = "video_codec is required";
@@ -465,6 +467,8 @@ pub(crate) async fn create_media_desired_target(
         normalize_container_chapter_policy(request.container_chapter_policy.as_deref())?;
     let container_chapters =
         normalize_container_chapters(&container_chapter_policy, &request.container_chapters)?;
+    let container_attachment_policy =
+        normalize_container_attachment_policy(request.container_attachment_policy.as_deref())?;
     if request.streams.is_empty() {
         return Err(ApiError::bad_request(DESIRED_TARGET_STREAMS_REQUIRED));
     }
@@ -479,6 +483,7 @@ pub(crate) async fn create_media_desired_target(
         container_metadata,
         container_chapter_policy,
         container_chapters,
+        container_attachment_policy,
         streams: request
             .streams
             .iter()
@@ -1426,6 +1431,7 @@ fn map_desired_target_response(
         container_metadata: target.container_metadata,
         container_chapter_policy: target.container_chapter_policy,
         container_chapters: target.container_chapters,
+        container_attachment_policy: target.container_attachment_policy,
         streams: target.streams,
     }
 }
@@ -1509,6 +1515,10 @@ fn normalize_container_metadata_policy(value: Option<&str>) -> Result<String, Ap
 
 fn normalize_container_chapter_policy(value: Option<&str>) -> Result<String, ApiError> {
     normalize_container_policy(value, CONTAINER_CHAPTER_POLICY_INVALID, true)
+}
+
+fn normalize_container_attachment_policy(value: Option<&str>) -> Result<String, ApiError> {
+    normalize_container_policy(value, CONTAINER_ATTACHMENT_POLICY_INVALID, false)
 }
 
 fn normalize_container_policy(
@@ -2193,6 +2203,22 @@ mod tests {
     }
 
     #[test]
+    fn container_attachment_policy_normalizes_supported_values() -> anyhow::Result<()> {
+        assert_eq!(normalize_container_attachment_policy(None)?, "preserve");
+        assert_eq!(
+            normalize_container_attachment_policy(Some(" Strip "))?,
+            "strip"
+        );
+        assert_eq!(
+            normalize_container_attachment_policy(Some(" Preserve "))?,
+            "preserve"
+        );
+        assert!(normalize_container_attachment_policy(Some("replace")).is_err());
+        assert!(normalize_container_attachment_policy(Some("rewrite")).is_err());
+        Ok(())
+    }
+
+    #[test]
     fn container_chapter_values_normalize_only_for_replace_policy() -> anyhow::Result<()> {
         let chapters = vec![
             MediaDesiredTargetChapterEntry {
@@ -2421,6 +2447,7 @@ mod tests {
                 container_metadata_policy: None,
                 container_metadata: Vec::new(),
                 container_chapter_policy: None,
+                container_attachment_policy: None,
                 container_chapters: Vec::new(),
                 streams: Vec::new(),
             }),
@@ -2438,12 +2465,31 @@ mod tests {
                 container_metadata_policy: Some("rewrite".to_string()),
                 container_metadata: Vec::new(),
                 container_chapter_policy: None,
+                container_attachment_policy: None,
                 container_chapters: Vec::new(),
                 streams: vec![valid_stream.clone()],
             }),
         )
         .await;
         assert!(invalid_metadata_policy.is_err());
+
+        let invalid_attachment_policy = create_media_desired_target(
+            State(state.clone()),
+            Json(MediaDesiredTargetCreateRequest {
+                target_key: "target".to_string(),
+                version: 1,
+                display_name: "Target".to_string(),
+                container_format: "matroska".to_string(),
+                container_metadata_policy: None,
+                container_metadata: Vec::new(),
+                container_chapter_policy: None,
+                container_attachment_policy: Some("replace".to_string()),
+                container_chapters: Vec::new(),
+                streams: vec![valid_stream.clone()],
+            }),
+        )
+        .await;
+        assert!(invalid_attachment_policy.is_err());
 
         let unavailable = create_media_desired_target(
             State(state.clone()),
@@ -2455,6 +2501,7 @@ mod tests {
                 container_metadata_policy: Some(" Preserve ".to_string()),
                 container_metadata: Vec::new(),
                 container_chapter_policy: Some(" Preserve ".to_string()),
+                container_attachment_policy: Some(" Preserve ".to_string()),
                 container_chapters: Vec::new(),
                 streams: vec![valid_stream.clone()],
             }),
@@ -2715,11 +2762,13 @@ mod tests {
             container_metadata_policy: "preserve".to_string(),
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
+            container_attachment_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
             streams: vec![params],
         });
         assert_eq!(response.container_metadata_policy, "preserve");
         assert_eq!(response.container_chapter_policy, "preserve");
+        assert_eq!(response.container_attachment_policy, "preserve");
         let response_stream = response
             .streams
             .first()

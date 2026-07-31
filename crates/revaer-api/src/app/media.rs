@@ -175,6 +175,8 @@ pub struct MediaDesiredTargetCreateParams {
     pub container_chapter_policy: String,
     /// Exact desired chapter timeline rows for the `replace` chapter policy.
     pub container_chapters: Vec<MediaDesiredTargetChapterParams>,
+    /// Desired container attachment policy.
+    pub container_attachment_policy: String,
     /// Complete ordered stream graph.
     pub streams: Vec<MediaDesiredTargetStreamParams>,
 }
@@ -334,6 +336,9 @@ pub struct MediaYamlDesiredTarget {
     /// Exact desired chapter timeline rows for the `replace` chapter policy.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub container_chapters: Vec<MediaDesiredTargetChapterParams>,
+    /// Desired container attachment policy.
+    #[serde(default = "default_container_attachment_policy")]
+    pub container_attachment_policy: String,
     /// Complete ordered stream graph.
     pub streams: Vec<MediaDesiredTargetStreamParams>,
 }
@@ -408,6 +413,10 @@ fn default_container_metadata_policy() -> String {
 }
 
 fn default_container_chapter_policy() -> String {
+    "preserve".to_string()
+}
+
+fn default_container_attachment_policy() -> String {
     "preserve".to_string()
 }
 
@@ -510,6 +519,8 @@ pub struct MediaDesiredTargetResponse {
     pub container_chapter_policy: String,
     /// Exact desired chapter timeline rows for the `replace` chapter policy.
     pub container_chapters: Vec<MediaDesiredTargetChapterParams>,
+    /// Desired container attachment policy.
+    pub container_attachment_policy: String,
     /// Complete ordered stream graph.
     pub streams: Vec<MediaDesiredTargetStreamParams>,
 }

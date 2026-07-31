@@ -27,7 +27,8 @@ use revaer_media_core::classify::SemanticRole;
 use revaer_media_core::model::{ContainerChapterEntry, ContainerMetadataEntry, DesiredGraph};
 use revaer_media_core::model::{MediaGraph, MediaStream, StreamKind};
 use revaer_media_core::normalize::{
-    normalize_audio_channel_layout, normalize_container_chapter_policy, normalize_container_format,
+    normalize_audio_channel_layout, normalize_container_attachment_policy,
+    normalize_container_chapter_policy, normalize_container_format,
     normalize_container_metadata_policy,
 };
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
@@ -924,6 +925,7 @@ impl MediaJobRuntime {
                         container_metadata: Vec::new(),
                         container_chapter_policy: None,
                         container_chapters: Vec::new(),
+                        container_attachment_policy: None,
                         streams: source_graph.streams.clone(),
                     },
                     sidecar_embeddings: Vec::new(),
@@ -2236,6 +2238,7 @@ fn desired_target_from_job(
             || job.desired_container_format.is_some()
             || job.desired_container_metadata_policy.is_some()
             || job.desired_container_chapter_policy.is_some()
+            || job.desired_container_attachment_policy.is_some()
         {
             return Err(MediaJobRuntimeError::InvalidDesiredGraph(
                 "media_job_desired_target_snapshot_incomplete",
@@ -2278,6 +2281,17 @@ fn desired_target_from_job(
             "media_job_desired_container_chapter_policy_unsupported",
         ));
     };
+    let container_attachment_policy = normalized_snapshot_field(
+        job.desired_container_attachment_policy.as_deref(),
+        "media_job_desired_container_attachment_policy_missing",
+    )?;
+    let Some(container_attachment_policy) =
+        normalize_container_attachment_policy(&container_attachment_policy).map(str::to_string)
+    else {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_desired_container_attachment_policy_unsupported",
+        ));
+    };
     let unmatched_stream_policy =
         unmatched_stream_policy_from_snapshot(job.unmatched_stream_policy.as_deref())?;
     let streams = rows
@@ -2300,6 +2314,7 @@ fn desired_target_from_job(
             container_metadata,
             container_chapter_policy,
             container_chapters,
+            container_attachment_policy,
             streams,
         },
         unmatched_stream_policy,
@@ -2622,6 +2637,7 @@ fn compile_desired_graph(
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: source.streams.clone(),
         };
     };
@@ -2695,6 +2711,7 @@ fn compile_desired_graph(
         container_metadata: Vec::new(),
         container_chapter_policy: None,
         container_chapters: Vec::new(),
+        container_attachment_policy: None,
         streams,
     }
 }
@@ -5036,6 +5053,7 @@ mod tests {
                 container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
                 container_chapters: Vec::new(),
+                container_attachment_policy: "preserve".to_string(),
                 streams: vec![stream],
             },
             unmatched_stream_policy: UnmatchedStreamPolicy::Preserve,
@@ -5281,6 +5299,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: video_graph("/tmp/source.mkv", "h264").streams,
         };
         let mut stream = target_stream("main-video", StreamKind::Video, "hevc");
@@ -5304,6 +5323,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: video_graph("/tmp/source.mkv", "h264").streams,
         };
         let mut stream = target_stream("dialog-audio", StreamKind::Audio, "aac");
@@ -5649,6 +5669,7 @@ mod tests {
                         container_format: "matroska",
                         container_metadata_policy,
                         container_chapter_policy,
+                        container_attachment_policy: "preserve",
                     },
                 )
                 .await?;
@@ -8193,6 +8214,7 @@ Integrated loudness:
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![
                 verification_test_stream(0, StreamKind::Video, "hevc", None, None, &["default"]),
                 verification_test_stream(
@@ -8269,6 +8291,7 @@ Integrated loudness:
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspected = MediaGraph {
@@ -8584,6 +8607,7 @@ Integrated loudness:
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: source.streams.clone(),
         };
         let report = JobPreflightReport {
@@ -8673,6 +8697,7 @@ Integrated loudness:
             desired_container_format: None,
             desired_container_metadata_policy: None,
             desired_container_chapter_policy: None,
+            desired_container_attachment_policy: None,
             unmatched_stream_policy: Some("remove".to_string()),
             verification_strictness: "strict".to_string(),
             verification_duration_tolerance_millis: 100,
@@ -8681,6 +8706,36 @@ Integrated loudness:
             verification_keyframe_seek: true.into(),
             verification_playback_probe: true.into(),
             cancel_generation: 0,
+        }
+    }
+
+    fn desired_video_target_stream_row() -> MediaJobDesiredTargetStreamRow {
+        MediaJobDesiredTargetStreamRow {
+            stream_key: "video-main".to_string(),
+            stream_kind: "video".to_string(),
+            semantic_role: None,
+            language_code: None,
+            optional: false,
+            sort_order: 0,
+            codec: "hevc".to_string(),
+            channel_count: None,
+            channel_layout: None,
+            audio_bitrate_bps: None,
+            audio_sample_rate_hz: None,
+            audio_loudness_profile: None,
+            audio_dynamic_range: None,
+            video_profile: None,
+            video_level: None,
+            video_bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            title: None,
+            default_disposition: false,
+            forced_disposition: false,
+            subtitle_placement: None,
+            image_subtitle_action: None,
         }
     }
 
@@ -8715,6 +8770,7 @@ Integrated loudness:
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some("preserve".to_string());
         job.desired_container_chapter_policy = Some("preserve".to_string());
+        job.desired_container_attachment_policy = Some("preserve".to_string());
 
         let result = desired_target_from_job(&job, Vec::new(), Vec::new(), Vec::new());
 
@@ -8738,6 +8794,7 @@ Integrated loudness:
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some("rewrite".to_string());
         job.desired_container_chapter_policy = Some("preserve".to_string());
+        job.desired_container_attachment_policy = Some("preserve".to_string());
 
         let result = desired_target_from_job(&job, Vec::new(), Vec::new(), Vec::new());
 
@@ -8764,6 +8821,7 @@ Integrated loudness:
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some(" Strip ".to_string());
         job.desired_container_chapter_policy = Some("preserve".to_string());
+        job.desired_container_attachment_policy = Some("preserve".to_string());
 
         let target = desired_target_from_job(
             &job,
@@ -8821,6 +8879,7 @@ Integrated loudness:
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some(" Replace ".to_string());
         job.desired_container_chapter_policy = Some("preserve".to_string());
+        job.desired_container_attachment_policy = Some("preserve".to_string());
 
         let target = desired_target_from_job(
             &job,
@@ -8901,6 +8960,7 @@ Integrated loudness:
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some("preserve".to_string());
         job.desired_container_chapter_policy = Some("rewrite".to_string());
+        job.desired_container_attachment_policy = Some("preserve".to_string());
 
         let result = desired_target_from_job(&job, Vec::new(), Vec::new(), Vec::new());
 
@@ -8910,6 +8970,65 @@ Integrated loudness:
         assert_eq!(
             error.code(),
             "media_job_desired_container_chapter_policy_unsupported"
+        );
+    }
+
+    #[test]
+    fn desired_target_snapshot_rejects_unsupported_container_attachment_policy() {
+        let mut job = claimed_job_with_paths(
+            "/input/movie.mkv",
+            Some("/output/movie.mkv".to_string()),
+            false,
+            "/input",
+            "/output",
+        );
+        job.desired_target_key = Some("living-room-output".to_string());
+        job.desired_target_version = Some(1);
+        job.desired_container_format = Some("matroska".to_string());
+        job.desired_container_metadata_policy = Some("preserve".to_string());
+        job.desired_container_chapter_policy = Some("preserve".to_string());
+        job.desired_container_attachment_policy = Some("rewrite".to_string());
+
+        let result = desired_target_from_job(&job, Vec::new(), Vec::new(), Vec::new());
+
+        let Err(error) = result else {
+            panic!("unsupported desired-target container attachment policy should fail");
+        };
+        assert_eq!(
+            error.code(),
+            "media_job_desired_container_attachment_policy_unsupported"
+        );
+    }
+
+    #[test]
+    fn desired_target_snapshot_accepts_strip_container_attachment_policy() {
+        let mut job = claimed_job_with_paths(
+            "/input/movie.mkv",
+            Some("/output/movie.mkv".to_string()),
+            false,
+            "/input",
+            "/output",
+        );
+        job.desired_target_key = Some("living-room-output".to_string());
+        job.desired_target_version = Some(1);
+        job.desired_container_format = Some("matroska".to_string());
+        job.desired_container_metadata_policy = Some("preserve".to_string());
+        job.desired_container_chapter_policy = Some("preserve".to_string());
+        job.desired_container_attachment_policy = Some(" Strip ".to_string());
+
+        let target = desired_target_from_job(
+            &job,
+            vec![desired_video_target_stream_row()],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap_or(None);
+
+        assert_eq!(
+            target
+                .as_ref()
+                .map(|snapshot| snapshot.target.container_attachment_policy.as_str()),
+            Some("strip")
         );
     }
 
@@ -8927,6 +9046,7 @@ Integrated loudness:
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some("preserve".to_string());
         job.desired_container_chapter_policy = Some(" Strip ".to_string());
+        job.desired_container_attachment_policy = Some("preserve".to_string());
 
         let target = desired_target_from_job(
             &job,
@@ -8984,6 +9104,7 @@ Integrated loudness:
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some("preserve".to_string());
         job.desired_container_chapter_policy = Some(" Replace ".to_string());
+        job.desired_container_attachment_policy = Some("preserve".to_string());
 
         let target = desired_target_from_job(
             &job,
@@ -9081,6 +9202,7 @@ Integrated loudness:
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some("preserve".to_string());
         job.desired_container_chapter_policy = Some("preserve".to_string());
+        job.desired_container_attachment_policy = Some("preserve".to_string());
         job.unmatched_stream_policy = Some(" Preserve ".to_string());
 
         let Some(snapshot) = desired_target_from_job(

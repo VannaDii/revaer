@@ -6,7 +6,8 @@ use revaer_media_core::model::{
     StreamKind,
 };
 use revaer_media_core::normalize::{
-    normalize_audio_channel_layout, normalize_container_chapter_policy, normalize_container_format,
+    normalize_audio_channel_layout, normalize_container_attachment_policy,
+    normalize_container_chapter_policy, normalize_container_format,
     normalize_container_metadata_policy, normalize_subtitle_codec,
 };
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
@@ -43,6 +44,9 @@ pub enum BuildArgsError {
     /// Desired container chapter policy is not supported by runtime command construction.
     #[error("required container chapter policy is not supported: {0}")]
     UnsupportedContainerChapterPolicy(String),
+    /// Desired container attachment policy is not supported by runtime command construction.
+    #[error("required container attachment policy is not supported: {0}")]
+    UnsupportedContainerAttachmentPolicy(String),
     /// Arbitrary metadata rewrite is not implemented as a verified desired-state contract.
     #[error("metadata rewrite is not supported until desired metadata verification is implemented")]
     UnsupportedMetadataRewrite,
@@ -583,6 +587,7 @@ fn append_input_preservation_args(
     container_metadata: &[ContainerMetadataEntry],
     container_chapter_policy: Option<&str>,
     container_chapters: &[ContainerChapterEntry],
+    container_attachment_policy: Option<&str>,
     chapter_input_index: Option<usize>,
 ) -> Result<(), BuildArgsError> {
     append_container_metadata_args(args, container_metadata_policy, container_metadata)?;
@@ -592,6 +597,16 @@ fn append_input_preservation_args(
         container_chapters,
         chapter_input_index,
     )?;
+    validate_container_attachment_policy(container_attachment_policy)?;
+    Ok(())
+}
+
+fn validate_container_attachment_policy(policy: Option<&str>) -> Result<(), BuildArgsError> {
+    if let Some(value) = policy {
+        normalize_container_attachment_policy(value).ok_or_else(|| {
+            BuildArgsError::UnsupportedContainerAttachmentPolicy(value.to_string())
+        })?;
+    }
     Ok(())
 }
 
@@ -889,7 +904,7 @@ fn build_ffmpeg_argv_with_video_policy(
         }
     }
 
-    append_input_preservation_args(&mut args, None, &[], None, &[], None)?;
+    append_input_preservation_args(&mut args, None, &[], None, &[], None, None)?;
     args.push(output_path.to_string());
     Ok(args)
 }
@@ -1256,6 +1271,7 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
         &desired.container_metadata,
         desired.container_chapter_policy.as_deref(),
         &desired.container_chapters,
+        desired.container_attachment_policy.as_deref(),
         chapter_metadata_path
             .as_ref()
             .map(|_| sidecar_embeddings.len() + 1),
@@ -3312,6 +3328,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -3374,6 +3391,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![source_stream],
         };
         let capabilities = CapabilitySnapshot {
@@ -3443,6 +3461,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![source_stream],
         };
         let operations = [PlannedOperation {
@@ -3498,6 +3517,7 @@ mod tests {
             ],
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![source_stream],
         };
         let operations = [PlannedOperation {
@@ -3552,6 +3572,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![source_stream],
         };
         let operations = [PlannedOperation {
@@ -3572,6 +3593,63 @@ mod tests {
 
         assert!(argv.windows(2).any(|pair| pair == ["-map_metadata", "0"]));
         assert!(argv.windows(2).any(|pair| pair == ["-map_chapters", "-1"]));
+    }
+
+    #[test]
+    fn desired_graph_strip_container_attachments_does_not_map_attachment_streams() {
+        let source_stream = MediaStream {
+            stream_id: 0,
+            kind: StreamKind::Video,
+            codec: "h264".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: Some("Main".to_string()),
+            dispositions: vec!["default".to_string()],
+        };
+        let attachment_stream = MediaStream {
+            stream_id: 1,
+            kind: StreamKind::Attachment,
+            codec: "ttf".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: Some("Font".to_string()),
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![source_stream.clone(), attachment_stream],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: Some("strip".to_string()),
+            streams: vec![source_stream],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+        }];
+
+        let argv = build_desired_graph_ffmpeg_argv(
+            "/in.mkv",
+            "/out.mkv",
+            &source,
+            &desired,
+            &operations,
+            None,
+            VideoTranscodePolicy::default(),
+        )
+        .unwrap_or_default();
+
+        assert!(argv.windows(2).any(|pair| pair == ["-map", "0:0"]));
+        assert!(!argv.windows(2).any(|pair| pair == ["-map", "0:1"]));
     }
 
     #[test]
@@ -3605,6 +3683,7 @@ mod tests {
                     value: "Intro".to_string(),
                 }],
             }],
+            container_attachment_policy: None,
             streams: vec![source_stream],
         };
         let operations = [PlannedOperation {
@@ -3668,6 +3747,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![source_stream],
         };
         let operations = [PlannedOperation {
@@ -3715,6 +3795,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: Some("rewrite".to_string()),
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![source_stream],
         };
         let operations = [PlannedOperation {
@@ -3733,6 +3814,54 @@ mod tests {
                 VideoTranscodePolicy::default(),
             ),
             Err(BuildArgsError::UnsupportedContainerChapterPolicy(
+                "rewrite".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn desired_graph_rejects_unknown_container_attachment_policy() {
+        let source_stream = MediaStream {
+            stream_id: 0,
+            kind: StreamKind::Video,
+            codec: "h264".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![source_stream.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: Some("rewrite".to_string()),
+            streams: vec![source_stream],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+        }];
+
+        assert_eq!(
+            build_desired_graph_ffmpeg_argv(
+                "/in.mkv",
+                "/out.mkv",
+                &source,
+                &desired,
+                &operations,
+                None,
+                VideoTranscodePolicy::default(),
+            ),
+            Err(BuildArgsError::UnsupportedContainerAttachmentPolicy(
                 "rewrite".to_string()
             ))
         );
@@ -3761,6 +3890,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -3835,6 +3965,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![stream],
         };
         let capabilities = CapabilitySnapshot {
@@ -3895,6 +4026,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: source.streams.clone(),
         };
         let operations = [PlannedOperation {
@@ -3960,6 +4092,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: source.streams.clone(),
         };
         let operations = [PlannedOperation {
@@ -4014,6 +4147,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 title: Some("renamed".to_string()),
                 ..attachment
@@ -4062,6 +4196,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 title: Some("renamed".to_string()),
                 ..data_stream
@@ -4110,6 +4245,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![stream],
         };
         let operations = [PlannedOperation {
@@ -4154,6 +4290,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -4233,6 +4370,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -4288,6 +4426,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -4340,6 +4479,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4392,6 +4532,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4455,6 +4596,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -4534,6 +4676,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4589,6 +4732,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 9,
                 kind: StreamKind::Audio,
@@ -4641,6 +4785,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -4693,6 +4838,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4750,6 +4896,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4811,6 +4958,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4885,6 +5033,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -4958,6 +5107,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -5308,6 +5458,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![video, subtitle.clone()],
         };
         let embeddings = [SidecarEmbedding {
@@ -5391,6 +5542,7 @@ mod tests {
                     container_metadata: Vec::new(),
                     container_chapter_policy: None,
                     container_chapters: Vec::new(),
+                    container_attachment_policy: None,
                     streams: source.streams.clone(),
                 },
                 operations: &output_operations,

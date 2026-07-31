@@ -383,3 +383,4 @@
 -   [372](372-media-container-chapter-strip-policy.md) - Media container chapter strip policy
 -   [373](373-media-container-metadata-values.md) - Media container metadata values
 -   [374](374-media-container-chapter-values.md) - Media container chapter values
+-   [375](375-media-container-attachment-policy.md) - Media container attachment policy

@@ -95,6 +95,9 @@ pub struct DesiredGraph {
     /// Desired exact chapter timeline rows when the chapter policy is `replace`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub container_chapters: Vec<ContainerChapterEntry>,
+    /// Desired attachment policy when a target selects one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_attachment_policy: Option<String>,
     /// Required streams in deterministic output order.
     pub streams: Vec<MediaStream>,
 }

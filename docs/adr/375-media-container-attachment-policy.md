@@ -1,0 +1,78 @@
+# Media Container Attachment Policy
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - ADR 369 proved attachment passthrough, but desired targets still had no explicit contract for intentionally removing container attachments.
+  - Attachments, especially Matroska fonts and cover assets, are not ordinary target streams in the first authored target surface. Removing them must be explicit, not an accidental side effect of unmatched-stream handling.
+  - The service needs one persisted desired-target value that API, YAML, database snapshots, runtime planning, command construction, and review evidence can all agree on.
+- Decision:
+  - Add `container_attachment_policy` to desired targets with implemented values `preserve` and `strip`.
+  - Default API and YAML imports to `preserve`.
+  - Reject unsupported attachment policy values at API normalization, desired-target compilation, immutable job reconstruction, and runtime command materialization.
+  - Let `strip` explicitly drop unmatched source attachment streams even when generic unmatched-stream policy would otherwise preserve or reject them.
+  - Persist attachment policy on desired-target container rows and snapshot it into `media_job` at enqueue time.
+  - Alternatives considered:
+    - Treat attachments only as generic unmatched streams: rejected because it makes attachment removal depend on broad stream policy instead of the desired container contract.
+    - Add authored attachment replacement now: rejected because replacement needs separate artifact schema, managed file staging, command support, and exact verification.
+- Consequences:
+  - Positive outcomes:
+    - Operators can intentionally strip source attachments without weakening the fail-closed posture for unsupported attachment edits.
+    - Queued jobs execute the attachment policy captured at enqueue time, not mutable catalog state.
+  - Risks or trade-offs:
+    - `strip` can remove useful Matroska font attachments when selected incorrectly.
+    - Attachment replacement remains unsupported until it has a complete schema, execution, and verification contract.
+- Follow-up:
+  - Add exact attachment replacement only after first-class artifact storage, muxing, and verification semantics are designed.
+  - Continue closing remaining desired-target and verifier gaps before declaring the transcoding service complete against the full specification.
+
+## Task Record
+
+- Motivation:
+  - Move container attachments from implicit preserve-only behavior to an explicit preserve/strip desired-target policy.
+- Design notes:
+  - `DesiredTarget` and `DesiredGraph` now carry `container_attachment_policy`.
+  - Core compilation normalizes the policy and skips unmatched attachment streams when the policy is `strip`, including under reject-unmatched policy.
+  - Migration 0175 adds the desired-target container policy column, job intent snapshot column, v4 create/list procedures, and v5 worker claim.
+  - App runtime desired-target reconstruction requires the attachment policy whenever a desired-target snapshot is present.
+  - Runtime command construction validates the policy and relies on the compiled desired graph stream list to avoid mapping stripped attachments.
+  - API and YAML import/export expose `container_attachment_policy` with a default of `preserve`.
+- Test coverage summary:
+  - `just api-export`
+  - `cargo fmt --all`
+  - `cargo test -p revaer-media-core --all-features container_attachment -- --nocapture`
+  - `cargo test -p revaer-media-runtime --all-features container_attachment -- --nocapture`
+  - `cargo test -p revaer-api --lib container_attachment -- --nocapture`
+  - `cargo test -p revaer-api --lib openapi_document_exports_media_schemas -- --nocapture`
+  - `cargo test -p revaer-api --lib desired_target_writes_validate_complete_graph_and_profile_pin -- --nocapture`
+  - `cargo test -p revaer-data --lib migration_guards_container_attachment_policy -- --nocapture`
+  - `cargo test -p revaer-data --lib media::schema_tests -- --nocapture` ran locally, but database-backed assertions were skipped because no test database URL was configured.
+  - `cargo test -p revaer-data --lib desired_target_versions_are_ordered_immutable_job_snapshots -- --nocapture` ran locally, but database-backed assertions were skipped because no test database URL was configured.
+  - `cargo test -p revaer-app --no-default-features --lib container_attachment -- --nocapture`
+  - `npm install` in `tests` completed with zero vulnerabilities.
+  - `npm run gen:api-client` in `tests`
+  - `npx tsc -p tsconfig.coverage.json` in `tests`
+  - `cargo check -p revaer-media-core -p revaer-media-runtime -p revaer-data -p revaer-api-models -p revaer-api --all-targets --all-features`
+  - `cargo check -p revaer-app --no-default-features --lib --tests`
+  - `cargo clippy -p revaer-media-core -p revaer-media-runtime --all-features --all-targets -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-api -p revaer-data --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `just policy`
+  - `just instruction-drift`
+  - `git diff --check`
+  - `just ci` was attempted and stopped before validation because this machine cannot connect to the local Docker daemon and no `localhost:5432` Postgres endpoint became reachable.
+  - `just ui-e2e` regenerated the Playwright API client from the updated OpenAPI artifact and confirmed `tests` npm install had zero vulnerabilities, then stopped at the same Docker/Postgres reachability boundary before API coverage files could be produced.
+- Observability updates:
+  - No new metrics, logs, or events were added. Existing preflight error metadata now has a distinct unsupported attachment-policy code.
+- Status-doc validation:
+  - Updated `MEDIA_TRANSCODING.md` to state attachment stripping requires explicit `container_attachment_policy: strip`.
+  - OpenAPI source and API E2E coverage were updated; generated artifacts are refreshed during validation.
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+- Risk & rollback plan:
+  - Roll back this ADR, migration 0175, and the Rust/API/YAML wiring if attachment stripping proves unsafe.
+  - Do not remove the policy column without first rejecting or migrating desired targets and queued jobs that carry attachment-policy snapshots.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found for this slice.

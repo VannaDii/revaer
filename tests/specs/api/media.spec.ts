@@ -118,6 +118,7 @@ test.describe('Media API', () => {
         version: 1,
         display_name: `E2E desired target ${suffix}`,
         container_format: 'matroska',
+        container_attachment_policy: 'strip',
         streams: [
           {
             stream_key: 'video-main',
@@ -157,6 +158,7 @@ test.describe('Media API', () => {
     });
     expect(createdDesiredTarget.response.status).toBe(201);
     expect(createdDesiredTarget.data?.target_key).toBe(desiredTargetKey);
+    expect(createdDesiredTarget.data?.container_attachment_policy).toBe('strip');
     expect(createdDesiredTarget.data?.streams.map((stream) => stream.stream_key)).toEqual([
       'video-main',
       'audio-main',
@@ -168,6 +170,10 @@ test.describe('Media API', () => {
     expect(
       desiredTargets.data?.targets.some((target) => target.target_key === desiredTargetKey)
     ).toBeTruthy();
+    expect(
+      desiredTargets.data?.targets.find((target) => target.target_key === desiredTargetKey)
+        ?.container_attachment_policy
+    ).toBe('strip');
 
     const pinnedDesiredTarget = await api.PATCH(
       '/v1/media/profiles/{media_profile_public_id}/desired-target',

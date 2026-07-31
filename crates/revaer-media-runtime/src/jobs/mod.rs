@@ -637,6 +637,10 @@ const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata 
             code: "preflight_build_unsupported_container_chapter_policy",
             detail: "required container chapter policy is unavailable",
         },
+        BuildArgsError::UnsupportedContainerAttachmentPolicy(_) => PreflightErrorMetadata {
+            code: "preflight_build_unsupported_container_attachment_policy",
+            detail: "required container attachment policy is unavailable",
+        },
         BuildArgsError::InvalidContainerChapterValues(_) => PreflightErrorMetadata {
             code: "preflight_build_invalid_container_chapter_values",
             detail: "desired container chapter values do not match the selected policy",
@@ -1630,6 +1634,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -1683,6 +1688,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -1740,6 +1746,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -1815,6 +1822,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: source.streams[..2].to_vec(),
         };
         let planned_result = plan_job(&JobPreflightRequest {
@@ -1872,6 +1880,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 3,
                 kind: StreamKind::Attachment,
@@ -1916,6 +1925,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -1984,6 +1994,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -2028,6 +2039,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -2178,6 +2190,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -2218,6 +2231,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -2264,6 +2278,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -2332,6 +2347,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -2412,6 +2428,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -2487,6 +2504,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -2773,6 +2791,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3004,6 +3023,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
@@ -3047,6 +3067,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let capabilities = capability_snapshot_for_tests(&["h264"], &["libx264"]);
@@ -3113,6 +3134,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -3194,6 +3216,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Video,
@@ -3274,6 +3297,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3326,6 +3350,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3378,6 +3403,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3426,6 +3452,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3474,6 +3501,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3524,6 +3552,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
@@ -3573,6 +3602,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: None,
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {

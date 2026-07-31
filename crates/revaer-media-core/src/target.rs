@@ -7,8 +7,8 @@ use crate::model::{
 };
 use crate::normalize::{
     audio_channel_count_for_layout, normalize_audio_channel_layout,
-    normalize_container_chapter_policy, normalize_container_format,
-    normalize_container_metadata_policy, normalize_subtitle_codec,
+    normalize_container_attachment_policy, normalize_container_chapter_policy,
+    normalize_container_format, normalize_container_metadata_policy, normalize_subtitle_codec,
 };
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -185,6 +185,8 @@ pub struct DesiredTarget {
     pub container_chapter_policy: String,
     /// Desired exact chapter timeline rows for the `replace` chapter policy.
     pub container_chapters: Vec<ContainerChapterEntry>,
+    /// Desired output attachment policy.
+    pub container_attachment_policy: String,
     /// Desired streams in final mux order.
     pub streams: Vec<TargetStream>,
 }
@@ -263,6 +265,9 @@ pub enum TargetCompileError {
     /// A desired container chapter metadata key occurs more than once in one chapter.
     #[error("duplicate desired target container chapter metadata key: {0}")]
     DuplicateContainerChapterMetadataKey(String),
+    /// The target requested an unsupported container attachment policy.
+    #[error("unsupported desired target container attachment policy: {0}")]
+    UnsupportedContainerAttachmentPolicy(String),
     /// A target stream key is blank.
     #[error("desired target stream key is empty")]
     EmptyStreamKey,
@@ -402,6 +407,7 @@ pub fn compile_desired_target(
     unmatched_policy: UnmatchedStreamPolicy,
 ) -> Result<DesiredGraph, TargetCompileError> {
     validate_target(target)?;
+    let attachment_policy = normalized_container_attachment_policy(target)?;
 
     let mut consumed = BTreeSet::new();
     let mut desired_streams = Vec::with_capacity(target.streams.len());
@@ -441,10 +447,10 @@ pub fn compile_desired_target(
         .iter()
         .filter(|stream| !consumed.contains(&stream.stream_id))
     {
-        match unmatched_policy {
-            UnmatchedStreamPolicy::Remove => {}
-            UnmatchedStreamPolicy::Preserve => desired_streams.push(stream.clone()),
-            UnmatchedStreamPolicy::Reject => {
+        match (stream.kind, attachment_policy.as_str(), unmatched_policy) {
+            (StreamKind::Attachment, "strip", _) | (_, _, UnmatchedStreamPolicy::Remove) => {}
+            (_, _, UnmatchedStreamPolicy::Preserve) => desired_streams.push(stream.clone()),
+            (_, _, UnmatchedStreamPolicy::Reject) => {
                 return Err(TargetCompileError::UnmatchedSourceStream(stream.stream_id));
             }
         }
@@ -457,6 +463,7 @@ pub fn compile_desired_target(
         container_metadata: normalized_container_metadata(target)?,
         container_chapter_policy: Some(normalized_container_chapter_policy(target)?),
         container_chapters: normalized_container_chapters(target)?,
+        container_attachment_policy: Some(attachment_policy),
         streams: desired_streams,
     })
 }
@@ -571,6 +578,7 @@ pub fn compile_desired_target_with_sidecars_at(
     append_unmatched_streams(
         source,
         unmatched_policy,
+        &normalized_container_attachment_policy(target)?,
         &consumed_streams,
         &mut state.desired_streams,
     )?;
@@ -588,6 +596,7 @@ pub fn compile_desired_target_with_sidecars_at(
             container_metadata: normalized_container_metadata(target)?,
             container_chapter_policy: Some(normalized_container_chapter_policy(target)?),
             container_chapters: normalized_container_chapters(target)?,
+            container_attachment_policy: Some(normalized_container_attachment_policy(target)?),
             streams: state.desired_streams,
         },
         sidecar_embeddings: state.embeddings,
@@ -830,6 +839,7 @@ fn derive_companion_path(path: &str, extension: &str) -> Option<String> {
 fn append_unmatched_streams(
     source: &MediaGraph,
     policy: UnmatchedStreamPolicy,
+    attachment_policy: &str,
     consumed: &BTreeSet<u32>,
     desired: &mut Vec<MediaStream>,
 ) -> Result<(), TargetCompileError> {
@@ -838,10 +848,10 @@ fn append_unmatched_streams(
         .iter()
         .filter(|stream| !consumed.contains(&stream.stream_id))
     {
-        match policy {
-            UnmatchedStreamPolicy::Remove => {}
-            UnmatchedStreamPolicy::Preserve => desired.push(stream.clone()),
-            UnmatchedStreamPolicy::Reject => {
+        match (stream.kind, attachment_policy, policy) {
+            (StreamKind::Attachment, "strip", _) | (_, _, UnmatchedStreamPolicy::Remove) => {}
+            (_, _, UnmatchedStreamPolicy::Preserve) => desired.push(stream.clone()),
+            (_, _, UnmatchedStreamPolicy::Reject) => {
                 return Err(TargetCompileError::UnmatchedSourceStream(stream.stream_id));
             }
         }
@@ -948,6 +958,7 @@ fn validate_target(target: &DesiredTarget) -> Result<(), TargetCompileError> {
     let chapter_policy = normalized_container_chapter_policy(target)?;
     validate_container_chapter_policy(&chapter_policy, &target.container_chapters)?;
     let _chapters = normalized_container_chapters(target)?;
+    let _attachment_policy = normalized_container_attachment_policy(target)?;
 
     let mut keys = BTreeSet::new();
     for stream in &target.streams {
@@ -1020,6 +1031,18 @@ fn normalized_container_chapter_policy(
         .ok_or_else(|| {
             TargetCompileError::UnsupportedContainerChapterPolicy(
                 target.container_chapter_policy.clone(),
+            )
+        })
+}
+
+fn normalized_container_attachment_policy(
+    target: &DesiredTarget,
+) -> Result<String, TargetCompileError> {
+    normalize_container_attachment_policy(&target.container_attachment_policy)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            TargetCompileError::UnsupportedContainerAttachmentPolicy(
+                target.container_attachment_policy.clone(),
             )
         })
 }
@@ -1705,6 +1728,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![
                 target_stream("video-cover", StreamKind::Video, None, None, "png"),
                 main_audio,
@@ -1835,6 +1859,64 @@ mod tests {
         )?;
 
         assert_eq!(desired.container_chapter_policy.as_deref(), Some("strip"));
+        Ok(())
+    }
+
+    #[test]
+    fn compiles_strip_container_attachment_policy() -> Result<(), TargetCompileError> {
+        let source = MediaGraph {
+            source_path: "/input/episode.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![
+                stream(
+                    0,
+                    StreamKind::Video,
+                    "h264",
+                    None,
+                    Some("Main"),
+                    &["default"],
+                ),
+                stream(1, StreamKind::Attachment, "ttf", None, Some("Font"), &[]),
+            ],
+        };
+        let mut target = DesiredTarget {
+            target_key: "web-playback".to_string(),
+            version: 4,
+            container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
+            container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
+            container_attachment_policy: " Strip ".to_string(),
+            streams: vec![target_stream(
+                "video-main",
+                StreamKind::Video,
+                None,
+                None,
+                "h264",
+            )],
+        };
+        target.streams[0].dispositions = vec!["default".to_string()];
+
+        let desired = compile_desired_target(
+            &source,
+            "/output/episode.mkv",
+            &target,
+            UnmatchedStreamPolicy::Reject,
+        )?;
+
+        assert_eq!(
+            desired.container_attachment_policy.as_deref(),
+            Some("strip")
+        );
+        assert_eq!(
+            desired
+                .streams
+                .iter()
+                .map(|stream| (stream.stream_id, stream.kind))
+                .collect::<Vec<_>>(),
+            vec![(0, StreamKind::Video)]
+        );
         Ok(())
     }
 
@@ -1988,6 +2070,25 @@ mod tests {
     }
 
     #[test]
+    fn target_validation_rejects_unknown_container_attachment_policy() {
+        let source = multistream_source();
+        let mut target = ordered_multistream_target();
+        target.container_attachment_policy = "rewrite".to_string();
+
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::UnsupportedContainerAttachmentPolicy(
+                "rewrite".to_string()
+            ))
+        );
+    }
+
+    #[test]
     fn target_validation_rejects_inconsistent_container_chapter_rows() {
         let source = multistream_source();
         let mut preserve_with_rows = ordered_multistream_target();
@@ -2133,6 +2234,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![optional_audio],
         };
 
@@ -2162,6 +2264,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "audio-main",
                 StreamKind::Audio,
@@ -2214,6 +2317,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![first, duplicate],
         };
         assert_eq!(
@@ -2322,6 +2426,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![invalid_audio_policy],
         };
         assert_eq!(
@@ -2352,6 +2457,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
         };
 
@@ -2416,6 +2522,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
         };
 
@@ -2463,6 +2570,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "audio-main",
                 StreamKind::Audio,
@@ -2502,6 +2610,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![invalid_video],
         };
 
@@ -2536,6 +2645,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![unsupported_color],
         };
         assert_eq!(
@@ -2564,6 +2674,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![supported_sdr_color],
         };
         assert_eq!(
@@ -2596,6 +2707,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![unsupported_level],
         };
 
@@ -2623,6 +2735,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![supported_av1_level],
         };
 
@@ -2649,6 +2762,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![unsupported_av1_level],
         };
 
@@ -2682,6 +2796,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "opaque-data",
                 StreamKind::Data,
@@ -2718,6 +2833,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![
                 target_stream("video", StreamKind::Video, None, None, "h264"),
                 target_stream(
@@ -2770,6 +2886,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "video",
                 StreamKind::Video,
@@ -2857,6 +2974,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
@@ -2912,6 +3030,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
@@ -2965,6 +3084,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
@@ -3006,6 +3126,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
@@ -3048,6 +3169,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
 
