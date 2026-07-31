@@ -429,6 +429,8 @@ report_missing "PR Sonar scan must install native libtorrent headers used by the
 report_missing "Main Sonar scan must install native libtorrent headers used by the compile database" 'libtorrent-rasterbar-dev' .github/workflows/sonar.yml
 report_missing "PR Sonar scan must verify the published result through the Justfile" 'run: just sonar-verify-result' .github/workflows/pr.yml
 report_missing "Main Sonar scan must verify the published result through the Justfile" 'run: just sonar-verify-result' .github/workflows/sonar.yml
+report_missing "PR Sonar scan must package scanner evidence even after scanner failure" 'run: just sonar-package-report' .github/workflows/pr.yml
+report_missing "Main Sonar scan must package scanner evidence even after scanner failure" 'run: just sonar-package-report' .github/workflows/sonar.yml
 report_missing "PR Sonar scan must retain the complete submitted scanner report" '\.scannerwork/scanner-report\.tar\.xz' .github/workflows/pr.yml
 report_missing "Main Sonar scan must retain the complete submitted scanner report" '\.scannerwork/scanner-report\.tar\.xz' .github/workflows/sonar.yml
 report_missing "Setup action must expose a Cargo cache opt-out" 'cargo-cache:' .github/actions/setup-revaer/action.yml

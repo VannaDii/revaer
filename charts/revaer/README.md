@@ -75,7 +75,7 @@ control-plane steps after the OCI repository is registered:
 3. After the repository shows `Verified publisher`, file Artifact Hub's
    `official` status request for the Revaer publisher or organization.
 
-Use `revaer-logo.png` as the Artifact Hub repository and organization logo when
+Use `revaer-logo.svg` as the Artifact Hub repository and organization logo when
 completing that setup.
 
 ## Key Values

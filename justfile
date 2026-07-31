@@ -262,12 +262,14 @@ sonar-compile-db:
     REVAER_NATIVE_COMPILE_COMMANDS_PATH="${PWD}/coverage/compile_commands.json" \
         cargo --config 'build.rustflags=["-Dwarnings"]' build -p revaer-torrent-libt --all-features
 
-sonar-verify-result:
+sonar-package-report:
     test -s .scannerwork/report-task.txt
     test -d .scannerwork/scanner-report
     tar -cJf .scannerwork/scanner-report.tar.xz -C .scannerwork scanner-report
     test -s .scannerwork/scanner-report.tar.xz
     tar -tf .scannerwork/scanner-report.tar.xz | grep -q '^scanner-report/'
+
+sonar-verify-result: sonar-package-report
     bash scripts/sonar-result-guardrails.sh
 
 sbom:
@@ -351,7 +353,7 @@ sync-assets:
     cargo run -p asset_sync
 
 check-assets: sync-assets
-    git diff --exit-code -- static/nexus
+    git diff --exit-code -- crates/revaer-ui/static/nexus
 
 trunk-install:
     required_trunk_version="0.21.14"; \

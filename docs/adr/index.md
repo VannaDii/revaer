@@ -387,3 +387,4 @@
 -   [376](376-media-unmatched-stream-actions.md) - Media unmatched stream actions
 -   [377](377-media-manual-operator-loop.md) - Media manual operator loop
 -   [378](378-ui-vendor-image-input-pruning.md) - UI vendor image input pruning
+-   [379](379-ui-runtime-image-canonicalization.md) - UI runtime image canonicalization

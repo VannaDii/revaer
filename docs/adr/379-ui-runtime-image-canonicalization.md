@@ -1,0 +1,89 @@
+# UI Runtime Image Canonicalization
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - PR 130 removed unused Nexus `public/images` inputs, but the Sonar scan still reported invalid UTF-8 warnings for the duplicate Nexus `html/images` vendor tree, the committed served `static/nexus/images` raster tree, app icons, favicon, and Revaer logo.
+  - Revaer policy forbids hiding committed binary assets through Sonar source, suffix, test-scope, or analyzer exclusions without explicit operator consent.
+  - The served UI only needs deterministic dashboard thumbnails, queue avatars, and Revaer brand assets; keeping inherited raster template images preserves scanner warnings without adding product value.
+  - The first PR 131 remote supply-chain rerun failed on `RUSTSEC-2026-0221` for `event-listener 5.4.1`.
+  - A later PR 131 Sonar rerun failed the quality gate because new-code coverage was 79.2%, below the required 80%, after the generated served DataTables JavaScript added an uncovered runtime avatar mapping line.
+  - After focused `asset_sync` coverage raised PR 131 new-code coverage to 91.5%, the next Sonar rerun failed only `new_duplicated_lines_density=20.1` because generation-time literal rewrites made the served DataTables copy look like a duplicated new vendor data block.
+- Decision:
+  - Remove tracked files under `crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images`.
+  - Replace the committed dashboard avatars, dashboard event thumbnails, app icon, favicon path, and Revaer logo with UTF-8 SVG assets.
+  - Remove unused committed raster assets under `crates/revaer-ui/static/nexus/images`, `crates/revaer-ui/static/icons`, `crates/revaer-ui/static`, and the repository root.
+  - Update `asset_sync` to copy vendor CSS and JS, validate known legacy vendor DataTables avatar literals, inject a small served-runtime avatar canonicalizer into the existing DataTables row mapping, validate the committed UTF-8 runtime image directory, and continue writing lock metadata for CSS, images, and JS.
+  - Fix `just check-assets` so it compares `crates/revaer-ui/static/nexus` from the repository root after `asset_sync` runs.
+  - Update the lockfile from `event-listener 5.4.1` to `5.4.2` so the audit gate no longer reports `RUSTSEC-2026-0221`.
+  - Split Sonar scanner-report packaging into a reusable `just sonar-package-report` gate and call it from PR and main scans even after scanner-side quality-gate failure so retained evidence is never reduced to report-task metadata only.
+  - Add bounded retry around `sonar-verify-result` Sonar API reads for transient transport and HTTP 5xx failures while preserving fail-closed handling for missing metrics, ignored conditions, unresolved findings, unreviewed hotspots, and malformed responses.
+  - Alternatives considered:
+    - Keeping duplicate vendor image inputs: rejected because it preserves 62 avoidable Sonar invalid-encoding warnings.
+    - Excluding image suffixes from Sonar: rejected because it relaxes scanner criteria without operator consent.
+    - Replacing raster files with SVG content while keeping `.png` or `.jpg` names: rejected because it would make file extensions and served content types misleading.
+- Consequences:
+  - Positive outcomes:
+    - Removes the duplicate vendor image input tree and the served raster inputs that produced Sonar invalid-encoding warnings.
+    - Keeps the dashboard visually populated with deterministic, reviewable SVG assets.
+    - Preserves `just check-assets` as a guard that validates the committed runtime image directory and generated lock metadata.
+    - Removes duplicated new-code deltas from mirrored vendor JavaScript instead of suppressing the Sonar duplication gate.
+    - Keeps the generated JavaScript delta to one runtime avatar canonicalization line instead of rewriting the copied vendor data block.
+    - Makes `just check-assets` fail when generated served assets drift.
+    - Retains the submitted scanner report artifact for failed quality gates as well as successful scans.
+  - Risks or trade-offs:
+    - Some inherited Nexus decorative imagery is no longer present; rollback requires restoring the removed raster files and accepting the corresponding Sonar warnings only with operator consent.
+- Follow-up:
+  - Repair SCA input evidence so dependency analysis runs instead of reporting a skipped dependency-analysis path.
+  - Tighten `sonar-verify-result` after scanner warnings and skipped dependency analysis are eliminated.
+
+## Task Record
+
+- Motivation:
+  - Continue reducing Sonar scanner warnings by deleting or replacing binary inputs instead of weakening analysis scope.
+- Design notes:
+  - `asset_sync` no longer requires `ui_vendor/nexus-html@3.1.0/html/images`.
+  - The tool still copies `html/assets/app.css` and `public/js`, validates known legacy `/images/avatars/1.png` through `/images/avatars/10.png` vendor demo literals, injects a single avatar override into the generated served DataTables row mapping, validates `static/nexus/images`, and writes deterministic lock stats over the current UTF-8 runtime images.
+  - Dashboard avatar and event thumbnail helpers now resolve SVG paths. The shell, web manifest, browser config, Helm chart metadata, and release docs now point at SVG brand assets.
+  - The supply-chain fix is lockfile-only: `event-listener` remains transitive through `sqlx` and test HTTP mocking support, but the compatible patched version removes the advisory hit and the now-unused `concurrent-queue` lock entry.
+  - The first PR 131 Sonar rerun failed only the new-code duplication condition (`new_duplicated_lines_density=70.4`) because the same avatar-reference edit was committed in three mirrored DataTables JavaScript copies. The rewrite now lives in `asset_sync`, leaving vendor inputs unchanged while keeping the generated served copy valid.
+  - The next PR 131 Sonar rerun failed only the new-code coverage condition (`new_coverage=79.2`) because the generated served DataTables JavaScript runtime mapping line was uncovered. Focused `asset_sync` tests now cover absent DataTables files, avatar canonicalizer injection, non-avatar JavaScript, unknown avatar PNG rejection, and missing row mapping rejection.
+  - The following PR 131 Sonar rerun proved the coverage repair (`new_coverage=91.5`) but failed only the new-code duplication condition (`new_duplicated_lines_density=20.1`) because generation-time literal rewrites made 50 served DataTables lines count as duplicated new code. The generated copy now keeps the vendor data literals stable and injects only the runtime avatar override.
+  - While diagnosing that coverage gap, `just check-assets` was found to compare the nonexistent repo-root `static/nexus` path. The recipe now compares `crates/revaer-ui/static/nexus`, and the UI/devops instructions document the required path.
+  - After the quality gate passed with `new_coverage=92.6` and `new_duplicated_lines_density=0.0`, `sonar-verify-result` hit a transient Sonar API HTTP 500 while reading result evidence. The verifier now retries only transport and HTTP 5xx reads before failing closed.
+- Test coverage summary:
+  - `just check-assets`
+  - `cargo test -p asset_sync`
+  - `cargo test -p revaer-ui logic::tests::icon_sources_rotate --all-features -- --nocapture`
+  - `git diff --check`
+  - `just fmt`
+  - `cargo clippy -p asset_sync -p revaer-ui --all-targets -- -D warnings`
+  - `cargo audit --deny warnings`
+  - `cargo tree -i event-listener --locked`
+  - `just audit`
+  - `just deny`
+  - `just udeps` was attempted locally after the lockfile update and failed in the native libtorrent build because the workstation Homebrew headers require `TORRENT_USE_OPENSSL` or `TORRENT_USE_GNUTLS`; the Linux PR supply-chain job remains the required `udeps` proof.
+  - `just policy`
+  - `just instruction-drift`
+  - `sonar api get '/api/qualitygates/project_status?projectKey=VannaDii_Revaer&pullRequest=131'`
+  - `sonar api get '/api/measures/component?component=VannaDii_Revaer&pullRequest=131&metricKeys=new_coverage,new_lines_to_cover,new_duplicated_lines_density,coverage,lines_to_cover'`
+  - `bash -n scripts/sonar-result-guardrails.sh`
+  - `sonar verify --file crates/revaer-ui/tools/asset_sync/src/lib.rs --project VannaDii_Revaer` was attempted and failed with SonarQube API 403 because Agentic Analysis is not available for the organization.
+  - `sonar verify --file docs/adr/379-ui-runtime-image-canonicalization.md --project VannaDii_Revaer` was attempted and failed with the same org-level 403.
+  - `sonar verify --file sonar-project.properties --project VannaDii_Revaer` was attempted and failed with the same org-level 403.
+  - `sonar analyze secrets` over changed text files, including the updated Sonar config, instruction files, docs, UI Rust code, HTML, XML, JSON, CSS, JS, and SVG assets.
+  - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table` reported no issues.
+  - A follow-up scan found no media files remaining under `test-fixtures` or `target`.
+- Observability updates:
+  - No runtime logging, metrics, tracing, health, or event-surface changes.
+- Status-doc validation:
+  - Updated ADR 031 to describe the current asset-sync contract.
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+- Risk & rollback plan:
+  - Roll back this ADR, restore the removed raster assets, and restore the `.png`/`.jpg` UI references if the SVG runtime assets prove visually insufficient.
+  - Do not keep restored binary inputs in a Sonar-scanned branch without explicit operator consent if they reintroduce invalid-encoding warnings.
+- Dependency rationale:
+  - No dependencies were added. The lockfile moved the existing transitive `event-listener` dependency to the compatible patched release `5.4.2` to clear `RUSTSEC-2026-0221`.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/sonarqube_mcp.instructions.md`, and `.github/instructions/devops.instructions.md`.
+  - Removed stale asset-sync documentation that said Nexus images are copied from vendor inputs.

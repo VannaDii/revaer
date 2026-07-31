@@ -5,8 +5,20 @@ project_key="${SONAR_PROJECT_KEY:?SONAR_PROJECT_KEY is required}"
 auth_token="${SONAR_AUTH_TOKEN:?SONAR_AUTH_TOKEN is required}"
 api_base="${SONAR_API_BASE_URL:-https://sonarcloud.io/api}"
 pull_request="${SONAR_PULL_REQUEST:-}"
+retry_attempts="${SONAR_API_RETRY_ATTEMPTS:-5}"
+retry_delay_seconds="${SONAR_API_RETRY_DELAY_SECONDS:-3}"
 temp_dir="$(mktemp -d)"
 trap 'rm -rf "${temp_dir}"' EXIT
+
+if ! [[ "${retry_attempts}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SONAR_API_RETRY_ATTEMPTS must be a positive integer" >&2
+  exit 2
+fi
+
+if ! [[ "${retry_delay_seconds}" =~ ^[0-9]+$ ]]; then
+  echo "SONAR_API_RETRY_DELAY_SECONDS must be a non-negative integer" >&2
+  exit 2
+fi
 
 scope_args=()
 if [[ -n "${pull_request}" ]]; then
@@ -16,14 +28,49 @@ fi
 sonar_get() {
   local endpoint="$1"
   local output_path="$2"
+  local output_temp="${output_path}.tmp"
+  local http_status
+  local curl_status
+  local attempt
   shift 2
 
-  curl --fail --silent --show-error \
-    --user "${auth_token}:" \
-    --get "${api_base}/${endpoint}" \
-    "${scope_args[@]}" \
-    "$@" \
-    --output "${output_path}"
+  for ((attempt = 1; attempt <= retry_attempts; attempt += 1)); do
+    rm -f "${output_temp}"
+    set +e
+    http_status="$(
+      curl --silent --show-error \
+        --user "${auth_token}:" \
+        --get "${api_base}/${endpoint}" \
+        "${scope_args[@]}" \
+        "$@" \
+        --output "${output_temp}" \
+        --write-out "%{http_code}"
+    )"
+    curl_status=$?
+    set -e
+
+    if [[ "${curl_status}" -eq 0 && "${http_status}" =~ ^2[0-9][0-9]$ ]]; then
+      mv "${output_temp}" "${output_path}"
+      return 0
+    fi
+
+    if [[ "${http_status}" =~ ^5[0-9][0-9]$ || "${http_status}" == "000" ]]; then
+      if ((attempt < retry_attempts)); then
+        printf 'Sonar API %s returned HTTP %s; retrying attempt %s/%s\n' \
+          "${endpoint}" "${http_status}" "${attempt}" "${retry_attempts}" >&2
+        sleep "${retry_delay_seconds}"
+        continue
+      fi
+    fi
+
+    if [[ -s "${output_temp}" ]]; then
+      cat "${output_temp}" >&2
+      printf '\n' >&2
+    fi
+    printf 'Sonar API %s failed with curl status %s and HTTP status %s after %s attempt(s)\n' \
+      "${endpoint}" "${curl_status}" "${http_status}" "${attempt}" >&2
+    return 22
+  done
 }
 
 sonar_get measures/component "${temp_dir}/measures.json" \

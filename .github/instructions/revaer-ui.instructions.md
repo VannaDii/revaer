@@ -37,5 +37,7 @@ applyTo:
 
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
 - Treat generated API clients and synchronized assets as generated artifacts; regenerate them intentionally and keep authored wrappers separate.
+- `asset_sync` may canonicalize legacy vendor asset references while copying into `static/nexus`; keep that transform in the tool instead of hand-editing the same generated JavaScript delta across mirrored vendor and served copies.
+- `just check-assets` must compare `crates/revaer-ui/static/nexus/**` from the repository root after running `asset_sync`; do not narrow the guard to a path that misses the generated served assets.
 - CI E2E should use an explicit browser channel such as `E2E_BROWSER_CHANNEL=chrome` when the runner already provides that browser, so shards install Playwright dependencies without downloading redundant browser bundles. Keep CI video capture off for that path unless the Playwright ffmpeg bundle is installed.
 - When UI structure, selectors, or synced assets change, update the relevant docs, tests, and instructions in the same change.

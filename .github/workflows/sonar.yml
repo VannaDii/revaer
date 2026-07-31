@@ -148,6 +148,10 @@ jobs:
           SONAR_PROJECT_KEY: VannaDii_Revaer
         run: just sonar-verify-result
 
+      - name: Package Sonar analysis evidence
+        if: always()
+        run: just sonar-package-report
+
       - name: Upload Sonar analysis evidence
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

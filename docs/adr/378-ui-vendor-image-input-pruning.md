@@ -5,7 +5,7 @@
 - Context:
   - The PR Sonar scan still reports invalid UTF-8 warnings for committed raster image assets.
   - Revaer policy treats scanner warnings as required fixes and forbids hiding committed assets through Sonar source, suffix, test-scope, or analyzer exclusions without explicit operator consent.
-  - The Nexus asset synchronization path uses `html/assets/app.css`, `html/images`, and `public/js`. The committed `public/images` directory is not an asset-sync input.
+  - At the time of this cleanup, the Nexus asset synchronization path used `html/assets/app.css`, `html/images`, and `public/js`. The committed `public/images` directory was not an asset-sync input.
 - Decision:
   - Remove unused tracked files under `crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images`.
   - Keep the runtime asset inputs required by `asset_sync` unchanged.
@@ -21,7 +21,7 @@
   - Risks or trade-offs:
     - Future work that wants Nexus sample images from `public/images` must re-import only the specific needed source files through a reviewed asset-ingestion change.
 - Follow-up:
-  - Replace or regenerate the remaining required committed raster UI assets so Sonar no longer emits invalid UTF-8 warnings.
+  - ADR 379 replaces the remaining required committed raster UI assets with UTF-8 SVG inputs so Sonar no longer emits invalid UTF-8 warnings for those files.
   - Repair SCA input evidence so dependency analysis runs instead of reporting a skipped dependency-analysis path.
   - Tighten `sonar-verify-result` after scanner warnings and skipped dependency analysis are eliminated.
 
@@ -30,8 +30,8 @@
 - Motivation:
   - Move Sonar strictness toward a fail-clean scan by deleting unused committed binary inputs instead of weakening analysis scope.
 - Design notes:
-  - `asset_sync` copies only `html/assets/app.css`, `html/images`, and `public/js` into `static/nexus`.
-  - ADR 260 already records `html/assets`, `html/images`, and `public/js` as the preserved runtime asset inputs.
+  - `asset_sync` copied only `html/assets/app.css`, `html/images`, and `public/js` into `static/nexus`; ADR 379 later removes the duplicate `html/images` input.
+  - ADR 260 already recorded `html/assets`, `html/images`, and `public/js` as the preserved runtime asset inputs for that prior state.
   - The deleted files were tracked vendor sample images under `public/images`; no runtime code, asset-sync code, Justfile recipe, or scoped instruction referenced that directory.
 - Test coverage summary:
   - `just check-assets`

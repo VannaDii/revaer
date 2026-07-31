@@ -295,6 +295,10 @@ jobs:
           SONAR_PULL_REQUEST: ${{ github.event.pull_request.number }}
         run: just sonar-verify-result
 
+      - name: Package Sonar analysis evidence
+        if: always() && github.event.pull_request.head.repo.fork == false && env.SONAR_AUTH_TOKEN != ''
+        run: just sonar-package-report
+
       - name: Upload Sonar analysis evidence
         if: always() && github.event.pull_request.head.repo.fork == false
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

@@ -83,14 +83,14 @@ pub(crate) fn app_shell(props: &ShellProps) -> Html {
                                     <img
                                         alt="logo-dark"
                                         class="h-5.5"
-                                        src="/static/revaer-logo.png" />
+                                        src="/static/revaer-logo.svg" />
                                 }
                             } else {
                                 html! {
                                     <img
                                         alt="logo-light"
                                         class="h-5.5"
-                                        src="/static/revaer-logo.png" />
+                                        src="/static/revaer-logo.svg" />
                                 }
                             }}
                         </Link<Route>>
