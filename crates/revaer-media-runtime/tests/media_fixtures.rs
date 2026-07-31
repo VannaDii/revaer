@@ -350,6 +350,7 @@ fn noop_materialization_verifies_source_path_without_requesting_output_artifact(
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         streams: Vec::new(),
     };
     let source_path = Path::new("test-fixtures/source/bbb-h264.mp4");
@@ -374,6 +375,7 @@ fn mutating_materialization_verifies_requested_output_artifact() {
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         streams: Vec::new(),
     };
 
@@ -980,6 +982,7 @@ fn materialize_same_graph(
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         streams: graph.streams.clone(),
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
@@ -1197,6 +1200,7 @@ fn assert_transcode_case(
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         streams: desired_streams,
     };
 
@@ -1339,6 +1343,7 @@ fn assert_multi_audio_selection(
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         streams: english_only,
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
@@ -1375,6 +1380,7 @@ fn assert_multi_audio_selection(
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         streams: ordered,
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
@@ -1408,6 +1414,7 @@ fn assert_subtitle_selection(
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         streams: graph.streams.clone(),
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired_all)?;
@@ -1439,6 +1446,7 @@ fn assert_subtitle_selection(
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         streams: forced_only,
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired_forced)?;
@@ -1474,6 +1482,7 @@ fn assert_subtitle_selection(
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         streams: no_subtitles,
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired_none)?;

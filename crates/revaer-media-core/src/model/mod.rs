@@ -63,6 +63,18 @@ pub struct ContainerMetadataEntry {
     pub value: String,
 }
 
+/// Desired normalized container chapter timeline entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContainerChapterEntry {
+    /// Inclusive chapter start in milliseconds.
+    pub start_millis: i64,
+    /// Exclusive chapter end in milliseconds.
+    pub end_millis: i64,
+    /// Exact chapter metadata rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metadata: Vec<ContainerMetadataEntry>,
+}
+
 /// Desired output graph after policy application.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DesiredGraph {
@@ -80,6 +92,9 @@ pub struct DesiredGraph {
     /// Desired container chapter policy when a target selects one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_chapter_policy: Option<String>,
+    /// Desired exact chapter timeline rows when the chapter policy is `replace`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_chapters: Vec<ContainerChapterEntry>,
     /// Required streams in deterministic output order.
     pub streams: Vec<MediaStream>,
 }

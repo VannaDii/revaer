@@ -6,13 +6,14 @@ use revaer_api::app::media::{
     MediaCapabilityRefreshParams,
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse,
     MediaCompatibilityTargetResponse as AppMediaCompatibilityTargetResponse,
-    MediaCompatibilityTargetUpsertParams, MediaDesiredTargetCreateParams,
-    MediaDesiredTargetMetadataParams, MediaDesiredTargetResponse as AppMediaDesiredTargetResponse,
-    MediaDesiredTargetStreamParams, MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams,
-    MediaDiscoveryPreviewResponse, MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunParams,
-    MediaDiscoveryRunResponse, MediaDiscoverySkippedItemResponse, MediaFacade,
-    MediaJobArtifactResponse, MediaJobCompactAuditResponse, MediaJobOperationResponse,
-    MediaJobPhaseResponse, MediaJobPlanReasonResponse, MediaJobResponse,
+    MediaCompatibilityTargetUpsertParams, MediaDesiredTargetChapterParams,
+    MediaDesiredTargetCreateParams, MediaDesiredTargetMetadataParams,
+    MediaDesiredTargetResponse as AppMediaDesiredTargetResponse, MediaDesiredTargetStreamParams,
+    MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryPreviewResponse,
+    MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunParams, MediaDiscoveryRunResponse,
+    MediaDiscoverySkippedItemResponse, MediaFacade, MediaJobArtifactResponse,
+    MediaJobCompactAuditResponse, MediaJobOperationResponse, MediaJobPhaseResponse,
+    MediaJobPlanReasonResponse, MediaJobResponse,
     MediaJobRetentionResponse as AppMediaJobRetentionResponse, MediaJobRetentionUpdateParams,
     MediaJobVerificationCheckResponse, MediaJobViolationResponse,
     MediaPolicyResponse as AppMediaPolicyResponse, MediaPolicyUpsertParams,
@@ -31,15 +32,18 @@ use revaer_data::media::capabilities::{
     start_capability_snapshot_run_with_executor,
 };
 use revaer_data::media::configuration::{
+    AppendMediaDesiredTargetChapterInput, AppendMediaDesiredTargetChapterMetadataInput,
     AppendMediaDesiredTargetMetadataInput, AppendMediaDesiredTargetStreamInput,
-    CreateMediaDesiredTargetInput, MediaCompatibilityTargetRow, MediaDesiredTargetMetadataRow,
-    MediaDesiredTargetStreamRow, MediaPolicyProfileRow, UpdateMediaJobRetentionPolicyInput,
-    UpsertMediaCompatibilityTargetInput, UpsertMediaPolicyProfileInput,
+    CreateMediaDesiredTargetInput, MediaCompatibilityTargetRow, MediaDesiredTargetChapterRow,
+    MediaDesiredTargetMetadataRow, MediaDesiredTargetStreamRow, MediaPolicyProfileRow,
+    UpdateMediaJobRetentionPolicyInput, UpsertMediaCompatibilityTargetInput,
+    UpsertMediaPolicyProfileInput, append_media_desired_target_chapter_metadata_with_executor,
+    append_media_desired_target_chapter_with_executor,
     append_media_desired_target_metadata_with_executor,
     append_media_desired_target_stream_with_executor, create_media_desired_target_with_executor,
-    list_media_desired_target_metadata, list_media_desired_target_streams,
-    list_media_desired_targets, set_media_profile_desired_target,
-    set_media_profile_desired_target_with_executor,
+    list_media_desired_target_chapters, list_media_desired_target_metadata,
+    list_media_desired_target_streams, list_media_desired_targets,
+    set_media_profile_desired_target, set_media_profile_desired_target_with_executor,
     upsert_media_compatibility_target_with_executor, upsert_media_policy_profile_with_executor,
 };
 use revaer_data::media::imports::{
@@ -111,6 +115,42 @@ impl MediaService {
             detector,
             telemetry,
         }
+    }
+
+    async fn create_desired_target_profile(
+        &self,
+        params: &MediaDesiredTargetCreateParams,
+    ) -> Result<Uuid, MediaServiceError> {
+        let mut transaction = self
+            .store
+            .pool()
+            .begin()
+            .await
+            .map_err(|err| map_data_error(&DataError::from(err)))?;
+        let target_id = create_media_desired_target_with_executor(
+            &mut *transaction,
+            CreateMediaDesiredTargetInput {
+                actor_public_id: params.actor_user_public_id,
+                target_key: &params.target_key,
+                version: params.version,
+                display_name: &params.display_name,
+                container_format: &params.container_format,
+                container_metadata_policy: &params.container_metadata_policy,
+                container_chapter_policy: &params.container_chapter_policy,
+            },
+        )
+        .await
+        .map_err(|err| map_data_error(&err))?;
+        import_yaml_desired_metadata(&mut transaction, target_id, &params.container_metadata)
+            .await?;
+        import_yaml_desired_chapters(&mut transaction, target_id, &params.container_chapters)
+            .await?;
+        import_yaml_desired_streams(&mut transaction, target_id, &params.streams).await?;
+        transaction
+            .commit()
+            .await
+            .map_err(|err| map_data_error(&DataError::from(err)))?;
+        Ok(target_id)
     }
 
     async fn run_discovery_for_profile(
@@ -595,6 +635,12 @@ impl MediaFacade for MediaService {
             )
             .await
             .map_err(|err| map_data_error(&err))?;
+            let chapters = list_media_desired_target_chapters(
+                self.store.pool(),
+                target.media_desired_target_profile_public_id,
+            )
+            .await
+            .map_err(|err| map_data_error(&err))?;
             responses.push(AppMediaDesiredTargetResponse {
                 media_desired_target_profile_public_id: target
                     .media_desired_target_profile_public_id,
@@ -608,6 +654,7 @@ impl MediaFacade for MediaService {
                     .map(map_desired_target_metadata)
                     .collect(),
                 container_chapter_policy: target.container_chapter_policy,
+                container_chapters: map_desired_target_chapters(chapters),
                 streams: streams.into_iter().map(map_desired_target_stream).collect(),
             });
         }
@@ -622,77 +669,7 @@ impl MediaFacade for MediaService {
             return Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
                 .with_code("media_desired_target_streams_required"));
         }
-        let mut transaction = self
-            .store
-            .pool()
-            .begin()
-            .await
-            .map_err(|err| map_data_error(&DataError::from(err)))?;
-        let target_id = create_media_desired_target_with_executor(
-            &mut *transaction,
-            CreateMediaDesiredTargetInput {
-                actor_public_id: params.actor_user_public_id,
-                target_key: &params.target_key,
-                version: params.version,
-                display_name: &params.display_name,
-                container_format: &params.container_format,
-                container_metadata_policy: &params.container_metadata_policy,
-                container_chapter_policy: &params.container_chapter_policy,
-            },
-        )
-        .await
-        .map_err(|err| map_data_error(&err))?;
-        for entry in &params.container_metadata {
-            append_media_desired_target_metadata_with_executor(
-                &mut *transaction,
-                AppendMediaDesiredTargetMetadataInput {
-                    media_desired_target_profile_public_id: target_id,
-                    metadata_key: &entry.key,
-                    metadata_value: &entry.value,
-                },
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-        }
-        for stream in &params.streams {
-            append_media_desired_target_stream_with_executor(
-                &mut *transaction,
-                AppendMediaDesiredTargetStreamInput {
-                    media_desired_target_profile_public_id: target_id,
-                    stream_key: &stream.stream_key,
-                    stream_kind: &stream.stream_kind,
-                    semantic_role: stream.semantic_role.as_deref(),
-                    language_code: stream.language_code.as_deref(),
-                    optional: stream.optional,
-                    sort_order: stream.sort_order,
-                    codec: &stream.codec,
-                    channel_count: stream.channel_count,
-                    channel_layout: stream.channel_layout.as_deref(),
-                    audio_bitrate_bps: stream.audio_bitrate_bps,
-                    audio_sample_rate_hz: stream.audio_sample_rate_hz,
-                    audio_loudness_profile: stream.audio_loudness_profile.as_deref(),
-                    audio_dynamic_range: stream.audio_dynamic_range.as_deref(),
-                    video_profile: stream.video_profile.as_deref(),
-                    video_level: stream.video_level.as_deref(),
-                    video_bitrate_bps: stream.video_bitrate_bps,
-                    color_primaries: stream.color_primaries.as_deref(),
-                    color_transfer: stream.color_transfer.as_deref(),
-                    color_space: stream.color_space.as_deref(),
-                    hdr_format: stream.hdr_format.as_deref(),
-                    title: stream.title.as_deref(),
-                    default_disposition: stream.default_disposition,
-                    forced_disposition: stream.forced_disposition,
-                    subtitle_placement: stream.subtitle_placement.as_deref(),
-                    image_subtitle_action: stream.image_subtitle_action.as_deref(),
-                },
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-        }
-        transaction
-            .commit()
-            .await
-            .map_err(|err| map_data_error(&DataError::from(err)))?;
+        let target_id = self.create_desired_target_profile(&params).await?;
         Ok(AppMediaDesiredTargetResponse {
             media_desired_target_profile_public_id: target_id,
             target_key: params.target_key,
@@ -702,6 +679,7 @@ impl MediaFacade for MediaService {
             container_metadata_policy: params.container_metadata_policy,
             container_metadata: params.container_metadata,
             container_chapter_policy: params.container_chapter_policy,
+            container_chapters: params.container_chapters,
             streams: params.streams,
         })
     }
@@ -1480,6 +1458,7 @@ async fn import_yaml_desired_targets(
         .await
         .map_err(|err| map_data_error(&err))?;
         import_yaml_desired_metadata(transaction, target_id, &target.container_metadata).await?;
+        import_yaml_desired_chapters(transaction, target_id, &target.container_chapters).await?;
         import_yaml_desired_streams(transaction, target_id, &target.streams).await?;
     }
     Ok(())
@@ -1501,6 +1480,39 @@ async fn import_yaml_desired_metadata(
         )
         .await
         .map_err(|err| map_data_error(&err))?;
+    }
+    Ok(())
+}
+
+async fn import_yaml_desired_chapters(
+    transaction: &mut MediaImportTransaction<'_>,
+    target_id: Uuid,
+    chapters: &[MediaDesiredTargetChapterParams],
+) -> Result<(), MediaServiceError> {
+    for chapter in chapters {
+        append_media_desired_target_chapter_with_executor(
+            &mut **transaction,
+            AppendMediaDesiredTargetChapterInput {
+                media_desired_target_profile_public_id: target_id,
+                start_millis: chapter.start_millis,
+                end_millis: chapter.end_millis,
+            },
+        )
+        .await
+        .map_err(|err| map_data_error(&err))?;
+        for entry in &chapter.metadata {
+            append_media_desired_target_chapter_metadata_with_executor(
+                &mut **transaction,
+                AppendMediaDesiredTargetChapterMetadataInput {
+                    media_desired_target_profile_public_id: target_id,
+                    start_millis: chapter.start_millis,
+                    metadata_key: &entry.key,
+                    metadata_value: &entry.value,
+                },
+            )
+            .await
+            .map_err(|err| map_data_error(&err))?;
+        }
     }
     Ok(())
 }
@@ -2313,6 +2325,10 @@ fn yaml_desired_target_shape_invalid(target: &MediaYamlDesiredTarget) -> bool {
             &target.container_metadata,
         )
         || !container_chapter_policy_supported(&target.container_chapter_policy)
+        || desired_target_chapters_shape_invalid(
+            &target.container_chapter_policy,
+            &target.container_chapters,
+        )
         || target.version <= 0
         || target.streams.is_empty()
 }
@@ -2342,8 +2358,42 @@ fn desired_target_metadata_shape_invalid(
 fn container_chapter_policy_supported(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),
-        "preserve" | "strip"
+        "preserve" | "strip" | "replace"
     )
+}
+
+fn desired_target_chapters_shape_invalid(
+    policy: &str,
+    chapters: &[MediaDesiredTargetChapterParams],
+) -> bool {
+    let replace = policy.trim().eq_ignore_ascii_case("replace");
+    if replace == chapters.is_empty() {
+        return true;
+    }
+    let mut previous_end = None;
+    for chapter in normalized_chapter_params(chapters) {
+        if chapter.start_millis < 0 || chapter.end_millis <= chapter.start_millis {
+            return true;
+        }
+        if previous_end.is_some_and(|end| chapter.start_millis < end) {
+            return true;
+        }
+        previous_end = Some(chapter.end_millis);
+        if desired_target_chapter_metadata_shape_invalid(&chapter.metadata) {
+            return true;
+        }
+    }
+    false
+}
+
+fn desired_target_chapter_metadata_shape_invalid(
+    metadata: &[MediaDesiredTargetMetadataParams],
+) -> bool {
+    let mut keys = BTreeSet::new();
+    metadata.iter().any(|entry| {
+        let key = entry.key.trim().to_ascii_lowercase();
+        key.is_empty() || entry.value.trim().is_empty() || !keys.insert(key)
+    })
 }
 
 fn yaml_desired_stream_invalid(
@@ -2482,6 +2532,7 @@ fn media_yaml_desired_target(target: AppMediaDesiredTargetResponse) -> MediaYaml
         container_metadata_policy: target.container_metadata_policy,
         container_metadata: target.container_metadata,
         container_chapter_policy: target.container_chapter_policy,
+        container_chapters: target.container_chapters,
         streams: target.streams,
     }
 }
@@ -2516,6 +2567,7 @@ fn desired_target_matches_yaml(
         && existing
             .container_chapter_policy
             .eq_ignore_ascii_case(&imported.container_chapter_policy)
+        && chapter_entries_match(&existing.container_chapters, &imported.container_chapters)
         && existing.streams == imported.streams
 }
 
@@ -2528,6 +2580,13 @@ fn metadata_entries_match(
     existing_entries.sort();
     imported_entries.sort();
     existing_entries == imported_entries
+}
+
+fn chapter_entries_match(
+    existing: &[MediaDesiredTargetChapterParams],
+    imported: &[MediaDesiredTargetChapterParams],
+) -> bool {
+    normalized_chapter_params(existing) == normalized_chapter_params(imported)
 }
 
 fn compatibility_target_matches_yaml(
@@ -2616,6 +2675,36 @@ fn map_desired_target_metadata(
     }
 }
 
+fn map_desired_target_chapters(
+    rows: Vec<MediaDesiredTargetChapterRow>,
+) -> Vec<MediaDesiredTargetChapterParams> {
+    let mut chapters = Vec::new();
+    for row in rows {
+        let chapter_index =
+            chapters
+                .iter()
+                .position(|chapter: &MediaDesiredTargetChapterParams| {
+                    chapter.start_millis == row.start_millis && chapter.end_millis == row.end_millis
+                });
+        let index = if let Some(index) = chapter_index {
+            index
+        } else {
+            chapters.push(MediaDesiredTargetChapterParams {
+                start_millis: row.start_millis,
+                end_millis: row.end_millis,
+                metadata: Vec::new(),
+            });
+            chapters.len() - 1
+        };
+        if let (Some(key), Some(value)) = (row.metadata_key, row.metadata_value) {
+            chapters[index]
+                .metadata
+                .push(MediaDesiredTargetMetadataParams { key, value });
+        }
+    }
+    normalized_chapter_params(&chapters)
+}
+
 fn normalize_metadata_params(
     metadata: &[MediaDesiredTargetMetadataParams],
 ) -> Vec<(String, String)> {
@@ -2628,6 +2717,33 @@ fn normalize_metadata_params(
             )
         })
         .collect()
+}
+
+fn normalized_chapter_params(
+    chapters: &[MediaDesiredTargetChapterParams],
+) -> Vec<MediaDesiredTargetChapterParams> {
+    let mut normalized = chapters
+        .iter()
+        .map(|chapter| MediaDesiredTargetChapterParams {
+            start_millis: chapter.start_millis,
+            end_millis: chapter.end_millis,
+            metadata: normalize_metadata_params(&chapter.metadata)
+                .into_iter()
+                .map(|(key, value)| MediaDesiredTargetMetadataParams { key, value })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+    for chapter in &mut normalized {
+        chapter
+            .metadata
+            .sort_by(|left, right| left.key.cmp(&right.key));
+    }
+    normalized.sort_by(|left, right| {
+        left.start_millis
+            .cmp(&right.start_millis)
+            .then(left.end_millis.cmp(&right.end_millis))
+    });
+    normalized
 }
 
 async fn fingerprint_source_candidate(
@@ -3190,20 +3306,21 @@ pub(crate) fn build_discovery_previews(
 mod tests {
     use super::{
         DiscoveryRunMode, MediaService, container_chapter_policy_supported,
-        container_metadata_policy_supported, desired_target_metadata_shape_invalid,
-        ensure_discovery_mode_enabled, ensure_execution_capability_snapshot,
-        ensure_profile_compatibility_target_readiness, ensure_profile_desired_target_readiness,
-        map_data_error, map_detect_error, parse_yaml_bundle, validate_yaml_bundle,
+        container_metadata_policy_supported, desired_target_chapters_shape_invalid,
+        desired_target_metadata_shape_invalid, ensure_discovery_mode_enabled,
+        ensure_execution_capability_snapshot, ensure_profile_compatibility_target_readiness,
+        ensure_profile_desired_target_readiness, map_data_error, map_detect_error,
+        parse_yaml_bundle, validate_yaml_bundle,
     };
     use anyhow::Context as _;
     use revaer_api::app::media::MediaServiceErrorKind;
     use revaer_api::app::media::{
         MediaCapabilityRefreshParams, MediaCompatibilityTargetUpsertParams,
-        MediaDesiredTargetCreateParams, MediaDesiredTargetMetadataParams,
-        MediaDesiredTargetStreamParams, MediaDiscoveryAutomationRunParams,
-        MediaDiscoveryPreviewParams, MediaDiscoveryRunParams, MediaFacade,
-        MediaJobRetentionUpdateParams, MediaPolicyUpsertParams, MediaProfileDesiredTargetParams,
-        MediaProfileUpsertParams,
+        MediaDesiredTargetChapterParams, MediaDesiredTargetCreateParams,
+        MediaDesiredTargetMetadataParams, MediaDesiredTargetStreamParams,
+        MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
+        MediaFacade, MediaJobRetentionUpdateParams, MediaPolicyUpsertParams,
+        MediaProfileDesiredTargetParams, MediaProfileUpsertParams,
     };
     use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -3674,6 +3791,7 @@ mod tests {
             container_metadata_policy: "preserve".to_string(),
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
             streams,
         }
     }
@@ -3710,6 +3828,7 @@ mod tests {
                 container_metadata_policy: "preserve".to_string(),
                 container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
+                container_chapters: Vec::new(),
                 streams: Vec::new(),
             })
             .await;
@@ -4157,10 +4276,78 @@ mod tests {
     }
 
     #[test]
-    fn yaml_container_chapter_policy_accepts_strip_only_as_implemented_rewrite() {
+    fn yaml_container_chapter_policy_accepts_implemented_values() {
         assert!(container_chapter_policy_supported("preserve"));
         assert!(container_chapter_policy_supported(" Strip "));
+        assert!(container_chapter_policy_supported(" Replace "));
         assert!(!container_chapter_policy_supported("rewrite"));
+    }
+
+    #[test]
+    fn yaml_container_chapter_values_are_valid_only_for_replace_policy() {
+        let chapters = vec![
+            MediaDesiredTargetChapterParams {
+                start_millis: 60_000,
+                end_millis: 120_000,
+                metadata: vec![MediaDesiredTargetMetadataParams {
+                    key: "TITLE".to_string(),
+                    value: "Act Two".to_string(),
+                }],
+            },
+            MediaDesiredTargetChapterParams {
+                start_millis: 0,
+                end_millis: 60_000,
+                metadata: vec![MediaDesiredTargetMetadataParams {
+                    key: " Title ".to_string(),
+                    value: " Act One ".to_string(),
+                }],
+            },
+        ];
+
+        assert!(!desired_target_chapters_shape_invalid("replace", &chapters));
+        assert!(desired_target_chapters_shape_invalid("preserve", &chapters));
+        assert!(desired_target_chapters_shape_invalid("strip", &chapters));
+        assert!(desired_target_chapters_shape_invalid("replace", &[]));
+        assert!(desired_target_chapters_shape_invalid(
+            "replace",
+            &[MediaDesiredTargetChapterParams {
+                start_millis: 1000,
+                end_millis: 1000,
+                metadata: Vec::new(),
+            }]
+        ));
+        assert!(desired_target_chapters_shape_invalid(
+            "replace",
+            &[
+                MediaDesiredTargetChapterParams {
+                    start_millis: 0,
+                    end_millis: 2000,
+                    metadata: Vec::new(),
+                },
+                MediaDesiredTargetChapterParams {
+                    start_millis: 1000,
+                    end_millis: 3000,
+                    metadata: Vec::new(),
+                },
+            ]
+        ));
+        assert!(desired_target_chapters_shape_invalid(
+            "replace",
+            &[MediaDesiredTargetChapterParams {
+                start_millis: 0,
+                end_millis: 1000,
+                metadata: vec![
+                    MediaDesiredTargetMetadataParams {
+                        key: "title".to_string(),
+                        value: "one".to_string(),
+                    },
+                    MediaDesiredTargetMetadataParams {
+                        key: " Title ".to_string(),
+                        value: "two".to_string(),
+                    },
+                ],
+            }]
+        ));
     }
 
     #[test]
@@ -4474,6 +4661,7 @@ mod tests {
                 container_metadata_policy: "preserve".to_string(),
                 container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
+                container_chapters: Vec::new(),
                 streams: vec![
                     desired_video_stream(),
                     desired_audio_stream(),
@@ -4594,6 +4782,7 @@ mod tests {
                 container_metadata_policy: "preserve".to_string(),
                 container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
+                container_chapters: Vec::new(),
                 streams: vec![desired_video_stream(), desired_audio_stream()],
             })
             .await?;

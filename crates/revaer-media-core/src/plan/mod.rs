@@ -558,6 +558,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![
                 MediaStream {
                     stream_id: 1,

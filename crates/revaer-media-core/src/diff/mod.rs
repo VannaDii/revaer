@@ -272,6 +272,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
 
@@ -291,6 +292,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
 
@@ -310,6 +312,7 @@ mod tests {
             container_metadata_policy: Some("strip".to_string()),
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
 
@@ -338,6 +341,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
+            container_chapters: Vec::new(),
             streams: Vec::new(),
         };
 
@@ -387,6 +391,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -446,6 +451,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![
                 MediaStream {
                     stream_id: 1,
@@ -500,6 +506,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -540,6 +547,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 2,
                 kind: StreamKind::Subtitle,
@@ -581,6 +589,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -622,6 +631,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -677,6 +687,7 @@ mod tests {
             container_metadata_policy: None,
             container_metadata: Vec::new(),
             container_chapter_policy: None,
+            container_chapters: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,

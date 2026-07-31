@@ -400,3 +400,4 @@
     -   [371: Media container metadata strip policy](adr/371-media-container-metadata-strip-policy.md)
     -   [372: Media container chapter strip policy](adr/372-media-container-chapter-strip-policy.md)
     -   [373: Media container metadata values](adr/373-media-container-metadata-values.md)
+    -   [374: Media container chapter values](adr/374-media-container-chapter-values.md)
