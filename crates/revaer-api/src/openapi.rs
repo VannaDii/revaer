@@ -1162,6 +1162,7 @@ fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
                         "container_chapters",
                         array_ref_schema("MediaDesiredTargetChapterEntry"),
                     ),
+                    ("container_attachment_policy", string_schema()),
                     (
                         "streams",
                         array_ref_min_items_schema("MediaDesiredTargetStream", 1),
@@ -1180,6 +1181,7 @@ fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
                     "container_format",
                     "container_metadata_policy",
                     "container_chapter_policy",
+                    "container_attachment_policy",
                     "streams",
                 ],
                 [
@@ -1198,6 +1200,7 @@ fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
                         "container_chapters",
                         array_ref_schema("MediaDesiredTargetChapterEntry"),
                     ),
+                    ("container_attachment_policy", string_schema()),
                     ("streams", array_ref_schema("MediaDesiredTargetStream")),
                 ],
             ),
@@ -2406,7 +2409,27 @@ mod tests {
                 chapter_schema,
                 Some("#/components/schemas/MediaDesiredTargetChapterEntry")
             );
+            let attachment_policy_present = schemas
+                .get(schema_name)
+                .and_then(|schema| schema.get("properties"))
+                .and_then(Value::as_object)
+                .is_some_and(|properties| properties.contains_key("container_attachment_policy"));
+            assert!(
+                attachment_policy_present,
+                "{schema_name} must expose container_attachment_policy"
+            );
         }
+
+        let response_requires_attachment_policy = schemas
+            .get("MediaDesiredTargetResponse")
+            .and_then(|schema| schema.get("required"))
+            .and_then(Value::as_array)
+            .is_some_and(|required| {
+                required
+                    .iter()
+                    .any(|field| field.as_str() == Some("container_attachment_policy"))
+            });
+        assert!(response_requires_attachment_policy);
 
         Ok(())
     }

@@ -28,7 +28,7 @@ const MEDIA_JOB_RETRY_V1: &str = "SELECT media_job_retry_v1(media_job_public_id_
 const MEDIA_JOB_MARK_COMPLETED_V1: &str =
     "SELECT media_job_mark_completed_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_jobs_pruned, failed_detail_rows_deleted FROM media_job_retention_run_v1(as_of_input => $1)";
-const MEDIA_JOB_WORKER_CLAIM_NEXT_V4: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, desired_container_metadata_policy, desired_container_chapter_policy, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v4()";
+const MEDIA_JOB_WORKER_CLAIM_NEXT_V5: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, desired_container_metadata_policy, desired_container_chapter_policy, desired_container_attachment_policy, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v5()";
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str =
     "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, status_input => $2::media_job_status, last_error_input => $3)";
@@ -324,6 +324,8 @@ pub struct ClaimedMediaJobRow {
     pub desired_container_metadata_policy: Option<String>,
     /// Optional desired container chapter policy snapshotted when queued.
     pub desired_container_chapter_policy: Option<String>,
+    /// Optional desired container attachment policy snapshotted when queued.
+    pub desired_container_attachment_policy: Option<String>,
     /// Unmatched-stream policy snapshotted when queued.
     pub unmatched_stream_policy: Option<String>,
     /// Verification strictness snapshotted when queued.
@@ -912,7 +914,7 @@ pub async fn run_media_job_retention(
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn media_job_worker_claim_next(pool: &PgPool) -> Result<Option<ClaimedMediaJobRow>> {
-    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V4)
+    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V5)
         .fetch_optional(pool)
         .await
         .map_err(try_op("media job worker claim next"))
@@ -1583,6 +1585,43 @@ mod tests {
                 && migration_text.contains("octet_length(metadata_value_value) > 4096")
                 && migration_text.contains("> 65536"),
             "chapter append procedures must bound chapters, metadata rows, per-row UTF-8 bytes, and aggregate UTF-8 bytes"
+        );
+    }
+
+    #[test]
+    fn migration_guards_container_attachment_policy() {
+        let migration_text = ordered_migration_text();
+        let latest_create = migration_text
+            .rsplit_once("CREATE FUNCTION media_desired_target_create_v4")
+            .map(|(_, create)| create)
+            .expect("media_desired_target_create_v4 must be present in migrations");
+        let latest_job_create = migration_text
+            .rsplit_once("CREATE OR REPLACE FUNCTION media_job_create_v1")
+            .map(|(_, create)| create)
+            .expect("media_job_create_v1 must be replaced by migrations");
+
+        assert!(
+            migration_text.contains("container_attachment_policy IN ('preserve', 'strip')"),
+            "desired-target container attachment constraint must accept preserve and strip"
+        );
+        assert!(
+            migration_text
+                .contains("intent_desired_container_attachment_policy IN ('preserve', 'strip')"),
+            "media job desired-target completeness constraint must snapshot attachment preserve and strip"
+        );
+        assert!(
+            latest_create.contains("attachment_policy_value NOT IN ('preserve', 'strip')"),
+            "latest desired-target create procedure must reject attachment policies other than preserve or strip"
+        );
+        assert!(
+            migration_text.contains("media_desired_target_list_v4")
+                && migration_text.contains("media_job_worker_claim_next_v5"),
+            "attachment policy must have desired-target list and worker-claim procedures"
+        );
+        assert!(
+            latest_job_create.contains("container.container_attachment_policy")
+                && latest_job_create.contains("intent_desired_container_attachment_policy"),
+            "job creation must snapshot desired-target attachment policy"
         );
     }
 

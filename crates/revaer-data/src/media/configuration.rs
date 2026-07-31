@@ -29,14 +29,14 @@ const MEDIA_POLICY_PROFILE_LIST_V1: &str = "SELECT policy_key, version, display_
 const MEDIA_POLICY_PROFILE_UPSERT_V1: &str = "SELECT policy_key, version, display_name, video_intent, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe FROM media_policy_profile_upsert_v1(actor_public_id_input => $1, policy_key_input => $2, version_input => $3, display_name_input => $4, video_intent_input => $5, verification_strictness_input => $6, verification_duration_tolerance_millis_input => $7, verification_mux_validation_input => $8, verification_decode_all_streams_input => $9, verification_keyframe_seek_input => $10, verification_playback_probe_input => $11)";
 const MEDIA_JOB_RETENTION_POLICY_GET_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_get_v2()";
 const MEDIA_JOB_RETENTION_POLICY_UPDATE_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_update_v2(actor_public_id_input => $1, completed_enabled_input => $2, completed_mode_input => $3, completed_limit_input => $4, failed_diagnostic_enabled_input => $5, failed_diagnostic_mode_input => $6, failed_diagnostic_limit_input => $7)";
-const MEDIA_DESIRED_TARGET_CREATE_V3: &str = "SELECT media_desired_target_create_v3(actor_public_id_input => $1, target_key_input => $2, version_input => $3, display_name_input => $4, container_format_input => $5, container_metadata_policy_input => $6, container_chapter_policy_input => $7)";
+const MEDIA_DESIRED_TARGET_CREATE_V4: &str = "SELECT media_desired_target_create_v4(actor_public_id_input => $1, target_key_input => $2, version_input => $3, display_name_input => $4, container_format_input => $5, container_metadata_policy_input => $6, container_chapter_policy_input => $7, container_attachment_policy_input => $8)";
 const MEDIA_DESIRED_TARGET_CHAPTER_APPEND_V1: &str = "SELECT media_desired_target_chapter_append_v1(media_desired_target_profile_public_id_input => $1, start_millis_input => $2, end_millis_input => $3)";
 const MEDIA_DESIRED_TARGET_CHAPTER_METADATA_APPEND_V1: &str = "SELECT media_desired_target_chapter_metadata_append_v1(media_desired_target_profile_public_id_input => $1, start_millis_input => $2, metadata_key_input => $3, metadata_value_input => $4)";
 const MEDIA_DESIRED_TARGET_CHAPTER_LIST_V1: &str = "SELECT start_millis, end_millis, metadata_key, metadata_value FROM media_desired_target_chapter_list_v1(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_DESIRED_TARGET_METADATA_APPEND_V1: &str = "SELECT media_desired_target_metadata_append_v1(media_desired_target_profile_public_id_input => $1, metadata_key_input => $2, metadata_value_input => $3)";
 const MEDIA_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, metadata_value FROM media_desired_target_metadata_list_v1(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_DESIRED_TARGET_STREAM_APPEND_V5: &str = "SELECT media_desired_target_stream_append_v5(media_desired_target_profile_public_id_input => $1, stream_key_input => $2, stream_kind_input => $3, semantic_role_input => $4, language_code_input => $5, optional_input => $6, sort_order_input => $7, codec_input => $8, channel_count_input => $9, channel_layout_input => $10, audio_bitrate_bps_input => $11, audio_sample_rate_hz_input => $12, audio_loudness_profile_input => $13, audio_dynamic_range_input => $14, video_profile_input => $15, video_level_input => $16, video_bitrate_bps_input => $17, color_primaries_input => $18, color_transfer_input => $19, color_space_input => $20, hdr_format_input => $21, title_input => $22, default_disposition_input => $23, forced_disposition_input => $24, subtitle_placement_input => $25, image_subtitle_action_input => $26)";
-const MEDIA_DESIRED_TARGET_LIST_V3: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, container_metadata_policy, container_chapter_policy FROM media_desired_target_list_v3()";
+const MEDIA_DESIRED_TARGET_LIST_V4: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, container_metadata_policy, container_chapter_policy, container_attachment_policy FROM media_desired_target_list_v4()";
 const MEDIA_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_stream_list_v5(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_PROFILE_DESIRED_TARGET_SET_V1: &str = "SELECT media_profile_desired_target_set_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, desired_target_key_input => $3, desired_target_version_input => $4)";
 
@@ -126,6 +126,8 @@ pub struct CreateMediaDesiredTargetInput<'a> {
     pub container_metadata_policy: &'a str,
     /// Desired container chapter policy.
     pub container_chapter_policy: &'a str,
+    /// Desired container attachment policy.
+    pub container_attachment_policy: &'a str,
 }
 
 /// Desired target container metadata append payload.
@@ -237,6 +239,8 @@ pub struct MediaDesiredTargetRow {
     pub container_metadata_policy: String,
     /// Desired container chapter policy.
     pub container_chapter_policy: String,
+    /// Desired container attachment policy.
+    pub container_attachment_policy: String,
 }
 
 /// Desired target container metadata row.
@@ -545,7 +549,7 @@ pub async fn create_media_desired_target_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, Uuid>(MEDIA_DESIRED_TARGET_CREATE_V3)
+    sqlx::query_scalar::<_, Uuid>(MEDIA_DESIRED_TARGET_CREATE_V4)
         .bind(input.actor_public_id)
         .bind(input.target_key)
         .bind(input.version)
@@ -553,6 +557,7 @@ where
         .bind(input.container_format)
         .bind(input.container_metadata_policy)
         .bind(input.container_chapter_policy)
+        .bind(input.container_attachment_policy)
         .fetch_one(executor)
         .await
         .map_err(try_op("media desired target create"))
@@ -724,7 +729,7 @@ where
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn list_media_desired_targets(pool: &PgPool) -> Result<Vec<MediaDesiredTargetRow>> {
-    sqlx::query_as::<_, MediaDesiredTargetRow>(MEDIA_DESIRED_TARGET_LIST_V3)
+    sqlx::query_as::<_, MediaDesiredTargetRow>(MEDIA_DESIRED_TARGET_LIST_V4)
         .fetch_all(pool)
         .await
         .map_err(try_op("media desired target list"))
@@ -866,6 +871,7 @@ mod tests {
                 container_format: "matroska",
                 container_metadata_policy: "preserve",
                 container_chapter_policy: "preserve",
+                container_attachment_policy: "preserve",
             },
         )
         .await?;
@@ -1130,6 +1136,7 @@ mod tests {
                 && target.container_format == "matroska"
                 && target.container_metadata_policy == "preserve"
                 && target.container_chapter_policy == "preserve"
+                && target.container_attachment_policy == "preserve"
         }));
         let streams = list_media_desired_target_streams(db.pool(), target_id).await?;
         assert_eq!(
@@ -1252,6 +1259,7 @@ mod tests {
                 container_format: "matroska",
                 container_metadata_policy: "preserve",
                 container_chapter_policy: "preserve",
+                container_attachment_policy: "preserve",
             },
         )
         .await?;
@@ -1328,6 +1336,10 @@ mod tests {
             claimed.desired_container_chapter_policy.as_deref(),
             Some("preserve")
         );
+        assert_eq!(
+            claimed.desired_container_attachment_policy.as_deref(),
+            Some("preserve")
+        );
     }
 
     #[tokio::test]
@@ -1389,6 +1401,7 @@ mod tests {
                 container_format: "matroska",
                 container_metadata_policy: "preserve",
                 container_chapter_policy: "preserve",
+                container_attachment_policy: "preserve",
             },
         )
         .await?)
@@ -1543,6 +1556,7 @@ mod tests {
                 container_format: "matroska",
                 container_metadata_policy: "preserve",
                 container_chapter_policy: "preserve",
+                container_attachment_policy: "preserve",
             },
         )
         .await?;
