@@ -152,6 +152,32 @@ fn sample_fs_policy_row() -> FsPolicyRow {
 }
 
 #[test]
+fn factory_reset_retry_sqlstates_are_limited_to_transient_contention() {
+    assert!(factory_reset_sqlstate_is_retryable(Some(
+        POSTGRES_DEADLOCK_DETECTED
+    )));
+    assert!(factory_reset_sqlstate_is_retryable(Some(
+        POSTGRES_SERIALIZATION_FAILURE
+    )));
+    assert!(factory_reset_sqlstate_is_retryable(Some(
+        POSTGRES_LOCK_NOT_AVAILABLE
+    )));
+
+    assert!(!factory_reset_sqlstate_is_retryable(None));
+    assert!(!factory_reset_sqlstate_is_retryable(Some("23505")));
+    assert!(!factory_reset_sqlstate_is_retryable(Some("42P01")));
+}
+
+#[test]
+fn factory_reset_retry_delay_scales_by_attempt() {
+    assert_eq!(factory_reset_retry_delay(1), FACTORY_RESET_RETRY_BASE_DELAY);
+    assert_eq!(
+        factory_reset_retry_delay(3),
+        FACTORY_RESET_RETRY_BASE_DELAY.saturating_mul(3)
+    );
+}
+
+#[test]
 fn app_mode_parses_and_formats() -> anyhow::Result<()> {
     assert_eq!(AppMode::from_str("setup")?, AppMode::Setup);
     assert_eq!(AppMode::from_str("active")?, AppMode::Active);

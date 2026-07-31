@@ -521,6 +521,9 @@ pub struct MediaDesiredTargetStream {
     /// Optional desired HDR format label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hdr_format: Option<String>,
+    /// Exact HDR10 mastering-display and content-light metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hdr10_metadata: Option<MediaDesiredTargetHdr10Metadata>,
     /// Optional desired stream title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -536,6 +539,36 @@ pub struct MediaDesiredTargetStream {
     /// Image-subtitle action: preserve, remove, or fail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_subtitle_action: Option<String>,
+}
+
+/// Exact authored HDR10 metadata for one desired video stream.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MediaDesiredTargetHdr10Metadata {
+    /// Red primary x chromaticity.
+    pub mastering_red_x: String,
+    /// Red primary y chromaticity.
+    pub mastering_red_y: String,
+    /// Green primary x chromaticity.
+    pub mastering_green_x: String,
+    /// Green primary y chromaticity.
+    pub mastering_green_y: String,
+    /// Blue primary x chromaticity.
+    pub mastering_blue_x: String,
+    /// Blue primary y chromaticity.
+    pub mastering_blue_y: String,
+    /// White point x chromaticity.
+    pub mastering_white_x: String,
+    /// White point y chromaticity.
+    pub mastering_white_y: String,
+    /// Minimum mastering display luminance.
+    pub mastering_min_luminance: String,
+    /// Maximum mastering display luminance.
+    pub mastering_max_luminance: String,
+    /// Maximum content light level.
+    pub max_content_light_level: String,
+    /// Maximum frame-average light level.
+    pub max_frame_average_light_level: String,
 }
 
 /// Desired exact container metadata entry.

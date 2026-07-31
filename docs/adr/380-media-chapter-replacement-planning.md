@@ -1,0 +1,68 @@
+# Media chapter replacement planning
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - ADR 374 added exact authored container chapter replacement, but graph diffing only treated `container_chapter_policy: strip` as a container-level mismatch.
+  - A desired target with `container_chapter_policy: replace` and unchanged streams could therefore plan as `no_op`, skipping the FFmetadata side input and leaving the source chapter state unchanged.
+  - The media conversion fixture suite also lacked a real FFmpeg path proving authored chapter replacement materializes and is visible in output inspection.
+- Decision:
+  - Treat both `strip` and `replace` container chapter policies as chapter-rewrite mismatches during graph diffing.
+  - Add a media fixture pipeline case that requests a complete authored chapter timeline, runs the normal planner and executor, and verifies the output with `ffprobe -show_chapters`.
+  - Keep unsupported chapter stream materialization fail-closed; this change covers target-level container chapter rows only.
+  - Alternatives considered:
+    - Rely on command-construction unit coverage: rejected because the planner could still return `no_op` before command construction.
+    - Compare authored replacement rows against source chapters before planning: rejected for this slice because the final verifier already owns exact output proof, and authored replacement is always a mutating target contract.
+- Consequences:
+  - Positive outcomes:
+    - Authored chapter replacement can no longer be silently skipped as an already-satisfied source graph.
+    - The PR media conversion fixture job now exercises real FFmpeg chapter replacement and output inspection.
+  - Risks or trade-offs:
+    - A replacement target that happens to match the source chapter timeline still materializes a candidate, preserving deterministic proof over no-op optimization.
+- Follow-up:
+  - Add authored attachment and data-stream replacement only with equivalent schema, execution, and verification evidence.
+  - Continue expanding fixture coverage for implemented target-level metadata, chapter, sidecar, and technical stream constraints.
+
+## Task Record
+
+- Motivation:
+  - Close a false no-op path in authored chapter replacement planning and add real conversion evidence for the implemented chapter target contract.
+- Design notes:
+  - `diff_graphs` now shares chapter rewrite detection for `strip` and `replace`.
+  - Container metadata and chapter rewrites now plan both `metadata_rewrite` and the required `remux`, keeping reports and plan cost aligned with the real artifact-producing FFmpeg operation.
+  - Authored chapter replacement now fails closed unless the desired output container is in the explicitly implemented chapter-authoring set. Matroska remains the only enabled container because it is the only path with real fixture evidence in this slice.
+  - Runtime execution removes the generated chapter ffmetadata input after successful output verification and also attempts the same cleanup when a later verification or replacement step fails.
+  - The fixture case uses an existing Matroska H.264 source, writes two authored chapter rows, expects `metadata_rewrite` plus the required remux, and asserts exact final chapter titles and millisecond ranges from FFprobe.
+- Test coverage summary:
+  - `cargo fmt --all --check`
+  - `cargo test -p revaer-media-core diff_scores_replace_container_chapter_policy --all-features -- --nocapture`
+  - `cargo test -p revaer-media-core generate_plan_reports_required_remux_for_replace_chapters --all-features -- --nocapture`
+  - `cargo test -p revaer-media-core generate_plan_selects_metadata_rewrite_for_strip_policy --all-features -- --nocapture`
+  - `cargo test -p revaer-media-core generate_plan_selects_metadata_rewrite_for_strip_chapters --all-features -- --nocapture`
+  - `cargo test -p revaer-media-runtime desired_graph_replace_container_chapters -- --nocapture`
+  - `cargo test -p revaer-media-runtime text_artifact -- --nocapture`
+  - `cargo test -p revaer-media-runtime unsupported_chapter_muxer_preflight_classification_is_stable -- --nocapture`
+  - `cargo test -p revaer-media-runtime --test media_fixtures chapter_timestamp_parser_reads_ffprobe_seconds -- --nocapture`
+  - `cargo test -p revaer-media-runtime --test media_fixtures media_conversion_report_starts_with_summary_and_lists_actions -- --nocapture`
+  - `cargo test -p revaer-media-core --all-features`
+  - `cargo clippy -p revaer-media-core -p revaer-media-runtime --all-features --all-targets -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `just check-assets`
+  - `git diff --check`
+  - `sonar verify --file crates/revaer-media-core/src/plan/mod.rs --project VannaDii_Revaer` and `sonar analyze sqaa --file <changed-file> --project VannaDii_Revaer` were attempted and failed with SonarQube API 403 because Agentic Analysis is unavailable for the organization.
+  - `sonar analyze secrets crates/revaer-media-core/src/plan/mod.rs docs/adr/380-media-chapter-replacement-planning.md`
+  - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table`
+  - An initial `just ci` attempt exposed the native libtorrent selection issue captured in ADR 381; after that follow-up fix, `source ~/.nvm/nvm.sh && nvm current && node --version && npm --version && just ci` passed with Node `v24.14.1`, npm `11.12.1`, generated `coverage/lcov.info`, and passed all per-package coverage thresholds.
+  - `source ~/.nvm/nvm.sh && nvm current && node --version && npm --version && just ui-e2e`
+  - `sonar analyze secrets` over the complete changed and new file set completed successfully.
+  - `just clean-test-fixtures`
+  - A pruned follow-up scan found no generated media files remaining outside ignored build and dependency caches.
+- Observability updates:
+  - No new runtime metrics or logs were added. The media conversion fixture report now records the real `metadata_rewrite` and `remux` actions for authored chapter replacement.
+- Risk and rollback plan:
+  - Risk: chapter replacement candidates are now always materialized even if the source chapter timeline already matches.
+  - Roll back by reverting the diff helper and fixture case; do not roll back to no-op planning without also proving exact source chapter equivalence.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - ADR 318 still listed authored chapter edits as open; it now distinguishes supported target-level authored chapter replacement from still-unsupported chapter stream materialization and authored attachment/data targets.

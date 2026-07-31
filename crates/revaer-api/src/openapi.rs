@@ -1107,6 +1107,8 @@ fn media_desired_target_stream_schemas() -> Vec<(&'static str, Value)> {
                     ("channel_layout", string_schema()),
                     ("audio_bitrate_bps", integer_schema()),
                     ("audio_sample_rate_hz", integer_schema()),
+                    ("audio_loudness_profile", string_schema()),
+                    ("audio_dynamic_range", string_schema()),
                     ("video_profile", string_schema()),
                     ("video_level", string_schema()),
                     ("video_bitrate_bps", integer_schema()),
@@ -1114,11 +1116,48 @@ fn media_desired_target_stream_schemas() -> Vec<(&'static str, Value)> {
                     ("color_transfer", string_schema()),
                     ("color_space", string_schema()),
                     ("hdr_format", string_schema()),
+                    (
+                        "hdr10_metadata",
+                        schema_ref("MediaDesiredTargetHdr10Metadata"),
+                    ),
                     ("title", string_schema()),
                     ("default_disposition", bool_schema()),
                     ("forced_disposition", bool_schema()),
                     ("subtitle_placement", string_schema()),
                     ("image_subtitle_action", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaDesiredTargetHdr10Metadata",
+            object_schema(
+                &[
+                    "mastering_red_x",
+                    "mastering_red_y",
+                    "mastering_green_x",
+                    "mastering_green_y",
+                    "mastering_blue_x",
+                    "mastering_blue_y",
+                    "mastering_white_x",
+                    "mastering_white_y",
+                    "mastering_min_luminance",
+                    "mastering_max_luminance",
+                    "max_content_light_level",
+                    "max_frame_average_light_level",
+                ],
+                [
+                    ("mastering_red_x", string_schema()),
+                    ("mastering_red_y", string_schema()),
+                    ("mastering_green_x", string_schema()),
+                    ("mastering_green_y", string_schema()),
+                    ("mastering_blue_x", string_schema()),
+                    ("mastering_blue_y", string_schema()),
+                    ("mastering_white_x", string_schema()),
+                    ("mastering_white_y", string_schema()),
+                    ("mastering_min_luminance", string_schema()),
+                    ("mastering_max_luminance", string_schema()),
+                    ("max_content_light_level", string_schema()),
+                    ("max_frame_average_light_level", string_schema()),
                 ],
             ),
         ),
@@ -2254,6 +2293,7 @@ mod tests {
         "MediaCompatibilityTargetListResponse",
         "MediaCompatibilityTargetUpsertRequest",
         "MediaDesiredTargetStream",
+        "MediaDesiredTargetHdr10Metadata",
         "MediaDesiredTargetMetadataEntry",
         "MediaDesiredTargetChapterEntry",
         "MediaDesiredTargetCreateRequest",
@@ -2450,6 +2490,21 @@ mod tests {
             .and_then(|streams| streams.get("minItems"))
             .and_then(Value::as_u64);
         assert_eq!(desired_target_streams_min_items, Some(1));
+
+        let stream_properties = schemas
+            .get("MediaDesiredTargetStream")
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+            .ok_or_else(|| io::Error::other("expected desired target stream properties"))?;
+        assert!(stream_properties.contains_key("audio_loudness_profile"));
+        assert!(stream_properties.contains_key("audio_dynamic_range"));
+        assert_eq!(
+            stream_properties
+                .get("hdr10_metadata")
+                .and_then(|schema| schema.get("$ref"))
+                .and_then(Value::as_str),
+            Some("#/components/schemas/MediaDesiredTargetHdr10Metadata")
+        );
 
         for schema_name in [
             "MediaDesiredTargetCreateRequest",

@@ -1,0 +1,55 @@
+# Justfile NVM Node wrapper
+
+- Status: Accepted
+- Date: 2026-08-01
+- Context:
+  - Local validation shells can have multiple Node installations, and `just` runs recipe lines through login `bash`.
+  - The wrapper shell had NVM active, but the login shell used by `just ui-e2e` resolved `/usr/local/bin/node` before the NVM-managed Node.
+  - Node-backed checks must use the same intended runtime for npm audit, release validation, generated API clients, Playwright, and JavaScript coverage.
+- Decision:
+  - Add `scripts/with-node.sh` as the canonical Node command wrapper for Justfile recipes.
+  - Source NVM when it is available and select an explicit `REVAER_NODE_VERSION` before executing the requested command.
+  - When `REVAER_NODE_VERSION` is unset, prefer the local `lts/*` NVM alias.
+  - Fall back to the existing PATH when NVM is absent, or when a CI runner exposes NVM without an installed LTS alias, so GitHub Actions jobs continue using their setup-node or hosted-runner Node path.
+  - Alternatives considered:
+    - Depend on each operator shell already exporting NVM first in PATH: rejected because `just` login shells can reorder PATH.
+    - Add a top-level `.nvmrc`: deferred because adding a new top-level tracked file would require expanding Sonar source scope, and the wrapper can select the local LTS alias without it.
+- Consequences:
+  - Positive outcomes:
+    - Local `just` Node-backed gates use NVM consistently even when login shell startup files reorder PATH.
+    - CI keeps using the Node version installed by the setup action or hosted runner path when NVM is unavailable or not populated with a local LTS alias.
+  - Risks or trade-offs:
+    - Local operators with NVM installed but no local LTS alias installed must install an LTS Node or set `REVAER_NODE_VERSION`; CI-only fallback does not mask that local setup gap.
+- Follow-up:
+  - Keep future Node/npm/npx invocations in Justfile recipes behind `scripts/with-node.sh`.
+
+## Task Record
+
+- Motivation:
+  - The UI e2e gate started under NVM Node `v24.14.1`, but nested npm execution reported `/usr/local` Node `v24.14.0`, proving that the local gate was not consistently using NVM.
+- Design notes:
+  - The wrapper is command-transparent: it only prepares Node resolution, then `exec`s the requested command.
+  - Justfile calls wrap `npm`, `npx`, `node`, and local JavaScript bin shims because bin shims use `/usr/bin/env node`.
+  - The wrapper does not install Node automatically; missing local NVM versions are a setup error, not a silent mutation during validation.
+  - CI fallback is intentionally narrower than local fallback: explicit `REVAER_NODE_VERSION` remains fail-closed everywhere, while the implicit `lts/*` preference may fall through only when `CI=true`.
+- Test coverage summary:
+  - `bash scripts/with-node.sh node --version`
+  - `bash -lc 'bash scripts/with-node.sh node --version; bash scripts/with-node.sh npm --version'`
+  - `CI=true NVM_DIR="$(mktemp -d)" bash scripts/with-node.sh npm --version`
+  - `source ~/.nvm/nvm.sh && nvm current && node --version && npm --version && just ci`
+  - `source ~/.nvm/nvm.sh && nvm current && node --version && npm --version && just ui-e2e`
+  - `sonar analyze secrets` over the complete changed and new file set completed successfully.
+  - SonarCloud PR issue search found four shell analyzer issues in `scripts/with-node.sh`; all conditional tests were updated to Bash `[[ ... ]]` form.
+- Observability updates:
+  - No runtime metrics, logs, or events changed.
+- Status-doc validation:
+  - Updated `.github/instructions/devops.instructions.md`, `docs/adr/index.md`, and `docs/SUMMARY.md`.
+- Risk and rollback plan:
+  - Risk: a local workstation with NVM installed but without an LTS alias can fail Node-backed Justfile recipes before running npm.
+  - Risk: a CI runner without setup-node and without any hosted Node path will still fail at command execution time.
+  - Roll back by reverting `scripts/with-node.sh` and the Justfile wrapper calls if the wrapper breaks CI setup-node execution.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/revaer-ui.instructions.md`.
+  - No instruction contradictions were introduced.

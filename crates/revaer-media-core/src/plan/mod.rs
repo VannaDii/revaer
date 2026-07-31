@@ -189,7 +189,9 @@ fn append_remux_operations(operations: &mut Vec<PlannedOperation>, diff: &GraphD
         });
     }
 
-    if diff.container_mismatch
+    if (diff.container_mismatch
+        || diff.container_metadata_mismatch
+        || diff.container_chapter_diff.is_mismatched())
         && !operations
             .iter()
             .any(|operation| operation.kind == OperationKind::Remux)
@@ -280,10 +282,16 @@ mod tests {
 
         assert_eq!(
             generate_plan(&diff),
-            vec![PlannedOperation {
-                kind: OperationKind::MetadataRewrite,
-                stream_id: None,
-            }]
+            vec![
+                PlannedOperation {
+                    kind: OperationKind::MetadataRewrite,
+                    stream_id: None,
+                },
+                PlannedOperation {
+                    kind: OperationKind::Remux,
+                    stream_id: None,
+                },
+            ]
         );
     }
 
@@ -296,10 +304,56 @@ mod tests {
 
         assert_eq!(
             generate_plan(&diff),
-            vec![PlannedOperation {
-                kind: OperationKind::MetadataRewrite,
-                stream_id: None,
-            }]
+            vec![
+                PlannedOperation {
+                    kind: OperationKind::MetadataRewrite,
+                    stream_id: None,
+                },
+                PlannedOperation {
+                    kind: OperationKind::Remux,
+                    stream_id: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn generate_plan_reports_required_remux_for_replace_chapters() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: Vec::new(),
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: Some("replace".to_string()),
+            container_chapters: vec![crate::model::ContainerChapterEntry {
+                start_millis: 0,
+                end_millis: 1_000,
+                metadata: vec![crate::model::ContainerMetadataEntry {
+                    key: "title".to_string(),
+                    value: "Opening".to_string(),
+                }],
+            }],
+            container_attachment_policy: None,
+            streams: Vec::new(),
+        };
+
+        assert_eq!(
+            generate_plan(&diff_graphs(&source, &desired)),
+            vec![
+                PlannedOperation {
+                    kind: OperationKind::MetadataRewrite,
+                    stream_id: None,
+                },
+                PlannedOperation {
+                    kind: OperationKind::Remux,
+                    stream_id: None,
+                },
+            ]
         );
     }
 

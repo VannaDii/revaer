@@ -4,7 +4,7 @@ use crate::error::{Result, try_op};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::configuration::MediaVerificationToggle;
+use super::configuration::{MediaDesiredTargetStreamRow, MediaVerificationToggle};
 
 const MEDIA_JOB_CREATE_V1: &str = "SELECT media_job_create_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, dry_run_input => $5)";
 const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1(media_job_public_id_input => $1, phase_index_input => $2, phase_name_input => $3, phase_status_input => $4, details_text_input => $5)";
@@ -40,7 +40,7 @@ const MEDIA_JOB_WORKER_COMPLETE_FINALIZED_V1: &str =
     "SELECT media_job_worker_complete_finalized_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, metadata_value FROM media_job_desired_target_metadata_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_CHAPTER_LIST_V1: &str = "SELECT start_millis, end_millis, metadata_key, metadata_value FROM media_job_desired_target_chapter_list_v1(media_job_public_id_input => $1)";
-const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
+const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V6: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_x, hdr10_mastering_white_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v6(media_job_public_id_input => $1)";
 const MEDIA_DISCOVERY_JOB_ENQUEUE_V1: &str = "SELECT media_discovery_job_enqueue_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
 const MEDIA_MANUAL_JOB_CREATE_V1: &str = "SELECT media_manual_job_create_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7, dry_run_input => $8)";
 
@@ -397,59 +397,7 @@ pub struct RecoveredMediaJobRow {
 }
 
 /// Ordered desired-target stream snapshotted for one job.
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct MediaJobDesiredTargetStreamRow {
-    /// Stable target stream key.
-    pub stream_key: String,
-    /// Media stream kind.
-    pub stream_kind: String,
-    /// Optional semantic role selector.
-    pub semantic_role: Option<String>,
-    /// Optional language selector.
-    pub language_code: Option<String>,
-    /// Whether a missing source match is acceptable.
-    pub optional: bool,
-    /// Final mux ordering position.
-    pub sort_order: i32,
-    /// Desired codec.
-    pub codec: String,
-    /// Optional desired audio channel count.
-    pub channel_count: Option<i32>,
-    /// Optional desired audio channel layout.
-    pub channel_layout: Option<String>,
-    /// Optional desired average audio bitrate in bits per second.
-    pub audio_bitrate_bps: Option<i32>,
-    /// Optional desired audio sample rate in hertz.
-    pub audio_sample_rate_hz: Option<i32>,
-    /// Optional desired audio loudness processing profile.
-    pub audio_loudness_profile: Option<String>,
-    /// Optional desired audio dynamic-range behavior.
-    pub audio_dynamic_range: Option<String>,
-    /// Optional desired video profile.
-    pub video_profile: Option<String>,
-    /// Optional desired video level.
-    pub video_level: Option<String>,
-    /// Optional desired average video bitrate in bits per second.
-    pub video_bitrate_bps: Option<i32>,
-    /// Optional desired video color primaries.
-    pub color_primaries: Option<String>,
-    /// Optional desired video transfer characteristic.
-    pub color_transfer: Option<String>,
-    /// Optional desired video color space.
-    pub color_space: Option<String>,
-    /// Optional desired HDR format label.
-    pub hdr_format: Option<String>,
-    /// Optional desired title.
-    pub title: Option<String>,
-    /// Desired default disposition.
-    pub default_disposition: bool,
-    /// Desired forced disposition.
-    pub forced_disposition: bool,
-    /// Desired subtitle placement for subtitle streams.
-    pub subtitle_placement: Option<String>,
-    /// Image-subtitle behavior for subtitle streams.
-    pub image_subtitle_action: Option<String>,
-}
+pub type MediaJobDesiredTargetStreamRow = MediaDesiredTargetStreamRow;
 
 /// Desired container metadata snapshotted for one job.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
@@ -549,7 +497,7 @@ pub async fn list_media_job_desired_target_streams(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobDesiredTargetStreamRow>> {
-    sqlx::query_as::<_, MediaJobDesiredTargetStreamRow>(MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5)
+    sqlx::query_as::<_, MediaJobDesiredTargetStreamRow>(MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V6)
         .bind(media_job_public_id)
         .fetch_all(pool)
         .await

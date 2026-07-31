@@ -80,7 +80,7 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
     let container_chapter_diff = if desired
         .container_chapter_policy
         .as_deref()
-        .is_some_and(|policy| policy.trim().eq_ignore_ascii_case("strip"))
+        .is_some_and(container_chapter_policy_requires_rewrite)
     {
         ContainerPolicyDiff::Mismatched
     } else {
@@ -199,6 +199,13 @@ fn retained_source_stream_ids(source: &MediaGraph, desired_stream_ids: &[u32]) -
 
 fn container_formats_match(source: &str, desired: &str) -> bool {
     normalize_container_format(source) == normalize_container_format(desired)
+}
+
+fn container_chapter_policy_requires_rewrite(policy: &str) -> bool {
+    matches!(
+        policy.trim().to_ascii_lowercase().as_str(),
+        "strip" | "replace"
+    )
 }
 
 fn audio_shape_differs(source: &MediaStream, desired: &MediaStream) -> bool {
@@ -345,6 +352,43 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
             container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams: Vec::new(),
+        };
+
+        let diff = diff_graphs(&source, &desired);
+        let report = score_diff(&diff);
+
+        assert!(diff.container_chapter_diff.is_mismatched());
+        assert_eq!(report.status, Status::NonCompliant);
+        assert!(report.violations.iter().any(|violation| {
+            violation.kind == ViolationKind::ContainerChapterMismatch
+                && violation.severity == Severity::Medium
+                && violation.stream_id.is_none()
+        }));
+    }
+
+    #[test]
+    fn diff_scores_replace_container_chapter_policy() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: Vec::new(),
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: Some("replace".to_string()),
+            container_chapters: vec![crate::model::ContainerChapterEntry {
+                start_millis: 0,
+                end_millis: 1_000,
+                metadata: vec![crate::model::ContainerMetadataEntry {
+                    key: "title".to_string(),
+                    value: "Opening".to_string(),
+                }],
+            }],
             container_attachment_policy: None,
             streams: Vec::new(),
         };

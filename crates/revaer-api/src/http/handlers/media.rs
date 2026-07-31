@@ -15,7 +15,7 @@ use revaer_media_core::{
         normalize_audio_channel_layout as normalize_supported_audio_channel_layout,
     },
     target::{
-        is_known_color_primaries, is_known_color_space, is_known_color_transfer,
+        Hdr10Metadata, is_known_color_primaries, is_known_color_space, is_known_color_transfer,
         is_known_video_level,
     },
 };
@@ -38,10 +38,11 @@ use crate::models::{
     MediaCapabilityRefreshResponse, MediaCompatibilityTargetListResponse,
     MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
     MediaComplianceResponse, MediaDesiredTargetChapterEntry, MediaDesiredTargetCreateRequest,
-    MediaDesiredTargetListResponse, MediaDesiredTargetMetadataEntry, MediaDesiredTargetResponse,
-    MediaDesiredTargetStream, MediaDiscoveryPreviewItemResponse, MediaDiscoveryPreviewRequest,
-    MediaDiscoveryPreviewResponse, MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunRequest,
-    MediaDiscoveryRunResponse, MediaDiscoveryScheduleListResponse, MediaDiscoveryScheduleResponse,
+    MediaDesiredTargetHdr10Metadata, MediaDesiredTargetListResponse,
+    MediaDesiredTargetMetadataEntry, MediaDesiredTargetResponse, MediaDesiredTargetStream,
+    MediaDiscoveryPreviewItemResponse, MediaDiscoveryPreviewRequest, MediaDiscoveryPreviewResponse,
+    MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunRequest, MediaDiscoveryRunResponse,
+    MediaDiscoveryScheduleListResponse, MediaDiscoveryScheduleResponse,
     MediaDiscoverySkippedItemResponse, MediaDiscoveryWatcherListResponse,
     MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse, MediaJobCompactAuditListResponse,
     MediaJobCreateRequest, MediaJobListResponse, MediaJobOperationListResponse,
@@ -1466,11 +1467,34 @@ fn map_desired_target_stream_params(
             .map(str::to_ascii_lowercase),
         hdr_format: trim_and_filter_empty(stream.hdr_format.as_deref())
             .map(str::to_ascii_lowercase),
+        hdr10_metadata: stream
+            .hdr10_metadata
+            .as_ref()
+            .map(map_desired_target_hdr10_metadata),
         title: trim_and_filter_empty(stream.title.as_deref()).map(str::to_string),
         default_disposition: stream.default_disposition,
         forced_disposition: stream.forced_disposition,
         subtitle_placement: subtitle_placement_for_stream(stream),
         image_subtitle_action: image_subtitle_action_for_stream(stream),
+    }
+}
+
+fn map_desired_target_hdr10_metadata(
+    metadata: &MediaDesiredTargetHdr10Metadata,
+) -> MediaDesiredTargetHdr10Metadata {
+    MediaDesiredTargetHdr10Metadata {
+        mastering_red_x: metadata.mastering_red_x.trim().to_string(),
+        mastering_red_y: metadata.mastering_red_y.trim().to_string(),
+        mastering_green_x: metadata.mastering_green_x.trim().to_string(),
+        mastering_green_y: metadata.mastering_green_y.trim().to_string(),
+        mastering_blue_x: metadata.mastering_blue_x.trim().to_string(),
+        mastering_blue_y: metadata.mastering_blue_y.trim().to_string(),
+        mastering_white_x: metadata.mastering_white_x.trim().to_string(),
+        mastering_white_y: metadata.mastering_white_y.trim().to_string(),
+        mastering_min_luminance: metadata.mastering_min_luminance.trim().to_string(),
+        mastering_max_luminance: metadata.mastering_max_luminance.trim().to_string(),
+        max_content_light_level: metadata.max_content_light_level.trim().to_string(),
+        max_frame_average_light_level: metadata.max_frame_average_light_level.trim().to_string(),
     }
 }
 
@@ -1845,6 +1869,7 @@ const fn has_video_target_shape_fields(stream: &MediaDesiredTargetStream) -> boo
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
         || stream.hdr_format.is_some()
+        || stream.hdr10_metadata.is_some()
 }
 
 fn validate_subtitle_target_shape_scope(
@@ -1897,7 +1922,42 @@ fn validate_video_target_shape(stream: &MediaDesiredTargetStream) -> Result<(), 
     {
         return Err(ApiError::bad_request("hdr_format is invalid"));
     }
+    validate_hdr10_metadata(stream)?;
     Ok(())
+}
+
+fn validate_hdr10_metadata(stream: &MediaDesiredTargetStream) -> Result<(), ApiError> {
+    let Some(metadata) = stream.hdr10_metadata.as_ref() else {
+        return Ok(());
+    };
+    if !trim_and_filter_empty(stream.hdr_format.as_deref())
+        .is_some_and(|format| format.eq_ignore_ascii_case("hdr10"))
+    {
+        return Err(ApiError::bad_request(
+            "hdr10_metadata requires hdr_format hdr10",
+        ));
+    }
+    if hdr10_metadata_core(metadata).scaled_values().is_none() {
+        return Err(ApiError::bad_request("hdr10_metadata is invalid"));
+    }
+    Ok(())
+}
+
+fn hdr10_metadata_core(metadata: &MediaDesiredTargetHdr10Metadata) -> Hdr10Metadata {
+    Hdr10Metadata {
+        mastering_red_x: metadata.mastering_red_x.clone(),
+        mastering_red_y: metadata.mastering_red_y.clone(),
+        mastering_green_x: metadata.mastering_green_x.clone(),
+        mastering_green_y: metadata.mastering_green_y.clone(),
+        mastering_blue_x: metadata.mastering_blue_x.clone(),
+        mastering_blue_y: metadata.mastering_blue_y.clone(),
+        mastering_white_x: metadata.mastering_white_x.clone(),
+        mastering_white_y: metadata.mastering_white_y.clone(),
+        mastering_min_luminance: metadata.mastering_min_luminance.clone(),
+        mastering_max_luminance: metadata.mastering_max_luminance.clone(),
+        max_content_light_level: metadata.max_content_light_level.clone(),
+        max_frame_average_light_level: metadata.max_frame_average_light_level.clone(),
+    }
 }
 
 fn validate_video_level(stream: &MediaDesiredTargetStream) -> Result<(), ApiError> {
@@ -2628,11 +2688,29 @@ mod tests {
             color_transfer: Some("smpte2084".to_string()),
             color_space: Some("bt2020nc".to_string()),
             hdr_format: Some("hdr10".to_string()),
+            hdr10_metadata: None,
             title: None,
             default_disposition: true,
             forced_disposition: false,
             subtitle_placement: None,
             image_subtitle_action: None,
+        }
+    }
+
+    fn exact_hdr10_metadata() -> MediaDesiredTargetHdr10Metadata {
+        MediaDesiredTargetHdr10Metadata {
+            mastering_red_x: "0.68".to_string(),
+            mastering_red_y: "0.32".to_string(),
+            mastering_green_x: "13250/50000".to_string(),
+            mastering_green_y: "34500/50000".to_string(),
+            mastering_blue_x: "7500/50000".to_string(),
+            mastering_blue_y: "3000/50000".to_string(),
+            mastering_white_x: "15635/50000".to_string(),
+            mastering_white_y: "16450/50000".to_string(),
+            mastering_min_luminance: "50/10000".to_string(),
+            mastering_max_luminance: "1000".to_string(),
+            max_content_light_level: "1000".to_string(),
+            max_frame_average_light_level: "400".to_string(),
         }
     }
 
@@ -2703,6 +2781,20 @@ mod tests {
         let mut invalid_hdr_format = valid_stream.clone();
         invalid_hdr_format.hdr_format = Some("dolby_vision".to_string());
         assert!(validate_desired_target_streams(&[invalid_hdr_format]).is_err());
+
+        let mut exact_hdr10 = valid_stream.clone();
+        exact_hdr10.hdr10_metadata = Some(exact_hdr10_metadata());
+        assert!(validate_desired_target_streams(std::slice::from_ref(&exact_hdr10)).is_ok());
+
+        let mut missing_hdr_format = exact_hdr10.clone();
+        missing_hdr_format.hdr_format = None;
+        assert!(validate_desired_target_streams(&[missing_hdr_format]).is_err());
+
+        let mut invalid_hdr10 = exact_hdr10;
+        if let Some(metadata) = invalid_hdr10.hdr10_metadata.as_mut() {
+            metadata.max_frame_average_light_level = "1200".to_string();
+        }
+        assert!(validate_desired_target_streams(&[invalid_hdr10]).is_err());
     }
 
     fn assert_desired_target_subtitle_validation_rejects_invalid_shapes(
@@ -2747,6 +2839,7 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_metadata: None,
             title: None,
             default_disposition: false,
             forced_disposition: false,
@@ -2798,6 +2891,7 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_metadata: None,
             title: Some(" Main audio ".to_string()),
             default_disposition: true,
             forced_disposition: false,

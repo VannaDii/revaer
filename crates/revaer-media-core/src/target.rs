@@ -55,6 +55,8 @@ pub struct TargetStream {
     pub color_space: Option<String>,
     /// Desired HDR format label.
     pub hdr_format: Option<String>,
+    /// Exact authored HDR10 mastering-display and content-light metadata.
+    pub hdr10_metadata: Option<Hdr10Metadata>,
     /// Desired stream title. `None` removes the source title.
     pub title: Option<String>,
     /// Complete desired disposition set.
@@ -63,6 +65,248 @@ pub struct TargetStream {
     pub subtitle_placement: Option<SubtitlePlacement>,
     /// Image-subtitle action. Non-subtitle rows leave this unset.
     pub image_subtitle_action: Option<ImageSubtitleAction>,
+}
+
+/// Exact HDR10 mastering-display and content-light values authored for an output stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hdr10Metadata {
+    /// Red primary x chromaticity.
+    pub mastering_red_x: String,
+    /// Red primary y chromaticity.
+    pub mastering_red_y: String,
+    /// Green primary x chromaticity.
+    pub mastering_green_x: String,
+    /// Green primary y chromaticity.
+    pub mastering_green_y: String,
+    /// Blue primary x chromaticity.
+    pub mastering_blue_x: String,
+    /// Blue primary y chromaticity.
+    pub mastering_blue_y: String,
+    /// White point x chromaticity.
+    pub mastering_white_x: String,
+    /// White point y chromaticity.
+    pub mastering_white_y: String,
+    /// Minimum mastering display luminance.
+    pub mastering_min_luminance: String,
+    /// Maximum mastering display luminance.
+    pub mastering_max_luminance: String,
+    /// Maximum content light level.
+    pub max_content_light_level: String,
+    /// Maximum frame-average light level.
+    pub max_frame_average_light_level: String,
+}
+
+/// HDR10 metadata in the integer units used by HEVC mastering-display side data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hdr10ScaledMetadata {
+    /// Red primary x chromaticity in 1/50000 units.
+    pub mastering_red_x: u64,
+    /// Red primary y chromaticity in 1/50000 units.
+    pub mastering_red_y: u64,
+    /// Green primary x chromaticity in 1/50000 units.
+    pub mastering_green_x: u64,
+    /// Green primary y chromaticity in 1/50000 units.
+    pub mastering_green_y: u64,
+    /// Blue primary x chromaticity in 1/50000 units.
+    pub mastering_blue_x: u64,
+    /// Blue primary y chromaticity in 1/50000 units.
+    pub mastering_blue_y: u64,
+    /// White point x chromaticity in 1/50000 units.
+    pub mastering_white_x: u64,
+    /// White point y chromaticity in 1/50000 units.
+    pub mastering_white_y: u64,
+    /// Minimum mastering display luminance in 1/10000 cd/m^2 units.
+    pub mastering_min_luminance: u64,
+    /// Maximum mastering display luminance in 1/10000 cd/m^2 units.
+    pub mastering_max_luminance: u64,
+    /// Maximum content light level in cd/m^2.
+    pub max_content_light_level: u64,
+    /// Maximum frame-average light level in cd/m^2.
+    pub max_frame_average_light_level: u64,
+}
+
+impl Hdr10Metadata {
+    /// Return the canonical integer-unit representation for exact comparison and encoding.
+    #[must_use]
+    pub fn scaled_values(&self) -> Option<Hdr10ScaledMetadata> {
+        let values = Hdr10ScaledMetadata {
+            mastering_red_x: parse_scaled_hdr10_number(&self.mastering_red_x, 50_000)?,
+            mastering_red_y: parse_scaled_hdr10_number(&self.mastering_red_y, 50_000)?,
+            mastering_green_x: parse_scaled_hdr10_number(&self.mastering_green_x, 50_000)?,
+            mastering_green_y: parse_scaled_hdr10_number(&self.mastering_green_y, 50_000)?,
+            mastering_blue_x: parse_scaled_hdr10_number(&self.mastering_blue_x, 50_000)?,
+            mastering_blue_y: parse_scaled_hdr10_number(&self.mastering_blue_y, 50_000)?,
+            mastering_white_x: parse_scaled_hdr10_number(&self.mastering_white_x, 50_000)?,
+            mastering_white_y: parse_scaled_hdr10_number(&self.mastering_white_y, 50_000)?,
+            mastering_min_luminance: parse_scaled_hdr10_number(
+                &self.mastering_min_luminance,
+                10_000,
+            )?,
+            mastering_max_luminance: parse_scaled_hdr10_number(
+                &self.mastering_max_luminance,
+                10_000,
+            )?,
+            max_content_light_level: parse_scaled_hdr10_number(&self.max_content_light_level, 1)?,
+            max_frame_average_light_level: parse_scaled_hdr10_number(
+                &self.max_frame_average_light_level,
+                1,
+            )?,
+        };
+        values.is_valid().then_some(values)
+    }
+
+    /// Return libx265's `master-display` parameter value.
+    #[must_use]
+    pub fn x265_master_display(&self) -> Option<String> {
+        let values = self.scaled_values()?;
+        Some(format!(
+            "G({},{})B({},{})R({},{})WP({},{})L({},{})",
+            values.mastering_green_x,
+            values.mastering_green_y,
+            values.mastering_blue_x,
+            values.mastering_blue_y,
+            values.mastering_red_x,
+            values.mastering_red_y,
+            values.mastering_white_x,
+            values.mastering_white_y,
+            values.mastering_max_luminance,
+            values.mastering_min_luminance
+        ))
+    }
+
+    /// Return libx265's `max-cll` parameter value.
+    #[must_use]
+    pub fn x265_max_cll(&self) -> Option<String> {
+        let values = self.scaled_values()?;
+        Some(format!(
+            "{},{}",
+            values.max_content_light_level, values.max_frame_average_light_level
+        ))
+    }
+}
+
+impl Hdr10ScaledMetadata {
+    fn is_valid(self) -> bool {
+        let red = ScaledChromaticityPoint {
+            x: self.mastering_red_x,
+            y: self.mastering_red_y,
+        };
+        let green = ScaledChromaticityPoint {
+            x: self.mastering_green_x,
+            y: self.mastering_green_y,
+        };
+        let blue = ScaledChromaticityPoint {
+            x: self.mastering_blue_x,
+            y: self.mastering_blue_y,
+        };
+        let white = ScaledChromaticityPoint {
+            x: self.mastering_white_x,
+            y: self.mastering_white_y,
+        };
+        [red, green, blue, white]
+            .into_iter()
+            .all(scaled_chromaticity_point_is_valid)
+            && scaled_chromaticity_point_inside_triangle(white, red, green, blue)
+            && self.mastering_max_luminance > self.mastering_min_luminance
+            && self.max_content_light_level > 0
+            && self.max_frame_average_light_level > 0
+            && self.max_frame_average_light_level <= self.max_content_light_level
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ScaledChromaticityPoint {
+    x: u64,
+    y: u64,
+}
+
+fn parse_scaled_hdr10_number(value: &str, scale: u64) -> Option<u64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let (numerator, denominator) = if let Some((numerator, denominator)) = value.split_once('/') {
+        if numerator.contains('/')
+            || !hdr10_integer_text_valid(numerator)
+            || !hdr10_integer_text_valid(denominator)
+            || denominator == "0"
+        {
+            return None;
+        }
+        (
+            numerator.parse::<u64>().ok()?,
+            denominator.parse::<u64>().ok()?,
+        )
+    } else if let Some((whole, fraction)) = value.split_once('.') {
+        if fraction.is_empty()
+            || fraction.contains('.')
+            || !hdr10_integer_text_valid(whole)
+            || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return None;
+        }
+        let denominator = 10_u64.checked_pow(u32::try_from(fraction.len()).ok()?)?;
+        let whole = whole.parse::<u64>().ok()?;
+        let fraction = fraction.parse::<u64>().ok()?;
+        (
+            whole.checked_mul(denominator)?.checked_add(fraction)?,
+            denominator,
+        )
+    } else {
+        if !hdr10_integer_text_valid(value) {
+            return None;
+        }
+        (value.parse::<u64>().ok()?, 1)
+    };
+    if denominator == 0 {
+        return None;
+    }
+    let scaled = numerator.checked_mul(scale)?;
+    (scaled % denominator == 0).then_some(scaled / denominator)
+}
+
+fn hdr10_integer_text_valid(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && (value == "0" || !value.starts_with('0'))
+}
+
+const fn scaled_chromaticity_point_is_valid(point: ScaledChromaticityPoint) -> bool {
+    point.x > 0 && point.y > 0 && point.x.saturating_add(point.y) <= 50_000
+}
+
+fn scaled_chromaticity_point_inside_triangle(
+    point: ScaledChromaticityPoint,
+    first: ScaledChromaticityPoint,
+    second: ScaledChromaticityPoint,
+    third: ScaledChromaticityPoint,
+) -> bool {
+    let area = signed_hdr10_area(first, second, third);
+    if area == 0 {
+        return false;
+    }
+    let first_edge = signed_hdr10_area(first, second, point);
+    let second_edge = signed_hdr10_area(second, third, point);
+    let third_edge = signed_hdr10_area(third, first, point);
+    if area > 0 {
+        first_edge >= 0 && second_edge >= 0 && third_edge >= 0
+    } else {
+        first_edge <= 0 && second_edge <= 0 && third_edge <= 0
+    }
+}
+
+fn signed_hdr10_area(
+    first: ScaledChromaticityPoint,
+    second: ScaledChromaticityPoint,
+    third: ScaledChromaticityPoint,
+) -> i128 {
+    let first_x = i128::from(first.x);
+    let first_y = i128::from(first.y);
+    let second_x = i128::from(second.x);
+    let second_y = i128::from(second.y);
+    let third_x = i128::from(third.x);
+    let third_y = i128::from(third.y);
+    (second_x - first_x) * (third_y - first_y) - (second_y - first_y) * (third_x - first_x)
 }
 
 /// Desired placement for a selected subtitle.
@@ -1357,6 +1601,27 @@ fn validate_video_constraints(stream: &TargetStream, key: &str) -> Result<(), Ta
             field: "video_bitrate_bps",
         });
     }
+    if stream.hdr10_metadata.is_some()
+        && !stream
+            .hdr_format
+            .as_deref()
+            .is_some_and(|format| format.trim().eq_ignore_ascii_case("hdr10"))
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "hdr10_metadata",
+        });
+    }
+    if stream
+        .hdr10_metadata
+        .as_ref()
+        .is_some_and(|metadata| metadata.scaled_values().is_none())
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "hdr10_metadata",
+        });
+    }
     Ok(())
 }
 
@@ -1429,6 +1694,7 @@ const fn has_video_shape(stream: &TargetStream) -> bool {
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
         || stream.hdr_format.is_some()
+        || stream.hdr10_metadata.is_some()
 }
 
 const fn has_subtitle_shape(stream: &TargetStream) -> bool {
@@ -1685,10 +1951,11 @@ fn normalized_dispositions(dispositions: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DesiredTarget, ImageSubtitleAction, SidecarOutputSource, SidecarSubtitleInput,
-        SubtitlePlacement, TargetCompileError, TargetStream, UnmatchedStreamPolicies,
-        UnmatchedStreamPolicy, compile_desired_target, compile_desired_target_with_sidecars,
-        compile_desired_target_with_sidecars_at, compile_desired_target_with_unmatched_policies,
+        DesiredTarget, Hdr10Metadata, ImageSubtitleAction, SidecarOutputSource,
+        SidecarSubtitleInput, SubtitlePlacement, TargetCompileError, TargetStream,
+        UnmatchedStreamPolicies, UnmatchedStreamPolicy, compile_desired_target,
+        compile_desired_target_with_sidecars, compile_desired_target_with_sidecars_at,
+        compile_desired_target_with_unmatched_policies,
     };
     use crate::classify::SemanticRole;
     use crate::model::{
@@ -1745,12 +2012,30 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_metadata: None,
             title: None,
             dispositions: Vec::new(),
             subtitle_placement: (kind == StreamKind::Subtitle)
                 .then_some(SubtitlePlacement::Embedded),
             image_subtitle_action: (kind == StreamKind::Subtitle)
                 .then_some(ImageSubtitleAction::Fail),
+        }
+    }
+
+    fn expected_hdr10_metadata() -> Hdr10Metadata {
+        Hdr10Metadata {
+            mastering_red_x: "0.68".to_string(),
+            mastering_red_y: "0.32".to_string(),
+            mastering_green_x: "13250/50000".to_string(),
+            mastering_green_y: "34500/50000".to_string(),
+            mastering_blue_x: "7500/50000".to_string(),
+            mastering_blue_y: "3000/50000".to_string(),
+            mastering_white_x: "15635/50000".to_string(),
+            mastering_white_y: "16450/50000".to_string(),
+            mastering_min_luminance: "50/10000".to_string(),
+            mastering_max_luminance: "1000".to_string(),
+            max_content_light_level: "1000".to_string(),
+            max_frame_average_light_level: "400".to_string(),
         }
     }
 
@@ -1847,6 +2132,46 @@ mod tests {
                 forced,
             ],
         }
+    }
+
+    #[test]
+    fn hdr10_metadata_formats_exact_scaled_values() {
+        let metadata = expected_hdr10_metadata();
+        let scaled = metadata
+            .scaled_values()
+            .expect("expected HDR10 metadata should scale exactly");
+        assert_eq!(scaled.mastering_red_x, 34_000);
+        assert_eq!(scaled.mastering_green_y, 34_500);
+        assert_eq!(scaled.mastering_min_luminance, 50);
+        assert_eq!(scaled.mastering_max_luminance, 10_000_000);
+        assert_eq!(
+            metadata.x265_master_display().as_deref(),
+            Some("G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,50)")
+        );
+        assert_eq!(metadata.x265_max_cll().as_deref(), Some("1000,400"));
+    }
+
+    #[test]
+    fn hdr10_metadata_rejects_inexact_or_impossible_values() {
+        let mut inexact = expected_hdr10_metadata();
+        inexact.mastering_red_x = "0.680001".to_string();
+        assert!(inexact.scaled_values().is_none());
+
+        let mut invalid_white_point = expected_hdr10_metadata();
+        invalid_white_point.mastering_white_x = "0.99".to_string();
+        assert!(invalid_white_point.scaled_values().is_none());
+
+        let mut invalid_light_order = expected_hdr10_metadata();
+        invalid_light_order.max_frame_average_light_level = "1200".to_string();
+        assert!(invalid_light_order.scaled_values().is_none());
+
+        let mut leading_zero = expected_hdr10_metadata();
+        leading_zero.max_content_light_level = "01000".to_string();
+        assert!(leading_zero.scaled_values().is_none());
+
+        let mut internal_space = expected_hdr10_metadata();
+        internal_space.mastering_green_x = "13250 /50000".to_string();
+        assert!(internal_space.scaled_values().is_none());
     }
 
     #[test]

@@ -35,9 +35,9 @@ const MEDIA_DESIRED_TARGET_CHAPTER_METADATA_APPEND_V1: &str = "SELECT media_desi
 const MEDIA_DESIRED_TARGET_CHAPTER_LIST_V1: &str = "SELECT start_millis, end_millis, metadata_key, metadata_value FROM media_desired_target_chapter_list_v1(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_DESIRED_TARGET_METADATA_APPEND_V1: &str = "SELECT media_desired_target_metadata_append_v1(media_desired_target_profile_public_id_input => $1, metadata_key_input => $2, metadata_value_input => $3)";
 const MEDIA_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, metadata_value FROM media_desired_target_metadata_list_v1(media_desired_target_profile_public_id_input => $1)";
-const MEDIA_DESIRED_TARGET_STREAM_APPEND_V5: &str = "SELECT media_desired_target_stream_append_v5(media_desired_target_profile_public_id_input => $1, stream_key_input => $2, stream_kind_input => $3, semantic_role_input => $4, language_code_input => $5, optional_input => $6, sort_order_input => $7, codec_input => $8, channel_count_input => $9, channel_layout_input => $10, audio_bitrate_bps_input => $11, audio_sample_rate_hz_input => $12, audio_loudness_profile_input => $13, audio_dynamic_range_input => $14, video_profile_input => $15, video_level_input => $16, video_bitrate_bps_input => $17, color_primaries_input => $18, color_transfer_input => $19, color_space_input => $20, hdr_format_input => $21, title_input => $22, default_disposition_input => $23, forced_disposition_input => $24, subtitle_placement_input => $25, image_subtitle_action_input => $26)";
+const MEDIA_DESIRED_TARGET_STREAM_APPEND_V6: &str = "SELECT media_desired_target_stream_append_v6(media_desired_target_profile_public_id_input => $1, stream_key_input => $2, stream_kind_input => $3, semantic_role_input => $4, language_code_input => $5, optional_input => $6, sort_order_input => $7, codec_input => $8, channel_count_input => $9, channel_layout_input => $10, audio_bitrate_bps_input => $11, audio_sample_rate_hz_input => $12, audio_loudness_profile_input => $13, audio_dynamic_range_input => $14, video_profile_input => $15, video_level_input => $16, video_bitrate_bps_input => $17, color_primaries_input => $18, color_transfer_input => $19, color_space_input => $20, hdr_format_input => $21, hdr10_mastering_red_x_input => $22, hdr10_mastering_red_y_input => $23, hdr10_mastering_green_x_input => $24, hdr10_mastering_green_y_input => $25, hdr10_mastering_blue_x_input => $26, hdr10_mastering_blue_y_input => $27, hdr10_mastering_white_x_input => $28, hdr10_mastering_white_y_input => $29, hdr10_mastering_min_luminance_input => $30, hdr10_mastering_max_luminance_input => $31, hdr10_max_content_light_level_input => $32, hdr10_max_frame_average_light_level_input => $33, title_input => $34, default_disposition_input => $35, forced_disposition_input => $36, subtitle_placement_input => $37, image_subtitle_action_input => $38)";
 const MEDIA_DESIRED_TARGET_LIST_V4: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, container_metadata_policy, container_chapter_policy, container_attachment_policy FROM media_desired_target_list_v4()";
-const MEDIA_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_stream_list_v5(media_desired_target_profile_public_id_input => $1)";
+const MEDIA_DESIRED_TARGET_STREAM_LIST_V6: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_x, hdr10_mastering_white_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_stream_list_v6(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_PROFILE_DESIRED_TARGET_SET_V1: &str = "SELECT media_profile_desired_target_set_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, desired_target_key_input => $3, desired_target_version_input => $4)";
 
 /// Compatibility target upsert payload.
@@ -220,6 +220,30 @@ pub struct AppendMediaDesiredTargetStreamInput<'a> {
     pub color_space: Option<&'a str>,
     /// Optional desired HDR format label.
     pub hdr_format: Option<&'a str>,
+    /// Optional HDR10 red primary x chromaticity.
+    pub hdr10_mastering_red_x: Option<&'a str>,
+    /// Optional HDR10 red primary y chromaticity.
+    pub hdr10_mastering_red_y: Option<&'a str>,
+    /// Optional HDR10 green primary x chromaticity.
+    pub hdr10_mastering_green_x: Option<&'a str>,
+    /// Optional HDR10 green primary y chromaticity.
+    pub hdr10_mastering_green_y: Option<&'a str>,
+    /// Optional HDR10 blue primary x chromaticity.
+    pub hdr10_mastering_blue_x: Option<&'a str>,
+    /// Optional HDR10 blue primary y chromaticity.
+    pub hdr10_mastering_blue_y: Option<&'a str>,
+    /// Optional HDR10 white point x chromaticity.
+    pub hdr10_mastering_white_x: Option<&'a str>,
+    /// Optional HDR10 white point y chromaticity.
+    pub hdr10_mastering_white_y: Option<&'a str>,
+    /// Optional HDR10 minimum mastering display luminance.
+    pub hdr10_mastering_min_luminance: Option<&'a str>,
+    /// Optional HDR10 maximum mastering display luminance.
+    pub hdr10_mastering_max_luminance: Option<&'a str>,
+    /// Optional HDR10 maximum content light level.
+    pub hdr10_max_content_light_level: Option<&'a str>,
+    /// Optional HDR10 maximum frame-average light level.
+    pub hdr10_max_frame_average_light_level: Option<&'a str>,
     /// Optional desired title.
     pub title: Option<&'a str>,
     /// Desired default disposition.
@@ -318,6 +342,30 @@ pub struct MediaDesiredTargetStreamRow {
     pub color_space: Option<String>,
     /// Optional desired HDR format label.
     pub hdr_format: Option<String>,
+    /// Optional HDR10 red primary x chromaticity.
+    pub hdr10_mastering_red_x: Option<String>,
+    /// Optional HDR10 red primary y chromaticity.
+    pub hdr10_mastering_red_y: Option<String>,
+    /// Optional HDR10 green primary x chromaticity.
+    pub hdr10_mastering_green_x: Option<String>,
+    /// Optional HDR10 green primary y chromaticity.
+    pub hdr10_mastering_green_y: Option<String>,
+    /// Optional HDR10 blue primary x chromaticity.
+    pub hdr10_mastering_blue_x: Option<String>,
+    /// Optional HDR10 blue primary y chromaticity.
+    pub hdr10_mastering_blue_y: Option<String>,
+    /// Optional HDR10 white point x chromaticity.
+    pub hdr10_mastering_white_x: Option<String>,
+    /// Optional HDR10 white point y chromaticity.
+    pub hdr10_mastering_white_y: Option<String>,
+    /// Optional HDR10 minimum mastering display luminance.
+    pub hdr10_mastering_min_luminance: Option<String>,
+    /// Optional HDR10 maximum mastering display luminance.
+    pub hdr10_mastering_max_luminance: Option<String>,
+    /// Optional HDR10 maximum content light level.
+    pub hdr10_max_content_light_level: Option<String>,
+    /// Optional HDR10 maximum frame-average light level.
+    pub hdr10_max_frame_average_light_level: Option<String>,
     /// Optional desired title.
     pub title: Option<String>,
     /// Desired default disposition.
@@ -715,7 +763,7 @@ pub async fn append_media_desired_target_stream_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query(MEDIA_DESIRED_TARGET_STREAM_APPEND_V5)
+    sqlx::query(MEDIA_DESIRED_TARGET_STREAM_APPEND_V6)
         .bind(input.media_desired_target_profile_public_id)
         .bind(input.stream_key)
         .bind(input.stream_kind)
@@ -737,6 +785,18 @@ where
         .bind(input.color_transfer)
         .bind(input.color_space)
         .bind(input.hdr_format)
+        .bind(input.hdr10_mastering_red_x)
+        .bind(input.hdr10_mastering_red_y)
+        .bind(input.hdr10_mastering_green_x)
+        .bind(input.hdr10_mastering_green_y)
+        .bind(input.hdr10_mastering_blue_x)
+        .bind(input.hdr10_mastering_blue_y)
+        .bind(input.hdr10_mastering_white_x)
+        .bind(input.hdr10_mastering_white_y)
+        .bind(input.hdr10_mastering_min_luminance)
+        .bind(input.hdr10_mastering_max_luminance)
+        .bind(input.hdr10_max_content_light_level)
+        .bind(input.hdr10_max_frame_average_light_level)
         .bind(input.title)
         .bind(input.default_disposition)
         .bind(input.forced_disposition)
@@ -801,7 +861,7 @@ pub async fn list_media_desired_target_streams(
     pool: &PgPool,
     media_desired_target_profile_public_id: Uuid,
 ) -> Result<Vec<MediaDesiredTargetStreamRow>> {
-    sqlx::query_as::<_, MediaDesiredTargetStreamRow>(MEDIA_DESIRED_TARGET_STREAM_LIST_V5)
+    sqlx::query_as::<_, MediaDesiredTargetStreamRow>(MEDIA_DESIRED_TARGET_STREAM_LIST_V6)
         .bind(media_desired_target_profile_public_id)
         .fetch_all(pool)
         .await
@@ -858,14 +918,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        AppendMediaDesiredTargetStreamInput, CreateMediaDesiredTargetInput,
-        MediaJobRetentionPolicyRow, UpdateMediaJobRetentionPolicyInput,
-        UpsertMediaCompatibilityTargetInput, UpsertMediaPolicyProfileInput,
-        append_media_desired_target_stream, create_media_desired_target,
-        get_media_job_retention_policy, list_media_compatibility_targets,
-        list_media_desired_target_streams, list_media_desired_targets, list_media_policy_profiles,
-        set_media_profile_desired_target, update_media_job_retention_policy,
-        upsert_media_compatibility_target, upsert_media_policy_profile,
+        AppendMediaDesiredTargetStreamInput, CreateMediaDesiredTargetInput, MediaDesiredTargetRow,
+        MediaDesiredTargetStreamRow, MediaJobRetentionPolicyRow,
+        UpdateMediaJobRetentionPolicyInput, UpsertMediaCompatibilityTargetInput,
+        UpsertMediaPolicyProfileInput, append_media_desired_target_stream,
+        create_media_desired_target, get_media_job_retention_policy,
+        list_media_compatibility_targets, list_media_desired_target_streams,
+        list_media_desired_targets, list_media_policy_profiles, set_media_profile_desired_target,
+        update_media_job_retention_policy, upsert_media_compatibility_target,
+        upsert_media_policy_profile,
     };
     use crate::config::factory_reset;
     use crate::media::jobs::{
@@ -933,6 +994,18 @@ mod tests {
             color_transfer: Some("smpte2084"),
             color_space: Some("bt2020nc"),
             hdr_format: Some("hdr10"),
+            hdr10_mastering_red_x: Some("0.68"),
+            hdr10_mastering_red_y: Some("0.32"),
+            hdr10_mastering_green_x: Some("13250/50000"),
+            hdr10_mastering_green_y: Some("34500/50000"),
+            hdr10_mastering_blue_x: Some("7500/50000"),
+            hdr10_mastering_blue_y: Some("3000/50000"),
+            hdr10_mastering_white_x: Some("15635/50000"),
+            hdr10_mastering_white_y: Some("16450/50000"),
+            hdr10_mastering_min_luminance: Some("50/10000"),
+            hdr10_mastering_max_luminance: Some("1000"),
+            hdr10_max_content_light_level: Some("1000"),
+            hdr10_max_frame_average_light_level: Some("400"),
             title: Some("Main picture"),
             default_disposition: true,
             forced_disposition: false,
@@ -964,6 +1037,18 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_mastering_red_x: None,
+            hdr10_mastering_red_y: None,
+            hdr10_mastering_green_x: None,
+            hdr10_mastering_green_y: None,
+            hdr10_mastering_blue_x: None,
+            hdr10_mastering_blue_y: None,
+            hdr10_mastering_white_x: None,
+            hdr10_mastering_white_y: None,
+            hdr10_mastering_min_luminance: None,
+            hdr10_mastering_max_luminance: None,
+            hdr10_max_content_light_level: None,
+            hdr10_max_frame_average_light_level: None,
             title: Some("English"),
             default_disposition: true,
             forced_disposition: false,
@@ -997,6 +1082,18 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_mastering_red_x: None,
+            hdr10_mastering_red_y: None,
+            hdr10_mastering_green_x: None,
+            hdr10_mastering_green_y: None,
+            hdr10_mastering_blue_x: None,
+            hdr10_mastering_blue_y: None,
+            hdr10_mastering_white_x: None,
+            hdr10_mastering_white_y: None,
+            hdr10_mastering_min_luminance: None,
+            hdr10_mastering_max_luminance: None,
+            hdr10_max_content_light_level: None,
+            hdr10_max_frame_average_light_level: None,
             title: None,
             default_disposition: false,
             forced_disposition: true,
@@ -1164,29 +1261,9 @@ mod tests {
         let target_id = create_ordered_desired_target(&db).await?;
 
         let targets = list_media_desired_targets(db.pool()).await?;
-        assert!(targets.iter().any(|target| {
-            target.media_desired_target_profile_public_id == target_id
-                && target.target_key == "theater-master"
-                && target.version == 2
-                && target.container_format == "matroska"
-                && target.container_metadata_policy == "preserve"
-                && target.container_chapter_policy == "preserve"
-                && target.container_attachment_policy == "preserve"
-        }));
+        assert_desired_target_profile_list(&targets, target_id);
         let streams = list_media_desired_target_streams(db.pool(), target_id).await?;
-        assert_eq!(
-            streams
-                .iter()
-                .map(|stream| (stream.stream_key.as_str(), stream.sort_order))
-                .collect::<Vec<_>>(),
-            vec![("video-main", 0), ("audio-main", 1), ("subtitle-forced", 2)]
-        );
-        assert_eq!(streams[1].channel_count, Some(2));
-        assert_eq!(streams[1].channel_layout.as_deref(), Some("stereo"));
-        assert_eq!(streams[1].audio_bitrate_bps, Some(160_000));
-        assert_eq!(streams[1].audio_sample_rate_hz, Some(48_000));
-        assert_eq!(streams[2].subtitle_placement.as_deref(), Some("both"));
-        assert_eq!(streams[2].image_subtitle_action.as_deref(), Some("remove"));
+        assert_desired_target_stream_list(&streams);
 
         let profile_id = upsert_media_profile(
             db.pool(),
@@ -1245,6 +1322,18 @@ mod tests {
                 color_transfer: None,
                 color_space: None,
                 hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_x: None,
+                hdr10_mastering_white_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
                 title: None,
                 default_disposition: false,
                 forced_disposition: false,
@@ -1255,6 +1344,47 @@ mod tests {
         .await;
         assert!(immutable_write.is_err());
         Ok(())
+    }
+
+    fn assert_desired_target_profile_list(targets: &[MediaDesiredTargetRow], target_id: Uuid) {
+        assert!(targets.iter().any(|target| {
+            target.media_desired_target_profile_public_id == target_id
+                && target.target_key == "theater-master"
+                && target.version == 2
+                && target.container_format == "matroska"
+                && target.container_metadata_policy == "preserve"
+                && target.container_chapter_policy == "preserve"
+                && target.container_attachment_policy == "preserve"
+        }));
+    }
+
+    fn assert_desired_target_stream_list(streams: &[MediaDesiredTargetStreamRow]) {
+        assert_eq!(
+            streams
+                .iter()
+                .map(|stream| (stream.stream_key.as_str(), stream.sort_order))
+                .collect::<Vec<_>>(),
+            vec![("video-main", 0), ("audio-main", 1), ("subtitle-forced", 2)]
+        );
+        assert_eq!(streams[1].channel_count, Some(2));
+        assert_eq!(streams[1].channel_layout.as_deref(), Some("stereo"));
+        assert_eq!(streams[1].audio_bitrate_bps, Some(160_000));
+        assert_eq!(streams[1].audio_sample_rate_hz, Some(48_000));
+        assert_eq!(streams[0].hdr10_mastering_red_x.as_deref(), Some("0.68"));
+        assert_eq!(
+            streams[0].hdr10_mastering_green_x.as_deref(),
+            Some("13250/50000")
+        );
+        assert_eq!(
+            streams[0].hdr10_mastering_min_luminance.as_deref(),
+            Some("50/10000")
+        );
+        assert_eq!(
+            streams[0].hdr10_max_frame_average_light_level.as_deref(),
+            Some("400")
+        );
+        assert_eq!(streams[2].subtitle_placement.as_deref(), Some("both"));
+        assert_eq!(streams[2].image_subtitle_action.as_deref(), Some("remove"));
     }
 
     async fn create_target_snapshot_job(
@@ -1343,6 +1473,24 @@ mod tests {
         assert_eq!(job_streams[0].color_transfer.as_deref(), Some("smpte2084"));
         assert_eq!(job_streams[0].color_space.as_deref(), Some("bt2020nc"));
         assert_eq!(job_streams[0].hdr_format.as_deref(), Some("hdr10"));
+        assert_eq!(
+            job_streams[0].hdr10_mastering_red_x.as_deref(),
+            Some("0.68")
+        );
+        assert_eq!(
+            job_streams[0].hdr10_mastering_green_x.as_deref(),
+            Some("13250/50000")
+        );
+        assert_eq!(
+            job_streams[0].hdr10_mastering_min_luminance.as_deref(),
+            Some("50/10000")
+        );
+        assert_eq!(
+            job_streams[0]
+                .hdr10_max_frame_average_light_level
+                .as_deref(),
+            Some("400")
+        );
         assert_eq!(job_streams[1].audio_bitrate_bps, Some(160_000));
         assert_eq!(job_streams[1].audio_sample_rate_hz, Some(48_000));
         assert_eq!(
@@ -1387,6 +1535,7 @@ mod tests {
         assert_invalid_subtitle_placement_rejected(&db, target_id).await?;
         assert_cross_kind_subtitle_fields_rejected(&db, target_id).await?;
         assert_unknown_hdr_format_rejected(&db, target_id).await?;
+        assert_invalid_hdr10_metadata_rejected(&db, target_id).await?;
         assert_unknown_video_color_rejected(&db, target_id).await?;
         assert_unknown_video_level_rejected(&db, target_id).await?;
         assert_invalid_audio_channel_layout_rejected(&db, target_id).await?;
@@ -1470,6 +1619,18 @@ mod tests {
                 color_transfer: None,
                 color_space: None,
                 hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_x: None,
+                hdr10_mastering_white_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
                 title: None,
                 default_disposition: false,
                 forced_disposition: false,
@@ -1530,6 +1691,46 @@ mod tests {
         };
         assert_eq!(
             unknown_hdr.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+        Ok(())
+    }
+
+    async fn assert_invalid_hdr10_metadata_rejected(
+        db: &MediaTestDb,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let incomplete_metadata = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-incomplete-hdr10",
+                hdr10_mastering_red_x: None,
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(incomplete_metadata) = incomplete_metadata else {
+            return Err(anyhow::anyhow!("incomplete HDR10 metadata was accepted"));
+        };
+        assert_eq!(
+            incomplete_metadata.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+
+        let invalid_geometry = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-invalid-hdr10",
+                hdr10_mastering_white_x: Some("0.99"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(invalid_geometry) = invalid_geometry else {
+            return Err(anyhow::anyhow!("invalid HDR10 metadata was accepted"));
+        };
+        assert_eq!(
+            invalid_geometry.database_detail(),
             Some("media_desired_target_video_shape_invalid")
         );
         Ok(())

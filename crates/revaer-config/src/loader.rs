@@ -71,6 +71,11 @@ impl DbSessionConfig {
 
 const SYSTEM_ACTOR_PUBLIC_ID: Uuid = Uuid::nil();
 const SECRET_SALT_BYTES: usize = 16;
+const FACTORY_RESET_MAX_ATTEMPTS: u8 = 3;
+const FACTORY_RESET_RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
+const POSTGRES_DEADLOCK_DETECTED: &str = "40P01";
+const POSTGRES_SERIALIZATION_FAILURE: &str = "40001";
+const POSTGRES_LOCK_NOT_AVAILABLE: &str = "55P03";
 
 #[async_trait]
 /// Abstraction over configuration backends used by the application service.
@@ -788,12 +793,52 @@ impl SettingsFacade for ConfigService {
     }
 
     async fn factory_reset(&self) -> Result<()> {
-        data_config::factory_reset(&self.pool)
-            .await
-            .map_err(map_db_err("config.factory_reset"))?;
-        info!("factory reset completed");
-        Ok(())
+        let mut attempt = 1;
+        loop {
+            match data_config::factory_reset(&self.pool).await {
+                Ok(()) => {
+                    info!("factory reset completed");
+                    return Ok(());
+                }
+                Err(source)
+                    if attempt < FACTORY_RESET_MAX_ATTEMPTS
+                        && factory_reset_error_is_retryable(&source) =>
+                {
+                    let sqlstate = source.database_code();
+                    let delay = factory_reset_retry_delay(attempt);
+                    warn!(
+                        attempt,
+                        max_attempts = FACTORY_RESET_MAX_ATTEMPTS,
+                        sqlstate = sqlstate.as_deref().unwrap_or("unknown"),
+                        delay_ms = delay.as_millis(),
+                        "factory reset hit transient database contention; retrying"
+                    );
+                    sleep(delay).await;
+                    attempt += 1;
+                }
+                Err(source) => return Err(map_db_err("config.factory_reset")(source)),
+            }
+        }
     }
+}
+
+fn factory_reset_error_is_retryable(source: &revaer_data::DataError) -> bool {
+    factory_reset_sqlstate_is_retryable(source.database_code().as_deref())
+}
+
+fn factory_reset_sqlstate_is_retryable(sqlstate: Option<&str>) -> bool {
+    matches!(
+        sqlstate,
+        Some(
+            POSTGRES_DEADLOCK_DETECTED
+                | POSTGRES_SERIALIZATION_FAILURE
+                | POSTGRES_LOCK_NOT_AVAILABLE,
+        )
+    )
+}
+
+fn factory_reset_retry_delay(attempt: u8) -> Duration {
+    FACTORY_RESET_RETRY_BASE_DELAY.saturating_mul(u32::from(attempt))
 }
 
 async fn apply_migrations(pool: &sqlx::PgPool) -> Result<()> {

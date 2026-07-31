@@ -18,6 +18,7 @@ use revaer_api_models::{
     MediaCapabilityReadinessResponse as SharedMediaCapabilityReadinessResponse,
     MediaCapabilitySnapshotResponse as SharedMediaCapabilitySnapshotResponse,
     MediaDesiredTargetChapterEntry as SharedMediaDesiredTargetChapterEntry,
+    MediaDesiredTargetHdr10Metadata as SharedMediaDesiredTargetHdr10Metadata,
     MediaDesiredTargetMetadataEntry as SharedMediaDesiredTargetMetadataEntry,
     MediaDesiredTargetStream as SharedMediaDesiredTargetStream,
     MediaJobArtifactResponse as SharedMediaJobArtifactResponse,
@@ -162,6 +163,9 @@ pub struct MediaCompatibilityTargetUpsertParams<'a> {
 
 /// Ordered desired-target stream parameters.
 pub type MediaDesiredTargetStreamParams = SharedMediaDesiredTargetStream;
+
+/// Exact HDR10 metadata parameters.
+pub type MediaDesiredTargetHdr10MetadataParams = SharedMediaDesiredTargetHdr10Metadata;
 
 /// Desired-target container metadata parameters.
 pub type MediaDesiredTargetMetadataParams = SharedMediaDesiredTargetMetadataEntry;

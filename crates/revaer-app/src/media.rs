@@ -7,13 +7,13 @@ use revaer_api::app::media::{
     MediaCapabilitySnapshotResponse as AppMediaCapabilitySnapshotResponse,
     MediaCompatibilityTargetResponse as AppMediaCompatibilityTargetResponse,
     MediaCompatibilityTargetUpsertParams, MediaDesiredTargetChapterParams,
-    MediaDesiredTargetCreateParams, MediaDesiredTargetMetadataParams,
-    MediaDesiredTargetResponse as AppMediaDesiredTargetResponse, MediaDesiredTargetStreamParams,
-    MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryPreviewResponse,
-    MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunParams, MediaDiscoveryRunResponse,
-    MediaDiscoverySkippedItemResponse, MediaFacade, MediaJobArtifactResponse,
-    MediaJobCompactAuditResponse, MediaJobCreateParams, MediaJobOperationResponse,
-    MediaJobPhaseResponse, MediaJobPlanReasonResponse, MediaJobResponse,
+    MediaDesiredTargetCreateParams, MediaDesiredTargetHdr10MetadataParams,
+    MediaDesiredTargetMetadataParams, MediaDesiredTargetResponse as AppMediaDesiredTargetResponse,
+    MediaDesiredTargetStreamParams, MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams,
+    MediaDiscoveryPreviewResponse, MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunParams,
+    MediaDiscoveryRunResponse, MediaDiscoverySkippedItemResponse, MediaFacade,
+    MediaJobArtifactResponse, MediaJobCompactAuditResponse, MediaJobCreateParams,
+    MediaJobOperationResponse, MediaJobPhaseResponse, MediaJobPlanReasonResponse, MediaJobResponse,
     MediaJobRetentionResponse as AppMediaJobRetentionResponse, MediaJobRetentionUpdateParams,
     MediaJobVerificationCheckResponse, MediaJobViolationResponse,
     MediaPolicyResponse as AppMediaPolicyResponse, MediaPolicyUpsertParams,
@@ -63,6 +63,7 @@ use revaer_media_core::model::StreamKind;
 use revaer_media_core::normalize::{
     audio_channel_count_for_layout, normalize_audio_channel_layout,
 };
+use revaer_media_core::target::Hdr10Metadata;
 use revaer_media_runtime::capabilities::{
     CapabilityDetectError, CapabilityDetector, CapabilitySnapshot, CodecCapability,
 };
@@ -1639,6 +1640,54 @@ async fn import_yaml_desired_streams(
                 color_transfer: stream.color_transfer.as_deref(),
                 color_space: stream.color_space.as_deref(),
                 hdr_format: stream.hdr_format.as_deref(),
+                hdr10_mastering_red_x: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_red_x.as_str()),
+                hdr10_mastering_red_y: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_red_y.as_str()),
+                hdr10_mastering_green_x: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_green_x.as_str()),
+                hdr10_mastering_green_y: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_green_y.as_str()),
+                hdr10_mastering_blue_x: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_blue_x.as_str()),
+                hdr10_mastering_blue_y: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_blue_y.as_str()),
+                hdr10_mastering_white_x: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_white_x.as_str()),
+                hdr10_mastering_white_y: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_white_y.as_str()),
+                hdr10_mastering_min_luminance: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_min_luminance.as_str()),
+                hdr10_mastering_max_luminance: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.mastering_max_luminance.as_str()),
+                hdr10_max_content_light_level: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.max_content_light_level.as_str()),
+                hdr10_max_frame_average_light_level: stream
+                    .hdr10_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.max_frame_average_light_level.as_str()),
                 title: stream.title.as_deref(),
                 default_disposition: stream.default_disposition,
                 forced_disposition: stream.forced_disposition,
@@ -2516,6 +2565,7 @@ fn yaml_desired_stream_invalid(
     let stream_kind = stream.stream_kind.trim().to_ascii_lowercase();
     yaml_stream_identity_invalid(stream, &stream_kind, stream_keys, stream_orders)
         || yaml_audio_constraints_invalid(stream, &stream_kind)
+        || yaml_video_constraints_invalid(stream, &stream_kind)
         || yaml_subtitle_constraints_invalid(stream, &stream_kind)
 }
 
@@ -2578,6 +2628,50 @@ fn audio_layout_contract_invalid(layout: Option<&str>, channels: Option<i32>) ->
         return true;
     };
     channels.is_some_and(|channel_count| channel_count != layout_channels)
+}
+
+fn yaml_video_constraints_invalid(
+    stream: &MediaDesiredTargetStreamParams,
+    stream_kind: &str,
+) -> bool {
+    if stream_kind != "video" {
+        return stream.video_profile.is_some()
+            || stream.video_level.is_some()
+            || stream.video_bitrate_bps.is_some()
+            || stream.color_primaries.is_some()
+            || stream.color_transfer.is_some()
+            || stream.color_space.is_some()
+            || stream.hdr_format.is_some()
+            || stream.hdr10_metadata.is_some();
+    }
+
+    stream.video_bitrate_bps.is_some_and(|bitrate| bitrate <= 0)
+        || stream.hdr10_metadata.as_ref().is_some_and(|metadata| {
+            !stream
+                .hdr_format
+                .as_deref()
+                .is_some_and(|format| format.trim().eq_ignore_ascii_case("hdr10"))
+                || hdr10_metadata_values_invalid(metadata)
+        })
+}
+
+fn hdr10_metadata_values_invalid(metadata: &MediaDesiredTargetHdr10MetadataParams) -> bool {
+    Hdr10Metadata {
+        mastering_red_x: metadata.mastering_red_x.clone(),
+        mastering_red_y: metadata.mastering_red_y.clone(),
+        mastering_green_x: metadata.mastering_green_x.clone(),
+        mastering_green_y: metadata.mastering_green_y.clone(),
+        mastering_blue_x: metadata.mastering_blue_x.clone(),
+        mastering_blue_y: metadata.mastering_blue_y.clone(),
+        mastering_white_x: metadata.mastering_white_x.clone(),
+        mastering_white_y: metadata.mastering_white_y.clone(),
+        mastering_min_luminance: metadata.mastering_min_luminance.clone(),
+        mastering_max_luminance: metadata.mastering_max_luminance.clone(),
+        max_content_light_level: metadata.max_content_light_level.clone(),
+        max_frame_average_light_level: metadata.max_frame_average_light_level.clone(),
+    }
+    .scaled_values()
+    .is_none()
 }
 
 fn yaml_subtitle_constraints_invalid(
@@ -2773,6 +2867,7 @@ fn trim_nonempty(value: &str) -> Option<&str> {
 }
 
 fn map_desired_target_stream(row: MediaDesiredTargetStreamRow) -> MediaDesiredTargetStreamParams {
+    let hdr10_metadata = map_desired_target_hdr10_metadata(&row);
     MediaDesiredTargetStreamParams {
         stream_key: row.stream_key,
         stream_kind: row.stream_kind,
@@ -2794,12 +2889,32 @@ fn map_desired_target_stream(row: MediaDesiredTargetStreamRow) -> MediaDesiredTa
         color_transfer: row.color_transfer,
         color_space: row.color_space,
         hdr_format: row.hdr_format,
+        hdr10_metadata,
         title: row.title,
         default_disposition: row.default_disposition,
         forced_disposition: row.forced_disposition,
         subtitle_placement: row.subtitle_placement,
         image_subtitle_action: row.image_subtitle_action,
     }
+}
+
+fn map_desired_target_hdr10_metadata(
+    row: &MediaDesiredTargetStreamRow,
+) -> Option<MediaDesiredTargetHdr10MetadataParams> {
+    Some(MediaDesiredTargetHdr10MetadataParams {
+        mastering_red_x: row.hdr10_mastering_red_x.clone()?,
+        mastering_red_y: row.hdr10_mastering_red_y.clone()?,
+        mastering_green_x: row.hdr10_mastering_green_x.clone()?,
+        mastering_green_y: row.hdr10_mastering_green_y.clone()?,
+        mastering_blue_x: row.hdr10_mastering_blue_x.clone()?,
+        mastering_blue_y: row.hdr10_mastering_blue_y.clone()?,
+        mastering_white_x: row.hdr10_mastering_white_x.clone()?,
+        mastering_white_y: row.hdr10_mastering_white_y.clone()?,
+        mastering_min_luminance: row.hdr10_mastering_min_luminance.clone()?,
+        mastering_max_luminance: row.hdr10_mastering_max_luminance.clone()?,
+        max_content_light_level: row.hdr10_max_content_light_level.clone()?,
+        max_frame_average_light_level: row.hdr10_max_frame_average_light_level.clone()?,
+    })
 }
 
 fn map_desired_target_metadata(
@@ -4666,6 +4781,21 @@ mod tests {
     }
 
     #[test]
+    fn validate_yaml_bundle_rejects_invalid_hdr10_metadata_contracts() {
+        let bundle = parse_yaml_bundle(
+            "format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Invalid HDR10 metadata\ntargets:\n  - target_key: bad-hdr10\n    version: 1\n    display_name: Bad HDR10\n    container_format: matroska\n    streams:\n      - stream_key: video-main\n        stream_kind: video\n        optional: false\n        sort_order: 0\n        codec: hevc\n        hdr_format: hdr10\n        hdr10_metadata:\n          mastering_red_x: '0.68'\n          mastering_red_y: '0.32'\n          mastering_green_x: '13250/50000'\n          mastering_green_y: '34500/50000'\n          mastering_blue_x: '7500/50000'\n          mastering_blue_y: '3000/50000'\n          mastering_white_x: '15635/50000'\n          mastering_white_y: '16450/50000'\n          mastering_min_luminance: '50/10000'\n          mastering_max_luminance: '1000'\n          max_content_light_level: '1000'\n          max_frame_average_light_level: '1200'\n        default_disposition: true\n        forced_disposition: false\n",
+        )
+        .expect("bundle");
+        let issues = validate_yaml_bundle(&bundle, &[], &[], &[]);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == "media_yaml_desired_target_stream_invalid")
+        );
+    }
+
+    #[test]
     fn validate_yaml_bundle_rejects_invalid_unmatched_policy_actions() {
         let bundle = parse_yaml_bundle(
             "format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Invalid policy actions\npolicies:\n  - policy_key: bad-actions\n    version: 1\n    display_name: Bad actions\n    video_intent: general\n    unmatched_video_action: fail\n    unmatched_audio_action: copy\n    unmatched_subtitle_action: preserve\n    unmatched_attachment_action: preserve\n    unmatched_data_action: remove\n    verification_strictness: balanced\n    verification_duration_tolerance_millis: 100\n    verification_mux_validation: true\n    verification_decode_all_streams: true\n    verification_keyframe_seek: true\n    verification_playback_probe: true\n",
@@ -5148,6 +5278,7 @@ mod tests {
             color_transfer: Some("smpte2084".to_string()),
             color_space: Some("bt2020nc".to_string()),
             hdr_format: Some("hdr10".to_string()),
+            hdr10_metadata: None,
             title: None,
             default_disposition: true,
             forced_disposition: false,
@@ -5178,6 +5309,7 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_metadata: None,
             title: Some("English".to_string()),
             default_disposition: true,
             forced_disposition: false,
@@ -5208,6 +5340,7 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_metadata: None,
             title: Some("English forced".to_string()),
             default_disposition: false,
             forced_disposition: true,

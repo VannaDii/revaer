@@ -154,8 +154,8 @@ audit:
         install_audit; \
     fi; \
     cargo audit --deny warnings
-    npm --prefix tests audit --audit-level=low
-    npm --prefix release audit --audit-level=low
+    bash scripts/with-node.sh npm --prefix tests audit --audit-level=low
+    bash scripts/with-node.sh npm --prefix release audit --audit-level=low
 
 deny:
     required_deny_version="0.18.9"; \
@@ -301,11 +301,11 @@ helm-publish chart_version app_version:
     bash release/scripts/helm-publish.sh "{{chart_version}}" "{{app_version}}"
 
 release-dev:
-    npm --prefix release ci
-    node release/node_modules/.bin/semantic-release --extends ./release/release.config.js
+    bash scripts/with-node.sh npm --prefix release ci
+    bash scripts/with-node.sh node release/node_modules/.bin/semantic-release --extends ./release/release.config.js
 
 release-lock:
-    npm --prefix release install --package-lock-only
+    bash scripts/with-node.sh npm --prefix release install --package-lock-only
 
 validate:
     test_database_url="${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh postgres)}"; \
@@ -376,8 +376,8 @@ ui-build: sync-assets trunk-install
     cd crates/revaer-ui && NO_COLOR=true trunk build --release
 
 ui-e2e: trunk-install
-    cd tests && npm install
-    cd tests && npm run gen:api-client
+    bash scripts/with-node.sh npm --prefix tests install
+    bash scripts/with-node.sh npm --prefix tests run gen:api-client
     playwright_browsers="$(printf "%s" "${E2E_BROWSERS:-chromium}" | tr "," " ")"; \
     playwright_install_browsers="${playwright_browsers}"; \
     if printf ' %s ' "${playwright_browsers}" | grep -q ' chromium '; then \
@@ -385,12 +385,12 @@ ui-e2e: trunk-install
     fi; \
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
         if [ -n "${E2E_BROWSER_CHANNEL:-}" ]; then \
-            cd tests && npx playwright install-deps ${playwright_install_browsers}; \
+            cd tests && bash ../scripts/with-node.sh npx playwright install-deps ${playwright_install_browsers}; \
         else \
-            cd tests && npx playwright install --with-deps ${playwright_install_browsers}; \
+            cd tests && bash ../scripts/with-node.sh npx playwright install --with-deps ${playwright_install_browsers}; \
         fi; \
     else \
-        cd tests && npx playwright install ${playwright_install_browsers}; \
+        cd tests && bash ../scripts/with-node.sh npx playwright install ${playwright_install_browsers}; \
     fi
     set -e; \
     playwright_args=(); \
@@ -424,11 +424,11 @@ ui-e2e: trunk-install
     fi; \
     if [ -n "${JS_COVERAGE_DIR:-}" ]; then \
         rm -rf target/js-coverage-tests "${JS_COVERAGE_DIR}"; \
-        (cd tests && npx tsc -p tsconfig.coverage.json); \
+        (cd tests && bash ../scripts/with-node.sh npx tsc -p tsconfig.coverage.json); \
         playwright_status=0; \
         NODE_PATH="${PWD}/tests/node_modules" \
         E2E_ENV_DIR="${PWD}/tests" \
-        tests/node_modules/.bin/c8 \
+        bash scripts/with-node.sh tests/node_modules/.bin/c8 \
             --reporter=lcovonly \
             --reports-dir "${JS_COVERAGE_DIR}" \
             tests/node_modules/.bin/playwright test \
@@ -441,17 +441,17 @@ ui-e2e: trunk-install
             -exec cp {} tests/test-results/ \;; \
         exit "${playwright_status}"; \
     else \
-        cd tests && npx playwright test "${playwright_args[@]}"; \
+        cd tests && bash ../scripts/with-node.sh npx playwright test "${playwright_args[@]}"; \
     fi
 
 ui-e2e-coverage:
-    node tests/scripts/check-e2e-coverage.js
+    bash scripts/with-node.sh node tests/scripts/check-e2e-coverage.js
 
 js-release-coverage:
-    cd tests && npm install
+    bash scripts/with-node.sh npm --prefix tests install
     rm -rf coverage/js/release
     mkdir -p coverage/js/release
-    tests/node_modules/.bin/c8 \
+    bash scripts/with-node.sh tests/node_modules/.bin/c8 \
         --reporter=lcovonly \
         --reports-dir coverage/js/release \
         node scripts/js-coverage/semantic-release-npm-stub.mjs

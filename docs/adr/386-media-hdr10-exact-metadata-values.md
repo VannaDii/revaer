@@ -1,0 +1,85 @@
+# Media HDR10 exact metadata values
+
+- Status: Accepted
+- Date: 2026-08-01
+- Context:
+  - ADR 318 still tracked a media-transcoding gap where HDR10 verification proved that side data existed and was internally sane, but did not prove the exact authored mastering-display and content-light values survived the plan, encode, snapshot, and verification path.
+  - Desired-target rows and job snapshots only carried HDR format and color labels. That made exact HDR10 value preservation impossible to express in the API contract or enforce in the runtime.
+  - The media service must remain fail-closed at API, YAML, stored-procedure, core, command-building, and verification boundaries.
+- Decision:
+  - Add normalized HDR10 scalar columns for desired-target streams and immutable job snapshot streams. Do not store HDR10 values as JSON or opaque blobs.
+  - Add a nested `hdr10_metadata` DTO with the twelve authored HDR10 mastering-display and content-light values.
+  - Use one shared Rust `Hdr10Metadata` parser for exact scaled-unit validation, libx265 parameter formatting, API validation, YAML validation, runtime compilation, and side-data comparison.
+  - Add database helper procedures and constraints that reject incomplete, inexact, geometrically invalid, or internally inconsistent HDR10 metadata before it can be persisted by direct stored-procedure callers.
+  - Emit exact HDR10 metadata through `-x265-params master-display=...:max-cll=...` only when the selected encoder is `libx265`; reject other encoders for exact HDR10 metadata until they have a tested equivalent.
+  - Verify exact authored HDR10 values by comparing FFprobe mastering-display and content-light side data in canonical integer units.
+  - Keep OpenAPI and the ignored TypeScript API schema aligned by regenerating them through the NVM-backed Node wrapper.
+- Consequences:
+  - Positive outcomes:
+    - Desired target creation, YAML import, job snapshotting, command construction, and final verification now share one exact HDR10 value contract.
+    - Direct database writes through stored procedures cannot persist malformed exact HDR10 values that the runtime would later reject.
+    - API clients can see and submit the new `hdr10_metadata` shape through the tracked OpenAPI document.
+  - Risks or trade-offs:
+    - Exact HDR10 metadata currently requires `libx265`; other HEVC encoders fail closed until they have encoder-specific support and tests.
+    - Numeric text is intentionally strict: leading-zero integers and internally spaced rationals are rejected so API/YAML and database behavior stay aligned.
+    - Existing targets with only `hdr_format: hdr10` remain valid; exact value preservation applies when all twelve HDR10 metadata fields are authored.
+- Follow-up:
+  - Continue closing broader media-transcoding gaps tracked by ADR 318, but this exact HDR10 metadata gap has direct storage, API, runtime, and verification coverage.
+
+## Task Record
+
+- Motivation:
+  - Close the exact HDR10 authored-value preservation gap so a target can require specific mastering-display and content-light values, not just generic HDR10 side-data presence.
+- Design notes:
+  - Added v6 desired-target and job-snapshot stream list/append procedures instead of changing existing procedure return shapes.
+  - Used a trigger to snapshot the new HDR10 columns from desired-target streams into job stream rows without replacing the large existing job-create procedure.
+  - Kept metadata values as normalized scalar text columns because authored values may be decimal or rational but must round exactly to HDR10 integer units.
+  - Added OpenAPI schema coverage for previously omitted desired-target audio loudness and dynamic-range fields while updating the HDR10 contract.
+  - Reused the desired-target stream row as the job snapshot stream row type because both stored procedures now return the same ordered stream contract.
+- Test coverage summary:
+  - `cargo test -p revaer-media-core hdr10_metadata --all-features`
+  - `cargo test -p revaer-media-runtime hdr10 --all-features`
+  - `cargo test -p revaer-data media_procedures_exist --all-features`
+  - `cargo test -p revaer-data desired_target --all-features`
+  - `cargo test -p revaer-api openapi_document_exports_media_schemas --all-features`
+  - `cargo test -p revaer-api desired_target_writes_validate_complete_graph_and_profile_pin --all-features`
+  - `cargo test -p revaer-app hdr10 --all-features`
+  - `cargo test -p revaer-app yaml --all-features`
+  - `cargo test -p revaer-app validate_yaml_bundle_rejects_invalid_hdr10_metadata_contracts --all-features`
+  - `cargo test -p revaer-data -p revaer-app -p revaer-media-core -p revaer-media-runtime -p revaer-api --all-features --no-run`
+  - `just api-export`
+  - `bash scripts/with-node.sh node --version`
+  - `bash scripts/with-node.sh npm --version`
+  - `bash scripts/with-node.sh npm --prefix tests install`
+  - `bash scripts/with-node.sh npm --prefix tests run gen:api-client`
+  - `just ci`
+  - `just ui-e2e`
+  - `just js-release-coverage`
+  - `JS_COVERAGE_DIR=coverage/js/api-local E2E_COVERAGE_REQUIRE_UI=0 E2E_PLAYWRIGHT_PROJECTS=api-api-key E2E_VIDEO=off just ui-e2e`
+  - `JS_COVERAGE_DIR=coverage/js/ui-local E2E_PLAYWRIGHT_PROJECTS=ui-chromium E2E_VIDEO=off just ui-e2e`
+  - `just js-coverage-merge`
+  - `just ui-e2e-coverage`
+  - `sonar analyze secrets <changed files>`
+  - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table`
+  - `just clean-test-fixtures`
+  - `find test-fixtures tests -type f \( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.mov' -o -iname '*.avi' -o -iname '*.webm' -o -iname '*.mp3' -o -iname '*.flac' -o -iname '*.wav' -o -iname '*.aac' -o -iname '*.ogg' -o -iname '*.m4a' \) -print`
+  - `cargo check -p revaer-data -p revaer-app -p revaer-runtime`
+- Local Sonar notes:
+  - GitHub Sonar for PR 132 initially failed the quality gate on `new_duplicated_lines_density` (`3.9` vs threshold `3`) while publishing positive coverage (`93.3`) and no open Sonar issues; the duplicated job snapshot row was collapsed into the matching desired-target row type and the PR Sonar job was rerun.
+  - `sonar verify --file crates/revaer-media-core/src/target.rs --project VannaDii_Revaer` was blocked by SonarCloud entitlement: Agentic Analysis returned `403 Forbidden`.
+  - `just sonar-compile-db` was blocked by local native dependency state: `/usr/local` libtorrent is x86_64, while the arm64 `/opt/homebrew` libtorrent is `2.1.0` and rejected by the repository's native build-script version gate.
+  - Rust LCOV and JavaScript LCOV were generated and verified locally; the native compile database remains covered by the GitHub Linux Sonar workflow where the supported native dependency is provisioned.
+- Observability updates:
+  - No runtime logs, metrics, tracing, or event records changed.
+- Status-doc validation:
+  - Updated `docs/api/openapi.json`, `crates/revaer-app/docs/api/openapi.json`, `docs/adr/index.md`, and `docs/SUMMARY.md`.
+  - No README or operator guide changes were required for this internal desired-target contract extension.
+- Risk & rollback plan:
+  - Risk: target authors may provide HDR10 values that are numerically valid but do not round exactly to HDR10 units; these now fail fast.
+  - Risk: exact HDR10 requests against non-`libx265` encoders fail until support is implemented.
+  - Roll back by reverting the migration, DTO, mapper, runtime, verification, OpenAPI, and ADR changes together before deployment. After deployment, rollback requires the normal database migration rollback plan or a forward migration that ignores the new columns.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/sonarqube_mcp.instructions.md`, `justfile`, `.github/workflows/pr.yml`, and `sonar-project.properties`.
+  - No instruction contradictions were found or introduced.

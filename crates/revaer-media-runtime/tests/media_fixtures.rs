@@ -1,4 +1,7 @@
-use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
+use revaer_media_core::model::{
+    ContainerChapterEntry, ContainerMetadataEntry, DesiredGraph, MediaGraph, MediaStream,
+    StreamKind,
+};
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_runtime::execute::{ProcessCommandRunner, execute_step_sequence};
 use revaer_media_runtime::inspect::{
@@ -391,6 +394,14 @@ fn mutating_materialization_verifies_requested_output_artifact() {
     );
 
     assert_eq!(verified_path, PathBuf::from(&desired.output_path));
+}
+
+#[test]
+fn chapter_timestamp_parser_reads_ffprobe_seconds() -> TestResult {
+    assert_eq!(parse_seconds_as_millis("0.000000")?, 0);
+    assert_eq!(parse_seconds_as_millis("1.250000")?, 1_250);
+    assert_eq!(parse_seconds_as_millis("3")?, 3_000);
+    Ok(())
 }
 
 #[test]
@@ -950,7 +961,9 @@ fn run_pipeline_cases(
 
     assert_multi_audio_selection(root, manifest, &output_root, report)?;
     assert_subtitle_selection(root, manifest, &output_root, report)?;
+    assert_container_chapter_replacement(root, manifest, &output_root, report)?;
     assert_transcoding_cases(root, manifest, &output_root, report)?;
+    assert_pipeline_report_has_operation(report, "metadata_rewrite")?;
     assert_pipeline_report_has_operation(report, "video_transcode")?;
     assert_pipeline_report_has_operation(report, "audio_transcode")?;
     Ok(())
@@ -1507,6 +1520,156 @@ fn assert_subtitle_selection(
         details: "removed all subtitle streams".to_string(),
     });
     Ok(())
+}
+
+fn assert_container_chapter_replacement(
+    root: &Path,
+    manifest: &FixtureManifest,
+    output_root: &Path,
+    report: &mut MediaConversionReport,
+) -> TestResult {
+    let fixture = fixture_by_id(manifest, "bbb-h264-mkv")?;
+    let source_path = root.join(&fixture.path);
+    let graph = inspect_graph(&source_path)?;
+    let desired_chapters = vec![
+        chapter_entry(0, 1_000, "Fixture Opening"),
+        chapter_entry(1_000, 3_000, "Fixture Main"),
+    ];
+    let desired = DesiredGraph {
+        output_path: path_text(&output_root.join("chapters-replaced.mkv"))?,
+        container_format: Some("matroska".to_string()),
+        container_metadata_policy: None,
+        container_metadata: Vec::new(),
+        container_chapter_policy: Some("replace".to_string()),
+        container_chapters: desired_chapters.clone(),
+        container_attachment_policy: None,
+        streams: graph.streams.clone(),
+    };
+
+    let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
+    assert_operations(
+        "replace container chapters",
+        &materialized.operations,
+        &["metadata_rewrite", "remux"],
+    )?;
+    assert_output_chapters(&materialized.verified_output_path, &desired_chapters)?;
+    report.record_pipeline_action(PipelineReportRow {
+        case_name: "replace container chapters".to_string(),
+        fixture_id: fixture.id.clone(),
+        input_path: fixture.path.clone(),
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
+        outcome: "passed".to_string(),
+        details: "published exact authored chapter timeline Fixture Opening,Fixture Main"
+            .to_string(),
+    });
+    Ok(())
+}
+
+fn chapter_entry(start_millis: i64, end_millis: i64, title: &str) -> ContainerChapterEntry {
+    ContainerChapterEntry {
+        start_millis,
+        end_millis,
+        metadata: vec![ContainerMetadataEntry {
+            key: "title".to_string(),
+            value: title.to_string(),
+        }],
+    }
+}
+
+fn assert_output_chapters(path: &Path, expected: &[ContainerChapterEntry]) -> TestResult {
+    let probe = ffprobe_chapters_json(path)?;
+    let Some(chapters) = probe.get("chapters").and_then(Value::as_array) else {
+        return fail(format!("{} missing ffprobe chapters array", path.display()));
+    };
+    if chapters.len() != expected.len() {
+        return fail(format!(
+            "{} chapter count mismatch: expected {}, got {}",
+            path.display(),
+            expected.len(),
+            chapters.len()
+        ));
+    }
+    for (actual, target) in chapters.iter().zip(expected) {
+        let start = chapter_millis(actual, "start_time")?;
+        let end = chapter_millis(actual, "end_time")?;
+        let title = actual.pointer("/tags/title").and_then(Value::as_str);
+        let expected_title = target
+            .metadata
+            .iter()
+            .find(|entry| entry.key == "title")
+            .map(|entry| entry.value.as_str());
+        if start != target.start_millis || end != target.end_millis || title != expected_title {
+            return fail(format!(
+                "{} chapter mismatch: expected {}..{} title={expected_title:?}, got {start}..{end} title={title:?}",
+                path.display(),
+                target.start_millis,
+                target.end_millis
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn ffprobe_chapters_json(path: &Path) -> TestResult<Value> {
+    let output = Command::new("ffprobe")
+        .args(["-v", "error", "-show_chapters", "-of", "json"])
+        .arg(path)
+        .output()?;
+    if !output.status.success() {
+        return fail(format!(
+            "ffprobe chapter inspection failed for {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    Ok(serde_json::from_slice(&output.stdout)?)
+}
+
+fn chapter_millis(chapter: &Value, field: &str) -> TestResult<i64> {
+    let Some(value) = chapter.get(field).and_then(Value::as_str) else {
+        return fail(format!("ffprobe chapter missing {field}"));
+    };
+    parse_seconds_as_millis(value)
+}
+
+fn parse_seconds_as_millis(value: &str) -> TestResult<i64> {
+    let trimmed = value.trim();
+    let (seconds_text, fraction_text) = match trimmed.split_once('.') {
+        Some((seconds, fraction)) => (seconds, fraction),
+        None => (trimmed, ""),
+    };
+    let seconds = seconds_text.parse::<i64>()?;
+    if seconds < 0 {
+        return fail(format!("negative chapter timestamp: {value}"));
+    }
+    let Some(mut millis) = seconds.checked_mul(1_000) else {
+        return fail(format!("chapter timestamp is out of range: {value}"));
+    };
+    for (index, digit) in fraction_text.chars().enumerate() {
+        if !digit.is_ascii_digit() {
+            return fail(format!("invalid chapter timestamp: {value}"));
+        }
+        if index < 3 {
+            let Some(number) = digit.to_digit(10) else {
+                return fail(format!("invalid chapter timestamp: {value}"));
+            };
+            let factor = match index {
+                0 => 100,
+                1 => 10,
+                2 => 1,
+                _ => 0,
+            };
+            let Some(addend) = i64::from(number).checked_mul(factor) else {
+                return fail(format!("chapter timestamp is out of range: {value}"));
+            };
+            let Some(next) = millis.checked_add(addend) else {
+                return fail(format!("chapter timestamp is out of range: {value}"));
+            };
+            millis = next;
+        }
+    }
+    Ok(millis)
 }
 
 fn inspect_graph(path: &Path) -> TestResult<MediaGraph> {
