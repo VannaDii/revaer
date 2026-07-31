@@ -1015,8 +1015,22 @@
           "container_chapter_policy": {
             "type": "string"
           },
+          "container_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetChapterEntry"
+            },
+            "maxItems": 1024,
+            "type": "array"
+          },
           "container_format": {
             "type": "string"
+          },
+          "container_metadata": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetMetadataEntry"
+            },
+            "maxItems": 64,
+            "type": "array"
           },
           "container_metadata_policy": {
             "type": "string"
@@ -1067,8 +1081,22 @@
           "container_chapter_policy": {
             "type": "string"
           },
+          "container_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetChapterEntry"
+            },
+            "maxItems": 1024,
+            "type": "array"
+          },
           "container_format": {
             "type": "string"
+          },
+          "container_metadata": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetMetadataEntry"
+            },
+            "maxItems": 64,
+            "type": "array"
           },
           "container_metadata_policy": {
             "type": "string"
@@ -4690,6 +4718,46 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "MediaDesiredTargetMetadataEntry": {
+        "properties": {
+          "key": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetChapterEntry": {
+        "properties": {
+          "end_millis": {
+            "type": "integer"
+          },
+          "metadata": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetMetadataEntry"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
+          "start_millis": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start_millis",
+          "end_millis",
+          "metadata"
+        ],
         "type": "object"
       }
     },

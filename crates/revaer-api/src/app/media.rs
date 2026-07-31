@@ -17,6 +17,7 @@ use revaer_api_models::{
     MediaCapabilityFeatureResponse as SharedMediaCapabilityFeatureResponse,
     MediaCapabilityReadinessResponse as SharedMediaCapabilityReadinessResponse,
     MediaCapabilitySnapshotResponse as SharedMediaCapabilitySnapshotResponse,
+    MediaDesiredTargetChapterEntry as SharedMediaDesiredTargetChapterEntry,
     MediaDesiredTargetMetadataEntry as SharedMediaDesiredTargetMetadataEntry,
     MediaDesiredTargetStream as SharedMediaDesiredTargetStream,
     MediaJobArtifactResponse as SharedMediaJobArtifactResponse,
@@ -150,6 +151,9 @@ pub type MediaDesiredTargetStreamParams = SharedMediaDesiredTargetStream;
 /// Desired-target container metadata parameters.
 pub type MediaDesiredTargetMetadataParams = SharedMediaDesiredTargetMetadataEntry;
 
+/// Desired-target container chapter parameters.
+pub type MediaDesiredTargetChapterParams = SharedMediaDesiredTargetChapterEntry;
+
 /// Immutable desired-target version creation parameters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaDesiredTargetCreateParams {
@@ -169,6 +173,8 @@ pub struct MediaDesiredTargetCreateParams {
     pub container_metadata: Vec<MediaDesiredTargetMetadataParams>,
     /// Desired container chapter policy.
     pub container_chapter_policy: String,
+    /// Exact desired chapter timeline rows for the `replace` chapter policy.
+    pub container_chapters: Vec<MediaDesiredTargetChapterParams>,
     /// Complete ordered stream graph.
     pub streams: Vec<MediaDesiredTargetStreamParams>,
 }
@@ -325,6 +331,9 @@ pub struct MediaYamlDesiredTarget {
     /// Desired container chapter policy.
     #[serde(default = "default_container_chapter_policy")]
     pub container_chapter_policy: String,
+    /// Exact desired chapter timeline rows for the `replace` chapter policy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_chapters: Vec<MediaDesiredTargetChapterParams>,
     /// Complete ordered stream graph.
     pub streams: Vec<MediaDesiredTargetStreamParams>,
 }
@@ -499,6 +508,8 @@ pub struct MediaDesiredTargetResponse {
     pub container_metadata: Vec<MediaDesiredTargetMetadataParams>,
     /// Desired container chapter policy.
     pub container_chapter_policy: String,
+    /// Exact desired chapter timeline rows for the `replace` chapter policy.
+    pub container_chapters: Vec<MediaDesiredTargetChapterParams>,
     /// Complete ordered stream graph.
     pub streams: Vec<MediaDesiredTargetStreamParams>,
 }

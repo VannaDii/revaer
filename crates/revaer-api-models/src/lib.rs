@@ -636,6 +636,18 @@ pub struct MediaDesiredTargetMetadataEntry {
     pub value: String,
 }
 
+/// Desired exact container chapter timeline entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetChapterEntry {
+    /// Inclusive chapter start in milliseconds.
+    pub start_millis: i64,
+    /// Exclusive chapter end in milliseconds.
+    pub end_millis: i64,
+    /// Exact chapter metadata rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metadata: Vec<MediaDesiredTargetMetadataEntry>,
+}
+
 /// Request payload for creating an immutable desired-target version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaDesiredTargetCreateRequest {
@@ -653,9 +665,12 @@ pub struct MediaDesiredTargetCreateRequest {
     /// Exact desired container metadata rows when `container_metadata_policy` is `replace`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub container_metadata: Vec<MediaDesiredTargetMetadataEntry>,
-    /// Desired container chapter policy. Implemented values are `preserve` and `strip`.
+    /// Desired container chapter policy. Implemented values are `preserve`, `strip`, and `replace`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_chapter_policy: Option<String>,
+    /// Exact desired chapter timeline rows when `container_chapter_policy` is `replace`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_chapters: Vec<MediaDesiredTargetChapterEntry>,
     /// Complete desired stream graph in final mux order.
     pub streams: Vec<MediaDesiredTargetStream>,
 }
@@ -680,6 +695,9 @@ pub struct MediaDesiredTargetResponse {
     pub container_metadata: Vec<MediaDesiredTargetMetadataEntry>,
     /// Desired container chapter policy.
     pub container_chapter_policy: String,
+    /// Exact desired chapter timeline rows when the policy is `replace`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_chapters: Vec<MediaDesiredTargetChapterEntry>,
     /// Complete desired stream graph in final mux order.
     pub streams: Vec<MediaDesiredTargetStream>,
 }

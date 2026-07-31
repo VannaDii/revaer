@@ -73,6 +73,7 @@ fn one_source_compiles_and_plans_two_independent_outputs() -> Result<(), Box<dyn
         container_metadata_policy: "preserve".to_string(),
         container_metadata: Vec::new(),
         container_chapter_policy: "preserve".to_string(),
+        container_chapters: Vec::new(),
         streams: vec![
             audio_target("stereo", "aac", 2, "stereo", &language),
             audio_target("surround", "eac3", 6, "5.1", &language),

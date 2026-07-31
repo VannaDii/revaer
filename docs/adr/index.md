@@ -381,6 +381,7 @@
 -   [371](371-media-container-metadata-strip-policy.md) – Media container metadata strip policy
 -   [372](372-media-container-chapter-strip-policy.md) – Media container chapter strip policy
 -   [373](373-media-container-metadata-values.md) – Media container metadata values
+-   [374](374-media-container-chapter-values.md) – Media container chapter values
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
@@ -398,6 +399,7 @@
 -   [423](423-media-source-identity-fence.md) – Media source identity fence
 -   [424](424-media-target-stream-limit-atomic-snapshot.md) – Media target stream limit and atomic snapshot
 -   [425](425-container-metadata-budget-defense.md) – Container metadata budget defense
+-   [426](426-media-chapter-boundary-hardening.md) – Media chapter boundary hardening
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
 -   [428](428-sonar-pr-result-scope.md) – Sonar pull-request result scope
 -   [429](429-pr81-job-runtime-review-closeout.md) – PR 81 job runtime review closeout
@@ -419,3 +421,4 @@
 -   [468](468-pr99-native-watcher-test-stability.md) – PR 99 native watcher test stability
 -   [475](475-pr110-openapi-schema-catalogue.md) – PR 110 OpenAPI schema catalogue correction
 -   [473](473-pr123-tuple-array-conversion.md) – PR 123 tuple array conversion correction
+-   [471](471-pr126-chapter-ordering-predicate.md) – PR 126 chapter ordering predicate correction

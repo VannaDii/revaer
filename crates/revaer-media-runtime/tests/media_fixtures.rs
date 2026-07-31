@@ -526,11 +526,11 @@ fn media_conversion_report_starts_with_summary_and_lists_actions() -> TestResult
 fn noop_materialization_verifies_source_path_without_requesting_output_artifact() {
     let desired = DesiredGraph {
         output_path: "target/media-fixture-integration/bbb-h264.mp4".to_string(),
-        container_chapters: Vec::new(),
         container_format: None,
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         stream_bindings: Vec::new(),
         streams: Vec::new(),
     };
@@ -553,11 +553,11 @@ fn noop_materialization_verifies_source_path_without_requesting_output_artifact(
 fn mutating_materialization_verifies_requested_output_artifact() {
     let desired = DesiredGraph {
         output_path: "target/media-fixture-integration/bbb-h264.mp4".to_string(),
-        container_chapters: Vec::new(),
         container_format: None,
         container_metadata_policy: None,
         container_metadata: Vec::new(),
         container_chapter_policy: None,
+        container_chapters: Vec::new(),
         stream_bindings: Vec::new(),
         streams: Vec::new(),
     };

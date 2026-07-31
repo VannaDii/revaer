@@ -10,6 +10,8 @@ use revaer_media_core::target::{
 use serde_json::{Map, Value};
 use tracing::error;
 
+use revaer_media_core::target::{MAX_CONTAINER_CHAPTER_METADATA_ENTRIES, MAX_CONTAINER_CHAPTERS};
+
 use crate::openapi_assets::OPENAPI_EMBEDDED_JSON;
 
 const MEDIA_DISCOVERY_SOURCE_PATHS_MAX_LEN: usize = 1024;
@@ -1134,6 +1136,23 @@ fn media_desired_target_stream_schemas() -> Vec<(&'static str, Value)> {
                 ],
             ),
         ),
+        (
+            "MediaDesiredTargetChapterEntry",
+            object_schema(
+                &["start_millis", "end_millis", "metadata"],
+                [
+                    ("start_millis", integer_schema()),
+                    ("end_millis", integer_schema()),
+                    (
+                        "metadata",
+                        array_ref_max_items_schema(
+                            "MediaDesiredTargetMetadataEntry",
+                            MAX_CONTAINER_CHAPTER_METADATA_ENTRIES,
+                        ),
+                    ),
+                ],
+            ),
+        ),
     ]
 }
 
@@ -1163,6 +1182,13 @@ fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
                         ),
                     ),
                     ("container_chapter_policy", string_schema()),
+                    (
+                        "container_chapters",
+                        array_ref_max_items_schema(
+                            "MediaDesiredTargetChapterEntry",
+                            MAX_CONTAINER_CHAPTERS,
+                        ),
+                    ),
                     (
                         "streams",
                         array_ref_items_schema(
@@ -1202,6 +1228,13 @@ fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
                         ),
                     ),
                     ("container_chapter_policy", string_schema()),
+                    (
+                        "container_chapters",
+                        array_ref_max_items_schema(
+                            "MediaDesiredTargetChapterEntry",
+                            MAX_CONTAINER_CHAPTERS,
+                        ),
+                    ),
                     ("streams", array_ref_schema("MediaDesiredTargetStream")),
                 ],
             ),
@@ -2442,6 +2475,7 @@ mod tests {
         "MediaCompatibilityTargetUpsertRequest",
         "MediaDesiredTargetStream",
         "MediaDesiredTargetMetadataEntry",
+        "MediaDesiredTargetChapterEntry",
         "MediaDesiredTargetCreateRequest",
         "MediaDesiredTargetResponse",
         "MediaDesiredTargetListResponse",
@@ -2545,6 +2579,43 @@ mod tests {
         assert_eq!(
             desired_target_streams_max_items,
             u64::try_from(MAX_DESIRED_TARGET_STREAMS).ok()
+        );
+
+        for schema_name in [
+            "MediaDesiredTargetCreateRequest",
+            "MediaDesiredTargetResponse",
+        ] {
+            let chapters = schemas
+                .get(schema_name)
+                .and_then(|schema| schema.get("properties"))
+                .and_then(Value::as_object)
+                .and_then(|properties| properties.get("container_chapters"));
+            let chapter_schema = chapters
+                .and_then(|chapters| chapters.get("items"))
+                .and_then(|items| items.get("$ref"))
+                .and_then(Value::as_str);
+            assert_eq!(
+                chapter_schema,
+                Some("#/components/schemas/MediaDesiredTargetChapterEntry")
+            );
+            assert_eq!(
+                chapters
+                    .and_then(|chapters| chapters.get("maxItems"))
+                    .and_then(Value::as_u64),
+                Some(MAX_CONTAINER_CHAPTERS as u64)
+            );
+        }
+
+        let chapter_metadata_max_items = schemas
+            .get("MediaDesiredTargetChapterEntry")
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+            .and_then(|properties| properties.get("metadata"))
+            .and_then(|metadata| metadata.get("maxItems"))
+            .and_then(Value::as_u64);
+        assert_eq!(
+            chapter_metadata_max_items,
+            Some(MAX_CONTAINER_CHAPTER_METADATA_ENTRIES as u64)
         );
 
         Ok(())

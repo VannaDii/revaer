@@ -83,6 +83,7 @@ pub fn normalize_container_chapter_policy(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
         "preserve" => Some("preserve"),
         "strip" => Some("strip"),
+        "replace" => Some("replace"),
         _ => None,
     }
 }

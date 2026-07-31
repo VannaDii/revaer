@@ -47,6 +47,7 @@ const MEDIA_JOB_TERMINAL_OUTBOX_MARK_PUBLISHED_V1: &str =
 const MEDIA_JOB_WORKER_COMPLETE_FINALIZED_V1: &str =
     "SELECT media_job_worker_complete_finalized_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, metadata_value FROM media_job_desired_target_metadata_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_DESIRED_TARGET_CHAPTER_LIST_V1: &str = "SELECT start_millis, end_millis, metadata_key, metadata_value FROM media_job_desired_target_chapter_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
 const MEDIA_DISCOVERY_JOB_ENQUEUE_V2: &str = "SELECT media_discovery_job_enqueue_v2(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_identity_input => $5, source_size_bytes_input => $6, source_modified_ns_input => $7, source_changed_ns_input => $8, source_sha256_input => $9)";
 
@@ -506,6 +507,19 @@ pub struct MediaJobDesiredTargetMetadataRow {
     pub metadata_value: String,
 }
 
+/// Desired container chapter snapshotted for one job.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobDesiredTargetChapterRow {
+    /// Inclusive chapter start in milliseconds.
+    pub start_millis: i64,
+    /// Exclusive chapter end in milliseconds.
+    pub end_millis: i64,
+    /// Optional lowercase metadata key.
+    pub metadata_key: Option<String>,
+    /// Optional trimmed metadata value.
+    pub metadata_value: Option<String>,
+}
+
 /// Create media job row.
 ///
 /// # Errors
@@ -580,6 +594,22 @@ pub async fn list_media_job_desired_target_metadata(
         .fetch_all(pool)
         .await
         .map_err(try_op("media job desired target metadata list"))
+}
+
+/// List immutable desired container chapters snapshotted for one job.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_desired_target_chapters(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<Vec<MediaJobDesiredTargetChapterRow>> {
+    sqlx::query_as::<_, MediaJobDesiredTargetChapterRow>(MEDIA_JOB_DESIRED_TARGET_CHAPTER_LIST_V1)
+        .bind(media_job_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job desired target chapter list"))
 }
 
 /// Append or update a media job phase row.
@@ -1705,7 +1735,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_guards_container_chapter_strip_policy() {
+    fn migration_guards_container_chapter_values_policy() {
         let migration_text = ordered_migration_text();
         let latest_create = migration_text
             .rsplit_once("CREATE OR REPLACE FUNCTION media_desired_target_create_v3")
@@ -1713,21 +1743,38 @@ mod tests {
             .expect("media_desired_target_create_v3 must be replaced by migrations");
 
         assert!(
-            migration_text.contains("container_chapter_policy IN ('preserve', 'strip')"),
-            "desired-target container chapter constraint must accept preserve and strip"
+            migration_text.contains("container_chapter_policy IN ('preserve', 'strip', 'replace')"),
+            "desired-target container chapter constraint must accept preserve, strip, and replace"
         );
         assert!(
-            migration_text
-                .contains("intent_desired_container_chapter_policy IN ('preserve', 'strip')"),
-            "media job desired-target completeness constraint must snapshot chapter preserve and strip"
+            migration_text.contains(
+                "intent_desired_container_chapter_policy IN ('preserve', 'strip', 'replace')"
+            ),
+            "media job desired-target completeness constraint must snapshot chapter preserve, strip, and replace"
         );
         assert!(
-            latest_create.contains("chapter_policy_value NOT IN ('preserve', 'strip')"),
-            "latest desired-target create procedure must reject chapter policies other than preserve or strip"
+            latest_create.contains("chapter_policy_value NOT IN ('preserve', 'strip', 'replace')"),
+            "latest desired-target create procedure must reject chapter policies other than preserve, strip, or replace"
         );
         assert!(
-            migration_text.contains("CREATE FUNCTION media_job_worker_claim_next_v4"),
-            "worker claim procedure must expose the snapshotted chapter policy"
+            migration_text.contains("media_desired_target_chapter_append_v1")
+                && migration_text.contains("media_desired_target_chapter_metadata_append_v1")
+                && migration_text.contains("media_job_desired_target_chapter_list_v1")
+                && migration_text.contains("media_desired_target_chapters_required"),
+            "chapter replacement policy must have append, metadata, snapshot list, and required-row guards"
+        );
+        assert!(
+            migration_text.contains("media_desired_target_chapter_policy_mismatch"),
+            "chapter rows must be rejected unless the selected container chapter policy is replace"
+        );
+        assert!(
+            migration_text.contains("media_desired_target_chapter_count_exceeded")
+                && migration_text.contains("media_desired_target_chapter_metadata_count_exceeded")
+                && migration_text.contains("media_desired_target_chapter_metadata_bytes_exceeded")
+                && migration_text.contains("octet_length(metadata_key_value) > 128")
+                && migration_text.contains("octet_length(metadata_value_value) > 4096")
+                && migration_text.contains("> 65536"),
+            "chapter append procedures must bound chapters, metadata rows, per-row UTF-8 bytes, and aggregate UTF-8 bytes"
         );
     }
 
