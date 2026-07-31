@@ -1,0 +1,54 @@
+# Media HDR10 pixel-format verification
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - The HDR10 verifier required BT.2020 primaries, SMPTE ST 2084 transfer, BT.2020 non-constant luminance matrix, and complete mastering-display and content-light side-data payloads.
+  - Full inspection already retains the stream pixel format, but HDR10 verification did not reject an otherwise tagged 8-bit candidate.
+  - A candidate with complete HDR10 signaling but an 8-bit pixel format would pass the implemented HDR10 subset while failing the practical HDR10 bit-depth contract.
+- Decision:
+  - Require the inspected HDR10 video stream pixel format to be one of the supported 10-bit FFmpeg formats before the HDR10 constraint can pass.
+  - Keep the accepted set explicit: common planar 10-bit YUV formats plus packed or semi-planar `p010`, `p210`, and `p410` endian variants.
+  - Alternatives considered:
+    - Infer bit depth from codec profile only: rejected because profile metadata can be absent or misleading, while FFprobe exposes the concrete decoded pixel format.
+    - Accept any pixel-format string containing `10`: rejected because a broad substring check would silently widen the verification contract.
+- Consequences:
+  - Positive outcomes:
+    - HDR10 candidate and final verification now fail closed when output signaling claims HDR10 but inspection reports an 8-bit pixel format.
+    - The change uses an existing inspection field and does not add persistence, API, or dependency surface.
+  - Risks or trade-offs:
+    - Some valid but not yet allowlisted FFmpeg 10-bit HDR-capable pixel formats will fail verification until explicitly reviewed and added.
+- Follow-up:
+  - Continue closing broader HDR/color semantics with concrete inspected fields and acceptance tests.
+  - Keep authored attachment and data-stream creation or rewrite fail-closed until payload schema, execution, and verification are implemented.
+
+## Task Record
+
+- Motivation:
+  - Move the media service closer to a production-complete HDR10 contract by verifying bit depth, not only color labels and side-data presence.
+- Design notes:
+  - `video_hdr_constraint_matches` now requires a supported 10-bit pixel format in addition to the existing color and side-data checks.
+  - The supported set is encoded as an exact match list so expanding it is a deliberate contract change.
+- Test coverage summary:
+  - Added unit coverage that rejects `yuv420p` for HDR10 and accepts `p010le`.
+  - Validation commands:
+    - `cargo fmt --all --check`
+    - `cargo test -p revaer-app --no-default-features hdr10_constraint -- --nocapture`
+    - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+    - `just policy`
+    - `just instruction-drift`
+    - `sonar verify --file crates/revaer-app/src/media_job_runtime.rs --project VannaDii_Revaer` was attempted and failed with SonarQube API 403 because Agentic Analysis is unavailable for the organization.
+    - `sonar analyze secrets crates/revaer-app/src/media_job_runtime.rs docs/adr/318-media-transcoding-foundation.md docs/adr/398-media-hdr10-pixel-format-verification.md docs/adr/index.md docs/SUMMARY.md`
+    - `git diff --check`
+- Observability updates:
+  - No new metrics or events were added. Existing video-constraint verification checks continue to report `media_job_output_video_constraints_mismatch`.
+- Status-doc validation:
+  - Re-checked the consolidated media ADR and updated it to include HDR10 pixel-format verification while preserving the remaining open implementation gaps.
+- Risk & rollback plan:
+  - Risk: an output using a valid but not yet allowlisted 10-bit pixel format will fail verification.
+  - Roll back by reverting the helper and tests, but only if replacement acceptance is otherwise guarded by an equivalent bit-depth verifier.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No policy drift or contradiction was introduced.

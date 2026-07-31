@@ -406,3 +406,4 @@
 -   [395](395-media-metadata-replacement-fixture.md) - Media metadata replacement fixture
 -   [396](396-media-sidecar-artifact-fixture.md) - Media sidecar artifact fixture
 -   [397](397-npm-audit-refresh.md) - Npm audit refresh
+-   [398](398-media-hdr10-pixel-format-verification.md) - Media HDR10 pixel-format verification

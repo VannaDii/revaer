@@ -3284,8 +3284,33 @@ fn video_hdr_constraint_matches(expected: &str, stream: &StreamInspection) -> bo
         && normalized_constraint_text(stream.color_transfer.as_deref()).as_deref()
             == Some("smpte2084")
         && normalized_constraint_text(stream.color_space.as_deref()).as_deref() == Some("bt2020nc")
+        && stream_has_hdr10_ten_bit_pixel_format(stream)
         && stream_has_hdr10_mastering_display_payload(stream)
         && stream_has_hdr10_content_light_payload(stream)
+}
+
+fn stream_has_hdr10_ten_bit_pixel_format(stream: &StreamInspection) -> bool {
+    normalized_constraint_text(stream.pixel_format.as_deref())
+        .as_deref()
+        .is_some_and(hdr10_ten_bit_pixel_format_is_supported)
+}
+
+fn hdr10_ten_bit_pixel_format_is_supported(pixel_format: &str) -> bool {
+    matches!(
+        pixel_format,
+        "yuv420p10le"
+            | "yuv420p10be"
+            | "yuv422p10le"
+            | "yuv422p10be"
+            | "yuv444p10le"
+            | "yuv444p10be"
+            | "p010le"
+            | "p010be"
+            | "p210le"
+            | "p210be"
+            | "p410le"
+            | "p410be"
+    )
 }
 
 fn stream_has_hdr10_mastering_display_payload(stream: &StreamInspection) -> bool {
@@ -5256,7 +5281,7 @@ mod tests {
                 sample_rate: (stream.kind == StreamKind::Audio).then_some(48_000),
                 width: (stream.kind == StreamKind::Video).then_some(1920),
                 height: (stream.kind == StreamKind::Video).then_some(1080),
-                pixel_format: (stream.kind == StreamKind::Video).then(|| "yuv420p".to_string()),
+                pixel_format: constrained_test_video_pixel_format(stream),
                 sample_aspect_ratio: None,
                 display_aspect_ratio: None,
                 average_frame_rate: None,
@@ -5403,6 +5428,17 @@ mod tests {
 
     fn constrained_test_video_bitrate(stream: &MediaStream) -> Option<u64> {
         (stream.kind == StreamKind::Video && stream.codec == "hevc").then_some(7_900_000)
+    }
+
+    fn constrained_test_video_pixel_format(stream: &MediaStream) -> Option<String> {
+        if stream.kind != StreamKind::Video {
+            return None;
+        }
+        if stream.codec == "hevc" {
+            Some("yuv420p10le".to_string())
+        } else {
+            Some("yuv420p".to_string())
+        }
     }
 
     fn constrained_test_video_color(stream: &MediaStream, value: &str) -> Option<String> {
@@ -5877,6 +5913,28 @@ mod tests {
         inspection.streams[0].side_data.clear();
 
         assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_eight_bit_pixel_format() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        inspection.streams[0].pixel_format = Some("yuv420p".to_string());
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_accepts_p010_pixel_format() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        inspection.streams[0].pixel_format = Some("p010le".to_string());
+
+        assert!(video_hdr_constraint_matches(
             "hdr10",
             &inspection.streams[0]
         ));
