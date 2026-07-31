@@ -141,6 +141,14 @@ if ! skip_existing video-only-mp4 test-fixtures/derived/video-only.mp4; then
   move_generated "${temp}" test-fixtures/derived/video-only.mp4
 fi
 
+if [[ ! -s test-fixtures/derived/video-only.eng.forced.srt || "${REVAER_FIXTURE_FORCE_GENERATE:-0}" == "1" ]]; then
+  cat >test-fixtures/derived/video-only.eng.forced.srt <<'SRT'
+1
+00:00:01,000 --> 00:00:04,000
+Generated forced sidecar subtitle.
+SRT
+fi
+
 if ! skip_existing audio-only-m4a test-fixtures/derived/audio-only.m4a; then
   temp="test-fixtures/derived/audio-only.tmp.$$.m4a"
   rm -f "${temp}"

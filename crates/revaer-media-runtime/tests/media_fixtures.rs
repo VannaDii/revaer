@@ -1,13 +1,22 @@
+use revaer_media_core::classify::SemanticRole;
 use revaer_media_core::model::{
     ContainerChapterEntry, ContainerMetadataEntry, DesiredGraph, MediaGraph, MediaStream,
     StreamKind,
 };
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
+use revaer_media_core::target::{
+    CompiledDesiredTarget, DesiredSidecarOutput, DesiredTarget, ImageSubtitleAction,
+    SidecarSubtitleInput, SubtitlePlacement, TargetStream, UnmatchedStreamPolicies,
+    UnmatchedStreamPolicy, compile_desired_target_with_sidecars_at_and_unmatched_policies,
+};
 use revaer_media_runtime::execute::{ProcessCommandRunner, execute_step_sequence};
 use revaer_media_runtime::inspect::{
-    FfprobeInspectAdapter, InspectAdapter, SystemInspectProbeExecutor,
+    FfprobeInspectAdapter, InspectAdapter, MediaInspection, SystemInspectProbeExecutor,
 };
-use revaer_media_runtime::jobs::{build_job_execution_steps, plan_job_from_source_graph};
+use revaer_media_runtime::jobs::{
+    build_job_execution_steps, plan_job_from_compiled_target, plan_job_from_source_graph,
+};
+use revaer_media_runtime::sidecar::{SidecarFormat, SidecarRole, SidecarSubtitle};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1039,8 +1048,14 @@ fn run_pipeline_cases(
     assert_multi_audio_selection(root, manifest, &output_root, report)?;
     assert_subtitle_selection(root, manifest, &output_root, report)?;
     assert_container_attachment_stripping(root, manifest, &output_root, report)?;
+    assert_sidecar_artifact_cases(root, manifest, &output_root, report)?;
+    assert_container_metadata_replacement(root, manifest, &output_root, report)?;
     assert_container_chapter_replacement(root, manifest, &output_root, report)?;
     assert_transcoding_cases(root, manifest, &output_root, report)?;
+    assert_pipeline_report_has_operation(report, "embed_subtitle")?;
+    assert_pipeline_report_has_operation(report, "extract_subtitle")?;
+    assert_pipeline_report_has_operation(report, "copy_sidecar_subtitle")?;
+    assert_pipeline_report_has_operation(report, "remove_sidecar_subtitle")?;
     assert_pipeline_report_has_operation(report, "metadata_rewrite")?;
     assert_pipeline_report_has_operation(report, "video_transcode")?;
     assert_pipeline_report_has_operation(report, "audio_transcode")?;
@@ -1712,6 +1727,256 @@ fn assert_container_attachment_stripping(
     Ok(())
 }
 
+fn assert_sidecar_artifact_cases(
+    root: &Path,
+    manifest: &FixtureManifest,
+    output_root: &Path,
+    report: &mut MediaConversionReport,
+) -> TestResult {
+    for mode in [
+        SidecarArtifactMode::EmbedExisting,
+        SidecarArtifactMode::CopyExisting,
+        SidecarArtifactMode::RemoveExisting,
+        SidecarArtifactMode::ExtractEmbedded,
+    ] {
+        assert_sidecar_artifact_case(root, manifest, output_root, report, mode)?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SidecarArtifactMode {
+    EmbedExisting,
+    CopyExisting,
+    RemoveExisting,
+    ExtractEmbedded,
+}
+
+impl SidecarArtifactMode {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::EmbedExisting => "embed existing sidecar",
+            Self::CopyExisting => "copy existing sidecar",
+            Self::RemoveExisting => "remove existing sidecar",
+            Self::ExtractEmbedded => "extract embedded subtitle",
+        }
+    }
+
+    const fn case_name(self) -> &'static str {
+        match self {
+            Self::EmbedExisting => "embed existing sidecar",
+            Self::CopyExisting => "copy existing sidecar",
+            Self::RemoveExisting => "plan existing sidecar removal",
+            Self::ExtractEmbedded => "extract embedded subtitle",
+        }
+    }
+
+    const fn fixture_id(self) -> &'static str {
+        match self {
+            Self::EmbedExisting | Self::CopyExisting | Self::RemoveExisting => "video-only-mp4",
+            Self::ExtractEmbedded => "subtitles-mkv",
+        }
+    }
+
+    const fn output_name(self) -> &'static str {
+        match self {
+            Self::EmbedExisting => "sidecar-embedded.mkv",
+            Self::CopyExisting => "sidecar-copied.mkv",
+            Self::RemoveExisting => "sidecar-removal-planned.mkv",
+            Self::ExtractEmbedded => "embedded-subtitle-extracted.mkv",
+        }
+    }
+
+    const fn details(self) -> &'static str {
+        match self {
+            Self::EmbedExisting => {
+                "embedded one English forced sidecar subtitle into Matroska output"
+            }
+            Self::CopyExisting => "copied one English forced SRT sidecar as a managed output",
+            Self::RemoveExisting => {
+                "planned verified source-sidecar removal while materializing primary output"
+            }
+            Self::ExtractEmbedded => {
+                "extracted one embedded English forced subtitle into a managed SRT sidecar"
+            }
+        }
+    }
+
+    const fn expected_operations(self) -> &'static [&'static str] {
+        match self {
+            Self::EmbedExisting => &[
+                "disposition_rewrite",
+                "remux",
+                "embed_subtitle",
+                "remove_sidecar_subtitle",
+            ],
+            Self::CopyExisting => &["disposition_rewrite", "remux", "copy_sidecar_subtitle"],
+            Self::RemoveExisting => &["disposition_rewrite", "remux", "remove_sidecar_subtitle"],
+            Self::ExtractEmbedded => &["disposition_rewrite", "remux", "extract_subtitle"],
+        }
+    }
+
+    const fn uses_discovered_sidecars(self) -> bool {
+        matches!(
+            self,
+            Self::EmbedExisting | Self::CopyExisting | Self::RemoveExisting
+        )
+    }
+
+    fn target(self) -> DesiredTarget {
+        match self {
+            Self::EmbedExisting => {
+                sidecar_target("embed-existing-sidecar", SubtitlePlacement::Embedded, true)
+            }
+            Self::CopyExisting => {
+                sidecar_target("copy-existing-sidecar", SubtitlePlacement::Sidecar, true)
+            }
+            Self::RemoveExisting => video_only_target("remove-existing-sidecar"),
+            Self::ExtractEmbedded => sidecar_target(
+                "extract-embedded-subtitle",
+                SubtitlePlacement::Sidecar,
+                false,
+            ),
+        }
+    }
+}
+
+fn assert_sidecar_artifact_case(
+    root: &Path,
+    manifest: &FixtureManifest,
+    output_root: &Path,
+    report: &mut MediaConversionReport,
+    mode: SidecarArtifactMode,
+) -> TestResult {
+    let fixture = fixture_by_id(manifest, mode.fixture_id())?;
+    let source_path = root.join(&fixture.path);
+    let inspection = inspect_full(&source_path)?;
+    let sidecars = if mode.uses_discovered_sidecars() {
+        let discovered = sidecar_inputs(&inspection.sidecars)?;
+        assert_single_sidecar(mode.label(), &discovered)?;
+        discovered
+    } else {
+        Vec::new()
+    };
+    let target = mode.target();
+    let output_path = output_root.join(mode.output_name());
+    let compiled = compile_desired_target_with_sidecars_at_and_unmatched_policies(
+        &inspection.graph,
+        &path_text(&output_path)?,
+        &path_text(&output_path)?,
+        &target,
+        UnmatchedStreamPolicies::from_single(UnmatchedStreamPolicy::Remove),
+        &sidecars,
+    )?;
+    let materialized = materialize_compiled_target(&source_path, &inspection.graph, &compiled)?;
+    let report_output = validate_sidecar_artifact_mode(
+        mode,
+        &inspection.graph,
+        &sidecars,
+        &compiled.sidecar_outputs,
+        &materialized,
+    )?;
+    report.record_pipeline_action(PipelineReportRow {
+        case_name: mode.case_name().to_string(),
+        fixture_id: fixture.id.clone(),
+        input_path: fixture.path.clone(),
+        output_path: report_path(root, report_output.as_ref()),
+        operations: materialized.operations,
+        outcome: "passed".to_string(),
+        details: mode.details().to_string(),
+    });
+    Ok(())
+}
+
+fn validate_sidecar_artifact_mode(
+    mode: SidecarArtifactMode,
+    source: &MediaGraph,
+    sidecars: &[SidecarSubtitleInput],
+    sidecar_outputs: &[DesiredSidecarOutput],
+    materialized: &MaterializedGraph,
+) -> TestResult<PathBuf> {
+    assert_operations(
+        mode.label(),
+        &materialized.operations,
+        mode.expected_operations(),
+    )?;
+    match mode {
+        SidecarArtifactMode::EmbedExisting => {
+            let output = inspect_graph(&materialized.verified_output_path)?;
+            assert_subtitle_languages(mode.label(), &output, &["eng"])?;
+            assert_forced_subtitle_count(mode.label(), &output, 1)?;
+            Ok(materialized.verified_output_path.clone())
+        }
+        SidecarArtifactMode::CopyExisting => {
+            let sidecar_output = single_sidecar_output_path(sidecar_outputs)?;
+            let source_sidecar = assert_single_sidecar(mode.label(), sidecars)?;
+            assert_sidecar_subtitle_file(&sidecar_output)?;
+            assert_files_equal(Path::new(&source_sidecar.path), &sidecar_output)?;
+            Ok(sidecar_output)
+        }
+        SidecarArtifactMode::RemoveExisting => {
+            let output = inspect_graph(&materialized.verified_output_path)?;
+            assert!(streams_by_kind(&output, StreamKind::Subtitle).is_empty());
+            Ok(materialized.verified_output_path.clone())
+        }
+        SidecarArtifactMode::ExtractEmbedded => {
+            assert!(
+                streams_by_kind(source, StreamKind::Subtitle)
+                    .iter()
+                    .any(|stream| stream.language.as_deref() == Some("eng"))
+            );
+            let sidecar_output = single_sidecar_output_path(sidecar_outputs)?;
+            assert_sidecar_subtitle_file(&sidecar_output)?;
+            let output = inspect_graph(&materialized.verified_output_path)?;
+            assert!(streams_by_kind(&output, StreamKind::Subtitle).is_empty());
+            Ok(sidecar_output)
+        }
+    }
+}
+
+fn assert_container_metadata_replacement(
+    root: &Path,
+    manifest: &FixtureManifest,
+    output_root: &Path,
+    report: &mut MediaConversionReport,
+) -> TestResult {
+    let fixture = fixture_by_id(manifest, "bbb-h264-mkv")?;
+    let source_path = root.join(&fixture.path);
+    let graph = inspect_graph(&source_path)?;
+    let desired_metadata = vec![
+        metadata_entry("comment", "Revaer fixture metadata replacement"),
+        metadata_entry("title", "Revaer Authored Metadata"),
+    ];
+    let desired = DesiredGraph {
+        output_path: path_text(&output_root.join("metadata-replaced.mkv"))?,
+        container_format: Some("matroska".to_string()),
+        container_metadata_policy: Some("replace".to_string()),
+        container_metadata: desired_metadata.clone(),
+        container_chapter_policy: None,
+        container_chapters: Vec::new(),
+        container_attachment_policy: None,
+        streams: graph.streams.clone(),
+    };
+
+    let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
+    assert_operations(
+        "replace container metadata",
+        &materialized.operations,
+        &["metadata_rewrite", "remux"],
+    )?;
+    assert_output_container_metadata(&materialized.verified_output_path, &desired_metadata)?;
+    report.record_pipeline_action(PipelineReportRow {
+        case_name: "replace container metadata".to_string(),
+        fixture_id: fixture.id.clone(),
+        input_path: fixture.path.clone(),
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
+        outcome: "passed".to_string(),
+        details: "published exact authored metadata comment,title".to_string(),
+    });
+    Ok(())
+}
+
 fn assert_container_chapter_replacement(
     root: &Path,
     manifest: &FixtureManifest,
@@ -1756,15 +2021,43 @@ fn assert_container_chapter_replacement(
     Ok(())
 }
 
+fn metadata_entry(key: &str, value: &str) -> ContainerMetadataEntry {
+    ContainerMetadataEntry {
+        key: key.to_string(),
+        value: value.to_string(),
+    }
+}
+
 fn chapter_entry(start_millis: i64, end_millis: i64, title: &str) -> ContainerChapterEntry {
     ContainerChapterEntry {
         start_millis,
         end_millis,
-        metadata: vec![ContainerMetadataEntry {
-            key: "title".to_string(),
-            value: title.to_string(),
-        }],
+        metadata: vec![metadata_entry("title", title)],
     }
+}
+
+fn assert_output_container_metadata(
+    path: &Path,
+    expected: &[ContainerMetadataEntry],
+) -> TestResult {
+    let inspector = FfprobeInspectAdapter::new(Arc::new(SystemInspectProbeExecutor), "ffprobe");
+    let inspection = inspector.inspect_full(&path_text(path)?)?;
+    let mut actual = inspection
+        .container
+        .metadata
+        .into_iter()
+        .map(|entry| metadata_entry(&entry.key, &entry.value))
+        .collect::<Vec<_>>();
+    actual.sort();
+    let mut expected = expected.to_vec();
+    expected.sort();
+    if actual != expected {
+        return fail(format!(
+            "{} container metadata mismatch: expected {expected:?}, got {actual:?}",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 fn assert_output_chapters(path: &Path, expected: &[ContainerChapterEntry]) -> TestResult {
@@ -1867,6 +2160,11 @@ fn inspect_graph(path: &Path) -> TestResult<MediaGraph> {
     Ok(inspector.inspect(&path_text(path)?)?)
 }
 
+fn inspect_full(path: &Path) -> TestResult<MediaInspection> {
+    let inspector = FfprobeInspectAdapter::new(Arc::new(SystemInspectProbeExecutor), "ffprobe");
+    Ok(inspector.inspect_full(&path_text(path)?)?)
+}
+
 fn materialize_desired_graph(
     source_path: &Path,
     source: &MediaGraph,
@@ -1882,6 +2180,32 @@ fn materialize_desired_graph(
         .collect::<Vec<_>>();
     let steps =
         build_job_execution_steps(&path_text(source_path)?, &desired.output_path, &planned)?;
+    execute_step_sequence(&steps, &ProcessCommandRunner)?;
+    Ok(MaterializedGraph {
+        operations: operation_names,
+        verified_output_path,
+    })
+}
+
+fn materialize_compiled_target(
+    source_path: &Path,
+    source: &MediaGraph,
+    compiled: &CompiledDesiredTarget,
+) -> TestResult<MaterializedGraph> {
+    let planned =
+        plan_job_from_compiled_target(compiled, fs::metadata(source_path)?.len(), source)?;
+    let verified_output_path =
+        verified_output_path_for_plan(source_path, &compiled.graph, &planned.operations);
+    let operation_names = planned
+        .operations
+        .iter()
+        .map(|operation| operation_kind_name(operation.kind).to_string())
+        .collect::<Vec<_>>();
+    let steps = build_job_execution_steps(
+        &path_text(source_path)?,
+        &compiled.graph.output_path,
+        &planned,
+    )?;
     execute_step_sequence(&steps, &ProcessCommandRunner)?;
     Ok(MaterializedGraph {
         operations: operation_names,
@@ -1916,6 +2240,36 @@ fn assert_audio_languages(label: &str, graph: &MediaGraph, expected: &[&str]) ->
     if actual != expected_values {
         return fail(format!(
             "{label} audio language mismatch: expected {expected_values:?}, got {actual:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn assert_subtitle_languages(label: &str, graph: &MediaGraph, expected: &[&str]) -> TestResult {
+    let actual = streams_by_kind(graph, StreamKind::Subtitle)
+        .iter()
+        .map(|stream| stream.language.as_deref().unwrap_or("und").to_string())
+        .collect::<Vec<_>>();
+    let expected_values = expected
+        .iter()
+        .map(|item| (*item).to_string())
+        .collect::<Vec<_>>();
+    if actual != expected_values {
+        return fail(format!(
+            "{label} subtitle language mismatch: expected {expected_values:?}, got {actual:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn assert_forced_subtitle_count(label: &str, graph: &MediaGraph, expected: usize) -> TestResult {
+    let actual = streams_by_kind(graph, StreamKind::Subtitle)
+        .iter()
+        .filter(|stream| stream.dispositions.iter().any(|item| item == "forced"))
+        .count();
+    if actual != expected {
+        return fail(format!(
+            "{label} forced subtitle count mismatch: expected {expected}, got {actual}"
         ));
     }
     Ok(())
@@ -1967,6 +2321,198 @@ fn media_conversion_report_path(root: &Path) -> TestResult<PathBuf> {
         return Ok(path);
     }
     Ok(root.join(path))
+}
+
+fn sidecar_target(
+    target_key: &str,
+    placement: SubtitlePlacement,
+    include_embedded_subtitle: bool,
+) -> DesiredTarget {
+    let mut streams = vec![target_stream(
+        "video-main",
+        StreamKind::Video,
+        None,
+        None,
+        "h264",
+    )];
+    let mut subtitle = target_stream(
+        "subtitle-forced",
+        StreamKind::Subtitle,
+        Some(SemanticRole::Forced),
+        Some("eng"),
+        "srt",
+    );
+    subtitle.subtitle_placement = Some(placement);
+    if include_embedded_subtitle {
+        subtitle.dispositions = vec!["forced".to_string()];
+    }
+    streams.push(subtitle);
+    target_with_streams(target_key, streams)
+}
+
+fn video_only_target(target_key: &str) -> DesiredTarget {
+    target_with_streams(
+        target_key,
+        vec![target_stream(
+            "video-main",
+            StreamKind::Video,
+            None,
+            None,
+            "h264",
+        )],
+    )
+}
+
+fn target_with_streams(target_key: &str, streams: Vec<TargetStream>) -> DesiredTarget {
+    DesiredTarget {
+        target_key: target_key.to_string(),
+        version: 1,
+        container: "matroska".to_string(),
+        container_metadata_policy: "preserve".to_string(),
+        container_metadata: Vec::new(),
+        container_chapter_policy: "preserve".to_string(),
+        container_chapters: Vec::new(),
+        container_attachment_policy: "preserve".to_string(),
+        streams,
+    }
+}
+
+fn target_stream(
+    stream_key: &str,
+    kind: StreamKind,
+    role: Option<SemanticRole>,
+    language: Option<&str>,
+    codec: &str,
+) -> TargetStream {
+    TargetStream {
+        stream_key: stream_key.to_string(),
+        kind,
+        role,
+        language: language.map(str::to_string),
+        optional: false,
+        codec: codec.to_string(),
+        channels: None,
+        channel_layout: None,
+        audio_bitrate_bps: None,
+        audio_sample_rate_hz: None,
+        audio_loudness_profile: None,
+        audio_dynamic_range: None,
+        video_profile: None,
+        video_level: None,
+        video_bitrate_bps: None,
+        color_primaries: None,
+        color_transfer: None,
+        color_space: None,
+        hdr_format: None,
+        title: None,
+        dispositions: Vec::new(),
+        subtitle_placement: (kind == StreamKind::Subtitle).then_some(SubtitlePlacement::Embedded),
+        image_subtitle_action: (kind == StreamKind::Subtitle).then_some(ImageSubtitleAction::Fail),
+    }
+}
+
+fn sidecar_inputs(sidecars: &[SidecarSubtitle]) -> TestResult<Vec<SidecarSubtitleInput>> {
+    sidecars.iter().map(sidecar_input).collect()
+}
+
+fn sidecar_input(sidecar: &SidecarSubtitle) -> TestResult<SidecarSubtitleInput> {
+    Ok(SidecarSubtitleInput {
+        path: path_text(&sidecar.path)?,
+        companion_path: sidecar
+            .companion_path
+            .as_ref()
+            .map(|path| path_text(path))
+            .transpose()?,
+        language: sidecar.language.clone(),
+        role: sidecar.role.map(sidecar_role),
+        codec: sidecar_codec(sidecar.format).to_string(),
+        image_based: sidecar.format.image_based(),
+    })
+}
+
+const fn sidecar_role(role: SidecarRole) -> SemanticRole {
+    match role {
+        SidecarRole::Forced => SemanticRole::Forced,
+        SidecarRole::Commentary => SemanticRole::Commentary,
+        SidecarRole::Sdh => SemanticRole::Sdh,
+        SidecarRole::SignsSongs => SemanticRole::SignsSongs,
+        SidecarRole::Karaoke => SemanticRole::Karaoke,
+    }
+}
+
+const fn sidecar_codec(format: SidecarFormat) -> &'static str {
+    match format {
+        SidecarFormat::Srt => "subrip",
+        SidecarFormat::Ass => "ass",
+        SidecarFormat::Vtt => "webvtt",
+        SidecarFormat::Sup => "hdmv_pgs_subtitle",
+        SidecarFormat::Sub => "microdvd",
+        SidecarFormat::VobSub => "dvd_subtitle",
+    }
+}
+
+fn assert_single_sidecar<'a>(
+    label: &str,
+    sidecars: &'a [SidecarSubtitleInput],
+) -> TestResult<&'a SidecarSubtitleInput> {
+    match sidecars {
+        [sidecar] => Ok(sidecar),
+        _ => fail(format!(
+            "{label} expected exactly one discovered sidecar, got {}",
+            sidecars.len()
+        )),
+    }
+}
+
+fn single_sidecar_output_path(outputs: &[DesiredSidecarOutput]) -> TestResult<PathBuf> {
+    match outputs {
+        [output] => Ok(PathBuf::from(&output.path)),
+        _ => fail(format!(
+            "expected exactly one managed sidecar output, got {}",
+            outputs.len()
+        )),
+    }
+}
+
+fn assert_sidecar_subtitle_file(path: &Path) -> TestResult {
+    let output = Command::new("ffprobe")
+        .args(["-v", "error", "-show_streams", "-of", "json"])
+        .arg(path)
+        .output()?;
+    if !output.status.success() {
+        return fail(format!(
+            "ffprobe sidecar inspection failed for {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let parsed: Value = serde_json::from_slice(&output.stdout)?;
+    let streams = parsed
+        .get("streams")
+        .and_then(Value::as_array)
+        .ok_or_else(|| std::io::Error::other("sidecar probe missing streams"))?;
+    if streams.len() != 1
+        || streams[0].get("codec_type").and_then(Value::as_str) != Some("subtitle")
+    {
+        return fail(format!(
+            "{} sidecar probe mismatch: expected one subtitle stream, got {streams:?}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn assert_files_equal(left: &Path, right: &Path) -> TestResult {
+    let left_bytes = fs::read(left)?;
+    let right_bytes = fs::read(right)?;
+    if left_bytes != right_bytes {
+        return fail(format!(
+            "file mismatch: {} differs from {}",
+            left.display(),
+            right.display()
+        ));
+    }
+    Ok(())
 }
 
 fn report_path(root: &Path, path: &Path) -> String {

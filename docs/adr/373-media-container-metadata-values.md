@@ -11,7 +11,7 @@
   - Persist desired container metadata entries in normalized relational rows keyed by desired-target version, snapshot those rows into immutable jobs, and expose list stored procedures for both catalog and job snapshots.
   - Require `replace` targets to provide at least one metadata row, and reject metadata rows for `preserve` or `strip`.
   - Normalize metadata keys to lowercase, trim values, reject blank keys, blank values, and duplicate keys, and sort entries deterministically before compilation and API/YAML responses.
-  - Compile `replace` into a desired-graph metadata mismatch, FFmpeg `-map_metadata -1` plus one `-metadata key=value` argument per row, and candidate/final verification against the exact desired metadata set.
+  - Compile `replace` into a desired-graph metadata mismatch, FFmpeg `-map_metadata -1` plus one `-metadata key=value` argument per row, and candidate/final verification against the exact desired authored metadata set after generated container-level muxer `encoder` tags are removed from full-inspection metadata.
   - Keep contextless `MetadataRewrite` operations fail-closed unless they are materialized through the complete desired graph.
   - Alternatives considered:
     - Merge provided metadata into source metadata: rejected because delete semantics are unclear and final verification would not prove a complete target state.
@@ -23,7 +23,7 @@
     - Job execution, final verification, API/YAML import/export, and database snapshots all agree on the same normalized metadata set.
   - Risks or trade-offs:
     - `replace` deliberately discards all source container metadata not present in the desired target row set.
-    - FFmpeg/muxer normalization can still alter metadata representation; verifier mismatches fail the job rather than accepting drift silently.
+    - FFmpeg/muxer normalization can still alter authored metadata representation; verifier mismatches fail the job rather than accepting drift silently. FFmpeg's generated container-level `encoder` tag is classified as technical muxer metadata instead of authored metadata.
 - Follow-up:
   - Add authored chapter timeline rows before accepting chapter edits.
   - Keep authored attachment and data-stream creation/rewrite fail-closed until they have equivalent schema, execution, and verification contracts.
@@ -36,7 +36,7 @@
   - `DesiredGraph` now carries `container_metadata` rows alongside `container_metadata_policy`.
   - Core desired-target validation enforces policy/row consistency, blank-value rejection, duplicate-key rejection, and deterministic sorting.
   - Database migration 0173 adds desired-target and job-snapshot metadata tables plus append/list procedures, and replaces profile-target assignment and job creation procedures so `replace` targets cannot be pinned or enqueued without rows.
-  - Runtime command construction maps `replace` to metadata clearing plus explicit key/value arguments, while worker preflight derives expected metadata from the compiled graph.
+  - Runtime command construction maps `replace` to metadata clearing plus explicit key/value arguments, while worker preflight derives expected authored metadata from the compiled graph. Full inspection filters generated container-level `encoder` metadata before comparing authored rows.
 - Test coverage summary:
   - `cargo check -p revaer-media-core -p revaer-media-runtime -p revaer-data -p revaer-runtime -p revaer-api`
   - `cargo check -p revaer-app --no-default-features`

@@ -747,7 +747,7 @@ fn normalize_container(format: Option<FfprobeFormat>) -> Result<ContainerInspect
         start_time_millis: parse_optional_millis(format.start_time.as_deref(), "start time")?,
         size_bytes: parse_optional_u64(format.size.as_deref(), "container size")?,
         bit_rate: parse_optional_u64(format.bit_rate.as_deref(), "container bit rate")?,
-        metadata: normalize_metadata(format.tags),
+        metadata: normalize_container_metadata(format.tags),
     })
 }
 
@@ -772,6 +772,19 @@ fn normalize_metadata(values: BTreeMap<String, String>) -> Vec<MetadataEntry> {
         .into_iter()
         .filter_map(|(key, value)| metadata_entry(&key, &value))
         .collect()
+}
+
+fn normalize_container_metadata(values: BTreeMap<String, String>) -> Vec<MetadataEntry> {
+    values
+        .into_iter()
+        .filter(|(key, _value)| !is_generated_container_metadata_key(key))
+        .filter_map(|(key, value)| metadata_entry(&key, &value))
+        .collect()
+}
+
+fn is_generated_container_metadata_key(key: &str) -> bool {
+    // FFmpeg muxers emit this container tag independently of authored metadata.
+    key.trim().eq_ignore_ascii_case("encoder")
 }
 
 fn metadata_from_stream(stream: &FfprobeStream) -> Vec<MetadataEntry> {
@@ -1818,6 +1831,55 @@ mod tests {
         assert_eq!(inspection.graph.streams[1].kind, StreamKind::Subtitle);
         assert_eq!(inspection.graph.streams[1].codec, "webvtt");
         assert!(inspection.streams[1].side_data.is_empty());
+    }
+
+    #[test]
+    fn ffprobe_adapter_filters_generated_container_encoder_metadata() {
+        let key = primary_inspect_probe_key("/input/movie.mkv");
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            key,
+            r#"{
+                "streams": [],
+                "format": {
+                    "format_name": "matroska,webm",
+                    "tags": {
+                        "COMMENT": " Fixture comment ",
+                        "ENCODER": "Lavf60.16.100",
+                        "producer": "authored",
+                        "title": "Fixture title"
+                    }
+                }
+            }"#
+            .to_string(),
+        );
+        let adapter = test_adapter(
+            Arc::new(StubInspectExecutor {
+                outputs,
+                calls: Mutex::new(Vec::new()),
+            }),
+            "ffprobe",
+        );
+
+        let inspection_result = adapter.inspect_full("/input/movie.mkv");
+        assert!(inspection_result.is_ok(), "expected inspect success");
+        let Ok(inspection) = inspection_result else {
+            return;
+        };
+        let metadata = inspection
+            .container
+            .metadata
+            .into_iter()
+            .map(|entry| (entry.key, entry.value))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            metadata,
+            vec![
+                ("comment".to_string(), "Fixture comment".to_string()),
+                ("producer".to_string(), "authored".to_string()),
+                ("title".to_string(), "Fixture title".to_string()),
+            ]
+        );
     }
 
     #[test]

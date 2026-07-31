@@ -1,0 +1,60 @@
+# Media metadata replacement fixture
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - ADR 373 implemented exact target-level container metadata replacement through relational desired rows, immutable job snapshots, FFmpeg command construction, and verifier expectations.
+  - The media conversion fixture suite still lacked a real FFmpeg path proving authored metadata replacement materializes and is visible in output inspection.
+  - The service cannot be treated as production-ready for an implemented operator-facing contract until the pipeline evidence exercises that contract end to end.
+  - The first remote fixture run exposed a Matroska muxer fact that unit tests had not captured: FFmpeg injects an `encoder=Lavf...` container tag even after source metadata is stripped and exact authored `title`/`comment` rows are written.
+- Decision:
+  - Add a media fixture pipeline case that requests exact authored container metadata, runs the normal planner and executor, and verifies the output through the normalized FFprobe full-inspection adapter.
+  - Require the planned operation list to include `metadata_rewrite` and the remux needed to publish a changed Matroska container.
+  - Treat FFmpeg's generated container-level `encoder` tag as muxer technical metadata, not operator-authored metadata, in normalized full inspection. Keep stream, chapter, side-data, and all other container metadata comparison exact.
+  - Keep contextless arbitrary metadata rewrite fail-closed; this fixture covers target-level complete metadata replacement only.
+  - Alternatives considered:
+    - Rely on command-construction unit coverage: rejected because fixture coverage proves the real command path, muxer behavior, and inspection normalization together.
+    - Verify only the conversion report row: rejected because the report is a useful artifact but not proof that the output media carries the authored metadata.
+- Consequences:
+  - Positive outcomes:
+    - The PR media conversion fixture job now exercises exact authored container metadata replacement with FFmpeg and FFprobe.
+    - The fixture report gains a concrete `replace container metadata` row beside the existing chapter replacement row.
+  - Risks or trade-offs:
+    - Known muxer-generated `encoder` tags no longer count as authored metadata drift. Any other extra, missing, or changed metadata row still fails exact comparison.
+- Follow-up:
+  - Continue adding fixture evidence for implemented sidecar, attachment, data-stream, and technical stream constraint contracts.
+  - Add authored attachment and data-stream replacement only after equivalent schema, execution, and verification contracts exist.
+
+## Task Record
+
+- Motivation:
+  - Strengthen production evidence for exact container metadata replacement using the shipped media fixture pipeline rather than only unit-level command construction.
+- Design notes:
+  - The fixture uses the existing Matroska H.264 source, writes `comment` and `title` metadata rows, and inspects the published artifact with `FfprobeInspectAdapter::inspect_full`.
+  - Metadata comparison sorts normalized key/value rows so the assertion checks exact set equality without depending on ffprobe ordering.
+  - Inspection normalization filters only the container-level generated `encoder` key. App verifier tests use a normal authored `producer` key to prove unexpected authored metadata is still rejected.
+- Test coverage summary:
+  - `cargo test -p revaer-media-runtime ffprobe_adapter_filters_generated_container_encoder_metadata --all-features -- --nocapture`
+  - `cargo test -p revaer-media-runtime --test media_fixtures media_conversion_report_starts_with_summary_and_lists_actions -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib adds_container_metadata -- --nocapture`
+  - `cargo clippy -p revaer-media-runtime --all-features --all-targets -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - Remote PR media conversion fixture run `30633433402` failed before this normalization fix because the output metadata contained FFmpeg's generated `encoder=Lavf60.16.100` tag in addition to the exact authored rows.
+  - `just fmt`
+  - `just policy`
+  - `just instruction-drift`
+  - `git diff --check`
+  - `sonar analyze secrets crates/revaer-media-runtime/src/inspect/mod.rs crates/revaer-app/src/media_job_runtime.rs crates/revaer-media-runtime/tests/media_fixtures.rs docs/adr/318-media-transcoding-foundation.md docs/adr/373-media-container-metadata-values.md docs/adr/395-media-metadata-replacement-fixture.md docs/adr/index.md docs/SUMMARY.md`
+  - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table`
+  - `sonar verify --file crates/revaer-media-runtime/src/inspect/mod.rs --project VannaDii_Revaer` was attempted and failed with SonarQube API 403 because Agentic Analysis is unavailable for the organization.
+  - The ignored full fixture pipeline remains remote-gated through the PR media conversion fixture job after this slice is pushed.
+- Observability updates:
+  - No service metrics or logs changed. The media conversion fixture report now records the real `metadata_rewrite` and `remux` actions for exact metadata replacement.
+- Risk and rollback plan:
+  - Risk: the fixture may expose real muxer metadata normalization drift that earlier unit tests did not catch. That should fail the PR fixture job and be fixed rather than bypassed.
+  - Roll back by reverting the fixture case and this ADR only if the broader metadata replacement contract is deliberately withdrawn with a compatible migration.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or criteria relaxation was introduced.

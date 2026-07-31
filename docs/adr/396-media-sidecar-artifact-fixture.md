@@ -1,0 +1,54 @@
+# Media sidecar artifact fixture
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - ADR 318 describes sidecar embedding, extraction, copy, and removal as implemented runtime behavior.
+  - Existing coverage proved sidecar discovery, compilation, command construction, replacement rollback, and final sidecar-state equality through unit and app-service tests.
+  - The real media conversion fixture suite still did not execute explicit sidecar artifact operations through FFmpeg and FFprobe.
+- Decision:
+  - Generate a deterministic ignored SRT sidecar beside the existing generated video-only fixture.
+  - Add fixture pipeline cases for embedding an existing sidecar, copying an existing sidecar to a managed output, planning removal of an unmatched sidecar, and extracting an embedded subtitle into a managed SRT sidecar.
+  - Require the media conversion report to include `embed_subtitle`, `extract_subtitle`, `copy_sidecar_subtitle`, and `remove_sidecar_subtitle` operations.
+  - Keep source-sidecar deletion and rollback verification in the app replacement tests because the fixture harness executes managed materialization, not the full source replacement transaction.
+  - Alternatives considered:
+    - Rely on existing command-builder and helper tests: rejected because they do not prove real FFmpeg execution against fixture media.
+    - Add committed media binaries: rejected because the fixture policy keeps generated and downloaded media ignored and cache-backed.
+- Consequences:
+  - Positive outcomes:
+    - The PR media conversion fixture job now exercises explicit sidecar artifact operations through the production planner and executor.
+    - The uploaded conversion report includes concrete rows for sidecar embedding, extraction, copy, and removal planning.
+  - Risks or trade-offs:
+    - Local fixture validation requires prepared ignored media files; remote PR media-conversion remains the full fixture gate when local fixture media is absent.
+- Follow-up:
+  - Add real fixture media for exact attachment and data-stream passthrough.
+  - Keep authored attachment and data-stream creation or rewrite fail-closed until equivalent schema, execution, and verification contracts exist.
+
+## Task Record
+
+- Motivation:
+  - Close the evidence gap between implemented sidecar operations and the real media fixture pipeline.
+- Design notes:
+  - The generated sidecar uses the documented `{stem}.{lang}.{role}.srt` pattern so the normal filesystem sidecar discoverer finds it during complete inspection.
+  - Fixture cases use sidecar-aware target compilation and `plan_job_from_compiled_target` so operation planning matches the production preflight path.
+  - Sidecar cases retain the planner's required `disposition_rewrite` operation where subtitle disposition changes are needed before sidecar artifact materialization.
+  - The copy case probes the managed sidecar output and byte-compares it to the discovered source sidecar.
+- Test coverage summary:
+  - `just download-test-fixtures`
+  - `just generate-test-fixtures`
+  - `just verify-test-fixtures`
+  - `just test-media-conversion`
+  - `cargo fmt --check`
+  - `cargo test -p revaer-media-runtime --test media_fixtures media_conversion_report_starts_with_summary_and_lists_actions -- --nocapture`
+  - `cargo clippy -p revaer-media-runtime --all-features --test media_fixtures -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - The generated `target/media-conversion-report.md` records passed rows for `embed existing sidecar`, `copy existing sidecar`, `plan existing sidecar removal`, and `extract embedded subtitle`.
+- Observability updates:
+  - No service metrics or logs changed. The media conversion report now records sidecar artifact operation rows.
+- Risk and rollback plan:
+  - Risk: the fixture may expose real FFmpeg sidecar materialization differences. That should fail the media-conversion job and be fixed rather than bypassed.
+  - Roll back by removing the sidecar fixture cases and generated sidecar input only if the implemented sidecar operation contract is withdrawn.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or criteria relaxation was introduced.

@@ -5377,7 +5377,7 @@ mod tests {
 
     fn with_added_test_container_metadata(mut inspection: MediaInspection) -> MediaInspection {
         inspection.container.metadata.push(MetadataEntry {
-            key: "encoder".to_string(),
+            key: "producer".to_string(),
             value: "unexpected-writer".to_string(),
         });
         inspection

@@ -421,3 +421,5 @@
     -   [392: Media job attachment strip evidence](adr/392-media-job-attachment-strip-evidence.md)
     -   [393: Media job attachment passthrough evidence](adr/393-media-job-attachment-passthrough-evidence.md)
     -   [394: Media job data passthrough evidence](adr/394-media-job-data-passthrough-evidence.md)
+    -   [395: Media metadata replacement fixture](adr/395-media-metadata-replacement-fixture.md)
+    -   [396: Media sidecar artifact fixture](adr/396-media-sidecar-artifact-fixture.md)
