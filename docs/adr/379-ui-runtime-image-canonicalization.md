@@ -9,6 +9,7 @@
   - The first PR 131 remote supply-chain rerun failed on `RUSTSEC-2026-0221` for `event-listener 5.4.1`.
   - A later PR 131 Sonar rerun failed the quality gate because new-code coverage was 79.2%, below the required 80%, after the generated served DataTables JavaScript added an uncovered runtime avatar mapping line.
   - After focused `asset_sync` coverage raised PR 131 new-code coverage to 91.5%, the next Sonar rerun failed only `new_duplicated_lines_density=20.1` because generation-time literal rewrites made the served DataTables copy look like a duplicated new vendor data block.
+  - The follow-up PR 131 scanner pass passed the quality gate but the strict post-scan API verifier surfaced a new ShellCheck-derived maintainability issue in the verifier retry branch.
 - Decision:
   - Remove tracked files under `crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images`.
   - Replace the committed dashboard avatars, dashboard event thumbnails, app icon, favicon path, and Revaer logo with UTF-8 SVG assets.
@@ -18,6 +19,7 @@
   - Update the lockfile from `event-listener 5.4.1` to `5.4.2` so the audit gate no longer reports `RUSTSEC-2026-0221`.
   - Split Sonar scanner-report packaging into a reusable `just sonar-package-report` gate and call it from PR and main scans even after scanner-side quality-gate failure so retained evidence is never reduced to report-task metadata only.
   - Add bounded retry around `sonar-verify-result` Sonar API reads for transient transport and HTTP 5xx failures while preserving fail-closed handling for missing metrics, ignored conditions, unresolved findings, unreviewed hotspots, and malformed responses.
+  - Merge the retryable-status and retry-budget conditions into one branch so the verifier remains fail-closed while satisfying Sonar's shell maintainability rule.
   - Alternatives considered:
     - Keeping duplicate vendor image inputs: rejected because it preserves 62 avoidable Sonar invalid-encoding warnings.
     - Excluding image suffixes from Sonar: rejected because it relaxes scanner criteria without operator consent.
@@ -51,6 +53,7 @@
   - The following PR 131 Sonar rerun proved the coverage repair (`new_coverage=91.5`) but failed only the new-code duplication condition (`new_duplicated_lines_density=20.1`) because generation-time literal rewrites made 50 served DataTables lines count as duplicated new code. The generated copy now keeps the vendor data literals stable and injects only the runtime avatar override.
   - While diagnosing that coverage gap, `just check-assets` was found to compare the nonexistent repo-root `static/nexus` path. The recipe now compares `crates/revaer-ui/static/nexus`, and the UI/devops instructions document the required path.
   - After the quality gate passed with `new_coverage=92.6` and `new_duplicated_lines_density=0.0`, `sonar-verify-result` hit a transient Sonar API HTTP 500 while reading result evidence. The verifier now retries only transport and HTTP 5xx reads before failing closed.
+  - The next PR 131 scanner pass reported one open new-code issue in `scripts/sonar-result-guardrails.sh` for a nested retry `if`. The retry predicate is now a single compound condition; no API failure mode was suppressed.
 - Test coverage summary:
   - `just check-assets`
   - `cargo test -p asset_sync`
@@ -68,6 +71,7 @@
   - `sonar api get '/api/qualitygates/project_status?projectKey=VannaDii_Revaer&pullRequest=131'`
   - `sonar api get '/api/measures/component?component=VannaDii_Revaer&pullRequest=131&metricKeys=new_coverage,new_lines_to_cover,new_duplicated_lines_density,coverage,lines_to_cover'`
   - `bash -n scripts/sonar-result-guardrails.sh`
+  - `sonar analyze secrets scripts/sonar-result-guardrails.sh`
   - `sonar verify --file crates/revaer-ui/tools/asset_sync/src/lib.rs --project VannaDii_Revaer` was attempted and failed with SonarQube API 403 because Agentic Analysis is not available for the organization.
   - `sonar verify --file docs/adr/379-ui-runtime-image-canonicalization.md --project VannaDii_Revaer` was attempted and failed with the same org-level 403.
   - `sonar verify --file sonar-project.properties --project VannaDii_Revaer` was attempted and failed with the same org-level 403.
