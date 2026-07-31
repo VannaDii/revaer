@@ -54,6 +54,15 @@ pub struct MediaGraph {
     pub streams: Vec<MediaStream>,
 }
 
+/// Desired normalized container metadata entry.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ContainerMetadataEntry {
+    /// Lowercase metadata key.
+    pub key: String,
+    /// Trimmed metadata value.
+    pub value: String,
+}
+
 /// Desired output graph after policy application.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DesiredGraph {
@@ -65,6 +74,9 @@ pub struct DesiredGraph {
     /// Desired container metadata policy when a target selects one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_metadata_policy: Option<String>,
+    /// Desired exact container metadata rows when the metadata policy is `replace`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_metadata: Vec<ContainerMetadataEntry>,
     /// Desired container chapter policy when a target selects one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_chapter_policy: Option<String>,

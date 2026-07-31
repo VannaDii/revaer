@@ -556,6 +556,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {

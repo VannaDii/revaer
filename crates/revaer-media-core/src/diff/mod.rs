@@ -67,10 +67,16 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
                 .iter()
                 .any(|source_format| container_formats_match(source_format, desired_format))
         });
-    let container_metadata_mismatch = desired
-        .container_metadata_policy
-        .as_deref()
-        .is_some_and(|policy| policy.trim().eq_ignore_ascii_case("strip"));
+    let container_metadata_mismatch =
+        desired
+            .container_metadata_policy
+            .as_deref()
+            .is_some_and(|policy| {
+                matches!(
+                    policy.trim().to_ascii_lowercase().as_str(),
+                    "strip" | "replace"
+                )
+            });
     let container_chapter_diff = if desired
         .container_chapter_policy
         .as_deref()
@@ -264,6 +270,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("mkv".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -282,6 +289,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("mp4".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -300,6 +308,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: Some("strip".to_string()),
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -327,6 +336,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
             streams: Vec::new(),
         };
@@ -375,6 +385,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -433,6 +444,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -486,6 +498,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -525,6 +538,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 2,
@@ -565,6 +579,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -605,6 +620,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -659,6 +675,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,

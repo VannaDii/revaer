@@ -629,6 +629,10 @@ const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata 
             code: "preflight_build_unsupported_container_metadata_policy",
             detail: "required container metadata policy is unavailable",
         },
+        BuildArgsError::InvalidContainerMetadataValues(_) => PreflightErrorMetadata {
+            code: "preflight_build_invalid_container_metadata_values",
+            detail: "desired container metadata values do not match the selected policy",
+        },
         BuildArgsError::UnsupportedContainerChapterPolicy(_) => PreflightErrorMetadata {
             code: "preflight_build_unsupported_container_chapter_policy",
             detail: "required container chapter policy is unavailable",
@@ -1619,6 +1623,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -1670,6 +1675,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -1725,6 +1731,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -1798,6 +1805,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: source.streams[..2].to_vec(),
         };
@@ -1853,6 +1861,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 3,
@@ -1895,6 +1904,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -1961,6 +1971,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -2003,6 +2014,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -2151,6 +2163,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -2189,6 +2202,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -2233,6 +2247,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -2299,6 +2314,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -2377,6 +2393,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -2450,6 +2467,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -2734,6 +2752,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -2963,6 +2982,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3004,6 +3024,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3068,6 +3089,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -3147,6 +3169,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -3225,6 +3248,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3275,6 +3299,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3325,6 +3350,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3371,6 +3397,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3417,6 +3444,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3465,6 +3493,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3512,6 +3541,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };

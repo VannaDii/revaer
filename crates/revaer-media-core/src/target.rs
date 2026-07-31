@@ -1,7 +1,7 @@
 //! Desired-target compilation into a concrete output graph.
 
 use crate::classify::{SemanticRole, infer_role};
-use crate::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
+use crate::model::{ContainerMetadataEntry, DesiredGraph, MediaGraph, MediaStream, StreamKind};
 use crate::normalize::{
     audio_channel_count_for_layout, normalize_audio_channel_layout,
     normalize_container_chapter_policy, normalize_container_format,
@@ -176,6 +176,8 @@ pub struct DesiredTarget {
     pub container: String,
     /// Desired output container metadata policy.
     pub container_metadata_policy: String,
+    /// Desired exact container metadata rows for the `replace` metadata policy.
+    pub container_metadata: Vec<ContainerMetadataEntry>,
     /// Desired output container chapter policy.
     pub container_chapter_policy: String,
     /// Desired streams in final mux order.
@@ -205,6 +207,21 @@ pub enum TargetCompileError {
     /// The target requested an unsupported container metadata policy.
     #[error("unsupported desired target container metadata policy: {0}")]
     UnsupportedContainerMetadataPolicy(String),
+    /// A desired container metadata key is blank.
+    #[error("desired target container metadata key is empty")]
+    EmptyContainerMetadataKey,
+    /// A desired container metadata value is blank.
+    #[error("desired target container metadata value is empty: {0}")]
+    EmptyContainerMetadataValue(String),
+    /// A desired container metadata key occurs more than once.
+    #[error("duplicate desired target container metadata key: {0}")]
+    DuplicateContainerMetadataKey(String),
+    /// Desired container metadata rows are incompatible with the selected metadata policy.
+    #[error("desired target container metadata rows require replace policy")]
+    ContainerMetadataRequiresReplacePolicy,
+    /// Replace policy requires at least one desired container metadata row.
+    #[error("desired target container metadata replace policy requires metadata rows")]
+    ReplaceContainerMetadataRequiresRows,
     /// The target requested an unsupported container chapter policy.
     #[error("unsupported desired target container chapter policy: {0}")]
     UnsupportedContainerChapterPolicy(String),
@@ -399,6 +416,7 @@ pub fn compile_desired_target(
         output_path: output_path.to_string(),
         container_format: Some(normalize_container_format(&target.container)),
         container_metadata_policy: Some(normalized_container_metadata_policy(target)?),
+        container_metadata: normalized_container_metadata(target)?,
         container_chapter_policy: Some(normalized_container_chapter_policy(target)?),
         streams: desired_streams,
     })
@@ -528,6 +546,7 @@ pub fn compile_desired_target_with_sidecars_at(
             output_path: output_path.to_string(),
             container_format: Some(normalize_container_format(&target.container)),
             container_metadata_policy: Some(normalized_container_metadata_policy(target)?),
+            container_metadata: normalized_container_metadata(target)?,
             container_chapter_policy: Some(normalized_container_chapter_policy(target)?),
             streams: state.desired_streams,
         },
@@ -883,7 +902,9 @@ fn validate_target(target: &DesiredTarget) -> Result<(), TargetCompileError> {
     if target.container.trim().is_empty() {
         return Err(TargetCompileError::EmptyContainer);
     }
-    normalized_container_metadata_policy(target)?;
+    let metadata_policy = normalized_container_metadata_policy(target)?;
+    validate_container_metadata_policy(&metadata_policy, &target.container_metadata)?;
+    let _metadata = normalized_container_metadata(target)?;
     normalized_container_chapter_policy(target)?;
 
     let mut keys = BTreeSet::new();
@@ -900,6 +921,20 @@ fn validate_target(target: &DesiredTarget) -> Result<(), TargetCompileError> {
     Ok(())
 }
 
+fn validate_container_metadata_policy(
+    policy: &str,
+    entries: &[ContainerMetadataEntry],
+) -> Result<(), TargetCompileError> {
+    match policy {
+        "replace" if entries.is_empty() => {
+            Err(TargetCompileError::ReplaceContainerMetadataRequiresRows)
+        }
+        "replace" => Ok(()),
+        _ if entries.is_empty() => Ok(()),
+        _ => Err(TargetCompileError::ContainerMetadataRequiresReplacePolicy),
+    }
+}
+
 fn normalized_container_metadata_policy(
     target: &DesiredTarget,
 ) -> Result<String, TargetCompileError> {
@@ -910,6 +945,29 @@ fn normalized_container_metadata_policy(
                 target.container_metadata_policy.clone(),
             )
         })
+}
+
+fn normalized_container_metadata(
+    target: &DesiredTarget,
+) -> Result<Vec<ContainerMetadataEntry>, TargetCompileError> {
+    let mut seen = BTreeSet::new();
+    let mut entries = Vec::with_capacity(target.container_metadata.len());
+    for entry in &target.container_metadata {
+        let key = entry.key.trim().to_ascii_lowercase();
+        if key.is_empty() {
+            return Err(TargetCompileError::EmptyContainerMetadataKey);
+        }
+        if !seen.insert(key.clone()) {
+            return Err(TargetCompileError::DuplicateContainerMetadataKey(key));
+        }
+        let value = entry.value.trim().to_string();
+        if value.is_empty() {
+            return Err(TargetCompileError::EmptyContainerMetadataValue(key));
+        }
+        entries.push(ContainerMetadataEntry { key, value });
+    }
+    entries.sort();
+    Ok(entries)
 }
 
 fn normalized_container_chapter_policy(
@@ -1390,7 +1448,7 @@ mod tests {
         compile_desired_target_with_sidecars_at,
     };
     use crate::classify::SemanticRole;
-    use crate::model::{MediaGraph, MediaStream, StreamKind};
+    use crate::model::{ContainerMetadataEntry, MediaGraph, MediaStream, StreamKind};
 
     fn stream(
         stream_id: u32,
@@ -1526,6 +1584,7 @@ mod tests {
             version: 4,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![
                 target_stream("video-cover", StreamKind::Video, None, None, "png"),
@@ -1601,6 +1660,49 @@ mod tests {
     }
 
     #[test]
+    fn compiles_replace_container_metadata_policy() -> Result<(), TargetCompileError> {
+        let source = multistream_source();
+        let mut target = ordered_multistream_target();
+        target.container_metadata_policy = " Replace ".to_string();
+        target.container_metadata = vec![
+            ContainerMetadataEntry {
+                key: " TITLE ".to_string(),
+                value: " Episode One ".to_string(),
+            },
+            ContainerMetadataEntry {
+                key: "album".to_string(),
+                value: "Season One".to_string(),
+            },
+        ];
+
+        let desired = compile_desired_target(
+            &source,
+            "/output/episode.mkv",
+            &target,
+            UnmatchedStreamPolicy::Remove,
+        )?;
+
+        assert_eq!(
+            desired.container_metadata_policy.as_deref(),
+            Some("replace")
+        );
+        assert_eq!(
+            desired.container_metadata,
+            vec![
+                ContainerMetadataEntry {
+                    key: "album".to_string(),
+                    value: "Season One".to_string(),
+                },
+                ContainerMetadataEntry {
+                    key: "title".to_string(),
+                    value: "Episode One".to_string(),
+                },
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
     fn compiles_strip_container_chapter_policy() -> Result<(), TargetCompileError> {
         let source = multistream_source();
         let mut target = ordered_multistream_target();
@@ -1632,6 +1734,61 @@ mod tests {
             ),
             Err(TargetCompileError::UnsupportedContainerMetadataPolicy(
                 "rewrite".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn target_validation_rejects_inconsistent_container_metadata_rows() {
+        let source = multistream_source();
+        let mut preserve_with_rows = ordered_multistream_target();
+        preserve_with_rows.container_metadata = vec![ContainerMetadataEntry {
+            key: "title".to_string(),
+            value: "Episode One".to_string(),
+        }];
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &preserve_with_rows,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::ContainerMetadataRequiresReplacePolicy)
+        );
+
+        let mut replace_without_rows = ordered_multistream_target();
+        replace_without_rows.container_metadata_policy = "replace".to_string();
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &replace_without_rows,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::ReplaceContainerMetadataRequiresRows)
+        );
+
+        let mut duplicate_rows = ordered_multistream_target();
+        duplicate_rows.container_metadata_policy = "replace".to_string();
+        duplicate_rows.container_metadata = vec![
+            ContainerMetadataEntry {
+                key: "title".to_string(),
+                value: "Episode One".to_string(),
+            },
+            ContainerMetadataEntry {
+                key: " TITLE ".to_string(),
+                value: "Duplicate".to_string(),
+            },
+        ];
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/episode.mkv",
+                &duplicate_rows,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::DuplicateContainerMetadataKey(
+                "title".to_string()
             ))
         );
     }
@@ -1687,6 +1844,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![optional_audio],
         };
@@ -1714,6 +1872,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "audio-main",
@@ -1764,6 +1923,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![first, duplicate],
         };
@@ -1870,6 +2030,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![invalid_audio_policy],
         };
@@ -1898,6 +2059,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
         };
@@ -1960,6 +2122,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream("audio", StreamKind::Audio, None, None, "aac")],
         };
@@ -2005,6 +2168,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "audio-main",
@@ -2042,6 +2206,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![invalid_video],
         };
@@ -2074,6 +2239,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![unsupported_color],
         };
@@ -2100,6 +2266,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![supported_sdr_color],
         };
@@ -2130,6 +2297,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![unsupported_level],
         };
@@ -2155,6 +2323,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![supported_av1_level],
         };
@@ -2179,6 +2348,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![unsupported_av1_level],
         };
@@ -2210,6 +2380,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "opaque-data",
@@ -2244,6 +2415,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![
                 target_stream("video", StreamKind::Video, None, None, "h264"),
@@ -2294,6 +2466,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![target_stream(
                 "video",
@@ -2379,6 +2552,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -2432,6 +2606,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -2483,6 +2658,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -2522,6 +2698,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };
@@ -2562,6 +2739,7 @@ mod tests {
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             streams: vec![subtitle],
         };

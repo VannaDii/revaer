@@ -399,3 +399,4 @@
     -   [370: Media data stream passthrough](adr/370-media-data-stream-passthrough.md)
     -   [371: Media container metadata strip policy](adr/371-media-container-metadata-strip-policy.md)
     -   [372: Media container chapter strip policy](adr/372-media-container-chapter-strip-policy.md)
+    -   [373: Media container metadata values](adr/373-media-container-metadata-values.md)

@@ -30,6 +30,8 @@ const MEDIA_POLICY_PROFILE_UPSERT_V1: &str = "SELECT policy_key, version, displa
 const MEDIA_JOB_RETENTION_POLICY_GET_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_get_v2()";
 const MEDIA_JOB_RETENTION_POLICY_UPDATE_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_update_v2(actor_public_id_input => $1, completed_enabled_input => $2, completed_mode_input => $3, completed_limit_input => $4, failed_diagnostic_enabled_input => $5, failed_diagnostic_mode_input => $6, failed_diagnostic_limit_input => $7)";
 const MEDIA_DESIRED_TARGET_CREATE_V3: &str = "SELECT media_desired_target_create_v3(actor_public_id_input => $1, target_key_input => $2, version_input => $3, display_name_input => $4, container_format_input => $5, container_metadata_policy_input => $6, container_chapter_policy_input => $7)";
+const MEDIA_DESIRED_TARGET_METADATA_APPEND_V1: &str = "SELECT media_desired_target_metadata_append_v1(media_desired_target_profile_public_id_input => $1, metadata_key_input => $2, metadata_value_input => $3)";
+const MEDIA_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, metadata_value FROM media_desired_target_metadata_list_v1(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_DESIRED_TARGET_STREAM_APPEND_V5: &str = "SELECT media_desired_target_stream_append_v5(media_desired_target_profile_public_id_input => $1, stream_key_input => $2, stream_kind_input => $3, semantic_role_input => $4, language_code_input => $5, optional_input => $6, sort_order_input => $7, codec_input => $8, channel_count_input => $9, channel_layout_input => $10, audio_bitrate_bps_input => $11, audio_sample_rate_hz_input => $12, audio_loudness_profile_input => $13, audio_dynamic_range_input => $14, video_profile_input => $15, video_level_input => $16, video_bitrate_bps_input => $17, color_primaries_input => $18, color_transfer_input => $19, color_space_input => $20, hdr_format_input => $21, title_input => $22, default_disposition_input => $23, forced_disposition_input => $24, subtitle_placement_input => $25, image_subtitle_action_input => $26)";
 const MEDIA_DESIRED_TARGET_LIST_V3: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, container_metadata_policy, container_chapter_policy FROM media_desired_target_list_v3()";
 const MEDIA_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_stream_list_v5(media_desired_target_profile_public_id_input => $1)";
@@ -123,6 +125,17 @@ pub struct CreateMediaDesiredTargetInput<'a> {
     pub container_chapter_policy: &'a str,
 }
 
+/// Desired target container metadata append payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppendMediaDesiredTargetMetadataInput<'a> {
+    /// Desired-target version public id.
+    pub media_desired_target_profile_public_id: Uuid,
+    /// Lowercase metadata key.
+    pub metadata_key: &'a str,
+    /// Trimmed metadata value.
+    pub metadata_value: &'a str,
+}
+
 /// Ordered desired-target stream creation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppendMediaDesiredTargetStreamInput<'a> {
@@ -197,6 +210,15 @@ pub struct MediaDesiredTargetRow {
     pub container_metadata_policy: String,
     /// Desired container chapter policy.
     pub container_chapter_policy: String,
+}
+
+/// Desired target container metadata row.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaDesiredTargetMetadataRow {
+    /// Lowercase metadata key.
+    pub metadata_key: String,
+    /// Trimmed metadata value.
+    pub metadata_value: String,
 }
 
 /// Ordered desired-target stream row.
@@ -496,6 +518,40 @@ where
         .map_err(try_op("media desired target create"))
 }
 
+/// Append one desired container metadata row before a target version is assigned.
+///
+/// # Errors
+///
+/// Returns an error when validation or stored-procedure execution fails.
+pub async fn append_media_desired_target_metadata(
+    pool: &PgPool,
+    input: AppendMediaDesiredTargetMetadataInput<'_>,
+) -> Result<()> {
+    append_media_desired_target_metadata_with_executor(pool, input).await
+}
+
+/// Append one desired container metadata row with a caller-provided executor.
+///
+/// # Errors
+///
+/// Returns an error when validation or stored-procedure execution fails.
+pub async fn append_media_desired_target_metadata_with_executor<'e, E>(
+    executor: E,
+    input: AppendMediaDesiredTargetMetadataInput<'_>,
+) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query(MEDIA_DESIRED_TARGET_METADATA_APPEND_V1)
+        .bind(input.media_desired_target_profile_public_id)
+        .bind(input.metadata_key)
+        .bind(input.metadata_value)
+        .execute(executor)
+        .await
+        .map_err(try_op("media desired target metadata append"))?;
+    Ok(())
+}
+
 /// Append one ordered stream before a desired-target version is assigned.
 ///
 /// # Errors
@@ -563,6 +619,22 @@ pub async fn list_media_desired_targets(pool: &PgPool) -> Result<Vec<MediaDesire
         .fetch_all(pool)
         .await
         .map_err(try_op("media desired target list"))
+}
+
+/// List desired container metadata rows for one desired-target version.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_desired_target_metadata(
+    pool: &PgPool,
+    media_desired_target_profile_public_id: Uuid,
+) -> Result<Vec<MediaDesiredTargetMetadataRow>> {
+    sqlx::query_as::<_, MediaDesiredTargetMetadataRow>(MEDIA_DESIRED_TARGET_METADATA_LIST_V1)
+        .bind(media_desired_target_profile_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media desired target metadata list"))
 }
 
 /// List the ordered stream graph for one desired-target version.

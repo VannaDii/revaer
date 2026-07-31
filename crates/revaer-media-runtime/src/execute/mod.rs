@@ -1,7 +1,9 @@
 //! Command argument builders.
 
 use crate::capabilities::CapabilitySnapshot;
-use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
+use revaer_media_core::model::{
+    ContainerMetadataEntry, DesiredGraph, MediaGraph, MediaStream, StreamKind,
+};
 use revaer_media_core::normalize::{
     normalize_audio_channel_layout, normalize_container_chapter_policy, normalize_container_format,
     normalize_container_metadata_policy, normalize_subtitle_codec,
@@ -42,6 +44,9 @@ pub enum BuildArgsError {
     /// Arbitrary metadata rewrite is not implemented as a verified desired-state contract.
     #[error("metadata rewrite is not supported until desired metadata verification is implemented")]
     UnsupportedMetadataRewrite,
+    /// Desired container metadata rows do not match the selected policy.
+    #[error("desired container metadata values are invalid: {0}")]
+    InvalidContainerMetadataValues(&'static str),
     /// Stream metadata, disposition, and ordering rewrites require the complete desired graph.
     #[error("stream rewrite requires complete desired graph context")]
     ContextlessStreamRewrite,
@@ -563,9 +568,10 @@ fn append_default_input_preservation_args(args: &mut Vec<String>) {
 fn append_input_preservation_args(
     args: &mut Vec<String>,
     container_metadata_policy: Option<&str>,
+    container_metadata: &[ContainerMetadataEntry],
     container_chapter_policy: Option<&str>,
 ) -> Result<(), BuildArgsError> {
-    append_container_metadata_args(args, container_metadata_policy)?;
+    append_container_metadata_args(args, container_metadata_policy, container_metadata)?;
     append_container_chapter_args(args, container_chapter_policy)?;
     Ok(())
 }
@@ -573,6 +579,7 @@ fn append_input_preservation_args(
 fn append_container_metadata_args(
     args: &mut Vec<String>,
     policy: Option<&str>,
+    metadata: &[ContainerMetadataEntry],
 ) -> Result<(), BuildArgsError> {
     let normalized = match policy {
         Some(value) => normalize_container_metadata_policy(value)
@@ -580,15 +587,27 @@ fn append_container_metadata_args(
         None => "preserve",
     };
     args.push("-map_metadata".to_string());
-    args.push(match normalized {
-        "preserve" => "0".to_string(),
-        "strip" => "-1".to_string(),
+    match normalized {
+        "preserve" if metadata.is_empty() => args.push("0".to_string()),
+        "strip" if metadata.is_empty() => args.push("-1".to_string()),
+        "replace" if !metadata.is_empty() => {
+            args.push("-1".to_string());
+            for entry in metadata {
+                args.push("-metadata".to_string());
+                args.push(format!("{}={}", entry.key, entry.value));
+            }
+        }
+        "preserve" | "strip" | "replace" => {
+            return Err(BuildArgsError::InvalidContainerMetadataValues(
+                "container metadata values do not match the selected policy",
+            ));
+        }
         _ => {
             return Err(BuildArgsError::UnsupportedContainerMetadataPolicy(
                 policy.unwrap_or_default().to_string(),
             ));
         }
-    });
+    }
     Ok(())
 }
 
@@ -691,7 +710,7 @@ fn build_ffmpeg_argv_with_video_policy(
         }
     }
 
-    append_input_preservation_args(&mut args, None, None)?;
+    append_input_preservation_args(&mut args, None, &[], None)?;
     args.push(output_path.to_string());
     Ok(args)
 }
@@ -1050,6 +1069,7 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
     append_input_preservation_args(
         &mut args,
         desired.container_metadata_policy.as_deref(),
+        &desired.container_metadata,
         desired.container_chapter_policy.as_deref(),
     )?;
     args.push(output_path.to_string());
@@ -2214,7 +2234,9 @@ mod tests {
         validate_container_muxer_capability, validate_declared_stream_codec_capability,
     };
     use crate::capabilities::CapabilitySnapshot;
-    use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
+    use revaer_media_core::model::{
+        ContainerMetadataEntry, DesiredGraph, MediaGraph, MediaStream, StreamKind,
+    };
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
     use revaer_media_core::target::{DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource};
     use std::fs;
@@ -3069,6 +3091,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -3129,6 +3152,7 @@ mod tests {
             output_path: "/workspace/in.mp4".to_string(),
             container_format: Some("mkv".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![source_stream],
         };
@@ -3196,6 +3220,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: Some("strip".to_string()),
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![source_stream],
         };
@@ -3220,6 +3245,68 @@ mod tests {
     }
 
     #[test]
+    fn desired_graph_replace_container_metadata_emits_metadata_values() -> anyhow::Result<()> {
+        let source_stream = MediaStream {
+            stream_id: 0,
+            kind: StreamKind::Video,
+            codec: "h264".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![source_stream.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: Some("replace".to_string()),
+            container_metadata: vec![
+                ContainerMetadataEntry {
+                    key: "title".to_string(),
+                    value: "Canonical Cut".to_string(),
+                },
+                ContainerMetadataEntry {
+                    key: "comment".to_string(),
+                    value: "Verified".to_string(),
+                },
+            ],
+            container_chapter_policy: None,
+            streams: vec![source_stream],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::MetadataRewrite,
+            stream_id: None,
+        }];
+
+        let argv = build_desired_graph_ffmpeg_argv(
+            "/in.mkv",
+            "/out.mkv",
+            &source,
+            &desired,
+            &operations,
+            None,
+            VideoTranscodePolicy::default(),
+        )?;
+
+        assert!(argv.windows(2).any(|pair| pair == ["-map_metadata", "-1"]));
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == ["-metadata", "title=Canonical Cut"])
+        );
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == ["-metadata", "comment=Verified"])
+        );
+        assert!(argv.windows(2).any(|pair| pair == ["-map_chapters", "0"]));
+        Ok(())
+    }
+
+    #[test]
     fn desired_graph_strip_container_chapters_emits_chapter_removal_args() {
         let source_stream = MediaStream {
             stream_id: 0,
@@ -3240,6 +3327,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
             streams: vec![source_stream],
         };
@@ -3284,6 +3372,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: Some("rewrite".to_string()),
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![source_stream],
         };
@@ -3329,6 +3418,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: Some("rewrite".to_string()),
             streams: vec![source_stream],
         };
@@ -3373,6 +3463,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -3445,6 +3536,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("mp4".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![stream],
         };
@@ -3503,6 +3595,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: source.streams.clone(),
         };
@@ -3566,6 +3659,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: source.streams.clone(),
         };
@@ -3618,6 +3712,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 title: Some("renamed".to_string()),
@@ -3664,6 +3759,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 title: Some("renamed".to_string()),
@@ -3710,6 +3806,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![stream],
         };
@@ -3752,6 +3849,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -3829,6 +3927,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -3882,6 +3981,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -3932,6 +4032,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -3982,6 +4083,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -4043,6 +4145,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -4120,6 +4223,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -4173,6 +4277,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 9,
@@ -4223,6 +4328,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -4273,6 +4379,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -4328,6 +4435,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -4387,6 +4495,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -4459,6 +4568,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -4530,6 +4640,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -4878,6 +4989,7 @@ mod tests {
             output_path: "/workspace/movie.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![video, subtitle.clone()],
         };
@@ -4959,6 +5071,7 @@ mod tests {
                     output_path: "/workspace/movie.mkv".to_string(),
                     container_format: Some("matroska".to_string()),
                     container_metadata_policy: None,
+                    container_metadata: Vec::new(),
                     container_chapter_policy: None,
                     streams: source.streams.clone(),
                 },
