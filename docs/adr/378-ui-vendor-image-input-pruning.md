@@ -1,0 +1,58 @@
+# UI Vendor Image Input Pruning
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - The PR Sonar scan still reports invalid UTF-8 warnings for committed raster image assets.
+  - Revaer policy treats scanner warnings as required fixes and forbids hiding committed assets through Sonar source, suffix, test-scope, or analyzer exclusions without explicit operator consent.
+  - The Nexus asset synchronization path uses `html/assets/app.css`, `html/images`, and `public/js`. The committed `public/images` directory is not an asset-sync input.
+- Decision:
+  - Remove unused tracked files under `crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images`.
+  - Keep the runtime asset inputs required by `asset_sync` unchanged.
+  - Continue addressing remaining Sonar binary-asset and SCA warnings with follow-up input cleanup or deterministic asset generation instead of scanner relaxation.
+  - Alternatives considered:
+    - Adding Sonar binary suffix exclusions: rejected because it relaxes scanner criteria without operator consent.
+    - Changing `sonar.sourceEncoding`: rejected because the issue is committed binary input, not a repository encoding mismatch.
+    - Removing `static/nexus/images` in this slice: rejected because those are generated runtime outputs that need a separate replacement strategy and visual verification.
+- Consequences:
+  - Positive outcomes:
+    - Shrinks the committed vendor surface and removes an unused source of Sonar invalid-encoding warnings.
+    - Preserves the UI runtime asset pipeline and the existing `asset_sync` contract.
+  - Risks or trade-offs:
+    - Future work that wants Nexus sample images from `public/images` must re-import only the specific needed source files through a reviewed asset-ingestion change.
+- Follow-up:
+  - Replace or regenerate the remaining required committed raster UI assets so Sonar no longer emits invalid UTF-8 warnings.
+  - Repair SCA input evidence so dependency analysis runs instead of reporting a skipped dependency-analysis path.
+  - Tighten `sonar-verify-result` after scanner warnings and skipped dependency analysis are eliminated.
+
+## Task Record
+
+- Motivation:
+  - Move Sonar strictness toward a fail-clean scan by deleting unused committed binary inputs instead of weakening analysis scope.
+- Design notes:
+  - `asset_sync` copies only `html/assets/app.css`, `html/images`, and `public/js` into `static/nexus`.
+  - ADR 260 already records `html/assets`, `html/images`, and `public/js` as the preserved runtime asset inputs.
+  - The deleted files were tracked vendor sample images under `public/images`; no runtime code, asset-sync code, Justfile recipe, or scoped instruction referenced that directory.
+- Test coverage summary:
+  - `just check-assets`
+  - `just fmt`
+  - `cargo test -p asset_sync`
+  - `git diff --check`
+  - `just policy`
+  - `just instruction-drift`
+  - `sonar verify --file docs/adr/378-ui-vendor-image-input-pruning.md --project VannaDii_Revaer` was attempted and failed with SonarQube API 403 because Agentic Analysis is not available for the organization.
+  - `sonar analyze secrets docs/adr/378-ui-vendor-image-input-pruning.md docs/adr/index.md docs/SUMMARY.md`
+  - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table` reported no issues.
+  - A follow-up scan found no media files remaining under `test-fixtures` or `target`.
+- Observability updates:
+  - No runtime logging, metrics, tracing, health, or event-surface changes.
+- Status-doc validation:
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+- Risk & rollback plan:
+  - Roll back this ADR and restore `crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images` if a future validated asset-sync path proves those files are required.
+  - Because runtime synced assets remain unchanged, rollback should not be needed for current UI rendering.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/sonarqube_mcp.instructions.md`, and `.github/instructions/devops.instructions.md`.
+  - No instruction drift or contradictions were found for this slice.
