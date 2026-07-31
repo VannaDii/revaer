@@ -637,6 +637,10 @@ const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata 
             code: "preflight_build_unsupported_container_metadata_policy",
             detail: "required container metadata policy is unavailable",
         },
+        BuildArgsError::InvalidContainerMetadataValues(_) => PreflightErrorMetadata {
+            code: "preflight_build_invalid_container_metadata_values",
+            detail: "desired container metadata values do not match the selected policy",
+        },
         BuildArgsError::UnsupportedContainerChapterPolicy(_) => PreflightErrorMetadata {
             code: "preflight_build_unsupported_container_chapter_policy",
             detail: "required container chapter policy is unavailable",
@@ -1771,6 +1775,7 @@ mod tests {
     fn plan_job_builds_operations_and_estimate() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -1790,6 +1795,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -1835,6 +1841,7 @@ mod tests {
         };
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: vec![ContainerChapterEntry {
                 start_millis: 0,
                 end_millis: 1_000,
@@ -1848,6 +1855,7 @@ mod tests {
             container_chapters: Vec::new(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
             stream_bindings: Vec::new(),
             streams: vec![stream.clone()],
@@ -1870,6 +1878,7 @@ mod tests {
 
         let reinspected = MediaGraph {
             source_path: "/output/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["matroska".to_string()],
             streams: vec![stream],
@@ -1896,6 +1905,7 @@ mod tests {
     fn preflight_capacity_check_fails_when_demand_exceeds_reserve_budget() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -1915,6 +1925,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -1954,6 +1965,7 @@ mod tests {
     fn build_job_execution_steps_adds_verify_step() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -1973,6 +1985,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -2008,6 +2021,7 @@ mod tests {
     fn job_execution_steps_map_only_desired_streams() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -2049,6 +2063,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: source.streams[..2].to_vec(),
         };
@@ -2088,6 +2103,7 @@ mod tests {
     fn plan_job_rejects_unsupported_recode_stream_kind() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -2107,6 +2123,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 3,
@@ -2133,6 +2150,7 @@ mod tests {
     fn plan_job_rejects_missing_desired_stream() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -2152,6 +2170,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -2190,6 +2209,7 @@ mod tests {
     fn plan_job_rejects_duplicate_source_stream_ids() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -2221,6 +2241,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -2247,6 +2268,7 @@ mod tests {
     fn plan_job_rejects_duplicate_desired_stream_ids() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -2266,6 +2288,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -2419,6 +2442,7 @@ mod tests {
     fn single_video_graphs(source_codec: &str, desired_codec: &str) -> (MediaGraph, DesiredGraph) {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -2438,6 +2462,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -2565,6 +2590,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -2580,6 +2606,7 @@ mod tests {
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: vec![MediaStream {
@@ -2612,6 +2639,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -2687,6 +2715,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -2702,6 +2731,7 @@ mod tests {
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: vec![MediaStream {
@@ -2768,6 +2798,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -2783,6 +2814,7 @@ mod tests {
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: vec![MediaStream {
@@ -2844,12 +2876,14 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: vec![MediaStream {
@@ -3131,12 +3165,14 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: vec![MediaStream {
@@ -3365,6 +3401,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3408,6 +3445,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
@@ -3475,6 +3513,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -3490,6 +3529,7 @@ mod tests {
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: vec![MediaStream {
@@ -3557,6 +3597,7 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -3572,6 +3613,7 @@ mod tests {
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: vec![MediaStream {
@@ -3638,12 +3680,14 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: Vec::new(),
@@ -3691,12 +3735,14 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: Vec::new(),
@@ -3744,12 +3790,14 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: Vec::new(),
@@ -3793,12 +3841,14 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: Vec::new(),
@@ -3842,12 +3892,14 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: Vec::new(),
@@ -3893,12 +3945,14 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: Vec::new(),
@@ -3943,12 +3997,14 @@ mod tests {
             container_format: None,
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspector = StubInspectAdapter {
             graph: Some(MediaGraph {
                 source_path: "/input/movie.mkv".to_string(),
+                container_metadata: Vec::new(),
                 container_chapters: Vec::new(),
                 container_formats: Vec::new(),
                 streams: Vec::new(),

@@ -10,7 +10,7 @@
   - Accept `strip` as the second implemented `container_metadata_policy` value across API validation, YAML validation, desired-target compilation, job snapshots, and database constraints.
   - Compile `strip` into a desired-graph metadata mismatch, a `MetadataRewrite` plan operation, and FFmpeg `-map_metadata -1` arguments on the desired-graph execution path.
   - Verify `strip` by expecting candidate and final container metadata to be empty. A candidate or committed output that retains container metadata fails the existing container-metadata mismatch boundary.
-  - Keep arbitrary key/value metadata rewrite unsupported. The contextless metadata rewrite operation still fails closed until a target schema and verification contract exist for authored metadata values.
+  - Keep arbitrary key/value metadata rewrite unsupported for contextless operations. ADR 373 later adds target-level exact container metadata replacement through a persisted desired-row schema and verification contract.
   - Alternatives considered:
     - Treat `strip` as a special case outside the desired graph: rejected because planning, compliance, execution, and verification would disagree about whether a change is required.
     - Reuse the arbitrary metadata rewrite failure path for stripping: rejected because stripping has a complete FFmpeg and verification contract now, while authored rewrites do not.
@@ -22,7 +22,7 @@
     - Existing configurations that set `strip` will now execute instead of failing validation, so incorrect use can remove source container tags by design.
     - The `MetadataRewrite` operation now has two meanings: implemented target-level strip when driven by a desired graph, and unsupported arbitrary rewrite when built without desired metadata context.
 - Follow-up:
-  - Add separate authored metadata schema, execution, and verification coverage before accepting any per-key rewrite policy.
+  - ADR 373 adds separate authored container metadata schema, execution, and verification coverage for target-level exact replacement. Keep broader contextless metadata rewrite operations fail-closed.
 
 ## Task Record
 

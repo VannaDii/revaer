@@ -74,6 +74,9 @@ pub struct ContainerChapterEntry {
 pub struct MediaGraph {
     /// Source path used for planning context.
     pub source_path: String,
+    /// Normalized container-level metadata observed in the source container.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_metadata: Vec<ContainerMetadataEntry>,
     /// Canonical container format names reported by the demuxer.
     #[serde(default)]
     pub container_formats: Vec<String>,
@@ -104,6 +107,9 @@ pub struct DesiredGraph {
     /// Desired container metadata policy when a target selects one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_metadata_policy: Option<String>,
+    /// Desired exact container metadata rows when the metadata policy is `replace`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_metadata: Vec<ContainerMetadataEntry>,
     /// Desired container chapter policy when a target selects one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_chapter_policy: Option<String>,

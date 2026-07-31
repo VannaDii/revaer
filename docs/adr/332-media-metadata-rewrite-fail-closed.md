@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-22
 - Context:
-  - Full inspection retains container and stream metadata, but the desired-target model does not yet define arbitrary metadata keys, values, preservation rules, rewrite rules, or post-replacement verification semantics.
+  - Full inspection retains container and stream metadata, but at the time of this ADR the desired-target model did not yet define arbitrary metadata keys, values, preservation rules, rewrite rules, or post-replacement verification semantics. ADR 373 later adds target-level exact container metadata replacement through persisted desired rows while keeping contextless arbitrary rewrite operations fail-closed.
   - The legacy single-operation FFmpeg command path treated `MetadataRewrite` as executable by passing `-map_metadata -1`, which removes container metadata instead of reconciling it to a verified desired state.
   - The media contract forbids silently dropping metadata.
 - Decision:
@@ -17,7 +17,7 @@
   - Metadata rewrite requests now fail closed instead of mutating files unsafely.
   - Full metadata reconciliation remains an explicit open implementation gap that requires target schema, stored procedures, API/YAML representation, command construction, and candidate/final verification.
 - Follow-up:
-  - Add normalized desired metadata rows and verification before enabling metadata rewrite execution.
+  - Keep contextless arbitrary metadata rewrite operations fail-closed. ADR 373 adds normalized desired container metadata rows and exact replacement verification for target-driven execution only.
   - Add real-media metadata rewrite fixtures once the desired metadata contract is implemented.
 
 ## Task Record

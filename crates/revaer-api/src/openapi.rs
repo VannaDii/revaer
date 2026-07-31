@@ -3,7 +3,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use revaer_media_core::target::MAX_DESIRED_TARGET_STREAMS;
+use revaer_media_core::target::{
+    MAX_CONTAINER_METADATA_ENTRIES, MAX_CONTAINER_METADATA_KEY_BYTES,
+    MAX_CONTAINER_METADATA_VALUE_BYTES, MAX_DESIRED_TARGET_STREAMS,
+};
 use serde_json::{Map, Value};
 use tracing::error;
 
@@ -1104,11 +1107,38 @@ fn media_configuration_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
+    let mut schemas = media_desired_target_stream_schemas();
+    schemas.extend(media_desired_target_profile_schemas());
+    schemas
+}
+
+fn media_desired_target_stream_schemas() -> Vec<(&'static str, Value)> {
     vec![
         (
             "MediaDesiredTargetStream",
             media_desired_target_stream_schema(),
         ),
+        (
+            "MediaDesiredTargetMetadataEntry",
+            object_schema(
+                &["key", "value"],
+                [
+                    (
+                        "key",
+                        string_max_length_schema(MAX_CONTAINER_METADATA_KEY_BYTES),
+                    ),
+                    (
+                        "value",
+                        string_max_length_schema(MAX_CONTAINER_METADATA_VALUE_BYTES),
+                    ),
+                ],
+            ),
+        ),
+    ]
+}
+
+fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
+    vec![
         (
             "MediaDesiredTargetCreateRequest",
             object_schema(
@@ -1125,6 +1155,13 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
                     ("container_metadata_policy", string_schema()),
+                    (
+                        "container_metadata",
+                        array_ref_max_items_schema(
+                            "MediaDesiredTargetMetadataEntry",
+                            MAX_CONTAINER_METADATA_ENTRIES,
+                        ),
+                    ),
                     ("container_chapter_policy", string_schema()),
                     (
                         "streams",
@@ -1157,6 +1194,13 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
                     ("container_metadata_policy", string_schema()),
+                    (
+                        "container_metadata",
+                        array_ref_max_items_schema(
+                            "MediaDesiredTargetMetadataEntry",
+                            MAX_CONTAINER_METADATA_ENTRIES,
+                        ),
+                    ),
                     ("container_chapter_policy", string_schema()),
                     ("streams", array_ref_schema("MediaDesiredTargetStream")),
                 ],
@@ -2162,6 +2206,10 @@ fn string_schema() -> Value {
     serde_json::json!({ "type": "string" })
 }
 
+fn string_max_length_schema(max_length: usize) -> Value {
+    serde_json::json!({ "type": "string", "maxLength": max_length })
+}
+
 fn uuid_schema() -> Value {
     serde_json::json!({ "type": "string", "format": "uuid" })
 }
@@ -2189,6 +2237,10 @@ fn array_ref_items_schema(schema: &'static str, min_items: usize, max_items: usi
         "maxItems": max_items,
         "items": schema_ref(schema),
     })
+}
+
+fn array_ref_max_items_schema(schema: &'static str, max_items: usize) -> Value {
+    serde_json::json!({ "type": "array", "maxItems": max_items, "items": schema_ref(schema) })
 }
 
 fn array_string_schema() -> Value {
@@ -2389,6 +2441,7 @@ mod tests {
         "MediaCompatibilityTargetListResponse",
         "MediaCompatibilityTargetUpsertRequest",
         "MediaDesiredTargetStream",
+        "MediaDesiredTargetMetadataEntry",
         "MediaDesiredTargetCreateRequest",
         "MediaDesiredTargetResponse",
         "MediaDesiredTargetListResponse",
@@ -2470,6 +2523,18 @@ mod tests {
             .and_then(|streams| streams.get("minItems"))
             .and_then(Value::as_u64);
         assert_eq!(desired_target_streams_min_items, Some(1));
+        assert_eq!(
+            schemas["MediaDesiredTargetCreateRequest"]["properties"]["container_metadata"]["maxItems"],
+            MAX_CONTAINER_METADATA_ENTRIES
+        );
+        assert_eq!(
+            schemas["MediaDesiredTargetMetadataEntry"]["properties"]["key"]["maxLength"],
+            MAX_CONTAINER_METADATA_KEY_BYTES
+        );
+        assert_eq!(
+            schemas["MediaDesiredTargetMetadataEntry"]["properties"]["value"]["maxLength"],
+            MAX_CONTAINER_METADATA_VALUE_BYTES
+        );
         let desired_target_streams_max_items = schemas
             .get("MediaDesiredTargetCreateRequest")
             .and_then(|schema| schema.get("properties"))

@@ -380,7 +380,7 @@
 -   [370](370-media-data-stream-passthrough.md) – Media data stream passthrough
 -   [371](371-media-container-metadata-strip-policy.md) – Media container metadata strip policy
 -   [372](372-media-container-chapter-strip-policy.md) – Media container chapter strip policy
--   [373](373-pr-123-chapter-idempotence-and-supply-chain.md) – PR 123 chapter idempotence and supply chain remediation
+-   [373](373-media-container-metadata-values.md) – Media container metadata values
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
@@ -389,6 +389,7 @@
 -   [410](410-libtorrent-21-compatibility.md) – Libtorrent 2.1 compatibility foundation
 -   [411](411-untracked-generated-api-schema.md) – Untracked generated API schema
 -   [412](412-core-planner-review-repair.md) – Core planner review repair
+-   [413](413-pr-123-chapter-idempotence-and-supply-chain.md) – PR 123 chapter idempotence and supply chain remediation
 -   [417](417-cargo-lock-dependency-integrity.md) – Cargo lock dependency integrity
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation
@@ -396,6 +397,7 @@
 -   [422](422-exact-documentation-tools.md) – Exact documentation tools
 -   [423](423-media-source-identity-fence.md) – Media source identity fence
 -   [424](424-media-target-stream-limit-atomic-snapshot.md) – Media target stream limit and atomic snapshot
+-   [425](425-container-metadata-budget-defense.md) – Container metadata budget defense
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
 -   [428](428-sonar-pr-result-scope.md) – Sonar pull-request result scope
 -   [429](429-pr81-job-runtime-review-closeout.md) – PR 81 job runtime review closeout

@@ -5,7 +5,7 @@
 - Context:
   - Desired media targets already declare the output container format and preserve source container metadata during replacement.
   - At the time of this ADR, container metadata rewrite modes were not implemented. Treating metadata policy as an implicit default would let API, YAML, and job snapshots diverge from the worker's actual behavior.
-  - ADR 371 later adds target-level `strip` as a supported policy. This ADR remains the record for introducing the explicit policy field and the original preserve-only boundary.
+  - ADR 371 later adds target-level `strip` as a supported policy, and ADR 373 later adds target-level `replace` with exact desired metadata rows. This ADR remains the record for introducing the explicit policy field and the original preserve-only boundary.
   - The media stack requires fail-closed desired-target contracts so review and execution can distinguish implemented behavior from future work.
 - Decision:
   - Add `container_metadata_policy` to desired-target container persistence, API models, service contracts, YAML import/export, OpenAPI, and worker job snapshots.
@@ -21,7 +21,7 @@
   - Risks or trade-offs:
     - At this ADR boundary, existing YAML that explicitly set any value other than `preserve` failed validation. That was intentional because no other behavior existed yet.
 - Follow-up:
-  - ADR 371 adds target-level metadata stripping. Add another separate ADR and implementation if title rewriting or per-container metadata normalization becomes a supported media feature.
+  - ADR 371 adds target-level metadata stripping. ADR 373 adds target-level exact metadata replacement. Add another separate ADR and implementation if broader metadata normalization or contextless rewrite operations become supported media features.
 
 ## Task Record
 

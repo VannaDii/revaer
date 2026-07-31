@@ -1,0 +1,81 @@
+# Media Container Metadata Values
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - ADR 371 implemented target-level container metadata stripping, but authored container metadata values still failed closed because there was no persisted key/value schema, immutable job snapshot, command materialization, or exact output verification contract.
+  - Treating per-key metadata edits as an implicit merge would be ambiguous: absent keys could mean preserve, delete, or ignore. A production transcoding service needs one deterministic target state.
+  - The existing exact-preservation verifier can prove complete normalized metadata equality once the desired graph carries the exact replacement set.
+- Decision:
+  - Add `replace` as the third implemented `container_metadata_policy` value for desired targets.
+  - Persist desired container metadata entries in normalized relational rows keyed by desired-target version, snapshot those rows into immutable jobs, and expose list stored procedures for both catalog and job snapshots.
+  - Require `replace` targets to provide at least one metadata row, and reject metadata rows for `preserve` or `strip`.
+  - Normalize metadata keys to lowercase, trim values, reject blank keys, blank values, and duplicate keys, and sort entries deterministically before compilation and API/YAML responses.
+  - Limit one target to 64 metadata rows, 128 UTF-8 bytes per key, 4096 UTF-8 bytes per value, and 65536 aggregate key/value bytes. Enforce the same limits in core validation and under the target-row lock in the append stored procedure so concurrent writers cannot exceed them.
+  - Compile `replace` into a desired-graph metadata mismatch, FFmpeg `-map_metadata -1` plus one `-metadata key=value` argument per row, and candidate/final verification against the exact desired metadata set.
+  - Keep contextless `MetadataRewrite` operations fail-closed unless they are materialized through the complete desired graph.
+  - Alternatives considered:
+    - Merge provided metadata into source metadata: rejected because delete semantics are unclear and final verification would not prove a complete target state.
+    - Allow empty `replace`: rejected because `strip` is already the explicit empty-container-metadata policy.
+    - Store metadata as a JSON map: rejected by the repository rule against conglomerate application state and because relational rows provide direct uniqueness and snapshot boundaries.
+- Consequences:
+  - Positive outcomes:
+    - Desired targets can now intentionally publish exact container metadata values instead of only preserving or stripping source tags.
+    - Job execution, final verification, API/YAML import/export, and database snapshots all agree on the same normalized metadata set.
+  - Risks or trade-offs:
+    - `replace` deliberately discards all source container metadata not present in the desired target row set.
+    - FFmpeg/muxer normalization can still alter metadata representation; verifier mismatches fail the job rather than accepting drift silently.
+- Follow-up:
+  - Add authored chapter timeline rows before accepting chapter edits.
+  - Keep authored attachment and data-stream creation/rewrite fail-closed until they have equivalent schema, execution, and verification contracts.
+
+## Task Record
+
+- Motivation:
+  - Move container metadata from preserve/strip-only behavior to exact authored target values without weakening fail-closed semantics for unsupported metadata operations.
+- Design notes:
+  - `DesiredGraph` now carries `container_metadata` rows alongside `container_metadata_policy`.
+  - Core desired-target validation enforces policy/row consistency, blank-value rejection, duplicate-key rejection, and deterministic sorting.
+  - Database migration 0173 adds desired-target and job-snapshot metadata tables plus append/list procedures, enforces row and UTF-8 byte budgets transactionally, and replaces profile-target assignment and job creation procedures so `replace` targets cannot be pinned or enqueued without rows.
+  - Runtime command construction maps `replace` to metadata clearing plus explicit key/value arguments, while worker preflight derives expected metadata from the compiled graph.
+- Test coverage summary:
+  - `cargo check -p revaer-media-core -p revaer-media-runtime -p revaer-data -p revaer-runtime -p revaer-api`
+  - `cargo check -p revaer-app --no-default-features`
+  - `cargo test -p revaer-media-core --all-features container_metadata -- --nocapture`
+  - `cargo test -p revaer-media-runtime --all-features desired_graph_replace_container_metadata -- --nocapture`
+  - `cargo test -p revaer-api --lib container_metadata -- --nocapture`
+  - `cargo test -p revaer-data --lib migration_guards_container_metadata_values_policy -- --nocapture`
+  - `cargo test -p revaer-data --lib migration_guards_container_chapter_strip_policy -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib yaml_container_metadata -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib desired_target_snapshot_accepts_replace_container_metadata_policy -- --nocapture`
+  - `cargo clippy -p revaer-media-core -p revaer-media-runtime --all-features --all-targets -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-api -p revaer-data --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `npx --prefix tests tsc -p tests/tsconfig.coverage.json`
+  - `just api-export`
+  - `just fmt`
+  - `just policy`
+  - `just instruction-drift`
+  - `git diff --check`
+  - `just clean-test-fixtures`
+  - Remote PR #124 `API E2E Coverage` initially failed because the API-key coverage project could retry in active API-key mode after a worker failure, while the fixture reset path still used an unauthenticated public client. The fixture now reuses the encrypted prior API-key session for factory reset when the public reset receives 401, preserving production auth and restoring retry isolation.
+  - The same remote run exposed a vague `Missing media job public id` assertion after discovery responses returned no queued job. The media API E2E now mutates the scheduled fixture source once if needed, verifies the changed source queues a job, and reports watcher/manual/schedule/job-list payloads if no persisted job exists.
+  - `cargo check -p revaer-app` was attempted with default features and stopped at the local native dependency boundary: Homebrew `libtorrent-rasterbar` headers require `TORRENT_USE_OPENSSL` or `TORRENT_USE_GNUTLS` when `TORRENT_USE_RTC` is enabled. The no-default app check above covers this slice locally; remote PR runners remain the full default-feature proof.
+  - `just ci` was attempted and stopped before tests at `db-start` because this machine cannot connect to the local Docker daemon and no `localhost:5432` Postgres endpoint became reachable.
+  - `just ui-e2e` regenerated the Playwright API client from the updated OpenAPI artifact and confirmed `tests` npm install had zero vulnerabilities, then stopped at the same local Docker/Postgres reachability boundary before API coverage files could be produced.
+- Observability updates:
+  - No new service metrics, logs, or events were added. Existing `MetadataRewrite` operation counts and `media_job_output_container_metadata_mismatch` verification diagnostics cover the new replacement path.
+  - API E2E diagnostics now include the discovery response payloads and media job list when no job identifier can be proven.
+- Status-doc validation:
+  - Updated ADR 318 to identify target-level container metadata replacement as implemented while keeping contextless arbitrary rewrite operations fail-closed.
+  - Updated ADRs 332, 365, 366, and 371 so their prior preserve/strip-only wording remains historical and points to this ADR for exact value replacement.
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+- Risk & rollback plan:
+  - Roll back this ADR, migration 0173, and the Rust/API/YAML wiring if exact metadata replacement proves unsafe.
+  - Do not remove `replace` validation without also migrating or rejecting persisted desired targets and immutable job snapshots that already carry replacement rows.
+  - If the E2E reset retry path proves too broad, revert the test fixture change and replace it with a per-project API process/database isolation strategy; do not relax factory-reset authentication.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found for this slice.
