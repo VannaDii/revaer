@@ -3,7 +3,7 @@
 use crate::capabilities::CapabilitySnapshot;
 use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 use revaer_media_core::normalize::{
-    normalize_audio_channel_layout, normalize_container_format,
+    normalize_audio_channel_layout, normalize_container_chapter_policy, normalize_container_format,
     normalize_container_metadata_policy, normalize_subtitle_codec,
 };
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
@@ -36,6 +36,9 @@ pub enum BuildArgsError {
     /// Desired container metadata policy is not supported by runtime command construction.
     #[error("required container metadata policy is not supported: {0}")]
     UnsupportedContainerMetadataPolicy(String),
+    /// Desired container chapter policy is not supported by runtime command construction.
+    #[error("required container chapter policy is not supported: {0}")]
+    UnsupportedContainerChapterPolicy(String),
     /// Arbitrary metadata rewrite is not implemented as a verified desired-state contract.
     #[error("metadata rewrite is not supported until desired metadata verification is implemented")]
     UnsupportedMetadataRewrite,
@@ -560,9 +563,10 @@ fn append_default_input_preservation_args(args: &mut Vec<String>) {
 fn append_input_preservation_args(
     args: &mut Vec<String>,
     container_metadata_policy: Option<&str>,
+    container_chapter_policy: Option<&str>,
 ) -> Result<(), BuildArgsError> {
     append_container_metadata_args(args, container_metadata_policy)?;
-    append_chapter_preservation_args(args);
+    append_container_chapter_args(args, container_chapter_policy)?;
     Ok(())
 }
 
@@ -581,6 +585,28 @@ fn append_container_metadata_args(
         "strip" => "-1".to_string(),
         _ => {
             return Err(BuildArgsError::UnsupportedContainerMetadataPolicy(
+                policy.unwrap_or_default().to_string(),
+            ));
+        }
+    });
+    Ok(())
+}
+
+fn append_container_chapter_args(
+    args: &mut Vec<String>,
+    policy: Option<&str>,
+) -> Result<(), BuildArgsError> {
+    let normalized = match policy {
+        Some(value) => normalize_container_chapter_policy(value)
+            .ok_or_else(|| BuildArgsError::UnsupportedContainerChapterPolicy(value.to_string()))?,
+        None => "preserve",
+    };
+    args.push("-map_chapters".to_string());
+    args.push(match normalized {
+        "preserve" => "0".to_string(),
+        "strip" => "-1".to_string(),
+        _ => {
+            return Err(BuildArgsError::UnsupportedContainerChapterPolicy(
                 policy.unwrap_or_default().to_string(),
             ));
         }
@@ -665,7 +691,7 @@ fn build_ffmpeg_argv_with_video_policy(
         }
     }
 
-    append_input_preservation_args(&mut args, None)?;
+    append_input_preservation_args(&mut args, None, None)?;
     args.push(output_path.to_string());
     Ok(args)
 }
@@ -1021,7 +1047,11 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
         args.push(normalize_container_format(container_format));
     }
 
-    append_input_preservation_args(&mut args, desired.container_metadata_policy.as_deref())?;
+    append_input_preservation_args(
+        &mut args,
+        desired.container_metadata_policy.as_deref(),
+        desired.container_chapter_policy.as_deref(),
+    )?;
     args.push(output_path.to_string());
     Ok(args)
 }
@@ -3039,6 +3069,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -3098,6 +3129,7 @@ mod tests {
             output_path: "/workspace/in.mp4".to_string(),
             container_format: Some("mkv".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![source_stream],
         };
         let capabilities = CapabilitySnapshot {
@@ -3164,6 +3196,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: Some("strip".to_string()),
+            container_chapter_policy: None,
             streams: vec![source_stream],
         };
         let operations = [PlannedOperation {
@@ -3187,6 +3220,50 @@ mod tests {
     }
 
     #[test]
+    fn desired_graph_strip_container_chapters_emits_chapter_removal_args() {
+        let source_stream = MediaStream {
+            stream_id: 0,
+            kind: StreamKind::Video,
+            codec: "h264".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![source_stream.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: None,
+            container_chapter_policy: Some("strip".to_string()),
+            streams: vec![source_stream],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::MetadataRewrite,
+            stream_id: None,
+        }];
+
+        let argv = build_desired_graph_ffmpeg_argv(
+            "/in.mkv",
+            "/out.mkv",
+            &source,
+            &desired,
+            &operations,
+            None,
+            VideoTranscodePolicy::default(),
+        )
+        .unwrap_or_default();
+
+        assert!(argv.windows(2).any(|pair| pair == ["-map_metadata", "0"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-map_chapters", "-1"]));
+    }
+
+    #[test]
     fn desired_graph_rejects_unknown_container_metadata_policy() {
         let source_stream = MediaStream {
             stream_id: 0,
@@ -3207,6 +3284,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: Some("rewrite".to_string()),
+            container_chapter_policy: None,
             streams: vec![source_stream],
         };
         let operations = [PlannedOperation {
@@ -3225,6 +3303,51 @@ mod tests {
                 VideoTranscodePolicy::default(),
             ),
             Err(BuildArgsError::UnsupportedContainerMetadataPolicy(
+                "rewrite".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn desired_graph_rejects_unknown_container_chapter_policy() {
+        let source_stream = MediaStream {
+            stream_id: 0,
+            kind: StreamKind::Video,
+            codec: "h264".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![source_stream.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: None,
+            container_chapter_policy: Some("rewrite".to_string()),
+            streams: vec![source_stream],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::MetadataRewrite,
+            stream_id: None,
+        }];
+
+        assert_eq!(
+            build_desired_graph_ffmpeg_argv(
+                "/in.mkv",
+                "/out.mkv",
+                &source,
+                &desired,
+                &operations,
+                None,
+                VideoTranscodePolicy::default(),
+            ),
+            Err(BuildArgsError::UnsupportedContainerChapterPolicy(
                 "rewrite".to_string()
             ))
         );
@@ -3250,6 +3373,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -3321,6 +3445,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("mp4".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![stream],
         };
         let capabilities = CapabilitySnapshot {
@@ -3378,6 +3503,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: source.streams.clone(),
         };
         let operations = [PlannedOperation {
@@ -3440,6 +3566,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: source.streams.clone(),
         };
         let operations = [PlannedOperation {
@@ -3491,6 +3618,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 title: Some("renamed".to_string()),
                 ..attachment
@@ -3536,6 +3664,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 title: Some("renamed".to_string()),
                 ..data_stream
@@ -3581,6 +3710,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![stream],
         };
         let operations = [PlannedOperation {
@@ -3622,6 +3752,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -3698,6 +3829,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -3750,6 +3882,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -3799,6 +3932,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -3848,6 +3982,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -3908,6 +4043,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -3984,6 +4120,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4036,6 +4173,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 9,
                 kind: StreamKind::Audio,
@@ -4085,6 +4223,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -4134,6 +4273,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4188,6 +4328,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4246,6 +4387,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4317,6 +4459,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -4387,6 +4530,7 @@ mod tests {
             output_path: "/out.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -4734,6 +4878,7 @@ mod tests {
             output_path: "/workspace/movie.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![video, subtitle.clone()],
         };
         let embeddings = [SidecarEmbedding {
@@ -4814,6 +4959,7 @@ mod tests {
                     output_path: "/workspace/movie.mkv".to_string(),
                     container_format: Some("matroska".to_string()),
                     container_metadata_policy: None,
+                    container_chapter_policy: None,
                     streams: source.streams.clone(),
                 },
                 operations: &output_operations,

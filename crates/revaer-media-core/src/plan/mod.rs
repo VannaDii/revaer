@@ -119,6 +119,7 @@ const fn diff_has_changes(diff: &GraphDiff) -> bool {
         || !diff.missing_desired_streams.is_empty()
         || !diff.stream_metadata_mismatched_streams.is_empty()
         || diff.container_metadata_mismatch
+        || diff.container_chapter_diff.is_mismatched()
         || !diff.disposition_mismatched_streams.is_empty()
         || !diff.recoded_streams.is_empty()
         || !diff.audio_channel_mismatched_streams.is_empty()
@@ -152,7 +153,7 @@ fn append_audio_channel_operations(operations: &mut Vec<PlannedOperation>, diff:
 }
 
 fn append_container_metadata_operation(operations: &mut Vec<PlannedOperation>, diff: &GraphDiff) {
-    if diff.container_metadata_mismatch {
+    if diff.container_metadata_mismatch || diff.container_chapter_diff.is_mismatched() {
         operations.push(PlannedOperation {
             kind: OperationKind::MetadataRewrite,
             stream_id: None,
@@ -231,7 +232,7 @@ mod tests {
         CandidatePlan, OperationKind, PlannedOperation, candidate_plan_cost, generate_plan,
         operation_cost, select_least_cost_plan,
     };
-    use crate::diff::{GraphDiff, RecodedStream, diff_graphs};
+    use crate::diff::{ContainerPolicyDiff, GraphDiff, RecodedStream, diff_graphs};
     use crate::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 
     #[test]
@@ -274,6 +275,22 @@ mod tests {
     fn generate_plan_selects_metadata_rewrite_for_strip_policy() {
         let diff = GraphDiff {
             container_metadata_mismatch: true,
+            ..GraphDiff::default()
+        };
+
+        assert_eq!(
+            generate_plan(&diff),
+            vec![PlannedOperation {
+                kind: OperationKind::MetadataRewrite,
+                stream_id: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn generate_plan_selects_metadata_rewrite_for_strip_chapters() {
+        let diff = GraphDiff {
+            container_chapter_diff: ContainerPolicyDiff::Mismatched,
             ..GraphDiff::default()
         };
 
@@ -539,6 +556,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 1,

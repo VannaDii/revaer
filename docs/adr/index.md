@@ -380,3 +380,4 @@
 -   [369](369-media-attachment-passthrough.md) - Media attachment passthrough
 -   [370](370-media-data-stream-passthrough.md) - Media data stream passthrough
 -   [371](371-media-container-metadata-strip-policy.md) - Media container metadata strip policy
+-   [372](372-media-container-chapter-strip-policy.md) - Media container chapter strip policy

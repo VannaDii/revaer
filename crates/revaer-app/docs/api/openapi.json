@@ -3230,6 +3230,9 @@
       },
       "MediaDesiredTargetCreateRequest": {
         "properties": {
+          "container_chapter_policy": {
+            "type": "string"
+          },
           "container_format": {
             "type": "string"
           },
@@ -3278,6 +3281,9 @@
       },
       "MediaDesiredTargetResponse": {
         "properties": {
+          "container_chapter_policy": {
+            "type": "string"
+          },
           "container_format": {
             "type": "string"
           },
@@ -3311,6 +3317,7 @@
           "display_name",
           "container_format",
           "container_metadata_policy",
+          "container_chapter_policy",
           "streams"
         ],
         "type": "object"

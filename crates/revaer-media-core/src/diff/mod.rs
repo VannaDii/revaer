@@ -12,6 +12,24 @@ pub struct RecodedStream {
     pub kind: StreamKind,
 }
 
+/// Container-level desired policy comparison state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ContainerPolicyDiff {
+    /// Source output already satisfies the desired policy.
+    #[default]
+    Satisfied,
+    /// Source output requires a container-level policy rewrite.
+    Mismatched,
+}
+
+impl ContainerPolicyDiff {
+    /// Return whether the source and desired policy differ.
+    #[must_use]
+    pub const fn is_mismatched(self) -> bool {
+        matches!(self, Self::Mismatched)
+    }
+}
+
 /// Diff result for graph comparison.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GraphDiff {
@@ -19,6 +37,8 @@ pub struct GraphDiff {
     pub container_mismatch: bool,
     /// Source container metadata does not satisfy the selected desired policy.
     pub container_metadata_mismatch: bool,
+    /// Source chapter timeline comparison against the selected desired policy.
+    pub container_chapter_diff: ContainerPolicyDiff,
     /// Stream ids present in source but absent in desired output.
     pub removed_streams: Vec<u32>,
     /// Desired stream ids absent from the source graph.
@@ -51,6 +71,15 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
         .container_metadata_policy
         .as_deref()
         .is_some_and(|policy| policy.trim().eq_ignore_ascii_case("strip"));
+    let container_chapter_diff = if desired
+        .container_chapter_policy
+        .as_deref()
+        .is_some_and(|policy| policy.trim().eq_ignore_ascii_case("strip"))
+    {
+        ContainerPolicyDiff::Mismatched
+    } else {
+        ContainerPolicyDiff::Satisfied
+    };
     let stream_diff = diff_source_streams(source, desired);
     let missing_desired_streams = missing_desired_streams(source, desired);
     let stream_order_changed = stream_order_changed(source, desired, &missing_desired_streams);
@@ -58,6 +87,7 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
     GraphDiff {
         container_mismatch,
         container_metadata_mismatch,
+        container_chapter_diff,
         removed_streams: stream_diff.removed_ids,
         missing_desired_streams,
         stream_metadata_mismatched_streams: stream_diff.metadata_mismatched_ids,
@@ -234,6 +264,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("mkv".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: Vec::new(),
         };
 
@@ -251,6 +282,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("mp4".to_string()),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: Vec::new(),
         };
 
@@ -268,6 +300,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("matroska".to_string()),
             container_metadata_policy: Some("strip".to_string()),
+            container_chapter_policy: None,
             streams: Vec::new(),
         };
 
@@ -278,6 +311,33 @@ mod tests {
         assert_eq!(report.status, Status::NonCompliant);
         assert!(report.violations.iter().any(|violation| {
             violation.kind == ViolationKind::ContainerMetadataMismatch
+                && violation.severity == Severity::Medium
+                && violation.stream_id.is_none()
+        }));
+    }
+
+    #[test]
+    fn diff_scores_strip_container_chapter_policy() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: Vec::new(),
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/movie.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            container_metadata_policy: None,
+            container_chapter_policy: Some("strip".to_string()),
+            streams: Vec::new(),
+        };
+
+        let diff = diff_graphs(&source, &desired);
+        let report = score_diff(&diff);
+
+        assert!(diff.container_chapter_diff.is_mismatched());
+        assert_eq!(report.status, Status::NonCompliant);
+        assert!(report.violations.iter().any(|violation| {
+            violation.kind == ViolationKind::ContainerChapterMismatch
                 && violation.severity == Severity::Medium
                 && violation.stream_id.is_none()
         }));
@@ -315,6 +375,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -372,6 +433,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 1,
@@ -424,6 +486,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -462,6 +525,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 2,
                 kind: StreamKind::Subtitle,
@@ -501,6 +565,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -540,6 +605,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -593,6 +659,7 @@ mod tests {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
