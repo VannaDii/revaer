@@ -34,8 +34,8 @@ use revaer_media_core::normalize::{
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_core::target::{
     CompiledDesiredTarget, DesiredSidecarOutput, DesiredTarget, ImageSubtitleAction,
-    SidecarSubtitleInput, SubtitlePlacement, TargetStream, UnmatchedStreamPolicy,
-    compile_desired_target_with_sidecars_at,
+    SidecarSubtitleInput, SubtitlePlacement, TargetStream, UnmatchedStreamPolicies,
+    UnmatchedStreamPolicy, compile_desired_target_with_sidecars_at_and_unmatched_policies,
 };
 use revaer_media_runtime::capabilities::{CapabilitySnapshot, CodecCapability};
 use revaer_media_runtime::execute::{
@@ -904,12 +904,12 @@ impl MediaJobRuntime {
             let source_file_bytes = source_artifact_bytes(&source_path, &inspection.sidecars)?;
             let source_graph = inspection.graph;
             let compiled = match desired_target.as_ref() {
-                Some(snapshot) => compile_desired_target_with_sidecars_at(
+                Some(snapshot) => compile_desired_target_with_sidecars_at_and_unmatched_policies(
                     &source_graph,
                     &output_path,
                     &source_path,
                     &snapshot.target,
-                    snapshot.unmatched_stream_policy,
+                    snapshot.unmatched_stream_policies,
                     &sidecar_inputs(&inspection.sidecars)?,
                 )
                 .map_err(|_| {
@@ -2216,7 +2216,7 @@ const fn terminal_workspace_outcome(terminal_state: TerminalWorkspaceState) -> &
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DesiredTargetSnapshot {
     target: DesiredTarget,
-    unmatched_stream_policy: UnmatchedStreamPolicy,
+    unmatched_stream_policies: UnmatchedStreamPolicies,
 }
 
 fn desired_target_from_job(
@@ -2292,8 +2292,7 @@ fn desired_target_from_job(
             "media_job_desired_container_attachment_policy_unsupported",
         ));
     };
-    let unmatched_stream_policy =
-        unmatched_stream_policy_from_snapshot(job.unmatched_stream_policy.as_deref())?;
+    let unmatched_stream_policies = unmatched_stream_policies_from_snapshot(job)?;
     let streams = rows
         .into_iter()
         .map(target_stream_from_snapshot)
@@ -2317,7 +2316,7 @@ fn desired_target_from_job(
             container_attachment_policy,
             streams,
         },
-        unmatched_stream_policy,
+        unmatched_stream_policies,
     }))
 }
 
@@ -2593,16 +2592,56 @@ fn semantic_role_from_snapshot(value: &str) -> Result<SemanticRole, MediaJobRunt
     }
 }
 
+fn unmatched_stream_policies_from_snapshot(
+    job: &ClaimedMediaJobRow,
+) -> Result<UnmatchedStreamPolicies, MediaJobRuntimeError> {
+    let legacy = job.unmatched_stream_policy.as_deref();
+    Ok(UnmatchedStreamPolicies {
+        video: unmatched_stream_policy_from_snapshot(
+            job.unmatched_video_action.as_deref(),
+            legacy,
+            "media_job_unmatched_video_action_missing",
+            "media_job_unmatched_video_action_unknown",
+        )?,
+        audio: unmatched_stream_policy_from_snapshot(
+            job.unmatched_audio_action.as_deref(),
+            legacy,
+            "media_job_unmatched_audio_action_missing",
+            "media_job_unmatched_audio_action_unknown",
+        )?,
+        subtitle: unmatched_stream_policy_from_snapshot(
+            job.unmatched_subtitle_action.as_deref(),
+            legacy,
+            "media_job_unmatched_subtitle_action_missing",
+            "media_job_unmatched_subtitle_action_unknown",
+        )?,
+        attachment: unmatched_stream_policy_from_snapshot(
+            job.unmatched_attachment_action.as_deref(),
+            legacy,
+            "media_job_unmatched_attachment_action_missing",
+            "media_job_unmatched_attachment_action_unknown",
+        )?,
+        data: unmatched_stream_policy_from_snapshot(
+            job.unmatched_data_action.as_deref(),
+            legacy,
+            "media_job_unmatched_data_action_missing",
+            "media_job_unmatched_data_action_unknown",
+        )?,
+    })
+}
+
 fn unmatched_stream_policy_from_snapshot(
     value: Option<&str>,
+    legacy: Option<&str>,
+    missing_code: &'static str,
+    unknown_code: &'static str,
 ) -> Result<UnmatchedStreamPolicy, MediaJobRuntimeError> {
-    match normalized_snapshot_field(value, "media_job_unmatched_stream_policy_missing")?.as_str() {
+    let resolved = value.or(legacy);
+    match normalized_snapshot_field(resolved, missing_code)?.as_str() {
         "remove" => Ok(UnmatchedStreamPolicy::Remove),
         "preserve" => Ok(UnmatchedStreamPolicy::Preserve),
-        "reject" => Ok(UnmatchedStreamPolicy::Reject),
-        _ => Err(MediaJobRuntimeError::InvalidDesiredGraph(
-            "media_job_unmatched_stream_policy_unknown",
-        )),
+        "fail" | "reject" => Ok(UnmatchedStreamPolicy::Reject),
+        _ => Err(MediaJobRuntimeError::InvalidDesiredGraph(unknown_code)),
     }
 }
 
@@ -4328,7 +4367,7 @@ mod tests {
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
     use revaer_media_core::target::{
         DesiredSidecarOutput, DesiredTarget, SidecarOutputSource, TargetStream,
-        UnmatchedStreamPolicy,
+        UnmatchedStreamPolicies, UnmatchedStreamPolicy,
     };
     use revaer_media_runtime::execute::{
         CommandRunner, ExecuteStepError, ExecutionControl, ExecutionStep,
@@ -5056,7 +5095,9 @@ mod tests {
                 container_attachment_policy: "preserve".to_string(),
                 streams: vec![stream],
             },
-            unmatched_stream_policy: UnmatchedStreamPolicy::Preserve,
+            unmatched_stream_policies: UnmatchedStreamPolicies::from_single(
+                UnmatchedStreamPolicy::Preserve,
+            ),
         }
     }
 
@@ -8699,6 +8740,11 @@ Integrated loudness:
             desired_container_chapter_policy: None,
             desired_container_attachment_policy: None,
             unmatched_stream_policy: Some("remove".to_string()),
+            unmatched_video_action: Some("fail".to_string()),
+            unmatched_audio_action: Some("preserve".to_string()),
+            unmatched_subtitle_action: Some("preserve".to_string()),
+            unmatched_attachment_action: Some("preserve".to_string()),
+            unmatched_data_action: Some("remove".to_string()),
             verification_strictness: "strict".to_string(),
             verification_duration_tolerance_millis: 100,
             verification_mux_validation: true.into(),
@@ -9203,7 +9249,7 @@ Integrated loudness:
         job.desired_container_metadata_policy = Some("preserve".to_string());
         job.desired_container_chapter_policy = Some("preserve".to_string());
         job.desired_container_attachment_policy = Some("preserve".to_string());
-        job.unmatched_stream_policy = Some(" Preserve ".to_string());
+        job.unmatched_data_action = Some(" Preserve ".to_string());
 
         let Some(snapshot) = desired_target_from_job(
             &job,
@@ -9241,7 +9287,7 @@ Integrated loudness:
             anyhow::bail!("desired target snapshot was not reconstructed");
         };
         assert_eq!(
-            snapshot.unmatched_stream_policy,
+            snapshot.unmatched_stream_policies.data,
             UnmatchedStreamPolicy::Preserve
         );
 
@@ -9258,11 +9304,11 @@ Integrated loudness:
         let mut source = video_graph("/input/movie.mkv", "h264");
         source.streams.push(data_stream.clone());
 
-        let desired = revaer_media_core::target::compile_desired_target(
+        let desired = revaer_media_core::target::compile_desired_target_with_unmatched_policies(
             &source,
             "/output/movie.mkv",
             &snapshot.target,
-            snapshot.unmatched_stream_policy,
+            snapshot.unmatched_stream_policies,
         )?;
 
         assert_eq!(desired.streams.len(), 2);

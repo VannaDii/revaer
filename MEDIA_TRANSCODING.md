@@ -979,6 +979,12 @@ unmatched_attachment_action: preserve
 unmatched_data_action: remove
 ```
 
+Policy profiles persist these per-kind actions explicitly. Public configuration
+uses `remove`, `preserve`, and `fail`; `fail` means the planner must stop before
+execution when an unmatched source stream of that family remains. The generic
+legacy unmatched-stream policy is not sufficient for first-release behavior
+because one value cannot represent the required mixed defaults.
+
 Planning policy:
 
 - No-op if already compliant.

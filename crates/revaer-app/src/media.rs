@@ -713,6 +713,11 @@ impl MediaFacade for MediaService {
                         version: row.version,
                         display_name: row.display_name,
                         video_intent: row.video_intent,
+                        unmatched_video_action: row.unmatched_video_action,
+                        unmatched_audio_action: row.unmatched_audio_action,
+                        unmatched_subtitle_action: row.unmatched_subtitle_action,
+                        unmatched_attachment_action: row.unmatched_attachment_action,
+                        unmatched_data_action: row.unmatched_data_action,
                         verification_strictness: row.verification_strictness,
                         verification_duration_tolerance_millis: row
                             .verification_duration_tolerance_millis,
@@ -746,6 +751,11 @@ impl MediaFacade for MediaService {
                 version: params.version,
                 display_name: params.display_name,
                 video_intent: params.video_intent,
+                unmatched_video_action: params.unmatched_video_action,
+                unmatched_audio_action: params.unmatched_audio_action,
+                unmatched_subtitle_action: params.unmatched_subtitle_action,
+                unmatched_attachment_action: params.unmatched_attachment_action,
+                unmatched_data_action: params.unmatched_data_action,
                 verification_strictness: params.verification_strictness,
                 verification_duration_tolerance_millis: params
                     .verification_duration_tolerance_millis,
@@ -763,6 +773,11 @@ impl MediaFacade for MediaService {
                 version: row.version,
                 display_name: row.display_name,
                 video_intent: row.video_intent,
+                unmatched_video_action: row.unmatched_video_action,
+                unmatched_audio_action: row.unmatched_audio_action,
+                unmatched_subtitle_action: row.unmatched_subtitle_action,
+                unmatched_attachment_action: row.unmatched_attachment_action,
+                unmatched_data_action: row.unmatched_data_action,
                 verification_strictness: row.verification_strictness,
                 verification_duration_tolerance_millis: row.verification_duration_tolerance_millis,
                 verification_mux_validation: row.verification_mux_validation.enabled().into(),
@@ -1414,6 +1429,11 @@ async fn import_yaml_policies(
                 version: policy.version,
                 display_name: &policy.display_name,
                 video_intent: &policy.video_intent,
+                unmatched_video_action: &policy.unmatched_video_action,
+                unmatched_audio_action: &policy.unmatched_audio_action,
+                unmatched_subtitle_action: &policy.unmatched_subtitle_action,
+                unmatched_attachment_action: &policy.unmatched_attachment_action,
+                unmatched_data_action: &policy.unmatched_data_action,
                 verification_strictness: &policy.verification_strictness,
                 verification_duration_tolerance_millis: policy
                     .verification_duration_tolerance_millis,
@@ -2254,6 +2274,11 @@ fn validate_yaml_policy_rows(
                 policy.video_intent.trim().to_ascii_lowercase().as_str(),
                 "general" | "anime" | "archival"
             )
+            || unmatched_action_invalid(&policy.unmatched_video_action)
+            || unmatched_action_invalid(&policy.unmatched_audio_action)
+            || unmatched_action_invalid(&policy.unmatched_subtitle_action)
+            || unmatched_action_invalid(&policy.unmatched_attachment_action)
+            || unmatched_action_invalid(&policy.unmatched_data_action)
             || policy.version <= 0
             || !matches!(strictness.as_str(), "strict" | "balanced" | "fast")
             || !(0..=60_000).contains(&policy.verification_duration_tolerance_millis)
@@ -2282,6 +2307,13 @@ fn validate_yaml_policy_rows(
             );
         }
     }
+}
+
+fn unmatched_action_invalid(value: &str) -> bool {
+    !matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "remove" | "preserve" | "fail"
+    )
 }
 
 fn validate_yaml_desired_rows(
@@ -2556,6 +2588,11 @@ fn media_yaml_policy(policy: AppMediaPolicyResponse) -> MediaYamlPolicy {
         version: policy.version,
         display_name: policy.display_name,
         video_intent: policy.video_intent,
+        unmatched_video_action: policy.unmatched_video_action,
+        unmatched_audio_action: policy.unmatched_audio_action,
+        unmatched_subtitle_action: policy.unmatched_subtitle_action,
+        unmatched_attachment_action: policy.unmatched_attachment_action,
+        unmatched_data_action: policy.unmatched_data_action,
         verification_strictness: policy.verification_strictness,
         verification_duration_tolerance_millis: policy.verification_duration_tolerance_millis,
         verification_mux_validation: policy.verification_mux_validation,
@@ -2628,6 +2665,21 @@ fn policy_matches_yaml(existing: &AppMediaPolicyResponse, imported: &MediaYamlPo
         && existing
             .video_intent
             .eq_ignore_ascii_case(&imported.video_intent)
+        && existing
+            .unmatched_video_action
+            .eq_ignore_ascii_case(&imported.unmatched_video_action)
+        && existing
+            .unmatched_audio_action
+            .eq_ignore_ascii_case(&imported.unmatched_audio_action)
+        && existing
+            .unmatched_subtitle_action
+            .eq_ignore_ascii_case(&imported.unmatched_subtitle_action)
+        && existing
+            .unmatched_attachment_action
+            .eq_ignore_ascii_case(&imported.unmatched_attachment_action)
+        && existing
+            .unmatched_data_action
+            .eq_ignore_ascii_case(&imported.unmatched_data_action)
         && existing
             .verification_strictness
             .eq_ignore_ascii_case(&imported.verification_strictness)
@@ -2801,6 +2853,7 @@ fn map_data_error(error: &DataError) -> MediaServiceError {
             | "media_profile_discovery_root_overlap"
             | "media_compatibility_target_not_found"
             | "media_policy_profile_not_found"
+            | "media_policy_unmatched_action_invalid"
             | "media_desired_target_streams_required"
             | "media_job_source_fingerprint_required",
         ) => MediaServiceErrorKind::Invalid,
@@ -3819,6 +3872,11 @@ mod tests {
             version: 1,
             display_name: "Policy".to_string(),
             video_intent: video_intent.to_string(),
+            unmatched_video_action: "fail".to_string(),
+            unmatched_audio_action: "preserve".to_string(),
+            unmatched_subtitle_action: "preserve".to_string(),
+            unmatched_attachment_action: "preserve".to_string(),
+            unmatched_data_action: "remove".to_string(),
             verification_strictness: "balanced".to_string(),
             verification_duration_tolerance_millis: 250,
             verification_mux_validation: true.into(),
@@ -4421,6 +4479,21 @@ mod tests {
     }
 
     #[test]
+    fn validate_yaml_bundle_rejects_invalid_unmatched_policy_actions() {
+        let bundle = parse_yaml_bundle(
+            "format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Invalid policy actions\npolicies:\n  - policy_key: bad-actions\n    version: 1\n    display_name: Bad actions\n    video_intent: general\n    unmatched_video_action: fail\n    unmatched_audio_action: copy\n    unmatched_subtitle_action: preserve\n    unmatched_attachment_action: preserve\n    unmatched_data_action: remove\n    verification_strictness: balanced\n    verification_duration_tolerance_millis: 100\n    verification_mux_validation: true\n    verification_decode_all_streams: true\n    verification_keyframe_seek: true\n    verification_playback_probe: true\n",
+        )
+        .expect("bundle");
+        let issues = validate_yaml_bundle(&bundle, &[], &[], &[]);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == "media_yaml_policy_invalid")
+        );
+    }
+
+    #[test]
     fn map_data_error_projects_expected_kind_and_codes() {
         let not_found = DataError::JobFailed {
             operation: "job",
@@ -4452,6 +4525,17 @@ mod tests {
         };
         assert_eq!(
             map_data_error(&invalid).kind(),
+            MediaServiceErrorKind::Invalid
+        );
+
+        let invalid_unmatched_action = DataError::JobFailed {
+            operation: "job",
+            job_key: "job",
+            error_code: None,
+            error_detail: Some("media_policy_unmatched_action_invalid".to_string()),
+        };
+        assert_eq!(
+            map_data_error(&invalid_unmatched_action).kind(),
             MediaServiceErrorKind::Invalid
         );
 
@@ -4669,6 +4753,11 @@ mod tests {
                 version: 2,
                 display_name: "Portable strict",
                 video_intent: "archival",
+                unmatched_video_action: "fail",
+                unmatched_audio_action: "preserve",
+                unmatched_subtitle_action: "preserve",
+                unmatched_attachment_action: "preserve",
+                unmatched_data_action: "remove",
                 verification_strictness: "strict",
                 verification_duration_tolerance_millis: 100,
                 verification_mux_validation: true.into(),
@@ -4985,6 +5074,11 @@ mod tests {
                 version: 3,
                 display_name: "Living room",
                 video_intent: "general",
+                unmatched_video_action: "fail",
+                unmatched_audio_action: "preserve",
+                unmatched_subtitle_action: "preserve",
+                unmatched_attachment_action: "preserve",
+                unmatched_data_action: "remove",
                 verification_strictness: "strict",
                 verification_duration_tolerance_millis: 100,
                 verification_mux_validation: true.into(),

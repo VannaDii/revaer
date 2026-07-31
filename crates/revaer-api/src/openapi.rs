@@ -1273,7 +1273,26 @@ fn media_compatibility_target_object_schema() -> Value {
 
 fn media_policy_profile_schemas() -> Vec<(&'static str, Value)> {
     vec![
-        ("MediaPolicyResponse", media_policy_object_schema()),
+        (
+            "MediaPolicyResponse",
+            media_policy_object_schema(&[
+                "policy_key",
+                "version",
+                "display_name",
+                "video_intent",
+                "unmatched_video_action",
+                "unmatched_audio_action",
+                "unmatched_subtitle_action",
+                "unmatched_attachment_action",
+                "unmatched_data_action",
+                "verification_strictness",
+                "verification_duration_tolerance_millis",
+                "verification_mux_validation",
+                "verification_decode_all_streams",
+                "verification_keyframe_seek",
+                "verification_playback_probe",
+            ]),
+        ),
         (
             "MediaPolicyListResponse",
             object_schema(
@@ -1281,29 +1300,37 @@ fn media_policy_profile_schemas() -> Vec<(&'static str, Value)> {
                 [("policies", array_ref_schema("MediaPolicyResponse"))],
             ),
         ),
-        ("MediaPolicyUpsertRequest", media_policy_object_schema()),
+        (
+            "MediaPolicyUpsertRequest",
+            media_policy_object_schema(&[
+                "policy_key",
+                "version",
+                "display_name",
+                "video_intent",
+                "verification_strictness",
+                "verification_duration_tolerance_millis",
+                "verification_mux_validation",
+                "verification_decode_all_streams",
+                "verification_keyframe_seek",
+                "verification_playback_probe",
+            ]),
+        ),
     ]
 }
 
-fn media_policy_object_schema() -> Value {
+fn media_policy_object_schema(required: &[&'static str]) -> Value {
     object_schema(
-        &[
-            "policy_key",
-            "version",
-            "display_name",
-            "video_intent",
-            "verification_strictness",
-            "verification_duration_tolerance_millis",
-            "verification_mux_validation",
-            "verification_decode_all_streams",
-            "verification_keyframe_seek",
-            "verification_playback_probe",
-        ],
+        required,
         [
             ("policy_key", string_schema()),
             ("version", integer_schema()),
             ("display_name", string_schema()),
             ("video_intent", string_schema()),
+            ("unmatched_video_action", unmatched_action_schema()),
+            ("unmatched_audio_action", unmatched_action_schema()),
+            ("unmatched_subtitle_action", unmatched_action_schema()),
+            ("unmatched_attachment_action", unmatched_action_schema()),
+            ("unmatched_data_action", unmatched_action_schema()),
             ("verification_strictness", verification_strictness_schema()),
             (
                 "verification_duration_tolerance_millis",
@@ -1315,6 +1342,13 @@ fn media_policy_object_schema() -> Value {
             ("verification_playback_probe", bool_schema()),
         ],
     )
+}
+
+fn unmatched_action_schema() -> Value {
+    serde_json::json!({
+        "type": "string",
+        "enum": ["remove", "preserve", "fail"]
+    })
 }
 
 fn verification_strictness_schema() -> Value {
@@ -2430,6 +2464,19 @@ mod tests {
                     .any(|field| field.as_str() == Some("container_attachment_policy"))
             });
         assert!(response_requires_attachment_policy);
+
+        let unmatched_video_enum = schemas
+            .get("MediaPolicyUpsertRequest")
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+            .and_then(|properties| properties.get("unmatched_video_action"))
+            .and_then(|field| field.get("enum"))
+            .and_then(Value::as_array)
+            .map(|values| values.iter().filter_map(Value::as_str).collect::<Vec<_>>());
+        assert_eq!(
+            unmatched_video_enum,
+            Some(vec!["remove", "preserve", "fail"])
+        );
 
         Ok(())
     }

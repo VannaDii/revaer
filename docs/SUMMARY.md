@@ -402,3 +402,4 @@
     -   [373: Media container metadata values](adr/373-media-container-metadata-values.md)
     -   [374: Media container chapter values](adr/374-media-container-chapter-values.md)
     -   [375: Media container attachment policy](adr/375-media-container-attachment-policy.md)
+    -   [376: Media unmatched stream actions](adr/376-media-unmatched-stream-actions.md)

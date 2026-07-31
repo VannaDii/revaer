@@ -202,6 +202,64 @@ pub enum UnmatchedStreamPolicy {
     Reject,
 }
 
+/// Policy set for source streams that no target row selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnmatchedStreamPolicies {
+    /// Policy for unmatched video streams.
+    pub video: UnmatchedStreamPolicy,
+    /// Policy for unmatched audio streams.
+    pub audio: UnmatchedStreamPolicy,
+    /// Policy for unmatched subtitle streams and sidecars.
+    pub subtitle: UnmatchedStreamPolicy,
+    /// Policy for unmatched attachment streams.
+    pub attachment: UnmatchedStreamPolicy,
+    /// Policy for unmatched opaque data streams.
+    pub data: UnmatchedStreamPolicy,
+}
+
+impl UnmatchedStreamPolicies {
+    /// Return the first-release default policy set from `MEDIA_TRANSCODING.md`.
+    #[must_use]
+    pub const fn first_release_defaults() -> Self {
+        Self {
+            video: UnmatchedStreamPolicy::Reject,
+            audio: UnmatchedStreamPolicy::Preserve,
+            subtitle: UnmatchedStreamPolicy::Preserve,
+            attachment: UnmatchedStreamPolicy::Preserve,
+            data: UnmatchedStreamPolicy::Remove,
+        }
+    }
+
+    /// Apply one legacy policy value to every authored stream family.
+    #[must_use]
+    pub const fn from_single(policy: UnmatchedStreamPolicy) -> Self {
+        Self {
+            video: policy,
+            audio: policy,
+            subtitle: policy,
+            attachment: policy,
+            data: policy,
+        }
+    }
+
+    const fn for_kind(self, kind: StreamKind) -> UnmatchedStreamPolicy {
+        match kind {
+            StreamKind::Video => self.video,
+            StreamKind::Audio => self.audio,
+            StreamKind::Subtitle => self.subtitle,
+            StreamKind::Attachment => self.attachment,
+            StreamKind::Data => self.data,
+            StreamKind::Chapter => UnmatchedStreamPolicy::Remove,
+        }
+    }
+}
+
+impl Default for UnmatchedStreamPolicies {
+    fn default() -> Self {
+        Self::first_release_defaults()
+    }
+}
+
 /// Desired-target validation or matching failure.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum TargetCompileError {
@@ -406,6 +464,26 @@ pub fn compile_desired_target(
     target: &DesiredTarget,
     unmatched_policy: UnmatchedStreamPolicy,
 ) -> Result<DesiredGraph, TargetCompileError> {
+    compile_desired_target_with_unmatched_policies(
+        source,
+        output_path,
+        target,
+        UnmatchedStreamPolicies::from_single(unmatched_policy),
+    )
+}
+
+/// Compile an immutable target and per-kind unmatched-stream policies into a desired graph.
+///
+/// # Errors
+///
+/// Returns a [`TargetCompileError`] when the target is malformed, a required stream cannot be
+/// matched, or unmatched policies reject a source stream.
+pub fn compile_desired_target_with_unmatched_policies(
+    source: &MediaGraph,
+    output_path: &str,
+    target: &DesiredTarget,
+    unmatched_policies: UnmatchedStreamPolicies,
+) -> Result<DesiredGraph, TargetCompileError> {
     validate_target(target)?;
     let attachment_policy = normalized_container_attachment_policy(target)?;
 
@@ -447,7 +525,8 @@ pub fn compile_desired_target(
         .iter()
         .filter(|stream| !consumed.contains(&stream.stream_id))
     {
-        match (stream.kind, attachment_policy.as_str(), unmatched_policy) {
+        let stream_policy = unmatched_policies.for_kind(stream.kind);
+        match (stream.kind, attachment_policy.as_str(), stream_policy) {
             (StreamKind::Attachment, "strip", _) | (_, _, UnmatchedStreamPolicy::Remove) => {}
             (_, _, UnmatchedStreamPolicy::Preserve) => desired_streams.push(stream.clone()),
             (_, _, UnmatchedStreamPolicy::Reject) => {
@@ -507,6 +586,30 @@ pub fn compile_desired_target_with_sidecars_at(
     destination_media_path: &str,
     target: &DesiredTarget,
     unmatched_policy: UnmatchedStreamPolicy,
+    sidecars: &[SidecarSubtitleInput],
+) -> Result<CompiledDesiredTarget, TargetCompileError> {
+    compile_desired_target_with_sidecars_at_and_unmatched_policies(
+        source,
+        output_path,
+        destination_media_path,
+        target,
+        UnmatchedStreamPolicies::from_single(unmatched_policy),
+        sidecars,
+    )
+}
+
+/// Compile a desired target with distinct workspace and final sidecar locations and per-kind
+/// unmatched-stream policies.
+///
+/// # Errors
+///
+/// Returns a [`TargetCompileError`] when the target or an artifact path is invalid.
+pub fn compile_desired_target_with_sidecars_at_and_unmatched_policies(
+    source: &MediaGraph,
+    output_path: &str,
+    destination_media_path: &str,
+    target: &DesiredTarget,
+    unmatched_policies: UnmatchedStreamPolicies,
     sidecars: &[SidecarSubtitleInput],
 ) -> Result<CompiledDesiredTarget, TargetCompileError> {
     validate_target(target)?;
@@ -577,14 +680,14 @@ pub fn compile_desired_target_with_sidecars_at(
 
     append_unmatched_streams(
         source,
-        unmatched_policy,
+        unmatched_policies,
         &normalized_container_attachment_policy(target)?,
         &consumed_streams,
         &mut state.desired_streams,
     )?;
     append_unmatched_sidecars(
         sidecars,
-        unmatched_policy,
+        unmatched_policies.subtitle,
         &consumed_sidecars,
         &mut state.removals,
     )?;
@@ -838,7 +941,7 @@ fn derive_companion_path(path: &str, extension: &str) -> Option<String> {
 
 fn append_unmatched_streams(
     source: &MediaGraph,
-    policy: UnmatchedStreamPolicy,
+    policies: UnmatchedStreamPolicies,
     attachment_policy: &str,
     consumed: &BTreeSet<u32>,
     desired: &mut Vec<MediaStream>,
@@ -848,7 +951,8 @@ fn append_unmatched_streams(
         .iter()
         .filter(|stream| !consumed.contains(&stream.stream_id))
     {
-        match (stream.kind, attachment_policy, policy) {
+        let stream_policy = policies.for_kind(stream.kind);
+        match (stream.kind, attachment_policy, stream_policy) {
             (StreamKind::Attachment, "strip", _) | (_, _, UnmatchedStreamPolicy::Remove) => {}
             (_, _, UnmatchedStreamPolicy::Preserve) => desired.push(stream.clone()),
             (_, _, UnmatchedStreamPolicy::Reject) => {
@@ -1582,9 +1686,9 @@ fn normalized_dispositions(dispositions: &[String]) -> Vec<String> {
 mod tests {
     use super::{
         DesiredTarget, ImageSubtitleAction, SidecarOutputSource, SidecarSubtitleInput,
-        SubtitlePlacement, TargetCompileError, TargetStream, UnmatchedStreamPolicy,
-        compile_desired_target, compile_desired_target_with_sidecars,
-        compile_desired_target_with_sidecars_at,
+        SubtitlePlacement, TargetCompileError, TargetStream, UnmatchedStreamPolicies,
+        UnmatchedStreamPolicy, compile_desired_target, compile_desired_target_with_sidecars,
+        compile_desired_target_with_sidecars_at, compile_desired_target_with_unmatched_policies,
     };
     use crate::classify::SemanticRole;
     use crate::model::{
@@ -2246,6 +2350,62 @@ mod tests {
         )?;
 
         assert_eq!(desired.streams, source.streams);
+        Ok(())
+    }
+
+    #[test]
+    fn per_kind_unmatched_policies_apply_independently() -> Result<(), TargetCompileError> {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![
+                stream(1, StreamKind::Video, "h264", None, None, &[]),
+                stream(2, StreamKind::Audio, "aac", Some("eng"), None, &[]),
+                stream(3, StreamKind::Subtitle, "subrip", Some("eng"), None, &[]),
+                stream(4, StreamKind::Attachment, "ttf", None, Some("Font"), &[]),
+                stream(5, StreamKind::Data, "bin_data", None, None, &[]),
+            ],
+        };
+        let target = DesiredTarget {
+            target_key: "per-kind".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
+            container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
+            streams: Vec::new(),
+        };
+
+        assert_eq!(
+            compile_desired_target_with_unmatched_policies(
+                &source,
+                "/output/movie.mkv",
+                &target,
+                UnmatchedStreamPolicies::first_release_defaults(),
+            ),
+            Err(TargetCompileError::UnmatchedSourceStream(1))
+        );
+
+        let desired = compile_desired_target_with_unmatched_policies(
+            &source,
+            "/output/movie.mkv",
+            &target,
+            UnmatchedStreamPolicies {
+                video: UnmatchedStreamPolicy::Remove,
+                ..UnmatchedStreamPolicies::first_release_defaults()
+            },
+        )?;
+
+        assert_eq!(
+            desired
+                .streams
+                .iter()
+                .map(|stream| stream.stream_id)
+                .collect::<Vec<_>>(),
+            vec![2, 3, 4]
+        );
         Ok(())
     }
 

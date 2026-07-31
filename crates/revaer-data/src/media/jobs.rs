@@ -28,7 +28,7 @@ const MEDIA_JOB_RETRY_V1: &str = "SELECT media_job_retry_v1(media_job_public_id_
 const MEDIA_JOB_MARK_COMPLETED_V1: &str =
     "SELECT media_job_mark_completed_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_jobs_pruned, failed_detail_rows_deleted FROM media_job_retention_run_v1(as_of_input => $1)";
-const MEDIA_JOB_WORKER_CLAIM_NEXT_V5: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, desired_container_metadata_policy, desired_container_chapter_policy, desired_container_attachment_policy, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v5()";
+const MEDIA_JOB_WORKER_CLAIM_NEXT_V6: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, desired_container_metadata_policy, desired_container_chapter_policy, desired_container_attachment_policy, unmatched_stream_policy, unmatched_video_action, unmatched_audio_action, unmatched_subtitle_action, unmatched_attachment_action, unmatched_data_action, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v6()";
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str =
     "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, status_input => $2::media_job_status, last_error_input => $3)";
@@ -328,6 +328,16 @@ pub struct ClaimedMediaJobRow {
     pub desired_container_attachment_policy: Option<String>,
     /// Unmatched-stream policy snapshotted when queued.
     pub unmatched_stream_policy: Option<String>,
+    /// Unmatched video action snapshotted when queued.
+    pub unmatched_video_action: Option<String>,
+    /// Unmatched audio action snapshotted when queued.
+    pub unmatched_audio_action: Option<String>,
+    /// Unmatched subtitle action snapshotted when queued.
+    pub unmatched_subtitle_action: Option<String>,
+    /// Unmatched attachment action snapshotted when queued.
+    pub unmatched_attachment_action: Option<String>,
+    /// Unmatched data action snapshotted when queued.
+    pub unmatched_data_action: Option<String>,
     /// Verification strictness snapshotted when queued.
     pub verification_strictness: String,
     /// Maximum source/candidate duration delta snapshotted when queued.
@@ -914,7 +924,7 @@ pub async fn run_media_job_retention(
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn media_job_worker_claim_next(pool: &PgPool) -> Result<Option<ClaimedMediaJobRow>> {
-    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V5)
+    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V6)
         .fetch_optional(pool)
         .await
         .map_err(try_op("media job worker claim next"))
@@ -1051,10 +1061,10 @@ pub async fn media_job_worker_mark_status(
 mod tests {
     use super::{
         AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
-        AppendMediaJobVerificationCheckInput, CreateMediaJobInput, EnqueueDiscoveredMediaJobInput,
-        append_media_job_artifact, append_media_job_compact_audit, append_media_job_operation,
-        append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
-        append_media_job_violation, cancel_media_job,
+        AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow, CreateMediaJobInput,
+        EnqueueDiscoveredMediaJobInput, append_media_job_artifact, append_media_job_compact_audit,
+        append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
+        append_media_job_verification_check, append_media_job_violation, cancel_media_job,
         create_media_job as create_unfingerprinted_media_job, enqueue_discovered_media_job,
         get_media_job, list_media_job_artifacts, list_media_job_compact_audits,
         list_media_job_operations, list_media_job_phases, list_media_job_plan_reasons,
@@ -1608,6 +1618,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn migration_guards_per_kind_unmatched_stream_actions() {
+        let migration_text = ordered_migration_text();
+
+        assert!(
+            migration_text.contains("unmatched_video_action TEXT NOT NULL DEFAULT 'fail'")
+                && migration_text
+                    .contains("unmatched_audio_action TEXT NOT NULL DEFAULT 'preserve'")
+                && migration_text
+                    .contains("unmatched_subtitle_action TEXT NOT NULL DEFAULT 'preserve'")
+                && migration_text
+                    .contains("unmatched_attachment_action TEXT NOT NULL DEFAULT 'preserve'")
+                && migration_text.contains("unmatched_data_action TEXT NOT NULL DEFAULT 'remove'"),
+            "policy profile must expose spec-default per-kind unmatched actions"
+        );
+        assert!(
+            migration_text.contains("media_policy_profile_upsert_v2")
+                && migration_text.contains("media_policy_profile_list_v2")
+                && migration_text.contains("media_job_worker_claim_next_v6"),
+            "policy API and worker claim procedures must carry per-kind unmatched actions"
+        );
+        assert!(
+            migration_text.contains("UPDATE media_policy_profile")
+                && migration_text.contains("WHEN unmatched_stream_policy = 'remove' THEN 'fail'")
+                && migration_text
+                    .contains("WHEN unmatched_stream_policy = 'remove' THEN 'preserve'")
+                && migration_text.contains("unmatched_data_action = CASE"),
+            "migration must move defaulted legacy policy profiles to the spec fallback mix"
+        );
+        assert!(
+            migration_text.contains("media_job_unmatched_stream_actions_fill_v1")
+                && migration_text.contains("intent_unmatched_video_action")
+                && migration_text.contains("intent_unmatched_data_action"),
+            "job creation must snapshot per-kind unmatched actions at enqueue time"
+        );
+    }
+
     #[tokio::test]
     async fn create_media_job_requires_persisted_source_fingerprint() -> anyhow::Result<()> {
         let db = match setup_media_db("create_media_job_requires_source_fingerprint").await {
@@ -2001,6 +2048,11 @@ mod tests {
                 version: 1,
                 display_name: "Snapshot strict",
                 video_intent: "general",
+                unmatched_video_action: "fail",
+                unmatched_audio_action: "preserve",
+                unmatched_subtitle_action: "preserve",
+                unmatched_attachment_action: "preserve",
+                unmatched_data_action: "remove",
                 verification_strictness: "strict",
                 verification_duration_tolerance_millis: 25,
                 verification_mux_validation: true.into(),
@@ -2025,6 +2077,11 @@ mod tests {
                 version: 1,
                 display_name: "Catalog changed after enqueue",
                 video_intent: "general",
+                unmatched_video_action: "fail",
+                unmatched_audio_action: "preserve",
+                unmatched_subtitle_action: "preserve",
+                unmatched_attachment_action: "preserve",
+                unmatched_data_action: "remove",
                 verification_strictness: "fast",
                 verification_duration_tolerance_millis: 5_000,
                 verification_mux_validation: false.into(),
@@ -2035,6 +2092,43 @@ mod tests {
         )
         .await?;
         Ok(())
+    }
+
+    fn assert_claimed_job_uses_original_intent(claimed: &ClaimedMediaJobRow, job_id: uuid::Uuid) {
+        assert_eq!(claimed.media_job_public_id, job_id);
+        assert_eq!(claimed.source_root, "/input/original");
+        assert_eq!(claimed.output_root, "/output/original");
+        assert_eq!(
+            claimed.compatibility_target_key.as_deref(),
+            Some("intent-stereo")
+        );
+        assert_eq!(claimed.policy_key, "safe_dry_run");
+        assert_eq!(claimed.target_video_codec.as_deref(), Some("hevc"));
+        assert_eq!(claimed.target_audio_codec.as_deref(), Some("aac"));
+        assert_eq!(claimed.target_audio_channels, Some(2));
+        assert_eq!(
+            claimed.target_audio_channel_layout.as_deref(),
+            Some("stereo")
+        );
+        assert_eq!(claimed.target_subtitle_policy.as_deref(), Some("selected"));
+        assert_eq!(claimed.policy_video_intent.as_deref(), Some("general"));
+        assert_eq!(claimed.unmatched_video_action.as_deref(), Some("fail"));
+        assert_eq!(claimed.unmatched_audio_action.as_deref(), Some("preserve"));
+        assert_eq!(
+            claimed.unmatched_subtitle_action.as_deref(),
+            Some("preserve")
+        );
+        assert_eq!(
+            claimed.unmatched_attachment_action.as_deref(),
+            Some("preserve")
+        );
+        assert_eq!(claimed.unmatched_data_action.as_deref(), Some("remove"));
+        assert_eq!(claimed.verification_strictness, "strict");
+        assert_eq!(claimed.verification_duration_tolerance_millis, 25);
+        assert!(claimed.verification_mux_validation.enabled());
+        assert!(claimed.verification_decode_all_streams.enabled());
+        assert!(claimed.verification_keyframe_seek.enabled());
+        assert!(claimed.verification_playback_probe.enabled());
     }
 
     #[tokio::test]
@@ -2115,29 +2209,7 @@ mod tests {
         let Some(claimed) = claimed else {
             return Err(anyhow::anyhow!("expected queued job to be claimed"));
         };
-        assert_eq!(claimed.media_job_public_id, job_id);
-        assert_eq!(claimed.source_root, "/input/original");
-        assert_eq!(claimed.output_root, "/output/original");
-        assert_eq!(
-            claimed.compatibility_target_key.as_deref(),
-            Some("intent-stereo")
-        );
-        assert_eq!(claimed.policy_key, "safe_dry_run");
-        assert_eq!(claimed.target_video_codec.as_deref(), Some("hevc"));
-        assert_eq!(claimed.target_audio_codec.as_deref(), Some("aac"));
-        assert_eq!(claimed.target_audio_channels, Some(2));
-        assert_eq!(
-            claimed.target_audio_channel_layout.as_deref(),
-            Some("stereo")
-        );
-        assert_eq!(claimed.target_subtitle_policy.as_deref(), Some("selected"));
-        assert_eq!(claimed.policy_video_intent.as_deref(), Some("general"));
-        assert_eq!(claimed.verification_strictness, "strict");
-        assert_eq!(claimed.verification_duration_tolerance_millis, 25);
-        assert!(claimed.verification_mux_validation.enabled());
-        assert!(claimed.verification_decode_all_streams.enabled());
-        assert!(claimed.verification_keyframe_seek.enabled());
-        assert!(claimed.verification_playback_probe.enabled());
+        assert_claimed_job_uses_original_intent(&claimed, job_id);
         Ok(())
     }
 
