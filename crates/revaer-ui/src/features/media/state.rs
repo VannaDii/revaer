@@ -36,5 +36,6 @@ pub(crate) struct MediaViewState {
     pub compatibility_targets: Vec<MediaCompatibilityTargetResponse>,
     pub policies: Vec<MediaPolicyResponse>,
     pub yaml_export: Option<String>,
+    pub discovery_preview_profile_id: Option<Uuid>,
     pub discovery_preview: Vec<MediaDiscoveryPreviewItemResponse>,
 }

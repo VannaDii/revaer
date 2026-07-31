@@ -27,8 +27,8 @@ use crate::app::media::{
     MediaDesiredTargetMetadataParams, MediaDesiredTargetResponse as AppMediaDesiredTargetResponse,
     MediaDesiredTargetStreamParams, MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams,
     MediaDiscoveryRunParams, MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse,
-    MediaProfileDesiredTargetParams, MediaProfilePatchParams, MediaProfileUpsertParams,
-    MediaServiceError, MediaServiceErrorKind,
+    MediaJobCreateParams, MediaProfileDesiredTargetParams, MediaProfilePatchParams,
+    MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -38,24 +38,22 @@ use crate::models::{
     MediaCapabilityRefreshResponse, MediaCompatibilityTargetListResponse,
     MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
     MediaComplianceResponse, MediaDesiredTargetChapterEntry, MediaDesiredTargetCreateRequest,
-    MediaDesiredTargetListResponse,
-    MediaDesiredTargetMetadataEntry, MediaDesiredTargetResponse, MediaDesiredTargetStream,
-    MediaDiscoveryPreviewItemResponse,
-    MediaDiscoveryPreviewRequest, MediaDiscoveryPreviewResponse, MediaDiscoveryQueuedJobResponse,
-    MediaDiscoveryRunRequest, MediaDiscoveryRunResponse, MediaDiscoveryScheduleListResponse,
-    MediaDiscoveryScheduleResponse, MediaDiscoverySkippedItemResponse,
-    MediaDiscoveryWatcherListResponse, MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse,
-    MediaJobCompactAuditListResponse, MediaJobListResponse, MediaJobOperationListResponse,
-    MediaJobPhaseListResponse,
-    MediaJobPlanReasonListResponse, MediaJobResponse, MediaJobRetentionResponse,
-    MediaJobRetentionUpdateRequest, MediaJobVerificationCheckListResponse,
-    MediaJobViolationListResponse, MediaPlanningPreviewRequest, MediaPlanningPreviewResponse,
-    MediaPolicyListResponse, MediaPolicyResponse, MediaPolicyUpsertRequest,
-    MediaProfileDesiredTargetRequest, MediaProfileListResponse, MediaProfilePatchRequest,
-    MediaProfileReadinessResponse, MediaProfileResponse, MediaProfileUpsertRequest,
-    MediaProfileValidationResponse, MediaTextValidationError, MediaYamlApplyResponse,
-    MediaYamlExportResponse, MediaYamlImportRequest, MediaYamlIssueResponse,
-    MediaYamlValidationResponse,
+    MediaDesiredTargetListResponse, MediaDesiredTargetMetadataEntry, MediaDesiredTargetResponse,
+    MediaDesiredTargetStream, MediaDiscoveryPreviewItemResponse, MediaDiscoveryPreviewRequest,
+    MediaDiscoveryPreviewResponse, MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunRequest,
+    MediaDiscoveryRunResponse, MediaDiscoveryScheduleListResponse, MediaDiscoveryScheduleResponse,
+    MediaDiscoverySkippedItemResponse, MediaDiscoveryWatcherListResponse,
+    MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse, MediaJobCompactAuditListResponse,
+    MediaJobCreateRequest, MediaJobListResponse, MediaJobOperationListResponse,
+    MediaJobPhaseListResponse, MediaJobPlanReasonListResponse, MediaJobResponse,
+    MediaJobRetentionResponse, MediaJobRetentionUpdateRequest,
+    MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
+    MediaPlanningPreviewRequest, MediaPlanningPreviewResponse, MediaPolicyListResponse,
+    MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileDesiredTargetRequest,
+    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileReadinessResponse,
+    MediaProfileResponse, MediaProfileUpsertRequest, MediaProfileValidationResponse,
+    MediaTextValidationError, MediaYamlApplyResponse, MediaYamlExportResponse,
+    MediaYamlImportRequest, MediaYamlIssueResponse, MediaYamlValidationResponse,
     validate_media_display, validate_media_key,
 };
 
@@ -69,6 +67,7 @@ const MEDIA_DISCOVERY_SCHEDULE_RUN_FAILED: &str = "failed to run scheduled media
 const MEDIA_DISCOVERY_SCHEDULE_LIST_FAILED: &str = "failed to list media discovery schedules";
 const MEDIA_DISCOVERY_WATCHER_RUN_FAILED: &str = "failed to run watcher media discovery";
 const MEDIA_DISCOVERY_WATCHER_LIST_FAILED: &str = "failed to list media discovery watchers";
+const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
 const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
 const MEDIA_JOB_CANCEL_FAILED: &str = "failed to cancel media job";
@@ -1001,12 +1000,9 @@ pub(crate) async fn list_media_jobs(
         trim_and_filter_empty(query.status.as_deref()),
         MEDIA_STATUS_INVALID,
     )?;
-    let Some(media_profile_public_id) = query.media_profile_public_id else {
-        return Ok(Json(MediaJobListResponse { jobs: Vec::new() }));
-    };
     let jobs = state
         .media
-        .media_job_list(media_profile_public_id, status.as_deref())
+        .media_job_list(query.media_profile_public_id, status.as_deref())
         .await
         .map_err(|err| map_media_error("media_job_list", MEDIA_JOB_LIST_FAILED, &err))?
         .into_iter()
@@ -1014,6 +1010,36 @@ pub(crate) async fn list_media_jobs(
         .collect();
 
     Ok(Json(MediaJobListResponse { jobs }))
+}
+
+pub(crate) async fn create_media_job(
+    State(state): State<Arc<ApiState>>,
+    Json(request): Json<MediaJobCreateRequest>,
+) -> Result<(StatusCode, Json<MediaJobResponse>), ApiError> {
+    let source_path = normalize_required_str_field(&request.source_path, SOURCE_PATH_REQUIRED)?;
+    if source_path.len() > DISCOVERY_SOURCE_PATH_MAX_BYTES {
+        let mut error = ApiError::bad_request(DISCOVERY_SOURCE_PATH_TOO_LARGE);
+        error = error.with_context_field("max_len", DISCOVERY_SOURCE_PATH_MAX_BYTES.to_string());
+        return Err(error);
+    }
+    let job = state
+        .media
+        .media_job_create(MediaJobCreateParams {
+            actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
+            media_profile_public_id: request.media_profile_public_id,
+            source_path,
+            dry_run: request.dry_run,
+            replace_confirmation: request.replace_confirmation.as_deref(),
+        })
+        .await
+        .map_err(|err| map_media_error("media_job_create", MEDIA_JOB_CREATE_FAILED, &err))?;
+    state.publish_event(CoreEvent::MediaJobQueued {
+        media_job_public_id: job.media_job_public_id,
+        media_profile_public_id: request.media_profile_public_id,
+        dry_run: job.dry_run,
+    });
+
+    Ok((StatusCode::CREATED, Json(map_job(job))))
 }
 
 pub(crate) async fn get_media_job(
@@ -3238,7 +3264,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_media_jobs_without_profile_filter_returns_empty_payload() -> anyhow::Result<()> {
+    async fn create_media_job_rejects_empty_source_path() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobCreateRequest {
+            media_profile_public_id: Uuid::new_v4(),
+            source_path: "   ".to_string(),
+            dry_run: None,
+            replace_confirmation: None,
+        };
+
+        let err = create_media_job(State(state), Json(request))
+            .await
+            .expect_err("empty manual job source path should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn create_media_job_rejects_too_long_source_path() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let request = MediaJobCreateRequest {
+            media_profile_public_id: Uuid::new_v4(),
+            source_path: format!("/{}", "a".repeat(DISCOVERY_SOURCE_PATH_MAX_BYTES)),
+            dry_run: None,
+            replace_confirmation: None,
+        };
+
+        let err = create_media_job(State(state), Json(request))
+            .await
+            .expect_err("oversized manual job source path should fail validation");
+        let response = err.into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), 64 * 1024).await?;
+        let problem: ProblemDetails = serde_json::from_slice(&body)?;
+        assert_eq!(
+            problem.detail.as_deref(),
+            Some(DISCOVERY_SOURCE_PATH_TOO_LARGE)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_media_jobs_without_profile_filter_uses_collection_route() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let query = MediaJobsQuery {
             media_profile_public_id: None,

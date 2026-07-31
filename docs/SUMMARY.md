@@ -403,6 +403,7 @@
     -   [374: Media container chapter values](adr/374-media-container-chapter-values.md)
     -   [375: Media container attachment policy](adr/375-media-container-attachment-policy.md)
     -   [376: Media unmatched stream actions](adr/376-media-unmatched-stream-actions.md)
+    -   [377: Media manual operator loop](adr/377-media-manual-operator-loop.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)

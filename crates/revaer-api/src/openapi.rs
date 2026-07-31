@@ -588,15 +588,26 @@ fn media_job_core_paths() -> Vec<(&'static str, Value)> {
     vec![
         media_path(
             "/v1/media/jobs",
-            [media_op(
-                "get",
-                "List media jobs",
-                "200",
-                "Media job collection",
-                Some("MediaJobListResponse"),
-                None,
-                MediaParameterSet::JobListQuery,
-            )],
+            [
+                media_op(
+                    "get",
+                    "List media jobs",
+                    "200",
+                    "Media job collection",
+                    Some("MediaJobListResponse"),
+                    None,
+                    MediaParameterSet::JobListQuery,
+                ),
+                media_op(
+                    "post",
+                    "Create a manual media job",
+                    "201",
+                    "Manual media job",
+                    Some("MediaJobResponse"),
+                    Some("MediaJobCreateRequest"),
+                    MediaParameterSet::None,
+                ),
+            ],
         ),
         media_single_path(
             "/v1/media/jobs/{media_job_public_id}",
@@ -1597,6 +1608,18 @@ fn media_job_schemas() -> Vec<(&'static str, Value)> {
 
 fn media_job_core_schemas() -> Vec<(&'static str, Value)> {
     vec![
+        (
+            "MediaJobCreateRequest",
+            object_schema(
+                &["media_profile_public_id", "source_path"],
+                [
+                    ("media_profile_public_id", uuid_schema()),
+                    ("source_path", string_schema()),
+                    ("dry_run", bool_schema()),
+                    ("replace_confirmation", string_schema()),
+                ],
+            ),
+        ),
         ("MediaJobResponse", media_job_response_schema()),
         (
             "MediaJobListResponse",
@@ -2255,6 +2278,7 @@ mod tests {
         "MediaDiscoveryScheduleListResponse",
         "MediaDiscoveryWatcherResponse",
         "MediaDiscoveryWatcherListResponse",
+        "MediaJobCreateRequest",
         "MediaJobListResponse",
         "MediaJobResponse",
         "MediaJobPhaseListResponse",

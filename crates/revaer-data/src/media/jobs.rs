@@ -42,6 +42,7 @@ const MEDIA_JOB_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, me
 const MEDIA_JOB_DESIRED_TARGET_CHAPTER_LIST_V1: &str = "SELECT start_millis, end_millis, metadata_key, metadata_value FROM media_job_desired_target_chapter_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
 const MEDIA_DISCOVERY_JOB_ENQUEUE_V1: &str = "SELECT media_discovery_job_enqueue_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
+const MEDIA_MANUAL_JOB_CREATE_V1: &str = "SELECT media_manual_job_create_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7, dry_run_input => $8)";
 
 /// Create media job payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +76,27 @@ pub struct EnqueueDiscoveredMediaJobInput<'a> {
     pub source_modified_ns: i64,
     /// Lowercase SHA-256 content fingerprint.
     pub source_sha256: &'a str,
+}
+
+/// Manual operator job creation input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateManualMediaJobInput<'a> {
+    /// Actor public id.
+    pub actor_public_id: Uuid,
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Canonical source path.
+    pub source_path: &'a str,
+    /// Derived output path.
+    pub output_path: Option<&'a str>,
+    /// Stable file size observed while hashing.
+    pub source_size_bytes: i64,
+    /// Stable nanosecond modification timestamp observed while hashing.
+    pub source_modified_ns: i64,
+    /// Lowercase SHA-256 content fingerprint.
+    pub source_sha256: &'a str,
+    /// Effective dry-run value for this manual job only.
+    pub dry_run: bool,
 }
 
 /// Append media job verification check payload.
@@ -493,6 +515,31 @@ pub async fn enqueue_discovered_media_job(
         .map_err(try_op("media discovery job enqueue"))
 }
 
+/// Create a manual operator job after refreshing the source fingerprint.
+///
+/// Unlike discovery enqueueing, this always creates a new job for a valid stable source.
+///
+/// # Errors
+///
+/// Returns an error when validation, fingerprint persistence, or job creation fails.
+pub async fn create_manual_media_job(
+    pool: &PgPool,
+    input: &CreateManualMediaJobInput<'_>,
+) -> Result<Uuid> {
+    sqlx::query_scalar::<_, Uuid>(MEDIA_MANUAL_JOB_CREATE_V1)
+        .bind(input.actor_public_id)
+        .bind(input.media_profile_public_id)
+        .bind(input.source_path)
+        .bind(input.output_path.unwrap_or_default())
+        .bind(input.source_size_bytes)
+        .bind(input.source_modified_ns)
+        .bind(input.source_sha256)
+        .bind(input.dry_run)
+        .fetch_one(pool)
+        .await
+        .map_err(try_op("media manual job create"))
+}
+
 /// List the immutable ordered desired-target stream snapshot for one job.
 ///
 /// # Errors
@@ -738,7 +785,7 @@ pub async fn append_media_job_compact_audit(
 /// Returns an error when stored-procedure execution fails.
 pub async fn list_media_jobs(
     pool: &PgPool,
-    media_profile_public_id: Uuid,
+    media_profile_public_id: Option<Uuid>,
     status_text: Option<&str>,
 ) -> Result<Vec<MediaJobRow>> {
     sqlx::query_as::<_, MediaJobRow>(MEDIA_JOB_LIST_V1)
@@ -1061,10 +1108,11 @@ pub async fn media_job_worker_mark_status(
 mod tests {
     use super::{
         AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
-        AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow, CreateMediaJobInput,
-        EnqueueDiscoveredMediaJobInput, append_media_job_artifact, append_media_job_compact_audit,
-        append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
-        append_media_job_verification_check, append_media_job_violation, cancel_media_job,
+        AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow, CreateManualMediaJobInput,
+        CreateMediaJobInput, EnqueueDiscoveredMediaJobInput, append_media_job_artifact,
+        append_media_job_compact_audit, append_media_job_operation, append_media_job_phase,
+        append_media_job_plan_reason, append_media_job_verification_check,
+        append_media_job_violation, cancel_media_job, create_manual_media_job,
         create_media_job as create_unfingerprinted_media_job, enqueue_discovered_media_job,
         get_media_job, list_media_job_artifacts, list_media_job_compact_audits,
         list_media_job_operations, list_media_job_phases, list_media_job_plan_reasons,
@@ -1781,7 +1829,7 @@ mod tests {
         )
         .await?;
 
-        let rows = list_media_jobs(db.pool(), profile_id, Some("queued")).await?;
+        let rows = list_media_jobs(db.pool(), Some(profile_id), Some("queued")).await?;
         assert!(rows.iter().any(|item| item.media_job_public_id == job_id));
 
         let job = get_media_job(db.pool(), job_id).await?;
@@ -2550,7 +2598,7 @@ mod tests {
         let append = append_media_job_phase(&pool, job_id, 0, "plan", "queued", None).await;
         assert!(append.is_err());
 
-        let list = list_media_jobs(&pool, profile_id, Some("queued")).await;
+        let list = list_media_jobs(&pool, Some(profile_id), Some("queued")).await;
         assert!(list.is_err());
 
         let get = get_media_job(&pool, job_id).await;
@@ -2709,8 +2757,60 @@ mod tests {
                 .is_some()
         );
 
-        let jobs = list_media_jobs(db.pool(), profile_id, None).await?;
+        let jobs = list_media_jobs(db.pool(), Some(profile_id), None).await?;
         assert_eq!(jobs.len(), 4);
+        assert!(jobs.iter().all(|job| job.dry_run));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn manual_job_creation_refreshes_fingerprint_and_allows_repeated_runs()
+    -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("manual_job_repeated_runs").await? else {
+            return Ok(());
+        };
+        let profile_id = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "manual-repeat",
+                source_root: "/input/manual-repeat",
+                output_root: "/output/manual-repeat",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        let source_path = "/input/manual-repeat/movie.mkv";
+        let output_path = "/output/manual-repeat/movie.mkv";
+        let source_sha256 = format!("{:064x}", 42);
+        let input = CreateManualMediaJobInput {
+            actor_public_id: db.system_user_public_id,
+            media_profile_public_id: profile_id,
+            source_path,
+            output_path: Some(output_path),
+            source_size_bytes: 1024,
+            source_modified_ns: 2048,
+            source_sha256: &source_sha256,
+            dry_run: true,
+        };
+
+        let first_job_id = create_manual_media_job(db.pool(), &input).await?;
+        let second_job_id = create_manual_media_job(db.pool(), &input).await?;
+
+        assert_ne!(first_job_id, second_job_id);
+        let jobs = list_media_jobs(db.pool(), Some(profile_id), Some("queued")).await?;
+        assert_eq!(jobs.len(), 2);
+        assert!(jobs.iter().all(|job| job.source_path == source_path));
+        assert!(
+            jobs.iter()
+                .all(|job| job.output_path.as_deref() == Some(output_path))
+        );
         assert!(jobs.iter().all(|job| job.dry_run));
         Ok(())
     }
