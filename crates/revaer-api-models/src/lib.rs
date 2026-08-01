@@ -610,6 +610,9 @@ pub struct MediaDesiredTargetStream {
     /// Optional desired HDR format label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hdr_format: Option<String>,
+    /// Optional exact HDR10 mastering-display and content-light contract.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hdr10_color_volume: Option<MediaHdr10ColorVolume>,
     /// Optional desired stream title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -625,6 +628,36 @@ pub struct MediaDesiredTargetStream {
     /// Image-subtitle action: preserve, remove, or fail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_subtitle_action: Option<String>,
+}
+
+/// Exact HDR10 mastering-display and content-light side-data contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MediaHdr10ColorVolume {
+    /// Red primary x chromaticity coordinate.
+    pub mastering_red_x: String,
+    /// Red primary y chromaticity coordinate.
+    pub mastering_red_y: String,
+    /// Green primary x chromaticity coordinate.
+    pub mastering_green_x: String,
+    /// Green primary y chromaticity coordinate.
+    pub mastering_green_y: String,
+    /// Blue primary x chromaticity coordinate.
+    pub mastering_blue_x: String,
+    /// Blue primary y chromaticity coordinate.
+    pub mastering_blue_y: String,
+    /// White point x chromaticity coordinate.
+    pub mastering_white_point_x: String,
+    /// White point y chromaticity coordinate.
+    pub mastering_white_point_y: String,
+    /// Minimum mastering-display luminance.
+    pub mastering_min_luminance: String,
+    /// Maximum mastering-display luminance.
+    pub mastering_max_luminance: String,
+    /// Maximum content light level.
+    pub max_content_light_level: String,
+    /// Maximum frame-average light level.
+    pub max_frame_average_light_level: String,
 }
 
 /// Desired exact container metadata entry.

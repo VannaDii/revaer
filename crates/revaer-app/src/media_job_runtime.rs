@@ -24,6 +24,10 @@ use revaer_data::media::jobs::{
 };
 use revaer_events::{Event, EventBus};
 use revaer_media_core::classify::SemanticRole;
+use revaer_media_core::hdr10::{
+    ChromaticityPoint, Hdr10ColorVolumeParts, color_volume_is_valid,
+    mastering_display_chromaticities_are_valid, parse_number as parse_hdr10_number,
+};
 use revaer_media_core::model::{
     ContainerChapterEntry, ContainerMetadataEntry, DesiredGraph, DesiredStreamBinding, MediaGraph,
     MediaStream, StreamKind,
@@ -35,9 +39,10 @@ use revaer_media_core::normalize::{
 };
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_core::target::{
-    CompiledDesiredTarget, DesiredSidecarOutput, DesiredTarget, ImageSubtitleAction, LanguageToken,
-    SidecarSubtitleInput, SubtitlePlacement, TargetStream, UnmatchedStreamPolicies,
-    UnmatchedStreamPolicy, compile_desired_target_with_sidecars_at_and_unmatched_policies,
+    CompiledDesiredTarget, DesiredSidecarOutput, DesiredTarget, Hdr10ColorVolume,
+    ImageSubtitleAction, LanguageToken, SidecarSubtitleInput, SubtitlePlacement, TargetStream,
+    UnmatchedStreamPolicies, UnmatchedStreamPolicy,
+    compile_desired_target_with_sidecars_at_and_unmatched_policies,
 };
 use revaer_media_runtime::capabilities::{CapabilitySnapshot, CodecCapability};
 use revaer_media_runtime::execute::{
@@ -48,7 +53,8 @@ use revaer_media_runtime::execute::{
 };
 use revaer_media_runtime::inspect::{
     ChapterInspection, FfprobeInspectAdapter, InspectAdapter, InspectCancellation, InspectError,
-    MediaInspection, MetadataEntry, StreamInspection, SystemInspectProbeExecutor,
+    MediaInspection, MetadataEntry, SideDataInspection, StreamInspection,
+    SystemInspectProbeExecutor,
 };
 use revaer_media_runtime::jobs::{
     JobPreflightEvaluation, JobPreflightReport, PreflightBuildTemplate, PreflightPolicyInput,
@@ -119,6 +125,7 @@ struct MediaJobRuntimeComponents {
 
 struct RuntimePreflightEvaluation {
     evaluation: JobPreflightEvaluation,
+    source_graph: MediaGraph,
     desired: DesiredGraph,
     desired_target: Option<DesiredTargetSnapshot>,
     expected_container_metadata: Vec<MetadataEntry>,
@@ -127,6 +134,7 @@ struct RuntimePreflightEvaluation {
 }
 
 struct DesiredVerificationContext<'a> {
+    source_graph: &'a MediaGraph,
     desired: &'a DesiredGraph,
     desired_target: Option<&'a DesiredTargetSnapshot>,
     expected_container_metadata: &'a [MetadataEntry],
@@ -691,6 +699,7 @@ impl MediaJobRuntime {
             .await?;
         let RuntimePreflightEvaluation {
             evaluation,
+            source_graph,
             desired,
             desired_target,
             expected_container_metadata,
@@ -704,6 +713,7 @@ impl MediaJobRuntime {
             }
             JobPreflightEvaluation::Ready(report) => {
                 let verification_context = DesiredVerificationContext {
+                    source_graph: &source_graph,
                     desired: &desired,
                     desired_target: desired_target.as_ref(),
                     expected_container_metadata: &expected_container_metadata,
@@ -914,37 +924,13 @@ impl MediaJobRuntime {
             let expected_sidecars = inspection.sidecars.clone();
             let source_file_bytes = source_artifact_bytes(&source_path, &inspection.sidecars)?;
             let source_graph = inspection.graph;
-            let compiled = match desired_target.as_ref() {
-                Some(snapshot) => compile_desired_target_with_sidecars_at_and_unmatched_policies(
-                    &source_graph,
-                    &output_path,
-                    &source_path,
-                    &snapshot.target,
-                    snapshot.unmatched_stream_policies,
-                    &sidecar_inputs(&inspection.sidecars)?,
-                )
-                .map_err(|_| {
-                    MediaJobRuntimeError::InvalidDesiredGraph(
-                        "media_job_desired_target_compile_failed",
-                    )
-                })?,
-                None => CompiledDesiredTarget {
-                    graph: DesiredGraph {
-                        output_path: output_path.clone(),
-                        container_format: None,
-                        stream_bindings: identity_stream_bindings(&source_graph.streams),
-                        container_metadata_policy: None,
-                        container_metadata: Vec::new(),
-                        container_chapter_policy: None,
-                        container_chapters: Vec::new(),
-                        container_attachment_policy: None,
-                        streams: source_graph.streams.clone(),
-                    },
-                    sidecar_embeddings: Vec::new(),
-                    sidecar_outputs: Vec::new(),
-                    sidecar_removals: Vec::new(),
-                },
-            };
+            let compiled = compile_runtime_desired_target(
+                &source_graph,
+                &output_path,
+                &source_path,
+                desired_target.as_ref(),
+                &inspection.sidecars,
+            )?;
             let expected_container_metadata = expected_container_metadata_for_policy(
                 &source_container_metadata,
                 compiled.graph.container_metadata_policy.as_deref(),
@@ -958,6 +944,7 @@ impl MediaJobRuntime {
             let video_policy = video_policy_from_target_snapshot(
                 base_video_policy,
                 desired_target.as_ref(),
+                &source_graph,
                 &compiled.graph,
             )?;
             let free_bytes = capacity_probe
@@ -986,6 +973,7 @@ impl MediaJobRuntime {
             );
             Ok(RuntimePreflightEvaluation {
                 evaluation,
+                source_graph,
                 desired: compiled.graph,
                 desired_target,
                 expected_container_metadata,
@@ -1452,8 +1440,7 @@ impl MediaJobRuntime {
                 video_constraint_check_index(check_kind, check_index),
                 video_constraint_check_kind(check_kind),
                 inspection,
-                verification_context.desired,
-                verification_context.desired_target,
+                verification_context,
             )
             .await?;
             self.verify_audio_constraints_inspection(
@@ -1461,8 +1448,7 @@ impl MediaJobRuntime {
                 audio_constraint_check_index(check_kind, check_index),
                 audio_constraint_check_kind(check_kind),
                 inspection,
-                verification_context.desired,
-                verification_context.desired_target,
+                verification_context,
             )
             .await?;
             self.verify_container_metadata_inspection(
@@ -1524,10 +1510,14 @@ impl MediaJobRuntime {
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
-        desired: &DesiredGraph,
-        desired_target: Option<&DesiredTargetSnapshot>,
+        verification_context: &DesiredVerificationContext<'_>,
     ) -> Result<(), MediaJobRuntimeError> {
-        let verification = video_constraints_match_inspection(inspection, desired, desired_target);
+        let verification = video_constraints_match_inspection(
+            inspection,
+            verification_context.source_graph,
+            verification_context.desired,
+            verification_context.desired_target,
+        );
         self.complete_verification_check(
             media_job_public_id,
             check_index,
@@ -1549,11 +1539,10 @@ impl MediaJobRuntime {
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
-        desired: &DesiredGraph,
-        desired_target: Option<&DesiredTargetSnapshot>,
+        verification_context: &DesiredVerificationContext<'_>,
     ) -> Result<(), MediaJobRuntimeError> {
         let verification = self
-            .audio_constraints_match_inspection(inspection, desired, desired_target)
+            .audio_constraints_match_inspection(inspection, verification_context)
             .await?;
         self.complete_verification_check(
             media_job_public_id,
@@ -1627,13 +1616,13 @@ impl MediaJobRuntime {
     async fn audio_constraints_match_inspection(
         &self,
         inspection: &MediaInspection,
-        desired: &DesiredGraph,
-        target: Option<&DesiredTargetSnapshot>,
+        verification_context: &DesiredVerificationContext<'_>,
     ) -> Result<AudioConstraintVerification, MediaJobRuntimeError> {
         audio_constraints_match_inspection(
             inspection,
-            desired,
-            target,
+            verification_context.source_graph,
+            verification_context.desired,
+            verification_context.desired_target,
             Arc::clone(&self.audio_analyzer),
         )
         .await
@@ -2525,6 +2514,7 @@ fn target_stream_from_snapshot(
         .map_err(|_| {
             MediaJobRuntimeError::InvalidDesiredGraph("media_job_desired_target_language_invalid")
         })?;
+    let hdr10_color_volume = hdr10_color_volume_from_job_stream(&row)?;
     Ok(TargetStream {
         stream_key: row.stream_key,
         kind,
@@ -2573,11 +2563,133 @@ fn target_stream_from_snapshot(
         color_transfer: row.color_transfer,
         color_space: row.color_space,
         hdr_format: row.hdr_format,
+        hdr10_color_volume,
         title: row.title,
         dispositions,
         subtitle_placement,
         image_subtitle_action,
     })
+}
+
+fn hdr10_color_volume_from_job_stream(
+    row: &MediaJobDesiredTargetStreamRow,
+) -> Result<Option<Hdr10ColorVolume>, MediaJobRuntimeError> {
+    let values = [
+        row.hdr10_mastering_red_x.as_ref(),
+        row.hdr10_mastering_red_y.as_ref(),
+        row.hdr10_mastering_green_x.as_ref(),
+        row.hdr10_mastering_green_y.as_ref(),
+        row.hdr10_mastering_blue_x.as_ref(),
+        row.hdr10_mastering_blue_y.as_ref(),
+        row.hdr10_mastering_white_point_x.as_ref(),
+        row.hdr10_mastering_white_point_y.as_ref(),
+        row.hdr10_mastering_min_luminance.as_ref(),
+        row.hdr10_mastering_max_luminance.as_ref(),
+        row.hdr10_max_content_light_level.as_ref(),
+        row.hdr10_max_frame_average_light_level.as_ref(),
+    ];
+    if values.iter().all(Option::is_none) {
+        return Ok(None);
+    }
+    if values.iter().any(Option::is_none) {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_desired_target_hdr10_color_volume_incomplete",
+        ));
+    }
+    let volume = Hdr10ColorVolume {
+        mastering_red_x: row.hdr10_mastering_red_x.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        mastering_red_y: row.hdr10_mastering_red_y.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        mastering_green_x: row.hdr10_mastering_green_x.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        mastering_green_y: row.hdr10_mastering_green_y.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        mastering_blue_x: row.hdr10_mastering_blue_x.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        mastering_blue_y: row.hdr10_mastering_blue_y.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        mastering_white_point_x: row.hdr10_mastering_white_point_x.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        mastering_white_point_y: row.hdr10_mastering_white_point_y.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        mastering_min_luminance: row.hdr10_mastering_min_luminance.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        mastering_max_luminance: row.hdr10_mastering_max_luminance.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        max_content_light_level: row.hdr10_max_content_light_level.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+        max_frame_average_light_level: row.hdr10_max_frame_average_light_level.clone().ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_target_hdr10_color_volume_incomplete",
+            ),
+        )?,
+    };
+    if !color_volume_is_valid(hdr10_color_volume_parts(&volume)) {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_desired_target_hdr10_color_volume_invalid",
+        ));
+    }
+    if !row
+        .hdr_format
+        .as_deref()
+        .is_some_and(|format| format.trim().eq_ignore_ascii_case("hdr10"))
+    {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_desired_target_hdr10_color_volume_format_missing",
+        ));
+    }
+    Ok(Some(volume))
+}
+
+fn hdr10_color_volume_parts(volume: &Hdr10ColorVolume) -> Hdr10ColorVolumeParts<'_> {
+    Hdr10ColorVolumeParts {
+        mastering_red_x: &volume.mastering_red_x,
+        mastering_red_y: &volume.mastering_red_y,
+        mastering_green_x: &volume.mastering_green_x,
+        mastering_green_y: &volume.mastering_green_y,
+        mastering_blue_x: &volume.mastering_blue_x,
+        mastering_blue_y: &volume.mastering_blue_y,
+        mastering_white_point_x: &volume.mastering_white_point_x,
+        mastering_white_point_y: &volume.mastering_white_point_y,
+        mastering_min_luminance: &volume.mastering_min_luminance,
+        mastering_max_luminance: &volume.mastering_max_luminance,
+        max_content_light_level: &volume.max_content_light_level,
+        max_frame_average_light_level: &volume.max_frame_average_light_level,
+    }
 }
 
 fn subtitle_placement_from_snapshot(
@@ -2856,6 +2968,7 @@ fn video_policy_from_policy_intent(
 fn video_policy_from_target_snapshot(
     mut policy: VideoTranscodePolicy,
     target: Option<&DesiredTargetSnapshot>,
+    source: &MediaGraph,
     desired: &DesiredGraph,
 ) -> Result<VideoTranscodePolicy, MediaJobRuntimeError> {
     let Some(target) = target else {
@@ -2868,12 +2981,15 @@ fn video_policy_from_target_snapshot(
         {
             continue;
         }
-        let stream =
-            desired_target_stream_for_constraints(desired, target_stream, &consumed_stream_ids)
-                .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
-                    "media_job_target_constraint_stream_unmatched",
-                ))?;
-        consumed_stream_ids.insert(stream.stream_id);
+        let stream = desired_target_stream_for_constraints(
+            source,
+            desired,
+            target_stream,
+            &mut consumed_stream_ids,
+        )
+        .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_target_constraint_stream_unmatched",
+        ))?;
         policy.stream_constraints.push(VideoStreamConstraints {
             stream_id: stream.stream_id,
             profile: target_stream.video_profile.clone(),
@@ -2883,6 +2999,7 @@ fn video_policy_from_target_snapshot(
             color_transfer: target_stream.color_transfer.clone(),
             color_space: target_stream.color_space.clone(),
             hdr_format: target_stream.hdr_format.clone(),
+            hdr10_color_volume: target_stream.hdr10_color_volume.clone(),
         });
     }
     consumed_stream_ids.clear();
@@ -2892,12 +3009,15 @@ fn video_policy_from_target_snapshot(
         {
             continue;
         }
-        let stream =
-            desired_target_stream_for_constraints(desired, target_stream, &consumed_stream_ids)
-                .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
-                    "media_job_target_constraint_stream_unmatched",
-                ))?;
-        consumed_stream_ids.insert(stream.stream_id);
+        let stream = desired_target_stream_for_constraints(
+            source,
+            desired,
+            target_stream,
+            &mut consumed_stream_ids,
+        )
+        .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_target_constraint_stream_unmatched",
+        ))?;
         policy
             .audio_stream_constraints
             .push(AudioStreamConstraints {
@@ -2914,18 +3034,51 @@ fn video_policy_from_target_snapshot(
 }
 
 fn desired_target_stream_for_constraints<'a>(
+    source: &MediaGraph,
     desired: &'a DesiredGraph,
     target_stream: &TargetStream,
-    consumed_stream_ids: &BTreeSet<u32>,
+    consumed_source_stream_ids: &mut BTreeSet<u32>,
 ) -> Option<&'a MediaStream> {
+    let source_stream = source.streams.iter().find(|stream| {
+        !consumed_source_stream_ids.contains(&stream.stream_id)
+            && source_stream_matches_target_for_binding(stream, target_stream)
+    })?;
+    consumed_source_stream_ids.insert(source_stream.stream_id);
     desired.streams.iter().find(|stream| {
-        stream.kind == target_stream.kind
-            && !consumed_stream_ids.contains(&stream.stream_id)
+        stream.stream_id == source_stream.stream_id
+            && stream.kind == target_stream.kind
             && stream
                 .codec
                 .trim()
                 .eq_ignore_ascii_case(target_stream.codec.trim())
     })
+}
+
+fn source_stream_matches_target_for_binding(source: &MediaStream, target: &TargetStream) -> bool {
+    source.kind == target.kind
+        && target.role.is_none_or(|required_role| {
+            revaer_media_core::classify::infer_role(source) == required_role
+        })
+        && target
+            .language
+            .as_ref()
+            .map(LanguageToken::as_str)
+            .is_none_or(|language| {
+                source.language.as_deref().is_some_and(|source_language| {
+                    source_language.trim().eq_ignore_ascii_case(language.trim())
+                })
+            })
+        && retained_stream_codec_matches_for_binding(source, target)
+}
+
+fn retained_stream_codec_matches_for_binding(source: &MediaStream, target: &TargetStream) -> bool {
+    if !matches!(target.kind, StreamKind::Attachment | StreamKind::Data) {
+        return true;
+    }
+    source
+        .codec
+        .trim()
+        .eq_ignore_ascii_case(target.codec.trim())
 }
 
 struct VideoConstraintVerification {
@@ -2937,10 +3090,11 @@ struct VideoConstraintVerification {
 
 fn video_constraints_match_inspection(
     inspection: &MediaInspection,
+    source: &MediaGraph,
     desired: &DesiredGraph,
     target: Option<&DesiredTargetSnapshot>,
 ) -> VideoConstraintVerification {
-    let constraints = match expected_video_constraints(target, desired) {
+    let constraints = match expected_video_constraints(target, source, desired) {
         Ok(constraints) => constraints,
         Err(mismatch) => return mismatch,
     };
@@ -2974,6 +3128,7 @@ fn video_constraints_match_inspection(
 
 fn expected_video_constraints(
     target: Option<&DesiredTargetSnapshot>,
+    source: &MediaGraph,
     desired: &DesiredGraph,
 ) -> Result<Vec<VideoStreamConstraints>, VideoConstraintVerification> {
     let Some(target) = target else {
@@ -2987,12 +3142,14 @@ fn expected_video_constraints(
         {
             continue;
         }
-        let Some(stream) =
-            desired_target_stream_for_constraints(desired, target_stream, &consumed_stream_ids)
-        else {
+        let Some(stream) = desired_target_stream_for_constraints(
+            source,
+            desired,
+            target_stream,
+            &mut consumed_stream_ids,
+        ) else {
             return Err(video_target_constraint_unmatched(target_stream));
         };
-        consumed_stream_ids.insert(stream.stream_id);
         constraints.push(VideoStreamConstraints {
             stream_id: stream.stream_id,
             profile: target_stream.video_profile.clone(),
@@ -3002,6 +3159,7 @@ fn expected_video_constraints(
             color_transfer: target_stream.color_transfer.clone(),
             color_space: target_stream.color_space.clone(),
             hdr_format: target_stream.hdr_format.clone(),
+            hdr10_color_volume: target_stream.hdr10_color_volume.clone(),
         });
     }
     Ok(constraints)
@@ -3106,6 +3264,16 @@ fn video_constraint_stream_mismatch(
             "hdr_format",
             expected,
             "unverified",
+        ));
+    }
+    if let Some(expected) = constraint.hdr10_color_volume.as_ref()
+        && !stream_hdr10_color_volume_matches(stream, expected)
+    {
+        return Some(video_constraint_mismatch(
+            constraint.stream_id,
+            "hdr10_color_volume",
+            "matched",
+            "mismatched",
         ));
     }
     None
@@ -3238,16 +3406,202 @@ fn video_hdr_constraint_matches(expected: &str, stream: &StreamInspection) -> bo
         && normalized_constraint_text(stream.color_transfer.as_deref()).as_deref()
             == Some("smpte2084")
         && normalized_constraint_text(stream.color_space.as_deref()).as_deref() == Some("bt2020nc")
-        && stream_has_side_data(stream, "mastering display metadata")
-        && stream_has_side_data(stream, "content light level metadata")
+        && stream_has_hdr10_ten_bit_pixel_format(stream)
+        && stream_has_hdr10_mastering_display_payload(stream)
+        && stream_has_hdr10_content_light_payload(stream)
 }
 
-fn stream_has_side_data(stream: &StreamInspection, expected: &str) -> bool {
+fn stream_has_hdr10_ten_bit_pixel_format(stream: &StreamInspection) -> bool {
+    normalized_constraint_text(stream.pixel_format.as_deref())
+        .as_deref()
+        .is_some_and(hdr10_ten_bit_pixel_format_is_supported)
+}
+
+fn hdr10_ten_bit_pixel_format_is_supported(pixel_format: &str) -> bool {
+    matches!(
+        pixel_format,
+        "yuv420p10le"
+            | "yuv420p10be"
+            | "yuv422p10le"
+            | "yuv422p10be"
+            | "yuv444p10le"
+            | "yuv444p10be"
+            | "p010le"
+            | "p010be"
+            | "p210le"
+            | "p210be"
+            | "p410le"
+            | "p410be"
+    )
+}
+
+fn stream_has_hdr10_mastering_display_payload(stream: &StreamInspection) -> bool {
+    let Some(side_data) = stream_side_data(stream, "mastering display metadata") else {
+        return false;
+    };
+    hdr10_mastering_display_payload_is_valid(side_data)
+}
+
+fn stream_has_hdr10_content_light_payload(stream: &StreamInspection) -> bool {
+    let Some(side_data) = stream_side_data(stream, "content light level metadata") else {
+        return false;
+    };
+    hdr10_content_light_payload_is_valid(side_data)
+}
+
+fn stream_hdr10_color_volume_matches(
+    stream: &StreamInspection,
+    expected: &Hdr10ColorVolume,
+) -> bool {
+    let Some(mastering_display) = stream_side_data(stream, "mastering display metadata") else {
+        return false;
+    };
+    let Some(content_light) = stream_side_data(stream, "content light level metadata") else {
+        return false;
+    };
+    hdr10_mastering_display_payload_matches(mastering_display, expected)
+        && hdr10_content_light_payload_matches(content_light, expected)
+}
+
+fn hdr10_mastering_display_payload_matches(
+    side_data: &SideDataInspection,
+    expected: &Hdr10ColorVolume,
+) -> bool {
+    [
+        ("red_x", &expected.mastering_red_x),
+        ("red_y", &expected.mastering_red_y),
+        ("green_x", &expected.mastering_green_x),
+        ("green_y", &expected.mastering_green_y),
+        ("blue_x", &expected.mastering_blue_x),
+        ("blue_y", &expected.mastering_blue_y),
+        ("white_point_x", &expected.mastering_white_point_x),
+        ("white_point_y", &expected.mastering_white_point_y),
+        ("min_luminance", &expected.mastering_min_luminance),
+        ("max_luminance", &expected.mastering_max_luminance),
+    ]
+    .into_iter()
+    .all(|(field, expected)| hdr10_side_data_value_matches(side_data, field, expected))
+}
+
+fn hdr10_content_light_payload_matches(
+    side_data: &SideDataInspection,
+    expected: &Hdr10ColorVolume,
+) -> bool {
+    [
+        ("max_content", &expected.max_content_light_level),
+        ("max_average", &expected.max_frame_average_light_level),
+    ]
+    .into_iter()
+    .all(|(field, expected)| hdr10_side_data_value_matches(side_data, field, expected))
+}
+
+fn hdr10_side_data_value_matches(
+    side_data: &SideDataInspection,
+    field: &str,
+    expected: &str,
+) -> bool {
+    let Some(expected) = parse_hdr10_number(expected) else {
+        return false;
+    };
+    let Some(actual) = side_data_numeric_value(side_data, field) else {
+        return false;
+    };
+    (actual - expected).abs() <= HDR10_SIDE_DATA_EPSILON
+}
+
+const HDR10_SIDE_DATA_EPSILON: f64 = 1.0e-6;
+
+fn hdr10_mastering_display_payload_is_valid(side_data: &SideDataInspection) -> bool {
+    let Some(red) = side_data_chromaticity_point(side_data, "red_x", "red_y") else {
+        return false;
+    };
+    let Some(green) = side_data_chromaticity_point(side_data, "green_x", "green_y") else {
+        return false;
+    };
+    let Some(blue) = side_data_chromaticity_point(side_data, "blue_x", "blue_y") else {
+        return false;
+    };
+    let Some(white_point) =
+        side_data_chromaticity_point(side_data, "white_point_x", "white_point_y")
+    else {
+        return false;
+    };
+    if !mastering_display_chromaticities_are_valid(red, green, blue, white_point) {
+        return false;
+    }
+    let Some(min_luminance) = side_data_numeric_value(side_data, "min_luminance") else {
+        return false;
+    };
+    let Some(max_luminance) = side_data_numeric_value(side_data, "max_luminance") else {
+        return false;
+    };
+    min_luminance >= 0.0 && max_luminance > min_luminance
+}
+
+fn side_data_chromaticity_point(
+    side_data: &SideDataInspection,
+    x_key: &str,
+    y_key: &str,
+) -> Option<ChromaticityPoint> {
+    let x = side_data_numeric_value(side_data, x_key)?;
+    let y = side_data_numeric_value(side_data, y_key)?;
+    ChromaticityPoint::new_physical(x, y)
+}
+
+fn hdr10_content_light_payload_is_valid(side_data: &SideDataInspection) -> bool {
+    let Some(max_content) = side_data_numeric_value(side_data, "max_content") else {
+        return false;
+    };
+    let Some(max_average) = side_data_numeric_value(side_data, "max_average") else {
+        return false;
+    };
+    max_content > 0.0 && max_average > 0.0 && max_average <= max_content
+}
+
+fn stream_side_data<'a>(
+    stream: &'a StreamInspection,
+    expected: &str,
+) -> Option<&'a SideDataInspection> {
     let expected = normalized_constraint_value(expected);
-    stream
+    if !stream
         .side_data_types
         .iter()
         .any(|actual| normalized_constraint_value(actual) == expected)
+    {
+        return None;
+    }
+    stream
+        .side_data
+        .iter()
+        .find(|actual| normalized_constraint_value(&actual.side_data_type) == expected)
+}
+
+fn side_data_numeric_value(side_data: &SideDataInspection, expected: &str) -> Option<f64> {
+    side_data.metadata.iter().find_map(|entry| {
+        if normalized_constraint_value(&entry.key) == expected {
+            parse_side_data_number(&entry.value)
+        } else {
+            None
+        }
+    })
+}
+
+fn parse_side_data_number(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let parsed = if let Some((numerator, denominator)) = value.split_once('/') {
+        let numerator = numerator.trim().parse::<f64>().ok()?;
+        let denominator = denominator.trim().parse::<f64>().ok()?;
+        if denominator <= 0.0 {
+            return None;
+        }
+        numerator / denominator
+    } else {
+        value.parse::<f64>().ok()?
+    };
+    parsed.is_finite().then_some(parsed)
 }
 
 fn normalized_compact_text(value: Option<&str>) -> Option<String> {
@@ -3309,6 +3663,7 @@ const fn target_stream_has_video_constraints(stream: &TargetStream) -> bool {
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
         || stream.hdr_format.is_some()
+        || stream.hdr10_color_volume.is_some()
 }
 
 struct AudioConstraintVerification {
@@ -3320,11 +3675,12 @@ struct AudioConstraintVerification {
 
 async fn audio_constraints_match_inspection(
     inspection: &MediaInspection,
+    source: &MediaGraph,
     desired: &DesiredGraph,
     target: Option<&DesiredTargetSnapshot>,
     analyzer: Arc<RuntimeAudioAnalyzer>,
 ) -> Result<AudioConstraintVerification, MediaJobRuntimeError> {
-    let constraints = match expected_audio_constraints(target, desired) {
+    let constraints = match expected_audio_constraints(target, source, desired) {
         Ok(constraints) => constraints,
         Err(mismatch) => return Ok(mismatch),
     };
@@ -3393,6 +3749,7 @@ async fn audio_constraints_match_inspection(
 
 fn expected_audio_constraints(
     target: Option<&DesiredTargetSnapshot>,
+    source: &MediaGraph,
     desired: &DesiredGraph,
 ) -> Result<Vec<AudioStreamConstraints>, AudioConstraintVerification> {
     let Some(target) = target else {
@@ -3406,12 +3763,14 @@ fn expected_audio_constraints(
         {
             continue;
         }
-        let Some(stream) =
-            desired_target_stream_for_constraints(desired, target_stream, &consumed_stream_ids)
-        else {
+        let Some(stream) = desired_target_stream_for_constraints(
+            source,
+            desired,
+            target_stream,
+            &mut consumed_stream_ids,
+        ) else {
             return Err(audio_target_constraint_unmatched(target_stream));
         };
-        consumed_stream_ids.insert(stream.stream_id);
         constraints.push(AudioStreamConstraints {
             stream_id: stream.stream_id,
             channel_count: target_stream.channels,
@@ -3670,6 +4029,44 @@ fn container_metadata_check_index(graph_check_kind: &'static str, fallback: i32)
         "final_graph" => 26,
         _ => fallback,
     }
+}
+
+fn compile_runtime_desired_target(
+    source_graph: &MediaGraph,
+    output_path: &str,
+    source_path: &str,
+    desired_target: Option<&DesiredTargetSnapshot>,
+    sidecars: &[SidecarSubtitle],
+) -> Result<CompiledDesiredTarget, MediaJobRuntimeError> {
+    let Some(snapshot) = desired_target else {
+        return Ok(CompiledDesiredTarget {
+            graph: DesiredGraph {
+                output_path: output_path.to_string(),
+                container_format: None,
+                stream_bindings: identity_stream_bindings(&source_graph.streams),
+                container_metadata_policy: None,
+                container_metadata: Vec::new(),
+                container_chapter_policy: None,
+                container_chapters: Vec::new(),
+                container_attachment_policy: None,
+                streams: source_graph.streams.clone(),
+            },
+            sidecar_embeddings: Vec::new(),
+            sidecar_outputs: Vec::new(),
+            sidecar_removals: Vec::new(),
+        });
+    };
+    compile_desired_target_with_sidecars_at_and_unmatched_policies(
+        source_graph,
+        output_path,
+        source_path,
+        &snapshot.target,
+        snapshot.unmatched_stream_policies,
+        &sidecar_inputs(sidecars)?,
+    )
+    .map_err(|_| {
+        MediaJobRuntimeError::InvalidDesiredGraph("media_job_desired_target_compile_failed")
+    })
 }
 
 fn expected_container_metadata_for_policy(
@@ -4379,8 +4776,8 @@ mod tests {
         desired_target_from_job, expected_audio_constraints, parse_ebur128_summary,
         read_bounded_audio_analysis_stderr, run_audio_analysis_process,
         run_audio_analysis_process_with_timeout, verification_policy_from_job,
-        video_constraint_stream_mismatch, video_policy_from_policy_intent,
-        video_policy_from_target_snapshot,
+        video_constraint_stream_mismatch, video_hdr_constraint_matches,
+        video_policy_from_policy_intent, video_policy_from_target_snapshot,
     };
     use crate::runtime_shutdown;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -4412,7 +4809,7 @@ mod tests {
     };
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
     use revaer_media_core::target::{
-        DesiredSidecarOutput, DesiredTarget, SidecarOutputSource, TargetStream,
+        DesiredSidecarOutput, DesiredTarget, Hdr10ColorVolume, SidecarOutputSource, TargetStream,
         UnmatchedStreamPolicies, UnmatchedStreamPolicy,
     };
     use revaer_media_runtime::execute::{
@@ -4420,7 +4817,7 @@ mod tests {
     };
     use revaer_media_runtime::inspect::{
         ChapterInspection, ContainerInspection, InspectAdapter, InspectCancellation, InspectError,
-        MediaInspection, MetadataEntry, StreamInspection,
+        MediaInspection, MetadataEntry, SideDataInspection, StreamInspection,
     };
     use revaer_media_runtime::jobs::{JobPreflightReport, PlannedJob, PlannedJobSummary};
     use revaer_media_runtime::replacement::{
@@ -5069,7 +5466,7 @@ mod tests {
                 sample_rate: (stream.kind == StreamKind::Audio).then_some(48_000),
                 width: (stream.kind == StreamKind::Video).then_some(1920),
                 height: (stream.kind == StreamKind::Video).then_some(1080),
-                pixel_format: (stream.kind == StreamKind::Video).then(|| "yuv420p".to_string()),
+                pixel_format: (stream.kind == StreamKind::Video).then(|| "yuv420p10le".to_string()),
                 sample_aspect_ratio: None,
                 display_aspect_ratio: None,
                 average_frame_rate: None,
@@ -5081,6 +5478,7 @@ mod tests {
                 field_order: None,
                 metadata: constrained_test_video_metadata(stream),
                 side_data_types: constrained_test_video_side_data(stream),
+                side_data: constrained_test_video_side_data_records(stream),
             })
             .collect();
         MediaInspection {
@@ -5260,6 +5658,128 @@ mod tests {
         }
     }
 
+    fn constrained_test_video_side_data_records(stream: &MediaStream) -> Vec<SideDataInspection> {
+        if stream.kind == StreamKind::Video && stream.codec == "hevc" {
+            vec![
+                SideDataInspection {
+                    side_data_type: "content light level metadata".to_string(),
+                    metadata: vec![
+                        MetadataEntry {
+                            key: "max_average".to_string(),
+                            value: "400".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "max_content".to_string(),
+                            value: "1000".to_string(),
+                        },
+                    ],
+                },
+                SideDataInspection {
+                    side_data_type: "mastering display metadata".to_string(),
+                    metadata: vec![
+                        MetadataEntry {
+                            key: "blue_x".to_string(),
+                            value: "7500/50000".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "blue_y".to_string(),
+                            value: "3000/50000".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "green_x".to_string(),
+                            value: "13250/50000".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "green_y".to_string(),
+                            value: "34500/50000".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "max_luminance".to_string(),
+                            value: "10000000/10000".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "min_luminance".to_string(),
+                            value: "50/10000".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "red_x".to_string(),
+                            value: "34000/50000".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "red_y".to_string(),
+                            value: "16000/50000".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "white_point_x".to_string(),
+                            value: "15635/50000".to_string(),
+                        },
+                        MetadataEntry {
+                            key: "white_point_y".to_string(),
+                            value: "16450/50000".to_string(),
+                        },
+                    ],
+                },
+            ]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn hdr10_color_volume_constraint() -> Hdr10ColorVolume {
+        Hdr10ColorVolume {
+            mastering_red_x: "0.68".to_string(),
+            mastering_red_y: "0.32".to_string(),
+            mastering_green_x: "13250/50000".to_string(),
+            mastering_green_y: "34500/50000".to_string(),
+            mastering_blue_x: "7500/50000".to_string(),
+            mastering_blue_y: "3000/50000".to_string(),
+            mastering_white_point_x: "15635/50000".to_string(),
+            mastering_white_point_y: "16450/50000".to_string(),
+            mastering_min_luminance: "50/10000".to_string(),
+            mastering_max_luminance: "1000".to_string(),
+            max_content_light_level: "1000".to_string(),
+            max_frame_average_light_level: "400".to_string(),
+        }
+    }
+
+    fn set_hdr10_mastering_value(
+        inspection: &mut MediaInspection,
+        key: &str,
+        value: &str,
+    ) -> anyhow::Result<()> {
+        let Some(side_data) = inspection.streams[0]
+            .side_data
+            .iter_mut()
+            .find(|side_data| side_data.side_data_type == "mastering display metadata")
+        else {
+            anyhow::bail!("missing mastering display metadata side data");
+        };
+        let Some(entry) = side_data.metadata.iter_mut().find(|entry| entry.key == key) else {
+            anyhow::bail!("missing mastering display metadata key {key}");
+        };
+        entry.value = value.to_string();
+        Ok(())
+    }
+
+    fn set_hdr10_content_light_value(
+        inspection: &mut MediaInspection,
+        key: &str,
+        value: &str,
+    ) -> anyhow::Result<()> {
+        let Some(side_data) = inspection.streams[0]
+            .side_data
+            .iter_mut()
+            .find(|side_data| side_data.side_data_type == "content light level metadata")
+        else {
+            anyhow::bail!("missing content light metadata side data");
+        };
+        let Some(entry) = side_data.metadata.iter_mut().find(|entry| entry.key == key) else {
+            anyhow::bail!("missing content light metadata key {key}");
+        };
+        entry.value = value.to_string();
+        Ok(())
+    }
+
     fn constrained_target_snapshot(stream: TargetStream) -> DesiredTargetSnapshot {
         DesiredTargetSnapshot {
             target: DesiredTarget {
@@ -5301,6 +5821,7 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_color_volume: None,
             title: None,
             dispositions: Vec::new(),
             subtitle_placement: None,
@@ -5341,6 +5862,7 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_color_volume: None,
         }
     }
 
@@ -5368,6 +5890,7 @@ mod tests {
                 value: actual_level.to_string(),
             }],
             side_data_types: Vec::new(),
+            side_data: Vec::new(),
         }
     }
 
@@ -5392,6 +5915,7 @@ mod tests {
             field_order: None,
             metadata: Vec::new(),
             side_data_types: Vec::new(),
+            side_data: Vec::new(),
         }
     }
 
@@ -5525,8 +6049,214 @@ mod tests {
     }
 
     #[test]
+    fn hdr10_constraint_accepts_complete_side_data_payloads() {
+        let inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+
+        assert!(video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_accepts_exact_authored_side_data_values() {
+        let inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        let constraint = VideoStreamConstraints {
+            stream_id: 0,
+            profile: None,
+            level: None,
+            bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: Some("hdr10".to_string()),
+            hdr10_color_volume: Some(hdr10_color_volume_constraint()),
+        };
+
+        assert!(video_constraint_stream_mismatch(&constraint, &inspection.streams[0]).is_none());
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_authored_content_light_mismatch() -> anyhow::Result<()> {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        set_hdr10_content_light_value(&mut inspection, "max_average", "399")?;
+        let constraint = VideoStreamConstraints {
+            stream_id: 0,
+            profile: None,
+            level: None,
+            bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: Some("hdr10".to_string()),
+            hdr10_color_volume: Some(hdr10_color_volume_constraint()),
+        };
+        let mismatch = video_constraint_stream_mismatch(&constraint, &inspection.streams[0])
+            .expect("exact HDR10 metadata mismatch should fail verification");
+
+        assert_eq!(mismatch.expected, "stream:0:hdr10_color_volume=matched");
+        assert_eq!(mismatch.actual, "mismatched");
+        Ok(())
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_type_only_side_data() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        inspection.streams[0].side_data.clear();
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_eight_bit_pixel_format() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        inspection.streams[0].pixel_format = Some("yuv420p".to_string());
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_accepts_p010_pixel_format() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        inspection.streams[0].pixel_format = Some("p010le".to_string());
+
+        assert!(video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_incomplete_content_light_payload() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        if let Some(side_data) = inspection.streams[0]
+            .side_data
+            .iter_mut()
+            .find(|side_data| side_data.side_data_type == "content light level metadata")
+        {
+            side_data
+                .metadata
+                .retain(|entry| entry.key != "max_average");
+        }
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_out_of_range_mastering_chromaticity() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        if let Some(side_data) = inspection.streams[0]
+            .side_data
+            .iter_mut()
+            .find(|side_data| side_data.side_data_type == "mastering display metadata")
+            && let Some(entry) = side_data
+                .metadata
+                .iter_mut()
+                .find(|entry| entry.key == "red_x")
+        {
+            entry.value = "51000/50000".to_string();
+        }
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_impossible_mastering_chromaticity_sum() -> anyhow::Result<()> {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        set_hdr10_mastering_value(&mut inspection, "red_y", "40000/50000")?;
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_degenerate_mastering_primary_triangle() -> anyhow::Result<()> {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        set_hdr10_mastering_value(&mut inspection, "green_x", "34000/50000")?;
+        set_hdr10_mastering_value(&mut inspection, "green_y", "16000/50000")?;
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_white_point_outside_mastering_primary_triangle()
+    -> anyhow::Result<()> {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        set_hdr10_mastering_value(&mut inspection, "white_point_x", "45000/50000")?;
+        set_hdr10_mastering_value(&mut inspection, "white_point_y", "2500/50000")?;
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_invalid_luminance_ordering() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        if let Some(side_data) = inspection.streams[0]
+            .side_data
+            .iter_mut()
+            .find(|side_data| side_data.side_data_type == "mastering display metadata")
+            && let Some(entry) = side_data
+                .metadata
+                .iter_mut()
+                .find(|entry| entry.key == "max_luminance")
+        {
+            entry.value = "50/10000".to_string();
+        }
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
+    fn hdr10_constraint_rejects_content_light_average_above_peak() {
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
+        if let Some(side_data) = inspection.streams[0]
+            .side_data
+            .iter_mut()
+            .find(|side_data| side_data.side_data_type == "content light level metadata")
+            && let Some(entry) = side_data
+                .metadata
+                .iter_mut()
+                .find(|entry| entry.key == "max_average")
+        {
+            entry.value = "1001".to_string();
+        }
+
+        assert!(!video_hdr_constraint_matches(
+            "hdr10",
+            &inspection.streams[0]
+        ));
+    }
+
+    #[test]
     fn video_policy_rejects_unmatched_target_constraint_stream() -> anyhow::Result<()> {
-        let streams = video_graph("/tmp/source.mkv", "h264").streams;
+        let source = video_graph("/tmp/source.mkv", "h264");
+        let streams = source.streams.clone();
         let desired = DesiredGraph {
             output_path: "/tmp/output.mkv".to_string(),
             container_format: Some("matroska".to_string()),
@@ -5543,8 +6273,9 @@ mod tests {
         let snapshot = constrained_target_snapshot(stream);
         let base_policy = video_policy_from_policy_intent(Some("general"))?;
 
-        let error = video_policy_from_target_snapshot(base_policy, Some(&snapshot), &desired)
-            .expect_err("unmatched constrained target video stream should fail closed");
+        let error =
+            video_policy_from_target_snapshot(base_policy, Some(&snapshot), &source, &desired)
+                .expect_err("unmatched constrained target video stream should fail closed");
 
         assert_eq!(error.code(), "media_job_target_constraint_stream_unmatched");
         Ok(())
@@ -5552,7 +6283,8 @@ mod tests {
 
     #[test]
     fn audio_constraint_mapping_rejects_unmatched_target_constraint_stream() {
-        let streams = video_graph("/tmp/source.mkv", "h264").streams;
+        let source = video_graph("/tmp/source.mkv", "h264");
+        let streams = source.streams.clone();
         let desired = DesiredGraph {
             output_path: "/tmp/output.mkv".to_string(),
             container_format: Some("matroska".to_string()),
@@ -5568,7 +6300,7 @@ mod tests {
         stream.audio_loudness_profile = Some("dialog-normalized".to_string());
         let snapshot = constrained_target_snapshot(stream);
 
-        let mismatch = expected_audio_constraints(Some(&snapshot), &desired)
+        let mismatch = expected_audio_constraints(Some(&snapshot), &source, &desired)
             .expect_err("unmatched constrained target audio stream should fail closed");
 
         assert!(!mismatch.matched);
@@ -5582,6 +6314,13 @@ mod tests {
     #[test]
     fn audio_constraint_mapping_carries_channel_shape_constraints() -> anyhow::Result<()> {
         let streams = vec![audio_graph_stream(Some(2), Some("stereo"))];
+        let source = MediaGraph {
+            source_path: "/tmp/source.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: Vec::new(),
+            streams: vec![audio_graph_stream(Some(2), Some("stereo"))],
+        };
         let desired = DesiredGraph {
             output_path: "/tmp/output.mkv".to_string(),
             container_format: Some("matroska".to_string()),
@@ -5599,7 +6338,7 @@ mod tests {
         let snapshot = constrained_target_snapshot(stream);
 
         let constraints =
-            expected_audio_constraints(Some(&snapshot), &desired).map_err(|mismatch| {
+            expected_audio_constraints(Some(&snapshot), &source, &desired).map_err(|mismatch| {
                 anyhow::anyhow!(
                     "unexpected audio constraint mapping failure: {} {}",
                     mismatch.expected,
@@ -6004,6 +6743,18 @@ mod tests {
                 color_transfer: Some("smpte2084"),
                 color_space: Some("bt2020nc"),
                 hdr_format: Some("hdr10"),
+                hdr10_mastering_red_x: Some("0.68"),
+                hdr10_mastering_red_y: Some("0.32"),
+                hdr10_mastering_green_x: Some("13250/50000"),
+                hdr10_mastering_green_y: Some("34500/50000"),
+                hdr10_mastering_blue_x: Some("7500/50000"),
+                hdr10_mastering_blue_y: Some("3000/50000"),
+                hdr10_mastering_white_point_x: Some("15635/50000"),
+                hdr10_mastering_white_point_y: Some("16450/50000"),
+                hdr10_mastering_min_luminance: Some("50/10000"),
+                hdr10_mastering_max_luminance: Some("1000"),
+                hdr10_max_content_light_level: Some("1000"),
+                hdr10_max_frame_average_light_level: Some("400"),
                 title: None,
                 default_disposition: false,
                 forced_disposition: false,
@@ -6074,6 +6825,18 @@ mod tests {
                 color_transfer: None,
                 color_space: None,
                 hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_point_x: None,
+                hdr10_mastering_white_point_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
                 title: None,
                 default_disposition: true,
                 forced_disposition: false,
@@ -9421,6 +10184,18 @@ Integrated loudness:
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_mastering_red_x: None,
+            hdr10_mastering_red_y: None,
+            hdr10_mastering_green_x: None,
+            hdr10_mastering_green_y: None,
+            hdr10_mastering_blue_x: None,
+            hdr10_mastering_blue_y: None,
+            hdr10_mastering_white_point_x: None,
+            hdr10_mastering_white_point_y: None,
+            hdr10_mastering_min_luminance: None,
+            hdr10_mastering_max_luminance: None,
+            hdr10_max_content_light_level: None,
+            hdr10_max_frame_average_light_level: None,
             title: None,
             default_disposition: false,
             forced_disposition: false,
@@ -9536,6 +10311,18 @@ Integrated loudness:
                 color_transfer: None,
                 color_space: None,
                 hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_point_x: None,
+                hdr10_mastering_white_point_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
                 title: None,
                 default_disposition: false,
                 forced_disposition: false,
@@ -9594,6 +10381,18 @@ Integrated loudness:
                 color_transfer: None,
                 color_space: None,
                 hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_point_x: None,
+                hdr10_mastering_white_point_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
                 title: None,
                 default_disposition: false,
                 forced_disposition: false,
@@ -9761,6 +10560,18 @@ Integrated loudness:
                 color_transfer: None,
                 color_space: None,
                 hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_point_x: None,
+                hdr10_mastering_white_point_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
                 title: None,
                 default_disposition: false,
                 forced_disposition: false,
@@ -9819,6 +10630,18 @@ Integrated loudness:
                 color_transfer: None,
                 color_space: None,
                 hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_point_x: None,
+                hdr10_mastering_white_point_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
                 title: None,
                 default_disposition: false,
                 forced_disposition: false,
@@ -9918,6 +10741,18 @@ Integrated loudness:
                 color_transfer: None,
                 color_space: None,
                 hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_point_x: None,
+                hdr10_mastering_white_point_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
                 title: None,
                 default_disposition: false,
                 forced_disposition: false,

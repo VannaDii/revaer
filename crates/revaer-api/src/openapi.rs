@@ -10,6 +10,20 @@ use crate::openapi_assets::OPENAPI_EMBEDDED_JSON;
 
 const MEDIA_DISCOVERY_SOURCE_PATHS_MAX_LEN: usize = 1024;
 const MEDIA_DISCOVERY_SOURCE_PATH_MAX_BYTES: usize = 4096;
+const MEDIA_HDR10_COLOR_VOLUME_FIELDS: [&str; 12] = [
+    "mastering_red_x",
+    "mastering_red_y",
+    "mastering_green_x",
+    "mastering_green_y",
+    "mastering_blue_x",
+    "mastering_blue_y",
+    "mastering_white_point_x",
+    "mastering_white_point_y",
+    "mastering_min_luminance",
+    "mastering_max_luminance",
+    "max_content_light_level",
+    "max_frame_average_light_level",
+];
 const STALE_MEDIA_SCHEMAS: [&str; 11] = [
     "MediaCapabilityRecordRequest",
     "MediaCapabilityRecordResponse",
@@ -1114,12 +1128,20 @@ fn media_desired_target_stream_schemas() -> Vec<(&'static str, Value)> {
                     ("color_transfer", string_schema()),
                     ("color_space", string_schema()),
                     ("hdr_format", string_schema()),
+                    ("hdr10_color_volume", schema_ref("MediaHdr10ColorVolume")),
                     ("title", string_schema()),
                     ("default_disposition", bool_schema()),
                     ("forced_disposition", bool_schema()),
                     ("subtitle_placement", string_schema()),
                     ("image_subtitle_action", string_schema()),
                 ],
+            ),
+        ),
+        (
+            "MediaHdr10ColorVolume",
+            object_schema_from_iter(
+                &MEDIA_HDR10_COLOR_VOLUME_FIELDS,
+                string_schema_properties(&MEDIA_HDR10_COLOR_VOLUME_FIELDS),
             ),
         ),
         (
@@ -2139,6 +2161,12 @@ where
         schema.insert("required".to_string(), serde_json::json!(required));
     }
     Value::Object(schema)
+}
+
+fn string_schema_properties(
+    fields: &'static [&'static str],
+) -> impl Iterator<Item = (&'static str, Value)> {
+    fields.iter().copied().map(|field| (field, string_schema()))
 }
 
 fn schema_ref(schema: &'static str) -> Value {

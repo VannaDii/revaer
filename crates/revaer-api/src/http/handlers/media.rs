@@ -29,6 +29,7 @@ use crate::app::media::{
     MediaDiscoveryRunParams, MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse,
     MediaJobCreateParams, MediaProfileDesiredTargetParams, MediaProfilePatchParams,
     MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
+    media_hdr10_color_volume_is_valid,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -1466,6 +1467,10 @@ fn map_desired_target_stream_params(
             .map(str::to_ascii_lowercase),
         hdr_format: trim_and_filter_empty(stream.hdr_format.as_deref())
             .map(str::to_ascii_lowercase),
+        hdr10_color_volume: stream
+            .hdr10_color_volume
+            .as_ref()
+            .map(normalized_hdr10_color_volume),
         title: trim_and_filter_empty(stream.title.as_deref()).map(str::to_string),
         default_disposition: stream.default_disposition,
         forced_disposition: stream.forced_disposition,
@@ -1742,7 +1747,7 @@ fn validate_desired_target_stream_identity(
 }
 
 fn validate_desired_target_stream_kind(value: &str) -> Result<String, ApiError> {
-    const STREAM_KINDS: [&str; 3] = ["video", "audio", "subtitle"];
+    const STREAM_KINDS: [&str; 5] = ["video", "audio", "subtitle", "attachment", "data"];
 
     let kind = normalize_required_str_field(value, "stream_kind is required")?.to_ascii_lowercase();
     if STREAM_KINDS.contains(&kind.as_str()) {
@@ -1781,6 +1786,7 @@ fn validate_desired_target_stream_shape(
     validate_video_target_shape_scope(stream, kind)?;
     validate_subtitle_target_shape_scope(stream, kind)?;
     validate_subtitle_target_shape(stream, kind)?;
+    validate_retained_target_shape(stream, kind)?;
     Ok(())
 }
 
@@ -1870,6 +1876,7 @@ const fn has_video_target_shape_fields(stream: &MediaDesiredTargetStream) -> boo
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
         || stream.hdr_format.is_some()
+        || stream.hdr10_color_volume.is_some()
 }
 
 fn validate_subtitle_target_shape_scope(
@@ -1922,7 +1929,43 @@ fn validate_video_target_shape(stream: &MediaDesiredTargetStream) -> Result<(), 
     {
         return Err(ApiError::bad_request("hdr_format is invalid"));
     }
+    validate_hdr10_color_volume(stream)?;
     Ok(())
+}
+
+fn validate_hdr10_color_volume(stream: &MediaDesiredTargetStream) -> Result<(), ApiError> {
+    let Some(volume) = &stream.hdr10_color_volume else {
+        return Ok(());
+    };
+    if trim_and_filter_empty(stream.hdr_format.as_deref())
+        .is_none_or(|format| !format.eq_ignore_ascii_case("hdr10"))
+    {
+        return Err(ApiError::bad_request(
+            "hdr10_color_volume requires hdr_format hdr10",
+        ));
+    }
+    media_hdr10_color_volume_is_valid(volume)
+        .then_some(())
+        .ok_or_else(|| ApiError::bad_request("hdr10_color_volume is invalid"))
+}
+
+fn normalized_hdr10_color_volume(
+    volume: &revaer_api_models::MediaHdr10ColorVolume,
+) -> revaer_api_models::MediaHdr10ColorVolume {
+    revaer_api_models::MediaHdr10ColorVolume {
+        mastering_red_x: volume.mastering_red_x.trim().to_string(),
+        mastering_red_y: volume.mastering_red_y.trim().to_string(),
+        mastering_green_x: volume.mastering_green_x.trim().to_string(),
+        mastering_green_y: volume.mastering_green_y.trim().to_string(),
+        mastering_blue_x: volume.mastering_blue_x.trim().to_string(),
+        mastering_blue_y: volume.mastering_blue_y.trim().to_string(),
+        mastering_white_point_x: volume.mastering_white_point_x.trim().to_string(),
+        mastering_white_point_y: volume.mastering_white_point_y.trim().to_string(),
+        mastering_min_luminance: volume.mastering_min_luminance.trim().to_string(),
+        mastering_max_luminance: volume.mastering_max_luminance.trim().to_string(),
+        max_content_light_level: volume.max_content_light_level.trim().to_string(),
+        max_frame_average_light_level: volume.max_frame_average_light_level.trim().to_string(),
+    }
 }
 
 fn validate_video_level(stream: &MediaDesiredTargetStream) -> Result<(), ApiError> {
@@ -1977,6 +2020,24 @@ fn validate_subtitle_target_shape(
         !["preserve", "remove", "fail"].contains(&value.to_ascii_lowercase().as_str())
     }) {
         return Err(ApiError::bad_request("image_subtitle_action is invalid"));
+    }
+    Ok(())
+}
+
+fn validate_retained_target_shape(
+    stream: &MediaDesiredTargetStream,
+    kind: &str,
+) -> Result<(), ApiError> {
+    if !matches!(kind, "attachment" | "data") {
+        return Ok(());
+    }
+    if trim_and_filter_empty(stream.title.as_deref()).is_some()
+        || stream.default_disposition
+        || stream.forced_disposition
+    {
+        return Err(ApiError::bad_request(
+            "retained stream rows only support exact passthrough selectors",
+        ));
     }
     Ok(())
 }
@@ -2653,11 +2714,29 @@ mod tests {
             color_transfer: Some("smpte2084".to_string()),
             color_space: Some("bt2020nc".to_string()),
             hdr_format: Some("hdr10".to_string()),
+            hdr10_color_volume: None,
             title: None,
             default_disposition: true,
             forced_disposition: false,
             subtitle_placement: None,
             image_subtitle_action: None,
+        }
+    }
+
+    fn valid_hdr10_color_volume() -> revaer_api_models::MediaHdr10ColorVolume {
+        revaer_api_models::MediaHdr10ColorVolume {
+            mastering_red_x: "34000/50000".to_string(),
+            mastering_red_y: "16000/50000".to_string(),
+            mastering_green_x: "13250/50000".to_string(),
+            mastering_green_y: "34500/50000".to_string(),
+            mastering_blue_x: "7500/50000".to_string(),
+            mastering_blue_y: "3000/50000".to_string(),
+            mastering_white_point_x: "15635/50000".to_string(),
+            mastering_white_point_y: "16450/50000".to_string(),
+            mastering_min_luminance: "50/10000".to_string(),
+            mastering_max_luminance: "10000000/10000".to_string(),
+            max_content_light_level: "1000".to_string(),
+            max_frame_average_light_level: "400".to_string(),
         }
     }
 
@@ -2728,6 +2807,19 @@ mod tests {
         let mut invalid_hdr_format = valid_stream.clone();
         invalid_hdr_format.hdr_format = Some("dolby_vision".to_string());
         assert!(validate_desired_target_streams(&[invalid_hdr_format]).is_err());
+
+        let mut exact_hdr10 = valid_stream.clone();
+        exact_hdr10.hdr10_color_volume = Some(valid_hdr10_color_volume());
+        assert!(validate_desired_target_streams(&[exact_hdr10.clone()]).is_ok());
+
+        let mut hdr10_without_format = exact_hdr10.clone();
+        hdr10_without_format.hdr_format = None;
+        assert!(validate_desired_target_streams(&[hdr10_without_format]).is_err());
+
+        let mut invalid_volume = valid_hdr10_color_volume();
+        invalid_volume.mastering_red_x = "51000/50000".to_string();
+        exact_hdr10.hdr10_color_volume = Some(invalid_volume);
+        assert!(validate_desired_target_streams(&[exact_hdr10]).is_err());
     }
 
     fn assert_desired_target_subtitle_validation_rejects_invalid_shapes(
@@ -2750,10 +2842,47 @@ mod tests {
     }
 
     #[test]
-    fn desired_target_stream_validation_rejects_unsupported_kinds() {
-        let unsupported = ["attachment", "chapter", "data"].map(|kind| MediaDesiredTargetStream {
-            stream_key: format!("{kind}-main"),
-            stream_kind: kind.to_string(),
+    fn desired_target_stream_validation_accepts_retained_passthrough_kinds() {
+        for kind in ["attachment", "data"] {
+            assert!(
+                validate_desired_target_streams(&[MediaDesiredTargetStream {
+                    stream_key: format!("{kind}-main"),
+                    stream_kind: kind.to_string(),
+                    semantic_role: None,
+                    language_code: None,
+                    optional: false,
+                    sort_order: 0,
+                    codec: "bin_data".to_string(),
+                    channel_count: None,
+                    channel_layout: None,
+                    audio_bitrate_bps: None,
+                    audio_sample_rate_hz: None,
+                    audio_loudness_profile: None,
+                    audio_dynamic_range: None,
+                    video_profile: None,
+                    video_level: None,
+                    video_bitrate_bps: None,
+                    color_primaries: None,
+                    color_transfer: None,
+                    color_space: None,
+                    hdr_format: None,
+                    hdr10_color_volume: None,
+                    title: None,
+                    default_disposition: false,
+                    forced_disposition: false,
+                    subtitle_placement: None,
+                    image_subtitle_action: None,
+                }])
+                .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn desired_target_stream_validation_rejects_retained_stream_rewrites() {
+        let mut retained = MediaDesiredTargetStream {
+            stream_key: "attachment-main".to_string(),
+            stream_kind: "attachment".to_string(),
             semantic_role: None,
             language_code: None,
             optional: false,
@@ -2772,16 +2901,34 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_color_volume: None,
             title: None,
             default_disposition: false,
             forced_disposition: false,
             subtitle_placement: None,
             image_subtitle_action: None,
-        });
+        };
+        retained.title = Some("Renamed".to_string());
+        assert!(validate_desired_target_streams(&[retained.clone()]).is_err());
+        retained.title = None;
+        retained.default_disposition = true;
+        assert!(validate_desired_target_streams(&[retained]).is_err());
+    }
 
-        for stream in unsupported {
-            assert!(validate_desired_target_streams(&[stream]).is_err());
-        }
+    #[test]
+    fn desired_target_stream_validation_rejects_unsupported_kinds() {
+        let mut unsupported = desired_target_valid_video_stream();
+        unsupported.stream_kind = "chapter".to_string();
+        unsupported.video_profile = None;
+        unsupported.video_level = None;
+        unsupported.video_bitrate_bps = None;
+        unsupported.color_primaries = None;
+        unsupported.color_transfer = None;
+        unsupported.color_space = None;
+        unsupported.hdr_format = None;
+        unsupported.hdr10_color_volume = None;
+        unsupported.default_disposition = false;
+        assert!(validate_desired_target_streams(&[unsupported]).is_err());
     }
 
     #[test]
@@ -2823,6 +2970,7 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_color_volume: None,
             title: Some(" Main audio ".to_string()),
             default_disposition: true,
             forced_disposition: false,

@@ -22,6 +22,7 @@ pub mod compile;
 pub mod compliance;
 pub mod diff;
 pub mod explain;
+pub mod hdr10;
 pub mod model;
 pub mod normalize;
 pub mod pipeline;

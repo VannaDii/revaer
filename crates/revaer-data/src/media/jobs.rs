@@ -40,7 +40,7 @@ const MEDIA_JOB_WORKER_COMPLETE_FINALIZED_V1: &str =
     "SELECT media_job_worker_complete_finalized_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, metadata_value FROM media_job_desired_target_metadata_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_CHAPTER_LIST_V1: &str = "SELECT start_millis, end_millis, metadata_key, metadata_value FROM media_job_desired_target_chapter_list_v1(media_job_public_id_input => $1)";
-const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
+const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V7: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v7(media_job_public_id_input => $1)";
 const MEDIA_DISCOVERY_JOB_ENQUEUE_V1: &str = "SELECT media_discovery_job_enqueue_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
 const MEDIA_MANUAL_JOB_CREATE_V1: &str = "SELECT media_manual_job_create_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7, dry_run_input => $8)";
 
@@ -439,6 +439,30 @@ pub struct MediaJobDesiredTargetStreamRow {
     pub color_space: Option<String>,
     /// Optional desired HDR format label.
     pub hdr_format: Option<String>,
+    /// Optional HDR10 mastering red x coordinate.
+    pub hdr10_mastering_red_x: Option<String>,
+    /// Optional HDR10 mastering red y coordinate.
+    pub hdr10_mastering_red_y: Option<String>,
+    /// Optional HDR10 mastering green x coordinate.
+    pub hdr10_mastering_green_x: Option<String>,
+    /// Optional HDR10 mastering green y coordinate.
+    pub hdr10_mastering_green_y: Option<String>,
+    /// Optional HDR10 mastering blue x coordinate.
+    pub hdr10_mastering_blue_x: Option<String>,
+    /// Optional HDR10 mastering blue y coordinate.
+    pub hdr10_mastering_blue_y: Option<String>,
+    /// Optional HDR10 mastering white point x coordinate.
+    pub hdr10_mastering_white_point_x: Option<String>,
+    /// Optional HDR10 mastering white point y coordinate.
+    pub hdr10_mastering_white_point_y: Option<String>,
+    /// Optional HDR10 mastering minimum luminance.
+    pub hdr10_mastering_min_luminance: Option<String>,
+    /// Optional HDR10 mastering maximum luminance.
+    pub hdr10_mastering_max_luminance: Option<String>,
+    /// Optional HDR10 maximum content light level.
+    pub hdr10_max_content_light_level: Option<String>,
+    /// Optional HDR10 maximum frame-average light level.
+    pub hdr10_max_frame_average_light_level: Option<String>,
     /// Optional desired title.
     pub title: Option<String>,
     /// Desired default disposition.
@@ -549,7 +573,7 @@ pub async fn list_media_job_desired_target_streams(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobDesiredTargetStreamRow>> {
-    sqlx::query_as::<_, MediaJobDesiredTargetStreamRow>(MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5)
+    sqlx::query_as::<_, MediaJobDesiredTargetStreamRow>(MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V7)
         .bind(media_job_public_id)
         .fetch_all(pool)
         .await

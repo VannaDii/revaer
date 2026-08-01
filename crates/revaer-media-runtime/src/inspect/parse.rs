@@ -12,7 +12,7 @@ use super::ffprobe::{
 };
 use super::model::{
     ChapterInspection, ContainerInspection, InspectError, MediaInspection, MetadataEntry,
-    ProbeGraph, ProbeStream, StreamInspection,
+    ProbeGraph, ProbeStream, SideDataInspection, StreamInspection,
 };
 use crate::sidecar::SidecarFormat;
 
@@ -264,6 +264,7 @@ fn normalize_stream_inspection(
             .as_ref()
             .map_or_else(Vec::new, metadata_from_stream_tags),
         side_data_types: normalize_side_data(&stream.side_data_list, frame_values),
+        side_data: normalize_side_data_records(&stream.side_data_list, frame_values),
     })
 }
 
@@ -359,6 +360,53 @@ fn normalize_side_data(
     normalized.sort();
     normalized.dedup();
     normalized
+}
+
+fn normalize_side_data_records(
+    stream_values: &[FfprobeSideData],
+    frame_values: &[&FfprobeSideData],
+) -> Vec<SideDataInspection> {
+    let mut merged: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for value in stream_values {
+        merge_side_data_record(&mut merged, value);
+    }
+    for value in frame_values {
+        merge_side_data_record(&mut merged, value);
+    }
+    merged
+        .into_iter()
+        .map(|(side_data_type, metadata)| SideDataInspection {
+            side_data_type,
+            metadata: normalize_metadata(metadata),
+        })
+        .collect()
+}
+
+fn merge_side_data_record(
+    target: &mut BTreeMap<String, BTreeMap<String, String>>,
+    value: &FfprobeSideData,
+) {
+    let Some(side_data_type) = normalize_lowercase_text(Some(&value.side_data_type)) else {
+        return;
+    };
+    let metadata = target.entry(side_data_type).or_default();
+    for (key, value) in &value.extra {
+        let text = match value {
+            serde_json::Value::String(value) => Some(value.clone()),
+            serde_json::Value::Number(value) => Some(value.to_string()),
+            serde_json::Value::Bool(value) => Some(value.to_string()),
+            serde_json::Value::Null
+            | serde_json::Value::Array(_)
+            | serde_json::Value::Object(_) => None,
+        };
+        if let Some(text) = text {
+            let key = key.trim().to_ascii_lowercase();
+            let text = text.trim().to_string();
+            if !key.is_empty() && !text.is_empty() {
+                metadata.insert(key, text);
+            }
+        }
+    }
 }
 
 fn normalize_optional_text(value: Option<&str>) -> Option<String> {

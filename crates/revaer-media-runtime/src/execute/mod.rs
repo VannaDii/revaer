@@ -1,6 +1,7 @@
 //! Command argument builders.
 
 use crate::capabilities::CapabilitySnapshot;
+use revaer_media_core::hdr10::parse_number as parse_hdr10_number;
 use revaer_media_core::model::{
     ContainerChapterEntry, ContainerMetadataEntry, DesiredGraph, MediaGraph, MediaStream,
     StreamKind,
@@ -11,7 +12,9 @@ use revaer_media_core::normalize::{
     normalize_container_metadata_policy, normalize_subtitle_codec,
 };
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
-use revaer_media_core::target::{DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource};
+use revaer_media_core::target::{
+    DesiredSidecarOutput, Hdr10ColorVolume, SidecarEmbedding, SidecarOutputSource,
+};
 use revaer_media_core::verify::{verify_plan, verify_unique_stream_ids};
 use std::collections::BTreeSet;
 use std::fs;
@@ -35,6 +38,17 @@ pub enum BuildArgsError {
     /// Required codec is not supported by runtime capabilities.
     #[error("required codec is not supported: {0}")]
     UnsupportedCodec(&'static str),
+    /// Exact HDR10 color-volume authoring requires an encoder with a verified side-data contract.
+    #[error("exact HDR10 color-volume authoring is not supported by encoder: {0}")]
+    UnsupportedHdr10ColorVolumeEncoder(String),
+    /// Exact HDR10 color-volume values cannot be represented by the selected encoder contract.
+    #[error("exact HDR10 color-volume value is invalid for {field}: {value}")]
+    InvalidHdr10ColorVolumeValue {
+        /// Invalid HDR10 field.
+        field: &'static str,
+        /// Invalid HDR10 field value.
+        value: String,
+    },
     /// Desired output muxer is not supported by runtime capabilities.
     #[error("required muxer is not supported: {0}")]
     UnsupportedMuxer(String),
@@ -369,6 +383,8 @@ fn read_bounded_stderr(mut stderr: ChildStderr) -> io::Result<String> {
 }
 
 const DEFAULT_VIDEO_ENCODER: &str = "libx265";
+const HDR10_COLOR_VOLUME_ENCODER: &str = "libx265";
+const HDR10_COLOR_VOLUME_ENCODER_FALLBACKS: &[&str] = &[HDR10_COLOR_VOLUME_ENCODER];
 const VIDEO_ENCODER_FALLBACKS: &[&str] = &[
     "hevc_nvenc",
     "hevc_qsv",
@@ -424,6 +440,8 @@ pub struct VideoStreamConstraints {
     pub color_space: Option<String>,
     /// Desired HDR format label.
     pub hdr_format: Option<String>,
+    /// Desired exact HDR10 mastering-display and content-light side-data contract.
+    pub hdr10_color_volume: Option<Hdr10ColorVolume>,
 }
 
 /// Per-stream audio constraints selected by an immutable desired target.
@@ -924,6 +942,15 @@ fn build_ffmpeg_argv_with_video_policy(
             args.push(format!("-c:{stream_id}"));
             args.push(video_encoder.to_string());
             append_video_quality_args(&mut args, video_encoder);
+            let output_index = usize::try_from(stream_id).map_err(|_| {
+                BuildArgsError::InvalidOperations("stream id cannot fit output index")
+            })?;
+            append_video_constraint_args_for_encoder(
+                &mut args,
+                output_index,
+                video_constraints_for_stream_id(policy, stream_id),
+                video_encoder,
+            )?;
             append_hdr_color_args(&mut args, policy.hdr_color);
         }
         OperationKind::EmbedSubtitle
@@ -1123,7 +1150,7 @@ pub fn build_execution_steps_with_video_policy(
     }
 
     let selected_video_encoder = select_video_encoder_for_policy(capabilities, policy);
-    validate_operation_capabilities(operations, capabilities, selected_video_encoder)?;
+    validate_operation_capabilities(operations, capabilities, selected_video_encoder, policy)?;
 
     let video_encoder = selected_video_encoder.unwrap_or(DEFAULT_VIDEO_ENCODER);
     let mut steps = Vec::with_capacity(operations.len() + 1);
@@ -1245,12 +1272,13 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
             operations,
             snapshot,
             select_video_encoder_for_policy(snapshot, &policy),
+            &policy,
         )
         .ok()
         .and_then(|()| select_video_encoder_for_policy(snapshot, &policy))
     });
     if let Some(snapshot) = capabilities {
-        validate_operation_capabilities(operations, snapshot, selected_video_encoder)?;
+        validate_operation_capabilities(operations, snapshot, selected_video_encoder, &policy)?;
         validate_muxer_capability(desired, snapshot)?;
     }
     let video_encoder = selected_video_encoder.unwrap_or(DEFAULT_VIDEO_ENCODER);
@@ -1338,7 +1366,12 @@ fn append_desired_stream_args(
         if stream.kind == StreamKind::Video && output_codec != "copy" {
             let constraints = video_constraints_for_stream(policy, stream);
             append_video_quality_args(args, &output_codec);
-            append_video_constraint_args(args, output_index, constraints);
+            append_video_constraint_args_for_encoder(
+                args,
+                output_index,
+                constraints,
+                &output_codec,
+            )?;
             append_hdr_color_args(args, policy.hdr_color);
         }
         if stream.kind == StreamKind::Audio && output_codec != "copy" {
@@ -2226,9 +2259,34 @@ fn validate_operation_capabilities(
     operations: &[PlannedOperation],
     capabilities: &CapabilitySnapshot,
     selected_video_encoder: Option<&'static str>,
+    policy: &VideoTranscodePolicy,
 ) -> Result<(), BuildArgsError> {
+    validate_hdr10_color_volume_encoder_policy(operations, selected_video_encoder, policy)?;
     for operation in operations {
         validate_operation_capability(operation, capabilities, selected_video_encoder)?;
+    }
+    Ok(())
+}
+
+fn validate_hdr10_color_volume_encoder_policy(
+    operations: &[PlannedOperation],
+    selected_video_encoder: Option<&str>,
+    policy: &VideoTranscodePolicy,
+) -> Result<(), BuildArgsError> {
+    if operations.iter().any(|operation| {
+        operation.kind == OperationKind::VideoTranscode
+            && operation.stream_id.is_some_and(|stream_id| {
+                video_constraints_for_stream_id(policy, stream_id)
+                    .and_then(|constraint| constraint.hdr10_color_volume.as_ref())
+                    .is_some()
+            })
+    }) && selected_video_encoder != Some(HDR10_COLOR_VOLUME_ENCODER)
+    {
+        return Err(BuildArgsError::UnsupportedHdr10ColorVolumeEncoder(
+            selected_video_encoder
+                .unwrap_or(HDR10_COLOR_VOLUME_ENCODER)
+                .to_string(),
+        ));
     }
     Ok(())
 }
@@ -2286,16 +2344,29 @@ fn select_video_encoder_for_policy(
     capabilities: &CapabilitySnapshot,
     policy: &VideoTranscodePolicy,
 ) -> Option<&'static str> {
-    let candidates = match policy.intent {
-        VideoTranscodeIntent::Anime | VideoTranscodeIntent::Archival => {
-            SOFTWARE_VIDEO_ENCODER_FALLBACKS
+    let candidates = if video_policy_requires_hdr10_color_volume(policy) {
+        HDR10_COLOR_VOLUME_ENCODER_FALLBACKS
+    } else {
+        match policy.intent {
+            VideoTranscodeIntent::Anime | VideoTranscodeIntent::Archival => {
+                SOFTWARE_VIDEO_ENCODER_FALLBACKS
+            }
+            VideoTranscodeIntent::General | VideoTranscodeIntent::Audiobook => {
+                VIDEO_ENCODER_FALLBACKS
+            }
         }
-        VideoTranscodeIntent::General | VideoTranscodeIntent::Audiobook => VIDEO_ENCODER_FALLBACKS,
     };
     candidates
         .iter()
         .copied()
         .find(|candidate| capabilities_has_encoder(capabilities, candidate))
+}
+
+fn video_policy_requires_hdr10_color_volume(policy: &VideoTranscodePolicy) -> bool {
+    policy
+        .stream_constraints
+        .iter()
+        .any(|constraint| constraint.hdr10_color_volume.is_some())
 }
 
 fn append_video_quality_args(args: &mut Vec<String>, video_encoder: &str) {
@@ -2327,19 +2398,27 @@ fn video_constraints_for_stream<'a>(
     policy: &'a VideoTranscodePolicy,
     stream: &MediaStream,
 ) -> Option<&'a VideoStreamConstraints> {
+    video_constraints_for_stream_id(policy, stream.stream_id)
+}
+
+fn video_constraints_for_stream_id(
+    policy: &VideoTranscodePolicy,
+    stream_id: u32,
+) -> Option<&VideoStreamConstraints> {
     policy
         .stream_constraints
         .iter()
-        .find(|constraints| constraints.stream_id == stream.stream_id)
+        .find(|constraints| constraints.stream_id == stream_id)
 }
 
-fn append_video_constraint_args(
+fn append_video_constraint_args_for_encoder(
     args: &mut Vec<String>,
     output_index: usize,
     constraints: Option<&VideoStreamConstraints>,
-) {
+    video_encoder: &str,
+) -> Result<(), BuildArgsError> {
     let Some(constraints) = constraints else {
-        return;
+        return Ok(());
     };
     append_optional_stream_arg(
         args,
@@ -2362,6 +2441,90 @@ fn append_video_constraint_args(
     );
     append_optional_stream_arg(args, "color_trc", output_index, color_transfer.as_deref());
     append_optional_stream_arg(args, "colorspace", output_index, color_space.as_deref());
+    if let Some(volume) = constraints.hdr10_color_volume.as_ref() {
+        append_x265_hdr10_color_volume_args(args, output_index, video_encoder, volume)?;
+    }
+    Ok(())
+}
+
+fn append_x265_hdr10_color_volume_args(
+    args: &mut Vec<String>,
+    output_index: usize,
+    video_encoder: &str,
+    volume: &Hdr10ColorVolume,
+) -> Result<(), BuildArgsError> {
+    if !video_encoder.eq_ignore_ascii_case(HDR10_COLOR_VOLUME_ENCODER) {
+        return Err(BuildArgsError::UnsupportedHdr10ColorVolumeEncoder(
+            video_encoder.to_string(),
+        ));
+    }
+    args.push(format!("-x265-params:{output_index}"));
+    args.push(hdr10_color_volume_x265_params(volume)?);
+    Ok(())
+}
+
+fn hdr10_color_volume_x265_params(volume: &Hdr10ColorVolume) -> Result<String, BuildArgsError> {
+    let red_x = hdr10_scaled_integer("mastering_red_x", &volume.mastering_red_x, 50_000)?;
+    let red_y = hdr10_scaled_integer("mastering_red_y", &volume.mastering_red_y, 50_000)?;
+    let green_x = hdr10_scaled_integer("mastering_green_x", &volume.mastering_green_x, 50_000)?;
+    let green_y = hdr10_scaled_integer("mastering_green_y", &volume.mastering_green_y, 50_000)?;
+    let blue_x = hdr10_scaled_integer("mastering_blue_x", &volume.mastering_blue_x, 50_000)?;
+    let blue_y = hdr10_scaled_integer("mastering_blue_y", &volume.mastering_blue_y, 50_000)?;
+    let white_x = hdr10_scaled_integer(
+        "mastering_white_point_x",
+        &volume.mastering_white_point_x,
+        50_000,
+    )?;
+    let white_y = hdr10_scaled_integer(
+        "mastering_white_point_y",
+        &volume.mastering_white_point_y,
+        50_000,
+    )?;
+    let min_luminance = hdr10_scaled_integer(
+        "mastering_min_luminance",
+        &volume.mastering_min_luminance,
+        10_000,
+    )?;
+    let max_luminance = hdr10_scaled_integer(
+        "mastering_max_luminance",
+        &volume.mastering_max_luminance,
+        10_000,
+    )?;
+    let max_content = hdr10_scaled_integer(
+        "max_content_light_level",
+        &volume.max_content_light_level,
+        1,
+    )?;
+    let max_average = hdr10_scaled_integer(
+        "max_frame_average_light_level",
+        &volume.max_frame_average_light_level,
+        1,
+    )?;
+    Ok(format!(
+        "master-display=G({green_x},{green_y})B({blue_x},{blue_y})R({red_x},{red_y})WP({white_x},{white_y})L({max_luminance},{min_luminance}):max-cll={max_content},{max_average}"
+    ))
+}
+
+fn hdr10_scaled_integer(
+    field: &'static str,
+    value: &str,
+    scale: u32,
+) -> Result<String, BuildArgsError> {
+    let Some(parsed) = parse_hdr10_number(value) else {
+        return Err(BuildArgsError::InvalidHdr10ColorVolumeValue {
+            field,
+            value: value.to_string(),
+        });
+    };
+    let scaled = parsed * f64::from(scale);
+    let rounded = scaled.round();
+    if !scaled.is_finite() || rounded < 0.0 || (scaled - rounded).abs() > 1.0e-6 {
+        return Err(BuildArgsError::InvalidHdr10ColorVolumeValue {
+            field,
+            value: value.to_string(),
+        });
+    }
+    Ok(format!("{rounded:.0}"))
 }
 
 fn append_optional_stream_arg(
@@ -2547,7 +2710,9 @@ mod tests {
         MediaGraph, MediaStream, StreamKind,
     };
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
-    use revaer_media_core::target::{DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource};
+    use revaer_media_core::target::{
+        DesiredSidecarOutput, Hdr10ColorVolume, SidecarEmbedding, SidecarOutputSource,
+    };
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -2602,6 +2767,23 @@ mod tests {
     impl ExecutionControl for AtomicExecutionControl {
         fn cancellation_requested(&self) -> bool {
             self.requested.load(Ordering::Acquire)
+        }
+    }
+
+    fn hdr10_color_volume() -> Hdr10ColorVolume {
+        Hdr10ColorVolume {
+            mastering_red_x: "34000/50000".to_string(),
+            mastering_red_y: "16000/50000".to_string(),
+            mastering_green_x: "13250/50000".to_string(),
+            mastering_green_y: "34500/50000".to_string(),
+            mastering_blue_x: "7500/50000".to_string(),
+            mastering_blue_y: "3000/50000".to_string(),
+            mastering_white_point_x: "15635/50000".to_string(),
+            mastering_white_point_y: "16450/50000".to_string(),
+            mastering_min_luminance: "50/10000".to_string(),
+            mastering_max_luminance: "10000000/10000".to_string(),
+            max_content_light_level: "1000".to_string(),
+            max_frame_average_light_level: "400".to_string(),
         }
     }
 
@@ -5735,6 +5917,7 @@ mod tests {
                 color_transfer: Some("smpte2084".to_string()),
                 color_space: Some("bt2020nc".to_string()),
                 hdr_format: Some("hdr10".to_string()),
+                hdr10_color_volume: None,
             }],
             ..VideoTranscodePolicy::default()
         };
@@ -5757,6 +5940,200 @@ mod tests {
         assert!(has_arg("-color_primaries:0", "bt2020"));
         assert!(has_arg("-color_trc:0", "smpte2084"));
         assert!(has_arg("-colorspace:0", "bt2020nc"));
+        assert_video_constraint_args(&argv);
+    }
+
+    fn assert_video_constraint_args(argv: &[String]) {
+        assert!(argv.windows(2).any(|pair| pair == ["-profile:0", "main10"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-level:0", "5.1"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-b:0", "8000000"]));
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == ["-color_primaries:0", "bt2020"])
+        );
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == ["-color_trc:0", "smpte2084"])
+        );
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == ["-colorspace:0", "bt2020nc"])
+        );
+    }
+
+    #[test]
+    fn desired_graph_exact_hdr10_color_volume_uses_x265_params() {
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: Vec::new(),
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: None,
+            stream_bindings: vec![DesiredStreamBinding {
+                output_stream_id: 0,
+                source_stream_id: Some(0),
+            }],
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: "hevc".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["libx265".to_string(), "hevc_nvenc".to_string()],
+            codec_support: Vec::new(),
+            encoders: vec!["hevc_nvenc".to_string(), "libx265".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+            output_stream_id: Some(0),
+        }];
+        let policy = VideoTranscodePolicy {
+            stream_constraints: vec![VideoStreamConstraints {
+                stream_id: 0,
+                profile: Some("main10".to_string()),
+                level: None,
+                bitrate_bps: None,
+                color_primaries: None,
+                color_transfer: None,
+                color_space: None,
+                hdr_format: Some("hdr10".to_string()),
+                hdr10_color_volume: Some(hdr10_color_volume()),
+            }],
+            ..VideoTranscodePolicy::default()
+        };
+
+        let argv = build_desired_graph_ffmpeg_argv(
+            "/in.mkv",
+            "/out.mkv",
+            &source,
+            &desired,
+            &operations,
+            Some(&capabilities),
+            policy,
+        )
+        .expect("desired graph argv");
+
+        assert!(argv.windows(2).any(|pair| pair == ["-c:0", "libx265"]));
+        assert!(!argv.iter().any(|item| item == "hevc_nvenc"));
+        assert!(argv.windows(2).any(|pair| {
+            pair == [
+                "-x265-params:0",
+                "master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,50):max-cll=1000,400",
+            ]
+        }));
+    }
+
+    #[test]
+    fn desired_graph_exact_hdr10_color_volume_rejects_hardware_only_encoder() {
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: Vec::new(),
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: None,
+            stream_bindings: vec![DesiredStreamBinding {
+                output_stream_id: 0,
+                source_stream_id: Some(0),
+            }],
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: "hevc".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["hevc_nvenc".to_string()],
+            codec_support: Vec::new(),
+            encoders: vec!["hevc_nvenc".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+            output_stream_id: Some(0),
+        }];
+        let policy = VideoTranscodePolicy {
+            stream_constraints: vec![VideoStreamConstraints {
+                stream_id: 0,
+                profile: None,
+                level: None,
+                bitrate_bps: None,
+                color_primaries: None,
+                color_transfer: None,
+                color_space: None,
+                hdr_format: Some("hdr10".to_string()),
+                hdr10_color_volume: Some(hdr10_color_volume()),
+            }],
+            ..VideoTranscodePolicy::default()
+        };
+
+        assert_eq!(
+            build_desired_graph_ffmpeg_argv(
+                "/in.mkv",
+                "/out.mkv",
+                &source,
+                &desired,
+                &operations,
+                Some(&capabilities),
+                policy,
+            ),
+            Err(BuildArgsError::UnsupportedHdr10ColorVolumeEncoder(
+                "libx265".to_string()
+            ))
+        );
     }
 
     #[test]

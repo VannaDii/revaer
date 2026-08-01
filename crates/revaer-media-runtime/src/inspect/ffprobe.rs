@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
+use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 pub(super) struct FfprobeOutput {
@@ -87,4 +88,6 @@ pub(super) struct FfprobeChapter {
 #[derive(Debug, Deserialize)]
 pub(super) struct FfprobeSideData {
     pub(super) side_data_type: String,
+    #[serde(flatten)]
+    pub(super) extra: BTreeMap<String, Value>,
 }
