@@ -1,0 +1,83 @@
+# Media explicit retained stream selectors
+
+- Status: Accepted
+- Date: 2026-08-01
+- Context:
+  - Full inspection already preserves attachment and opaque data stream facts, and the runtime can copy an attachment or data stream when the desired graph is an exact clone of the inspected source stream.
+  - Operators still could not intentionally name an existing attachment or data stream in a desired target. The only supported path was broad unmatched-stream preservation, which is too implicit for target catalogs that need deterministic stream order and selection.
+  - The target schema still does not model attachment payloads, data payload semantics, muxer-specific transforms, or verification rules for authored creation or rewrite.
+- Decision:
+  - Permit `attachment` and `data` desired-target stream rows as exact retained-stream selectors.
+  - A retained selector may bind by kind, optional role, optional language, and exact codec. After binding, target compilation copies the inspected source stream unchanged instead of applying target metadata, disposition, audio, video, or subtitle shape.
+  - API, YAML, database, job-snapshot reconstruction, core compilation, and profile-readiness validation all accept exact retained selectors and reject retained-stream creation or rewrite attempts.
+  - Keep `chapter` stream rows rejected. Chapter behavior remains governed by the target-level container chapter policy.
+  - Alternatives considered:
+    - Continue relying only on unmatched-stream preservation: rejected because it cannot express explicit operator intent or desired mux order for retained streams.
+    - Allow retained rows to rewrite title or disposition: rejected because that would stop being exact passthrough and would need separate runtime and verifier contracts.
+    - Require the target row codec to be `copy`: rejected because the codec value is useful as an exact selector against inspected source metadata.
+- Consequences:
+  - Positive outcomes:
+    - Desired targets can now deliberately retain specific existing attachments and data streams without widening authored payload support.
+    - Readiness checks do not require encoders for retained selectors because no encoding is performed.
+  - Risks or trade-offs:
+    - The selector depends on inspected codec labels. A source whose codec label changes across FFprobe versions may require catalog adjustment.
+    - Payload creation, metadata rewrite, disposition rewrite, and arbitrary data semantics remain unavailable until they have explicit contracts.
+- Follow-up:
+  - Add authored attachment payload and verification support before allowing attachment creation or mutation.
+  - Add data-stream payload, muxer, and verifier semantics before allowing data-stream creation or mutation.
+
+## Task Record
+
+- Motivation:
+  - Close the gap between runtime exact passthrough support and desired-target catalog expressiveness without pretending authored retained-stream mutation is implemented.
+- Design notes:
+  - `TargetStream` validation now treats `Attachment` and `Data` as retained-stream selectors with no audio, video, subtitle, title, or disposition shape.
+  - The core compiler matches retained selectors by exact codec in addition to kind, role, and language, then clones the inspected source stream into the desired graph.
+  - Runtime profile-readiness validation skips encoder requirements for retained selectors.
+  - The database migration widens persisted desired-target and job-snapshot stream kinds to `attachment` and `data`, and adds exact-passthrough constraints for retained rows.
+  - The native libtorrent build helper now carries pkg-config compile definitions into the C++ bridge build so the Sonar CFamily compile database reflects the installed libtorrent feature contract, selects one coherent libtorrent source per build instead of mixing fallback Homebrew/system paths with pkg-config paths, and reruns when the caller-selected PATH changes.
+  - The native libtorrent authoring bridge now feeds directory entries to pre-2.1 `file_storage` with the torrent root name included and hashes from the parent directory, matching the older API contract while preserving root-relative file paths in the Rust result.
+  - The native bridge poll loop now keeps metadata-event construction in a helper and uses Sonar-preferred byte/reference forms so new CFamily maintainability findings are fixed in source.
+  - The native bridge now fails closed when optional legacy disk-cache settings are requested against linked libtorrent builds that no longer expose those settings, rather than silently pretending the settings were applied.
+  - The native build supports libtorrent `>= 2.0.10, < 2.2.0`, covering the validated 2.0 and 2.1 native API shapes while preserving a fail-closed boundary for unvalidated later minors.
+  - `just test-native` runs the native libtorrent package tests serially to avoid overlapping native sessions on hosted runners while still executing the full native suite.
+  - Justfile recipes now use non-login Bash so CI setup actions and local NVM-managed shells preserve the selected Node, `pkg-config`, and native package paths.
+- Test coverage summary:
+  - Added core coverage for explicit attachment and data selectors, exact-codec misses, and retained-stream rewrite rejection.
+  - Added API request validation coverage for retained selector acceptance and rewrite rejection.
+  - Added YAML validation coverage for retained selector import and rewrite rejection.
+  - Added database coverage for persisted retained rows and stored-procedure rewrite rejection.
+  - Added app readiness and job-snapshot coverage proving retained selectors reconstruct and compile without requiring encoders.
+  - Added native torrent-authoring regression coverage proving the non-deprecated libtorrent `create_torrent` path preserves directory-root names and operator-facing relative file paths.
+  - Added native storage-setting coverage for both supported legacy cache settings and newer libtorrent builds that explicitly reject unavailable cache knobs.
+  - Ran `just ci` under NVM-managed Node 22.14.0; it passed formatting, policy guardrails, workflow guardrails, media compliance guardrails, both Clippy passes, Helm lint, instruction drift, asset sync, unused dependency analysis, cargo/npm audit, cargo deny, UI release build, full-feature tests, minimum-feature tests, coverage, every 90% per-package line floor, LCOV export to `coverage/lcov.info`, HTML coverage export to `coverage/html`, and the release build.
+  - Ran `just ui-e2e` under NVM-managed Node 22.14.0; 104 Playwright API/UI tests passed with coverage enforcement enabled.
+  - Ran the focused torrent authoring API Playwright spec after the native include-path repair; all 12 torrent API tests passed, including the previously crashing authoring case.
+  - Ran `just sonar-compile-db` under NVM-managed Node 22.14.0 after `just ci`; `coverage/lcov.info` and `coverage/compile_commands.json` were verified nonempty, and the CFamily compile command includes both the pkg-config libtorrent include directory and `/opt/homebrew/include` so Boost headers match the linked ARM Homebrew libtorrent dylib.
+  - The Sonar native compile database now builds through the pkg-config libtorrent path without C++ compiler warnings, including the required CXX bridge include inputs.
+  - Ran `REVAER_NATIVE_IT=1 cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-torrent-libt --all-features -- --nocapture`; 91 library tests and 3 native integration tests passed.
+  - Ran `RUST_TEST_THREADS=1 REVAER_NATIVE_IT=1 cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-torrent-libt --all-features -- --nocapture`; 91 library tests and 3 native integration tests passed under the serialized native shape used by `just test-native`.
+  - Ran `just test-native` under NVM-managed Node 22.14.0 after fixing the Sonar CFamily findings; 93 library tests and 3 native integration tests passed.
+  - The next GitHub Sonar scan reported zero new unresolved issues but failed the quality gate because new-code coverage was 78.0% against the 80% threshold. Added focused Rust coverage for malformed bencode parsing and native error-shape handling rather than relaxing scanner criteria.
+  - Ran `just cov` under NVM-managed Node 22.14.0 after the coverage fix; the workspace coverage run passed every per-package 90% line floor and regenerated `coverage/lcov.info` and `coverage/html`.
+  - Estimated PR new-code coverage from the regenerated LCOV plus Sonar's 129 uncovered C++ new lines at approximately 81.4%, above the 80% quality gate threshold.
+  - Ran Sonar secret analysis successfully against the changed files. SonarQube Agentic Analysis was attempted but the organization rejected it with a 403 entitlement response, so it remains unavailable rather than a repository-side scanner gap.
+  - Reproduced the hosted-runner directory-authoring crash against Ubuntu 24.04 libtorrent 2.0.10 in an isolated container, then verified the patched path layout generated metainfo successfully with the same libtorrent version.
+  - A local `just ci` attempt exposed that login Bash startup files could shadow the NVM-selected Node and ARM Homebrew `pkg-config` with unrelated `/usr/local` tools; the Justfile shell now preserves the caller-selected PATH instead.
+  - A local `just ui-e2e` attempt then exposed a native `revaer-app` crash while formatting libtorrent alert error messages through Boost.System built with mixed header/runtime prefixes. The build script now adds dependency include prefixes derived from pkg-config link paths, and the focused torrent authoring spec plus full E2E run passed after rebuilding.
+  - Ran Sonar CLI issue and secrets checks on the final changed file set; open issue listing returned zero issues, secrets analysis passed, and file-level Agentic Analysis was unavailable for the organization with HTTP 403.
+  - The GitHub Sonar job accepted Rust LCOV, JavaScript LCOV, and CFamily compile-database inputs, reported a passing quality gate, then failed the strict post-scan guardrail because six new CFamily issues remained in `session.cpp`; all six were fixed in source without relaxing Sonar criteria.
+  - Verified the local SonarScanner CLI is installed and reads this branch's `sonar-project.properties`. A local scanner upload was not run because no `SONAR_TOKEN` is present in the local environment; GitHub Actions remains the publication gate for the full server-side scan.
+- Observability updates:
+  - No new metrics, logs, or event types were added. Unsupported retained rewrites continue to surface as invalid target/catalog inputs or preflight build failures, depending on boundary.
+- Status-doc validation:
+  - Updated ADR 318 and the prior attachment/data passthrough ADRs so they no longer claim all retained target rows are rejected.
+- Risk & rollback plan:
+  - Risk: a retained selector may fail to bind if codec, language, or role metadata does not match the inspected source exactly.
+  - Roll back by reverting this migration and validation/compiler changes, returning retained streams to unmatched-policy-only preservation.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Updated `.github/instructions/rust.instructions.md` and `.github/instructions/devops.instructions.md` to record the coherent libtorrent package-selection requirement, the serialized native-test policy introduced in `just test-native`, and the non-login Justfile shell contract.
+  - No instruction drift or contradiction was introduced.

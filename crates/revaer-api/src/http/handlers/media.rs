@@ -1741,7 +1741,7 @@ fn validate_desired_target_stream_identity(
 }
 
 fn validate_desired_target_stream_kind(value: &str) -> Result<String, ApiError> {
-    const STREAM_KINDS: [&str; 3] = ["video", "audio", "subtitle"];
+    const STREAM_KINDS: [&str; 5] = ["video", "audio", "subtitle", "attachment", "data"];
 
     let kind = normalize_required_str_field(value, "stream_kind is required")?.to_ascii_lowercase();
     if STREAM_KINDS.contains(&kind.as_str()) {
@@ -1780,6 +1780,7 @@ fn validate_desired_target_stream_shape(
     validate_video_target_shape_scope(stream, kind)?;
     validate_subtitle_target_shape_scope(stream, kind)?;
     validate_subtitle_target_shape(stream, kind)?;
+    validate_retained_target_shape(stream, kind)?;
     Ok(())
 }
 
@@ -2012,6 +2013,24 @@ fn validate_subtitle_target_shape(
         !["preserve", "remove", "fail"].contains(&value.to_ascii_lowercase().as_str())
     }) {
         return Err(ApiError::bad_request("image_subtitle_action is invalid"));
+    }
+    Ok(())
+}
+
+fn validate_retained_target_shape(
+    stream: &MediaDesiredTargetStream,
+    kind: &str,
+) -> Result<(), ApiError> {
+    if !matches!(kind, "attachment" | "data") {
+        return Ok(());
+    }
+    if trim_and_filter_empty(stream.title.as_deref()).is_some()
+        || stream.default_disposition
+        || stream.forced_disposition
+    {
+        return Err(ApiError::bad_request(
+            "retained stream rows only support exact passthrough selectors",
+        ));
     }
     Ok(())
 }
@@ -2817,10 +2836,47 @@ mod tests {
     }
 
     #[test]
-    fn desired_target_stream_validation_rejects_unsupported_kinds() {
-        let unsupported = ["attachment", "chapter", "data"].map(|kind| MediaDesiredTargetStream {
-            stream_key: format!("{kind}-main"),
-            stream_kind: kind.to_string(),
+    fn desired_target_stream_validation_accepts_retained_passthrough_kinds() {
+        for kind in ["attachment", "data"] {
+            assert!(
+                validate_desired_target_streams(&[MediaDesiredTargetStream {
+                    stream_key: format!("{kind}-main"),
+                    stream_kind: kind.to_string(),
+                    semantic_role: None,
+                    language_code: None,
+                    optional: false,
+                    sort_order: 0,
+                    codec: "bin_data".to_string(),
+                    channel_count: None,
+                    channel_layout: None,
+                    audio_bitrate_bps: None,
+                    audio_sample_rate_hz: None,
+                    audio_loudness_profile: None,
+                    audio_dynamic_range: None,
+                    video_profile: None,
+                    video_level: None,
+                    video_bitrate_bps: None,
+                    color_primaries: None,
+                    color_transfer: None,
+                    color_space: None,
+                    hdr_format: None,
+                    hdr10_metadata: None,
+                    title: None,
+                    default_disposition: false,
+                    forced_disposition: false,
+                    subtitle_placement: None,
+                    image_subtitle_action: None,
+                }])
+                .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn desired_target_stream_validation_rejects_retained_stream_rewrites() {
+        let mut retained = MediaDesiredTargetStream {
+            stream_key: "attachment-main".to_string(),
+            stream_kind: "attachment".to_string(),
             semantic_role: None,
             language_code: None,
             optional: false,
@@ -2845,11 +2901,27 @@ mod tests {
             forced_disposition: false,
             subtitle_placement: None,
             image_subtitle_action: None,
-        });
+        };
+        retained.title = Some("Renamed".to_string());
+        assert!(validate_desired_target_streams(&[retained.clone()]).is_err());
+        retained.title = None;
+        retained.default_disposition = true;
+        assert!(validate_desired_target_streams(&[retained]).is_err());
+    }
 
-        for stream in unsupported {
-            assert!(validate_desired_target_streams(&[stream]).is_err());
-        }
+    #[test]
+    fn desired_target_stream_validation_rejects_unsupported_kinds() {
+        let mut unsupported = desired_target_valid_video_stream();
+        unsupported.stream_kind = "chapter".to_string();
+        unsupported.video_profile = None;
+        unsupported.video_level = None;
+        unsupported.video_bitrate_bps = None;
+        unsupported.color_primaries = None;
+        unsupported.color_transfer = None;
+        unsupported.color_space = None;
+        unsupported.hdr_format = None;
+        unsupported.default_disposition = false;
+        assert!(validate_desired_target_streams(&[unsupported]).is_err());
     }
 
     #[test]

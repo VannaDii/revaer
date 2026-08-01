@@ -2571,6 +2571,7 @@ fn yaml_desired_stream_invalid(
     yaml_stream_identity_invalid(stream, &stream_kind, stream_keys, stream_orders)
         || yaml_audio_constraints_invalid(stream, &stream_kind)
         || yaml_video_constraints_invalid(stream, &stream_kind)
+        || yaml_retained_stream_constraints_invalid(stream, &stream_kind)
         || yaml_subtitle_constraints_invalid(stream, &stream_kind)
 }
 
@@ -2583,7 +2584,10 @@ fn yaml_stream_identity_invalid(
     stream.stream_key.trim().is_empty()
         || stream.codec.trim().is_empty()
         || stream.sort_order < 0
-        || !matches!(stream_kind, "video" | "audio" | "subtitle")
+        || !matches!(
+            stream_kind,
+            "video" | "audio" | "subtitle" | "attachment" | "data"
+        )
         || !stream_keys.insert(stream.stream_key.trim().to_ascii_lowercase())
         || !stream_orders.insert(stream.sort_order)
 }
@@ -2679,11 +2683,39 @@ fn hdr10_metadata_values_invalid(metadata: &MediaDesiredTargetHdr10MetadataParam
     .is_none()
 }
 
+fn yaml_retained_stream_constraints_invalid(
+    stream: &MediaDesiredTargetStreamParams,
+    stream_kind: &str,
+) -> bool {
+    if !matches!(stream_kind, "attachment" | "data") {
+        return false;
+    }
+    stream
+        .title
+        .as_deref()
+        .is_some_and(|title| !title.trim().is_empty())
+        || stream.default_disposition
+        || stream.forced_disposition
+        || stream.video_profile.is_some()
+        || stream.video_level.is_some()
+        || stream.video_bitrate_bps.is_some()
+        || stream.color_primaries.is_some()
+        || stream.color_transfer.is_some()
+        || stream.color_space.is_some()
+        || stream.hdr_format.is_some()
+        || stream.hdr10_metadata.is_some()
+        || stream.subtitle_placement.is_some()
+        || stream.image_subtitle_action.is_some()
+}
+
 fn yaml_subtitle_constraints_invalid(
     stream: &MediaDesiredTargetStreamParams,
     stream_kind: &str,
 ) -> bool {
-    stream_kind != "subtitle" && stream.forced_disposition
+    stream_kind != "subtitle"
+        && (stream.forced_disposition
+            || stream.subtitle_placement.is_some()
+            || stream.image_subtitle_action.is_some())
 }
 
 fn validate_unique_catalog_keys(
@@ -3445,6 +3477,8 @@ fn desired_target_stream_kind(stream_kind: &str) -> Result<StreamKind, MediaServ
         "video" => Ok(StreamKind::Video),
         "audio" => Ok(StreamKind::Audio),
         "subtitle" => Ok(StreamKind::Subtitle),
+        "attachment" => Ok(StreamKind::Attachment),
+        "data" => Ok(StreamKind::Data),
         _ => Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
             .with_code("media_profile_desired_target_stream_unsupported")),
     }
@@ -3966,7 +4000,7 @@ mod tests {
         let profile = media_profile_with_desired_target("living-room-output", 1);
         let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
         let mut stream = desired_video_stream();
-        stream.stream_kind = "data".to_string();
+        stream.stream_kind = "chapter".to_string();
         let target = desired_target_response("matroska", vec![stream]);
         let policies = vec![policy_profile("safe_dry_run", "general")];
 
@@ -3976,6 +4010,26 @@ mod tests {
         assert_eq!(
             result.err().and_then(|err| err.code().map(str::to_owned)),
             Some("media_profile_desired_target_stream_unsupported".to_string())
+        );
+    }
+
+    #[test]
+    fn profile_desired_target_readiness_accepts_retained_stream_selectors() {
+        let profile = media_profile_with_desired_target("living-room-output", 1);
+        let snapshot = capability_snapshot_with_codecs(&[capability_codec("hevc", true, true)]);
+        let target = desired_target_response(
+            "matroska",
+            vec![
+                desired_video_stream(),
+                desired_retained_stream("font-main", "attachment", None, 1, "ttf"),
+                desired_retained_stream("timecode-main", "data", Some("eng"), 2, "bin_data"),
+            ],
+        );
+        let policies = vec![policy_profile("safe_dry_run", "general")];
+
+        assert!(
+            ensure_profile_desired_target_readiness(&profile, &snapshot, &[target], &policies)
+                .is_ok()
         );
     }
 
@@ -4801,6 +4855,36 @@ mod tests {
     }
 
     #[test]
+    fn validate_yaml_bundle_accepts_retained_stream_selectors() {
+        let bundle = parse_yaml_bundle(
+            "format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Retained streams\ntargets:\n  - target_key: retained-target\n    version: 1\n    display_name: Retained target\n    container_format: matroska\n    streams:\n      - stream_key: font-main\n        stream_kind: attachment\n        optional: false\n        sort_order: 0\n        codec: ttf\n        default_disposition: false\n        forced_disposition: false\n      - stream_key: timecode-main\n        stream_kind: data\n        language_code: eng\n        optional: true\n        sort_order: 1\n        codec: bin_data\n        default_disposition: false\n        forced_disposition: false\n",
+        )
+        .expect("bundle");
+        let issues = validate_yaml_bundle(&bundle, &[], &[], &[]);
+
+        assert!(
+            issues
+                .iter()
+                .all(|issue| issue.code != "media_yaml_desired_target_stream_invalid")
+        );
+    }
+
+    #[test]
+    fn validate_yaml_bundle_rejects_retained_stream_rewrites() {
+        let bundle = parse_yaml_bundle(
+            "format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Retained rewrite\ntargets:\n  - target_key: retained-target\n    version: 1\n    display_name: Retained target\n    container_format: matroska\n    streams:\n      - stream_key: font-main\n        stream_kind: attachment\n        optional: false\n        sort_order: 0\n        codec: ttf\n        title: Renamed font\n        default_disposition: false\n        forced_disposition: false\n",
+        )
+        .expect("bundle");
+        let issues = validate_yaml_bundle(&bundle, &[], &[], &[]);
+
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue.code == "media_yaml_desired_target_stream_invalid")
+        );
+    }
+
+    #[test]
     fn validate_yaml_bundle_rejects_invalid_unmatched_policy_actions() {
         let bundle = parse_yaml_bundle(
             "format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Invalid policy actions\npolicies:\n  - policy_key: bad-actions\n    version: 1\n    display_name: Bad actions\n    video_intent: general\n    unmatched_video_action: fail\n    unmatched_audio_action: copy\n    unmatched_subtitle_action: preserve\n    unmatched_attachment_action: preserve\n    unmatched_data_action: remove\n    verification_strictness: balanced\n    verification_duration_tolerance_millis: 100\n    verification_mux_validation: true\n    verification_decode_all_streams: true\n    verification_keyframe_seek: true\n    verification_playback_probe: true\n",
@@ -5286,6 +5370,43 @@ mod tests {
             hdr10_metadata: None,
             title: None,
             default_disposition: true,
+            forced_disposition: false,
+            subtitle_placement: None,
+            image_subtitle_action: None,
+        }
+    }
+
+    fn desired_retained_stream(
+        stream_key: &str,
+        stream_kind: &str,
+        language_code: Option<&str>,
+        sort_order: i32,
+        codec: &str,
+    ) -> MediaDesiredTargetStreamParams {
+        MediaDesiredTargetStreamParams {
+            stream_key: stream_key.to_string(),
+            stream_kind: stream_kind.to_string(),
+            semantic_role: None,
+            language_code: language_code.map(str::to_string),
+            optional: false,
+            sort_order,
+            codec: codec.to_string(),
+            channel_count: None,
+            channel_layout: None,
+            audio_bitrate_bps: None,
+            audio_sample_rate_hz: None,
+            audio_loudness_profile: None,
+            audio_dynamic_range: None,
+            video_profile: None,
+            video_level: None,
+            video_bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            hdr10_metadata: None,
+            title: None,
+            default_disposition: false,
             forced_disposition: false,
             subtitle_placement: None,
             image_subtitle_action: None,

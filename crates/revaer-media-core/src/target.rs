@@ -657,6 +657,9 @@ pub enum TargetCompileError {
     /// The desired stream kind is retained by inspection but not yet accepted in target contracts.
     #[error("unsupported desired target stream kind: {0}")]
     UnsupportedDesiredStreamKind(String),
+    /// The target tried to author metadata or shape changes on an exact-passthrough stream.
+    #[error("desired target retained stream rewrite is unsupported: {0}")]
+    UnsupportedRetainedStreamRewrite(String),
     /// A subtitle target uses an audio-only semantic role.
     #[error("subtitle target uses an invalid semantic role: {0}")]
     InvalidSubtitleRole(String),
@@ -744,15 +747,14 @@ pub fn compile_desired_target_with_unmatched_policies(
                 target_stream.stream_key.clone(),
             ));
         }
-        let source_stream = source
-            .streams
-            .iter()
-            .find(|stream| !consumed.contains(&stream.stream_id) && matches(stream, target_stream));
+        let source_stream = source.streams.iter().find(|stream| {
+            !consumed.contains(&stream.stream_id) && stream_matches_target(stream, target_stream)
+        });
         match source_stream {
             Some(stream) => {
                 consumed.insert(stream.stream_id);
                 if target_stream.subtitle_placement != Some(SubtitlePlacement::None) {
-                    desired_streams.push(apply_target_stream(stream, target_stream));
+                    desired_streams.push(apply_selected_stream(stream, target_stream));
                 }
             }
             None if target_stream.optional => {}
@@ -883,7 +885,8 @@ pub fn compile_desired_target_with_sidecars_at_and_unmatched_policies(
         }
 
         let embedded = source.streams.iter().find(|stream| {
-            !consumed_streams.contains(&stream.stream_id) && matches(stream, target_stream)
+            !consumed_streams.contains(&stream.stream_id)
+                && stream_matches_target(stream, target_stream)
         });
         let sidecar = sidecars.iter().enumerate().find(|(index, sidecar)| {
             !consumed_sidecars.contains(index) && sidecar_matches(sidecar, target_stream)
@@ -978,14 +981,13 @@ fn compile_primary_stream(
     consumed: &mut BTreeSet<u32>,
     desired: &mut Vec<MediaStream>,
 ) -> Result<(), TargetCompileError> {
-    let selected = source
-        .streams
-        .iter()
-        .find(|stream| !consumed.contains(&stream.stream_id) && matches(stream, target));
+    let selected = source.streams.iter().find(|stream| {
+        !consumed.contains(&stream.stream_id) && stream_matches_target(stream, target)
+    });
     match selected {
         Some(stream) => {
             consumed.insert(stream.stream_id);
-            desired.push(apply_target_stream(stream, target));
+            desired.push(apply_selected_stream(stream, target));
             Ok(())
         }
         None if target.optional => Ok(()),
@@ -1478,10 +1480,28 @@ fn validate_target_stream(stream: &TargetStream, key: &str) -> Result<(), Target
         StreamKind::Audio => validate_audio_target_stream(stream, key),
         StreamKind::Video => validate_video_target_stream(stream, key),
         StreamKind::Subtitle => validate_subtitle_target_stream(stream, key),
-        StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data => Err(
-            TargetCompileError::UnsupportedDesiredStreamKind(key.to_string()),
-        ),
+        StreamKind::Attachment | StreamKind::Data => validate_retained_target_stream(stream, key),
+        StreamKind::Chapter => Err(TargetCompileError::UnsupportedDesiredStreamKind(
+            key.to_string(),
+        )),
     }
+}
+
+fn validate_retained_target_stream(
+    stream: &TargetStream,
+    key: &str,
+) -> Result<(), TargetCompileError> {
+    if has_audio_shape(stream)
+        || has_video_shape(stream)
+        || has_subtitle_shape(stream)
+        || stream.title.is_some()
+        || !stream.dispositions.is_empty()
+    {
+        return Err(TargetCompileError::UnsupportedRetainedStreamRewrite(
+            key.to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_audio_target_stream(
@@ -1898,7 +1918,7 @@ fn normalized_video_level(level: &str) -> Option<NormalizedVideoLevel> {
     }
 }
 
-fn matches(source: &MediaStream, target: &TargetStream) -> bool {
+fn stream_matches_target(source: &MediaStream, target: &TargetStream) -> bool {
     source.kind == target.kind
         && target
             .role
@@ -1909,6 +1929,17 @@ fn matches(source: &MediaStream, target: &TargetStream) -> bool {
                 .as_deref()
                 .is_some_and(|source_language| language_matches(source_language, language))
         })
+        && retained_codec_matches(source, target)
+}
+
+fn retained_codec_matches(source: &MediaStream, target: &TargetStream) -> bool {
+    if !matches!(target.kind, StreamKind::Attachment | StreamKind::Data) {
+        return true;
+    }
+    source
+        .codec
+        .trim()
+        .eq_ignore_ascii_case(target.codec.trim())
 }
 
 fn language_matches(source: &str, target: &str) -> bool {
@@ -1935,6 +1966,14 @@ fn apply_target_stream(source: &MediaStream, target: &TargetStream) -> MediaStre
             .or_else(|| source.language.clone()),
         title: target.title.clone(),
         dispositions: normalized_dispositions(&target.dispositions),
+    }
+}
+
+fn apply_selected_stream(source: &MediaStream, target: &TargetStream) -> MediaStream {
+    if matches!(target.kind, StreamKind::Attachment | StreamKind::Data) {
+        source.clone()
+    } else {
+        apply_target_stream(source, target)
     }
 }
 
@@ -2855,7 +2894,7 @@ mod tests {
         unsupported_hdr.hdr_format = Some("dolby_vision".to_string());
         let unsupported_hdr_target = DesiredTarget {
             streams: vec![unsupported_hdr],
-            ..invalid_shape_target.clone()
+            ..invalid_shape_target
         };
         assert_eq!(
             compile_desired_target(
@@ -2869,28 +2908,44 @@ mod tests {
                 hdr_format: "dolby_vision".to_string(),
             })
         );
+    }
 
-        for (key, kind) in [
-            ("attachment-font", StreamKind::Attachment),
-            ("chapter-main", StreamKind::Chapter),
-            ("data-main", StreamKind::Data),
-        ] {
-            let unsupported_target = DesiredTarget {
-                streams: vec![target_stream(key, kind, None, None, "bin_data")],
-                ..invalid_shape_target.clone()
-            };
-            assert_eq!(
-                compile_desired_target(
-                    &source,
-                    "/output/movie.mkv",
-                    &unsupported_target,
-                    UnmatchedStreamPolicy::Remove,
-                ),
-                Err(TargetCompileError::UnsupportedDesiredStreamKind(
-                    key.to_string()
-                ))
-            );
-        }
+    #[test]
+    fn target_validation_rejects_chapter_stream_rows() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        let key = "chapter-main";
+        let unsupported_target = DesiredTarget {
+            target_key: "invalid".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
+            container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
+            streams: vec![target_stream(
+                key,
+                StreamKind::Chapter,
+                None,
+                None,
+                "bin_data",
+            )],
+        };
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &unsupported_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::UnsupportedDesiredStreamKind(
+                key.to_string()
+            ))
+        );
     }
 
     #[test]
@@ -3267,14 +3322,68 @@ mod tests {
     }
 
     #[test]
-    fn target_validation_rejects_explicit_data_stream_rows() {
+    fn compiles_explicit_retained_attachment_and_data_streams() -> Result<(), TargetCompileError> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
             container_formats: Vec::new(),
-            streams: Vec::new(),
+            streams: vec![
+                stream(1, StreamKind::Video, "h264", None, None, &["default"]),
+                stream(3, StreamKind::Attachment, "ttf", None, Some("Font"), &[]),
+                stream(
+                    4,
+                    StreamKind::Data,
+                    "bin_data",
+                    Some("eng"),
+                    Some("Timecode"),
+                    &["default"],
+                ),
+            ],
         };
-        let unsupported_target = DesiredTarget {
-            target_key: "unsupported-data".to_string(),
+        let target = DesiredTarget {
+            target_key: "retained-streams".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
+            container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
+            streams: vec![
+                target_stream("font", StreamKind::Attachment, None, None, "ttf"),
+                target_stream("timecode", StreamKind::Data, None, Some("eng"), "bin_data"),
+            ],
+        };
+
+        let desired = compile_desired_target(
+            &source,
+            "/output/movie.mkv",
+            &target,
+            UnmatchedStreamPolicy::Remove,
+        )?;
+
+        assert_eq!(
+            desired.streams,
+            vec![source.streams[1].clone(), source.streams[2].clone()]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn retained_stream_rows_require_exact_codec_match() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![stream(
+                4,
+                StreamKind::Data,
+                "bin_data",
+                Some("eng"),
+                Some("Timecode"),
+                &[],
+            )],
+        };
+        let target = DesiredTarget {
+            target_key: "retained-codec".to_string(),
             version: 1,
             container: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
@@ -3283,22 +3392,57 @@ mod tests {
             container_chapters: Vec::new(),
             container_attachment_policy: "preserve".to_string(),
             streams: vec![target_stream(
-                "opaque-data",
+                "timecode",
                 StreamKind::Data,
                 None,
-                None,
-                "bin_data",
+                Some("eng"),
+                "text",
             )],
         };
+
         assert_eq!(
             compile_desired_target(
                 &source,
                 "/output/movie.mkv",
-                &unsupported_target,
+                &target,
                 UnmatchedStreamPolicy::Remove,
             ),
-            Err(TargetCompileError::UnsupportedDesiredStreamKind(
-                "opaque-data".to_string()
+            Err(TargetCompileError::RequiredStreamMissing(
+                "timecode".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn target_validation_rejects_retained_stream_rewrites() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        let mut rewritten = target_stream("font", StreamKind::Attachment, None, None, "ttf");
+        rewritten.title = Some("Renamed Font".to_string());
+        let target = DesiredTarget {
+            target_key: "retained-rewrite".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
+            container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
+            streams: vec![rewritten],
+        };
+
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::UnsupportedRetainedStreamRewrite(
+                "font".to_string()
             ))
         );
     }

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const MIN_VERSION: &str = "2.0.10";
-const MAX_EXCLUSIVE_VERSION: &str = "2.1.0";
+const MAX_EXCLUSIVE_VERSION: &str = "2.2.0";
 const CXXBRIDGE_RUST_HEADER: &str = "rust/cxx.h";
 const CXXBRIDGE_CRATE_HEADER: &str = "revaer-torrent-libt/src/ffi/bridge.rs.h";
 
@@ -24,6 +24,7 @@ fn try_main() -> Result<(), BuildError> {
     println!("cargo:rerun-if-env-changed=LIBTORRENT_BUNDLE_DIR");
     println!("cargo:rerun-if-env-changed=REVAER_NATIVE_IT");
     println!("cargo:rerun-if-env-changed=REVAER_NATIVE_COMPILE_COMMANDS_PATH");
+    println!("cargo:rerun-if-env-changed=PATH");
     println!("cargo:rustc-check-cfg=cfg(libtorrent_native)");
     emit_pkg_config_reruns();
 
@@ -56,7 +57,6 @@ fn try_main() -> Result<(), BuildError> {
 
         let include_override = env::var_os("LIBTORRENT_INCLUDE_DIR").map(PathBuf::from);
         let lib_dir_override = env::var_os("LIBTORRENT_LIB_DIR").map(PathBuf::from);
-
         if include_override.is_some() || lib_dir_override.is_some() {
             let include = include_override
                 .as_ref()
@@ -68,6 +68,9 @@ fn try_main() -> Result<(), BuildError> {
                 &["torrent-rasterbar".to_string()],
             )?;
             bridge.include(include);
+            for dependency_include in prefix_include_dirs_from_link_paths([lib]) {
+                bridge.include(dependency_include);
+            }
             println!("cargo:rustc-link-search=native={}", lib.display());
             return Ok(vec!["torrent-rasterbar".to_string()]);
         }
@@ -84,21 +87,38 @@ fn try_main() -> Result<(), BuildError> {
                 bridge.include(path);
             }
             let mut defines = libtorrent.defines.iter().collect::<Vec<_>>();
-            defines.sort_by_key(|(name, _)| *name);
+            defines.sort_unstable_by_key(|(name, _)| *name);
             for (name, value) in defines {
                 bridge.define(name, value.as_deref());
             }
             ensure_macos_link_architecture(&libtorrent.link_paths, &libtorrent.libs)?;
+            for dependency_include in
+                prefix_include_dirs_from_link_paths(libtorrent.link_paths.iter())
+            {
+                bridge.include(dependency_include);
+            }
             for lib_path in &libtorrent.link_paths {
                 println!("cargo:rustc-link-search=native={}", lib_path.display());
             }
             return Ok(libtorrent.libs.clone());
         }
 
-        Err(BuildError::PkgConfig(match pkg_config_result {
+        let source = match pkg_config_result {
             Ok(_) => return Ok(Vec::new()),
             Err(err) => err,
-        }))
+        };
+        if let Some((include, lib)) = fallback_prefix_paths() {
+            ensure_header_version(&include)?;
+            ensure_macos_link_architecture(
+                std::slice::from_ref(&lib),
+                &["torrent-rasterbar".to_string()],
+            )?;
+            bridge.include(&include);
+            println!("cargo:rustc-link-search=native={}", lib.display());
+            return Ok(vec!["torrent-rasterbar".to_string()]);
+        }
+
+        Err(BuildError::PkgConfig(source))
     })();
 
     let libs = match libs_result {
@@ -318,6 +338,34 @@ fn emit_pkg_config_reruns() {
             println!("cargo:rerun-if-env-changed={prefix}_{normalized_target}");
         }
     }
+}
+
+fn fallback_prefix_paths() -> Option<(PathBuf, PathBuf)> {
+    ["/opt/homebrew", "/usr/local"]
+        .into_iter()
+        .map(PathBuf::from)
+        .map(|root| (root.join("include"), root.join("lib")))
+        .find(|(include, lib)| {
+            include.join("libtorrent").exists()
+                && (lib.join("libtorrent-rasterbar.dylib").exists()
+                    || lib.join("libtorrent-rasterbar.a").exists())
+        })
+}
+
+fn prefix_include_dirs_from_link_paths<'a>(
+    link_paths: impl IntoIterator<Item = &'a PathBuf>,
+) -> Vec<PathBuf> {
+    let mut includes = Vec::new();
+    for link_path in link_paths {
+        let Some(prefix) = link_path.parent() else {
+            continue;
+        };
+        let include = prefix.join("include");
+        if include.is_dir() && !includes.iter().any(|existing| existing == &include) {
+            includes.push(include);
+        }
+    }
+    includes
 }
 
 fn emit_link_libs(libs: Vec<String>) {

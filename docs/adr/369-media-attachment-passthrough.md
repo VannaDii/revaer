@@ -4,18 +4,19 @@
 - Date: 2026-07-30
 - Supersession note:
   - ADR 370 narrows the data-stream portion of this record by permitting exact inspected data-stream passthrough. Chapter stream-map materialization remains rejected.
+  - ADR 384 narrows the desired-target validation portion of this record by permitting exact retained attachment and data selector rows while keeping creation and rewrite fail-closed.
 - Context:
   - The media graph already retains inspected attachment streams such as Matroska font attachments.
   - Desired-target rows for authored attachment behavior still fail closed because the schema does not model attachment payloads, MIME types, filenames, or verification semantics.
   - A preserve policy should still be able to keep an existing attachment stream unchanged when another stream forces remux or transcoding.
 - Decision:
   - Allow command materialization for attachment streams only when the desired stream is an exact clone of the inspected source stream.
-  - Keep authored attachment target rows rejected by desired-target validation.
+  - Keep authored attachment creation and rewrite rejected by desired-target validation.
   - In this slice, keep chapter and data streams rejected by command materialization until a separate exact-preservation contract is added.
   - Skip explicit stream metadata and disposition rewrite arguments for passthrough attachments so stream-copy behavior owns preservation.
   - Alternatives considered:
     - Keep all attachment streams fail-closed: rejected because it prevents safe preservation of already-inspected Matroska font attachments during otherwise supported rewrites.
-    - Accept authored attachment target rows now: rejected because the target schema still lacks a complete payload and verification contract.
+    - Accept arbitrary authored attachment target rows now: rejected because the target schema still lacks a complete payload and verification contract.
 - Consequences:
   - Positive outcomes:
     - Supported jobs can preserve existing attachment streams unchanged instead of failing during command construction.
@@ -32,9 +33,9 @@
 - Design notes:
   - `build_desired_graph_ffmpeg_argv_with_sidecars` now verifies stream identity first, then permits `StreamKind::Attachment` only when the desired graph carries the exact inspected source stream.
   - Attachment command output uses the existing mapped-stream copy path and avoids stream metadata/disposition rewrite arguments.
-  - Desired target validation continues to reject `attachment`, `chapter`, and `data` target rows.
+  - Desired target validation continues to reject `chapter` stream rows and retained-stream creation or rewrite rows; ADR 384 later permits exact attachment and data selector rows.
 - Test coverage summary:
-  - Extended core target coverage to prove preserve policy appends an unmatched attachment stream unchanged while authored attachment, chapter, and data rows remain rejected.
+  - Extended core target coverage to prove preserve policy appends an unmatched attachment stream unchanged while authored attachment rewrites and chapter rows remain rejected; data-row selector support was outside this slice and later narrowed by ADR 384.
   - Added runtime command-builder coverage proving exact attachment passthrough maps the attachment stream and copies it.
   - Added runtime command-builder coverage proving attempted attachment mutation still fails with `UnsupportedDesiredStreamKind`.
   - Validation run:
