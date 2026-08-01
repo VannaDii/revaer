@@ -1430,7 +1430,8 @@ pub fn validate_declared_stream_codec_capability(
         StreamKind::Video => video_encoder_for_codec(&codec, selected_video_encoder)?,
         StreamKind::Audio => audio_encoder_for_codec(&codec)?,
         StreamKind::Subtitle => subtitle_encoder_for_codec(&codec)?,
-        StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data => {
+        StreamKind::Attachment | StreamKind::Data => return Ok(()),
+        StreamKind::Chapter => {
             return Err(BuildArgsError::UnsupportedCodec("stream"));
         }
     };

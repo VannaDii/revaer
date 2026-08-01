@@ -1,4 +1,4 @@
-set shell := ["bash", "-lc"]
+set shell := ["bash", "-c"]
 
 fmt:
     cargo fmt --all --check
@@ -38,7 +38,7 @@ test-native:
     test_database_url="${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh postgres)}"; \
     database_url="${DATABASE_URL:-${test_database_url}}"; \
     REVAER_NATIVE_IT=1 REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" \
-        cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-torrent-libt --all-features
+        cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-torrent-libt --all-features -- --test-threads=1
 
 download-test-fixtures:
     bash scripts/test-fixtures/download-test-fixtures.sh

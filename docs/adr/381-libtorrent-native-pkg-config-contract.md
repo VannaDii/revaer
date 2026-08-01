@@ -8,25 +8,25 @@
   - `libtorrent-rasterbar.pc` also supplies required C++ preprocessor definitions, including OpenSSL-related feature flags, but the build script only consumed include paths, link paths, and library names.
   - pkg-config environment changes were not declared as build-script invalidation inputs, so switching between local native installations could leave stale link metadata in the Cargo target directory.
   - macOS workstations can expose an Intel `/usr/local` libtorrent or OpenSSL installation while the workspace is building arm64 targets.
-  - ADR 317 already requires unsupported libtorrent 2.1+ headers to be treated as unavailable unless native integration is explicitly required.
+  - ADR 317 required unsupported libtorrent 2.1+ headers to be treated as unavailable unless native integration was explicitly required. ADR 400 supersedes that temporary boundary for the validated libtorrent 2.1 minor series.
 - Decision:
   - Treat `LIBTORRENT_BUNDLE_DIR` and paired `LIBTORRENT_INCLUDE_DIR`/`LIBTORRENT_LIB_DIR` overrides as authoritative before default host probing.
   - Prefer pkg-config over hard-coded Homebrew paths and apply its declared preprocessor definitions in deterministic key order before compiling the C++ bridge.
   - Declare pkg-config environment variables as Cargo build-script inputs so native discovery is re-evaluated when an operator changes package search paths.
   - On macOS, verify selected native libraries with `lipo -info` and reject libraries that do not include the Cargo target architecture before enabling the native backend.
   - Do not auto-promote `/opt/homebrew` or `/usr/local` fallback paths into native builds; operators must use pkg-config, `LIBTORRENT_BUNDLE_DIR`, or an explicit include/lib pair so headers and libraries come from one intentional source.
-  - Keep libtorrent `>= 2.0.10` as the supported lower bound and fail closed on `>= 2.1.0` headers, matching the already documented unsupported-version boundary.
+  - Keep libtorrent `>= 2.0.10` as the supported lower bound and fail closed on `>= 2.2.0` headers, matching the validated native bridge compatibility range.
   - Alternatives considered:
     - Require local operators to set `PKG_CONFIG_PATH` for every gate: rejected because it preserves a fragile default build surface.
-    - Update the C++ shim for libtorrent 2.1 in this PR: deferred because the native API compatibility work is larger than the media chapter-planning slice and needs dedicated fixture coverage.
+    - Update the C++ shim for libtorrent 2.1 in this PR: deferred in ADR 381 and later completed by ADR 400 with dedicated native fixture coverage.
 - Consequences:
   - Positive outcomes:
     - Default local `just ci` no longer compiles against unsupported or wrong-architecture Homebrew libtorrent paths by accident.
-    - Supported 2.0.x native builds consume the same pkg-config feature definitions used by the linked library.
+    - Supported 2.0.x and 2.1.x native builds consume the same pkg-config feature definitions used by the linked library.
   - Risks or trade-offs:
     - Workstations without a supported pkg-config or explicit native override continue using the stub path for default validation, and `REVAER_NATIVE_IT=1` fails early until a supported native source is configured.
 - Follow-up:
-  - Implement and validate libtorrent 2.1 native API compatibility as its own task before raising the supported upper bound.
+  - Implement and validate the next libtorrent minor before raising the supported upper bound again.
 
 ## Task Record
 
@@ -38,10 +38,10 @@
   - macOS native discovery now validates selected library architectures before emitting link metadata.
   - Explicit include/lib overrides are accepted only as a pair so a header tree cannot be mixed accidentally with an unrelated library directory.
   - Hard-coded Homebrew fallback probing was removed because it can select unsupported or wrong-architecture libraries on dual-prefix macOS systems.
-  - Unsupported libtorrent versions remain optional-path unavailable unless `REVAER_NATIVE_IT` asks for native integration explicitly.
+  - Unsupported libtorrent versions outside the validated `>= 2.0.10, < 2.2.0` range remain optional-path unavailable unless `REVAER_NATIVE_IT` asks for native integration explicitly.
 - Test coverage summary:
   - `cargo check -p revaer-torrent-libt --features libtorrent`
-  - `REVAER_NATIVE_IT=1 cargo check -p revaer-torrent-libt --features libtorrent` failed early with `libtorrent version is unsupported` against local libtorrent 2.1, as intended.
+  - `REVAER_NATIVE_IT=1 cargo check -p revaer-torrent-libt --features libtorrent` originally failed early with `libtorrent version is unsupported` against local libtorrent 2.1. ADR 400 later replaced that boundary with validated 2.1 compatibility.
   - `PKG_CONFIG_PATH=/usr/local/Cellar/libtorrent-rasterbar/2.0.11_3/lib/pkgconfig cargo check -p revaer-torrent-libt --features libtorrent`
   - `PKG_CONFIG_PATH=/usr/local/Cellar/libtorrent-rasterbar/2.0.11_3/lib/pkgconfig REVAER_NATIVE_IT=1 cargo check -p revaer-torrent-libt --features libtorrent` failed early with an arm64/x86_64 library architecture mismatch, as intended.
   - `source ~/.nvm/nvm.sh && nvm current && node --version && npm --version && just ci`
@@ -53,8 +53,8 @@
 - Status-doc validation:
   - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
 - Risk and rollback plan:
-  - Risk: a workstation that depended on unsupported 2.1 native compilation will now use the stub by default.
-  - Roll back by reverting the build-script ordering and version-bound changes only if a supported 2.0.x native path regresses.
+  - Risk: a workstation that depends on unvalidated libtorrent `>= 2.2.0` native compilation will use the stub by default.
+  - Roll back by reverting the build-script ordering and version-bound changes only if a supported 2.0.x or 2.1.x native path regresses.
 - Dependency rationale:
   - No dependencies were added.
 - Stale-policy check:

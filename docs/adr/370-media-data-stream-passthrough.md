@@ -5,15 +5,16 @@
 - Context:
   - Full media inspection retains opaque data streams so the planner can account for them.
   - Desired-target rows for authored data behavior still fail closed because the schema does not model data payload semantics, muxer-specific support, rewrite rules, or verification beyond exact source retention.
+  - ADR 384 later permits exact retained attachment and data selector rows while preserving that authored creation and rewrite boundary.
   - An unmatched-stream preserve policy must still be able to keep an existing data stream unchanged when another supported stream or container difference requires FFmpeg materialization.
 - Decision:
   - Allow command materialization for data streams only when the desired stream is an exact clone of the inspected source stream.
-  - Keep authored data target rows rejected by desired-target validation.
+  - Keep authored data creation and rewrite rejected by desired-target validation.
   - Keep chapter streams rejected by stream-map materialization; chapter preservation continues through the explicit chapter-preservation path.
   - Skip explicit stream metadata and disposition rewrite arguments for passthrough data streams so stream-copy behavior owns preservation.
   - Alternatives considered:
     - Keep all data streams fail-closed: rejected because it prevents safe preservation of already-inspected data streams during otherwise supported rewrites.
-    - Accept authored data target rows now: rejected because the target schema still lacks a complete data payload, muxer, and verification contract.
+    - Accept arbitrary authored data target rows now: rejected because the target schema still lacks a complete data payload, muxer, and verification contract.
 - Consequences:
   - Positive outcomes:
     - Supported jobs can preserve existing data streams unchanged instead of failing during command construction.
@@ -30,10 +31,10 @@
 - Design notes:
   - `build_desired_graph_ffmpeg_argv_with_sidecars` now permits `StreamKind::Data` only when the desired graph carries the exact inspected source stream.
   - Data passthrough uses the existing mapped-stream copy path and avoids stream metadata/disposition rewrite arguments.
-  - Desired target validation continues to reject `attachment`, `chapter`, and `data` target rows.
-  - App worker snapshot reconstruction remains authored-target-only; unmatched-stream `preserve` policy appends inspected data streams during target compilation instead of admitting authored data rows.
+  - Desired target validation continues to reject `chapter` stream rows and retained-stream creation or rewrite rows; ADR 384 later permits exact attachment and data selector rows.
+  - App worker snapshot reconstruction remains limited to implemented target-stream contracts; unmatched-stream `preserve` policy appends inspected data streams during target compilation in this slice.
 - Test coverage summary:
-  - Extended core target coverage to prove preserve policy appends an unmatched data stream unchanged while authored data rows remain rejected.
+  - Extended core target coverage to prove preserve policy appends an unmatched data stream unchanged while authored data rewrites remain rejected.
   - Added runtime command-builder coverage proving exact data passthrough maps the data stream and copies it.
   - Added runtime command-builder coverage proving attempted data mutation still fails with `UnsupportedDesiredStreamKind`.
   - Added app worker coverage proving persisted desired-target snapshots reconstruct with `preserve` policy and compile to a desired graph that keeps the inspected source data stream unchanged.

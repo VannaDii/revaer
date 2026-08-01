@@ -2675,7 +2675,7 @@ fn stream_kind_from_snapshot(value: &str) -> Result<StreamKind, MediaJobRuntimeE
         "audio" => Ok(StreamKind::Audio),
         "subtitle" => Ok(StreamKind::Subtitle),
         "attachment" => Ok(StreamKind::Attachment),
-        "chapter" => Ok(StreamKind::Chapter),
+        "data" => Ok(StreamKind::Data),
         _ => Err(MediaJobRuntimeError::InvalidDesiredGraph(
             "media_job_desired_target_stream_kind_unknown",
         )),
@@ -9945,6 +9945,48 @@ Integrated loudness:
         }
     }
 
+    fn desired_data_target_stream_row() -> MediaJobDesiredTargetStreamRow {
+        MediaJobDesiredTargetStreamRow {
+            stream_key: "timecode-main".to_string(),
+            stream_kind: "data".to_string(),
+            semantic_role: None,
+            language_code: Some("eng".to_string()),
+            optional: false,
+            sort_order: 1,
+            codec: "bin_data".to_string(),
+            channel_count: None,
+            channel_layout: None,
+            audio_bitrate_bps: None,
+            audio_sample_rate_hz: None,
+            audio_loudness_profile: None,
+            audio_dynamic_range: None,
+            video_profile: None,
+            video_level: None,
+            video_bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            hdr10_mastering_red_x: None,
+            hdr10_mastering_red_y: None,
+            hdr10_mastering_green_x: None,
+            hdr10_mastering_green_y: None,
+            hdr10_mastering_blue_x: None,
+            hdr10_mastering_blue_y: None,
+            hdr10_mastering_white_x: None,
+            hdr10_mastering_white_y: None,
+            hdr10_mastering_min_luminance: None,
+            hdr10_mastering_max_luminance: None,
+            hdr10_max_content_light_level: None,
+            hdr10_max_frame_average_light_level: None,
+            title: None,
+            default_disposition: false,
+            forced_disposition: false,
+            subtitle_placement: None,
+            image_subtitle_action: None,
+        }
+    }
+
     #[test]
     fn verification_policy_rejects_relaxed_strict_snapshot() {
         let mut job = claimed_job_with_paths(
@@ -10222,6 +10264,61 @@ Integrated loudness:
                 .map(|snapshot| snapshot.target.container_attachment_policy.as_str()),
             Some("strip")
         );
+    }
+
+    #[test]
+    fn desired_target_snapshot_accepts_explicit_data_stream_rows() -> anyhow::Result<()> {
+        let mut job = claimed_job_with_paths(
+            "/input/movie.mkv",
+            Some("/output/movie.mkv".to_string()),
+            false,
+            "/input",
+            "/output",
+        );
+        job.desired_target_key = Some("living-room-output".to_string());
+        job.desired_target_version = Some(1);
+        job.desired_container_format = Some("matroska".to_string());
+        job.desired_container_metadata_policy = Some("preserve".to_string());
+        job.desired_container_chapter_policy = Some("preserve".to_string());
+        job.desired_container_attachment_policy = Some("preserve".to_string());
+
+        let Some(snapshot) = desired_target_from_job(
+            &job,
+            vec![
+                desired_video_target_stream_row(),
+                desired_data_target_stream_row(),
+            ],
+            Vec::new(),
+            Vec::new(),
+        )?
+        else {
+            anyhow::bail!("desired target snapshot was not reconstructed");
+        };
+        let data_stream = MediaStream {
+            stream_id: 7,
+            kind: StreamKind::Data,
+            codec: "bin_data".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: Some("eng".to_string()),
+            title: Some("Timecode".to_string()),
+            dispositions: vec!["default".to_string()],
+        };
+        let mut source = video_graph("/input/movie.mkv", "h264");
+        source.streams.push(data_stream.clone());
+
+        let desired = revaer_media_core::target::compile_desired_target_with_unmatched_policies(
+            &source,
+            "/output/movie.mkv",
+            &snapshot.target,
+            snapshot.unmatched_stream_policies,
+        )?;
+
+        assert_eq!(desired.streams.len(), 2);
+        assert_eq!(desired.streams[0].kind, StreamKind::Video);
+        assert_eq!(desired.streams[0].codec, "hevc");
+        assert_eq!(desired.streams[1], data_stream);
+        Ok(())
     }
 
     #[test]

@@ -408,3 +408,4 @@
 -   [397](397-npm-audit-refresh.md) - Npm audit refresh
 -   [398](398-media-hdr10-pixel-format-verification.md) - Media HDR10 pixel-format verification
 -   [399](399-media-watcher-native-change-events.md) - Media watcher native change event backstop
+-   [400](400-media-explicit-retained-stream-selectors.md) - Media explicit retained stream selectors

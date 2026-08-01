@@ -20,7 +20,7 @@
     - Some valid but not yet allowlisted FFmpeg 10-bit HDR-capable pixel formats will fail verification until explicitly reviewed and added.
 - Follow-up:
   - Continue closing broader HDR/color semantics with concrete inspected fields and acceptance tests.
-  - Keep authored attachment and data-stream creation or rewrite fail-closed until payload schema, execution, and verification are implemented.
+  - Keep authored attachment and data-stream creation or rewrite fail-closed until payload schema, execution, and verification are implemented; exact retained-stream selectors are handled separately by ADR 384.
 
 ## Task Record
 

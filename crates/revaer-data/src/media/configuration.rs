@@ -1102,6 +1102,55 @@ mod tests {
         }
     }
 
+    fn retained_target_stream(
+        target_id: uuid::Uuid,
+        stream_key: &'static str,
+        stream_kind: &'static str,
+        sort_order: i32,
+        codec: &'static str,
+    ) -> AppendMediaDesiredTargetStreamInput<'static> {
+        AppendMediaDesiredTargetStreamInput {
+            media_desired_target_profile_public_id: target_id,
+            stream_key,
+            stream_kind,
+            semantic_role: None,
+            language_code: None,
+            optional: false,
+            sort_order,
+            codec,
+            channel_count: None,
+            channel_layout: None,
+            audio_bitrate_bps: None,
+            audio_sample_rate_hz: None,
+            audio_loudness_profile: None,
+            audio_dynamic_range: None,
+            video_profile: None,
+            video_level: None,
+            video_bitrate_bps: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            hdr10_mastering_red_x: None,
+            hdr10_mastering_red_y: None,
+            hdr10_mastering_green_x: None,
+            hdr10_mastering_green_y: None,
+            hdr10_mastering_blue_x: None,
+            hdr10_mastering_blue_y: None,
+            hdr10_mastering_white_x: None,
+            hdr10_mastering_white_y: None,
+            hdr10_mastering_min_luminance: None,
+            hdr10_mastering_max_luminance: None,
+            hdr10_max_content_light_level: None,
+            hdr10_max_frame_average_light_level: None,
+            title: None,
+            default_disposition: false,
+            forced_disposition: false,
+            subtitle_placement: None,
+            image_subtitle_action: None,
+        }
+    }
+
     async fn assert_invalid_fast_policy_rejected(pool: &sqlx::PgPool, actor_public_id: uuid::Uuid) {
         let result = upsert_media_policy_profile(
             pool,
@@ -1385,6 +1434,74 @@ mod tests {
         );
         assert_eq!(streams[2].subtitle_placement.as_deref(), Some("both"));
         assert_eq!(streams[2].image_subtitle_action.as_deref(), Some("remove"));
+    }
+
+    #[tokio::test]
+    async fn desired_target_accepts_exact_retained_stream_rows() -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("desired_target_retained_stream_rows").await? else {
+            return Ok(());
+        };
+        let target_id = create_media_desired_target(
+            db.pool(),
+            CreateMediaDesiredTargetInput {
+                actor_public_id: db.system_user_public_id,
+                target_key: "retained-streams",
+                version: 1,
+                display_name: "Retained streams",
+                container_format: "matroska",
+                container_metadata_policy: "preserve",
+                container_chapter_policy: "preserve",
+                container_attachment_policy: "preserve",
+            },
+        )
+        .await?;
+
+        append_media_desired_target_stream(
+            db.pool(),
+            retained_target_stream(target_id, "font-main", "attachment", 0, "ttf"),
+        )
+        .await?;
+        append_media_desired_target_stream(
+            db.pool(),
+            retained_target_stream(target_id, "timecode-main", "data", 1, "bin_data"),
+        )
+        .await?;
+        let streams = list_media_desired_target_streams(db.pool(), target_id).await?;
+        assert_eq!(
+            streams
+                .iter()
+                .map(|stream| {
+                    (
+                        stream.stream_key.as_str(),
+                        stream.stream_kind.as_str(),
+                        stream.codec.as_str(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                ("font-main", "attachment", "ttf"),
+                ("timecode-main", "data", "bin_data")
+            ]
+        );
+
+        let rewritten = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "font-renamed",
+                sort_order: 2,
+                title: Some("Renamed Font"),
+                ..retained_target_stream(target_id, "font-renamed", "attachment", 2, "ttf")
+            },
+        )
+        .await;
+        let Err(rewritten) = rewritten else {
+            return Err(anyhow::anyhow!("retained stream rewrite was accepted"));
+        };
+        assert_eq!(
+            rewritten.database_detail(),
+            Some("media_desired_target_retained_stream_shape_invalid")
+        );
+        Ok(())
     }
 
     async fn create_target_snapshot_job(
@@ -1885,23 +2002,6 @@ mod tests {
         db: &MediaTestDb,
         target_id: Uuid,
     ) -> anyhow::Result<()> {
-        let unsupported_attachment = append_media_desired_target_stream(
-            db.pool(),
-            AppendMediaDesiredTargetStreamInput {
-                stream_key: "cover-art",
-                stream_kind: "attachment",
-                codec: "mjpeg",
-                sort_order: 0,
-                ..video_target_stream(target_id)
-            },
-        )
-        .await;
-        if unsupported_attachment.is_ok() {
-            return Err(anyhow::anyhow!(
-                "unsupported attachment target stream was accepted"
-            ));
-        }
-
         let unsupported_chapter = append_media_desired_target_stream(
             db.pool(),
             AppendMediaDesiredTargetStreamInput {
@@ -1916,23 +2016,6 @@ mod tests {
         if unsupported_chapter.is_ok() {
             return Err(anyhow::anyhow!(
                 "unsupported chapter target stream was accepted"
-            ));
-        }
-
-        let unsupported_data = append_media_desired_target_stream(
-            db.pool(),
-            AppendMediaDesiredTargetStreamInput {
-                stream_key: "opaque-data",
-                stream_kind: "data",
-                codec: "bin_data",
-                sort_order: 0,
-                ..video_target_stream(target_id)
-            },
-        )
-        .await;
-        if unsupported_data.is_ok() {
-            return Err(anyhow::anyhow!(
-                "unsupported data target stream was accepted"
             ));
         }
         Ok(())
