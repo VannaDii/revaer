@@ -3377,11 +3377,7 @@ fn hdr10_mastering_display_payload_is_valid(side_data: &SideDataInspection) -> b
     else {
         return false;
     };
-    if ![red, green, blue, white_point]
-        .into_iter()
-        .all(chromaticity_point_is_valid)
-        || !chromaticity_point_inside_triangle(white_point, red, green, blue)
-    {
+    if !mastering_display_chromaticities_are_valid(red, green, blue, white_point) {
         return false;
     }
     let Some(min_luminance) = side_data_numeric_value(side_data, "min_luminance") else {
@@ -3404,45 +3400,61 @@ fn side_data_chromaticity_point(
     x_key: &str,
     y_key: &str,
 ) -> Option<ChromaticityPoint> {
-    Some(ChromaticityPoint {
+    let point = ChromaticityPoint {
         x: side_data_numeric_value(side_data, x_key)?,
         y: side_data_numeric_value(side_data, y_key)?,
-    })
+    };
+    chromaticity_point_is_physical(point).then_some(point)
 }
 
-fn chromaticity_point_is_valid(point: ChromaticityPoint) -> bool {
-    point.x > 0.0 && point.y > 0.0 && point.x + point.y <= 1.0 + f64::EPSILON
+fn chromaticity_point_is_physical(point: ChromaticityPoint) -> bool {
+    point.x > 0.0 && point.y > 0.0 && point.x + point.y <= 1.0
+}
+
+fn mastering_display_chromaticities_are_valid(
+    red: ChromaticityPoint,
+    green: ChromaticityPoint,
+    blue: ChromaticityPoint,
+    white_point: ChromaticityPoint,
+) -> bool {
+    chromaticity_triangle_area(red, green, blue) > CHROMATICITY_EPSILON
+        && chromaticity_point_inside_triangle(white_point, red, green, blue)
+}
+
+const CHROMATICITY_EPSILON: f64 = 1.0e-9;
+
+fn chromaticity_triangle_area(
+    red: ChromaticityPoint,
+    green: ChromaticityPoint,
+    blue: ChromaticityPoint,
+) -> f64 {
+    (blue.x - red.x)
+        .mul_add(-(green.y - red.y), (green.x - red.x) * (blue.y - red.y))
+        .abs()
+        / 2.0
 }
 
 fn chromaticity_point_inside_triangle(
     point: ChromaticityPoint,
-    first: ChromaticityPoint,
-    second: ChromaticityPoint,
-    third: ChromaticityPoint,
+    red: ChromaticityPoint,
+    green: ChromaticityPoint,
+    blue: ChromaticityPoint,
 ) -> bool {
-    let area = signed_chromaticity_area(first, second, third);
-    if area.abs() <= f64::EPSILON {
+    let denominator =
+        (blue.x - green.x).mul_add(red.y - blue.y, (green.y - blue.y) * (red.x - blue.x));
+    if denominator.abs() <= CHROMATICITY_EPSILON {
         return false;
     }
-    let first_edge = signed_chromaticity_area(first, second, point);
-    let second_edge = signed_chromaticity_area(second, third, point);
-    let third_edge = signed_chromaticity_area(third, first, point);
-    if area.is_sign_positive() {
-        first_edge >= -f64::EPSILON && second_edge >= -f64::EPSILON && third_edge >= -f64::EPSILON
-    } else {
-        first_edge <= f64::EPSILON && second_edge <= f64::EPSILON && third_edge <= f64::EPSILON
-    }
-}
-
-fn signed_chromaticity_area(
-    first: ChromaticityPoint,
-    second: ChromaticityPoint,
-    third: ChromaticityPoint,
-) -> f64 {
-    (second.y - first.y).mul_add(
-        -(third.x - first.x),
-        (second.x - first.x) * (third.y - first.y),
-    )
+    let alpha = (blue.x - green.x)
+        .mul_add(point.y - blue.y, (green.y - blue.y) * (point.x - blue.x))
+        / denominator;
+    let beta = (red.x - blue.x).mul_add(point.y - blue.y, (blue.y - red.y) * (point.x - blue.x))
+        / denominator;
+    let gamma = 1.0 - alpha - beta;
+    let barycentric_range = -CHROMATICITY_EPSILON..=1.0 + CHROMATICITY_EPSILON;
+    [alpha, beta, gamma]
+        .into_iter()
+        .all(|value| barycentric_range.contains(&value))
 }
 
 fn hdr10_content_light_payload_is_valid(side_data: &SideDataInspection) -> bool {

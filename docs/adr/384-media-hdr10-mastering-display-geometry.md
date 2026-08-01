@@ -9,6 +9,7 @@
 - Decision:
   - Parse mastering display red, green, blue, and white-point coordinates as typed CIE xy points.
   - Reject any point whose coordinates are not positive or whose `x + y` exceeds the valid chromaticity plane.
+  - Use a single explicit geometric tolerance for triangle degeneracy and barycentric containment instead of relying on machine epsilon as policy.
   - Reject degenerate primary triangles and reject white points outside the declared primary triangle.
   - Alternatives considered:
     - Continue relying on scalar bounds only: rejected because scalar bounds do not prove a valid color volume.
@@ -30,6 +31,7 @@
 - Design notes:
   - Kept the current `hdr10` target contract limited to probeable HDR10 evidence.
   - Added geometry validation to the existing mastering-display payload validator rather than widening the desired-target schema.
+  - Kept chromaticity point parsing allocation-free by reading the already-retained FFprobe scalar fields by key.
   - Preserved common P3-D65 mastering-display metadata by validating geometric consistency rather than exact primary labels.
 - Test coverage summary:
   - Added focused unit coverage for impossible chromaticity sums, degenerate primary triangles, and white points outside the primary triangle.
