@@ -415,3 +415,4 @@
     -   [386: Media HDR10 exact metadata values](adr/386-media-hdr10-exact-metadata-values.md)
     -   [387: Media attachment strip fixture evidence](adr/387-media-attachment-strip-fixture-evidence.md)
     -   [388: Media discovery desired target readiness](adr/388-media-discovery-desired-target-readiness.md)
+    -   [389: Media audio rate constraint materialization](adr/389-media-audio-rate-constraint-materialization.md)
