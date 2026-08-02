@@ -1,0 +1,56 @@
+# Media job chapter replacement evidence
+
+- Status: Accepted
+- Date: 2026-08-02
+- Context:
+  - ADR 380 proved that target-level authored chapter replacement plans as a mutating graph operation and materializes through the media conversion fixture harness.
+  - The application worker test matrix still covered chapter preservation and stripping, but did not prove a queued desired target with authored chapter rows flows through job snapshot loading, command construction, candidate verification, final verification, replacement, and transient FFmetadata cleanup.
+  - ADR 318 also retained stale wording that grouped all authored chapter edits with still-unsupported authored attachment and data-stream targets.
+- Decision:
+  - Add an outside-in media-job runtime test target that persists a Matroska HEVC desired target with `container_chapter_policy: replace` plus two authored chapter rows and titles through the stored-procedure configuration API.
+  - Add a runtime inspector fixture that reports source chapters for the original file and the authored replacement timeline for candidate and final outputs.
+  - Assert that the worker command consumes a generated `.chapters.ffmetadata` input with `-map_chapters 1`, that the artifact lives under the managed workspace, and that it is deleted after successful output verification.
+  - Assert candidate and final chapter verification checks pass before the source is replaced.
+  - Consolidate ADR 318 wording so it names target-level authored Matroska chapter replacement as implemented while keeping chapter stream materialization, authored attachment rows, and authored data rows fail-closed.
+- Consequences:
+  - Positive outcomes:
+    - The chapter replacement contract now has worker-level evidence, not only planner, command-builder, and fixture evidence.
+    - The regression test covers the exact operational chain a queued profile uses, including immutable target snapshot loading and final replacement.
+    - The foundation ADR no longer overstates the remaining chapter gap.
+  - Risks or trade-offs:
+    - The new test remains synthetic at the inspector/command boundary; real FFmpeg chapter materialization continues to be covered by the media fixture suite from ADR 380.
+    - Only target-level Matroska chapter replacement is in scope. Chapter stream materialization remains unsupported.
+- Follow-up:
+  - Add equivalent outside-in evidence when authored attachment and data-stream contracts are implemented.
+  - Keep ADR 318 current as later narrow ADRs close service-level gaps.
+
+## Task Record
+
+- Motivation:
+  - Close the queued-job evidence gap for authored chapter replacement and remove stale gap language that could make the implemented surface look unsupported.
+- Design notes:
+  - Reused the existing runtime target setup path and stored-procedure helpers instead of hand-building a desired graph.
+  - Kept the new fixture isolated to tests; production code already had the required planning, execution, verification, and cleanup behavior.
+  - The inspector reports replacement chapters only for candidate/final output state so source inspection continues to model a real changed timeline.
+- Test coverage summary:
+  - `just fmt-fix`
+  - `cargo test -p revaer-app media_job_runtime_replaces_container_chapters_when_policy_selects_replace --all-features -- --nocapture`
+  - `git diff --check`
+  - `sonar verify --file crates/revaer-app/src/media_job_runtime.rs --project VannaDii_Revaer` was attempted and blocked by the organization entitlement: `SonarQube Agentic Analysis is not available for this organization`.
+  - `sonar analyze secrets crates/revaer-app/src/media_job_runtime.rs docs/adr/318-media-transcoding-foundation.md docs/adr/391-media-job-chapter-replacement-evidence.md docs/adr/index.md docs/SUMMARY.md`
+  - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table`
+  - `just ci`, including workspace coverage and `coverage/lcov.info` generation.
+  - `just ui-e2e`, including 104 Playwright checks.
+- Observability updates:
+  - No runtime logs, metrics, tracing, or events changed.
+- Status-doc validation:
+  - Updated ADR 318, `docs/adr/index.md`, and `docs/SUMMARY.md`.
+  - Rechecked ADR 380 and ADR 386 to ensure the foundation ADR reflects already accepted chapter replacement and exact HDR10 metadata evidence without claiming full service completion.
+- Risk & rollback plan:
+  - Risk is limited to test harness setup and status documentation. Runtime behavior is unchanged.
+  - Roll back by removing the test target, inspector, runtime test, this ADR, and the ADR 318 wording changes.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Drift found: ADR 318 still listed exact HDR10 authored values and target-level authored chapter edits as open despite ADR 386 and ADR 380 evidence. The stale wording was narrowed without relaxing any quality or implementation criteria.
