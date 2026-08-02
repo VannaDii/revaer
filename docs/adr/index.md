@@ -400,3 +400,6 @@
 -   [389](389-media-audio-rate-constraint-materialization.md) - Media audio rate constraint materialization
 -   [390](390-media-chromium-edge-fixture-evidence.md) - Media Chromium edge fixture evidence
 -   [391](391-media-job-chapter-replacement-evidence.md) - Media job chapter replacement evidence
+-   [392](392-media-job-attachment-strip-evidence.md) - Media job attachment strip evidence
+-   [393](393-media-job-attachment-passthrough-evidence.md) - Media job attachment passthrough evidence
+-   [394](394-media-job-data-passthrough-evidence.md) - Media job data passthrough evidence
