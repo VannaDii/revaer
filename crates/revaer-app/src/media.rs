@@ -567,6 +567,52 @@ impl MediaService {
     }
 }
 
+pub(crate) async fn load_media_desired_targets(
+    store: &MediaStore,
+) -> Result<Vec<AppMediaDesiredTargetResponse>, MediaServiceError> {
+    let targets = list_media_desired_targets(store.pool())
+        .await
+        .map_err(|err| map_data_error(&err))?;
+    let mut responses = Vec::with_capacity(targets.len());
+    for target in targets {
+        let streams = list_media_desired_target_streams(
+            store.pool(),
+            target.media_desired_target_profile_public_id,
+        )
+        .await
+        .map_err(|err| map_data_error(&err))?;
+        let metadata = list_media_desired_target_metadata(
+            store.pool(),
+            target.media_desired_target_profile_public_id,
+        )
+        .await
+        .map_err(|err| map_data_error(&err))?;
+        let chapters = list_media_desired_target_chapters(
+            store.pool(),
+            target.media_desired_target_profile_public_id,
+        )
+        .await
+        .map_err(|err| map_data_error(&err))?;
+        responses.push(AppMediaDesiredTargetResponse {
+            media_desired_target_profile_public_id: target.media_desired_target_profile_public_id,
+            target_key: target.target_key,
+            version: target.version,
+            display_name: target.display_name,
+            container_format: target.container_format,
+            container_metadata_policy: target.container_metadata_policy,
+            container_metadata: metadata
+                .into_iter()
+                .map(map_desired_target_metadata)
+                .collect(),
+            container_chapter_policy: target.container_chapter_policy,
+            container_chapters: map_desired_target_chapters(chapters),
+            container_attachment_policy: target.container_attachment_policy,
+            streams: streams.into_iter().map(map_desired_target_stream).collect(),
+        });
+    }
+    Ok(responses)
+}
+
 #[async_trait]
 impl MediaFacade for MediaService {
     async fn media_profile_upsert(
@@ -706,48 +752,7 @@ impl MediaFacade for MediaService {
     async fn media_desired_target_list(
         &self,
     ) -> Result<Vec<AppMediaDesiredTargetResponse>, MediaServiceError> {
-        let targets = list_media_desired_targets(self.store.pool())
-            .await
-            .map_err(|err| map_data_error(&err))?;
-        let mut responses = Vec::with_capacity(targets.len());
-        for target in targets {
-            let streams = list_media_desired_target_streams(
-                self.store.pool(),
-                target.media_desired_target_profile_public_id,
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-            let metadata = list_media_desired_target_metadata(
-                self.store.pool(),
-                target.media_desired_target_profile_public_id,
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-            let chapters = list_media_desired_target_chapters(
-                self.store.pool(),
-                target.media_desired_target_profile_public_id,
-            )
-            .await
-            .map_err(|err| map_data_error(&err))?;
-            responses.push(AppMediaDesiredTargetResponse {
-                media_desired_target_profile_public_id: target
-                    .media_desired_target_profile_public_id,
-                target_key: target.target_key,
-                version: target.version,
-                display_name: target.display_name,
-                container_format: target.container_format,
-                container_metadata_policy: target.container_metadata_policy,
-                container_metadata: metadata
-                    .into_iter()
-                    .map(map_desired_target_metadata)
-                    .collect(),
-                container_chapter_policy: target.container_chapter_policy,
-                container_chapters: map_desired_target_chapters(chapters),
-                container_attachment_policy: target.container_attachment_policy,
-                streams: streams.into_iter().map(map_desired_target_stream).collect(),
-            });
-        }
-        Ok(responses)
+        load_media_desired_targets(&self.store).await
     }
 
     async fn media_desired_target_create(
@@ -3209,7 +3214,7 @@ pub(crate) fn ensure_profile_compatibility_target_readiness(
     Ok(())
 }
 
-fn ensure_profile_desired_target_readiness(
+pub(crate) fn ensure_profile_desired_target_readiness(
     profile: &MediaProfileRow,
     snapshot: &CapabilitySnapshotRow,
     desired_targets: &[AppMediaDesiredTargetResponse],
