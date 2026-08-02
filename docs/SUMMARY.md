@@ -416,3 +416,4 @@
     -   [387: Media attachment strip fixture evidence](adr/387-media-attachment-strip-fixture-evidence.md)
     -   [388: Media discovery desired target readiness](adr/388-media-discovery-desired-target-readiness.md)
     -   [389: Media audio rate constraint materialization](adr/389-media-audio-rate-constraint-materialization.md)
+    -   [390: Media Chromium edge fixture evidence](adr/390-media-chromium-edge-fixture-evidence.md)

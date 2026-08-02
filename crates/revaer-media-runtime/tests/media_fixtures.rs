@@ -999,6 +999,26 @@ fn run_pipeline_cases(
         ("bbb-h264-mkv", "MKV H.264 input"),
         ("chromium-bear-1280x720-av-frag-mp4", "fragmented MP4 input"),
         (
+            "chromium-bear-vp8-webvtt-webm",
+            "WebM WebVTT subtitle edge input",
+        ),
+        (
+            "chromium-bear-320x180-hi10p-mp4",
+            "H.264 Hi10p profile edge input",
+        ),
+        (
+            "chromium-bear-vp9-profile2-webm",
+            "VP9 profile 2 edge input",
+        ),
+        (
+            "chromium-bear-v-frag-hevc-mp4",
+            "fragmented HEVC MP4 edge input",
+        ),
+        (
+            "chromium-bear-1280x720-aac-he-ts",
+            "HE-AAC MPEG-TS edge input",
+        ),
+        (
             "chromium-bbb-2video-2audio-mp4",
             "multi-track MP4 deterministic selection",
         ),
@@ -1061,12 +1081,7 @@ fn materialize_same_graph(
     };
     let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
     let output_graph = inspect_graph(&materialized.verified_output_path)?;
-    assert_eq!(
-        output_graph.streams.len(),
-        desired.streams.len(),
-        "{} output stream count mismatch",
-        fixture.id
-    );
+    assert_fixture_graph_matches(fixture, &output_graph)?;
     let details = if materialized.is_noop() {
         "source already satisfied desired graph; no output materialized".to_string()
     } else {
@@ -1084,6 +1099,67 @@ fn materialize_same_graph(
         outcome: "passed".to_string(),
         details,
     });
+    Ok(())
+}
+
+fn assert_fixture_graph_matches(fixture: &FixtureEntry, graph: &MediaGraph) -> TestResult {
+    assert_fixture_graph_kind(
+        &fixture.id,
+        graph,
+        StreamKind::Video,
+        fixture.expected_video_stream_count,
+        &fixture.expected_video_codecs,
+    )?;
+    assert_fixture_graph_kind(
+        &fixture.id,
+        graph,
+        StreamKind::Audio,
+        fixture.expected_audio_stream_count,
+        &fixture.expected_audio_codecs,
+    )?;
+    assert_fixture_graph_kind(
+        &fixture.id,
+        graph,
+        StreamKind::Subtitle,
+        fixture.expected_subtitle_stream_count,
+        &fixture.expected_subtitle_codecs,
+    )?;
+    assert_fixture_graph_kind(
+        &fixture.id,
+        graph,
+        StreamKind::Attachment,
+        fixture.expected_attachment_stream_count,
+        &fixture.expected_attachment_codecs,
+    )
+}
+
+fn assert_fixture_graph_kind(
+    fixture_id: &str,
+    graph: &MediaGraph,
+    kind: StreamKind,
+    expected_count: usize,
+    expected_codecs: &[String],
+) -> TestResult {
+    let streams = streams_by_kind(graph, kind);
+    if streams.len() != expected_count {
+        return fail(format!(
+            "{fixture_id} {kind:?} stream count mismatch: expected {expected_count}, got {}",
+            streams.len()
+        ));
+    }
+    let actual_codecs = streams
+        .iter()
+        .map(|stream| stream.codec.as_str())
+        .collect::<BTreeSet<_>>();
+    let expected_codec_set = expected_codecs
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if actual_codecs != expected_codec_set {
+        return fail(format!(
+            "{fixture_id} {kind:?} codec mismatch: expected {expected_codec_set:?}, got {actual_codecs:?}"
+        ));
+    }
     Ok(())
 }
 

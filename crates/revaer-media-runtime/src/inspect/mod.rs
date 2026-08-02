@@ -858,10 +858,12 @@ fn merge_side_data_record(
 fn frame_side_data_by_stream(frames: &[FfprobeFrame]) -> BTreeMap<u32, Vec<&FfprobeSideData>> {
     let mut values: BTreeMap<u32, Vec<&FfprobeSideData>> = BTreeMap::new();
     for frame in frames {
-        values
-            .entry(frame.stream_index)
-            .or_default()
-            .extend(frame.side_data_list.iter());
+        if let Some(stream_index) = frame.stream_index {
+            values
+                .entry(stream_index)
+                .or_default()
+                .extend(frame.side_data_list.iter());
+        }
     }
     values
 }
@@ -1065,7 +1067,7 @@ fn codec_name_from_probe(codec_type: &str, codec_name: Option<String>) -> String
 
 #[derive(Debug, Deserialize)]
 struct FfprobeFrame {
-    stream_index: u32,
+    stream_index: Option<u32>,
     #[serde(default)]
     side_data_list: Vec<FfprobeSideData>,
 }
@@ -1760,6 +1762,62 @@ mod tests {
                 .iter()
                 .any(|entry| entry.key == "tmdb" && entry.value == "123")
         );
+    }
+
+    #[test]
+    fn ffprobe_adapter_accepts_unindexed_frame_records() {
+        let key = primary_inspect_probe_key("/input/webvtt.webm");
+        let mut outputs = HashMap::new();
+        let probe_output = r#"{
+                "frames": [
+                    {
+                        "media_type": "subtitle",
+                        "pts": 0,
+                        "pts_time": "0.000000",
+                        "format": 1,
+                        "start_display_time": 0,
+                        "end_display_time": 500,
+                        "num_rects": 1
+                    }
+                ],
+                "streams": [
+                    {
+                        "index": 0,
+                        "codec_type": "video",
+                        "codec_name": "vp8",
+                        "disposition": {"default": 1}
+                    },
+                    {
+                        "index": 1,
+                        "codec_type": "subtitle",
+                        "codec_name": "webvtt",
+                        "disposition": {"default": 1},
+                        "tags": {"language": "eng"}
+                    }
+                ],
+                "format": {"format_name": "matroska,webm"}
+            }"#;
+        outputs.insert(key, probe_output.to_string());
+        let adapter = test_adapter(
+            Arc::new(StubInspectExecutor {
+                outputs,
+                calls: Mutex::new(Vec::new()),
+            }),
+            "ffprobe",
+        );
+
+        let inspection = adapter.inspect_full("/input/webvtt.webm");
+        assert!(
+            inspection.is_ok(),
+            "expected unindexed frame records to inspect successfully"
+        );
+        let Ok(inspection) = inspection else {
+            return;
+        };
+        assert_eq!(inspection.graph.streams.len(), 2);
+        assert_eq!(inspection.graph.streams[1].kind, StreamKind::Subtitle);
+        assert_eq!(inspection.graph.streams[1].codec, "webvtt");
+        assert!(inspection.streams[1].side_data.is_empty());
     }
 
     #[test]

@@ -1,0 +1,55 @@
+# Media Chromium Edge Fixture Evidence
+
+- Status: Accepted
+- Date: 2026-08-02
+- Context:
+  - The media fixture manifest already includes Chromium WebVTT, Hi10p, VP9 profile 2, fragmented HEVC, and HE-AAC MPEG-TS edge inputs required by the media transcoding acceptance matrix.
+  - Those files were validated by manifest/probe checks, but not all of them were exercised through the production planning and materialization fixture path.
+  - Same-graph materialization only checked total stream count, which left codec-family regressions less directly visible in the generated media conversion report.
+  - Exercising the WebVTT-in-WebM fixture through the production inspector exposed an ffprobe shape where subtitle frame records do not include `stream_index`.
+- Decision:
+  - Accept unindexed ffprobe frame records during inspection and only merge frame side-data when ffprobe provides a stream index.
+  - Add the remaining Chromium edge fixtures to the production pipeline case loop in `crates/revaer-media-runtime/tests/media_fixtures.rs`.
+  - Strengthen same-graph materialization checks so output graphs must match each fixture's expected per-kind stream counts and codecs.
+  - Keep the schema and supported desired-target surface unchanged.
+- Consequences:
+  - Positive outcomes:
+    - WebVTT subtitle inputs that emit unindexed ffprobe frame records can now be inspected instead of failing before planning.
+    - The dedicated media conversion fixture report now covers the Chromium edge cases named by the acceptance matrix through the same production planning/materialization harness used by the other fixture cases.
+    - Stream-count and codec regressions are caught for same-graph fixture materialization instead of being reduced to total stream count.
+  - Risks or trade-offs:
+    - Frame side-data from unindexed ffprobe frame records is intentionally ignored because it cannot be safely attributed to a stream.
+    - The dedicated fixture job now exercises five additional media inputs through the production fixture harness.
+    - The service is still not complete in the absolute sense; authored attachment/data creation and broader technical-property contracts remain outside the completed boundary recorded in ADR 318.
+- Follow-up:
+  - Continue closing ADR 318 gaps through dedicated contract and verifier slices.
+  - Keep fixture additions limited to small, licensed, ignored media binaries plus committed manifest/probe/script evidence.
+
+## Task Record
+
+- Motivation:
+  - Close a fixture acceptance evidence gap found while auditing the current PR against `MEDIA_TRANSCODING.md`.
+- Design notes:
+  - Reused the existing fixture harness and report writer instead of adding a parallel runner.
+  - Treated the Chromium edge files as same-graph materialization cases because the acceptance matrix requires explicit parser/materialization behavior and output probeability, not new runtime feature semantics.
+  - Compared expected codecs by stream kind using the committed manifest as the source of truth.
+  - Changed only frame-side-data attribution for ffprobe frame records that lack `stream_index`; stream records remain required and normalized as before.
+- Test coverage summary:
+  - Added `ffprobe_adapter_accepts_unindexed_frame_records` in `crates/revaer-media-runtime/src/inspect/mod.rs`.
+  - Added production fixture-path coverage for `chromium-bear-vp8-webvtt-webm`, `chromium-bear-320x180-hi10p-mp4`, `chromium-bear-vp9-profile2-webm`, `chromium-bear-v-frag-hevc-mp4`, and `chromium-bear-1280x720-aac-he-ts`.
+  - Strengthened same-graph materialization assertions in `crates/revaer-media-runtime/tests/media_fixtures.rs`.
+  - Full validation status is recorded in the current task handoff.
+- Observability updates:
+  - No new runtime telemetry, logs, metrics, or events were added.
+  - The generated media conversion Markdown report now includes additional edge-case pipeline rows when the dedicated fixture job runs.
+- Status-doc validation:
+  - Rechecked `MEDIA_TRANSCODING.md`, ADR 318, and the current fixture manifest.
+  - ADR 318 remains accurate that the media transcoding service is still implementation-incomplete outside the fixture evidence covered here.
+- Risk & rollback plan:
+  - Runtime risk is limited to preserving inspection success when ffprobe omits frame-level stream attribution. Indexed frame side-data behavior is unchanged.
+  - Roll back by restoring required frame `stream_index`, removing the additional fixture case entries and per-kind graph assertion helper, then removing this ADR/index entry.
+- Dependency rationale:
+  - No new dependencies were added.
+- Stale-policy check:
+  - Instruction files reviewed: `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Drift found: none for this scoped fixture-evidence change.
