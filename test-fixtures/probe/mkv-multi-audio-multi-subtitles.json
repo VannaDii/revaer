@@ -1,143 +1,143 @@
 {
   "streams": [
     {
+      "index": 0,
       "codec_name": "h264",
       "codec_type": "video",
       "disposition": {
         "default": 1,
         "forced": 0
       },
-      "index": 0,
       "tags": {
         "language": null,
         "title": null
       }
     },
     {
+      "index": 1,
       "codec_name": "aac",
       "codec_type": "audio",
       "disposition": {
         "default": 1,
         "forced": 0
       },
-      "index": 1,
       "tags": {
         "language": null,
         "title": null
       }
     },
     {
+      "index": 2,
       "codec_name": "subrip",
       "codec_type": "subtitle",
       "disposition": {
         "default": 1,
         "forced": 0
       },
-      "index": 2,
       "tags": {
         "language": "eng",
         "title": null
       }
     },
     {
+      "index": 3,
       "codec_name": "subrip",
       "codec_type": "subtitle",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 3,
       "tags": {
         "language": "hun",
         "title": null
       }
     },
     {
+      "index": 4,
       "codec_name": "subrip",
       "codec_type": "subtitle",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 4,
       "tags": {
         "language": "ger",
         "title": null
       }
     },
     {
+      "index": 5,
       "codec_name": "subrip",
       "codec_type": "subtitle",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 5,
       "tags": {
         "language": "fre",
         "title": null
       }
     },
     {
+      "index": 6,
       "codec_name": "subrip",
       "codec_type": "subtitle",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 6,
       "tags": {
         "language": "spa",
         "title": null
       }
     },
     {
+      "index": 7,
       "codec_name": "subrip",
       "codec_type": "subtitle",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 7,
       "tags": {
         "language": "ita",
         "title": null
       }
     },
     {
+      "index": 8,
       "codec_name": "aac",
       "codec_type": "audio",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 8,
       "tags": {
         "language": "eng",
         "title": "Commentary"
       }
     },
     {
+      "index": 9,
       "codec_name": "subrip",
       "codec_type": "subtitle",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 9,
       "tags": {
         "language": "jpn",
         "title": null
       }
     },
     {
+      "index": 10,
       "codec_name": "subrip",
       "codec_type": "subtitle",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 10,
       "tags": {
         "language": null,
         "title": null

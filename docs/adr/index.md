@@ -395,3 +395,4 @@
 -   [384](384-media-hdr10-mastering-display-geometry.md) - Media HDR10 mastering display geometry
 -   [385](385-factory-reset-transient-contention-retry.md) - Factory reset transient contention retry
 -   [386](386-media-hdr10-exact-metadata-values.md) - Media HDR10 exact metadata values
+-   [387](387-media-attachment-strip-fixture-evidence.md) - Media attachment strip fixture evidence

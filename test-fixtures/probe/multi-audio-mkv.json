@@ -1,65 +1,65 @@
 {
   "streams": [
     {
+      "index": 0,
       "codec_name": "h264",
       "codec_type": "video",
       "disposition": {
         "default": 1,
         "forced": 0
       },
-      "index": 0,
       "tags": {
         "language": null,
         "title": null
       }
     },
     {
+      "index": 1,
       "codec_name": "aac",
       "codec_type": "audio",
       "disposition": {
         "default": 1,
         "forced": 0
       },
-      "index": 1,
       "tags": {
         "language": "eng",
         "title": "English AAC Tone"
       }
     },
     {
+      "index": 2,
       "codec_name": "opus",
       "codec_type": "audio",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 2,
       "tags": {
         "language": "jpn",
         "title": "Japanese Opus Tone"
       }
     },
     {
+      "index": 3,
       "codec_name": "ac3",
       "codec_type": "audio",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 3,
       "tags": {
         "language": "spa",
         "title": "Spanish AC3 Tone"
       }
     },
     {
+      "index": 4,
       "codec_name": "aac",
       "codec_type": "audio",
       "disposition": {
         "default": 0,
         "forced": 0
       },
-      "index": 4,
       "tags": {
         "language": null,
         "title": "Undeclared Silent AAC"

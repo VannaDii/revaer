@@ -1,0 +1,52 @@
+# Media Attachment Strip Fixture Evidence
+
+- Status: Accepted
+- Date: 2026-08-01
+- Context:
+  - The media target contract supports existing container attachments only as exact passthrough or strip.
+  - Unit coverage proved argument construction for strip behavior, but the fixture-backed media conversion suite did not include a real attachment-bearing container.
+  - The service remains incomplete for authored attachment creation or rewrite; this change tightens evidence for the supported strip contract only.
+- Decision:
+  - Add a generated Matroska fixture with one synthetic `text/plain` attachment named `attachment-note.txt`.
+  - Extend fixture validation to count attachment streams and verify a stable attachment codec marker when a manifest entry declares one.
+  - Treat attachment MIME type and filename metadata as the text/plain proof, because ffprobe's attachment `codec_name` differs across supported runner environments.
+  - Add a pipeline case that materializes the attachment-bearing input with `container_attachment_policy = strip` and asserts the output has no attachment streams.
+  - Do not add authored attachment creation or rewrite support in this change.
+- Consequences:
+  - Positive outcomes:
+    - Real FFmpeg/ffprobe fixture evidence now covers the supported attachment strip path.
+    - The conversion report records the attachment strip materialization as a remux action.
+  - Risks or trade-offs:
+    - The fixture remains generated and depends on local FFmpeg Matroska attachment behavior.
+    - Authored attachment rows still fail closed and remain outside the implemented service boundary.
+- Follow-up:
+  - Preserve exact attachment passthrough fixture evidence if the suite later adds font-bearing inputs.
+  - Implement authored attachment creation or rewrite only with a separate target contract, runtime command path, verifier, and fixture suite.
+
+## Task Record
+
+- Motivation:
+  - Close an evidence gap in the supported media attachment strip behavior while continuing the production-readiness audit.
+- Design notes:
+  - The generated fixture uses a tiny locally generated text attachment to avoid new binary assets or dependencies.
+  - Manifest attachment expectations default to zero for existing entries and become explicit on the attachment fixture.
+  - Attachment codec checks use a stable `attachment` marker so local macOS ffprobe and GitHub Ubuntu ffprobe agree when one reports `text` and the other omits `codec_name`.
+  - The pipeline assertion uses the production planner and command runner, then probes the materialized output graph.
+- Test coverage summary:
+  - Added fixture metadata validation for the attachment stream count, attachment codec, filename, and MIME type.
+  - Added fixture-backed pipeline coverage for stripping a real attachment stream.
+  - Full validation status is recorded in the current task handoff.
+- Observability updates:
+  - The media conversion report now includes attachment stream and codec summaries in fixture validation rows.
+  - The report records a `strip container attachments` pipeline action when the fixture suite runs.
+- Status-doc validation:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Reviewed `docs/adr/318-media-transcoding-foundation.md`; its broader incomplete-status warning remains accurate because authored attachment creation/rewrite still fails closed.
+- Risk & rollback plan:
+  - Risk is limited to fixture generation and media-runtime integration coverage.
+  - Roll back by removing the generated fixture entry, generator step, attachment-specific fixture assertions, and this ADR/index entry.
+- Dependency rationale:
+  - No new dependencies were added.
+- Stale-policy check:
+  - Instruction files reviewed: `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Drift found: none in scoped instructions for this fixture-evidence change.

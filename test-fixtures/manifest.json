@@ -463,6 +463,27 @@
       "notes": "The source fixture is video-only, so no original audio is present to copy."
     },
     {
+      "id": "attachment-mkv",
+      "path": "test-fixtures/derived/attachment.mkv",
+      "source": "generated from test-fixtures/source/bbb-h264.mp4 plus synthetic text attachment",
+      "license": "CC-BY-3.0",
+      "attribution": "Derived from Big Buck Bunny source video; text attachment generated locally.",
+      "container": "matroska",
+      "expectedVideoCodecs": ["h264"],
+      "expectedAudioCodecs": [],
+      "expectedSubtitleCodecs": [],
+      "expectedAttachmentCodecs": ["attachment"],
+      "expectedVideoStreamCount": 1,
+      "expectedAudioStreamCount": 0,
+      "expectedSubtitleStreamCount": 0,
+      "expectedAttachmentStreamCount": 1,
+      "purpose": "Container attachment strip behavior against a real attachment-bearing Matroska input.",
+      "generated": true,
+      "shouldDownload": false,
+      "shouldGenerate": true,
+      "notes": "Contains one text/plain attachment named attachment-note.txt."
+    },
+    {
       "id": "video-only-mp4",
       "path": "test-fixtures/derived/video-only.mp4",
       "source": "generated from test-fixtures/source/bbb-h264.mp4",

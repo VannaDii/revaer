@@ -1,26 +1,26 @@
 {
   "streams": [
     {
+      "index": 0,
       "codec_name": "vp8",
       "codec_type": "video",
       "disposition": {
         "default": 1,
         "forced": 0
       },
-      "index": 0,
       "tags": {
         "language": null,
         "title": null
       }
     },
     {
+      "index": 1,
       "codec_name": "vorbis",
       "codec_type": "audio",
       "disposition": {
         "default": 1,
         "forced": 0
       },
-      "index": 1,
       "tags": {
         "language": null,
         "title": null

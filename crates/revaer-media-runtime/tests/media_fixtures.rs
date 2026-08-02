@@ -39,12 +39,16 @@ struct FixtureEntry {
     expected_audio_codecs: Vec<String>,
     #[serde(rename = "expectedSubtitleCodecs")]
     expected_subtitle_codecs: Vec<String>,
+    #[serde(default, rename = "expectedAttachmentCodecs")]
+    expected_attachment_codecs: Vec<String>,
     #[serde(rename = "expectedVideoStreamCount")]
     expected_video_stream_count: usize,
     #[serde(rename = "expectedAudioStreamCount")]
     expected_audio_stream_count: usize,
     #[serde(rename = "expectedSubtitleStreamCount")]
     expected_subtitle_stream_count: usize,
+    #[serde(default, rename = "expectedAttachmentStreamCount")]
+    expected_attachment_stream_count: usize,
     purpose: String,
     generated: bool,
     #[serde(rename = "shouldDownload")]
@@ -267,7 +271,7 @@ fn manifest_contract_tracks_fixture_suite() -> TestResult {
     let manifest = load_manifest(&root)?;
 
     assert_eq!(manifest.schema_version, 1);
-    assert_eq!(manifest.fixtures.len(), 30);
+    assert_eq!(manifest.fixtures.len(), 31);
     assert_required_fixture_ids(&manifest)?;
     assert_fixture_paths_are_unique(&manifest)?;
     assert_committed_fixture_files_exist(&root)?;
@@ -506,6 +510,7 @@ fn assert_required_fixture_ids(manifest: &FixtureManifest) -> TestResult {
         "chromium-multitrack-3video-2audio-webm",
         "multi-audio-mkv",
         "subtitles-mkv",
+        "attachment-mkv",
         "video-only-mp4",
         "audio-only-m4a",
         "silent-audio-mp4",
@@ -673,6 +678,12 @@ fn validate_fixture_probe(fixture: &FixtureEntry, probe: &Value) -> TestResult {
         "subtitle",
         fixture.expected_subtitle_stream_count,
     )?;
+    assert_stream_count(
+        fixture,
+        probe,
+        "attachment",
+        fixture.expected_attachment_stream_count,
+    )?;
     assert_codecs(fixture, probe, "video", &fixture.expected_video_codecs)?;
     assert_codecs(fixture, probe, "audio", &fixture.expected_audio_codecs)?;
     assert_codecs(
@@ -680,6 +691,12 @@ fn validate_fixture_probe(fixture: &FixtureEntry, probe: &Value) -> TestResult {
         probe,
         "subtitle",
         &fixture.expected_subtitle_codecs,
+    )?;
+    assert_codecs(
+        fixture,
+        probe,
+        "attachment",
+        &fixture.expected_attachment_codecs,
     )?;
     Ok(())
 }
@@ -708,8 +725,7 @@ fn assert_codecs(
 ) -> TestResult {
     let actual = streams_of_kind(probe, kind)?
         .iter()
-        .filter_map(|stream| stream.get("codec_name").and_then(Value::as_str))
-        .map(str::to_string)
+        .filter_map(|stream| codec_name_for_probe_stream(kind, stream))
         .collect::<BTreeSet<_>>();
     let expected_set = expected.iter().cloned().collect::<BTreeSet<_>>();
     if actual != expected_set {
@@ -719,6 +735,18 @@ fn assert_codecs(
         ));
     }
     Ok(())
+}
+
+fn codec_name_for_probe_stream(kind: &str, stream: &Value) -> Option<String> {
+    if kind.eq_ignore_ascii_case("attachment") {
+        return Some("attachment".to_string());
+    }
+    stream
+        .get("codec_name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn streams_of_kind<'a>(probe: &'a Value, kind: &str) -> TestResult<Vec<&'a Value>> {
@@ -781,23 +809,25 @@ fn fixture_report_details(fixture: &FixtureEntry, probe: &Value) -> TestResult<S
     let video_codecs = codec_summary(probe, "video")?;
     let audio_codecs = codec_summary(probe, "audio")?;
     let subtitle_codecs = codec_summary(probe, "subtitle")?;
+    let attachment_codecs = codec_summary(probe, "attachment")?;
     Ok(format!(
-        "container={} streams video={} audio={} subtitle={} codecs video=[{}] audio=[{}] subtitle=[{}]",
+        "container={} streams video={} audio={} subtitle={} attachment={} codecs video=[{}] audio=[{}] subtitle=[{}] attachment=[{}]",
         fixture.container,
         streams_of_kind(probe, "video")?.len(),
         streams_of_kind(probe, "audio")?.len(),
         streams_of_kind(probe, "subtitle")?.len(),
+        streams_of_kind(probe, "attachment")?.len(),
         video_codecs,
         audio_codecs,
-        subtitle_codecs
+        subtitle_codecs,
+        attachment_codecs
     ))
 }
 
 fn codec_summary(probe: &Value, kind: &str) -> TestResult<String> {
     let codecs = streams_of_kind(probe, kind)?
         .iter()
-        .filter_map(|stream| stream.get("codec_name").and_then(Value::as_str))
-        .map(str::to_string)
+        .filter_map(|stream| codec_name_for_probe_stream(kind, stream))
         .collect::<BTreeSet<_>>();
     if codecs.is_empty() {
         return Ok("none".to_string());
@@ -853,6 +883,15 @@ fn validate_derived_metadata(
         "subtitle language/title metadata matched and second subtitle is forced",
     );
 
+    let attachment = probe_by_id(probes, "attachment-mkv")?;
+    let attachment_streams = streams_of_kind(attachment, "attachment")?;
+    assert_attachment_tags("attachment-mkv", &attachment_streams)?;
+    report.record_metadata_check(
+        "attachment-mkv",
+        "passed",
+        "attachment filename and MIME type metadata matched attachment-note.txt text/plain",
+    );
+
     let silent = probe_by_id(probes, "silent-audio-mp4")?;
     if streams_of_kind(silent, "audio")?.is_empty() {
         return fail("silent-audio-mp4 expected an audio stream");
@@ -863,6 +902,24 @@ fn validate_derived_metadata(
         "passed",
         "audio stream exists and ffmpeg silencedetect found silence",
     );
+    Ok(())
+}
+
+fn assert_attachment_tags(id: &str, streams: &[&Value]) -> TestResult {
+    if streams.len() != 1 {
+        return fail(format!(
+            "{id} attachment stream count mismatch: expected 1, got {}",
+            streams.len()
+        ));
+    }
+    let stream = streams[0];
+    let filename = stream.pointer("/tags/filename").and_then(Value::as_str);
+    let mimetype = stream.pointer("/tags/mimetype").and_then(Value::as_str);
+    if filename != Some("attachment-note.txt") || mimetype != Some("text/plain") {
+        return fail(format!(
+            "{id} attachment metadata mismatch: expected filename=attachment-note.txt mimetype=text/plain, got filename={filename:?} mimetype={mimetype:?}"
+        ));
+    }
     Ok(())
 }
 
@@ -961,6 +1018,7 @@ fn run_pipeline_cases(
 
     assert_multi_audio_selection(root, manifest, &output_root, report)?;
     assert_subtitle_selection(root, manifest, &output_root, report)?;
+    assert_container_attachment_stripping(root, manifest, &output_root, report)?;
     assert_container_chapter_replacement(root, manifest, &output_root, report)?;
     assert_transcoding_cases(root, manifest, &output_root, report)?;
     assert_pipeline_report_has_operation(report, "metadata_rewrite")?;
@@ -1518,6 +1576,62 @@ fn assert_subtitle_selection(
         operations: materialized.operations,
         outcome: "passed".to_string(),
         details: "removed all subtitle streams".to_string(),
+    });
+    Ok(())
+}
+
+fn assert_container_attachment_stripping(
+    root: &Path,
+    manifest: &FixtureManifest,
+    output_root: &Path,
+    report: &mut MediaConversionReport,
+) -> TestResult {
+    let fixture = fixture_by_id(manifest, "attachment-mkv")?;
+    let source_path = root.join(&fixture.path);
+    let graph = inspect_graph(&source_path)?;
+    if streams_by_kind(&graph, StreamKind::Attachment).len() != 1 {
+        return fail("attachment-mkv source graph must contain exactly one attachment stream");
+    }
+    let stripped_streams = graph
+        .streams
+        .iter()
+        .filter(|stream| stream.kind != StreamKind::Attachment)
+        .cloned()
+        .collect::<Vec<_>>();
+    let desired = DesiredGraph {
+        output_path: path_text(&output_root.join("attachment-stripped.mkv"))?,
+        container_format: None,
+        container_metadata_policy: None,
+        container_metadata: Vec::new(),
+        container_chapter_policy: None,
+        container_chapters: Vec::new(),
+        container_attachment_policy: Some("strip".to_string()),
+        streams: stripped_streams,
+    };
+    let materialized = materialize_desired_graph(&source_path, &graph, &desired)?;
+    assert_operations(
+        "strip container attachments",
+        &materialized.operations,
+        &["remux"],
+    )?;
+    let output = inspect_graph(&materialized.verified_output_path)?;
+    if !streams_by_kind(&output, StreamKind::Attachment).is_empty() {
+        return fail("attachment strip output retained attachment streams");
+    }
+    assert_eq!(
+        output.streams.len(),
+        desired.streams.len(),
+        "attachment strip output stream count mismatch"
+    );
+    report.record_pipeline_action(PipelineReportRow {
+        case_name: "strip container attachments".to_string(),
+        fixture_id: fixture.id.clone(),
+        input_path: fixture.path.clone(),
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
+        outcome: "passed".to_string(),
+        details: "removed the text/plain attachment while retaining selected media streams"
+            .to_string(),
     });
     Ok(())
 }

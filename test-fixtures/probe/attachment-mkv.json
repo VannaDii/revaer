@@ -2,7 +2,7 @@
   "streams": [
     {
       "index": 0,
-      "codec_name": "theora",
+      "codec_name": "h264",
       "codec_type": "video",
       "disposition": {
         "default": 1,
@@ -15,10 +15,10 @@
     },
     {
       "index": 1,
-      "codec_name": "vorbis",
-      "codec_type": "audio",
+      "codec_name": "text",
+      "codec_type": "attachment",
       "disposition": {
-        "default": 1,
+        "default": 0,
         "forced": 0
       },
       "tags": {

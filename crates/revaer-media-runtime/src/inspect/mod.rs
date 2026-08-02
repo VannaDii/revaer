@@ -489,10 +489,11 @@ impl InspectAdapter for FfprobeInspectAdapter {
                         Some(tags) => (tags.language, tags.title),
                         None => (None, None),
                     };
+                    let codec = codec_name_from_probe(&item.codec_type, item.codec_name);
                     ProbeStream {
                         stream_id: item.index,
                         kind: item.codec_type,
-                        codec: item.codec_name,
+                        codec,
                         channels: item.channels,
                         channel_layout: item.channel_layout,
                         language,
@@ -545,7 +546,8 @@ fn validate_sidecars(
                 "sidecar does not contain a subtitle stream: {path}"
             )));
         }
-        let actual_codec = normalize_subtitle_codec(&stream.codec_name);
+        let actual_codec =
+            normalize_subtitle_codec(stream.codec_name.as_deref().unwrap_or_default());
         let expected_codec = expected_sidecar_codec(sidecar.format);
         if actual_codec != expected_codec {
             return Err(InspectError::OutputMalformed(format!(
@@ -1026,7 +1028,7 @@ struct FfprobeOutput {
 struct FfprobeStream {
     index: u32,
     codec_type: String,
-    codec_name: String,
+    codec_name: Option<String>,
     channels: Option<u32>,
     channel_layout: Option<String>,
     disposition: Option<FfprobeDisposition>,
@@ -1050,6 +1052,15 @@ struct FfprobeStream {
     level: Option<Value>,
     #[serde(default)]
     side_data_list: Vec<FfprobeSideData>,
+}
+
+fn codec_name_from_probe(codec_type: &str, codec_name: Option<String>) -> String {
+    if codec_type.trim().eq_ignore_ascii_case("attachment") {
+        return "attachment".to_string();
+    }
+    codec_name
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Deserialize)]
@@ -1862,6 +1873,87 @@ mod tests {
             result.err().map(|err| err.to_string()),
             Some(InspectError::OutputMalformed("stream codec is missing".to_string()).to_string())
         );
+    }
+
+    #[test]
+    fn ffprobe_adapter_labels_attachment_without_codec_name() {
+        let key = primary_inspect_probe_key("/input/movie.mkv");
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            key,
+            r#"{
+                "streams": [
+                    {
+                        "index": 1,
+                        "codec_type": "attachment",
+                        "disposition": {"default": 0},
+                        "tags": {
+                            "filename": "attachment-note.txt",
+                            "mimetype": "text/plain"
+                        }
+                    }
+                ]
+            }"#
+            .to_string(),
+        );
+        let adapter = test_adapter(
+            Arc::new(StubInspectExecutor {
+                outputs,
+                calls: Mutex::new(Vec::new()),
+            }),
+            "ffprobe",
+        );
+
+        let result = adapter.inspect("/input/movie.mkv");
+
+        assert!(result.is_ok(), "attachment probe should normalize");
+        let Ok(graph) = result else {
+            return;
+        };
+        assert_eq!(graph.streams.len(), 1);
+        assert_eq!(graph.streams[0].kind, StreamKind::Attachment);
+        assert_eq!(graph.streams[0].codec, "attachment");
+    }
+
+    #[test]
+    fn ffprobe_adapter_uses_stable_attachment_codec_marker() {
+        let key = primary_inspect_probe_key("/input/movie.mkv");
+        let mut outputs = HashMap::new();
+        outputs.insert(
+            key,
+            r#"{
+                "streams": [
+                    {
+                        "index": 1,
+                        "codec_type": "attachment",
+                        "codec_name": "text",
+                        "disposition": {"default": 0},
+                        "tags": {
+                            "filename": "attachment-note.txt",
+                            "mimetype": "text/plain"
+                        }
+                    }
+                ]
+            }"#
+            .to_string(),
+        );
+        let adapter = test_adapter(
+            Arc::new(StubInspectExecutor {
+                outputs,
+                calls: Mutex::new(Vec::new()),
+            }),
+            "ffprobe",
+        );
+
+        let result = adapter.inspect("/input/movie.mkv");
+
+        assert!(result.is_ok(), "attachment probe should normalize");
+        let Ok(graph) = result else {
+            return;
+        };
+        assert_eq!(graph.streams.len(), 1);
+        assert_eq!(graph.streams[0].kind, StreamKind::Attachment);
+        assert_eq!(graph.streams[0].codec, "attachment");
     }
 
     #[test]
