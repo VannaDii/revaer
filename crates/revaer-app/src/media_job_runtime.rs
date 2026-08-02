@@ -4335,7 +4335,9 @@ mod tests {
         start_capability_snapshot_run_with_executor,
     };
     use revaer_data::media::configuration::{
+        AppendMediaDesiredTargetChapterInput, AppendMediaDesiredTargetChapterMetadataInput,
         AppendMediaDesiredTargetStreamInput, CreateMediaDesiredTargetInput,
+        append_media_desired_target_chapter, append_media_desired_target_chapter_metadata,
         append_media_desired_target_stream, create_media_desired_target,
         set_media_profile_desired_target,
     };
@@ -4521,6 +4523,32 @@ mod tests {
             match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => Ok(inspection),
                 Ok(_) | Err(_) if source_path_text.contains("/workspace/") => Ok(inspection),
+                Ok(_) | Err(_) => Ok(with_test_chapters(inspection)),
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct ChapterReplaceInspector;
+
+    impl InspectAdapter for ChapterReplaceInspector {
+        fn inspect(&self, source_path: &str) -> Result<MediaGraph, InspectError> {
+            let codec = match fs::read(source_path) {
+                Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
+                Ok(_) | Err(_) => "h264",
+            };
+            Ok(video_graph(source_path, codec))
+        }
+
+        fn inspect_full(&self, source_path: &str) -> Result<MediaInspection, InspectError> {
+            let inspection = self.inspect(source_path).map(complete_test_inspection)?;
+            match fs::read(source_path) {
+                Ok(bytes) if bytes.as_slice() == b"output" => {
+                    Ok(with_replacement_test_chapters(inspection))
+                }
+                Ok(_) | Err(_) if source_path.contains("/workspace/") => {
+                    Ok(with_replacement_test_chapters(inspection))
+                }
                 Ok(_) | Err(_) => Ok(with_test_chapters(inspection)),
             }
         }
@@ -4985,6 +5013,30 @@ mod tests {
                     .collect(),
             })
             .collect();
+        inspection
+    }
+
+    fn with_replacement_test_chapters(mut inspection: MediaInspection) -> MediaInspection {
+        inspection.chapters = vec![
+            ChapterInspection {
+                chapter_id: 0,
+                start_millis: 0,
+                end_millis: 400,
+                metadata: vec![MetadataEntry {
+                    key: "title".to_string(),
+                    value: "Cold Open".to_string(),
+                }],
+            },
+            ChapterInspection {
+                chapter_id: 1,
+                start_millis: 400,
+                end_millis: 1_000,
+                metadata: vec![MetadataEntry {
+                    key: "title".to_string(),
+                    value: "Main Feature".to_string(),
+                }],
+            },
+        ];
         inspection
     }
 
@@ -5554,6 +5606,7 @@ mod tests {
         HevcAudio,
         HevcStrip,
         HevcStripChapters,
+        HevcReplaceChapters,
     }
 
     async fn create_runtime_target(
@@ -5566,17 +5619,17 @@ mod tests {
             RuntimeJobTarget::Hevc
             | RuntimeJobTarget::HevcAudio
             | RuntimeJobTarget::HevcStrip
-            | RuntimeJobTarget::HevcStripChapters => {
+            | RuntimeJobTarget::HevcStripChapters
+            | RuntimeJobTarget::HevcReplaceChapters => {
                 let container_metadata_policy = if job_target == RuntimeJobTarget::HevcStrip {
                     "strip"
                 } else {
                     "preserve"
                 };
-                let container_chapter_policy = if job_target == RuntimeJobTarget::HevcStripChapters
-                {
-                    "strip"
-                } else {
-                    "preserve"
+                let container_chapter_policy = match job_target {
+                    RuntimeJobTarget::HevcStripChapters => "strip",
+                    RuntimeJobTarget::HevcReplaceChapters => "replace",
+                    _ => "preserve",
                 };
                 let target_id = create_media_desired_target(
                     store.pool(),
@@ -5593,6 +5646,9 @@ mod tests {
                 )
                 .await?;
                 append_runtime_target_video_stream(store, target_id).await?;
+                if job_target == RuntimeJobTarget::HevcReplaceChapters {
+                    append_runtime_target_replacement_chapters(store, target_id).await?;
+                }
                 if job_target == RuntimeJobTarget::HevcAudio {
                     append_runtime_target_audio_stream(store, target_id).await?;
                 }
@@ -5637,6 +5693,37 @@ mod tests {
             },
         )
         .await?;
+        Ok(())
+    }
+
+    async fn append_runtime_target_replacement_chapters(
+        store: &MediaStore,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        for (start_millis, end_millis, title) in [
+            (0_i64, 400_i64, "Cold Open"),
+            (400_i64, 1_000_i64, "Main Feature"),
+        ] {
+            append_media_desired_target_chapter(
+                store.pool(),
+                AppendMediaDesiredTargetChapterInput {
+                    media_desired_target_profile_public_id: target_id,
+                    start_millis,
+                    end_millis,
+                },
+            )
+            .await?;
+            append_media_desired_target_chapter_metadata(
+                store.pool(),
+                AppendMediaDesiredTargetChapterMetadataInput {
+                    media_desired_target_profile_public_id: target_id,
+                    start_millis,
+                    metadata_key: "title",
+                    metadata_value: title,
+                },
+            )
+            .await?;
+        }
         Ok(())
     }
 
@@ -7323,6 +7410,70 @@ Integrated loudness:
                 output_stream_id: None,
             }]
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_replaces_container_chapters_when_policy_selects_replace()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) =
+            setup_runtime(false, true, RuntimeJobTarget::HevcReplaceChapters).await?
+        else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(ChapterReplaceInspector) as Arc<RuntimeInspector>;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+        assert_eq!(fs::read(&job.source_path)?, b"output");
+        let chapter_artifact = {
+            let commands = fixture
+                .command_runner
+                .commands
+                .lock()
+                .map_err(|error| anyhow::anyhow!("command lock poisoned: {error}"))?;
+            let first_command = commands
+                .first()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("ffmpeg command missing"))?;
+            drop(commands);
+            let chapter_artifact = first_command
+                .windows(2)
+                .find_map(|pair| {
+                    (pair[0] == "-i" && pair[1].ends_with(".chapters.ffmetadata"))
+                        .then(|| pair[1].clone())
+                })
+                .ok_or_else(|| anyhow::anyhow!("chapter metadata input missing"))?;
+            assert!(Path::new(&chapter_artifact).starts_with(&fixture.runtime.workspace_root));
+            assert!(
+                first_command
+                    .windows(2)
+                    .any(|pair| pair == ["-map_chapters", "1"])
+            );
+            chapter_artifact
+        };
+        assert!(!Path::new(&chapter_artifact).exists());
+        let checks = fixture
+            .store
+            .list_job_verification_checks(fixture.job_id)
+            .await?;
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "candidate_chapters"
+                && check.check_status == "passed"
+                && check.expected_value.as_deref() == Some("2 source_chapters")
+        }));
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "final_chapters"
+                && check.check_status == "passed"
+                && check.expected_value.as_deref() == Some("2 source_chapters")
+        }));
         Ok(())
     }
 

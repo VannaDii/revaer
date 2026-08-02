@@ -406,6 +406,7 @@
     -   [377: Media manual operator loop](adr/377-media-manual-operator-loop.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
+    -   [391: Media job chapter replacement evidence](adr/391-media-job-chapter-replacement-evidence.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
     -   [407: Database-backed coverage execution](adr/407-database-backed-coverage-execution.md)
     -   [409: Portable Helm annotation rendering](adr/409-portable-helm-annotation-rendering.md)
