@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use revaer_api::app::media::MediaDiscoveryPreviewResponse;
+use revaer_api::app::media::{MediaDiscoveryPreviewResponse, MediaServiceError};
 use revaer_data::DataError;
 use revaer_data::media::jobs::EnqueueDiscoveredMediaJobInput;
 use revaer_data::media::profiles::MediaProfileRow;
@@ -28,7 +28,8 @@ use uuid::Uuid;
 
 use crate::media::{
     build_discovery_previews, ensure_execution_capability_snapshot,
-    ensure_profile_compatibility_target_readiness,
+    ensure_profile_compatibility_target_readiness, ensure_profile_desired_target_readiness,
+    load_media_desired_targets,
 };
 use crate::media_discovery_watcher::{MediaWatchEvent, MediaWatcher, NotifyMediaWatcher};
 use crate::media_source_fingerprint::{MediaSourceFingerprintError, fingerprint_media_file};
@@ -220,6 +221,23 @@ impl MediaDiscoveryRuntime {
                 return Ok(false);
             }
         }
+        if profile
+            .desired_target_key
+            .as_deref()
+            .is_some_and(|target_key| !target_key.trim().is_empty())
+        {
+            let desired_targets = load_media_desired_targets(&self.store).await?;
+            let policies = self.store.list_policy_profiles().await?;
+            if let Err(error) = ensure_profile_desired_target_readiness(
+                profile,
+                snapshot,
+                &desired_targets,
+                &policies,
+            ) {
+                self.record_not_ready(profile, origin, error.code().unwrap_or("media_not_ready"));
+                return Ok(false);
+            }
+        }
         Ok(true)
     }
 
@@ -370,6 +388,8 @@ fn rebase_watch_event_path(event_path: &Path, source_root: &str) -> Option<PathB
 enum MediaDiscoveryRuntimeError {
     #[error("media discovery runtime data error: {0}")]
     Data(#[from] DataError),
+    #[error("media discovery runtime media service error: {0}")]
+    MediaService(#[from] MediaServiceError),
     #[error("media discovery runtime io error for {path}: {source}")]
     Io { path: PathBuf, source: io::Error },
     #[error("media discovery runtime path is not unicode: {0}")]
@@ -451,7 +471,10 @@ mod tests {
         start_capability_snapshot_run_with_executor,
     };
     use revaer_data::media::configuration::{
-        UpsertMediaCompatibilityTargetInput, upsert_media_compatibility_target,
+        AppendMediaDesiredTargetStreamInput, CreateMediaDesiredTargetInput,
+        UpsertMediaCompatibilityTargetInput, append_media_desired_target_stream,
+        create_media_desired_target, set_media_profile_desired_target,
+        upsert_media_compatibility_target,
     };
     use revaer_data::media::jobs::list_media_jobs;
     use revaer_data::media::profiles::{
@@ -466,6 +489,8 @@ mod tests {
     use std::time::{Duration, Instant};
     use tokio::time::{sleep, timeout};
     use uuid::Uuid;
+
+    const WATCHER_UNAVAILABLE_DESIRED_TARGET_KEY: &str = "watcher-unavailable-desired-target";
 
     fn closed_media_store() -> MediaStore {
         let options = sqlx::postgres::PgConnectOptions::new()
@@ -785,6 +810,159 @@ mod tests {
         );
         assert!(runtime_shutdown::request(&shutdown_tx));
         timeout(Duration::from_secs(5), runtime_task).await??;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn watcher_non_dry_run_profile_skips_queueing_when_desired_target_not_ready()
+    -> anyhow::Result<()> {
+        let Ok(postgres) = start_postgres() else {
+            return Ok(());
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .connect(postgres.connection_string())
+            .await?;
+        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
+        migrator.set_ignore_missing(true);
+        migrator.run(&pool).await?;
+        let store = MediaStore::new(pool);
+        let temp = tempfile::tempdir()?;
+        let source_root = temp.path().join("source");
+        let output_root = temp.path().join("output");
+        fs::create_dir_all(&source_root)?;
+        fs::create_dir_all(&output_root)?;
+        let source_root_text = source_root
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("source root is not Unicode"))?;
+        let output_root_text = output_root
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("output root is not Unicode"))?;
+        record_unsupported_hevc_aac_capability(store.pool()).await?;
+        create_unsupported_hevc_desired_target(store.pool()).await?;
+        let profile_id = upsert_media_profile(
+            store.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
+                profile_key: "watcher-runtime-desired-target-gate",
+                source_root: source_root_text,
+                output_root: output_root_text,
+                dry_run_only: false,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: true,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        set_media_profile_desired_target(
+            store.pool(),
+            super::SYSTEM_USER_PUBLIC_ID,
+            profile_id,
+            Some(WATCHER_UNAVAILABLE_DESIRED_TARGET_KEY),
+            Some(1),
+        )
+        .await?;
+        update_media_profile(
+            store.pool(),
+            &UpdateMediaProfileInput {
+                actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
+                media_profile_public_id: profile_id,
+                source_root: None,
+                output_root: None,
+                dry_run_only: Some(false),
+                retention_days: None,
+                compatibility_target_key: None,
+                policy_key: None,
+                watcher_enabled: None,
+                schedule_enabled: None,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        let runtime = MediaDiscoveryRuntime::with_tick_interval(
+            store.clone(),
+            Metrics::new()?,
+            Duration::from_millis(100),
+        );
+        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
+        let runtime_task = runtime.spawn(shutdown_rx);
+        sleep(Duration::from_millis(500)).await;
+
+        fs::write(source_root.join("movie.webm"), b"needs-desired-target")?;
+        sleep(Duration::from_secs(2)).await;
+
+        assert!(
+            list_media_jobs(store.pool(), Some(profile_id), None)
+                .await?
+                .is_empty()
+        );
+        assert!(runtime_shutdown::request(&shutdown_tx));
+        timeout(Duration::from_secs(5), runtime_task).await??;
+        Ok(())
+    }
+
+    async fn create_unsupported_hevc_desired_target(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+        let target_id = create_media_desired_target(
+            pool,
+            CreateMediaDesiredTargetInput {
+                actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
+                target_key: WATCHER_UNAVAILABLE_DESIRED_TARGET_KEY,
+                version: 1,
+                display_name: "Watcher unavailable desired target",
+                container_format: "matroska",
+                container_metadata_policy: "preserve",
+                container_chapter_policy: "preserve",
+                container_attachment_policy: "preserve",
+            },
+        )
+        .await?;
+        append_media_desired_target_stream(
+            pool,
+            AppendMediaDesiredTargetStreamInput {
+                media_desired_target_profile_public_id: target_id,
+                stream_key: "video-main",
+                stream_kind: "video",
+                semantic_role: None,
+                language_code: None,
+                optional: false,
+                sort_order: 1,
+                codec: "hevc",
+                channel_count: None,
+                channel_layout: None,
+                audio_bitrate_bps: None,
+                audio_sample_rate_hz: None,
+                audio_loudness_profile: None,
+                audio_dynamic_range: None,
+                video_profile: None,
+                video_level: None,
+                video_bitrate_bps: None,
+                color_primaries: None,
+                color_transfer: None,
+                color_space: None,
+                hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_x: None,
+                hdr10_mastering_white_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
+                title: None,
+                default_disposition: true,
+                forced_disposition: false,
+                subtitle_placement: None,
+                image_subtitle_action: None,
+            },
+        )
+        .await?;
         Ok(())
     }
 
