@@ -389,6 +389,9 @@
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [391](391-media-job-chapter-replacement-evidence.md) – Media job chapter replacement evidence
+-   [392](392-media-job-attachment-strip-evidence.md) – Media job attachment strip evidence
+-   [393](393-media-job-attachment-passthrough-evidence.md) – Media job attachment passthrough evidence
+-   [394](394-media-job-data-passthrough-evidence.md) – Media job data passthrough evidence
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
 -   [407](407-database-backed-coverage-execution.md) – Database-backed coverage execution
 -   [409](409-portable-helm-annotation-rendering.md) – Portable Helm annotation rendering

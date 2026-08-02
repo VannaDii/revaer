@@ -4337,9 +4337,10 @@ mod tests {
     use revaer_data::media::configuration::{
         AppendMediaDesiredTargetChapterInput, AppendMediaDesiredTargetChapterMetadataInput,
         AppendMediaDesiredTargetStreamInput, CreateMediaDesiredTargetInput,
+        MediaVerificationToggle, UpsertMediaPolicyProfileInput,
         append_media_desired_target_chapter, append_media_desired_target_chapter_metadata,
         append_media_desired_target_stream, create_media_desired_target,
-        set_media_profile_desired_target,
+        set_media_profile_desired_target, upsert_media_policy_profile,
     };
     use revaer_data::media::jobs::{
         ClaimedMediaJobRow, EnqueueDiscoveredMediaJobInput, MediaJobDesiredTargetChapterRow,
@@ -4532,25 +4533,91 @@ mod tests {
     struct ChapterReplaceInspector;
 
     impl InspectAdapter for ChapterReplaceInspector {
-        fn inspect(&self, source_path: &str) -> Result<MediaGraph, InspectError> {
+        fn inspect_with_cancellation(
+            &self,
+            source_path: &Path,
+            cancellation: &dyn InspectCancellation,
+        ) -> Result<MediaInspection, InspectError> {
+            let source_path_text = checked_test_source_path(source_path, cancellation)?;
             let codec = match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
                 Ok(_) | Err(_) => "h264",
             };
-            Ok(video_graph(source_path, codec))
-        }
-
-        fn inspect_full(&self, source_path: &str) -> Result<MediaInspection, InspectError> {
-            let inspection = self.inspect(source_path).map(complete_test_inspection)?;
+            let inspection = complete_test_inspection(video_graph(source_path_text, codec));
             match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => {
                     Ok(with_replacement_test_chapters(inspection))
                 }
-                Ok(_) | Err(_) if source_path.contains("/workspace/") => {
+                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => {
                     Ok(with_replacement_test_chapters(inspection))
                 }
                 Ok(_) | Err(_) => Ok(with_test_chapters(inspection)),
             }
+        }
+    }
+
+    #[derive(Clone)]
+    struct AttachmentStripInspector;
+
+    impl InspectAdapter for AttachmentStripInspector {
+        fn inspect_with_cancellation(
+            &self,
+            source_path: &Path,
+            cancellation: &dyn InspectCancellation,
+        ) -> Result<MediaInspection, InspectError> {
+            let source_path_text = checked_test_source_path(source_path, cancellation)?;
+            let codec = match fs::read(source_path) {
+                Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
+                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => "hevc",
+                Ok(_) | Err(_) => "h264",
+            };
+            let mut graph = video_graph(source_path_text, codec);
+            if codec == "h264" {
+                graph.streams.push(test_attachment_stream());
+            }
+            Ok(complete_test_inspection(graph))
+        }
+    }
+
+    #[derive(Clone)]
+    struct AttachmentPassthroughInspector;
+
+    impl InspectAdapter for AttachmentPassthroughInspector {
+        fn inspect_with_cancellation(
+            &self,
+            source_path: &Path,
+            cancellation: &dyn InspectCancellation,
+        ) -> Result<MediaInspection, InspectError> {
+            let source_path_text = checked_test_source_path(source_path, cancellation)?;
+            let codec = match fs::read(source_path) {
+                Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
+                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => "hevc",
+                Ok(_) | Err(_) => "h264",
+            };
+            let mut graph = video_graph(source_path_text, codec);
+            graph.streams.push(test_attachment_stream());
+            Ok(complete_test_inspection(graph))
+        }
+    }
+
+    #[derive(Clone)]
+    struct DataPassthroughInspector;
+
+    impl InspectAdapter for DataPassthroughInspector {
+        fn inspect_with_cancellation(
+            &self,
+            source_path: &Path,
+            cancellation: &dyn InspectCancellation,
+        ) -> Result<MediaInspection, InspectError> {
+            let source_path_text = checked_test_source_path(source_path, cancellation)?;
+            let codec = match fs::read(source_path) {
+                Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
+                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => "hevc",
+                Ok(_) | Err(_) => "h264",
+            };
+            let mut graph = video_graph(source_path_text, codec);
+            graph.streams.push(test_data_stream());
+            Ok(complete_test_inspection(graph))
         }
     }
 
@@ -5014,6 +5081,32 @@ mod tests {
             })
             .collect();
         inspection
+    }
+
+    fn test_attachment_stream() -> MediaStream {
+        MediaStream {
+            stream_id: 1,
+            kind: StreamKind::Attachment,
+            codec: "ttf".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: Some("Font".to_string()),
+            dispositions: Vec::new(),
+        }
+    }
+
+    fn test_data_stream() -> MediaStream {
+        MediaStream {
+            stream_id: 1,
+            kind: StreamKind::Data,
+            codec: "bin_data".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        }
     }
 
     fn with_replacement_test_chapters(mut inspection: MediaInspection) -> MediaInspection {
@@ -5607,20 +5700,23 @@ mod tests {
         HevcStrip,
         HevcStripChapters,
         HevcReplaceChapters,
+        HevcStripAttachments,
     }
 
     async fn create_runtime_target(
         store: &MediaStore,
         actor: Uuid,
         job_target: RuntimeJobTarget,
-    ) -> anyhow::Result<Option<(&'static str, i32)>> {
+        target_key: &str,
+    ) -> anyhow::Result<Option<(String, i32)>> {
         match job_target {
             RuntimeJobTarget::SourceGraph => Ok(None),
             RuntimeJobTarget::Hevc
             | RuntimeJobTarget::HevcAudio
             | RuntimeJobTarget::HevcStrip
             | RuntimeJobTarget::HevcStripChapters
-            | RuntimeJobTarget::HevcReplaceChapters => {
+            | RuntimeJobTarget::HevcReplaceChapters
+            | RuntimeJobTarget::HevcStripAttachments => {
                 let container_metadata_policy = if job_target == RuntimeJobTarget::HevcStrip {
                     "strip"
                 } else {
@@ -5631,17 +5727,23 @@ mod tests {
                     RuntimeJobTarget::HevcReplaceChapters => "replace",
                     _ => "preserve",
                 };
+                let container_attachment_policy =
+                    if job_target == RuntimeJobTarget::HevcStripAttachments {
+                        "strip"
+                    } else {
+                        "preserve"
+                    };
                 let target_id = create_media_desired_target(
                     store.pool(),
                     CreateMediaDesiredTargetInput {
                         actor_public_id: actor,
-                        target_key: "runtime-hevc",
+                        target_key,
                         version: 1,
                         display_name: "Runtime HEVC",
                         container_format: "matroska",
                         container_metadata_policy,
                         container_chapter_policy,
-                        container_attachment_policy: "preserve",
+                        container_attachment_policy,
                     },
                 )
                 .await?;
@@ -5652,7 +5754,7 @@ mod tests {
                 if job_target == RuntimeJobTarget::HevcAudio {
                     append_runtime_target_audio_stream(store, target_id).await?;
                 }
-                Ok(Some(("runtime-hevc", 1)))
+                Ok(Some((target_key.to_string(), 1)))
             }
         }
     }
@@ -5766,6 +5868,37 @@ mod tests {
         Ok(())
     }
 
+    async fn upsert_runtime_policy(
+        store: &MediaStore,
+        actor: Uuid,
+        policy_key: &str,
+        unmatched_data_action: &str,
+    ) -> anyhow::Result<()> {
+        upsert_media_policy_profile(
+            store.pool(),
+            UpsertMediaPolicyProfileInput {
+                actor_public_id: actor,
+                policy_key,
+                version: 1,
+                display_name: "Runtime policy",
+                video_intent: "general",
+                unmatched_video_action: "fail",
+                unmatched_audio_action: "preserve",
+                unmatched_subtitle_action: "preserve",
+                unmatched_attachment_action: "preserve",
+                unmatched_data_action,
+                verification_strictness: "strict",
+                verification_duration_tolerance_millis: 100,
+                verification_mux_validation: MediaVerificationToggle::from(true),
+                verification_decode_all_streams: MediaVerificationToggle::from(true),
+                verification_keyframe_seek: MediaVerificationToggle::from(true),
+                verification_playback_probe: MediaVerificationToggle::from(true),
+            },
+        )
+        .await?;
+        Ok(())
+    }
+
     async fn pin_runtime_target(
         store: &MediaStore,
         actor: Uuid,
@@ -5824,6 +5957,16 @@ mod tests {
         record_capability: bool,
         job_target: RuntimeJobTarget,
     ) -> anyhow::Result<Option<RuntimeFixture>> {
+        setup_runtime_with_unmatched_data_action(dry_run, record_capability, job_target, "remove")
+            .await
+    }
+
+    async fn setup_runtime_with_unmatched_data_action(
+        dry_run: bool,
+        record_capability: bool,
+        job_target: RuntimeJobTarget,
+        unmatched_data_action: &str,
+    ) -> anyhow::Result<Option<RuntimeFixture>> {
         let Ok(postgres) = start_postgres() else {
             return Ok(None);
         };
@@ -5853,40 +5996,16 @@ mod tests {
         let email = format!("media-worker-{}@example.invalid", Uuid::new_v4());
         let actor = app_user_create(store.pool(), &email, "Media Worker").await?;
         app_user_verify_email(store.pool(), actor).await?;
-        let desired_target = create_runtime_target(&store, actor, job_target).await?;
-        let profile_id = store
-            .upsert_profile(&UpsertMediaProfileInput {
-                actor_public_id: actor,
-                profile_key: "worker",
-                source_root: &input_root_text,
-                output_root: &output_root_text,
-                dry_run_only: dry_run,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            })
-            .await?;
-        pin_runtime_target(&store, actor, profile_id, desired_target).await?;
-        if !dry_run {
-            store
-                .update_profile(&UpdateMediaProfileInput {
-                    actor_public_id: actor,
-                    media_profile_public_id: profile_id,
-                    source_root: None,
-                    output_root: None,
-                    dry_run_only: Some(false),
-                    retention_days: None,
-                    compatibility_target_key: None,
-                    policy_key: None,
-                    watcher_enabled: None,
-                    schedule_enabled: None,
-                    schedule_interval_minutes: None,
-                })
-                .await?;
-        }
+        let profile_id = create_runtime_profile(
+            &store,
+            actor,
+            job_target,
+            dry_run,
+            unmatched_data_action,
+            &input_root_text,
+            &output_root_text,
+        )
+        .await?;
         let job_id = store
             .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: actor,
@@ -5923,6 +6042,64 @@ mod tests {
             telemetry,
             command_runner,
         }))
+    }
+
+    async fn create_runtime_profile(
+        store: &MediaStore,
+        actor: Uuid,
+        job_target: RuntimeJobTarget,
+        dry_run: bool,
+        unmatched_data_action: &str,
+        input_root_text: &str,
+        output_root_text: &str,
+    ) -> anyhow::Result<Uuid> {
+        let target_key = format!("runtime-hevc-{}", Uuid::new_v4());
+        let policy_key = format!("runtime-policy-{}", Uuid::new_v4());
+        let profile_key = format!("worker-{}", Uuid::new_v4());
+        let desired_target = create_runtime_target(store, actor, job_target, &target_key).await?;
+        upsert_runtime_policy(store, actor, &policy_key, unmatched_data_action).await?;
+        let profile_id = store
+            .upsert_profile(&UpsertMediaProfileInput {
+                actor_public_id: actor,
+                profile_key: &profile_key,
+                source_root: input_root_text,
+                output_root: output_root_text,
+                dry_run_only: dry_run,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: &policy_key,
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            })
+            .await?;
+        pin_runtime_target(
+            store,
+            actor,
+            profile_id,
+            desired_target
+                .as_ref()
+                .map(|(target_key, version)| (target_key.as_str(), *version)),
+        )
+        .await?;
+        if !dry_run {
+            store
+                .update_profile(&UpdateMediaProfileInput {
+                    actor_public_id: actor,
+                    media_profile_public_id: profile_id,
+                    source_root: None,
+                    output_root: None,
+                    dry_run_only: Some(false),
+                    retention_days: None,
+                    compatibility_target_key: None,
+                    policy_key: None,
+                    watcher_enabled: None,
+                    schedule_enabled: None,
+                    schedule_interval_minutes: None,
+                })
+                .await?;
+        }
+        Ok(profile_id)
     }
 
     fn test_runtime(
@@ -7473,6 +7650,174 @@ Integrated loudness:
             check.check_kind == "final_chapters"
                 && check.check_status == "passed"
                 && check.expected_value.as_deref() == Some("2 source_chapters")
+        }));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_strips_container_attachments_when_policy_selects_strip()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) =
+            setup_runtime(false, true, RuntimeJobTarget::HevcStripAttachments).await?
+        else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(AttachmentStripInspector) as Arc<RuntimeInspector>;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+        assert_eq!(fs::read(&job.source_path)?, b"output");
+        let first_command = {
+            let commands = fixture
+                .command_runner
+                .commands
+                .lock()
+                .map_err(|error| anyhow::anyhow!("command lock poisoned: {error}"))?;
+            commands
+                .first()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("ffmpeg command missing"))?
+        };
+        assert!(first_command.windows(2).any(|pair| pair == ["-map", "0:0"]));
+        assert!(first_command.windows(2).all(|pair| pair != ["-map", "0:1"]));
+        let checks = fixture
+            .store
+            .list_job_verification_checks(fixture.job_id)
+            .await?;
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "candidate_graph"
+                && check.check_status == "passed"
+                && check.expected_value.as_deref() == Some("desired_graph")
+        }));
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "final_graph"
+                && check.check_status == "passed"
+                && check.expected_value.as_deref() == Some("desired_graph")
+        }));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_preserves_unmatched_attachments_when_policy_preserves()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        fixture.runtime.inspector =
+            Arc::new(AttachmentPassthroughInspector) as Arc<RuntimeInspector>;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+        assert_eq!(fs::read(&job.source_path)?, b"output");
+        let first_command = {
+            let commands = fixture
+                .command_runner
+                .commands
+                .lock()
+                .map_err(|error| anyhow::anyhow!("command lock poisoned: {error}"))?;
+            commands
+                .first()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("ffmpeg command missing"))?
+        };
+        assert!(first_command.windows(2).any(|pair| pair == ["-map", "0:0"]));
+        assert!(first_command.windows(2).any(|pair| pair == ["-map", "0:1"]));
+        assert!(
+            first_command
+                .windows(2)
+                .any(|pair| pair == ["-c:1", "copy"])
+        );
+        let checks = fixture
+            .store
+            .list_job_verification_checks(fixture.job_id)
+            .await?;
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "candidate_graph"
+                && check.check_status == "passed"
+                && check.expected_value.as_deref() == Some("desired_graph")
+        }));
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "final_graph"
+                && check.check_status == "passed"
+                && check.expected_value.as_deref() == Some("desired_graph")
+        }));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_preserves_unmatched_data_when_policy_preserves() -> anyhow::Result<()>
+    {
+        let Some(mut fixture) = setup_runtime_with_unmatched_data_action(
+            false,
+            true,
+            RuntimeJobTarget::Hevc,
+            "preserve",
+        )
+        .await?
+        else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(DataPassthroughInspector) as Arc<RuntimeInspector>;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        let checks = fixture
+            .store
+            .list_job_verification_checks(fixture.job_id)
+            .await?;
+        assert_eq!(
+            job.status_text, "completed",
+            "last_error={:?}; checks={checks:#?}",
+            job.last_error
+        );
+        assert_eq!(job.last_error, None);
+        assert_eq!(fs::read(&job.source_path)?, b"output");
+        let first_command = {
+            let commands = fixture
+                .command_runner
+                .commands
+                .lock()
+                .map_err(|error| anyhow::anyhow!("command lock poisoned: {error}"))?;
+            commands
+                .first()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("ffmpeg command missing"))?
+        };
+        assert!(first_command.windows(2).any(|pair| pair == ["-map", "0:0"]));
+        assert!(first_command.windows(2).any(|pair| pair == ["-map", "0:1"]));
+        assert!(
+            first_command
+                .windows(2)
+                .any(|pair| pair == ["-c:1", "copy"])
+        );
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "candidate_graph"
+                && check.check_status == "passed"
+                && check.expected_value.as_deref() == Some("desired_graph")
+        }));
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "final_graph"
+                && check.check_status == "passed"
+                && check.expected_value.as_deref() == Some("desired_graph")
         }));
         Ok(())
     }

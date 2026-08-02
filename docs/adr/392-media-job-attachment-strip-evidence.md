@@ -1,0 +1,62 @@
+# Media job attachment strip evidence
+
+- Status: Accepted
+- Date: 2026-08-02
+- Context:
+  - ADR 375 added a target-level `container_attachment_policy` with `preserve` and `strip` semantics.
+  - ADR 387 added real fixture evidence that FFmpeg/ffprobe materialization strips an attachment-bearing Matroska input.
+  - The application worker test matrix still did not prove a queued desired target with `container_attachment_policy: strip` flows through job snapshot loading, desired graph compilation, command construction, candidate verification, final verification, and source replacement.
+  - Authored attachment creation and rewrite remain unsupported; this change tightens evidence for the already-supported source attachment strip contract only.
+- Decision:
+  - Add a test-only runtime target selector that persists a Matroska HEVC desired target with `container_attachment_policy: strip` through the stored-procedure configuration API.
+  - Add a runtime inspector fixture that reports a source video stream plus attachment stream for the original file and only the transcoded video stream for candidate and final output states.
+  - Assert that the worker command maps the video stream but not the source attachment stream.
+  - Assert candidate and final graph verification checks pass before the source is replaced.
+  - Consolidate ADR 318 wording so it names target-level attachment stripping as implemented while keeping authored attachment rows and authored data rows fail-closed.
+- Consequences:
+  - Positive outcomes:
+    - The attachment strip contract now has worker-level evidence, not only command-builder and real media fixture evidence.
+    - The regression covers the same stored-procedure-backed target snapshot path used by queued profile jobs.
+    - The service status record more accurately distinguishes supported attachment stripping from unsupported authored attachment mutation.
+  - Risks or trade-offs:
+    - The new worker test remains synthetic at the inspector/command boundary; real FFmpeg attachment removal continues to be covered by the media fixture suite from ADR 387.
+    - Authored attachment creation and rewrite stay outside the implemented service boundary.
+- Follow-up:
+  - Add outside-in worker evidence for exact attachment passthrough if a future profile depends on attachment preservation beyond the existing lower-level contract.
+  - Implement authored attachment creation or rewrite only with a separate target schema, execution path, verifier, and fixture suite.
+
+## Task Record
+
+- Motivation:
+  - Close the queued-job evidence gap for supported attachment stripping while continuing the production-readiness audit.
+- Design notes:
+  - Reused the existing runtime target setup path and stored-procedure helpers instead of hand-building a desired graph.
+  - Kept the new selector and inspector isolated to tests; production code already had the required compilation, command-construction, verification, and replacement behavior.
+  - The inspector reports the attachment only for source inspection so candidate and final graph verification prove the attachment was intentionally omitted.
+- Test coverage summary:
+  - `bash scripts/with-node.sh node --version` selected Node `v24.14.1`; `bash scripts/with-node.sh npm --version` reported npm `11.12.1`.
+  - `just fmt-fix`
+  - `cargo test -p revaer-app media_job_runtime_strips_container_attachments_when_policy_selects_strip --all-features -- --nocapture`
+  - `sonar verify --file crates/revaer-app/src/media_job_runtime.rs --project VannaDii_Revaer` was attempted and blocked by the organization entitlement: `SonarQube Agentic Analysis is not available for this organization`.
+  - `sonar analyze secrets crates/revaer-app/src/media_job_runtime.rs docs/adr/318-media-transcoding-foundation.md docs/adr/392-media-job-attachment-strip-evidence.md docs/adr/index.md docs/SUMMARY.md`
+  - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table`
+  - `just ci`, including workspace coverage floors and `coverage/lcov.info` generation with source and line records.
+  - `just ui-e2e`, including 104 Playwright checks through the NVM-backed Node wrapper.
+  - `just ui-e2e-coverage`
+  - `just js-release-coverage`
+  - `just js-coverage-merge`, producing `coverage/js-lcov.info` with source and line records.
+  - `just sonar-compile-db` was attempted locally and blocked by the Apple Silicon workstation's mixed libtorrent installs: arm64 `/opt/homebrew` has unsupported `2.1.0`, while supported `/usr/local` `2.0.11` is x86_64. The CI Sonar job remains the authoritative scanner path because it installs the native Linux libtorrent headers before building the compile database.
+  - `git diff --check`
+- Observability updates:
+  - No runtime logs, metrics, tracing, or events changed.
+- Status-doc validation:
+  - Updated ADR 318, `docs/adr/index.md`, and `docs/SUMMARY.md`.
+  - Rechecked ADR 375 and ADR 387 to keep the foundation ADR aligned with the existing attachment strip policy and fixture evidence.
+- Risk & rollback plan:
+  - Risk is limited to test harness setup and status documentation. Runtime behavior is unchanged.
+  - Roll back by removing the test target, inspector, runtime test, this ADR, and the ADR 318 wording changes.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Drift found: ADR 318 did not yet mention target-level attachment stripping in the implemented worker evidence scope. The wording was narrowed without relaxing any quality or implementation criteria.
