@@ -423,3 +423,4 @@
     -   [394: Media job data passthrough evidence](adr/394-media-job-data-passthrough-evidence.md)
     -   [395: Media metadata replacement fixture](adr/395-media-metadata-replacement-fixture.md)
     -   [396: Media sidecar artifact fixture](adr/396-media-sidecar-artifact-fixture.md)
+    -   [397: Npm audit refresh](adr/397-npm-audit-refresh.md)

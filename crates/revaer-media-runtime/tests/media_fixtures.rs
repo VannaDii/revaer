@@ -2382,6 +2382,7 @@ fn target_stream(
         color_transfer: None,
         color_space: None,
         hdr_format: None,
+        hdr10_metadata: None,
         title: None,
         dispositions: Vec::new(),
         subtitle_placement: (kind == StreamKind::Subtitle).then_some(SubtitlePlacement::Embedded),

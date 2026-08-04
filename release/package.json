@@ -13,6 +13,7 @@
         "semantic-release": "^25.0.8"
     },
     "overrides": {
+        "undici": "7.29.0",
         "semantic-release": {
             "@semantic-release/npm": "npm:@semantic-release/exec@7.1.0"
         }
