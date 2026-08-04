@@ -8,6 +8,7 @@ members = [
     "crates/revaer-fsops",
     "crates/revaer-events",
     "crates/revaer-media-core",
+    "crates/revaer-media-runtime",
     "crates/revaer-doc-indexer",
     "crates/revaer-telemetry",
     "crates/revaer-torrent-core",
@@ -76,6 +77,7 @@ walkdir = "2.5"
 jsonschema = { version = "0.46", default-features = false }
 notify = "8.2"
 sha2 = "0.10"
+rustix = { version = "1.1.4", features = ["fs", "process"] }
 revaer-test-support = { path = "crates/revaer-test-support" }
 
 [workspace.metadata.cargo-llvm-cov]
