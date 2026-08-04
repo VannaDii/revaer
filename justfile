@@ -126,10 +126,14 @@ cov:
         cargo-llvm-cov cargo-llvm-cov "${required_llvm_cov_version}"
     rustup component add llvm-tools-preview
     cargo llvm-cov clean --workspace
-    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}"; \
-    DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}"; \
-        export REVAER_TEST_DATABASE_URL DATABASE_URL; \
-    just db-start
+    test_database_url="${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh postgres)}"; \
+    database_url="${DATABASE_URL:-${test_database_url}}"; \
+    db_managed="${REVAER_DB_MANAGED:-0}"; \
+    if [ -z "${DATABASE_URL:-}" ]; then \
+        db_managed="${REVAER_DB_MANAGED:-1}"; \
+    fi; \
+    REVAER_DB_MANAGED="${db_managed}" REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" just db-start && \
+    REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" \
     RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}" \
     CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}" \
         cargo llvm-cov --workspace --all-features --no-report
