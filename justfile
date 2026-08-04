@@ -15,6 +15,8 @@ policy:
     just stack-check-contract-test
     just supply-chain-results-test
     bash scripts/test-exact-cargo-tool.sh
+    bash scripts/generated-api-schema-guardrail.sh
+    bash scripts/test-generated-api-schema-guardrail.sh
 
 instruction-drift:
     bash scripts/instruction-drift-check.sh
@@ -317,10 +319,14 @@ ui-build: sync-assets trunk-install
     mkdir -p crates/revaer-ui/dist/.stage
     cd crates/revaer-ui && NO_COLOR=true trunk build --release
 
+api-test-client:
+    npm --prefix tests ci --ignore-scripts
+    npm --prefix tests audit --audit-level=info
+    npm --prefix tests run gen:api-client
+    test -s tests/support/api/schema.ts
+
 ui-e2e: trunk-install
-    cd tests && npm ci --ignore-scripts
-    cd tests && npm audit --audit-level=info
-    cd tests && npm run gen:api-client
+    just api-test-client
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
         cd tests && npx playwright install --with-deps; \
     else \

@@ -24,5 +24,6 @@ docs/book
 /test-fixtures/matroska/
 /test-fixtures/chromium/
 /test-fixtures/derived/
+/tests/support/api/schema.ts
 node_modules
 release/next-release.json
