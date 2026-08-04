@@ -5,7 +5,7 @@
 - `just ui-e2e` provisions a temp database, runs API suites for both auth modes, then runs UI tests in a single Playwright execution (one final report). The provisioning is handled by Playwright global setup.
 - API tests execute before UI tests to surface backend failures first.
 - Configuration is loaded from `tests/.env` (overrides are allowed via env vars).
-- API E2E tests use a generated client from `docs/api/openapi.json` (`npm run gen:api-client` runs automatically in `just ui-e2e`).
+- API E2E tests use an untracked generated client from `docs/api/openapi.json`; `just api-test-client` installs the lockfile exactly and regenerates it automatically from `just ui-e2e`.
 
 ## Requirements
 
