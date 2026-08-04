@@ -132,11 +132,15 @@ cov:
     if [ -z "${DATABASE_URL:-}" ]; then \
         db_managed="${REVAER_DB_MANAGED:-1}"; \
     fi; \
+    llvm_tools_bin="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin"; \
     REVAER_DB_MANAGED="${db_managed}" REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" just db-start && \
     REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" \
     RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}" \
     CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}" \
-        cargo llvm-cov --workspace --all-features --no-report
+    CC="${CC:-clang}" CXX="${CXX:-clang++}" \
+    LLVM_COV="${LLVM_COV:-${llvm_tools_bin}/llvm-cov}" \
+    LLVM_PROFDATA="${LLVM_PROFDATA:-${llvm_tools_bin}/llvm-profdata}" \
+        cargo llvm-cov --workspace --all-features --include-ffi --no-report
     fail_list=""; \
         while IFS= read -r member; do \
             manifest="${member}/Cargo.toml"; \
@@ -152,7 +156,7 @@ cov:
                 continue; \
             fi; \
             echo "== coverage: ${name} =="; \
-            if ! cargo llvm-cov report --package "${name}" --json --summary-only --fail-under-lines 90 >/dev/null; then \
+            if ! cargo llvm-cov report --package "${name}" --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --json --summary-only --fail-under-lines 90 >/dev/null; then \
                 fail_list="${fail_list} ${name}"; \
             fi; \
         done < <(awk ' \
@@ -166,17 +170,19 @@ cov:
         fi
     rm -rf coverage
     mkdir -p coverage
-    cargo llvm-cov report --lcov --output-path coverage/lcov.info
-    cargo llvm-cov report --html --output-dir coverage
+    cargo llvm-cov report --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --lcov --output-path coverage/lcov.info
+    cargo llvm-cov report --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --html --output-dir coverage
+    cargo llvm-cov report --text --output-path coverage/llvm-cov.txt
 
 sonar-compile-db:
     mkdir -p coverage
     rm -f coverage/compile_commands.json
-    mkdir -p target/sonar-build
+    cargo clean --target-dir "${PWD}/target/sonar-build" -p revaer-torrent-libt
     REVAER_NATIVE_IT=1 \
     CARGO_TARGET_DIR="${PWD}/target/sonar-build" \
     REVAER_NATIVE_COMPILE_COMMANDS_PATH="${PWD}/coverage/compile_commands.json" \
         cargo --config 'build.rustflags=["-Dwarnings"]' build -p revaer-torrent-libt --all-features
+    test -s coverage/compile_commands.json
 
 sbom:
     mkdir -p artifacts

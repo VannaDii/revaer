@@ -6,7 +6,7 @@ test.describe('Route coverage', () => {
     const torrentId = randomUUID();
     await app.goto(`/torrents/${torrentId}`);
     await expect(page).toHaveURL(new RegExp(`/torrents/${torrentId}$`));
-    const spinner = page.getByRole('status');
+    const spinner = page.locator('[role="status"].loading-spinner');
     const overviewTab = page.getByRole('tab', { name: 'Overview' });
     await expect.poll(async () => {
       return (await spinner.isVisible()) || (await overviewTab.isVisible());

@@ -107,6 +107,11 @@ run_matches="$(
 )"
 report_matches 'workflow run blocks must not interpolate ${{ inputs.* }} directly' "${run_matches}"
 
+sonar_coverage_exclusions="$(awk -F= '
+  $1 == "sonar.coverage.exclusions" && $2 != "" { print FNR ":" $0 }
+' sonar-project.properties)"
+report_matches "Sonar coverage exclusions must remain empty" "${sonar_coverage_exclusions}"
+
 if [ "${failures}" -ne 0 ]; then
   exit 1
 fi
