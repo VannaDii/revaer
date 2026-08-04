@@ -62,6 +62,7 @@ applyTo:
 
 - CI-only credentials may be ephemeral only when they are clearly scoped to isolated test infrastructure, such as throwaway Postgres service containers.
 - Ephemeral test credentials must never be reused as application secrets, committed runtime credentials, or user-facing examples.
+- `just cov` must pass its resolved test database URL to both database startup and the coverage process in the same recipe shell so database-backed tests cannot silently lose their configured endpoint. Disposable test databases must be dropped with forced session cleanup, and local-only host fallback must remain bounded to `localhost` and `127.0.0.1` inputs.
 - Do not log secrets or secret-like values. Mask or omit them.
 - Keep Helm registry credentials (`HELM_API_KEY_ID`, `HELM_API_KEY_SECRET`) separate from chart-signing material (`HELM_GPG_PRIVATE`, `HELM_GPG_PUBLIC`). Publishing jobs may use registry credentials only when consuming an already-packaged chart artifact.
 - GHCR chart publication on GitHub-hosted runners should prefer the job-scoped `GITHUB_TOKEN` plus explicit `packages: write` over long-lived custom registry secrets. Keep `HELM_API_KEY_*` only for non-GitHub or local override paths.
