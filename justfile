@@ -10,6 +10,8 @@ policy:
     bash scripts/policy-guardrails.sh
     bash scripts/workflow-guardrails.sh
     bash scripts/test-exact-cargo-tool.sh
+    bash scripts/generated-api-schema-guardrail.sh
+    bash scripts/test-generated-api-schema-guardrail.sh
 
 instruction-drift:
     bash scripts/instruction-drift-check.sh
@@ -278,9 +280,13 @@ ui-build: sync-assets trunk-install
     mkdir -p crates/revaer-ui/dist/.stage
     cd crates/revaer-ui && NO_COLOR=true trunk build --release
 
+api-test-client:
+    npm --prefix tests ci
+    npm --prefix tests run gen:api-client
+    test -s tests/support/api/schema.ts
+
 ui-e2e: trunk-install
-    cd tests && npm install
-    cd tests && npm run gen:api-client
+    just api-test-client
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
         cd tests && npx playwright install --with-deps; \
     else \
