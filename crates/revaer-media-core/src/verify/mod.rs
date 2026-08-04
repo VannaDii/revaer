@@ -409,6 +409,7 @@ mod tests {
     fn reject_unknown_stream_id_for_stream_scoped_operation() {
         let source = MediaGraph {
             source_path: "/tmp/source.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -433,6 +434,7 @@ mod tests {
     fn reject_video_transcode_targeting_non_video_stream() {
         let source = MediaGraph {
             source_path: "/tmp/source.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
@@ -457,6 +459,7 @@ mod tests {
     fn accept_matching_transcode_stream_kind() {
         let source = MediaGraph {
             source_path: "/tmp/source.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 2,

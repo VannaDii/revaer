@@ -1107,34 +1107,7 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
     vec![
         (
             "MediaDesiredTargetStream",
-            object_schema(
-                &["stream_key", "stream_kind", "sort_order", "codec"],
-                [
-                    ("stream_key", string_schema()),
-                    ("stream_kind", string_schema()),
-                    ("semantic_role", string_schema()),
-                    ("language_code", string_schema()),
-                    ("optional", bool_schema()),
-                    ("sort_order", integer_schema()),
-                    ("codec", string_schema()),
-                    ("channel_count", integer_schema()),
-                    ("channel_layout", string_schema()),
-                    ("audio_bitrate_bps", integer_schema()),
-                    ("audio_sample_rate_hz", integer_schema()),
-                    ("video_profile", string_schema()),
-                    ("video_level", string_schema()),
-                    ("video_bitrate_bps", integer_schema()),
-                    ("color_primaries", string_schema()),
-                    ("color_transfer", string_schema()),
-                    ("color_space", string_schema()),
-                    ("hdr_format", string_schema()),
-                    ("title", string_schema()),
-                    ("default_disposition", bool_schema()),
-                    ("forced_disposition", bool_schema()),
-                    ("subtitle_placement", string_schema()),
-                    ("image_subtitle_action", string_schema()),
-                ],
-            ),
+            media_desired_target_stream_schema(),
         ),
         (
             "MediaDesiredTargetCreateRequest",
@@ -1152,6 +1125,7 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
                     ("container_metadata_policy", string_schema()),
+                    ("container_chapter_policy", string_schema()),
                     (
                         "streams",
                         array_ref_items_schema(
@@ -1173,6 +1147,7 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     "display_name",
                     "container_format",
                     "container_metadata_policy",
+                    "container_chapter_policy",
                     "streams",
                 ],
                 [
@@ -1182,6 +1157,7 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
                     ("display_name", string_schema()),
                     ("container_format", string_schema()),
                     ("container_metadata_policy", string_schema()),
+                    ("container_chapter_policy", string_schema()),
                     ("streams", array_ref_schema("MediaDesiredTargetStream")),
                 ],
             ),
@@ -1204,6 +1180,37 @@ fn media_desired_target_schemas() -> Vec<(&'static str, Value)> {
             ),
         ),
     ]
+}
+
+fn media_desired_target_stream_schema() -> Value {
+    object_schema(
+        &["stream_key", "stream_kind", "sort_order", "codec"],
+        [
+            ("stream_key", string_schema()),
+            ("stream_kind", string_schema()),
+            ("semantic_role", string_schema()),
+            ("language_code", string_schema()),
+            ("optional", bool_schema()),
+            ("sort_order", integer_schema()),
+            ("codec", string_schema()),
+            ("channel_count", integer_schema()),
+            ("channel_layout", string_schema()),
+            ("audio_bitrate_bps", integer_schema()),
+            ("audio_sample_rate_hz", integer_schema()),
+            ("video_profile", string_schema()),
+            ("video_level", string_schema()),
+            ("video_bitrate_bps", integer_schema()),
+            ("color_primaries", string_schema()),
+            ("color_transfer", string_schema()),
+            ("color_space", string_schema()),
+            ("hdr_format", string_schema()),
+            ("title", string_schema()),
+            ("default_disposition", bool_schema()),
+            ("forced_disposition", bool_schema()),
+            ("subtitle_placement", string_schema()),
+            ("image_subtitle_action", string_schema()),
+        ],
+    )
 }
 
 fn media_compatibility_target_schemas() -> Vec<(&'static str, Value)> {

@@ -95,6 +95,7 @@ const SOURCE_PATH_REQUIRED: &str = "source_path is required";
 const CONTAINER_FORMAT_REQUIRED: &str = "container_format is required";
 const CONTAINER_METADATA_POLICY_INVALID: &str =
     "container_metadata_policy must be preserve or strip";
+const CONTAINER_CHAPTER_POLICY_INVALID: &str = "container_chapter_policy must be preserve or strip";
 const DESIRED_TARGET_STREAMS_REQUIRED: &str = "streams must contain at least one stream";
 const VIDEO_CODEC_REQUIRED: &str = "video_codec is required";
 const AUDIO_CODEC_REQUIRED: &str = "audio_codec is required";
@@ -464,6 +465,8 @@ pub(crate) async fn create_media_desired_target(
         normalize_required_str_field(&request.container_format, CONTAINER_FORMAT_REQUIRED)?;
     let container_metadata_policy =
         normalize_container_metadata_policy(request.container_metadata_policy.as_deref())?;
+    let container_chapter_policy =
+        normalize_container_chapter_policy(request.container_chapter_policy.as_deref())?;
     validate_desired_target_streams(&request.streams)?;
     let params = MediaDesiredTargetCreateParams {
         actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
@@ -472,6 +475,7 @@ pub(crate) async fn create_media_desired_target(
         display_name: display_name.to_string(),
         container_format: container_format.to_ascii_lowercase(),
         container_metadata_policy,
+        container_chapter_policy,
         streams: request
             .streams
             .iter()
@@ -1533,6 +1537,7 @@ fn map_desired_target_response(
         display_name: target.display_name,
         container_format: target.container_format,
         container_metadata_policy: target.container_metadata_policy,
+        container_chapter_policy: target.container_chapter_policy,
         streams: target.streams,
     }
 }
@@ -1633,13 +1638,24 @@ fn trim_and_filter_empty(value: Option<&str>) -> Option<&str> {
 }
 
 fn normalize_container_metadata_policy(value: Option<&str>) -> Result<String, ApiError> {
+    normalize_container_policy(value, CONTAINER_METADATA_POLICY_INVALID)
+}
+
+fn normalize_container_chapter_policy(value: Option<&str>) -> Result<String, ApiError> {
+    normalize_container_policy(value, CONTAINER_CHAPTER_POLICY_INVALID)
+}
+
+fn normalize_container_policy(
+    value: Option<&str>,
+    invalid_message: &'static str,
+) -> Result<String, ApiError> {
     let policy = trim_and_filter_empty(value)
         .unwrap_or("preserve")
         .to_ascii_lowercase();
     if matches!(policy.as_str(), "preserve" | "strip") {
         Ok(policy)
     } else {
-        Err(ApiError::bad_request(CONTAINER_METADATA_POLICY_INVALID))
+        Err(ApiError::bad_request(invalid_message))
     }
 }
 
@@ -2187,6 +2203,17 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn container_chapter_policy_normalizes_supported_values() -> anyhow::Result<()> {
+        assert_eq!(normalize_container_chapter_policy(None)?, "preserve");
+        assert_eq!(
+            normalize_container_chapter_policy(Some(" Strip "))?,
+            "strip"
+        );
+        assert!(normalize_container_chapter_policy(Some("rewrite")).is_err());
+        Ok(())
+    }
+
     #[tokio::test]
     async fn list_media_profiles_returns_empty_payload_with_default_facade() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
@@ -2361,6 +2388,7 @@ mod tests {
                 display_name: "Target".to_string(),
                 container_format: "matroska".to_string(),
                 container_metadata_policy: None,
+                container_chapter_policy: None,
                 streams: Vec::new(),
             }),
         )
@@ -2375,6 +2403,7 @@ mod tests {
                 display_name: "Target".to_string(),
                 container_format: "matroska".to_string(),
                 container_metadata_policy: Some("rewrite".to_string()),
+                container_chapter_policy: None,
                 streams: vec![valid_stream.clone()],
             }),
         )
@@ -2389,6 +2418,7 @@ mod tests {
                 display_name: " Target ".to_string(),
                 container_format: " Matroska ".to_string(),
                 container_metadata_policy: Some(" Preserve ".to_string()),
+                container_chapter_policy: Some(" Preserve ".to_string()),
                 streams: vec![valid_stream.clone()],
             }),
         )
@@ -2666,9 +2696,11 @@ mod tests {
             display_name: "Living room".to_string(),
             container_format: "matroska".to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_chapter_policy: "preserve".to_string(),
             streams: vec![params],
         });
         assert_eq!(response.container_metadata_policy, "preserve");
+        assert_eq!(response.container_chapter_policy, "preserve");
         let response_stream = response
             .streams
             .first()

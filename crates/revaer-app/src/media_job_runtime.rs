@@ -27,7 +27,8 @@ use revaer_media_core::model::{
     DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind,
 };
 use revaer_media_core::normalize::{
-    normalize_audio_channel_layout, normalize_container_format, normalize_container_metadata_policy,
+    normalize_audio_channel_layout, normalize_container_chapter_policy, normalize_container_format,
+    normalize_container_metadata_policy,
 };
 use revaer_media_core::pipeline::{PlanningConstraints, PlanningOutcome, compile_and_plan};
 use revaer_media_core::plan::{CandidateRejectionReason, OperationKind, PlannedOperation};
@@ -2381,6 +2382,7 @@ fn desired_target_from_job(
             || job.desired_target_version.is_some()
             || job.desired_container_format.is_some()
             || job.desired_container_metadata_policy.is_some()
+            || job.desired_container_chapter_policy.is_some()
         {
             return Err(MediaJobRuntimeError::InvalidDesiredGraph(
                 "media_job_desired_target_snapshot_incomplete",
@@ -2412,6 +2414,17 @@ fn desired_target_from_job(
             "media_job_desired_container_metadata_policy_unsupported",
         ));
     };
+    let container_chapter_policy = normalized_snapshot_field(
+        job.desired_container_chapter_policy.as_deref(),
+        "media_job_desired_container_chapter_policy_missing",
+    )?;
+    let Some(container_chapter_policy) =
+        normalize_container_chapter_policy(&container_chapter_policy).map(str::to_string)
+    else {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_desired_container_chapter_policy_unsupported",
+        ));
+    };
     let unmatched_stream_policy =
         unmatched_stream_policy_from_snapshot(job.unmatched_stream_policy.as_deref())?;
     let streams = rows
@@ -2429,6 +2442,7 @@ fn desired_target_from_job(
             version,
             container,
             container_metadata_policy,
+            container_chapter_policy,
             streams,
         },
         unmatched_stream_policy,
@@ -2660,9 +2674,11 @@ fn compile_desired_graph(
     let Some(target) = target else {
         return DesiredGraph {
             output_path: output_path.to_string(),
+            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: identity_stream_bindings(&source.streams),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: source.streams.clone(),
         };
     };
@@ -2731,9 +2747,11 @@ fn compile_desired_graph(
         .collect();
     DesiredGraph {
         output_path: output_path.to_string(),
+        container_chapters: Vec::new(),
         container_format: None,
         stream_bindings: identity_stream_bindings(&streams),
         container_metadata_policy: None,
+        container_chapter_policy: None,
         streams,
     }
 }
@@ -3239,7 +3257,7 @@ fn compile_runtime_preflight(
     input: RuntimePreflightBuildInput,
 ) -> Result<RuntimePreflightEvaluation, MediaJobRuntimeError> {
     let source_container_metadata = input.inspection.container.metadata.clone();
-    let expected_chapters = input.inspection.chapters.clone();
+    let source_chapters = input.inspection.chapters.clone();
     let expected_sidecars = input.inspection.sidecars.clone();
     let source_file_bytes = source_artifact_bytes(&input.source_path, &input.inspection.sidecars)?;
     let source_inspection = input.inspection;
@@ -3273,6 +3291,10 @@ fn compile_runtime_preflight(
     let expected_container_metadata = expected_container_metadata_for_policy(
         &source_container_metadata,
         compiled.graph.container_metadata_policy.as_deref(),
+    )?;
+    let expected_chapters = expected_chapters_for_policy(
+        &source_chapters,
+        compiled.graph.container_chapter_policy.as_deref(),
     )?;
     let video_policy = video_policy_from_target_snapshot(
         input.base_video_policy,
@@ -3342,6 +3364,8 @@ fn compile_runtime_desired_target(
                     container_format: None,
                     stream_bindings: identity_stream_bindings(&source_graph.streams),
                     container_metadata_policy: None,
+                    container_chapter_policy: None,
+                    container_chapters: source_graph.container_chapters.clone(),
                     streams: source_graph.streams.clone(),
                 },
                 sidecar_embeddings: Vec::new(),
@@ -3713,6 +3737,29 @@ fn expected_container_metadata_for_policy(
         _ => {
             return Err(MediaJobRuntimeError::InvalidDesiredGraph(
                 "media_job_desired_container_metadata_policy_unsupported",
+            ));
+        }
+    })
+}
+
+fn expected_chapters_for_policy(
+    source_chapters: &[ChapterInspection],
+    policy: Option<&str>,
+) -> Result<Vec<ChapterInspection>, MediaJobRuntimeError> {
+    let normalized = match policy {
+        Some(value) => normalize_container_chapter_policy(value).ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_container_chapter_policy_unsupported",
+            ),
+        )?,
+        None => "preserve",
+    };
+    Ok(match normalized {
+        "preserve" => source_chapters.to_vec(),
+        "strip" => Vec::new(),
+        _ => {
+            return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_container_chapter_policy_unsupported",
             ));
         }
     })
@@ -4645,6 +4692,50 @@ mod tests {
     }
 
     #[derive(Clone)]
+    struct ChapterStripInspector;
+
+    impl InspectAdapter for ChapterStripInspector {
+        fn inspect_with_cancellation(
+            &self,
+            source_path: &Path,
+            cancellation: &dyn InspectCancellation,
+        ) -> Result<MediaInspection, InspectError> {
+            let source_path_text = checked_test_source_path(source_path, cancellation)?;
+            let codec = match fs::read(source_path) {
+                Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
+                Ok(_) | Err(_) => "h264",
+            };
+            let inspection = complete_test_inspection(video_graph(source_path_text, codec));
+            match fs::read(source_path) {
+                Ok(bytes) if bytes.as_slice() == b"output" => Ok(inspection),
+                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => Ok(inspection),
+                Ok(_) | Err(_) => Ok(with_test_chapters(inspection)),
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct CandidateRetainsChaptersInspector;
+
+    impl InspectAdapter for CandidateRetainsChaptersInspector {
+        fn inspect_with_cancellation(
+            &self,
+            source_path: &Path,
+            cancellation: &dyn InspectCancellation,
+        ) -> Result<MediaInspection, InspectError> {
+            let source_path_text = checked_test_source_path(source_path, cancellation)?;
+            let codec = match fs::read(source_path) {
+                Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
+                Ok(_) | Err(_) => "h264",
+            };
+            Ok(with_test_chapters(complete_test_inspection(video_graph(
+                source_path_text,
+                codec,
+            ))))
+        }
+    }
+
+    #[derive(Clone)]
     struct CandidateDropsContainerMetadataInspector;
 
     impl InspectAdapter for CandidateDropsContainerMetadataInspector {
@@ -5067,6 +5158,22 @@ mod tests {
                 }],
             },
         ];
+        inspection.graph.container_chapters = inspection
+            .chapters
+            .iter()
+            .map(|chapter| revaer_media_core::model::ContainerChapterEntry {
+                start_millis: chapter.start_millis,
+                end_millis: chapter.end_millis,
+                metadata: chapter
+                    .metadata
+                    .iter()
+                    .map(|entry| revaer_media_core::model::ContainerMetadataEntry {
+                        key: entry.key.clone(),
+                        value: entry.value.clone(),
+                    })
+                    .collect(),
+            })
+            .collect();
         inspection
     }
 
@@ -5148,6 +5255,7 @@ mod tests {
                 version: 1,
                 container: "matroska".to_string(),
                 container_metadata_policy: "preserve".to_string(),
+                container_chapter_policy: "preserve".to_string(),
                 streams: vec![stream],
             },
             unmatched_stream_policy: UnmatchedStreamPolicy::Preserve,
@@ -5264,9 +5372,11 @@ mod tests {
         let streams = video_graph("/tmp/source.mkv", "h264").streams;
         let desired = DesiredGraph {
             output_path: "/tmp/output.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: Some("matroska".to_string()),
             stream_bindings: super::identity_stream_bindings(&streams),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams,
         };
         let mut stream = target_stream("main-video", StreamKind::Video, "hevc");
@@ -5286,9 +5396,11 @@ mod tests {
         let streams = video_graph("/tmp/source.mkv", "h264").streams;
         let desired = DesiredGraph {
             output_path: "/tmp/output.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: Some("matroska".to_string()),
             stream_bindings: super::identity_stream_bindings(&streams),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams,
         };
         let mut stream = target_stream("dialog-audio", StreamKind::Audio, "aac");
@@ -5625,6 +5737,7 @@ mod tests {
         Hevc,
         HevcAudio,
         HevcStrip,
+        HevcStripChapters,
     }
 
     async fn create_runtime_target(
@@ -5634,8 +5747,17 @@ mod tests {
     ) -> anyhow::Result<Option<(&'static str, i32)>> {
         match job_target {
             RuntimeJobTarget::SourceGraph => Ok(None),
-            RuntimeJobTarget::Hevc | RuntimeJobTarget::HevcAudio | RuntimeJobTarget::HevcStrip => {
+            RuntimeJobTarget::Hevc
+            | RuntimeJobTarget::HevcAudio
+            | RuntimeJobTarget::HevcStrip
+            | RuntimeJobTarget::HevcStripChapters => {
                 let container_metadata_policy = if job_target == RuntimeJobTarget::HevcStrip {
+                    "strip"
+                } else {
+                    "preserve"
+                };
+                let container_chapter_policy = if job_target == RuntimeJobTarget::HevcStripChapters
+                {
                     "strip"
                 } else {
                     "preserve"
@@ -5649,78 +5771,95 @@ mod tests {
                         display_name: "Runtime HEVC",
                         container_format: "matroska",
                         container_metadata_policy,
+                        container_chapter_policy,
                     },
                 )
                 .await?;
-                append_media_desired_target_stream(
-                    store.pool(),
-                    AppendMediaDesiredTargetStreamInput {
-                        media_desired_target_profile_public_id: target_id,
-                        stream_key: "video-main",
-                        stream_kind: "video",
-                        semantic_role: None,
-                        language_code: None,
-                        optional: false,
-                        sort_order: 0,
-                        codec: "hevc",
-                        channel_count: None,
-                        channel_layout: None,
-                        audio_bitrate_bps: None,
-                        audio_sample_rate_hz: None,
-                        audio_loudness_profile: None,
-                        audio_dynamic_range: None,
-                        video_profile: Some("main10"),
-                        video_level: Some("5.1"),
-                        video_bitrate_bps: Some(8_000_000),
-                        color_primaries: Some("bt2020"),
-                        color_transfer: Some("smpte2084"),
-                        color_space: Some("bt2020nc"),
-                        hdr_format: Some("hdr10"),
-                        title: None,
-                        default_disposition: false,
-                        forced_disposition: false,
-                        subtitle_placement: None,
-                        image_subtitle_action: None,
-                    },
-                )
-                .await?;
+                append_runtime_target_video_stream(store, target_id).await?;
                 if job_target == RuntimeJobTarget::HevcAudio {
-                    append_media_desired_target_stream(
-                        store.pool(),
-                        AppendMediaDesiredTargetStreamInput {
-                            media_desired_target_profile_public_id: target_id,
-                            stream_key: "audio-main",
-                            stream_kind: "audio",
-                            semantic_role: Some("primary"),
-                            language_code: Some("eng"),
-                            optional: false,
-                            sort_order: 1,
-                            codec: "aac",
-                            channel_count: Some(2),
-                            channel_layout: Some("stereo"),
-                            audio_bitrate_bps: Some(160_000),
-                            audio_sample_rate_hz: Some(48_000),
-                            audio_loudness_profile: Some("dialog-normalized"),
-                            audio_dynamic_range: Some("speech"),
-                            video_profile: None,
-                            video_level: None,
-                            video_bitrate_bps: None,
-                            color_primaries: None,
-                            color_transfer: None,
-                            color_space: None,
-                            hdr_format: None,
-                            title: None,
-                            default_disposition: true,
-                            forced_disposition: false,
-                            subtitle_placement: None,
-                            image_subtitle_action: None,
-                        },
-                    )
-                    .await?;
+                    append_runtime_target_audio_stream(store, target_id).await?;
                 }
                 Ok(Some(("runtime-hevc", 1)))
             }
         }
+    }
+
+    async fn append_runtime_target_video_stream(
+        store: &MediaStore,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        append_media_desired_target_stream(
+            store.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                media_desired_target_profile_public_id: target_id,
+                stream_key: "video-main",
+                stream_kind: "video",
+                semantic_role: None,
+                language_code: None,
+                optional: false,
+                sort_order: 0,
+                codec: "hevc",
+                channel_count: None,
+                channel_layout: None,
+                audio_bitrate_bps: None,
+                audio_sample_rate_hz: None,
+                audio_loudness_profile: None,
+                audio_dynamic_range: None,
+                video_profile: Some("main10"),
+                video_level: Some("5.1"),
+                video_bitrate_bps: Some(8_000_000),
+                color_primaries: Some("bt2020"),
+                color_transfer: Some("smpte2084"),
+                color_space: Some("bt2020nc"),
+                hdr_format: Some("hdr10"),
+                title: None,
+                default_disposition: false,
+                forced_disposition: false,
+                subtitle_placement: None,
+                image_subtitle_action: None,
+            },
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn append_runtime_target_audio_stream(
+        store: &MediaStore,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        append_media_desired_target_stream(
+            store.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                media_desired_target_profile_public_id: target_id,
+                stream_key: "audio-main",
+                stream_kind: "audio",
+                semantic_role: Some("primary"),
+                language_code: Some("eng"),
+                optional: false,
+                sort_order: 1,
+                codec: "aac",
+                channel_count: Some(2),
+                channel_layout: Some("stereo"),
+                audio_bitrate_bps: Some(160_000),
+                audio_sample_rate_hz: Some(48_000),
+                audio_loudness_profile: Some("dialog-normalized"),
+                audio_dynamic_range: Some("speech"),
+                video_profile: None,
+                video_level: None,
+                video_bitrate_bps: None,
+                color_primaries: None,
+                color_transfer: None,
+                color_space: None,
+                hdr_format: None,
+                title: None,
+                default_disposition: true,
+                forced_disposition: false,
+                subtitle_placement: None,
+                image_subtitle_action: None,
+            },
+        )
+        .await?;
+        Ok(())
     }
 
     async fn pin_runtime_target(
@@ -5745,6 +5884,7 @@ mod tests {
     fn video_graph(source_path: &str, codec: &str) -> MediaGraph {
         MediaGraph {
             source_path: source_path.to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -7295,6 +7435,77 @@ Integrated loudness:
     }
 
     #[tokio::test]
+    async fn media_job_runtime_strips_container_chapters_when_policy_selects_strip()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) =
+            setup_runtime(false, true, RuntimeJobTarget::HevcStripChapters).await?
+        else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(ChapterStripInspector) as Arc<RuntimeInspector>;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+        let (preserved_metadata, stripped_chapters) = {
+            let commands = fixture
+                .command_runner
+                .commands
+                .lock()
+                .map_err(|error| anyhow::anyhow!("command lock poisoned: {error}"))?;
+            (
+                commands.iter().any(|command| {
+                    command
+                        .windows(2)
+                        .any(|pair| pair == ["-map_metadata", "0"])
+                }),
+                commands.iter().any(|command| {
+                    command
+                        .windows(2)
+                        .any(|pair| pair == ["-map_chapters", "-1"])
+                }),
+            )
+        };
+        assert!(preserved_metadata);
+        assert!(stripped_chapters);
+
+        let reinspected = fixture
+            .runtime
+            .inspector
+            .inspect(Path::new(&job.source_path))?;
+        let desired = DesiredGraph {
+            output_path: job.source_path.clone(),
+            container_chapters: Vec::new(),
+            container_format: None,
+            container_metadata_policy: None,
+            container_chapter_policy: Some("strip".to_string()),
+            stream_bindings: Vec::new(),
+            streams: reinspected.graph.streams.clone(),
+        };
+        let replanned = revaer_media_runtime::jobs::plan_job_from_source_graph(
+            &desired,
+            fs::metadata(&job.source_path)?.len(),
+            &reinspected.graph,
+        )
+        .map_err(anyhow::Error::msg)?;
+        assert_eq!(
+            replanned.operations,
+            vec![revaer_media_core::plan::PlannedOperation {
+                kind: revaer_media_core::plan::OperationKind::NoOp,
+                stream_id: None,
+                output_stream_id: None,
+            }]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn media_job_runtime_rejects_strip_candidate_that_retains_container_metadata()
     -> anyhow::Result<()> {
         let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::HevcStrip).await?
@@ -7503,6 +7714,43 @@ Integrated loudness:
         assert!(checks.iter().any(|check| {
             check.check_kind == "final_container_metadata" && check.check_status == "failed"
         }));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_rejects_strip_candidate_that_retains_chapters() -> anyhow::Result<()>
+    {
+        let Some(mut fixture) =
+            setup_runtime(false, true, RuntimeJobTarget::HevcStripChapters).await?
+        else {
+            return Ok(());
+        };
+        fixture.runtime.inspector =
+            Arc::new(CandidateRetainsChaptersInspector) as Arc<RuntimeInspector>;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "failed");
+        assert_eq!(
+            job.last_error.as_deref(),
+            Some("media_job_output_chapter_timeline_mismatch")
+        );
+        assert_eq!(fs::read(&job.source_path)?, b"source");
+        let checks = fixture
+            .store
+            .list_job_verification_checks(fixture.job_id)
+            .await?;
+        assert!(checks.iter().any(|check| {
+            check.check_kind == "candidate_chapters"
+                && check.check_status == "failed"
+                && check.expected_value.as_deref() == Some("0 source_chapters")
+        }));
+        assert!(checks.iter().all(|check| check.check_kind != "final_graph"));
         Ok(())
     }
 
@@ -7770,6 +8018,7 @@ Integrated loudness:
     {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -7864,6 +8113,7 @@ Integrated loudness:
     fn selected_subtitle_policy_prefers_full_subtitles_over_commentary_default() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -7931,6 +8181,7 @@ Integrated loudness:
     fn desired_graph_clears_commentary_subtitle_default_when_retaining_all_subtitles() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -8001,6 +8252,7 @@ Integrated loudness:
     fn desired_graph_keeps_only_first_subtitle_default_when_retaining_all_subtitles() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -8071,6 +8323,7 @@ Integrated loudness:
     fn desired_graph_applies_snapshotted_audio_channel_policy() -> anyhow::Result<()> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -8139,6 +8392,7 @@ Integrated loudness:
     fn final_graph_verification_matches_ordered_stream_content_after_index_compaction() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: Some("mkv".to_string()),
             stream_bindings: vec![
                 DesiredStreamBinding {
@@ -8151,6 +8405,7 @@ Integrated loudness:
                 },
             ],
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -8214,13 +8469,16 @@ Integrated loudness:
     fn final_graph_verification_rejects_wrong_container() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: Some("mkv".to_string()),
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspected = MediaGraph {
             source_path: "/output/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: vec!["mp4".to_string()],
             streams: Vec::new(),
         };
@@ -8551,6 +8809,7 @@ Integrated loudness:
         };
         let source = MediaGraph {
             source_path: "/media/in.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -8565,9 +8824,11 @@ Integrated loudness:
         };
         let desired = DesiredGraph {
             output_path: "/media/out.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: super::identity_stream_bindings(&source.streams),
             container_metadata_policy: None,
+            container_chapter_policy: None,
             streams: source.streams.clone(),
         };
         let report = JobPreflightReport {
@@ -8668,6 +8929,7 @@ Integrated loudness:
             desired_target_version: None,
             desired_container_format: None,
             desired_container_metadata_policy: None,
+            desired_container_chapter_policy: None,
             unmatched_stream_policy: Some("remove".to_string()),
             verification_strictness: "strict".to_string(),
             verification_duration_tolerance_millis: 100,
@@ -8709,6 +8971,7 @@ Integrated loudness:
         job.desired_target_version = Some(1);
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some("preserve".to_string());
+        job.desired_container_chapter_policy = Some("preserve".to_string());
 
         let result = desired_target_from_job(&job, Vec::new());
 
@@ -8731,6 +8994,7 @@ Integrated loudness:
         job.desired_target_version = Some(1);
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some("rewrite".to_string());
+        job.desired_container_chapter_policy = Some("preserve".to_string());
 
         let result = desired_target_from_job(&job, Vec::new());
 
@@ -8756,6 +9020,7 @@ Integrated loudness:
         job.desired_target_version = Some(1);
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some(" Strip ".to_string());
+        job.desired_container_chapter_policy = Some("preserve".to_string());
 
         let target = desired_target_from_job(
             &job,
@@ -8798,6 +9063,87 @@ Integrated loudness:
     }
 
     #[test]
+    fn desired_target_snapshot_rejects_unsupported_container_chapter_policy() {
+        let mut job = claimed_job_with_paths(
+            "/input/movie.mkv",
+            Some("/output/movie.mkv".to_string()),
+            false,
+            "/input",
+            "/output",
+        );
+        job.desired_target_key = Some("living-room-output".to_string());
+        job.desired_target_version = Some(1);
+        job.desired_container_format = Some("matroska".to_string());
+        job.desired_container_metadata_policy = Some("preserve".to_string());
+        job.desired_container_chapter_policy = Some("rewrite".to_string());
+
+        let result = desired_target_from_job(&job, Vec::new());
+
+        let Err(error) = result else {
+            panic!("unsupported desired-target container chapter policy should fail");
+        };
+        assert_eq!(
+            error.code(),
+            "media_job_desired_container_chapter_policy_unsupported"
+        );
+    }
+
+    #[test]
+    fn desired_target_snapshot_accepts_strip_container_chapter_policy() {
+        let mut job = claimed_job_with_paths(
+            "/input/movie.mkv",
+            Some("/output/movie.mkv".to_string()),
+            false,
+            "/input",
+            "/output",
+        );
+        job.desired_target_key = Some("living-room-output".to_string());
+        job.desired_target_version = Some(1);
+        job.desired_container_format = Some("matroska".to_string());
+        job.desired_container_metadata_policy = Some("preserve".to_string());
+        job.desired_container_chapter_policy = Some(" Strip ".to_string());
+
+        let target = desired_target_from_job(
+            &job,
+            vec![MediaJobDesiredTargetStreamRow {
+                stream_key: "video-main".to_string(),
+                stream_kind: "video".to_string(),
+                semantic_role: None,
+                language_code: None,
+                optional: false,
+                sort_order: 0,
+                codec: "hevc".to_string(),
+                channel_count: None,
+                channel_layout: None,
+                audio_bitrate_bps: None,
+                audio_sample_rate_hz: None,
+                audio_loudness_profile: None,
+                audio_dynamic_range: None,
+                video_profile: None,
+                video_level: None,
+                video_bitrate_bps: None,
+                color_primaries: None,
+                color_transfer: None,
+                color_space: None,
+                hdr_format: None,
+                title: None,
+                default_disposition: false,
+                forced_disposition: false,
+                subtitle_placement: None,
+                image_subtitle_action: None,
+            }],
+        )
+        .unwrap_or(None);
+
+        assert_eq!(
+            target
+                .as_ref()
+                .map(|snapshot| snapshot.target.container_chapter_policy.as_str()),
+            Some("strip")
+        );
+    }
+
+    #[test]
     fn persisted_target_snapshot_preserves_unmatched_data_streams() -> anyhow::Result<()> {
         let mut job = claimed_job_with_paths(
             "/input/movie.mkv",
@@ -8810,6 +9156,7 @@ Integrated loudness:
         job.desired_target_version = Some(1);
         job.desired_container_format = Some("matroska".to_string());
         job.desired_container_metadata_policy = Some("preserve".to_string());
+        job.desired_container_chapter_policy = Some("preserve".to_string());
         job.unmatched_stream_policy = Some(" Preserve ".to_string());
 
         let Some(snapshot) = desired_target_from_job(

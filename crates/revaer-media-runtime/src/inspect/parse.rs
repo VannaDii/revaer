@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use revaer_media_core::model::{MediaGraph, MediaStream, StreamKind};
+use revaer_media_core::model::{
+    ContainerChapterEntry, ContainerMetadataEntry, MediaGraph, MediaStream, StreamKind,
+};
 use revaer_media_core::normalize::{normalize_graph, normalize_subtitle_codec};
 
 use super::ffprobe::{
@@ -40,7 +42,6 @@ pub(super) fn parse_source(
     };
     let mut graph = normalize_probe_graph(graph_input)?;
     graph.container_formats.clone_from(&container.formats);
-    graph = normalize_graph(&graph);
     technical_streams.sort_by_key(|stream| stream.stream_id);
     let mut chapters = parsed
         .chapters
@@ -49,6 +50,22 @@ pub(super) fn parse_source(
         .collect::<Result<Vec<_>, _>>()?;
     chapters.sort_by_key(|chapter| (chapter.start_millis, chapter.chapter_id));
     reject_duplicate_chapters(&chapters)?;
+    graph.container_chapters = chapters
+        .iter()
+        .map(|chapter| ContainerChapterEntry {
+            start_millis: chapter.start_millis,
+            end_millis: chapter.end_millis,
+            metadata: chapter
+                .metadata
+                .iter()
+                .map(|entry| ContainerMetadataEntry {
+                    key: entry.key.clone(),
+                    value: entry.value.clone(),
+                })
+                .collect(),
+        })
+        .collect();
+    graph = normalize_graph(&graph);
     Ok(MediaInspection {
         graph,
         container,
@@ -119,6 +136,7 @@ pub fn normalize_probe_graph(input: ProbeGraph) -> Result<MediaGraph, InspectErr
     reject_duplicate_streams(&streams)?;
     Ok(normalize_graph(&MediaGraph {
         source_path: input.source_path,
+        container_chapters: Vec::new(),
         container_formats: Vec::new(),
         streams,
     }))

@@ -1,6 +1,6 @@
 //! Deterministic normalization helpers.
 
-use crate::model::{MediaGraph, MediaStream};
+use crate::model::{ContainerChapterEntry, ContainerMetadataEntry, MediaGraph, MediaStream};
 
 /// Normalize a source graph and return a canonical clone.
 #[must_use]
@@ -16,8 +16,38 @@ pub fn normalize_graph(graph: &MediaGraph) -> MediaGraph {
     MediaGraph {
         source_path: graph.source_path.trim().to_string(),
         container_formats,
+        container_chapters: normalize_container_chapters(&graph.container_chapters),
         streams: graph.streams.iter().map(normalize_stream).collect(),
     }
+}
+
+/// Normalize a chapter timeline for deterministic graph comparison.
+#[must_use]
+pub fn normalize_container_chapters(
+    chapters: &[ContainerChapterEntry],
+) -> Vec<ContainerChapterEntry> {
+    chapters
+        .iter()
+        .map(|chapter| ContainerChapterEntry {
+            start_millis: chapter.start_millis,
+            end_millis: chapter.end_millis,
+            metadata: normalize_container_metadata(&chapter.metadata),
+        })
+        .collect()
+}
+
+fn normalize_container_metadata(entries: &[ContainerMetadataEntry]) -> Vec<ContainerMetadataEntry> {
+    let mut normalized = entries
+        .iter()
+        .filter_map(|entry| {
+            let key = entry.key.trim().to_ascii_lowercase();
+            let value = entry.value.trim().to_string();
+            (!key.is_empty() && !value.is_empty()).then_some(ContainerMetadataEntry { key, value })
+        })
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    normalized
 }
 
 /// Normalize a container alias to the canonical `FFmpeg` muxer name.
@@ -34,6 +64,16 @@ pub fn normalize_container_format(value: &str) -> String {
 /// Normalize a desired-target container metadata policy.
 #[must_use]
 pub fn normalize_container_metadata_policy(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "preserve" => Some("preserve"),
+        "strip" => Some("strip"),
+        _ => None,
+    }
+}
+
+/// Normalize a desired-target container chapter policy.
+#[must_use]
+pub fn normalize_container_chapter_policy(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
         "preserve" => Some("preserve"),
         "strip" => Some("strip"),
@@ -191,6 +231,7 @@ mod tests {
     fn normalize_aliases_and_whitespace() {
         let graph = MediaGraph {
             source_path: " /data/source.mkv ".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -249,6 +290,7 @@ mod tests {
     fn normalize_codec_aliases_from_tool_output() {
         let graph = MediaGraph {
             source_path: "/data/source.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -283,6 +325,7 @@ mod tests {
     fn normalize_language_region_aliases() {
         let graph = MediaGraph {
             source_path: "/data/source.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
