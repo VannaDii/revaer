@@ -2794,6 +2794,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "revaer-media-runtime"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+ "serde",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "revaer-runtime"
 version = "0.1.0"
 dependencies = [
