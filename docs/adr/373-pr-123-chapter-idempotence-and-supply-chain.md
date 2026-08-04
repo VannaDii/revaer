@@ -1,0 +1,54 @@
+# PR 123 Chapter Idempotence And Supply Chain Remediation
+
+- Status: Accepted
+- Date: 2026-08-04
+- Context:
+  - Chapter-strip planning treated every `strip` target as mismatched, including media whose inspected chapter timeline was already empty. Reprocessing an already compliant output therefore scheduled another rewrite instead of a deterministic no-op.
+  - The PR supply-chain gate reported high-severity advisories for `brace-expansion` 5.0.8 and `fast-uri` 3.1.4 in the Playwright dependency graph.
+  - Revalidating the complete audit gate also found a newer moderate advisory for transitive `undici` 7.28.0 in release tooling.
+  - Planning and post-execution verification need one normalized chapter value rather than independent presence assumptions.
+- Decision:
+  - Carry normalized chapter timeline entries in both `MediaGraph` and `DesiredGraph`.
+  - Populate source graph chapters from the same normalized ffprobe chapter inspection used by candidate and final verification.
+  - Compile `preserve` to the source timeline and `strip` to an empty desired timeline, then compare actual and desired timeline values when a chapter policy is selected.
+  - Pin npm overrides to patched, major-compatible `brace-expansion` 5.0.9 and `fast-uri` 3.1.5 and regenerate the test lockfile with NVM-managed Node 24 and npm.
+  - Resolve release tooling normally so npm selects patched `undici` 7.29.0.
+  - Alternatives considered:
+    - Compare only a chapter count: rejected because equal counts can hide timeline or metadata replacement mismatches.
+    - Keep unconditional strip rewrites and special-case completed jobs: rejected because idempotence belongs in graph comparison and planning.
+    - Ignore the advisories: rejected by repository supply-chain policy.
+- Consequences:
+  - Reinspection of an output with no chapters produces a no-op for a strip target.
+  - Preserve and future exact replacement comparisons share a normalized chapter value surface.
+  - Existing graph constructors explicitly initialize the new value, while serialized older graphs deserialize it as empty.
+- Follow-up:
+  - Rebase later chapter-value work onto this graph contract and remove any duplicate model declarations during stack repair.
+
+## Task Record
+
+- Motivation:
+  - Resolve the live P1 review thread and restore the failed PR supply-chain gate without suppressions or criteria changes.
+- Design notes:
+  - Chapter identifiers are excluded from graph comparison because the existing exact verification contract compares timeline bounds and normalized metadata rather than muxer-assigned IDs.
+  - Metadata keys are lowercased, values are trimmed, and rows are sorted and deduplicated during graph normalization.
+  - The runtime regression executes the strip workflow, reinspects the replacement, and proves that replanning yields only `NoOp`.
+- Test coverage summary:
+  - Focused graph diff tests cover strip with chapters, strip without chapters, preserve, and replacement mismatch.
+  - Target compilation tests cover desired strip and preserve values.
+  - The ffprobe adapter test proves normalized chapters are carried into `MediaGraph`.
+  - The existing chapter-strip runtime test now proves execute, reinspect, and no-op replanning behavior.
+  - Focused Cargo checks/tests and strict Clippy passed for `revaer-media-core`, `revaer-media-runtime`, and `revaer-app` without default features.
+  - `just audit`, `just deny`, `just fmt`, `just policy`, `just instruction-drift`, both npm clean installs/audits, TypeScript coverage compilation, and semantic-release config/version loading passed.
+  - Workspace-wide `just lint` was attempted and reached Clippy, but the host Homebrew libtorrent build failed because RTC was enabled without the OpenSSL/GnuTLS compile definition. The failure is outside this change; the main task retains ownership of shared full gates.
+- Observability updates:
+  - No new logs, metrics, or events are required. Existing plan operation and chapter verification records expose rewrite versus no-op behavior.
+- Status-doc validation:
+  - The media feature status remains unchanged; this change corrects idempotence and dependency safety. ADR indexes were updated.
+- Risk & rollback plan:
+  - The primary compatibility risk is deserializing pre-change graphs; serde defaults preserve compatibility with an empty timeline.
+  - Roll back this ADR, the graph fields, inspection mapping, comparison logic, and npm override updates together if the contract regresses.
+- Dependency rationale:
+  - No dependency was added. Existing transitive packages were advanced to patched, compatible releases.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No policy contradiction was found. The devops instructions now require NVM-managed normal npm lockfile resolution for advisory remediation; no workflow, Justfile, Sonar criterion, advisory ignore, or suppression changed.

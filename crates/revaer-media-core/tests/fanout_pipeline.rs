@@ -45,6 +45,7 @@ fn audio_target(
 fn source_fixture() -> MediaGraph {
     MediaGraph {
         source_path: "/fixtures/fanout-source.mkv".to_string(),
+        container_chapters: Vec::new(),
         container_formats: vec!["matroska".to_string()],
         streams: vec![MediaStream {
             stream_id: 41,
@@ -69,6 +70,7 @@ fn one_source_compiles_and_plans_two_independent_outputs() -> Result<(), Box<dyn
         version: 1,
         container: "matroska".to_string(),
         container_metadata_policy: "preserve".to_string(),
+        container_chapter_policy: "preserve".to_string(),
         streams: vec![
             audio_target("stereo", "aac", 2, "stereo", &language),
             audio_target("surround", "eac3", 6, "5.1", &language),

@@ -932,6 +932,7 @@ impl MediaJobRuntime {
                 None => CompiledDesiredTarget {
                     graph: DesiredGraph {
                         output_path: output_path.clone(),
+                        container_chapters: Vec::new(),
                         container_format: None,
                         stream_bindings: identity_stream_bindings(&source_graph.streams),
                         container_metadata_policy: None,
@@ -2545,6 +2546,7 @@ fn compile_desired_graph(
     let Some(target) = target else {
         return DesiredGraph {
             output_path: output_path.to_string(),
+            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: identity_stream_bindings(&source.streams),
             container_metadata_policy: None,
@@ -2617,6 +2619,7 @@ fn compile_desired_graph(
         .collect();
     DesiredGraph {
         output_path: output_path.to_string(),
+        container_chapters: Vec::new(),
         container_format: None,
         stream_bindings: identity_stream_bindings(&streams),
         container_metadata_policy: None,
@@ -4250,19 +4253,20 @@ mod tests {
     struct ChapterStripInspector;
 
     impl InspectAdapter for ChapterStripInspector {
-        fn inspect(&self, source_path: &str) -> Result<MediaGraph, InspectError> {
+        fn inspect_with_cancellation(
+            &self,
+            source_path: &Path,
+            cancellation: &dyn InspectCancellation,
+        ) -> Result<MediaInspection, InspectError> {
+            let source_path_text = checked_test_source_path(source_path, cancellation)?;
             let codec = match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
                 Ok(_) | Err(_) => "h264",
             };
-            Ok(video_graph(source_path, codec))
-        }
-
-        fn inspect_full(&self, source_path: &str) -> Result<MediaInspection, InspectError> {
-            let inspection = self.inspect(source_path).map(complete_test_inspection)?;
+            let inspection = complete_test_inspection(video_graph(source_path_text, codec));
             match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => Ok(inspection),
-                Ok(_) | Err(_) if source_path.contains("/workspace/") => Ok(inspection),
+                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => Ok(inspection),
                 Ok(_) | Err(_) => Ok(with_test_chapters(inspection)),
             }
         }
@@ -4272,18 +4276,20 @@ mod tests {
     struct CandidateRetainsChaptersInspector;
 
     impl InspectAdapter for CandidateRetainsChaptersInspector {
-        fn inspect(&self, source_path: &str) -> Result<MediaGraph, InspectError> {
+        fn inspect_with_cancellation(
+            &self,
+            source_path: &Path,
+            cancellation: &dyn InspectCancellation,
+        ) -> Result<MediaInspection, InspectError> {
+            let source_path_text = checked_test_source_path(source_path, cancellation)?;
             let codec = match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
                 Ok(_) | Err(_) => "h264",
             };
-            Ok(video_graph(source_path, codec))
-        }
-
-        fn inspect_full(&self, source_path: &str) -> Result<MediaInspection, InspectError> {
-            self.inspect(source_path)
-                .map(complete_test_inspection)
-                .map(with_test_chapters)
+            Ok(with_test_chapters(complete_test_inspection(video_graph(
+                source_path_text,
+                codec,
+            ))))
         }
     }
 
@@ -4709,6 +4715,22 @@ mod tests {
                 }],
             },
         ];
+        inspection.graph.container_chapters = inspection
+            .chapters
+            .iter()
+            .map(|chapter| revaer_media_core::model::ContainerChapterEntry {
+                start_millis: chapter.start_millis,
+                end_millis: chapter.end_millis,
+                metadata: chapter
+                    .metadata
+                    .iter()
+                    .map(|entry| revaer_media_core::model::ContainerMetadataEntry {
+                        key: entry.key.clone(),
+                        value: entry.value.clone(),
+                    })
+                    .collect(),
+            })
+            .collect();
         inspection
     }
 
@@ -4906,6 +4928,7 @@ mod tests {
         let streams = video_graph("/tmp/source.mkv", "h264").streams;
         let desired = DesiredGraph {
             output_path: "/tmp/output.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: Some("matroska".to_string()),
             stream_bindings: super::identity_stream_bindings(&streams),
             container_metadata_policy: None,
@@ -4929,6 +4952,7 @@ mod tests {
         let streams = video_graph("/tmp/source.mkv", "h264").streams;
         let desired = DesiredGraph {
             output_path: "/tmp/output.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: Some("matroska".to_string()),
             stream_bindings: super::identity_stream_bindings(&streams),
             container_metadata_policy: None,
@@ -5390,6 +5414,7 @@ mod tests {
     fn video_graph(source_path: &str, codec: &str) -> MediaGraph {
         MediaGraph {
             source_path: source_path.to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -6980,6 +7005,34 @@ Integrated loudness:
         };
         assert!(preserved_metadata);
         assert!(stripped_chapters);
+
+        let reinspected = fixture
+            .runtime
+            .inspector
+            .inspect(Path::new(&job.source_path))?;
+        let desired = DesiredGraph {
+            output_path: job.source_path.clone(),
+            container_chapters: Vec::new(),
+            container_format: None,
+            container_metadata_policy: None,
+            container_chapter_policy: Some("strip".to_string()),
+            stream_bindings: Vec::new(),
+            streams: reinspected.graph.streams.clone(),
+        };
+        let replanned = revaer_media_runtime::jobs::plan_job_from_source_graph(
+            &desired,
+            fs::metadata(&job.source_path)?.len(),
+            &reinspected.graph,
+        )
+        .map_err(anyhow::Error::msg)?;
+        assert_eq!(
+            replanned.operations,
+            vec![revaer_media_core::plan::PlannedOperation {
+                kind: revaer_media_core::plan::OperationKind::NoOp,
+                stream_id: None,
+                output_stream_id: None,
+            }]
+        );
         Ok(())
     }
 
@@ -7454,6 +7507,7 @@ Integrated loudness:
     {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -7548,6 +7602,7 @@ Integrated loudness:
     fn selected_subtitle_policy_prefers_full_subtitles_over_commentary_default() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -7615,6 +7670,7 @@ Integrated loudness:
     fn desired_graph_clears_commentary_subtitle_default_when_retaining_all_subtitles() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -7685,6 +7741,7 @@ Integrated loudness:
     fn desired_graph_keeps_only_first_subtitle_default_when_retaining_all_subtitles() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -7755,6 +7812,7 @@ Integrated loudness:
     fn desired_graph_applies_snapshotted_audio_channel_policy() -> anyhow::Result<()> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
                 MediaStream {
@@ -7823,6 +7881,7 @@ Integrated loudness:
     fn final_graph_verification_matches_ordered_stream_content_after_index_compaction() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: Some("mkv".to_string()),
             stream_bindings: vec![
                 DesiredStreamBinding {
@@ -7899,6 +7958,7 @@ Integrated loudness:
     fn final_graph_verification_rejects_wrong_container() {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: Some("mkv".to_string()),
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
@@ -7907,6 +7967,7 @@ Integrated loudness:
         };
         let inspected = MediaGraph {
             source_path: "/output/movie.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: vec!["mp4".to_string()],
             streams: Vec::new(),
         };
@@ -8204,6 +8265,7 @@ Integrated loudness:
         };
         let source = MediaGraph {
             source_path: "/media/in.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
@@ -8218,6 +8280,7 @@ Integrated loudness:
         };
         let desired = DesiredGraph {
             output_path: "/media/out.mkv".to_string(),
+            container_chapters: Vec::new(),
             container_format: None,
             stream_bindings: super::identity_stream_bindings(&source.streams),
             container_metadata_policy: None,

@@ -399,6 +399,7 @@
     -   [370: Media data stream passthrough](adr/370-media-data-stream-passthrough.md)
     -   [371: Media container metadata strip policy](adr/371-media-container-metadata-strip-policy.md)
     -   [372: Media container chapter strip policy](adr/372-media-container-chapter-strip-policy.md)
+    -   [373: PR 123 chapter idempotence and supply chain remediation](adr/373-pr-123-chapter-idempotence-and-supply-chain.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
