@@ -1,0 +1,56 @@
+# Media watcher native change event backstop
+
+- Status: Accepted
+- Date: 2026-08-04
+- Context:
+  - Local validation in a temporary worktree repeatedly failed `just test-features-min` in `native_watcher_reports_recursive_media_file_changes`.
+  - The failure exposed three watcher assumptions: raw native `notify` path spelling can differ from canonical path spelling, native backends may report write completion through access-close or imprecise event kinds rather than only create or modify, and some local/native environments may emit no usable event for a recursive write.
+  - On macOS temporary directories may be reported through `/var/...` while `Path::canonicalize` resolves the same file through `/private/var/...`.
+  - Some native backends coalesce recursive file additions to a parent-directory event path or require a polling backend on filesystems where native notifications are silent.
+  - Production discovery already canonicalizes watcher event paths in `rebase_watch_event_path` before rebasing them to the configured source root.
+- Decision:
+  - Register both the recommended native watcher and a recursive `notify::PollWatcher` for each watcher-enabled source root. Native creation or registration failures are logged once, while the poll watcher remains the correctness backstop.
+  - Configure the poll watcher with a two-second interval so watcher-only profiles do not depend on the 30-second notify default before discovery can see newly created media.
+  - Treat `notify` access-open/access-close write or imprecise events, access-kind `Any`, top-level `Any`, and top-level `Other` events as possible media-changing events in addition to create and modify events.
+  - Expand debounced directory watcher events into the concrete media files currently present under that directory before queueing discovery work.
+  - Canonicalize observed native event paths inside the native watcher test before comparing them to the expected media file.
+  - Ignore observed test paths that cannot be canonicalized because create and modify notifications may include transient parent or early file paths that are not the durable media file under test.
+- Consequences:
+  - Positive outcomes:
+    - `just test-features-min` no longer depends on platform-specific spelling of the same temporary filesystem path.
+    - The runtime no longer drops write-close or imprecise watcher events before the downstream media-extension and stable-fingerprint gates can decide whether to queue work.
+    - Watcher-only discovery can still enqueue newly created media when the backend reports the changed parent directory instead of the file path, or when the native backend is silent and only the poll fallback observes the change.
+    - The test proves that the production watcher reports a recursive media file change for the configured profile even in a local environment where the native backend did not emit the event.
+  - Risks or trade-offs:
+    - Imprecise native events and poll fallback events may increase debounce input volume, but downstream extension filtering and durable fingerprint de-duplication remain in place.
+    - Polling adds recurring filesystem traversal cost for watcher-enabled roots. The two-second interval is intentionally bounded for timely operator feedback and can be tuned later only with an ADR-backed performance measurement and without weakening correctness.
+- Follow-up:
+  - Keep deeper runtime debounce and queueing semantics covered by media discovery runtime tests.
+
+## Task Record
+
+- Motivation:
+  - Restore local Justfile validation reliability while making watcher-only discovery correct when native events are unavailable or imprecise.
+- Design notes:
+  - The event filter stays fail-open only for watcher events that can plausibly represent a write or imprecise backend change, and removal/read-close events remain ignored.
+  - The poll watcher is registered alongside the recommended watcher rather than replacing it, preserving native low-latency delivery while adding a deterministic correctness backstop.
+  - Directory expansion reuses the existing media extension filter and sorted discovery walker.
+  - The test path comparison matches production's existing canonicalization boundary.
+- Test coverage summary:
+  - `just fmt`
+  - `just instruction-drift`
+  - `git diff --check origin/stack/media3-56-container-metadata-fixture..HEAD`
+  - `just policy`
+  - `just test-features-min`
+- Observability updates:
+  - Native watcher creation and registration failures now log that the poll fallback remains active.
+- Status-doc validation:
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+- Risk and rollback plan:
+  - Roll back by reverting this ADR plus the watcher poll fallback, event-filter, directory-expansion, and assertion updates.
+  - The rollback risk is restoring a local platform-specific validation failure and dropping directory-level or poll-observed watcher events.
+- Dependency rationale:
+  - No dependencies were added; the existing `notify` dependency already provides `PollWatcher`.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No policy drift or contradiction was introduced.

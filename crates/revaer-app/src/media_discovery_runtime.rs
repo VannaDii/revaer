@@ -335,11 +335,38 @@ impl MediaDiscoveryRuntime {
         let Some(profile_path) = rebase_watch_event_path(&event.path, &profile.source_root) else {
             return;
         };
-        if !is_media_file(&profile_path) {
+        self.record_watch_profile_path(event.media_profile_public_id, &profile_path);
+    }
+
+    fn record_watch_profile_path(&mut self, profile_id: Uuid, profile_path: &Path) {
+        if profile_path.is_dir() {
+            match discover_media_source_paths_from_path(profile_path) {
+                Ok(paths) => {
+                    for path in paths {
+                        self.record_watch_media_path(profile_id, PathBuf::from(path));
+                    }
+                }
+                Err(error) => {
+                    warn!(
+                        path = %profile_path.display(),
+                        error = %error,
+                        "media watcher directory event scan failed"
+                    );
+                    self.telemetry
+                        .inc_media_discovery_candidate("watcher", "scan_failed");
+                }
+            }
             return;
         }
+
+        if is_media_file(profile_path) {
+            self.record_watch_media_path(profile_id, profile_path.to_path_buf());
+        }
+    }
+
+    fn record_watch_media_path(&mut self, profile_id: Uuid, profile_path: PathBuf) {
         self.pending_watch_events.insert(
-            (event.media_profile_public_id, profile_path),
+            (profile_id, profile_path),
             Instant::now() + WATCH_DEBOUNCE_INTERVAL,
         );
     }
@@ -407,8 +434,14 @@ enum MediaDiscoveryRuntimeError {
 fn discover_media_source_paths(
     source_root: &str,
 ) -> Result<Vec<String>, MediaDiscoveryRuntimeError> {
+    discover_media_source_paths_from_path(Path::new(source_root))
+}
+
+fn discover_media_source_paths_from_path(
+    source_root: &Path,
+) -> Result<Vec<String>, MediaDiscoveryRuntimeError> {
     let mut paths = Vec::new();
-    visit_media_source_paths(Path::new(source_root), &mut paths)?;
+    visit_media_source_paths(source_root, &mut paths)?;
     paths.sort();
     Ok(paths)
 }
@@ -461,6 +494,7 @@ mod tests {
         MediaDiscoveryRuntime, discover_media_source_paths, fingerprint_media_file, is_media_file,
         rebase_watch_event_path,
     };
+    use crate::media_discovery_watcher::MediaWatchEvent;
     use crate::runtime_shutdown;
     use chrono::Utc;
     use revaer_data::DataError;
@@ -558,6 +592,42 @@ mod tests {
         assert!(is_media_file(Path::new("/media/movie.ts")));
         assert!(is_media_file(Path::new("/media/movie.m4a")));
         assert!(!is_media_file(Path::new("/media/movie.srt")));
+    }
+
+    #[tokio::test]
+    async fn record_watch_event_expands_directory_events_to_media_files() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let source_root = temp.path().join("source");
+        let nested = source_root.join("nested");
+        fs::create_dir_all(&nested)?;
+        fs::write(nested.join("movie.webm"), b"media")?;
+        fs::write(nested.join("notes.txt"), b"ignored")?;
+        let mut profile = media_profile(true, false, None);
+        profile.source_root = source_root.to_string_lossy().into_owned();
+        let profile_id = profile.media_profile_public_id;
+        let mut runtime = MediaDiscoveryRuntime::with_tick_interval(
+            closed_media_store(),
+            Metrics::new()?,
+            Duration::from_secs(1),
+        );
+        runtime.watcher_profiles.insert(profile_id, profile);
+
+        runtime.record_watch_event(&MediaWatchEvent {
+            media_profile_public_id: profile_id,
+            path: nested.canonicalize()?,
+        });
+
+        assert!(
+            runtime
+                .pending_watch_events
+                .contains_key(&(profile_id, source_root.join("nested").join("movie.webm")))
+        );
+        assert!(
+            !runtime
+                .pending_watch_events
+                .contains_key(&(profile_id, source_root.join("nested").join("notes.txt")))
+        );
+        Ok(())
     }
 
     #[test]

@@ -425,3 +425,4 @@
     -   [396: Media sidecar artifact fixture](adr/396-media-sidecar-artifact-fixture.md)
     -   [397: Npm audit refresh](adr/397-npm-audit-refresh.md)
     -   [398: Media HDR10 pixel-format verification](adr/398-media-hdr10-pixel-format-verification.md)
+    -   [399: Media watcher native change event backstop](adr/399-media-watcher-native-change-events.md)
