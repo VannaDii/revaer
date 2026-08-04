@@ -349,6 +349,7 @@
     -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
     -   [318: Media transcoding foundation](adr/318-media-transcoding-foundation.md)
     -   [322: Supply chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)
+    -   [323: Core planner review repair](adr/323-core-planner-review-repair.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [404: Doc indexer fixture isolation](adr/404-doc-indexer-fixture-isolation.md)

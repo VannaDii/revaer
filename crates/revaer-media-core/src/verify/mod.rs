@@ -1,6 +1,6 @@
 //! Output verification helpers.
 
-use crate::model::{MediaGraph, MediaStream, StreamKind};
+use crate::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 use crate::plan::{OperationKind, PlannedOperation};
 use std::collections::BTreeSet;
 
@@ -31,22 +31,30 @@ pub fn verify_plan(operations: &[PlannedOperation]) -> Result<(), &'static str> 
     }
 
     if operations.iter().any(|item| {
-        (item.kind == OperationKind::AudioTranscode
-            || item.kind == OperationKind::VideoTranscode
-            || item.kind == OperationKind::DispositionRewrite
-            || item.kind == OperationKind::LabelRewrite
-            || item.kind == OperationKind::EmbedSubtitle
-            || item.kind == OperationKind::ExtractSubtitle
-            || item.kind == OperationKind::SubtitleTranscode)
-            && item.stream_id.is_none()
+        matches!(
+            item.kind,
+            OperationKind::AudioTranscode
+                | OperationKind::VideoTranscode
+                | OperationKind::DispositionRewrite
+                | OperationKind::LabelRewrite
+                | OperationKind::ExtractSubtitle
+                | OperationKind::SubtitleTranscode
+        ) && (item.stream_id.is_none() || item.output_stream_id.is_none())
     }) {
-        return Err("stream-scoped operation is missing stream id");
+        return Err("stream-scoped operation is missing source or output stream id");
     }
 
     if operations
         .iter()
-        .any(|item| item.kind == OperationKind::NoOp && item.stream_id.is_some())
+        .any(|item| item.kind == OperationKind::EmbedSubtitle && item.output_stream_id.is_none())
     {
+        return Err("subtitle embed operation is missing output stream id");
+    }
+
+    if operations.iter().any(|item| {
+        item.kind == OperationKind::NoOp
+            && (item.stream_id.is_some() || item.output_stream_id.is_some())
+    }) {
         return Err("no-op operation must not target a stream");
     }
 
@@ -56,7 +64,7 @@ pub fn verify_plan(operations: &[PlannedOperation]) -> Result<(), &'static str> 
             || item.kind == OperationKind::StreamReorder
             || item.kind == OperationKind::CopySidecarSubtitle
             || item.kind == OperationKind::RemoveSidecarSubtitle)
-            && item.stream_id.is_some()
+            && (item.stream_id.is_some() || item.output_stream_id.is_some())
     }) {
         return Err("non-stream-scoped operation must not target a stream");
     }
@@ -130,6 +138,81 @@ pub fn verify_plan_against_source(
     Ok(())
 }
 
+/// Verify operation output identities and source bindings against compiled graphs.
+///
+/// # Errors
+///
+/// Returns an error string when an operation references an unknown desired output or disagrees
+/// with the compiler-owned source binding.
+pub fn verify_plan_against_graphs(
+    source: &MediaGraph,
+    desired: &DesiredGraph,
+    operations: &[PlannedOperation],
+) -> Result<(), &'static str> {
+    verify_plan_against_source(source, operations)?;
+    for operation in operations {
+        let Some(output_stream_id) = operation.output_stream_id else {
+            continue;
+        };
+        if !desired
+            .streams
+            .iter()
+            .any(|stream| stream.stream_id == output_stream_id)
+        {
+            return Err("operation references unknown desired output stream id");
+        }
+        if let Some(source_stream_id) = operation.stream_id {
+            let bound_source = desired
+                .stream_bindings
+                .iter()
+                .find(|binding| binding.output_stream_id == output_stream_id)
+                .and_then(|binding| binding.source_stream_id)
+                .or_else(|| Some(output_stream_id).filter(|_| desired.stream_bindings.is_empty()));
+            if bound_source != Some(source_stream_id) {
+                return Err("operation source disagrees with desired output binding");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Verify a materialized output graph against compiled desired output identities and stream state.
+///
+/// # Errors
+///
+/// Returns an error string when container format, stream cardinality, identity, or normalized
+/// stream state differs from the desired graph.
+pub fn verify_output_graph(
+    actual: &MediaGraph,
+    desired: &DesiredGraph,
+) -> Result<(), &'static str> {
+    verify_unique_stream_ids(&actual.streams)?;
+    if desired.container_format.as_deref().is_some_and(|format| {
+        !actual
+            .container_formats
+            .iter()
+            .any(|actual_format| actual_format.eq_ignore_ascii_case(format))
+    }) {
+        return Err("output container does not match desired container");
+    }
+    if actual.streams.len() != desired.streams.len() {
+        return Err("output stream count does not match desired graph");
+    }
+    for desired_stream in &desired.streams {
+        let Some(actual_stream) = actual
+            .streams
+            .iter()
+            .find(|stream| stream.stream_id == desired_stream.stream_id)
+        else {
+            return Err("desired output stream is missing");
+        };
+        if actual_stream != desired_stream {
+            return Err("output stream state does not match desired graph");
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{verify_plan, verify_plan_against_source, verify_unique_stream_ids};
@@ -200,6 +283,7 @@ mod tests {
         let operations = vec![PlannedOperation {
             kind: OperationKind::VideoTranscode,
             stream_id: None,
+            output_stream_id: Some(0),
         }];
         assert!(verify_plan(&operations).is_err());
     }
@@ -209,6 +293,7 @@ mod tests {
         let operations = vec![PlannedOperation {
             kind: OperationKind::Remux,
             stream_id: Some(1),
+            output_stream_id: None,
         }];
         assert_eq!(
             verify_plan(&operations),
@@ -235,6 +320,7 @@ mod tests {
         let operations = vec![PlannedOperation {
             kind: OperationKind::AudioTranscode,
             stream_id: Some(9),
+            output_stream_id: Some(0),
         }];
         assert!(verify_plan_against_source(&source, &operations).is_err());
     }
@@ -258,6 +344,7 @@ mod tests {
         let operations = vec![PlannedOperation {
             kind: OperationKind::VideoTranscode,
             stream_id: Some(1),
+            output_stream_id: Some(0),
         }];
         assert!(verify_plan_against_source(&source, &operations).is_err());
     }
@@ -281,6 +368,7 @@ mod tests {
         let operations = vec![PlannedOperation {
             kind: OperationKind::VideoTranscode,
             stream_id: Some(2),
+            output_stream_id: Some(0),
         }];
         assert!(verify_plan_against_source(&source, &operations).is_ok());
     }

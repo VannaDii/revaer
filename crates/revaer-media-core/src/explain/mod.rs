@@ -1,38 +1,52 @@
 //! Plan explanation models.
 
-use crate::plan::{CandidatePlan, OperationKind, PlannedOperation, candidate_plan_cost};
+use crate::plan::{CandidateRejectionReason, OperationKind, PlanSelection, PlannedOperation};
+use serde::{Deserialize, Serialize};
 
 /// Human-readable explanation record for a selected operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Explanation {
     /// Deterministic message suitable for audit trails.
     pub message: String,
 }
 
+/// Structured explanation for one selected operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelectedOperationExplanation {
+    /// Selected operation kind.
+    pub kind: OperationKind,
+    /// Source-container stream identity when the operation consumes one.
+    pub source_stream_id: Option<u32>,
+    /// Independent desired-output stream identity when the operation produces one.
+    pub output_stream_id: Option<u32>,
+    /// Deterministic human-readable selection rationale.
+    pub reason: String,
+}
+
 /// Explanation for a selected plan.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectedPlanExplanation {
     /// Stable selected plan identifier.
     pub id: String,
     /// Sum of operation costs for the selected plan.
     pub total_cost: u32,
-    /// Deterministic reasons for each selected operation.
-    pub reasons: Vec<String>,
+    /// Deterministic structured explanation for every selected operation.
+    pub operations: Vec<SelectedOperationExplanation>,
 }
 
 /// Explanation for a rejected plan.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RejectedPlanExplanation {
     /// Stable rejected plan identifier.
     pub id: String,
     /// Sum of operation costs for the rejected plan.
     pub total_cost: u32,
-    /// Deterministic rejection reason.
-    pub reason: String,
+    /// Stable planner rejection reason.
+    pub reason: CandidateRejectionReason,
 }
 
 /// Explanation for plan selection.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanSelectionExplanation {
     /// Selected plan explanation.
     pub selected_plan: SelectedPlanExplanation,
@@ -47,9 +61,10 @@ pub fn explain_plan(operations: &[PlannedOperation]) -> Vec<Explanation> {
         .iter()
         .map(|item| Explanation {
             message: format!(
-                "selected operation: {} stream_id={}",
+                "selected operation: {} source_stream_id={} output_stream_id={}",
                 operation_kind_code(item.kind),
-                stream_id_code(item.stream_id)
+                stream_id_code(item.stream_id),
+                stream_id_code(item.output_stream_id)
             ),
         })
         .collect()
@@ -57,31 +72,31 @@ pub fn explain_plan(operations: &[PlannedOperation]) -> Vec<Explanation> {
 
 /// Explain selected and rejected candidate plans with deterministic costs.
 #[must_use]
-pub fn explain_plan_selection(
-    selected: &CandidatePlan,
-    rejected: &[CandidatePlan],
-) -> PlanSelectionExplanation {
-    let selected_cost = candidate_plan_cost(selected);
-    let rejected_plans = rejected
+pub fn explain_plan_selection(selection: &PlanSelection) -> PlanSelectionExplanation {
+    let rejected_plans = selection
+        .rejected
         .iter()
-        .map(|plan| {
-            let rejected_cost = candidate_plan_cost(plan);
-            RejectedPlanExplanation {
-                id: plan.id.clone(),
-                total_cost: rejected_cost,
-                reason: rejection_reason(selected_cost, rejected_cost).to_string(),
-            }
+        .map(|rejected| RejectedPlanExplanation {
+            id: rejected.candidate.id.clone(),
+            total_cost: rejected.total_cost,
+            reason: rejected.reason,
         })
         .collect();
 
     PlanSelectionExplanation {
         selected_plan: SelectedPlanExplanation {
-            id: selected.id.clone(),
-            total_cost: selected_cost,
-            reasons: selected
+            id: selection.selected.id.clone(),
+            total_cost: selection.selected_cost,
+            operations: selection
+                .selected
                 .operations
                 .iter()
-                .map(selected_operation_reason)
+                .map(|operation| SelectedOperationExplanation {
+                    kind: operation.kind,
+                    source_stream_id: operation.stream_id,
+                    output_stream_id: operation.output_stream_id,
+                    reason: selected_operation_reason(operation),
+                })
                 .collect(),
         },
         rejected_plans,
@@ -140,16 +155,6 @@ fn selected_operation_reason(operation: &PlannedOperation) -> String {
     }
 }
 
-const fn rejection_reason(selected_cost: u32, rejected_cost: u32) -> &'static str {
-    if rejected_cost > selected_cost {
-        "higher cost with no compliance benefit"
-    } else if rejected_cost == selected_cost {
-        "equivalent cost without deterministic tie-break win"
-    } else {
-        "lower cost candidate rejected by upstream safety validation"
-    }
-}
-
 fn stream_id_code(stream_id: Option<u32>) -> String {
     stream_id.map_or_else(|| "none".to_string(), |value| value.to_string())
 }
@@ -157,13 +162,17 @@ fn stream_id_code(stream_id: Option<u32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{explain_plan, explain_plan_selection};
-    use crate::plan::{CandidatePlan, OperationKind, PlannedOperation};
+    use crate::plan::{
+        CandidatePlan, CandidateRejectionReason, OperationKind, PlanSelection, PlannedOperation,
+        RejectedCandidatePlan,
+    };
 
     #[test]
     fn produce_explanation_rows() {
         let explanations = explain_plan(&[PlannedOperation {
             kind: OperationKind::Remux,
             stream_id: None,
+            output_stream_id: None,
         }]);
 
         assert_eq!(explanations.len(), 1);
@@ -178,24 +187,39 @@ mod tests {
                 PlannedOperation {
                     kind: OperationKind::AudioTranscode,
                     stream_id: Some(2),
+                    output_stream_id: Some(0),
                 },
                 PlannedOperation {
                     kind: OperationKind::Remux,
                     stream_id: None,
+                    output_stream_id: None,
                 },
             ],
         };
 
-        let explanation = explain_plan_selection(&selected, &[]);
+        let explanation = explain_plan_selection(&PlanSelection {
+            selected,
+            selected_cost: 25,
+            rejected: Vec::new(),
+        });
 
         assert_eq!(explanation.selected_plan.id, "audio-remux");
         assert_eq!(explanation.selected_plan.total_cost, 25);
         assert_eq!(
-            explanation.selected_plan.reasons,
-            vec![
-                "audio codec mismatch requires audio_transcode stream_id=2",
-                "container rewrite preserves selected streams",
-            ]
+            explanation.selected_plan.operations[0].source_stream_id,
+            Some(2)
+        );
+        assert_eq!(
+            explanation.selected_plan.operations[0].output_stream_id,
+            Some(0)
+        );
+        assert_eq!(
+            explanation.selected_plan.operations[0].reason,
+            "audio codec mismatch requires audio_transcode stream_id=2"
+        );
+        assert_eq!(
+            explanation.selected_plan.operations[1].reason,
+            "container rewrite preserves selected streams"
         );
     }
 
@@ -206,6 +230,7 @@ mod tests {
             operations: vec![PlannedOperation {
                 kind: OperationKind::Remux,
                 stream_id: None,
+                output_stream_id: None,
             }],
         };
         let rejected = CandidatePlan {
@@ -213,17 +238,26 @@ mod tests {
             operations: vec![PlannedOperation {
                 kind: OperationKind::VideoTranscode,
                 stream_id: Some(0),
+                output_stream_id: Some(0),
             }],
         };
 
-        let explanation = explain_plan_selection(&selected, &[rejected]);
+        let explanation = explain_plan_selection(&PlanSelection {
+            selected,
+            selected_cost: 5,
+            rejected: vec![RejectedCandidatePlan {
+                candidate: rejected,
+                total_cost: 1_000,
+                reason: CandidateRejectionReason::InvalidOperationShape,
+            }],
+        });
 
         assert_eq!(explanation.rejected_plans.len(), 1);
         assert_eq!(explanation.rejected_plans[0].id, "full-transcode");
         assert_eq!(explanation.rejected_plans[0].total_cost, 1000);
         assert_eq!(
             explanation.rejected_plans[0].reason,
-            "higher cost with no compliance benefit"
+            CandidateRejectionReason::InvalidOperationShape
         );
     }
 }

@@ -1,6 +1,6 @@
 //! Media graph diffing.
 
-use crate::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
+use crate::model::{DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind};
 use crate::normalize::normalize_container_format;
 
 /// Stream requiring codec-level recode.
@@ -8,7 +8,20 @@ use crate::normalize::normalize_container_format;
 pub struct RecodedStream {
     /// Stream id in source container.
     pub stream_id: u32,
+    /// Independent stream id in the desired output container.
+    pub output_stream_id: u32,
     /// Source stream kind used for operation planning.
+    pub kind: StreamKind,
+}
+
+/// Source and desired-output identity for one bound output stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BoundStream {
+    /// Independent desired output stream id.
+    pub output_stream_id: u32,
+    /// Selected source-container stream id.
+    pub source_stream_id: u32,
+    /// Desired stream kind.
     pub kind: StreamKind,
 }
 
@@ -17,6 +30,10 @@ pub struct RecodedStream {
 pub struct GraphDiff {
     /// Source container does not satisfy the selected desired muxer.
     pub container_mismatch: bool,
+    /// Explicit desired-output to source bindings used by execution planning.
+    pub stream_bindings: Vec<DesiredStreamBinding>,
+    /// Bound output streams with the kind required for alternative generation.
+    pub bound_streams: Vec<BoundStream>,
     /// Stream ids present in source but absent in desired output.
     pub removed_streams: Vec<u32>,
     /// Desired stream ids absent from the source graph.
@@ -51,6 +68,8 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
 
     GraphDiff {
         container_mismatch,
+        stream_bindings: normalized_bindings(desired),
+        bound_streams: bound_streams(desired),
         removed_streams: stream_diff.removed_ids,
         missing_desired_streams,
         stream_metadata_mismatched_streams: stream_diff.metadata_mismatched_ids,
@@ -59,6 +78,20 @@ pub fn diff_graphs(source: &MediaGraph, desired: &DesiredGraph) -> GraphDiff {
         audio_channel_mismatched_streams: stream_diff.audio_channel_mismatched_ids,
         stream_order_changed,
     }
+}
+
+fn bound_streams(desired: &DesiredGraph) -> Vec<BoundStream> {
+    desired
+        .streams
+        .iter()
+        .filter_map(|stream| {
+            source_stream_id(desired, stream.stream_id).map(|source_stream_id| BoundStream {
+                output_stream_id: stream.stream_id,
+                source_stream_id,
+                kind: stream.kind,
+            })
+        })
+        .collect()
 }
 
 #[derive(Default)]
@@ -74,37 +107,48 @@ fn diff_source_streams(source: &MediaGraph, desired: &DesiredGraph) -> SourceStr
     let mut diff = SourceStreamDiff::default();
 
     for stream in &source.streams {
-        match desired_stream(desired, stream.stream_id) {
-            Some(target) => diff_existing_stream(&mut diff, stream, target),
-            None => diff.removed_ids.push(stream.stream_id),
+        if !desired_uses_source(desired, stream.stream_id) {
+            diff.removed_ids.push(stream.stream_id);
+        }
+    }
+    for target in &desired.streams {
+        let Some(source_stream_id) = source_stream_id(desired, target.stream_id) else {
+            continue;
+        };
+        if let Some(source_stream) = source
+            .streams
+            .iter()
+            .find(|stream| stream.stream_id == source_stream_id)
+        {
+            diff_existing_stream(&mut diff, source_stream, target);
         }
     }
 
     diff
 }
 
-fn desired_stream(desired: &DesiredGraph, stream_id: u32) -> Option<&MediaStream> {
-    desired
-        .streams
+fn desired_uses_source(desired: &DesiredGraph, source_stream_id: u32) -> bool {
+    normalized_bindings(desired)
         .iter()
-        .find(|candidate| candidate.stream_id == stream_id)
+        .any(|binding| binding.source_stream_id == Some(source_stream_id))
 }
 
 fn diff_existing_stream(diff: &mut SourceStreamDiff, source: &MediaStream, desired: &MediaStream) {
     if desired.codec != source.codec {
         diff.recoded.push(RecodedStream {
             stream_id: source.stream_id,
+            output_stream_id: desired.stream_id,
             kind: source.kind,
         });
     }
     if stream_metadata_differs(source, desired) {
-        diff.metadata_mismatched_ids.push(source.stream_id);
+        diff.metadata_mismatched_ids.push(desired.stream_id);
     }
     if dispositions_differ(source, desired) {
-        diff.disposition_mismatched_ids.push(source.stream_id);
+        diff.disposition_mismatched_ids.push(desired.stream_id);
     }
     if audio_shape_differs(source, desired) {
-        diff.audio_channel_mismatched_ids.push(source.stream_id);
+        diff.audio_channel_mismatched_ids.push(desired.stream_id);
     }
 }
 
@@ -112,7 +156,10 @@ fn missing_desired_streams(source: &MediaGraph, desired: &DesiredGraph) -> Vec<u
     desired
         .streams
         .iter()
-        .filter(|stream| !source_stream_contains(source, stream.stream_id))
+        .filter(|stream| {
+            source_stream_id(desired, stream.stream_id)
+                .is_none_or(|stream_id| !source_stream_contains(source, stream_id))
+        })
         .map(|stream| stream.stream_id)
         .collect()
 }
@@ -129,29 +176,63 @@ fn stream_order_changed(
     desired: &DesiredGraph,
     missing_desired_streams: &[u32],
 ) -> bool {
-    let desired_stream_ids = desired_stream_ids(desired);
-    let retained_source_stream_ids = retained_source_stream_ids(source, &desired_stream_ids);
+    let desired_source_stream_ids = desired_source_stream_ids(desired);
+    let retained_source_stream_ids = retained_source_stream_ids(source, &desired_source_stream_ids);
 
-    retained_source_stream_ids.len() == desired_stream_ids.len()
+    unique_source_bindings(desired)
+        && retained_source_stream_ids.len() == desired_source_stream_ids.len()
         && missing_desired_streams.is_empty()
-        && retained_source_stream_ids != desired_stream_ids
+        && retained_source_stream_ids != desired_source_stream_ids
 }
 
-fn desired_stream_ids(desired: &DesiredGraph) -> Vec<u32> {
-    desired
-        .streams
+fn desired_source_stream_ids(desired: &DesiredGraph) -> Vec<u32> {
+    normalized_bindings(desired)
         .iter()
-        .map(|stream| stream.stream_id)
+        .filter_map(|binding| binding.source_stream_id)
         .collect()
 }
 
-fn retained_source_stream_ids(source: &MediaGraph, desired_stream_ids: &[u32]) -> Vec<u32> {
+fn unique_source_bindings(desired: &DesiredGraph) -> bool {
+    let source_ids = desired_source_stream_ids(desired);
+    source_ids
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        == source_ids.len()
+}
+
+fn retained_source_stream_ids(source: &MediaGraph, desired_source_stream_ids: &[u32]) -> Vec<u32> {
     source
         .streams
         .iter()
-        .filter(|stream| desired_stream_ids.contains(&stream.stream_id))
+        .filter(|stream| desired_source_stream_ids.contains(&stream.stream_id))
         .map(|stream| stream.stream_id)
         .collect()
+}
+
+fn source_stream_id(desired: &DesiredGraph, output_stream_id: u32) -> Option<u32> {
+    if desired.stream_bindings.is_empty() {
+        return Some(output_stream_id);
+    }
+    desired
+        .stream_bindings
+        .iter()
+        .find(|binding| binding.output_stream_id == output_stream_id)
+        .and_then(|binding| binding.source_stream_id)
+}
+
+fn normalized_bindings(desired: &DesiredGraph) -> Vec<DesiredStreamBinding> {
+    if desired.stream_bindings.is_empty() {
+        return desired
+            .streams
+            .iter()
+            .map(|stream| DesiredStreamBinding {
+                output_stream_id: stream.stream_id,
+                source_stream_id: Some(stream.stream_id),
+            })
+            .collect();
+    }
+    desired.stream_bindings.clone()
 }
 
 fn container_formats_match(source: &str, desired: &str) -> bool {
@@ -229,6 +310,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("mkv".to_string()),
+            stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
 
@@ -245,6 +327,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: Some("mp4".to_string()),
+            stream_bindings: Vec::new(),
             streams: Vec::new(),
         };
 
@@ -282,6 +365,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -300,6 +384,7 @@ mod tests {
             diff.recoded_streams,
             vec![RecodedStream {
                 stream_id: 0,
+                output_stream_id: 0,
                 kind: StreamKind::Video,
             }]
         );
@@ -338,6 +423,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            stream_bindings: Vec::new(),
             streams: vec![
                 MediaStream {
                     stream_id: 1,
@@ -389,6 +475,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -426,6 +513,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 2,
                 kind: StreamKind::Subtitle,
@@ -464,6 +552,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -502,6 +591,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            stream_bindings: Vec::new(),
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -554,6 +644,7 @@ mod tests {
         let desired = DesiredGraph {
             output_path: "/output/movie.mkv".to_string(),
             container_format: None,
+            stream_bindings: Vec::new(),
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -572,6 +663,7 @@ mod tests {
             diff.recoded_streams,
             vec![RecodedStream {
                 stream_id: 1,
+                output_stream_id: 1,
                 kind: StreamKind::Audio,
             }]
         );
@@ -585,10 +677,12 @@ mod tests {
             recoded_streams: vec![
                 RecodedStream {
                     stream_id: 1,
+                    output_stream_id: 1,
                     kind: StreamKind::Audio,
                 },
                 RecodedStream {
                     stream_id: 0,
+                    output_stream_id: 0,
                     kind: StreamKind::Video,
                 },
             ],
