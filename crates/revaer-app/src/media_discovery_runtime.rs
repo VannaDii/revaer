@@ -335,11 +335,38 @@ impl MediaDiscoveryRuntime {
         let Some(profile_path) = rebase_watch_event_path(&event.path, &profile.source_root) else {
             return;
         };
-        if !is_media_file(&profile_path) {
+        self.record_watch_profile_path(event.media_profile_public_id, &profile_path);
+    }
+
+    fn record_watch_profile_path(&mut self, profile_id: Uuid, profile_path: &Path) {
+        if profile_path.is_dir() {
+            match discover_media_source_paths_from_path(profile_path) {
+                Ok(paths) => {
+                    for path in paths {
+                        self.record_watch_media_path(profile_id, PathBuf::from(path));
+                    }
+                }
+                Err(error) => {
+                    warn!(
+                        path = %profile_path.display(),
+                        error = %error,
+                        "media watcher directory event scan failed"
+                    );
+                    self.telemetry
+                        .inc_media_discovery_candidate("watcher", "scan_failed");
+                }
+            }
             return;
         }
+
+        if is_media_file(profile_path) {
+            self.record_watch_media_path(profile_id, profile_path.to_path_buf());
+        }
+    }
+
+    fn record_watch_media_path(&mut self, profile_id: Uuid, profile_path: PathBuf) {
         self.pending_watch_events.insert(
-            (event.media_profile_public_id, profile_path),
+            (profile_id, profile_path),
             Instant::now() + WATCH_DEBOUNCE_INTERVAL,
         );
     }
@@ -407,8 +434,14 @@ enum MediaDiscoveryRuntimeError {
 fn discover_media_source_paths(
     source_root: &str,
 ) -> Result<Vec<String>, MediaDiscoveryRuntimeError> {
+    discover_media_source_paths_from_path(Path::new(source_root))
+}
+
+fn discover_media_source_paths_from_path(
+    source_root: &Path,
+) -> Result<Vec<String>, MediaDiscoveryRuntimeError> {
     let mut paths = Vec::new();
-    visit_media_source_paths(Path::new(source_root), &mut paths)?;
+    visit_media_source_paths(source_root, &mut paths)?;
     paths.sort();
     Ok(paths)
 }
@@ -461,9 +494,8 @@ mod tests {
         MediaDiscoveryRuntime, discover_media_source_paths, fingerprint_media_file, is_media_file,
         rebase_watch_event_path,
     };
-    use crate::runtime_shutdown;
+    use crate::media_discovery_watcher::MediaWatchEvent;
     use chrono::Utc;
-    use revaer_data::DataError;
     use revaer_data::media::capabilities::{
         RecordCapabilityEncoderInput, RecordCapabilityFeatureInput, RecordCapabilitySnapshotInput,
         complete_capability_snapshot_run_with_executor, record_capability_encoder,
@@ -487,7 +519,6 @@ mod tests {
     use std::fs;
     use std::path::Path;
     use std::time::{Duration, Instant};
-    use tokio::time::{sleep, timeout};
     use uuid::Uuid;
 
     const WATCHER_UNAVAILABLE_DESIRED_TARGET_KEY: &str = "watcher-unavailable-desired-target";
@@ -558,6 +589,59 @@ mod tests {
         assert!(is_media_file(Path::new("/media/movie.ts")));
         assert!(is_media_file(Path::new("/media/movie.m4a")));
         assert!(!is_media_file(Path::new("/media/movie.srt")));
+    }
+
+    #[tokio::test]
+    async fn record_watch_event_expands_directory_events_to_media_files() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let source_root = temp.path().join("source");
+        let nested = source_root.join("nested");
+        fs::create_dir_all(&nested)?;
+        fs::write(nested.join("movie.webm"), b"media")?;
+        fs::write(nested.join("notes.txt"), b"ignored")?;
+        let mut profile = media_profile(true, false, None);
+        profile.source_root = source_root.to_string_lossy().into_owned();
+        let profile_id = profile.media_profile_public_id;
+        let mut runtime = MediaDiscoveryRuntime::with_tick_interval(
+            closed_media_store(),
+            Metrics::new()?,
+            Duration::from_secs(1),
+        );
+        runtime.watcher_profiles.insert(profile_id, profile);
+
+        runtime.record_watch_event(&MediaWatchEvent {
+            media_profile_public_id: profile_id,
+            path: nested.canonicalize()?,
+        });
+
+        assert!(
+            runtime
+                .pending_watch_events
+                .contains_key(&(profile_id, source_root.join("nested").join("movie.webm")))
+        );
+        assert!(
+            !runtime
+                .pending_watch_events
+                .contains_key(&(profile_id, source_root.join("nested").join("notes.txt")))
+        );
+        Ok(())
+    }
+
+    async fn flush_watch_path(
+        runtime: &mut MediaDiscoveryRuntime,
+        profile_id: Uuid,
+        path: &Path,
+    ) -> anyhow::Result<()> {
+        runtime.record_watch_event(&MediaWatchEvent {
+            media_profile_public_id: profile_id,
+            path: path.canonicalize()?,
+        });
+        let now = Instant::now();
+        for deadline in runtime.pending_watch_events.values_mut() {
+            *deadline = now;
+        }
+        runtime.flush_watch_events().await?;
+        Ok(())
     }
 
     #[test]
@@ -684,19 +768,27 @@ mod tests {
             },
         )
         .await?;
-        let runtime = MediaDiscoveryRuntime::with_tick_interval(
+        let mut runtime = MediaDiscoveryRuntime::with_tick_interval(
             store.clone(),
             Metrics::new()?,
             Duration::from_millis(100),
         );
-        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
-        let runtime_task = runtime.spawn(shutdown_rx);
-        sleep(Duration::from_millis(500)).await;
+        let profile = store
+            .get_profile(profile_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("watcher profile missing"))?;
+        runtime.watcher_profiles.insert(profile_id, profile);
 
         let source_path = source_root.join("movie.webm");
         fs::write(&source_path, b"first-version")?;
-        wait_for_job_count(&store, profile_id, 1).await?;
-        sleep(Duration::from_secs(2)).await;
+        flush_watch_path(&mut runtime, profile_id, &source_path).await?;
+        assert_eq!(
+            list_media_jobs(store.pool(), Some(profile_id), None)
+                .await?
+                .len(),
+            1
+        );
+        flush_watch_path(&mut runtime, profile_id, &source_path).await?;
         assert_eq!(
             list_media_jobs(store.pool(), Some(profile_id), None)
                 .await?
@@ -705,14 +797,17 @@ mod tests {
         );
 
         fs::write(&source_path, b"second-version")?;
-        wait_for_job_count(&store, profile_id, 2).await?;
-        sleep(Duration::from_secs(2)).await;
+        flush_watch_path(&mut runtime, profile_id, &source_path).await?;
         let jobs = list_media_jobs(store.pool(), Some(profile_id), None).await?;
         assert_eq!(jobs.len(), 2);
         assert!(jobs.iter().all(|job| job.dry_run));
-
-        assert!(runtime_shutdown::request(&shutdown_tx));
-        timeout(Duration::from_secs(5), runtime_task).await??;
+        flush_watch_path(&mut runtime, profile_id, &source_path).await?;
+        assert_eq!(
+            list_media_jobs(store.pool(), Some(profile_id), None)
+                .await?
+                .len(),
+            2
+        );
         Ok(())
     }
 
@@ -791,25 +886,26 @@ mod tests {
             },
         )
         .await?;
-        let runtime = MediaDiscoveryRuntime::with_tick_interval(
+        let mut runtime = MediaDiscoveryRuntime::with_tick_interval(
             store.clone(),
             Metrics::new()?,
             Duration::from_millis(100),
         );
-        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
-        let runtime_task = runtime.spawn(shutdown_rx);
-        sleep(Duration::from_millis(500)).await;
+        let profile = store
+            .get_profile(profile_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("watcher profile missing"))?;
+        runtime.watcher_profiles.insert(profile_id, profile);
 
-        fs::write(source_root.join("movie.webm"), b"needs-capability")?;
-        sleep(Duration::from_secs(2)).await;
+        let source_path = source_root.join("movie.webm");
+        fs::write(&source_path, b"needs-capability")?;
+        flush_watch_path(&mut runtime, profile_id, &source_path).await?;
 
         assert!(
             list_media_jobs(store.pool(), Some(profile_id), None)
                 .await?
                 .is_empty()
         );
-        assert!(runtime_shutdown::request(&shutdown_tx));
-        timeout(Duration::from_secs(5), runtime_task).await??;
         Ok(())
     }
 
@@ -882,25 +978,26 @@ mod tests {
             },
         )
         .await?;
-        let runtime = MediaDiscoveryRuntime::with_tick_interval(
+        let mut runtime = MediaDiscoveryRuntime::with_tick_interval(
             store.clone(),
             Metrics::new()?,
             Duration::from_millis(100),
         );
-        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
-        let runtime_task = runtime.spawn(shutdown_rx);
-        sleep(Duration::from_millis(500)).await;
+        let profile = store
+            .get_profile(profile_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("watcher profile missing"))?;
+        runtime.watcher_profiles.insert(profile_id, profile);
 
-        fs::write(source_root.join("movie.webm"), b"needs-desired-target")?;
-        sleep(Duration::from_secs(2)).await;
+        let source_path = source_root.join("movie.webm");
+        fs::write(&source_path, b"needs-desired-target")?;
+        flush_watch_path(&mut runtime, profile_id, &source_path).await?;
 
         assert!(
             list_media_jobs(store.pool(), Some(profile_id), None)
                 .await?
                 .is_empty()
         );
-        assert!(runtime_shutdown::request(&shutdown_tx));
-        timeout(Duration::from_secs(5), runtime_task).await??;
         Ok(())
     }
 
@@ -1022,24 +1119,6 @@ mod tests {
             .await?;
         }
         complete_capability_snapshot_run_with_executor(pool, snapshot_run_public_id).await?;
-        Ok(())
-    }
-
-    async fn wait_for_job_count(
-        store: &MediaStore,
-        profile_id: Uuid,
-        expected: usize,
-    ) -> anyhow::Result<()> {
-        timeout(Duration::from_secs(10), async {
-            loop {
-                let jobs = list_media_jobs(store.pool(), Some(profile_id), None).await?;
-                if jobs.len() == expected {
-                    return Ok::<(), DataError>(());
-                }
-                sleep(Duration::from_millis(100)).await;
-            }
-        })
-        .await??;
         Ok(())
     }
 }

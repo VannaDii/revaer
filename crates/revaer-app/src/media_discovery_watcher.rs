@@ -2,13 +2,17 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::event::{AccessKind, AccessMode};
+use notify::{Config, Event, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 use revaer_data::media::profiles::MediaProfileRow;
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::warn;
 use uuid::Uuid;
+
+const WATCH_POLL_FALLBACK_INTERVAL: Duration = Duration::from_secs(2);
 
 /// One filesystem event associated with a configured media profile.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,10 +28,11 @@ pub(crate) trait MediaWatcher: Send + Sync {
 
 struct WatchRegistration {
     source_root: PathBuf,
-    _watcher: RecommendedWatcher,
+    _native_watcher: Option<RecommendedWatcher>,
+    _poll_watcher: PollWatcher,
 }
 
-/// Native watcher selected by `notify` for the current operating system.
+/// Native watcher with a polling correctness backstop selected through `notify`.
 pub(crate) struct NotifyMediaWatcher {
     events: UnboundedSender<MediaWatchEvent>,
     registrations: BTreeMap<Uuid, WatchRegistration>,
@@ -49,36 +54,51 @@ impl NotifyMediaWatcher {
         }
 
         let profile_id = profile.media_profile_public_id;
-        let sender = self.events.clone();
-        let mut watcher =
-            notify::recommended_watcher(move |result: notify::Result<Event>| match result {
-                Ok(event) if event_can_change_media(event.kind) => {
-                    for path in event.paths {
-                        if sender
-                            .send(MediaWatchEvent {
-                                media_profile_public_id: profile_id,
-                                path,
-                            })
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
-                }
-                Ok(_) => {}
-                Err(error) => {
+        let native_sender = self.events.clone();
+        let native_watcher = match notify::recommended_watcher(
+            move |result: notify::Result<Event>| {
+                forward_notify_result(profile_id, &native_sender, result);
+            },
+        ) {
+            Ok(mut watcher) => {
+                if let Err(source) =
+                    watcher.watch(Path::new(&source_root), RecursiveMode::Recursive)
+                {
                     warn!(
                         media_profile_public_id = %profile_id,
-                        error = %error,
-                        "media filesystem watcher event failed"
+                        path = %source_root.display(),
+                        error = %source,
+                        "media native filesystem watcher registration failed; poll fallback remains active"
                     );
+                    None
+                } else {
+                    Some(watcher)
                 }
-            })
-            .map_err(|source| MediaWatcherError::Create {
-                path: source_root.clone(),
-                source,
-            })?;
-        watcher
+            }
+            Err(source) => {
+                warn!(
+                    media_profile_public_id = %profile_id,
+                    path = %source_root.display(),
+                    error = %source,
+                    "media native filesystem watcher creation failed; poll fallback remains active"
+                );
+                None
+            }
+        };
+
+        let poll_sender = self.events.clone();
+        let poll_config = Config::default().with_poll_interval(WATCH_POLL_FALLBACK_INTERVAL);
+        let mut poll_watcher = PollWatcher::new(
+            move |result: notify::Result<Event>| {
+                forward_notify_result(profile_id, &poll_sender, result);
+            },
+            poll_config,
+        )
+        .map_err(|source| MediaWatcherError::Create {
+            path: source_root.clone(),
+            source,
+        })?;
+        poll_watcher
             .watch(Path::new(&source_root), RecursiveMode::Recursive)
             .map_err(|source| MediaWatcherError::Watch {
                 path: source_root.clone(),
@@ -88,7 +108,8 @@ impl NotifyMediaWatcher {
             profile_id,
             WatchRegistration {
                 source_root,
-                _watcher: watcher,
+                _native_watcher: native_watcher,
+                _poll_watcher: poll_watcher,
             },
         );
         Ok(())
@@ -128,7 +149,55 @@ impl MediaWatcher for NotifyMediaWatcher {
 }
 
 const fn event_can_change_media(kind: EventKind) -> bool {
-    matches!(kind, EventKind::Create(_) | EventKind::Modify(_))
+    matches!(
+        kind,
+        EventKind::Any
+            | EventKind::Other
+            | EventKind::Create(_)
+            | EventKind::Modify(_)
+            | EventKind::Access(
+                AccessKind::Any
+                    | AccessKind::Other
+                    | AccessKind::Open(AccessMode::Any | AccessMode::Other | AccessMode::Write)
+                    | AccessKind::Close(AccessMode::Any | AccessMode::Other | AccessMode::Write),
+            )
+    )
+}
+
+fn forward_notify_result(
+    profile_id: Uuid,
+    sender: &UnboundedSender<MediaWatchEvent>,
+    result: notify::Result<Event>,
+) {
+    match result {
+        Ok(event) => forward_notify_event(profile_id, sender, event),
+        Err(error) => {
+            warn!(
+                media_profile_public_id = %profile_id,
+                error = %error,
+                "media filesystem watcher event failed"
+            );
+        }
+    }
+}
+
+fn forward_notify_event(profile_id: Uuid, sender: &UnboundedSender<MediaWatchEvent>, event: Event) {
+    let Event { kind, paths, .. } = event;
+    if !event_can_change_media(kind) {
+        return;
+    }
+
+    for path in paths {
+        if sender
+            .send(MediaWatchEvent {
+                media_profile_public_id: profile_id,
+                path,
+            })
+            .is_err()
+        {
+            return;
+        }
+    }
 }
 
 /// Filesystem watcher setup failure.
@@ -153,7 +222,7 @@ mod tests {
     use super::{MediaWatcher, NotifyMediaWatcher, event_can_change_media};
     use chrono::Utc;
     use notify::EventKind;
-    use notify::event::{CreateKind, ModifyKind, RemoveKind};
+    use notify::event::{AccessKind, AccessMode, CreateKind, ModifyKind, RemoveKind};
     use revaer_data::media::profiles::MediaProfileRow;
     use std::fs;
     use std::time::Duration;
@@ -162,18 +231,30 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
-    fn watcher_accepts_create_and_modify_events_only() {
+    fn watcher_accepts_media_change_events() {
         assert!(event_can_change_media(EventKind::Create(CreateKind::File)));
         assert!(event_can_change_media(EventKind::Modify(ModifyKind::Any)));
+        assert!(event_can_change_media(EventKind::Access(
+            AccessKind::Close(AccessMode::Write)
+        )));
+        assert!(event_can_change_media(EventKind::Access(AccessKind::Open(
+            AccessMode::Write
+        ))));
+        assert!(event_can_change_media(EventKind::Access(AccessKind::Any)));
+        assert!(event_can_change_media(EventKind::Any));
+        assert!(event_can_change_media(EventKind::Other));
         assert!(!event_can_change_media(EventKind::Remove(RemoveKind::File)));
-        assert!(!event_can_change_media(EventKind::Other));
+        assert!(!event_can_change_media(EventKind::Access(
+            AccessKind::Close(AccessMode::Read)
+        )));
+        assert!(!event_can_change_media(EventKind::Access(
+            AccessKind::Open(AccessMode::Read)
+        )));
     }
 
     #[tokio::test]
-    async fn native_watcher_reports_recursive_media_file_changes() -> anyhow::Result<()> {
+    async fn watcher_reports_recursive_media_file_changes() -> anyhow::Result<()> {
         let root = tempfile::tempdir()?;
-        let nested = root.path().join("nested");
-        fs::create_dir_all(&nested)?;
         let profile_id = Uuid::new_v4();
         let profile = MediaProfileRow {
             media_profile_public_id: profile_id,
@@ -199,13 +280,20 @@ mod tests {
         }
         sleep(Duration::from_millis(250)).await;
 
+        let nested = root.path().join("nested");
+        fs::create_dir_all(&nested)?;
         let media_path = nested.join("movie.webm");
         fs::write(&media_path, b"first")?;
         let canonical_media_path = media_path.canonicalize()?;
         let observed = timeout(Duration::from_secs(5), async {
             loop {
                 let event = rx.recv().await?;
-                if event.path == canonical_media_path {
+                let Ok(observed_path) = event.path.canonicalize() else {
+                    continue;
+                };
+                if observed_path == canonical_media_path
+                    || (observed_path.is_dir() && canonical_media_path.starts_with(&observed_path))
+                {
                     return Some(event);
                 }
             }
@@ -214,7 +302,11 @@ mod tests {
         .ok_or_else(|| anyhow::anyhow!("native watcher event channel closed"))?;
 
         assert_eq!(observed.media_profile_public_id, profile_id);
-        assert_eq!(observed.path, canonical_media_path);
+        let observed_path = observed.path.canonicalize()?;
+        assert!(
+            observed_path == canonical_media_path
+                || (observed_path.is_dir() && canonical_media_path.starts_with(observed_path))
+        );
         Ok(())
     }
 }
