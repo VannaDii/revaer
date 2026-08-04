@@ -331,3 +331,4 @@
 -   [317](317-supply-chain-advisory-baseline.md) – Supply chain advisory baseline
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
 -   [407](407-database-backed-coverage-execution.md) – Database-backed coverage execution
+-   [409](409-portable-helm-annotation-rendering.md) – Portable Helm annotation rendering
