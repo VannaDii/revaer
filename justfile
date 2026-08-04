@@ -190,7 +190,10 @@ licenses:
 api-export:
     cargo run -p revaer-api --bin generate_openapi
 
-helm-lint:
+helm-annotation-test:
+    bash release/tests/helm-annotation-rendering.sh
+
+helm-lint: helm-annotation-test
     if ! command -v helm >/dev/null 2>&1; then \
         echo "helm is required to lint the chart"; \
         exit 1; \
