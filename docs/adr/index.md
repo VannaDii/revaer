@@ -328,3 +328,4 @@
 -   [314](314-artifacthub-verification-and-official-readiness.md) – Artifact Hub verification and official readiness
 -   [315](315-indexer-import-job-runtime-worker.md) – Indexer import job runtime worker
 -   [316](316-import-runtime-gap-closure-followup.md) – Import runtime gap-closure follow-up
+-   [409](409-portable-helm-annotation-rendering.md) – Portable Helm annotation rendering
