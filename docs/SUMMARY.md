@@ -351,3 +351,4 @@
     -   [407: Database-backed coverage execution](adr/407-database-backed-coverage-execution.md)
     -   [409: Portable Helm annotation rendering](adr/409-portable-helm-annotation-rendering.md)
     -   [410: Libtorrent 2.1 compatibility foundation](adr/410-libtorrent-21-compatibility.md)
+    -   [411: Untracked generated API schema](adr/411-untracked-generated-api-schema.md)
