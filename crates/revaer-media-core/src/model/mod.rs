@@ -6,16 +6,22 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StreamKind {
     /// Video stream.
+    #[serde(alias = "video")]
     Video,
     /// Audio stream.
+    #[serde(alias = "audio")]
     Audio,
     /// Subtitle stream.
+    #[serde(alias = "subtitle")]
     Subtitle,
     /// Attachment stream.
+    #[serde(alias = "attachment")]
     Attachment,
     /// Chapter or timeline metadata stream.
+    #[serde(alias = "chapter")]
     Chapter,
     /// Opaque timed or container data stream.
+    #[serde(alias = "data")]
     Data,
 }
 
@@ -54,6 +60,15 @@ pub struct MediaGraph {
     pub streams: Vec<MediaStream>,
 }
 
+/// Explicit binding from one desired output stream to its selected source stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesiredStreamBinding {
+    /// Independent stream identity in the desired output container.
+    pub output_stream_id: u32,
+    /// Source-container stream identity, or `None` for an external input.
+    pub source_stream_id: Option<u32>,
+}
+
 /// Desired output graph after policy application.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DesiredGraph {
@@ -62,6 +77,9 @@ pub struct DesiredGraph {
     /// Required output container muxer when a target selects one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_format: Option<String>,
+    /// Explicit source binding for every desired output stream.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stream_bindings: Vec<DesiredStreamBinding>,
     /// Required streams in deterministic output order.
     pub streams: Vec<MediaStream>,
 }
