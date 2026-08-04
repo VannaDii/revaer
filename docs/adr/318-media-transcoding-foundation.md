@@ -26,7 +26,7 @@
 ### Inspection, planning, and execution safeguards
 
 - Treat probed stream indexes as runtime correlation values only. Persist target stream keys plus semantic kind, role, and language selectors, then match deterministically at planning time.
-- Compile desired streams in declared target order, consume each source stream at most once, reject missing required rows, skip missing optional rows, and apply explicit remove, preserve, or reject behavior to unmatched source streams.
+- Compile desired streams in declared target order with independent output identities and explicit source binding keys. Distinct binding keys consume one source match each; a shared binding key intentionally fans one source out to multiple outputs. Reject missing required rows, skip missing optional rows, and apply explicit remove, preserve, or reject behavior only to source streams not selected by any binding.
 - Validate duplicate stream IDs, missing desired streams, stream-kind mismatches, operation-list shape, container-operation targets, audio channel shape, subtitle commentary selection, and default subtitle disposition before execution.
 - Preserve source order where policy does not explicitly reorder, and represent no-op plans explicitly rather than invoking a transcode unnecessarily.
 - Keep destructive replacement gated behind dry-run policy, capability checks, plan validation, candidate verification, and path containment.

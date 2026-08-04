@@ -14,4 +14,5 @@ categories = ["multimedia"]
 
 [dependencies]
 serde.workspace = true
+serde_yaml = "0.9"
 thiserror.workspace = true

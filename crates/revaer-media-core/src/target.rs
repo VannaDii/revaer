@@ -1,14 +1,57 @@
 //! Desired-target compilation into a concrete output graph.
 
 use crate::classify::{SemanticRole, infer_role};
-use crate::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
+use crate::model::{DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind};
 use crate::normalize::{normalize_container_format, normalize_subtitle_codec};
-use std::collections::BTreeSet;
-use std::path::Path;
+use serde::{Deserialize, Deserializer};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Component, Path};
 use thiserror::Error;
 
-/// Desired output stream independent of source-container stream indexes.
+/// Maximum accepted desired-target YAML payload size.
+pub const MAX_DESIRED_TARGET_YAML_BYTES: usize = 1_048_576;
+/// Maximum desired streams accepted in one target document.
+pub const MAX_DESIRED_TARGET_STREAMS: usize = 1_024;
+
+/// Validated normalized ISO-639-3 language token used by desired targets.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LanguageToken(String);
+
+impl LanguageToken {
+    /// Parse one lowercase three-letter ASCII language token.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TargetCompileError::InvalidLanguage`] for separators, dot segments, controls,
+    /// percent-encoded bytes, mixed case, or any non-ISO token shape.
+    pub fn parse(value: &str) -> Result<Self, TargetCompileError> {
+        let normalized = value.trim();
+        if normalized.len() != 3 || !normalized.bytes().all(|byte| byte.is_ascii_lowercase()) {
+            return Err(TargetCompileError::InvalidLanguage(value.to_string()));
+        }
+        Ok(Self(normalized.to_string()))
+    }
+
+    /// Return the normalized token.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for LanguageToken {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Desired output stream independent of source-container stream indexes.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TargetStream {
     /// Stable identity within the target version.
     pub stream_key: String,
@@ -17,7 +60,9 @@ pub struct TargetStream {
     /// Optional semantic-role selector.
     pub role: Option<SemanticRole>,
     /// Optional normalized language selector.
-    pub language: Option<String>,
+    pub language: Option<LanguageToken>,
+    /// Optional stable binding key shared by outputs that reuse one selected source stream.
+    pub source_binding_key: Option<String>,
     /// Whether absence of a matching source stream is acceptable.
     pub optional: bool,
     /// Desired output codec.
@@ -51,6 +96,7 @@ pub struct TargetStream {
     /// Desired stream title. `None` removes the source title.
     pub title: Option<String>,
     /// Complete desired disposition set.
+    #[serde(default)]
     pub dispositions: Vec<String>,
     /// Desired subtitle placement. Non-subtitle rows leave this unset.
     pub subtitle_placement: Option<SubtitlePlacement>,
@@ -59,7 +105,8 @@ pub struct TargetStream {
 }
 
 /// Desired placement for a selected subtitle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SubtitlePlacement {
     /// Keep the selected subtitle in the media container.
     Embedded,
@@ -72,7 +119,8 @@ pub enum SubtitlePlacement {
 }
 
 /// Policy for image-based subtitle inputs when OCR is unavailable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ImageSubtitleAction {
     /// Preserve the image subtitle without format conversion.
     Preserve,
@@ -162,7 +210,8 @@ pub struct CompiledDesiredTarget {
 }
 
 /// Versioned desired output graph definition.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DesiredTarget {
     /// Stable target key.
     pub target_key: String,
@@ -200,6 +249,24 @@ pub enum TargetCompileError {
     /// A target stream key occurs more than once.
     #[error("duplicate desired target stream key: {0}")]
     DuplicateStreamKey(String),
+    /// A source binding key is present but empty.
+    #[error("desired target source binding key is empty: {0}")]
+    EmptySourceBindingKey(String),
+    /// A language selector is not one normalized ISO-639-3 token.
+    #[error("desired target language is invalid: {0}")]
+    InvalidLanguage(String),
+    /// Desired-target YAML exceeds the accepted byte limit.
+    #[error("desired target YAML payload exceeds the accepted byte limit")]
+    YamlPayloadTooLarge,
+    /// Desired-target YAML cannot be decoded as the versioned target shape.
+    #[error("desired target YAML payload is invalid")]
+    InvalidYaml,
+    /// A desired target exceeds the accepted stream cardinality.
+    #[error("desired target stream count exceeds the accepted limit")]
+    TooManyTargetStreams,
+    /// Reused source binding does not satisfy all grouped target selectors.
+    #[error("desired target source binding is incompatible: {0}")]
+    IncompatibleSourceBinding(String),
     /// A target stream codec is blank.
     #[error("desired target stream codec is empty: {0}")]
     EmptyCodec(String),
@@ -241,6 +308,9 @@ pub enum TargetCompileError {
     /// A synthetic external-input stream id cannot be allocated.
     #[error("sidecar embedding stream identity overflow")]
     SidecarStreamIdentityOverflow,
+    /// A desired output stream identity cannot be allocated.
+    #[error("desired output stream identity overflow")]
+    DesiredStreamIdentityOverflow,
     /// Image-subtitle policy rejected a selected source.
     #[error("image subtitle policy rejected selected source: {0}")]
     ImageSubtitleRejected(String),
@@ -258,11 +328,31 @@ pub enum TargetCompileError {
     UnmatchedSidecar(String),
 }
 
+/// Parse and validate one bounded desired-target YAML document.
+///
+/// # Errors
+///
+/// Returns a [`TargetCompileError`] when the payload exceeds its byte or stream bound, cannot be
+/// decoded, or violates target semantics.
+pub fn parse_desired_target_yaml(yaml_payload: &str) -> Result<DesiredTarget, TargetCompileError> {
+    if yaml_payload.len() > MAX_DESIRED_TARGET_YAML_BYTES {
+        return Err(TargetCompileError::YamlPayloadTooLarge);
+    }
+    let target: DesiredTarget =
+        serde_yaml::from_str(yaml_payload).map_err(|_| TargetCompileError::InvalidYaml)?;
+    if target.streams.len() > MAX_DESIRED_TARGET_STREAMS {
+        return Err(TargetCompileError::TooManyTargetStreams);
+    }
+    validate_target(&target)?;
+    Ok(target)
+}
+
 /// Compile an immutable target and an independent unmatched-stream policy into a desired graph.
 ///
-/// Target rows are evaluated in declared order. Each row consumes the first still-unmatched
-/// source stream satisfying its kind, semantic role, and language selectors. Source stream ids
-/// are therefore runtime correlation values only; they are never part of persisted target identity.
+/// Target rows are evaluated in declared order. A row without `source_binding_key` consumes the
+/// first still-unmatched source satisfying its selectors. Rows sharing an explicit binding key
+/// reuse one selected source while retaining independent desired output identities. Source stream
+/// ids are therefore runtime correlation values only; they are never persisted target identity.
 ///
 /// # Errors
 ///
@@ -276,8 +366,9 @@ pub fn compile_desired_target(
 ) -> Result<DesiredGraph, TargetCompileError> {
     validate_target(target)?;
 
-    let mut consumed = BTreeSet::new();
+    let mut source_bindings = SourceBindingState::default();
     let mut desired_streams = Vec::with_capacity(target.streams.len());
+    let mut desired_bindings = Vec::with_capacity(target.streams.len());
     for target_stream in &target.streams {
         if target_stream.kind == StreamKind::Subtitle
             && matches!(
@@ -289,15 +380,16 @@ pub fn compile_desired_target(
                 target_stream.stream_key.clone(),
             ));
         }
-        let source_stream = source
-            .streams
-            .iter()
-            .find(|stream| !consumed.contains(&stream.stream_id) && matches(stream, target_stream));
-        match source_stream {
+        match source_bindings.select(source, target_stream)? {
             Some(stream) => {
-                consumed.insert(stream.stream_id);
                 if target_stream.subtitle_placement != Some(SubtitlePlacement::None) {
-                    desired_streams.push(apply_target_stream(stream, target_stream));
+                    let output_stream_id = next_output_id(&desired_streams)?;
+                    push_bound_stream(
+                        &mut desired_streams,
+                        &mut desired_bindings,
+                        apply_target_stream(stream, target_stream, output_stream_id),
+                        Some(stream.stream_id),
+                    );
                 }
             }
             None if target_stream.optional => {}
@@ -312,11 +404,20 @@ pub fn compile_desired_target(
     for stream in source
         .streams
         .iter()
-        .filter(|stream| !consumed.contains(&stream.stream_id))
+        .filter(|stream| !source_bindings.consumed.contains(&stream.stream_id))
     {
         match unmatched_policy {
             UnmatchedStreamPolicy::Remove => {}
-            UnmatchedStreamPolicy::Preserve => desired_streams.push(stream.clone()),
+            UnmatchedStreamPolicy::Preserve => {
+                let mut desired_stream = stream.clone();
+                desired_stream.stream_id = next_output_id(&desired_streams)?;
+                push_bound_stream(
+                    &mut desired_streams,
+                    &mut desired_bindings,
+                    desired_stream,
+                    Some(stream.stream_id),
+                );
+            }
             UnmatchedStreamPolicy::Reject => {
                 return Err(TargetCompileError::UnmatchedSourceStream(stream.stream_id));
             }
@@ -326,8 +427,72 @@ pub fn compile_desired_target(
     Ok(DesiredGraph {
         output_path: output_path.to_string(),
         container_format: Some(normalize_container_format(&target.container)),
+        stream_bindings: desired_bindings,
         streams: desired_streams,
     })
+}
+
+#[derive(Default)]
+struct SourceBindingState {
+    consumed: BTreeSet<u32>,
+    selected: BTreeMap<String, u32>,
+}
+
+impl SourceBindingState {
+    fn select<'a>(
+        &mut self,
+        source: &'a MediaGraph,
+        target: &TargetStream,
+    ) -> Result<Option<&'a MediaStream>, TargetCompileError> {
+        let binding_key = normalized_source_binding_key(target);
+        if let Some(stream_id) = self.selected.get(&binding_key) {
+            let selected = source
+                .streams
+                .iter()
+                .find(|stream| stream.stream_id == *stream_id)
+                .filter(|stream| matches(stream, target))
+                .ok_or_else(|| {
+                    TargetCompileError::IncompatibleSourceBinding(binding_key.clone())
+                })?;
+            return Ok(Some(selected));
+        }
+
+        let selected = source
+            .streams
+            .iter()
+            .find(|stream| !self.consumed.contains(&stream.stream_id) && matches(stream, target));
+        if let Some(stream) = selected {
+            self.consumed.insert(stream.stream_id);
+            self.selected.insert(binding_key, stream.stream_id);
+        }
+        Ok(selected)
+    }
+}
+
+fn normalized_source_binding_key(target: &TargetStream) -> String {
+    target
+        .source_binding_key
+        .as_deref()
+        .unwrap_or(&target.stream_key)
+        .trim()
+        .to_ascii_lowercase()
+}
+
+fn next_output_id(streams: &[MediaStream]) -> Result<u32, TargetCompileError> {
+    u32::try_from(streams.len()).map_err(|_| TargetCompileError::DesiredStreamIdentityOverflow)
+}
+
+fn push_bound_stream(
+    streams: &mut Vec<MediaStream>,
+    bindings: &mut Vec<DesiredStreamBinding>,
+    stream: MediaStream,
+    source_stream_id: Option<u32>,
+) {
+    bindings.push(DesiredStreamBinding {
+        output_stream_id: stream.stream_id,
+        source_stream_id,
+    });
+    streams.push(stream);
 }
 
 /// Compile the primary graph and every required subtitle artifact from embedded and sidecar inputs.
@@ -372,40 +537,22 @@ pub fn compile_desired_target_with_sidecars_at(
     sidecars: &[SidecarSubtitleInput],
 ) -> Result<CompiledDesiredTarget, TargetCompileError> {
     validate_target(target)?;
-    let mut consumed_streams = BTreeSet::new();
+    let mut source_bindings = SourceBindingState::default();
     let mut consumed_sidecars = BTreeSet::new();
     let mut state = TargetCompilationState::new(target.streams.len());
-    let mut next_stream_id = source
-        .streams
-        .iter()
-        .map(|stream| stream.stream_id)
-        .max()
-        .map_or(Ok(0), |value| {
-            value
-                .checked_add(1)
-                .ok_or(TargetCompileError::SidecarStreamIdentityOverflow)
-        })?;
 
     for target_stream in &target.streams {
         if target_stream.kind != StreamKind::Subtitle {
-            compile_primary_stream(
-                source,
-                target_stream,
-                &mut consumed_streams,
-                &mut state.desired_streams,
-            )?;
+            compile_primary_stream(source, target_stream, &mut source_bindings, &mut state)?;
             continue;
         }
 
-        let embedded = source.streams.iter().find(|stream| {
-            !consumed_streams.contains(&stream.stream_id) && matches(stream, target_stream)
-        });
+        let embedded = source_bindings.select(source, target_stream)?;
         let sidecar = sidecars.iter().enumerate().find(|(index, sidecar)| {
             !consumed_sidecars.contains(index) && sidecar_matches(sidecar, target_stream)
         });
         match (embedded, sidecar) {
             (Some(stream), _) => {
-                consumed_streams.insert(stream.stream_id);
                 compile_embedded_subtitle(
                     output_path,
                     destination_media_path,
@@ -421,12 +568,8 @@ pub fn compile_desired_target_with_sidecars_at(
                     destination_media_path,
                     sidecar,
                     target_stream,
-                    next_stream_id,
                     &mut state,
                 )?;
-                next_stream_id = next_stream_id
-                    .checked_add(1)
-                    .ok_or(TargetCompileError::SidecarStreamIdentityOverflow)?;
             }
             (None, None) if target_stream.optional => {}
             (None, None) => {
@@ -440,8 +583,8 @@ pub fn compile_desired_target_with_sidecars_at(
     append_unmatched_streams(
         source,
         unmatched_policy,
-        &consumed_streams,
-        &mut state.desired_streams,
+        &source_bindings.consumed,
+        &mut state,
     )?;
     append_unmatched_sidecars(
         sidecars,
@@ -453,6 +596,7 @@ pub fn compile_desired_target_with_sidecars_at(
         graph: DesiredGraph {
             output_path: output_path.to_string(),
             container_format: Some(normalize_container_format(&target.container)),
+            stream_bindings: state.desired_bindings,
             streams: state.desired_streams,
         },
         sidecar_embeddings: state.embeddings,
@@ -463,6 +607,7 @@ pub fn compile_desired_target_with_sidecars_at(
 
 struct TargetCompilationState {
     desired_streams: Vec<MediaStream>,
+    desired_bindings: Vec<DesiredStreamBinding>,
     embeddings: Vec<SidecarEmbedding>,
     outputs: Vec<DesiredSidecarOutput>,
     removals: BTreeSet<String>,
@@ -473,6 +618,7 @@ impl TargetCompilationState {
     fn new(stream_capacity: usize) -> Self {
         Self {
             desired_streams: Vec::with_capacity(stream_capacity),
+            desired_bindings: Vec::with_capacity(stream_capacity),
             embeddings: Vec::new(),
             outputs: Vec::new(),
             removals: BTreeSet::new(),
@@ -484,23 +630,36 @@ impl TargetCompilationState {
 fn compile_primary_stream(
     source: &MediaGraph,
     target: &TargetStream,
-    consumed: &mut BTreeSet<u32>,
-    desired: &mut Vec<MediaStream>,
+    source_bindings: &mut SourceBindingState,
+    state: &mut TargetCompilationState,
 ) -> Result<(), TargetCompileError> {
-    let selected = source
-        .streams
-        .iter()
-        .find(|stream| !consumed.contains(&stream.stream_id) && matches(stream, target));
-    match selected {
+    match source_bindings.select(source, target)? {
         Some(stream) => {
-            consumed.insert(stream.stream_id);
-            desired.push(apply_target_stream(stream, target));
+            state.push_stream(
+                apply_target_stream(stream, target, state.next_output_id()?),
+                Some(stream.stream_id),
+            );
             Ok(())
         }
         None if target.optional => Ok(()),
         None => Err(TargetCompileError::RequiredStreamMissing(
             target.stream_key.clone(),
         )),
+    }
+}
+
+impl TargetCompilationState {
+    fn next_output_id(&self) -> Result<u32, TargetCompileError> {
+        next_output_id(&self.desired_streams)
+    }
+
+    fn push_stream(&mut self, stream: MediaStream, source_stream_id: Option<u32>) {
+        push_bound_stream(
+            &mut self.desired_streams,
+            &mut self.desired_bindings,
+            stream,
+            source_stream_id,
+        );
     }
 }
 
@@ -525,9 +684,10 @@ fn compile_embedded_subtitle(
         placement,
         SubtitlePlacement::Embedded | SubtitlePlacement::Both
     ) {
-        state
-            .desired_streams
-            .push(apply_target_stream(source, target));
+        state.push_stream(
+            apply_target_stream(source, target, state.next_output_id()?),
+            Some(source.stream_id),
+        );
     }
     if matches!(
         placement,
@@ -551,7 +711,6 @@ fn compile_sidecar_subtitle(
     destination_media_path: &str,
     source: &SidecarSubtitleInput,
     target: &TargetStream,
-    stream_id: u32,
     state: &mut TargetCompilationState,
 ) -> Result<(), TargetCompileError> {
     if remove_image_subtitle(source.image_based, &source.codec, target)? {
@@ -568,8 +727,8 @@ fn compile_sidecar_subtitle(
         placement,
         SubtitlePlacement::Embedded | SubtitlePlacement::Both
     ) {
-        let output_stream = apply_sidecar_target(source, target, stream_id);
-        state.desired_streams.push(output_stream.clone());
+        let output_stream = apply_sidecar_target(source, target, state.next_output_id()?);
+        state.push_stream(output_stream.clone(), None);
         state.embeddings.push(SidecarEmbedding {
             path: source.path.clone(),
             companion_path: source.companion_path.clone(),
@@ -670,17 +829,37 @@ fn derive_sidecar_path(
         .ok_or_else(|| {
             TargetCompileError::InvalidSidecarOutputPath(media_output_path.to_string())
         })?;
-    let language = target.language.as_deref().unwrap_or("und");
+    let language = target
+        .language
+        .as_ref()
+        .map_or("und", LanguageToken::as_str);
     let role = target.role.and_then(role_path_token);
     let suffix = role.map_or_else(
         || format!("{language}.{extension}"),
         |role| format!("{language}.{role}.{extension}"),
     );
-    let path = media_path.with_file_name(format!("{stem}.{suffix}"));
+    let file_name = format!("{stem}.{suffix}");
+    if !is_single_path_component(&file_name) {
+        return Err(TargetCompileError::InvalidSidecarOutputPath(file_name));
+    }
+    let path = media_path.with_file_name(&file_name);
+    if path.parent() != media_path.parent() {
+        return Err(TargetCompileError::InvalidSidecarOutputPath(
+            path.to_string_lossy().into_owned(),
+        ));
+    }
     let path = path.to_str().map(str::to_string).ok_or_else(|| {
         TargetCompileError::InvalidSidecarOutputPath(media_output_path.to_string())
     })?;
     Ok(path)
+}
+
+fn is_single_path_component(value: &str) -> bool {
+    if value.contains(['/', '\\']) {
+        return false;
+    }
+    let mut components = Path::new(value).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 fn derive_companion_path(path: &str, extension: &str) -> Option<String> {
@@ -696,7 +875,7 @@ fn append_unmatched_streams(
     source: &MediaGraph,
     policy: UnmatchedStreamPolicy,
     consumed: &BTreeSet<u32>,
-    desired: &mut Vec<MediaStream>,
+    state: &mut TargetCompilationState,
 ) -> Result<(), TargetCompileError> {
     for stream in source
         .streams
@@ -705,7 +884,11 @@ fn append_unmatched_streams(
     {
         match policy {
             UnmatchedStreamPolicy::Remove => {}
-            UnmatchedStreamPolicy::Preserve => desired.push(stream.clone()),
+            UnmatchedStreamPolicy::Preserve => {
+                let mut desired_stream = stream.clone();
+                desired_stream.stream_id = state.next_output_id()?;
+                state.push_stream(desired_stream, Some(stream.stream_id));
+            }
             UnmatchedStreamPolicy::Reject => {
                 return Err(TargetCompileError::UnmatchedSourceStream(stream.stream_id));
             }
@@ -743,11 +926,11 @@ fn append_unmatched_sidecars(
 
 fn sidecar_matches(source: &SidecarSubtitleInput, target: &TargetStream) -> bool {
     target.role.is_none_or(|role| source.role == Some(role))
-        && target.language.as_deref().is_none_or(|language| {
+        && target.language.as_ref().is_none_or(|language| {
             source
                 .language
                 .as_deref()
-                .is_some_and(|source_language| language_matches(source_language, language))
+                .is_some_and(|source_language| language_matches(source_language, language.as_str()))
         })
 }
 
@@ -762,7 +945,11 @@ fn apply_sidecar_target(
         codec: target.codec.trim().to_ascii_lowercase(),
         channels: None,
         channel_layout: None,
-        language: target.language.clone().or_else(|| source.language.clone()),
+        language: target
+            .language
+            .as_ref()
+            .map(|language| language.as_str().to_string())
+            .or_else(|| source.language.clone()),
         title: target.title.clone(),
         dispositions: normalized_dispositions(&target.dispositions),
     }
@@ -823,6 +1010,16 @@ fn validate_target(target: &DesiredTarget) -> Result<(), TargetCompileError> {
 }
 
 fn validate_target_stream(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
+    if let Some(language) = &stream.language {
+        LanguageToken::parse(language.as_str())?;
+    }
+    if stream
+        .source_binding_key
+        .as_deref()
+        .is_some_and(|binding| binding.trim().is_empty())
+    {
+        return Err(TargetCompileError::EmptySourceBindingKey(key.to_string()));
+    }
     if stream.codec.trim().is_empty() {
         return Err(TargetCompileError::EmptyCodec(key.to_string()));
     }
@@ -917,11 +1114,11 @@ fn matches(source: &MediaStream, target: &TargetStream) -> bool {
         && target
             .role
             .is_none_or(|required_role| infer_role(source) == required_role)
-        && target.language.as_deref().is_none_or(|language| {
+        && target.language.as_ref().is_none_or(|language| {
             source
                 .language
                 .as_deref()
-                .is_some_and(|source_language| language_matches(source_language, language))
+                .is_some_and(|source_language| language_matches(source_language, language.as_str()))
         })
 }
 
@@ -929,19 +1126,21 @@ fn language_matches(source: &str, target: &str) -> bool {
     source.trim().eq_ignore_ascii_case(target.trim())
 }
 
-fn apply_target_stream(source: &MediaStream, target: &TargetStream) -> MediaStream {
+fn apply_target_stream(
+    source: &MediaStream,
+    target: &TargetStream,
+    output_stream_id: u32,
+) -> MediaStream {
     MediaStream {
-        stream_id: source.stream_id,
+        stream_id: output_stream_id,
         kind: source.kind,
         codec: target.codec.trim().to_ascii_lowercase(),
         channels: target.channels,
         channel_layout: target.channel_layout.clone(),
         language: target
             .language
-            .as_deref()
-            .map(str::trim)
-            .filter(|language| !language.is_empty())
-            .map(str::to_ascii_lowercase)
+            .as_ref()
+            .map(|language| language.as_str().to_string())
             .or_else(|| source.language.clone()),
         title: target.title.clone(),
         dispositions: normalized_dispositions(&target.dispositions),
@@ -961,13 +1160,15 @@ fn normalized_dispositions(dispositions: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DesiredTarget, ImageSubtitleAction, SidecarOutputSource, SidecarSubtitleInput,
-        SubtitlePlacement, TargetCompileError, TargetStream, UnmatchedStreamPolicy,
-        compile_desired_target, compile_desired_target_with_sidecars,
-        compile_desired_target_with_sidecars_at,
+        DesiredTarget, ImageSubtitleAction, LanguageToken, SidecarOutputSource,
+        SidecarSubtitleInput, SubtitlePlacement, TargetCompileError, TargetStream,
+        UnmatchedStreamPolicy, compile_desired_target, compile_desired_target_with_sidecars,
+        compile_desired_target_with_sidecars_at, is_single_path_component,
+        parse_desired_target_yaml,
     };
     use crate::classify::SemanticRole;
     use crate::model::{MediaGraph, MediaStream, StreamKind};
+    use std::path::Path;
 
     fn stream(
         stream_id: u32,
@@ -1003,7 +1204,8 @@ mod tests {
             stream_key: key.to_string(),
             kind,
             role,
-            language: language.map(str::to_string),
+            language: language.map(|value| LanguageToken(value.to_string())),
+            source_binding_key: None,
             optional: false,
             codec: codec.to_string(),
             channels: None,
@@ -1141,11 +1343,25 @@ mod tests {
                 .map(|stream| (stream.stream_id, stream.codec.as_str()))
                 .collect::<Vec<_>>(),
             vec![
-                (3, "png"),
-                (7, "opus"),
-                (5, "av1"),
-                (9, "aac"),
-                (13, "webvtt")
+                (0, "png"),
+                (1, "opus"),
+                (2, "av1"),
+                (3, "aac"),
+                (4, "webvtt")
+            ]
+        );
+        assert_eq!(
+            desired
+                .stream_bindings
+                .iter()
+                .map(|binding| (binding.output_stream_id, binding.source_stream_id))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, Some(3)),
+                (1, Some(7)),
+                (2, Some(5)),
+                (3, Some(9)),
+                (4, Some(13))
             ]
         );
         assert_eq!(desired.streams[1].channels, Some(2));
@@ -1184,7 +1400,10 @@ mod tests {
             UnmatchedStreamPolicy::Preserve,
         )?;
 
-        assert_eq!(desired.streams, source.streams);
+        assert_eq!(desired.streams.len(), 1);
+        assert_eq!(desired.streams[0].stream_id, 0);
+        assert_eq!(desired.streams[0].codec, source.streams[0].codec);
+        assert_eq!(desired.stream_bindings[0].source_stream_id, Some(2));
         Ok(())
     }
 
@@ -1409,7 +1628,8 @@ mod tests {
         )?;
 
         assert_eq!(compiled.graph.streams.len(), 2);
-        assert_eq!(compiled.graph.streams[1].stream_id, 3);
+        assert_eq!(compiled.graph.streams[1].stream_id, 1);
+        assert_eq!(compiled.graph.stream_bindings[1].source_stream_id, None);
         assert_eq!(compiled.sidecar_embeddings.len(), 1);
         assert!(compiled.sidecar_outputs.is_empty());
         assert_eq!(compiled.sidecar_removals, vec![sidecars[0].path.clone()]);
@@ -1700,5 +1920,212 @@ mod tests {
                 "subtitle".to_string()
             ))
         );
+    }
+
+    #[test]
+    fn explicit_source_binding_fans_one_audio_source_out_to_two_outputs()
+    -> Result<(), TargetCompileError> {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![stream(
+                17,
+                StreamKind::Audio,
+                "dts",
+                Some("eng"),
+                Some("Main"),
+                &["default"],
+            )],
+        };
+        let mut stereo = target_stream(
+            "audio-stereo",
+            StreamKind::Audio,
+            Some(SemanticRole::Primary),
+            Some("eng"),
+            "aac",
+        );
+        stereo.source_binding_key = Some("main-dts".to_string());
+        stereo.channels = Some(2);
+        stereo.channel_layout = Some("stereo".to_string());
+        let mut surround = target_stream(
+            "audio-surround",
+            StreamKind::Audio,
+            Some(SemanticRole::Primary),
+            Some("eng"),
+            "eac3",
+        );
+        surround.source_binding_key = Some("main-dts".to_string());
+        surround.channels = Some(6);
+        surround.channel_layout = Some("5.1".to_string());
+        let target = DesiredTarget {
+            target_key: "audio-fanout".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![stereo, surround],
+        };
+
+        let desired = compile_desired_target(
+            &source,
+            "/output/movie.mkv",
+            &target,
+            UnmatchedStreamPolicy::Reject,
+        )?;
+
+        assert_eq!(desired.streams.len(), 2);
+        assert_eq!(desired.streams[0].stream_id, 0);
+        assert_eq!(desired.streams[0].codec, "aac");
+        assert_eq!(desired.streams[1].stream_id, 1);
+        assert_eq!(desired.streams[1].codec, "eac3");
+        assert_eq!(
+            desired
+                .stream_bindings
+                .iter()
+                .map(|binding| binding.source_stream_id)
+                .collect::<Vec<_>>(),
+            vec![Some(17), Some(17)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn desired_target_yaml_rejects_language_path_payloads() -> Result<(), TargetCompileError> {
+        let invalid = [
+            "../escape",
+            "/absolute",
+            r"..\escape",
+            "eng/escape",
+            "eng%2fescape",
+            "eng%2Fescape",
+            "eng%5cescape",
+            "eng%5Cescape",
+            r"C:\escape",
+            r"\\server\share",
+            "en\u{0000}",
+            "ENG",
+            ".",
+        ];
+        for value in invalid {
+            assert!(LanguageToken::parse(value).is_err(), "accepted {value:?}");
+            let yaml = format!(
+                "target_key: language-boundary\nversion: 1\ncontainer: matroska\nstreams:\n  - stream_key: subtitles\n    kind: subtitle\n    language: {value:?}\n    optional: false\n    codec: subrip\n"
+            );
+            assert!(
+                parse_desired_target_yaml(&yaml).is_err(),
+                "desired-target YAML accepted {value:?}"
+            );
+        }
+        let valid = parse_desired_target_yaml(
+            "target_key: language-boundary\nversion: 1\ncontainer: matroska\nstreams:\n  - stream_key: subtitles\n    kind: subtitle\n    language: eng\n    optional: false\n    codec: subrip\n",
+        )?;
+        assert_eq!(
+            valid.streams[0]
+                .language
+                .as_ref()
+                .map(LanguageToken::as_str),
+            Some("eng")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn compiler_rejects_forged_language_before_sidecar_derivation() {
+        let source = MediaGraph {
+            source_path: "/library/movie.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![stream(
+                4,
+                StreamKind::Subtitle,
+                "subrip",
+                Some("eng"),
+                Some("Forced"),
+                &["forced"],
+            )],
+        };
+        let mut subtitle = target_stream(
+            "forced",
+            StreamKind::Subtitle,
+            Some(SemanticRole::Forced),
+            Some("eng"),
+            "srt",
+        );
+        subtitle.language = Some(LanguageToken("../escape".to_string()));
+        subtitle.subtitle_placement = Some(SubtitlePlacement::Sidecar);
+        let target = DesiredTarget {
+            target_key: "forged-language".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            streams: vec![subtitle],
+        };
+
+        assert_eq!(
+            compile_desired_target_with_sidecars_at(
+                &source,
+                "/workspace/movie.mkv",
+                "/library/movie.mkv",
+                &target,
+                UnmatchedStreamPolicy::Remove,
+                &[],
+            ),
+            Err(TargetCompileError::InvalidLanguage("../escape".to_string()))
+        );
+    }
+
+    #[test]
+    fn desired_target_yaml_compiles_contained_workspace_and_destination_sidecars()
+    -> Result<(), TargetCompileError> {
+        let target = parse_desired_target_yaml(
+            "target_key: imported-sidecar\nversion: 1\ncontainer: matroska\nstreams:\n  - stream_key: forced\n    kind: subtitle\n    role: forced\n    language: eng\n    optional: false\n    codec: srt\n    subtitle_placement: sidecar\n",
+        )?;
+        let source = MediaGraph {
+            source_path: "/library/movie.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![stream(
+                4,
+                StreamKind::Subtitle,
+                "subrip",
+                Some("eng"),
+                Some("Forced"),
+                &["forced"],
+            )],
+        };
+
+        let compiled = compile_desired_target_with_sidecars_at(
+            &source,
+            "/workspace/movie.mkv",
+            "/library/movie.mkv",
+            &target,
+            UnmatchedStreamPolicy::Remove,
+            &[],
+        )?;
+        let output = &compiled.sidecar_outputs[0];
+        assert_eq!(
+            Path::new(&output.path).parent(),
+            Some(Path::new("/workspace"))
+        );
+        assert_eq!(
+            Path::new(&output.destination_path).parent(),
+            Some(Path::new("/library"))
+        );
+        assert!(
+            Path::new(&output.path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(is_single_path_component)
+        );
+        assert!(
+            Path::new(&output.destination_path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(is_single_path_component)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn sidecar_file_name_is_exactly_one_relative_component() {
+        assert!(is_single_path_component("movie.eng.srt"));
+        for value in ["../movie.eng.srt", "/movie.eng.srt", r"..\movie.eng.srt"] {
+            assert!(!is_single_path_component(value), "accepted {value:?}");
+        }
     }
 }
