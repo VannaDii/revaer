@@ -13,7 +13,7 @@ inputs:
     required: false
     default: ""
   apt-profile:
-    description: Predefined apt package set (base, db).
+    description: Predefined apt package set (base, db, coverage).
     required: false
     default: ""
   node-version:
@@ -74,6 +74,9 @@ runs:
               ;;
             db)
               packages=(libtorrent-rasterbar-dev pkg-config libpq-dev postgresql-client sccache)
+              ;;
+            coverage)
+              packages=(libtorrent-rasterbar-dev pkg-config libpq-dev postgresql-client sccache clang-19)
               ;;
             "")
               packages=()

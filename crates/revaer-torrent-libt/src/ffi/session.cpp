@@ -58,6 +58,14 @@
 #include <libtorrent/write_resume_data.hpp>
 #include <openssl/evp.h>
 
+#ifndef REVAER_LIBTORRENT_ABI_VERSION
+#error "libtorrent ABI configuration missing"
+#endif
+
+static_assert(
+    TORRENT_ABI_VERSION == REVAER_LIBTORRENT_ABI_VERSION,
+    "libtorrent header and library ABI configuration differ");
+
 namespace revaer {
 
 namespace {
@@ -516,6 +524,12 @@ std::string unsupported_setting_message(const char* name) {
 
 void set_strict_super_seeding(lt::settings_pack& pack, bool value) {
     set_bool_setting(pack, "strict_super_seeding", value);
+}
+
+bool matches_any(const std::vector<std::regex>& patterns, const std::string& value) {
+    return std::any_of(patterns.begin(), patterns.end(), [&value](const std::regex& re) {
+        return std::regex_match(value, re);
+    });
 }
 }  // namespace
 
@@ -1907,7 +1921,7 @@ public:
                     evt.id = id;
                     evt.kind = NativeEventKind::Error;
                     evt.state = NativeTorrentState::Failed;
-                    evt.message = err->error.message();
+                    evt.message = err->message();
                     events.push_back(evt);
                 }
             }
@@ -1922,16 +1936,16 @@ public:
                     NativeTrackerStatus status{};
                     status.url = tracker_err->tracker_url();
                     status.status = "error";
-                    status.message = tracker_err->error.message();
+                    status.message = tracker_err->message();
                     evt.tracker_statuses.push_back(std::move(status));
                     events.push_back(evt);
                 }
             }
             if (auto* listen_err = lt::alert_cast<lt::listen_failed_alert>(alert)) {
-                push_session_error("network", listen_err->error.message(), std::string());
+                push_session_error("network", listen_err->message(), std::string());
             }
             if (auto* portmap_err = lt::alert_cast<lt::portmap_error_alert>(alert)) {
-                push_session_error("portmap", portmap_err->error.message(), std::string());
+                push_session_error("portmap", portmap_err->message(), std::string());
             }
             if (auto* storage_err = lt::alert_cast<lt::file_error_alert>(alert)) {
                 auto id = find_torrent_id(storage_err->handle);
@@ -1939,9 +1953,10 @@ public:
                 evt.id = id;
                 evt.kind = NativeEventKind::Error;
                 evt.state = NativeTorrentState::Failed;
-                evt.message = storage_err->error.message();
+                const auto message = storage_err->message();
+                evt.message = message;
                 events.push_back(evt);
-                push_session_error("storage", storage_err->error.message(), id);
+                push_session_error("storage", message, id);
             }
             if (auto* tracker_warn = lt::alert_cast<lt::tracker_warning_alert>(alert)) {
                 auto id = find_torrent_id(tracker_warn->handle);
@@ -1962,7 +1977,7 @@ public:
             if (auto* tracker_err =
                     lt::alert_cast<lt::tracker_error_alert>(alert)) {
                 auto id = find_torrent_id(tracker_err->handle);
-                push_session_error("tracker", tracker_err->error.message(), id);
+                push_session_error("tracker", tracker_err->message(), id);
             }
             if (auto* peer_ban = lt::alert_cast<lt::peer_ban_alert>(alert)) {
                 auto id = find_torrent_id(peer_ban->handle);
@@ -2013,7 +2028,7 @@ public:
                     evt.id = id;
                     evt.kind = NativeEventKind::Error;
                     evt.state = snapshot->second.state;
-                    evt.message = move_failed->error.message();
+                    evt.message = move_failed->message();
                     events.push_back(evt);
                 }
             }
@@ -2286,13 +2301,6 @@ private:
         evt.message = message;
         events.push_back(std::move(evt));
         stale_ids.insert(id);
-    }
-
-    bool matches_any(const std::vector<std::regex>& patterns, const std::string& value) const {
-        return std::any_of(patterns.begin(), patterns.end(),
-                           [&value](const std::regex& re) {
-                               return std::regex_match(value, re);
-                           });
     }
 
     void apply_selection(const std::string& id, lt::torrent_handle& handle) {
