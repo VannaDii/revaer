@@ -332,3 +332,4 @@
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
 -   [407](407-database-backed-coverage-execution.md) – Database-backed coverage execution
 -   [409](409-portable-helm-annotation-rendering.md) – Portable Helm annotation rendering
+-   [410](410-libtorrent-21-compatibility.md) – Libtorrent 2.1 compatibility foundation
