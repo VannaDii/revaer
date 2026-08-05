@@ -21,4 +21,5 @@
 
 pub mod capabilities;
 mod process;
+pub mod sidecar;
 pub mod workspace;
