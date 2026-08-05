@@ -34,7 +34,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 # Noise And Scope
 
 - Generated or vendored paths excluded by `sonar-project.properties` are not first-party maintainability targets unless the user explicitly asks about them.
-- If Sonar noise appears to come from generated or vendored files, verify whether the scope or exclusion rules need to be updated in `sonar-project.properties`.
+- If Sonar noise comes from committed generated, vendored, or binary files, delete, regenerate, or replace the input with reviewable UTF-8 source. Do not hide the input through scanner exclusions without explicit operator consent.
 
 # Expectations After Fixes
 

@@ -7684,17 +7684,17 @@ strong {
     .bg-\[url\(\'\/images\/landing\/testimonial-background\.svg\'\)\] {
         background-image: url(../images/landing/testimonial-background.svg);
     }
-    .bg-\[url\(\/images\/apps\/ecommerce\/products\/9\.jpg\)\] {
-        background-image: url(../images/apps/ecommerce/products/9.jpg);
+    .bg-\[url\(\/images\/apps\/ecommerce\/products\/9\.svg\)\] {
+        background-image: url(../images/apps/ecommerce/products/9.svg);
     }
-    .bg-\[url\(\/images\/landing\/hero-bg-gradient\.png\)\] {
-        background-image: url(../images/landing/hero-bg-gradient.png);
+    .bg-\[url\(\/images\/landing\/hero-bg-gradient\.svg\)\] {
+        background-image: url(../images/landing/hero-bg-gradient.svg);
     }
-    .bg-\[url\(\/images\/landing\/showcase-bg-element\.png\)\] {
-        background-image: url(../images/landing/showcase-bg-element.png);
+    .bg-\[url\(\/images\/landing\/showcase-bg-element\.svg\)\] {
+        background-image: url(../images/landing/showcase-bg-element.svg);
     }
-    .bg-\[url\(\/images\/landing\/showcase-bg-gradient\.png\)\] {
-        background-image: url(../images/landing/showcase-bg-gradient.png);
+    .bg-\[url\(\/images\/landing\/showcase-bg-gradient\.svg\)\] {
+        background-image: url(../images/landing/showcase-bg-gradient.svg);
     }
     .from-\(--root-bg\) {
         --tw-gradient-from: var(--root-bg);
@@ -14016,7 +14016,7 @@ input:-webkit-autofill:active {
     border-width: 0;
 }
 .grainy {
-    background: #fff0 url(../images/landing/footer-grainy.png) 50%;
+    background: #fff0 url(../images/landing/footer-grainy.svg) 50%;
 }
 .landing-gradient-underline {
     position: relative;

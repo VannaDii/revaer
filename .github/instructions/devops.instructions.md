@@ -27,6 +27,7 @@ applyTo:
 - Workflows that install Rust toolchains must use the repository's configured toolchain source of truth rather than hard-coded ad hoc channels unless a documented exception is required.
 - Workflow build, lint, test, coverage, and release gates must call `just` recipes. Do not reintroduce raw `cargo` pipelines into CI jobs.
 - Justfile recipes must run under non-login Bash so caller-selected Rust and NVM tool paths remain active inside every recipe.
+- `just check-assets` must run the canonical asset synchronizer and compare `crates/revaer-ui/static/nexus/**` from the repository root; a cwd-relative comparison that misses generated served assets is forbidden.
 - Generated Playwright API schema output must remain ignored and untracked. Regenerate it from the committed OpenAPI document at test time through `just api-test-client`, using `npm ci` so `tests/package-lock.json` is the complete dependency-resolution source of truth; keep the generated-source guardrail and its fixture tests in `just policy`.
 - `pr.yml` is the sole pull-request validation workflow. Keep formatting, lint, test, audit, deny, coverage, E2E, and other verification gates there so pull requests are validated exactly once before merge.
 - `pr.yml` must run its release-build validation job on pull requests. Keep post-merge and tag publication in `ci.yml`, but do not hide PR release-build validation behind main/tag-only guards.
