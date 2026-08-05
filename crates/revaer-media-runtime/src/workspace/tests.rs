@@ -270,6 +270,230 @@ fn stale_workspace_cleanup_missing_root_returns_empty() -> Result<(), Box<dyn st
 }
 
 #[test]
+fn bounded_janitor_rejects_zero_budget_and_handles_missing_root()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = temp_workspace_root()?;
+    fs::remove_dir_all(&root)?;
+
+    let invalid = cleanup_stale_workspaces_bounded(
+        &root,
+        &[],
+        SystemTime::now(),
+        WorkspaceRetentionPolicy {
+            workspace_max_age: Duration::ZERO,
+            diagnostics_max_age: Duration::ZERO,
+            max_entries_per_tick: 0,
+        },
+    );
+    assert!(matches!(
+        invalid,
+        Err(ManagedWorkspaceError::InvalidCleanupPolicy)
+    ));
+
+    let report = cleanup_stale_workspaces_bounded(
+        &root,
+        &[],
+        SystemTime::now(),
+        WorkspaceRetentionPolicy {
+            workspace_max_age: Duration::ZERO,
+            diagnostics_max_age: Duration::ZERO,
+            max_entries_per_tick: 1,
+        },
+    )?;
+    assert_eq!(report.examined_entries, 0);
+    assert!(report.removed.is_empty());
+    assert!(report.failures.is_empty());
+    assert!(!report.limit_reached);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_workspace_and_janitors_report_inaccessible_parent_paths() {
+    let inaccessible = PathBuf::from("/dev/null/revaer-workspace");
+
+    assert!(matches!(
+        create_managed_workspace(&inaccessible, "job"),
+        Err(ManagedWorkspaceError::Io {
+            operation: "workspace.create_root",
+            path,
+            ..
+        }) if path == inaccessible
+    ));
+    assert!(matches!(
+        cleanup_stale_workspaces(&inaccessible, &[], SystemTime::now(), Duration::ZERO),
+        Err(ManagedWorkspaceError::Io {
+            operation: "workspace.cleanup_root_exists",
+            path,
+            ..
+        }) if path == inaccessible
+    ));
+    assert!(matches!(
+        cleanup_stale_workspaces_bounded(
+            &inaccessible,
+            &[],
+            SystemTime::now(),
+            WorkspaceRetentionPolicy {
+                workspace_max_age: Duration::ZERO,
+                diagnostics_max_age: Duration::ZERO,
+                max_entries_per_tick: 1,
+            },
+        ),
+        Err(ManagedWorkspaceError::Io {
+            operation: "workspace.cleanup_root_exists",
+            path,
+            ..
+        }) if path == inaccessible
+    ));
+}
+
+#[test]
+fn janitors_preserve_future_dated_workspace_entries() -> Result<(), Box<dyn std::error::Error>> {
+    let root = temp_workspace_root()?;
+    let future = root.join("future-job");
+    fs::create_dir(&future)?;
+
+    let removed = cleanup_stale_workspaces(&root, &[], SystemTime::UNIX_EPOCH, Duration::ZERO)?;
+    assert!(removed.is_empty());
+
+    let report = cleanup_stale_workspaces_bounded(
+        &root,
+        &[],
+        SystemTime::UNIX_EPOCH,
+        WorkspaceRetentionPolicy {
+            workspace_max_age: Duration::ZERO,
+            diagnostics_max_age: Duration::ZERO,
+            max_entries_per_tick: 4,
+        },
+    )?;
+    assert_eq!(report.examined_entries, 1);
+    assert!(report.removed.is_empty());
+    assert!(report.failures.is_empty());
+    assert!(!report.limit_reached);
+    assert!(future.exists());
+
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn janitors_ignore_non_utf8_workspace_entries() -> Result<(), Box<dyn std::error::Error>> {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let root = temp_workspace_root()?;
+    let non_utf8 = root.join(OsString::from_vec(vec![0xff]));
+    fs::create_dir(&non_utf8)?;
+
+    let removed = cleanup_stale_workspaces(
+        &root,
+        &[],
+        SystemTime::now() + Duration::from_secs(1),
+        Duration::ZERO,
+    )?;
+    assert!(removed.is_empty());
+    let report = cleanup_stale_workspaces_bounded(
+        &root,
+        &[],
+        SystemTime::now() + Duration::from_secs(1),
+        WorkspaceRetentionPolicy {
+            workspace_max_age: Duration::ZERO,
+            diagnostics_max_age: Duration::ZERO,
+            max_entries_per_tick: 1,
+        },
+    )?;
+    assert_eq!(report.examined_entries, 1);
+    assert!(report.removed.is_empty());
+    assert!(report.failures.is_empty());
+    assert!(!report.limit_reached);
+    assert!(non_utf8.exists());
+
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn janitors_report_unreadable_root() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temp_workspace_root()?;
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o000))?;
+    let legacy = cleanup_stale_workspaces(&root, &[], SystemTime::now(), Duration::ZERO);
+    let bounded = cleanup_stale_workspaces_bounded(
+        &root,
+        &[],
+        SystemTime::now(),
+        WorkspaceRetentionPolicy {
+            workspace_max_age: Duration::ZERO,
+            diagnostics_max_age: Duration::ZERO,
+            max_entries_per_tick: 1,
+        },
+    );
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
+
+    assert!(matches!(
+        legacy,
+        Err(ManagedWorkspaceError::Io {
+            operation: "workspace.cleanup_read_root",
+            path,
+            ..
+        }) if path == root
+    ));
+    assert!(matches!(
+        bounded,
+        Err(ManagedWorkspaceError::Io {
+            operation: "workspace.cleanup_read_root",
+            path,
+            ..
+        }) if path == root
+    ));
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn legacy_and_direct_cleanup_report_unreadable_workspace() -> Result<(), Box<dyn std::error::Error>>
+{
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temp_workspace_root()?;
+    let workspace = create_managed_workspace(&root, "blocked-job")?;
+    fs::write(workspace.diagnostics_path.join("evidence"), b"bounded")?;
+    fs::set_permissions(&workspace.job_path, fs::Permissions::from_mode(0o000))?;
+
+    let legacy = cleanup_stale_workspaces(
+        &root,
+        &[],
+        SystemTime::now() + Duration::from_secs(1),
+        Duration::ZERO,
+    );
+    let direct = teardown_managed_workspace(&workspace);
+    fs::set_permissions(&workspace.job_path, fs::Permissions::from_mode(0o700))?;
+
+    assert!(matches!(
+        legacy,
+        Err(ManagedWorkspaceError::Io {
+            operation: "workspace.cleanup_remove",
+            path,
+            ..
+        }) if path == workspace.job_path
+    ));
+    assert!(matches!(
+        direct,
+        Err(ManagedWorkspaceError::Io {
+            operation: "workspace.teardown_remove",
+            path,
+            ..
+        }) if path == workspace.job_path
+    ));
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
 fn terminal_workspace_cleanup_completed_removes_job_directory()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = temp_workspace_root()?;
