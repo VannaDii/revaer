@@ -2797,8 +2797,10 @@ dependencies = [
 name = "revaer-media-runtime"
 version = "0.1.0"
 dependencies = [
+ "revaer-media-core",
  "rustix",
  "serde",
+ "serde_json",
  "thiserror 2.0.19",
 ]
 

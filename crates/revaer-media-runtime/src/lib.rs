@@ -15,11 +15,13 @@
 
 //! Runtime adapters and orchestration primitives for media processing.
 //!
-//! The initial surface provides deterministic, bounded discovery of the deployed
-//! `FFmpeg` toolchain. Callers inject [`capabilities::CapabilityProbeExecutor`] in
-//! tests and use [`capabilities::SystemCapabilityProbeExecutor`] at bootstrap.
+//! The runtime provides deterministic, bounded discovery of the deployed
+//! `FFmpeg` toolchain, adjacent subtitle sidecars, managed workspace lifecycle,
+//! and normalized media inspection. Runtime collaborators are injected; bootstrap
+//! code may select the concrete system adapters.
 
 pub mod capabilities;
+pub mod inspect;
 mod process;
 pub mod sidecar;
 pub mod workspace;
