@@ -263,7 +263,7 @@ sync-assets:
     cargo run -p asset_sync
 
 check-assets: sync-assets
-    git diff --exit-code -- static/nexus
+    git diff --exit-code -- crates/revaer-ui/static/nexus
 
 trunk-install:
     required_trunk_version="0.21.14"; \
