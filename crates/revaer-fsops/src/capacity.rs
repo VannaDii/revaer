@@ -34,11 +34,30 @@ pub fn available_bytes(path: impl AsRef<Path>) -> FsOpsResult<u64> {
 mod tests {
     use super::available_bytes;
 
+    use crate::error::FsOpsError;
+
     #[test]
     fn available_bytes_reports_capacity_for_existing_path() -> anyhow::Result<()> {
         let temp = tempfile::tempdir()?;
         let available = available_bytes(temp.path())?;
         assert!(available > 0);
+        Ok(())
+    }
+
+    #[test]
+    fn available_bytes_reports_missing_path() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let missing = temp.path().join("missing");
+        let result = available_bytes(&missing);
+
+        assert!(matches!(
+            result,
+            Err(FsOpsError::Nix {
+                operation: "capacity.statvfs",
+                path,
+                ..
+            }) if path == missing
+        ));
         Ok(())
     }
 }
