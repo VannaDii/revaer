@@ -347,6 +347,7 @@
     -   [315: Indexer import job runtime worker](adr/315-indexer-import-job-runtime-worker.md)
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
     -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
+    -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
     -   [407: Database-backed coverage execution](adr/407-database-backed-coverage-execution.md)
     -   [409: Portable Helm annotation rendering](adr/409-portable-helm-annotation-rendering.md)
