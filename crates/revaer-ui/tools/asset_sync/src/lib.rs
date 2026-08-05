@@ -16,12 +16,13 @@
 //!
 //! # Design
 //! - Resolves the UI root relative to `CARGO_MANIFEST_DIR` so it can be run from any cwd.
-//! - Copies CSS, images, and JS into `static/nexus`, replacing any previous outputs.
+//! - Copies CSS and JS into `static/nexus`, replacing previous synced outputs.
+//! - Validates the committed UTF-8 `static/nexus/images` runtime asset directory.
 //! - Validates the copied CSS for size and a `DaisyUI` marker before writing the lock file.
 //! - Emits a deterministic `ASSET_LOCK.txt` containing the CSS hash and directory stats.
 //!
-//! Failure modes include missing vendor inputs, copy errors, invalid CSS contents,
-//! or inability to write outputs and the lock file.
+//! Failure modes include missing vendor or runtime inputs, copy errors, invalid CSS
+//! contents, or inability to write outputs and the lock file.
 
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
@@ -36,6 +37,13 @@ const VENDOR_ROOT: &str = "ui_vendor/nexus-html@3.1.0";
 const OUTPUT_ROOT: &str = "static/nexus";
 const MIN_CSS_BYTES: usize = 1024;
 const CSS_MARKER: &str = ".btn";
+const DATATABLES_JS: &str = "components/datatables.js";
+const LEGACY_AVATAR_DIRECTORY: &str = "/images/avatars/";
+const LEGACY_AVATAR_EXTENSION: &str = ".png";
+const DATATABLES_AVATAR_COUNT: u8 = 10;
+const DATATABLES_MAP_MARKER: &str = "        ...data,\n";
+const DATATABLES_AVATAR_CANONICALIZER: &str =
+    "        avatar: data.avatar.replace(\".png\", \".svg\"),\n";
 
 /// Errors returned by the asset sync tool.
 #[derive(Debug)]
@@ -76,6 +84,13 @@ pub enum AssetSyncError {
         /// CSS path that failed validation.
         path: PathBuf,
         /// Reason the CSS was rejected.
+        reason: String,
+    },
+    /// The copied JavaScript failed canonicalization.
+    JsInvalid {
+        /// JavaScript path that failed validation.
+        path: PathBuf,
+        /// Reason the JavaScript was rejected.
         reason: String,
     },
     /// Traversal of a directory failed.
@@ -121,6 +136,11 @@ impl Display for AssetSyncError {
                 "copied CSS failed validation at {}: {reason}",
                 path.display()
             ),
+            Self::JsInvalid { path, reason } => write!(
+                formatter,
+                "copied JavaScript failed validation at {}: {reason}",
+                path.display()
+            ),
             Self::WalkFailed { path, message } => {
                 write!(
                     formatter,
@@ -150,8 +170,8 @@ struct DirStats {
 /// Run the asset synchronization using the repository-relative paths.
 ///
 /// # Errors
-/// Returns an error if vendor inputs are missing, outputs cannot be written,
-/// or the copied CSS fails the sanity check.
+/// Returns an error if vendor or runtime inputs are missing, outputs cannot be
+/// written, or the copied CSS fails the sanity check.
 pub fn run() -> Result<(), AssetSyncError> {
     let ui_root = ui_root_dir()?;
     sync_assets(&ui_root)
@@ -170,11 +190,9 @@ fn ui_root_dir() -> Result<PathBuf, AssetSyncError> {
 
 fn sync_assets(ui_root: &Path) -> Result<(), AssetSyncError> {
     let vendor_css = ui_root.join(VENDOR_ROOT).join("html/assets/app.css");
-    let vendor_images = ui_root.join(VENDOR_ROOT).join("html/images");
     let vendor_js = ui_root.join(VENDOR_ROOT).join("public/js");
 
     ensure_file(&vendor_css)?;
-    ensure_dir(&vendor_images)?;
     ensure_dir(&vendor_js)?;
 
     let output_root = ui_root.join(OUTPUT_ROOT);
@@ -184,10 +202,11 @@ fn sync_assets(ui_root: &Path) -> Result<(), AssetSyncError> {
     let output_js = output_root.join("js");
 
     ensure_dir_exists(&output_assets)?;
+    ensure_dir(&output_images)?;
 
     copy_file(&vendor_css, &output_css)?;
-    copy_dir(&vendor_images, &output_images)?;
     copy_dir(&vendor_js, &output_js)?;
+    canonicalize_js_asset_references(&output_js)?;
 
     validate_css(&output_css)?;
 
@@ -293,6 +312,56 @@ fn validate_css(path: &Path) -> Result<(), AssetSyncError> {
         });
     }
     Ok(())
+}
+
+fn canonicalize_js_asset_references(output_js: &Path) -> Result<(), AssetSyncError> {
+    let datatables_path = output_js.join(DATATABLES_JS);
+    if !datatables_path.is_file() {
+        return Ok(());
+    }
+    let contents = fs::read_to_string(&datatables_path).map_err(|source| AssetSyncError::Io {
+        path: datatables_path.clone(),
+        source,
+    })?;
+    let canonical = canonicalize_legacy_avatar_paths(&datatables_path, &contents)?;
+    if canonical != contents {
+        fs::write(&datatables_path, canonical).map_err(|source| AssetSyncError::Io {
+            path: datatables_path,
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+fn canonicalize_legacy_avatar_paths(path: &Path, contents: &str) -> Result<String, AssetSyncError> {
+    if !contents.contains(LEGACY_AVATAR_DIRECTORY) {
+        return Ok(contents.to_string());
+    }
+    let mut unmatched = contents.to_string();
+    for avatar_index in 1..=DATATABLES_AVATAR_COUNT {
+        let legacy = format!("{LEGACY_AVATAR_DIRECTORY}{avatar_index}{LEGACY_AVATAR_EXTENSION}");
+        unmatched = unmatched.replace(&legacy, "");
+    }
+    if unmatched.contains(LEGACY_AVATAR_DIRECTORY) && unmatched.contains(LEGACY_AVATAR_EXTENSION) {
+        return Err(AssetSyncError::JsInvalid {
+            path: path.to_path_buf(),
+            reason: "unknown DataTables avatar image reference".to_string(),
+        });
+    }
+    if contents.contains(DATATABLES_AVATAR_CANONICALIZER) {
+        return Ok(contents.to_string());
+    }
+    if !contents.contains(DATATABLES_MAP_MARKER) {
+        return Err(AssetSyncError::JsInvalid {
+            path: path.to_path_buf(),
+            reason: "missing DataTables row mapping for avatar canonicalization".to_string(),
+        });
+    }
+    Ok(contents.replacen(
+        DATATABLES_MAP_MARKER,
+        &format!("{DATATABLES_MAP_MARKER}{DATATABLES_AVATAR_CANONICALIZER}"),
+        1,
+    ))
 }
 
 fn sha256_hex(path: &Path) -> Result<String, AssetSyncError> {
@@ -411,13 +480,23 @@ mod tests {
         }
         fs::write(&css_path, css)?;
 
-        let images_path = root.join(VENDOR_ROOT).join("html/images");
+        let images_path = root.join(OUTPUT_ROOT).join("images");
         fs::create_dir_all(&images_path)?;
-        fs::write(images_path.join("logo.png"), "png")?;
+        fs::write(images_path.join("logo.svg"), "<svg></svg>")?;
 
         let js_path = root.join(VENDOR_ROOT).join("public/js");
         fs::create_dir_all(&js_path)?;
         fs::write(js_path.join("app.js"), "console.log('ok');")?;
+        fs::create_dir_all(js_path.join("components"))?;
+        fs::write(
+            js_path.join(DATATABLES_JS),
+            r#"const rows = [{ avatar: "/images/avatars/1.png" }].map((data) => {
+    return {
+        ...data,
+        dateTime: new Date(),
+    }
+})"#,
+        )?;
         Ok(())
     }
 
@@ -439,10 +518,102 @@ mod tests {
         assert!(lock_contents.contains(&format!("app.css sha256 {css_hash}")));
 
         let images_dir = temp_root.path.join(OUTPUT_ROOT).join("images");
-        assert!(images_dir.join("logo.png").is_file());
+        assert!(images_dir.join("logo.svg").is_file());
+        assert_eq!(
+            fs::read_to_string(images_dir.join("logo.svg"))?,
+            "<svg></svg>"
+        );
         let js_dir = temp_root.path.join(OUTPUT_ROOT).join("js");
         assert!(js_dir.join("app.js").is_file());
+        let datatables_contents = fs::read_to_string(js_dir.join(DATATABLES_JS))?;
+        assert!(datatables_contents.contains(DATATABLES_AVATAR_CANONICALIZER));
+        assert!(datatables_contents.contains(r"/images/avatars/1.png"));
+        assert!(!datatables_contents.contains(r#"/images/avatars/1.svg""#));
         Ok(())
+    }
+
+    #[test]
+    fn sync_assets_requires_committed_runtime_images() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        let css_content = css_fixture();
+        write_vendor_fixture(&temp_root.path, &css_content)?;
+        fs::remove_dir_all(temp_root.path.join(OUTPUT_ROOT).join("images"))?;
+
+        let result = sync_assets(&temp_root.path);
+        assert!(
+            matches!(result, Err(AssetSyncError::MissingPath { .. })),
+            "expected MissingPath error, got {result:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn canonicalize_js_asset_references_allows_absent_datatables_file() -> TestResult {
+        let temp_root = TempRoot::new()?;
+        let js_dir = temp_root.path.join(OUTPUT_ROOT).join("js");
+        fs::create_dir_all(&js_dir)?;
+
+        canonicalize_js_asset_references(&js_dir)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn canonicalize_legacy_avatar_paths_injects_runtime_canonicalizer() -> TestResult {
+        let canonical = canonicalize_legacy_avatar_paths(
+            Path::new("components/datatables.js"),
+            r#"const rows = [{ avatar: "/images/avatars/10.png" }].map((data) => {
+    return {
+        ...data,
+        dateTime: new Date(),
+    }
+})"#,
+        )?;
+
+        assert!(canonical.contains(DATATABLES_AVATAR_CANONICALIZER));
+        assert!(canonical.contains(r"/images/avatars/10.png"));
+        assert!(!canonical.contains(r#"/images/avatars/10.svg""#));
+        Ok(())
+    }
+
+    #[test]
+    fn canonicalize_legacy_avatar_paths_keeps_non_avatar_javascript() -> TestResult {
+        let contents = "console.log('ok');";
+        let canonical = canonicalize_legacy_avatar_paths(Path::new("app.js"), contents)?;
+
+        assert_eq!(canonical, contents);
+        Ok(())
+    }
+
+    #[test]
+    fn canonicalize_legacy_avatar_paths_rejects_unknown_avatar_png() {
+        let result = canonicalize_legacy_avatar_paths(
+            Path::new("components/datatables.js"),
+            r#"const rows = [{ avatar: "/images/avatars/11.png" }].map((data) => {
+    return {
+        ...data,
+        dateTime: new Date(),
+    }
+})"#,
+        );
+
+        assert!(
+            matches!(result, Err(AssetSyncError::JsInvalid { .. })),
+            "expected JsInvalid error, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn canonicalize_legacy_avatar_paths_rejects_missing_mapping() {
+        let result = canonicalize_legacy_avatar_paths(
+            Path::new("components/datatables.js"),
+            r#"const rows = [{ avatar: "/images/avatars/1.png" }];"#,
+        );
+
+        assert!(
+            matches!(result, Err(AssetSyncError::JsInvalid { .. })),
+            "expected JsInvalid error, got {result:?}"
+        );
     }
 
     #[test]
@@ -516,6 +687,17 @@ mod tests {
                 .contains("copied CSS failed validation")
         );
         assert!(css_variant.source().is_none());
+
+        let js_variant = AssetSyncError::JsInvalid {
+            path: PathBuf::from("static/nexus/js/components/datatables.js"),
+            reason: "missing map".to_string(),
+        };
+        assert!(
+            js_variant
+                .to_string()
+                .contains("copied JavaScript failed validation")
+        );
+        assert!(js_variant.source().is_none());
 
         let walk_variant = AssetSyncError::WalkFailed {
             path: PathBuf::from("static/nexus/images"),

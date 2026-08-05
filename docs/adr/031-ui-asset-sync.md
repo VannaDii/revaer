@@ -4,10 +4,11 @@
 - Date: 2025-12-23
 - Context:
   - The UI consumes Nexus HTML/CSS/JS as vendored, compiled assets with no JS toolchain in dev/CI.
-  - We need deterministic sync of vendor CSS, images, and JS into `crates/revaer-ui/static/` so Trunk can serve them.
+  - We need deterministic sync of vendor CSS and JS into `crates/revaer-ui/static/` so Trunk can serve them.
+  - Runtime Nexus images are committed under `crates/revaer-ui/static/nexus/images` and validated by the sync tool.
   - Output consistency must be verifiable in CI without relying on external asset pipelines.
 - Decision:
-  - Add a Rust CLI tool (`asset_sync`) that copies Nexus assets into `static/nexus`, validates the CSS, and writes a lock file.
+  - Add a Rust CLI tool (`asset_sync`) that copies Nexus CSS and JS into `static/nexus`, validates the CSS and committed runtime image directory, and writes a lock file.
   - Wire the tool into `just` so `dev`, `build`, and CI checks always run the sync first.
   - Update the UI entry HTML to copy the full static directory and load Nexus `app.css` directly.
 - Dependency rationale:
