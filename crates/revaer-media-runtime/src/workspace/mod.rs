@@ -3,6 +3,7 @@
 mod filesystem;
 mod janitor;
 mod model;
+mod monitor;
 mod policy;
 
 pub use filesystem::{
@@ -14,6 +15,9 @@ pub use model::{
     TerminalWorkspaceState, WorkspaceCapacityReport, WorkspaceCleanupFailure,
     WorkspaceCleanupReport, WorkspaceError, WorkspacePolicy, WorkspaceRejectionReason,
     WorkspaceRetentionPolicy,
+};
+pub use monitor::{
+    SystemWorkspaceBudgetProbe, WorkspaceBudgetControl, WorkspaceBudgetProbe, WorkspaceBudgetSample,
 };
 
 #[cfg(test)]
