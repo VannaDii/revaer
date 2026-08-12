@@ -12,6 +12,84 @@ use thiserror::Error;
 
 const MAX_VERIFICATION_DETAIL_CHARS: usize = 2_048;
 const TRUNCATION_MARKER: &str = "...[truncated]";
+const BITRATE_TOLERANCE_BASIS_POINTS: u64 = 100;
+
+/// Packet-derived bitrate evidence for one measured time window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BitrateWindowSample {
+    /// Output stream identifier.
+    pub stream_id: u32,
+    /// Window start timestamp in milliseconds.
+    pub start_millis: u64,
+    /// Positive measured window duration in milliseconds.
+    pub duration_millis: u64,
+    /// Aggregate encoded packet bytes within the window.
+    pub packet_bytes: u64,
+}
+
+/// Verify packet-window peak bitrate against a maximum policy.
+///
+/// The one-percent tolerance applies only above the configured ceiling to absorb timestamp and
+/// packet-boundary quantization. Outputs below the ceiling are always accepted.
+#[must_use]
+pub fn verify_max_bitrate(
+    stream_id: u32,
+    max_bitrate_bps: u64,
+    samples: &[BitrateWindowSample],
+) -> VerificationCheck {
+    let allowed_bps = max_bitrate_bps.saturating_add(
+        max_bitrate_bps
+            .saturating_mul(BITRATE_TOLERANCE_BASIS_POINTS)
+            .div_ceil(10_000),
+    );
+    let mut found_sample = false;
+    let mut measured_peak = Some(0_u64);
+    for sample in samples
+        .iter()
+        .filter(|sample| sample.stream_id == stream_id)
+    {
+        found_sample = true;
+        measured_peak = measured_peak
+            .zip(window_bitrate_bps(sample))
+            .map(|(peak, measured)| peak.max(measured));
+    }
+    match (found_sample, measured_peak) {
+        (true, Some(peak_bps)) => VerificationCheck {
+            kind: "max_bitrate",
+            passed: peak_bps <= allowed_bps,
+            expected: format!("peak<={max_bitrate_bps}bps+tolerance"),
+            actual: format!("peak={peak_bps}bps"),
+            details: Some(format!("allowed={allowed_bps}bps tolerance=1%")),
+        },
+        (true, None) => VerificationCheck {
+            kind: "max_bitrate",
+            passed: false,
+            expected: format!("peak<={max_bitrate_bps}bps+tolerance"),
+            actual: "invalid zero-duration packet window".to_string(),
+            details: None,
+        },
+        (false, _) => VerificationCheck {
+            kind: "max_bitrate",
+            passed: false,
+            expected: format!("peak<={max_bitrate_bps}bps+tolerance"),
+            actual: "packet-window evidence unavailable".to_string(),
+            details: None,
+        },
+    }
+}
+
+const fn window_bitrate_bps(sample: &BitrateWindowSample) -> Option<u64> {
+    if sample.duration_millis == 0 {
+        return None;
+    }
+    Some(
+        sample
+            .packet_bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000)
+            .div_ceil(sample.duration_millis),
+    )
+}
 
 /// Policy-selected candidate safety checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -550,9 +628,9 @@ fn has_video(candidate: &MediaInspection) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_VERIFICATION_DETAIL_CHARS, SystemVerificationExecutor, TRUNCATION_MARKER,
-        VerificationChecks, VerificationExecutionError, VerificationExecutor, VerificationPolicy,
-        bounded_detail, verify_candidate,
+        BitrateWindowSample, MAX_VERIFICATION_DETAIL_CHARS, SystemVerificationExecutor,
+        TRUNCATION_MARKER, VerificationChecks, VerificationExecutionError, VerificationExecutor,
+        VerificationPolicy, bounded_detail, verify_candidate, verify_max_bitrate,
     };
     use crate::execute::ExecutionControl;
     use crate::inspect::{ContainerInspection, MediaInspection, MetadataEntry, StreamInspection};
@@ -753,5 +831,41 @@ mod tests {
         assert!(join_result.is_ok());
         assert_eq!(result, Err(VerificationExecutionError::Cancelled));
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn max_bitrate_accepts_below_and_equal_ceiling_without_lower_bound() {
+        let below = [BitrateWindowSample {
+            stream_id: 0,
+            start_millis: 0,
+            duration_millis: 1_000,
+            packet_bytes: 900_000,
+        }];
+        let equal = [BitrateWindowSample {
+            packet_bytes: 1_000_000,
+            ..below[0]
+        }];
+
+        assert!(verify_max_bitrate(0, 8_000_000, &below).passed);
+        assert!(verify_max_bitrate(0, 8_000_000, &equal).passed);
+    }
+
+    #[test]
+    fn max_bitrate_rejects_above_ceiling_and_short_peak_burst() {
+        let above = [BitrateWindowSample {
+            stream_id: 0,
+            start_millis: 0,
+            duration_millis: 1_000,
+            packet_bytes: 1_020_000,
+        }];
+        let short_burst = [BitrateWindowSample {
+            stream_id: 0,
+            start_millis: 1_500,
+            duration_millis: 100,
+            packet_bytes: 110_000,
+        }];
+
+        assert!(!verify_max_bitrate(0, 8_000_000, &above).passed);
+        assert!(!verify_max_bitrate(0, 8_000_000, &short_burst).passed);
     }
 }

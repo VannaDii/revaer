@@ -64,6 +64,9 @@ pub enum ExecuteStepError {
     /// Cooperative cancellation stopped command execution.
     #[error("command execution cancelled")]
     Cancelled,
+    /// A live execution resource limit was breached.
+    #[error("execution resource limit breached: {0}")]
+    LimitBreached(ExecutionLimitBreach),
     /// Command steps require an injected command runner.
     #[error("command steps require an injected command runner")]
     CommandStepUnsupported,
@@ -100,6 +103,25 @@ pub enum ExecuteStepError {
 pub trait ExecutionControl {
     /// Return whether the active operation must stop.
     fn cancellation_requested(&self) -> bool;
+
+    /// Return a live resource breach that requires immediate child termination.
+    fn limit_breach(&self) -> Option<ExecutionLimitBreach> {
+        None
+    }
+}
+
+/// Machine-readable live execution limit breach.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum ExecutionLimitBreach {
+    /// Cumulative logical workspace bytes exceeded the configured maximum.
+    #[error("workspace byte budget exceeded")]
+    WorkspaceBytesExceeded,
+    /// Current free bytes fell below the configured reserve.
+    #[error("workspace free-space reserve lost")]
+    WorkspaceReserveLost,
+    /// The injected live usage probe failed, so execution stopped fail-closed.
+    #[error("workspace usage probe failed: {0:?}")]
+    WorkspaceProbeFailed(io::ErrorKind),
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -146,10 +168,16 @@ pub trait CommandRunner {
         argv: &[String],
         control: &dyn ExecutionControl,
     ) -> Result<(), ExecuteStepError> {
+        if let Some(breach) = control.limit_breach() {
+            return Err(ExecuteStepError::LimitBreached(breach));
+        }
         if control.cancellation_requested() {
             return Err(ExecuteStepError::Cancelled);
         }
         self.run(bin, argv)?;
+        if let Some(breach) = control.limit_breach() {
+            return Err(ExecuteStepError::LimitBreached(breach));
+        }
         if control.cancellation_requested() {
             return Err(ExecuteStepError::Cancelled);
         }
@@ -185,23 +213,12 @@ impl CommandRunner for ProcessCommandRunner {
                     source,
                 })?;
         loop {
+            if let Some(breach) = control.limit_breach() {
+                terminate_child(&mut child, bin)?;
+                return Err(ExecuteStepError::LimitBreached(breach));
+            }
             if control.cancellation_requested() {
-                match child.kill() {
-                    Ok(()) => {}
-                    Err(source) if source.kind() == io::ErrorKind::InvalidInput => {}
-                    Err(source) => {
-                        return Err(ExecuteStepError::Io {
-                            operation: "execution.command_kill",
-                            path: PathBuf::from(bin),
-                            source,
-                        });
-                    }
-                }
-                child.wait().map_err(|source| ExecuteStepError::Io {
-                    operation: "execution.command_reap",
-                    path: PathBuf::from(bin),
-                    source,
-                })?;
+                terminate_child(&mut child, bin)?;
                 return Err(ExecuteStepError::Cancelled);
             }
             if let Some(status) = child.try_wait().map_err(|source| ExecuteStepError::Io {
@@ -223,7 +240,29 @@ impl CommandRunner for ProcessCommandRunner {
     }
 }
 
+fn terminate_child(child: &mut std::process::Child, bin: &str) -> Result<(), ExecuteStepError> {
+    match child.kill() {
+        Ok(()) => {}
+        Err(source) if source.kind() == io::ErrorKind::InvalidInput => {}
+        Err(source) => {
+            return Err(ExecuteStepError::Io {
+                operation: "execution.command_kill",
+                path: PathBuf::from(bin),
+                source,
+            });
+        }
+    }
+    child.wait().map_err(|source| ExecuteStepError::Io {
+        operation: "execution.command_reap",
+        path: PathBuf::from(bin),
+        source,
+    })?;
+    Ok(())
+}
+
 const DEFAULT_VIDEO_ENCODER: &str = "libx265";
+const VIDEO_AVERAGE_TARGET_PERCENT: u64 = 95;
+const VIDEO_VBV_SECONDS: u64 = 2;
 const VIDEO_ENCODER_FALLBACKS: &[&str] = &[
     "hevc_nvenc",
     "hevc_qsv",
@@ -269,8 +308,8 @@ pub struct VideoStreamConstraints {
     pub profile: Option<String>,
     /// Desired encoder level in the toolchain's accepted representation.
     pub level: Option<String>,
-    /// Desired average bitrate in bits per second.
-    pub bitrate_bps: Option<u32>,
+    /// Maximum permitted encoded bitrate in bits per second.
+    pub max_bitrate_bps: Option<u32>,
     /// Desired color primaries.
     pub color_primaries: Option<String>,
     /// Desired transfer characteristic.
@@ -1601,6 +1640,9 @@ pub fn execute_step_controlled(
     command_runner: &dyn CommandRunner,
     control: &dyn ExecutionControl,
 ) -> Result<(), ExecuteStepError> {
+    if let Some(breach) = control.limit_breach() {
+        return Err(ExecuteStepError::LimitBreached(breach));
+    }
     if control.cancellation_requested() {
         return Err(ExecuteStepError::Cancelled);
     }
@@ -1778,9 +1820,16 @@ fn append_video_constraint_args(
         constraints.profile.as_deref(),
     );
     append_optional_stream_arg(args, "level", output_index, constraints.level.as_deref());
-    if let Some(bitrate_bps) = constraints.bitrate_bps {
+    if let Some(max_bitrate_bps) = constraints.max_bitrate_bps {
+        let max_bitrate_bps = u64::from(max_bitrate_bps);
+        let average_target = max_bitrate_bps.saturating_mul(VIDEO_AVERAGE_TARGET_PERCENT) / 100;
+        let vbv_buffer = max_bitrate_bps.saturating_mul(VIDEO_VBV_SECONDS);
         args.push(format!("-b:{output_index}"));
-        args.push(bitrate_bps.to_string());
+        args.push(average_target.to_string());
+        args.push(format!("-maxrate:{output_index}"));
+        args.push(max_bitrate_bps.to_string());
+        args.push(format!("-bufsize:{output_index}"));
+        args.push(vbv_buffer.to_string());
     }
     let (color_primaries, color_transfer, color_space) =
         normalized_video_color_constraints(constraints);
@@ -1955,9 +2004,12 @@ const fn is_recovery_step(step: &ExecutionStep) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        AudioStreamConstraints, BuildArgsError, CommandRunner, ExecutionControl, ExecutionStep,
-        HdrColorPolicy, ProcessCommandRunner, VideoStreamConstraints, VideoTranscodeIntent,
-        VideoTranscodePolicy, build_desired_graph_execution_steps, build_desired_graph_ffmpeg_argv,
+        AudioStreamConstraints, BuildArgsError, CommandRunner, DesiredGraphBuildContext,
+        ExecutionControl, ExecutionStep, HdrColorPolicy, ProcessCommandRunner,
+        SubtitleArtifactPlan, VideoStreamConstraints, VideoTranscodeIntent, VideoTranscodePolicy,
+        append_video_constraint_args, append_video_quality_args,
+        build_desired_graph_execution_steps, build_desired_graph_execution_steps_with_sidecars,
+        build_desired_graph_ffmpeg_argv, build_desired_graph_ffmpeg_argv_with_sidecars,
         build_execution_steps, build_execution_steps_with_capabilities,
         build_execution_steps_with_replacement, build_execution_steps_with_replacement_policy,
         build_execution_steps_with_video_policy, build_extract_subtitle_argv, build_ffmpeg_argv,
@@ -1968,6 +2020,7 @@ mod tests {
         DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind,
     };
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
+    use revaer_media_core::target::{DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -2009,6 +2062,21 @@ mod tests {
     impl ExecutionControl for AtomicExecutionControl {
         fn cancellation_requested(&self) -> bool {
             self.requested.load(Ordering::Acquire)
+        }
+    }
+
+    struct ReserveLossControl {
+        polls: AtomicU64,
+    }
+
+    impl ExecutionControl for ReserveLossControl {
+        fn cancellation_requested(&self) -> bool {
+            false
+        }
+
+        fn limit_breach(&self) -> Option<super::ExecutionLimitBreach> {
+            (self.polls.fetch_add(1, Ordering::AcqRel) >= 1)
+                .then_some(super::ExecutionLimitBreach::WorkspaceReserveLost)
         }
     }
 
@@ -2589,6 +2657,46 @@ mod tests {
         assert!(join_result.is_ok());
         assert!(matches!(result, Err(super::ExecuteStepError::Cancelled)));
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn mid_run_reserve_loss_terminates_and_quarantines_output()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = temp_execution_root()?;
+        let output = root.join("output.bin");
+        let quarantine = root.join("quarantine/output.bin");
+        fs::write(&output, b"partial-output")?;
+        let steps = [
+            ExecutionStep::Command {
+                bin: "/bin/sleep".to_string(),
+                argv: vec!["30".to_string()],
+            },
+            ExecutionStep::QuarantineFailedOutput {
+                output_path: output.to_string_lossy().into_owned(),
+                quarantine_path: quarantine.to_string_lossy().into_owned(),
+            },
+        ];
+        let control = ReserveLossControl {
+            polls: AtomicU64::new(0),
+        };
+
+        let result =
+            super::execute_step_sequence_controlled(&steps, &ProcessCommandRunner, &control);
+
+        assert!(matches!(
+            result,
+            Err(super::ExecuteSequenceError {
+                failed: super::ExecuteStepError::LimitBreached(
+                    super::ExecutionLimitBreach::WorkspaceReserveLost
+                ),
+                recovery: None,
+                ..
+            })
+        ));
+        assert!(!output.exists());
+        assert_eq!(fs::read(&quarantine)?, b"partial-output");
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[test]
@@ -3837,7 +3945,7 @@ mod tests {
                 stream_id: 0,
                 profile: Some("main10".to_string()),
                 level: Some("5.1".to_string()),
-                bitrate_bps: Some(8_000_000),
+                max_bitrate_bps: Some(8_000_000),
                 color_primaries: Some("bt2020".to_string()),
                 color_transfer: Some("smpte2084".to_string()),
                 color_space: Some("bt2020nc".to_string()),
@@ -3860,10 +3968,36 @@ mod tests {
         let has_arg = |name: &str, value: &str| argv.windows(2).any(|pair| pair == [name, value]);
         assert!(has_arg("-profile:0", "main10"));
         assert!(has_arg("-level:0", "5.1"));
-        assert!(has_arg("-b:0", "8000000"));
+        assert!(has_arg("-b:0", "7600000"));
+        assert!(has_arg("-maxrate:0", "8000000"));
+        assert!(has_arg("-bufsize:0", "16000000"));
         assert!(has_arg("-color_primaries:0", "bt2020"));
         assert!(has_arg("-color_trc:0", "smpte2084"));
         assert!(has_arg("-colorspace:0", "bt2020nc"));
+    }
+
+    #[test]
+    fn software_and_hardware_encoders_receive_peak_and_vbv_controls() {
+        let constraints = VideoStreamConstraints {
+            stream_id: 0,
+            profile: None,
+            level: None,
+            max_bitrate_bps: Some(8_000_000),
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+        };
+        for encoder in ["libx265", "hevc_nvenc", "hevc_qsv", "hevc_vaapi"] {
+            let mut argv = Vec::new();
+            append_video_quality_args(&mut argv, encoder);
+            append_video_constraint_args(&mut argv, 0, Some(&constraints));
+            let has_arg =
+                |name: &str, value: &str| argv.windows(2).any(|pair| pair == [name, value]);
+            assert!(has_arg("-b:0", "7600000"), "encoder={encoder}");
+            assert!(has_arg("-maxrate:0", "8000000"), "encoder={encoder}");
+            assert!(has_arg("-bufsize:0", "16000000"), "encoder={encoder}");
+        }
     }
 
     #[test]
@@ -4050,5 +4184,224 @@ mod tests {
             argv.windows(2)
                 .any(|pair| pair == ["-colorspace", "bt2020nc"])
         );
+    }
+
+    #[test]
+    fn hdr_to_sdr_policy_adds_tonemap_filter_and_sdr_range() {
+        let op = PlannedOperation {
+            kind: OperationKind::VideoTranscode,
+            stream_id: Some(0),
+            output_stream_id: Some(0),
+        };
+        let capabilities = CapabilitySnapshot {
+            ffmpeg_version: "7.0".to_string(),
+            ffprobe_version: "7.0".to_string(),
+            codecs: vec!["libx265".to_string()],
+            codec_support: Vec::new(),
+            encoders: vec!["libx265".to_string()],
+            ..CapabilitySnapshot::default()
+        };
+        let policy = VideoTranscodePolicy {
+            intent: VideoTranscodeIntent::General,
+            hdr_color: HdrColorPolicy::ToneMapToSdr,
+            ..VideoTranscodePolicy::default()
+        };
+
+        let result = build_execution_steps_with_video_policy(
+            "/in.mkv",
+            "/out.mkv",
+            &[op],
+            &capabilities,
+            &policy,
+        );
+
+        assert!(result.is_ok());
+        let Ok(steps) = result else {
+            return;
+        };
+        let Some(ExecutionStep::Command { argv, .. }) = steps.first() else {
+            return;
+        };
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair[0] == "-vf" && pair[1].contains("tonemap=hable"))
+        );
+        assert!(argv.windows(2).any(|pair| pair == ["-color_range", "tv"]));
+    }
+
+    #[test]
+    fn intermediate_outputs_preserve_requested_extension() {
+        let operations = [
+            PlannedOperation {
+                kind: OperationKind::Remux,
+                stream_id: None,
+                output_stream_id: None,
+            },
+            PlannedOperation {
+                kind: OperationKind::AudioTranscode,
+                stream_id: Some(1),
+                output_stream_id: Some(1),
+            },
+        ];
+        let result = build_execution_steps("/in.mkv", "/out.mp4", &operations);
+        assert!(result.is_ok());
+        let Ok(steps) = result else {
+            return;
+        };
+        let ExecutionStep::Command { argv: first, .. } = &steps[0] else {
+            return;
+        };
+        assert_eq!(
+            first.last().map(String::as_str),
+            Some("/out.stage0.tmp.mp4")
+        );
+    }
+
+    #[test]
+    fn sidecar_aware_argv_binds_external_subtitle_stream() {
+        let video = MediaStream {
+            stream_id: 0,
+            kind: StreamKind::Video,
+            codec: "h264".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        };
+        let subtitle = MediaStream {
+            stream_id: 1,
+            kind: StreamKind::Subtitle,
+            codec: "srt".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: Some("eng".to_string()),
+            title: None,
+            dispositions: vec!["forced".to_string()],
+        };
+        let source = MediaGraph {
+            source_path: "/library/movie.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![video.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/workspace/movie.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: vec![
+                DesiredStreamBinding {
+                    output_stream_id: 0,
+                    source_stream_id: Some(0),
+                },
+                DesiredStreamBinding {
+                    output_stream_id: 1,
+                    source_stream_id: None,
+                },
+            ],
+            streams: vec![video, subtitle.clone()],
+        };
+        let embeddings = [SidecarEmbedding {
+            path: "/library/movie.eng.forced.srt".to_string(),
+            companion_path: None,
+            output_stream: subtitle,
+            source_codec: "subrip".to_string(),
+        }];
+        let operations = [PlannedOperation {
+            kind: OperationKind::EmbedSubtitle,
+            stream_id: None,
+            output_stream_id: Some(1),
+        }];
+
+        let argv = build_desired_graph_ffmpeg_argv_with_sidecars(
+            DesiredGraphBuildContext {
+                input_path: "/library/movie.mkv",
+                output_path: "/workspace/movie.mkv",
+                source: &source,
+                desired: &desired,
+                operations: &operations,
+                capabilities: None,
+                policy: VideoTranscodePolicy::default(),
+            },
+            &embeddings,
+        );
+        assert!(argv.is_ok());
+        let Ok(argv) = argv else {
+            return;
+        };
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == ["-i", "/library/movie.eng.forced.srt"])
+        );
+        assert!(argv.windows(2).any(|pair| pair == ["-map", "1:0"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-c:1", "copy"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-map_chapters", "0"]));
+    }
+
+    #[test]
+    fn sidecar_aware_steps_materialize_existing_sidecar_output() {
+        let source = MediaGraph {
+            source_path: "/library/movie.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Video,
+                codec: "h264".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let outputs = [DesiredSidecarOutput {
+            path: "/workspace/movie.eng.forced.srt".to_string(),
+            companion_path: None,
+            destination_path: "/library/movie.eng.forced.srt".to_string(),
+            destination_companion_path: None,
+            source: SidecarOutputSource::ExistingSidecar {
+                path: "/incoming/movie.eng.forced.srt".to_string(),
+                companion_path: None,
+                codec: "subrip".to_string(),
+            },
+            codec: "srt".to_string(),
+        }];
+        let output_operations = [PlannedOperation {
+            kind: OperationKind::CopySidecarSubtitle,
+            stream_id: None,
+            output_stream_id: None,
+        }];
+        let steps = build_desired_graph_execution_steps_with_sidecars(
+            DesiredGraphBuildContext {
+                input_path: "/library/movie.mkv",
+                output_path: "/workspace/movie.mkv",
+                source: &source,
+                desired: &DesiredGraph {
+                    output_path: "/workspace/movie.mkv".to_string(),
+                    container_format: Some("matroska".to_string()),
+                    stream_bindings: vec![DesiredStreamBinding {
+                        output_stream_id: 0,
+                        source_stream_id: Some(0),
+                    }],
+                    streams: source.streams.clone(),
+                },
+                operations: &output_operations,
+                capabilities: None,
+                policy: VideoTranscodePolicy::default(),
+            },
+            SubtitleArtifactPlan {
+                embeddings: &[],
+                outputs: &outputs,
+                removals: &[],
+            },
+        );
+        assert!(steps.is_ok());
+        let Ok(steps) = steps else {
+            return;
+        };
+        assert!(steps.iter().any(|step| matches!(
+            step,
+            ExecutionStep::CopySidecarSubtitle { source_path, output_path }
+                if source_path == "/incoming/movie.eng.forced.srt"
+                    && output_path == "/workspace/movie.eng.forced.srt"
+        )));
     }
 }
