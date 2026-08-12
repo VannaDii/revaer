@@ -27213,3 +27213,8787 @@ $_$;
 
 
 
+CREATE FUNCTION public.search_request_explainability(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS TABLE(zero_runnable_indexers boolean, skipped_canceled_indexers integer, skipped_failed_indexers integer, blocked_results integer, blocked_rule_public_ids uuid[], rate_limited_indexers integer, retrying_indexers integer)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM search_request_explainability_v1(
+        actor_user_public_id => actor_user_public_id,
+        search_request_public_id_input => search_request_public_id_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.search_request_explainability_v1(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS TABLE(zero_runnable_indexers boolean, skipped_canceled_indexers integer, skipped_failed_indexers integer, blocked_results integer, blocked_rule_public_ids uuid[], rate_limited_indexers integer, retrying_indexers integer)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    request_id BIGINT;
+BEGIN
+    -- Reuse list auth/visibility checks so error detail codes remain consistent.
+    PERFORM *
+    FROM search_page_list_v1(
+        actor_user_public_id => actor_user_public_id,
+        search_request_public_id_input => search_request_public_id_input
+    )
+    LIMIT 1;
+
+    SELECT search_request_id
+    INTO request_id
+    FROM search_request
+    WHERE search_request_public_id = search_request_public_id_input;
+
+    RETURN QUERY
+    WITH run_counts AS (
+        SELECT
+            COUNT(*)::INTEGER AS runnable_count,
+            COUNT(*) FILTER (WHERE status = 'canceled')::INTEGER AS canceled_count,
+            COUNT(*) FILTER (WHERE status = 'failed')::INTEGER AS failed_count,
+            COUNT(*) FILTER (WHERE last_error_class = 'rate_limited')::INTEGER AS rate_limited_count,
+            COUNT(*) FILTER (
+                WHERE status = 'queued'
+                  AND next_attempt_at IS NOT NULL
+                  AND next_attempt_at > now()
+            )::INTEGER AS retrying_count
+        FROM search_request_indexer_run
+        WHERE search_request_id = request_id
+    ), block_counts AS (
+        SELECT
+            COUNT(*)::INTEGER AS blocked_count,
+            COALESCE(
+                array_agg(DISTINCT policy_rule_public_id ORDER BY policy_rule_public_id),
+                ARRAY[]::UUID[]
+            ) AS blocked_rule_ids
+        FROM search_filter_decision
+        WHERE search_request_id = request_id
+          AND decision IN ('drop_source', 'drop_canonical')
+    )
+    SELECT
+        (run_counts.runnable_count = 0) AS zero_runnable_indexers,
+        run_counts.canceled_count,
+        run_counts.failed_count,
+        block_counts.blocked_count,
+        block_counts.blocked_rule_ids,
+        run_counts.rate_limited_count,
+        run_counts.retrying_count
+    FROM run_counts
+    CROSS JOIN block_counts;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.search_request_finalize_on_runs_terminal_v1() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    request_status_value search_status;
+    finalized_at_value TIMESTAMPTZ;
+BEGIN
+    IF NEW.status NOT IN ('finished', 'failed', 'canceled') THEN
+        RETURN NEW;
+    END IF;
+
+    IF TG_OP = 'UPDATE' AND OLD.status = NEW.status THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT status
+    INTO request_status_value
+    FROM search_request
+    WHERE search_request_id = NEW.search_request_id
+    FOR UPDATE;
+
+    IF request_status_value IS NULL OR request_status_value <> 'running' THEN
+        RETURN NEW;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM search_request_indexer_run
+        WHERE search_request_id = NEW.search_request_id
+          AND status IN ('queued', 'running')
+    ) THEN
+        RETURN NEW;
+    END IF;
+
+    finalized_at_value := now();
+
+    UPDATE search_request
+    SET status = 'finished',
+        finished_at = finalized_at_value
+    WHERE search_request_id = NEW.search_request_id
+      AND status = 'running';
+
+    IF FOUND THEN
+        UPDATE search_page
+        SET sealed_at = finalized_at_value
+        WHERE search_request_id = NEW.search_request_id
+          AND sealed_at IS NULL;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.search_result_ingest(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, source_guid_input character varying, details_url_input character varying, download_url_input character varying, magnet_uri_input character varying, title_raw_input character varying, size_bytes_input bigint, infohash_v1_input character, infohash_v2_input character, magnet_hash_input character, seeders_input integer, leechers_input integer, published_at_input timestamp with time zone, uploader_input character varying, observed_at_input timestamp with time zone, attr_keys_input public.observation_attr_key[], attr_types_input public.attr_value_type[], attr_value_text_input character varying[], attr_value_int_input integer[], attr_value_bigint_input bigint[], attr_value_numeric_input numeric[], attr_value_bool_input boolean[], attr_value_uuid_input uuid[]) RETURNS TABLE(canonical_torrent_public_id uuid, canonical_torrent_source_public_id uuid, observation_created boolean, durable_source_created boolean, canonical_changed boolean)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    request_id_value BIGINT;
+    canonical_id_value BIGINT;
+    source_id_value BIGINT;
+    canonical_public_id_value UUID;
+    canonical_source_public_id_value UUID;
+BEGIN
+    SELECT *
+    INTO
+        canonical_public_id_value,
+        canonical_source_public_id_value,
+        observation_created,
+        durable_source_created,
+        canonical_changed
+    FROM search_result_ingest_v1(
+        search_request_public_id_input,
+        indexer_instance_public_id_input,
+        source_guid_input,
+        details_url_input,
+        download_url_input,
+        magnet_uri_input,
+        title_raw_input,
+        size_bytes_input,
+        infohash_v1_input,
+        infohash_v2_input,
+        magnet_hash_input,
+        seeders_input,
+        leechers_input,
+        published_at_input,
+        uploader_input,
+        observed_at_input,
+        attr_keys_input,
+        attr_types_input,
+        attr_value_text_input,
+        attr_value_int_input,
+        attr_value_bigint_input,
+        attr_value_numeric_input,
+        attr_value_bool_input,
+        attr_value_uuid_input
+    );
+
+    canonical_torrent_public_id := canonical_public_id_value;
+    canonical_torrent_source_public_id := canonical_source_public_id_value;
+
+    IF canonical_public_id_value IS NOT NULL
+        AND canonical_source_public_id_value IS NOT NULL THEN
+        SELECT search_request_id
+        INTO request_id_value
+        FROM search_request
+        WHERE search_request_public_id = search_request_public_id_input;
+
+        SELECT canonical_torrent_id
+        INTO canonical_id_value
+        FROM canonical_torrent
+        WHERE canonical_torrent.canonical_torrent_public_id = canonical_public_id_value;
+
+        SELECT canonical_torrent_source_id
+        INTO source_id_value
+        FROM canonical_torrent_source
+        WHERE canonical_torrent_source.canonical_torrent_source_public_id =
+            canonical_source_public_id_value;
+
+        IF request_id_value IS NOT NULL
+            AND canonical_id_value IS NOT NULL
+            AND source_id_value IS NOT NULL
+            AND EXISTS (
+                SELECT 1
+                FROM search_request_canonical src
+                JOIN search_page_item spi
+                    ON spi.search_request_canonical_id = src.search_request_canonical_id
+                WHERE src.search_request_id = request_id_value
+                  AND src.canonical_torrent_id = canonical_id_value
+            ) THEN
+            INSERT INTO canonical_torrent_best_source_context (
+                context_key_type,
+                context_key_id,
+                canonical_torrent_id,
+                canonical_torrent_source_id,
+                computed_at
+            )
+            VALUES (
+                'search_request',
+                request_id_value,
+                canonical_id_value,
+                source_id_value,
+                now()
+            )
+            ON CONFLICT (context_key_type, context_key_id, canonical_torrent_id)
+            DO UPDATE SET
+                canonical_torrent_source_id = EXCLUDED.canonical_torrent_source_id,
+                computed_at = EXCLUDED.computed_at;
+        END IF;
+    END IF;
+
+    RETURN NEXT;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.search_result_ingest_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, source_guid_input character varying, details_url_input character varying, download_url_input character varying, magnet_uri_input character varying, title_raw_input character varying, size_bytes_input bigint, infohash_v1_input character, infohash_v2_input character, magnet_hash_input character, seeders_input integer, leechers_input integer, published_at_input timestamp with time zone, uploader_input character varying, observed_at_input timestamp with time zone, attr_keys_input public.observation_attr_key[], attr_types_input public.attr_value_type[], attr_value_text_input character varying[], attr_value_int_input integer[], attr_value_bigint_input bigint[], attr_value_numeric_input numeric[], attr_value_bool_input boolean[], attr_value_uuid_input uuid[]) RETURNS TABLE(canonical_torrent_public_id uuid, canonical_torrent_source_public_id uuid, observation_created boolean, durable_source_created boolean, canonical_changed boolean)
+    LANGUAGE plpgsql
+    SET "plpgsql.variable_conflict" TO 'use_column'
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+    base_message CONSTANT text := 'Failed to ingest search result';
+    errcode CONSTANT text := 'P0001';
+    request_id BIGINT;
+    request_status search_status;
+    request_snapshot_id BIGINT;
+    request_page_size INTEGER;
+    request_effective_domain_id BIGINT;
+    request_profile_id BIGINT;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    instance_enabled BOOLEAN;
+    instance_migration_state indexer_instance_migration_state;
+    instance_trust_tier_key trust_tier_key;
+    instance_trust_rank SMALLINT := 0;
+    trust_bucket INTEGER := 0;
+    signal_confidence_base NUMERIC(4,3) := 0.5;
+    observed_at_value TIMESTAMPTZ;
+    trimmed_title TEXT;
+    title_for_norm TEXT;
+    title_normalized_value TEXT;
+    source_guid_value TEXT;
+    details_url_value TEXT;
+    download_url_value TEXT;
+    magnet_uri_value TEXT;
+    infohash_v1_value TEXT;
+    infohash_v2_value TEXT;
+    magnet_hash_value TEXT;
+    parsed_infohash_v1 TEXT;
+    parsed_infohash_v2 TEXT;
+    identity_strategy_value identity_strategy;
+    identity_confidence_value NUMERIC(4,3);
+    title_size_hash_value TEXT;
+    disambiguation_type disambiguation_identity_type;
+    disambiguation_value TEXT;
+    canonical_id BIGINT;
+    canonical_public_id UUID;
+    canonical_infohash_v1 TEXT;
+    canonical_infohash_v2 TEXT;
+    canonical_magnet_hash TEXT;
+    canonical_inserted BOOLEAN := FALSE;
+    source_id BIGINT;
+    source_public_id UUID;
+    source_inserted BOOLEAN := FALSE;
+    observation_id_value BIGINT;
+    observation_inserted BOOLEAN := FALSE;
+    guid_conflict_value BOOLEAN := FALSE;
+    downranked BOOLEAN := FALSE;
+    flagged BOOLEAN := FALSE;
+    dropped_canonical BOOLEAN := FALSE;
+    dropped_source BOOLEAN := FALSE;
+    allowlist_scope_indexer INTEGER;
+    allowlist_scope_title INTEGER;
+    allowlist_scope_release_group INTEGER;
+    allowlist_scope_domain INTEGER;
+    allowlist_scope_trust INTEGER;
+    require_indexer_rule UUID;
+    require_title_rule UUID;
+    require_release_group_rule UUID;
+    require_domain_rule UUID;
+    require_trust_rule UUID;
+    require_indexer_matched BOOLEAN := FALSE;
+    require_title_matched BOOLEAN := FALSE;
+    require_release_group_matched BOOLEAN := FALSE;
+    require_domain_matched BOOLEAN := FALSE;
+    require_trust_matched BOOLEAN := FALSE;
+    release_group_token TEXT;
+    release_group_confidence NUMERIC(4,3);
+    release_group_suffix_present BOOLEAN := FALSE;
+    tracker_name_value TEXT;
+    language_primary_value TEXT;
+    subtitles_primary_value TEXT;
+    tracker_category_value INTEGER;
+    tracker_subcategory_value INTEGER;
+    files_count_value INTEGER;
+    size_bytes_reported_value BIGINT;
+    imdb_id_value TEXT;
+    tmdb_id_value INTEGER;
+    tvdb_id_value INTEGER;
+    season_value INTEGER;
+    episode_value INTEGER;
+    year_value INTEGER;
+    attr_count INTEGER;
+    existing_infohash_v1 TEXT;
+    existing_infohash_v2 TEXT;
+    existing_magnet_hash TEXT;
+    existing_source_guid TEXT;
+    existing_tracker_name TEXT;
+    existing_tracker_category INTEGER;
+    existing_tracker_subcategory INTEGER;
+    existing_files_count INTEGER;
+    existing_size_bytes_reported BIGINT;
+    existing_imdb_id TEXT;
+    existing_tmdb_id INTEGER;
+    existing_tvdb_id INTEGER;
+    existing_season INTEGER;
+    existing_episode INTEGER;
+    existing_year INTEGER;
+    best_imdb_id TEXT;
+    best_tmdb_id INTEGER;
+    best_tvdb_id INTEGER;
+    best_title_display TEXT;
+    media_domain_key_value TEXT;
+    instance_domain_ids BIGINT[];
+    base_score NUMERIC(12,4) := 0;
+    score_policy_adjust NUMERIC(12,4) := 0;
+    score_tag_adjust NUMERIC(12,4) := 0;
+    score_total_context NUMERIC(12,4) := 0;
+    best_context_score NUMERIC(12,4);
+    best_context_source BIGINT;
+    best_context_seeders INTEGER;
+    should_update_best BOOLEAN := FALSE;
+    page_id BIGINT;
+    page_number_value INTEGER;
+    page_item_count INTEGER := 0;
+    canonical_link_id BIGINT;
+    size_sample_allowed BOOLEAN := FALSE;
+    size_cutoff BIGINT := 10995116277760; -- 10 TiB
+    sample_count INTEGER;
+    sample_median NUMERIC(20,4);
+    sample_min BIGINT;
+    sample_max BIGINT;
+    sample_first BIGINT;
+    policy_min_rank INTEGER;
+    policy_rule_record RECORD;
+    rule_matched BOOLEAN;
+BEGIN
+    IF search_request_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_missing';
+    END IF;
+
+    IF indexer_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_missing';
+    END IF;
+
+    SELECT search_request_id, status, policy_snapshot_id, page_size, effective_media_domain_id, search_profile_id
+    INTO request_id, request_status, request_snapshot_id, request_page_size, request_effective_domain_id, request_profile_id
+    FROM search_request
+    WHERE search_request_public_id = search_request_public_id_input;
+
+    IF request_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_found';
+    END IF;
+
+    IF request_status <> 'running' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_running';
+    END IF;
+
+    SELECT indexer_instance_id, deleted_at, is_enabled, migration_state, trust_tier_key
+    INTO instance_id, instance_deleted_at, instance_enabled, instance_migration_state, instance_trust_tier_key
+    FROM indexer_instance
+    WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL OR instance_enabled IS NOT TRUE THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_disabled';
+    END IF;
+
+    IF instance_migration_state IS NOT NULL AND instance_migration_state <> 'ready' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_not_ready';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM search_request_indexer_run
+        WHERE search_request_id = request_id
+          AND indexer_instance_id = instance_id
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_not_in_search';
+    END IF;
+
+    IF instance_trust_tier_key IS NOT NULL THEN
+        SELECT rank
+        INTO instance_trust_rank
+        FROM trust_tier
+        WHERE trust_tier_key = instance_trust_tier_key;
+        IF instance_trust_rank IS NULL THEN
+            instance_trust_rank := 0;
+        END IF;
+    END IF;
+
+    IF instance_trust_rank >= 40 THEN
+        trust_bucket := 3;
+    ELSIF instance_trust_rank >= 30 THEN
+        trust_bucket := 2;
+    ELSIF instance_trust_rank >= 20 THEN
+        trust_bucket := 1;
+    ELSE
+        trust_bucket := 0;
+    END IF;
+
+    signal_confidence_base := 0.5 + (trust_bucket * 0.1);
+
+    trimmed_title := COALESCE(title_raw_input, '');
+    trimmed_title := btrim(trimmed_title);
+    IF trimmed_title = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'missing_title';
+    END IF;
+
+    source_guid_value := NULLIF(btrim(source_guid_input), '');
+    details_url_value := NULLIF(btrim(details_url_input), '');
+    download_url_value := NULLIF(btrim(download_url_input), '');
+    magnet_uri_value := NULLIF(btrim(magnet_uri_input), '');
+
+    infohash_v1_value := NULLIF(lower(infohash_v1_input), '');
+    infohash_v2_value := NULLIF(lower(infohash_v2_input), '');
+    magnet_hash_value := NULLIF(lower(magnet_hash_input), '');
+
+    IF infohash_v1_value IS NOT NULL AND infohash_v1_value !~ '^[0-9a-f]{40}$' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'invalid_hash';
+    END IF;
+
+    IF infohash_v2_value IS NOT NULL AND infohash_v2_value !~ '^[0-9a-f]{64}$' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'invalid_hash';
+    END IF;
+
+    IF magnet_hash_value IS NOT NULL AND magnet_hash_value !~ '^[0-9a-f]{64}$' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'invalid_hash';
+    END IF;
+
+    IF magnet_uri_value IS NOT NULL THEN
+        SELECT lower((regexp_matches(magnet_uri_value, '(?i)xt=urn:btih:([0-9a-f]{40})'))[1])
+        INTO parsed_infohash_v1;
+        SELECT lower((regexp_matches(magnet_uri_value, '(?i)xt=urn:btmh:(?:1220)?([0-9a-f]{64})'))[1])
+        INTO parsed_infohash_v2;
+
+        IF infohash_v1_value IS NULL AND parsed_infohash_v1 IS NOT NULL THEN
+            infohash_v1_value := parsed_infohash_v1;
+        END IF;
+
+        IF infohash_v2_value IS NULL AND parsed_infohash_v2 IS NOT NULL THEN
+            infohash_v2_value := parsed_infohash_v2;
+        END IF;
+    END IF;
+
+    magnet_hash_value := COALESCE(
+        magnet_hash_value,
+        derive_magnet_hash_v1(infohash_v2_value, infohash_v1_value, magnet_uri_value)
+    );
+
+    IF source_guid_value IS NULL
+        AND infohash_v1_value IS NULL
+        AND infohash_v2_value IS NULL
+        AND magnet_hash_value IS NULL
+        AND size_bytes_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'insufficient_identity';
+    END IF;
+
+    observed_at_value := COALESCE(observed_at_input, now());
+
+    release_group_suffix_present := FALSE;
+    release_group_token := NULL;
+    release_group_confidence := 0;
+    IF trimmed_title ~* '(\\s-\\s|-)[A-Za-z0-9]{2,20}\\s*$' THEN
+        release_group_suffix_present := TRUE;
+        SELECT (regexp_matches(trimmed_title, '(?i)(?:\\s-\\s|-)([A-Za-z0-9]{2,20})\\s*$'))[1]
+        INTO release_group_token;
+        IF release_group_token IS NOT NULL THEN
+            release_group_token := lower(release_group_token);
+            release_group_confidence := release_group_confidence + 0.6;
+            IF release_group_token !~ '\\s' THEN
+                release_group_confidence := release_group_confidence + 0.1;
+            END IF;
+            IF release_group_token IN ('repack', 'proper', 'web') THEN
+                release_group_confidence := release_group_confidence - 0.2;
+            END IF;
+            IF trimmed_title ~* '(2160p|1080p|720p|480p|4320p|4k|8k|webrip|web[- ]?dl|bluray|blu[- ]?ray|bdrip|hdtv|x264|x265|h264|h265|hevc|avc|xvid|divx|vp9|av1)' THEN
+                release_group_confidence := release_group_confidence + 0.2;
+            END IF;
+        END IF;
+    END IF;
+
+    IF release_group_suffix_present THEN
+        title_for_norm := regexp_replace(trimmed_title, '(?i)(?:\\s-\\s|-)[A-Za-z0-9]{2,20}\\s*$', '', 'g');
+        title_for_norm := btrim(title_for_norm);
+    ELSE
+        title_for_norm := trimmed_title;
+    END IF;
+
+    IF release_group_confidence < 0.8 THEN
+        release_group_token := NULL;
+        release_group_confidence := 0;
+    END IF;
+
+    title_normalized_value := normalize_title_v1(title_for_norm);
+
+    IF title_normalized_value IS NULL OR title_normalized_value = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'missing_title';
+    END IF;
+
+    IF infohash_v2_value IS NOT NULL THEN
+        identity_strategy_value := 'infohash_v2';
+        identity_confidence_value := 1.0;
+    ELSIF infohash_v1_value IS NOT NULL THEN
+        identity_strategy_value := 'infohash_v1';
+        identity_confidence_value := 1.0;
+    ELSIF magnet_hash_value IS NOT NULL THEN
+        identity_strategy_value := 'magnet_hash';
+        identity_confidence_value := 0.85;
+    ELSE
+        identity_strategy_value := 'title_size_fallback';
+        identity_confidence_value := 0.60;
+        title_size_hash_value := compute_title_size_hash_v1(title_normalized_value, size_bytes_input);
+    END IF;
+
+    IF identity_strategy_value = 'title_size_fallback' AND title_size_hash_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'insufficient_identity';
+    END IF;
+
+    IF identity_strategy_value = 'infohash_v2' THEN
+        disambiguation_type := 'infohash_v2';
+        disambiguation_value := infohash_v2_value;
+    ELSIF identity_strategy_value = 'infohash_v1' THEN
+        disambiguation_type := 'infohash_v1';
+        disambiguation_value := infohash_v1_value;
+    ELSIF identity_strategy_value = 'magnet_hash' THEN
+        disambiguation_type := 'magnet_hash';
+        disambiguation_value := magnet_hash_value;
+    ELSE
+        disambiguation_type := NULL;
+        disambiguation_value := NULL;
+    END IF;
+
+    IF identity_strategy_value = 'infohash_v2' THEN
+        SELECT canonical_torrent_id, canonical_torrent_public_id
+        INTO canonical_id, canonical_public_id
+        FROM canonical_torrent
+        WHERE infohash_v2 = infohash_v2_value;
+    ELSIF identity_strategy_value = 'infohash_v1' THEN
+        SELECT canonical_torrent_id, canonical_torrent_public_id
+        INTO canonical_id, canonical_public_id
+        FROM canonical_torrent
+        WHERE infohash_v1 = infohash_v1_value;
+    ELSIF identity_strategy_value = 'magnet_hash' THEN
+        SELECT canonical_torrent_id, canonical_torrent_public_id
+        INTO canonical_id, canonical_public_id
+        FROM canonical_torrent
+        WHERE magnet_hash = magnet_hash_value;
+    ELSE
+        SELECT canonical_torrent_id, canonical_torrent_public_id
+        INTO canonical_id, canonical_public_id
+        FROM canonical_torrent
+        WHERE title_size_hash = title_size_hash_value;
+    END IF;
+
+    IF canonical_id IS NOT NULL
+        AND disambiguation_type IS NOT NULL
+        AND disambiguation_value IS NOT NULL
+        AND EXISTS (
+            SELECT 1
+            FROM canonical_disambiguation_rule
+            WHERE rule_type = 'prevent_merge'
+              AND (
+                  (
+                      identity_left_type = 'canonical_public_id'
+                      AND identity_left_value_uuid = canonical_public_id
+                      AND identity_right_type = disambiguation_type
+                      AND identity_right_value_text = disambiguation_value
+                  )
+                  OR (
+                      identity_right_type = 'canonical_public_id'
+                      AND identity_right_value_uuid = canonical_public_id
+                      AND identity_left_type = disambiguation_type
+                      AND identity_left_value_text = disambiguation_value
+                  )
+              )
+        ) THEN
+        canonical_id := NULL;
+        canonical_public_id := NULL;
+    END IF;
+
+    IF canonical_id IS NULL THEN
+        canonical_public_id := gen_random_uuid();
+        INSERT INTO canonical_torrent (
+            canonical_torrent_public_id,
+            identity_confidence,
+            identity_strategy,
+            infohash_v1,
+            infohash_v2,
+            magnet_hash,
+            title_size_hash,
+            title_display,
+            title_normalized,
+            size_bytes
+        )
+        VALUES (
+            canonical_public_id,
+            identity_confidence_value,
+            identity_strategy_value,
+            infohash_v1_value,
+            infohash_v2_value,
+            magnet_hash_value,
+            title_size_hash_value,
+            trimmed_title,
+            title_normalized_value,
+            CASE
+                WHEN identity_strategy_value = 'title_size_fallback' THEN size_bytes_input
+                ELSE NULL
+            END
+        )
+        RETURNING canonical_torrent_id INTO canonical_id;
+        canonical_inserted := TRUE;
+    END IF;
+
+    SELECT infohash_v1, infohash_v2, magnet_hash
+    INTO canonical_infohash_v1, canonical_infohash_v2, canonical_magnet_hash
+    FROM canonical_torrent
+    WHERE canonical_torrent_id = canonical_id;
+
+    IF source_guid_value IS NOT NULL THEN
+        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        INTO source_id, source_public_id
+        FROM canonical_torrent_source
+        WHERE indexer_instance_id = instance_id
+          AND source_guid = source_guid_value;
+    END IF;
+
+    IF source_id IS NULL AND infohash_v2_value IS NOT NULL THEN
+        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        INTO source_id, source_public_id
+        FROM canonical_torrent_source
+        WHERE indexer_instance_id = instance_id
+          AND source_guid IS NULL
+          AND infohash_v2 = infohash_v2_value;
+    END IF;
+
+    IF source_id IS NULL AND infohash_v1_value IS NOT NULL THEN
+        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        INTO source_id, source_public_id
+        FROM canonical_torrent_source
+        WHERE indexer_instance_id = instance_id
+          AND source_guid IS NULL
+          AND infohash_v2 IS NULL
+          AND infohash_v1 = infohash_v1_value;
+    END IF;
+
+    IF source_id IS NULL AND magnet_hash_value IS NOT NULL THEN
+        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        INTO source_id, source_public_id
+        FROM canonical_torrent_source
+        WHERE indexer_instance_id = instance_id
+          AND source_guid IS NULL
+          AND infohash_v2 IS NULL
+          AND infohash_v1 IS NULL
+          AND magnet_hash = magnet_hash_value;
+    END IF;
+
+    IF source_id IS NULL AND size_bytes_input IS NOT NULL THEN
+        SELECT canonical_torrent_source_id, canonical_torrent_source_public_id
+        INTO source_id, source_public_id
+        FROM canonical_torrent_source
+        WHERE indexer_instance_id = instance_id
+          AND source_guid IS NULL
+          AND infohash_v2 IS NULL
+          AND infohash_v1 IS NULL
+          AND magnet_hash IS NULL
+          AND size_bytes = size_bytes_input
+          AND title_normalized = title_normalized_value;
+    END IF;
+
+    IF source_id IS NULL THEN
+        source_public_id := gen_random_uuid();
+        INSERT INTO canonical_torrent_source (
+            indexer_instance_id,
+            canonical_torrent_source_public_id,
+            source_guid,
+            infohash_v1,
+            infohash_v2,
+            magnet_hash,
+            title_normalized,
+            size_bytes,
+            last_seen_at,
+            last_seen_seeders,
+            last_seen_leechers,
+            last_seen_published_at,
+            last_seen_download_url,
+            last_seen_magnet_uri,
+            last_seen_details_url,
+            last_seen_uploader
+        )
+        VALUES (
+            instance_id,
+            source_public_id,
+            source_guid_value,
+            infohash_v1_value,
+            infohash_v2_value,
+            magnet_hash_value,
+            title_normalized_value,
+            size_bytes_input,
+            observed_at_value,
+            seeders_input,
+            leechers_input,
+            published_at_input,
+            download_url_value,
+            magnet_uri_value,
+            details_url_value,
+            uploader_input
+        )
+        RETURNING canonical_torrent_source_id INTO source_id;
+        source_inserted := TRUE;
+    ELSE
+        SELECT source_guid, infohash_v1, infohash_v2, magnet_hash
+        INTO existing_source_guid, existing_infohash_v1, existing_infohash_v2, existing_magnet_hash
+        FROM canonical_torrent_source
+        WHERE canonical_torrent_source_id = source_id;
+
+        IF source_guid_value IS NOT NULL THEN
+            IF existing_source_guid IS NULL THEN
+                IF EXISTS (
+                    SELECT 1
+                    FROM canonical_torrent_source
+                    WHERE indexer_instance_id = instance_id
+                      AND source_guid = source_guid_value
+                      AND canonical_torrent_source_id <> source_id
+                ) THEN
+                    SELECT canonical_torrent_source_public_id
+                    INTO existing_source_guid
+                    FROM canonical_torrent_source
+                    WHERE indexer_instance_id = instance_id
+                      AND source_guid = source_guid_value
+                      AND canonical_torrent_source_id <> source_id
+                    LIMIT 1;
+
+                    guid_conflict_value := TRUE;
+                    PERFORM log_source_metadata_conflict_v1(
+                        source_id,
+                        instance_id,
+                        'source_guid',
+                        existing_source_guid,
+                        source_guid_value,
+                        observed_at_value
+                    );
+                ELSE
+                    UPDATE canonical_torrent_source
+                    SET source_guid = source_guid_value,
+                        updated_at = now()
+                    WHERE canonical_torrent_source_id = source_id;
+                    existing_source_guid := source_guid_value;
+                END IF;
+            ELSIF existing_source_guid <> source_guid_value THEN
+                guid_conflict_value := TRUE;
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'source_guid',
+                    source_public_id::TEXT,
+                    source_guid_value,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        IF infohash_v2_value IS NOT NULL THEN
+            IF existing_infohash_v2 IS NULL THEN
+                IF EXISTS (
+                    SELECT 1
+                    FROM canonical_torrent_source
+                    WHERE indexer_instance_id = instance_id
+                      AND source_guid IS NULL
+                      AND infohash_v2 = infohash_v2_value
+                      AND canonical_torrent_source_id <> source_id
+                ) THEN
+                    PERFORM log_source_metadata_conflict_v1(
+                        source_id,
+                        instance_id,
+                        'hash',
+                        infohash_v2_value,
+                        infohash_v2_value,
+                        observed_at_value
+                    );
+                ELSE
+                    UPDATE canonical_torrent_source
+                    SET infohash_v2 = infohash_v2_value,
+                        updated_at = now()
+                    WHERE canonical_torrent_source_id = source_id;
+                    existing_infohash_v2 := infohash_v2_value;
+                END IF;
+            ELSIF existing_infohash_v2 <> infohash_v2_value THEN
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'hash',
+                    existing_infohash_v2,
+                    infohash_v2_value,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        IF infohash_v1_value IS NOT NULL THEN
+            IF existing_infohash_v1 IS NULL THEN
+                IF existing_infohash_v2 IS NULL AND EXISTS (
+                    SELECT 1
+                    FROM canonical_torrent_source
+                    WHERE indexer_instance_id = instance_id
+                      AND source_guid IS NULL
+                      AND infohash_v2 IS NULL
+                      AND infohash_v1 = infohash_v1_value
+                      AND canonical_torrent_source_id <> source_id
+                ) THEN
+                    PERFORM log_source_metadata_conflict_v1(
+                        source_id,
+                        instance_id,
+                        'hash',
+                        infohash_v1_value,
+                        infohash_v1_value,
+                        observed_at_value
+                    );
+                ELSE
+                    UPDATE canonical_torrent_source
+                    SET infohash_v1 = infohash_v1_value,
+                        updated_at = now()
+                    WHERE canonical_torrent_source_id = source_id;
+                    existing_infohash_v1 := infohash_v1_value;
+                END IF;
+            ELSIF existing_infohash_v1 <> infohash_v1_value THEN
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'hash',
+                    existing_infohash_v1,
+                    infohash_v1_value,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        IF magnet_hash_value IS NOT NULL THEN
+            IF existing_magnet_hash IS NULL THEN
+                IF existing_infohash_v2 IS NULL AND existing_infohash_v1 IS NULL AND EXISTS (
+                    SELECT 1
+                    FROM canonical_torrent_source
+                    WHERE indexer_instance_id = instance_id
+                      AND source_guid IS NULL
+                      AND infohash_v2 IS NULL
+                      AND infohash_v1 IS NULL
+                      AND magnet_hash = magnet_hash_value
+                      AND canonical_torrent_source_id <> source_id
+                ) THEN
+                    PERFORM log_source_metadata_conflict_v1(
+                        source_id,
+                        instance_id,
+                        'hash',
+                        magnet_hash_value,
+                        magnet_hash_value,
+                        observed_at_value
+                    );
+                ELSE
+                    UPDATE canonical_torrent_source
+                    SET magnet_hash = magnet_hash_value,
+                        updated_at = now()
+                    WHERE canonical_torrent_source_id = source_id;
+                    existing_magnet_hash := magnet_hash_value;
+                END IF;
+            ELSIF existing_magnet_hash <> magnet_hash_value THEN
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'hash',
+                    existing_magnet_hash,
+                    magnet_hash_value,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        UPDATE canonical_torrent_source
+        SET last_seen_at = CASE
+                WHEN observed_at_value > last_seen_at THEN observed_at_value
+                ELSE last_seen_at
+            END,
+            last_seen_seeders = CASE
+                WHEN observed_at_value > last_seen_at THEN seeders_input
+                ELSE last_seen_seeders
+            END,
+            last_seen_leechers = CASE
+                WHEN observed_at_value > last_seen_at THEN leechers_input
+                ELSE last_seen_leechers
+            END,
+            last_seen_published_at = CASE
+                WHEN observed_at_value > last_seen_at THEN published_at_input
+                ELSE last_seen_published_at
+            END,
+            last_seen_download_url = CASE
+                WHEN observed_at_value > last_seen_at THEN download_url_value
+                ELSE last_seen_download_url
+            END,
+            last_seen_magnet_uri = CASE
+                WHEN observed_at_value > last_seen_at THEN magnet_uri_value
+                ELSE last_seen_magnet_uri
+            END,
+            last_seen_details_url = CASE
+                WHEN observed_at_value > last_seen_at THEN details_url_value
+                ELSE last_seen_details_url
+            END,
+            last_seen_uploader = CASE
+                WHEN observed_at_value > last_seen_at THEN uploader_input
+                ELSE last_seen_uploader
+            END,
+            updated_at = now()
+        WHERE canonical_torrent_source_id = source_id;
+    END IF;
+
+    IF attr_keys_input IS NOT NULL THEN
+        IF attr_types_input IS NULL
+            OR attr_value_text_input IS NULL
+            OR attr_value_int_input IS NULL
+            OR attr_value_bigint_input IS NULL
+            OR attr_value_numeric_input IS NULL
+            OR attr_value_bool_input IS NULL
+            OR attr_value_uuid_input IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_length_mismatch';
+        END IF;
+
+        attr_count := COALESCE(array_length(attr_keys_input, 1), 0);
+        IF attr_count <> COALESCE(array_length(attr_types_input, 1), 0)
+            OR attr_count <> COALESCE(array_length(attr_value_text_input, 1), 0)
+            OR attr_count <> COALESCE(array_length(attr_value_int_input, 1), 0)
+            OR attr_count <> COALESCE(array_length(attr_value_bigint_input, 1), 0)
+            OR attr_count <> COALESCE(array_length(attr_value_numeric_input, 1), 0)
+            OR attr_count <> COALESCE(array_length(attr_value_bool_input, 1), 0)
+            OR attr_count <> COALESCE(array_length(attr_value_uuid_input, 1), 0) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_length_mismatch';
+        END IF;
+
+        CREATE TEMP TABLE tmp_attrs (
+            attr_key observation_attr_key,
+            attr_type attr_value_type,
+            value_text VARCHAR,
+            value_int INTEGER,
+            value_bigint BIGINT,
+            value_numeric NUMERIC(12,4),
+            value_bool BOOLEAN,
+            value_uuid UUID
+        ) ON COMMIT DROP;
+
+        INSERT INTO tmp_attrs (attr_key, attr_type, value_text, value_int, value_bigint, value_numeric, value_bool, value_uuid)
+        SELECT *
+        FROM unnest(
+            attr_keys_input,
+            attr_types_input,
+            attr_value_text_input,
+            attr_value_int_input,
+            attr_value_bigint_input,
+            attr_value_numeric_input,
+            attr_value_bool_input,
+            attr_value_uuid_input
+        );
+
+        IF EXISTS (
+            SELECT 1
+            FROM tmp_attrs
+            GROUP BY attr_key
+            HAVING COUNT(*) > 1
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'duplicate_attr_key';
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+            FROM tmp_attrs
+            WHERE (
+                (attr_type = 'text' AND value_text IS NULL)
+                OR (attr_type = 'int' AND value_int IS NULL)
+                OR (attr_type = 'bigint' AND value_bigint IS NULL)
+                OR (attr_type = 'numeric' AND value_numeric IS NULL)
+                OR (attr_type = 'bool' AND value_bool IS NULL)
+                OR (attr_type = 'uuid' AND value_uuid IS NULL)
+            )
+            OR (
+                (value_text IS NOT NULL)::INT
+                + (value_int IS NOT NULL)::INT
+                + (value_bigint IS NOT NULL)::INT
+                + (value_numeric IS NOT NULL)::INT
+                + (value_bool IS NOT NULL)::INT
+                + (value_uuid IS NOT NULL)::INT
+            ) <> 1
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+            FROM tmp_attrs
+            WHERE (
+                attr_key IN ('tracker_name', 'release_group', 'language_primary', 'subtitles_primary', 'imdb_id')
+                AND attr_type <> 'text'
+            )
+            OR (
+                attr_key = 'size_bytes_reported'
+                AND attr_type <> 'bigint'
+            )
+            OR (
+                attr_key IN (
+                    'tracker_category',
+                    'tracker_subcategory',
+                    'files_count',
+                    'season',
+                    'episode',
+                    'year',
+                    'tmdb_id',
+                    'tvdb_id',
+                    'minimum_seed_time_hours'
+                ) AND attr_type <> 'int'
+            )
+            OR (attr_key = 'minimum_ratio' AND attr_type <> 'numeric')
+            OR (attr_key IN ('freeleech', 'internal_flag', 'scene_flag') AND attr_type <> 'bool')
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_type_mismatch';
+        END IF;
+
+        SELECT value_text INTO tracker_name_value
+        FROM tmp_attrs WHERE attr_key = 'tracker_name';
+        SELECT value_text INTO language_primary_value
+        FROM tmp_attrs WHERE attr_key = 'language_primary';
+        SELECT value_text INTO subtitles_primary_value
+        FROM tmp_attrs WHERE attr_key = 'subtitles_primary';
+        SELECT value_int INTO tracker_category_value
+        FROM tmp_attrs WHERE attr_key = 'tracker_category';
+        SELECT value_int INTO tracker_subcategory_value
+        FROM tmp_attrs WHERE attr_key = 'tracker_subcategory';
+        SELECT value_int INTO files_count_value
+        FROM tmp_attrs WHERE attr_key = 'files_count';
+        SELECT value_bigint INTO size_bytes_reported_value
+        FROM tmp_attrs WHERE attr_key = 'size_bytes_reported';
+        SELECT value_text INTO imdb_id_value
+        FROM tmp_attrs WHERE attr_key = 'imdb_id';
+        SELECT value_int INTO tmdb_id_value
+        FROM tmp_attrs WHERE attr_key = 'tmdb_id';
+        SELECT value_int INTO tvdb_id_value
+        FROM tmp_attrs WHERE attr_key = 'tvdb_id';
+        SELECT value_int INTO season_value
+        FROM tmp_attrs WHERE attr_key = 'season';
+        SELECT value_int INTO episode_value
+        FROM tmp_attrs WHERE attr_key = 'episode';
+        SELECT value_int INTO year_value
+        FROM tmp_attrs WHERE attr_key = 'year';
+
+        IF tracker_category_value IS NOT NULL AND tracker_category_value < 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF tracker_subcategory_value IS NOT NULL AND tracker_subcategory_value < 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF files_count_value IS NOT NULL AND files_count_value < 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF size_bytes_reported_value IS NOT NULL AND size_bytes_reported_value < 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF season_value IS NOT NULL AND season_value < 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF episode_value IS NOT NULL AND episode_value < 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF year_value IS NOT NULL AND year_value < 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF tmdb_id_value IS NOT NULL AND tmdb_id_value <= 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF tvdb_id_value IS NOT NULL AND tvdb_id_value <= 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'attr_value_invalid';
+        END IF;
+
+        IF imdb_id_value IS NOT NULL THEN
+            imdb_id_value := lower(imdb_id_value);
+            IF imdb_id_value !~ '^tt[0-9]{7,9}$' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'attr_value_invalid';
+            END IF;
+            UPDATE tmp_attrs
+            SET value_text = imdb_id_value
+            WHERE attr_key = 'imdb_id';
+        END IF;
+
+        IF language_primary_value IS NOT NULL THEN
+            language_primary_value := lower(btrim(language_primary_value));
+            IF language_primary_value = '' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'attr_value_invalid';
+            END IF;
+            UPDATE tmp_attrs
+            SET value_text = language_primary_value
+            WHERE attr_key = 'language_primary';
+        END IF;
+
+        IF subtitles_primary_value IS NOT NULL THEN
+            subtitles_primary_value := lower(btrim(subtitles_primary_value));
+            IF subtitles_primary_value = '' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'attr_value_invalid';
+            END IF;
+            UPDATE tmp_attrs
+            SET value_text = subtitles_primary_value
+            WHERE attr_key = 'subtitles_primary';
+        END IF;
+
+        IF release_group_confidence < 0.8 THEN
+            DELETE FROM tmp_attrs WHERE attr_key = 'release_group';
+        ELSIF release_group_token IS NOT NULL THEN
+            DELETE FROM tmp_attrs
+            WHERE attr_key = 'release_group'
+              AND lower(value_text) IS DISTINCT FROM release_group_token;
+            UPDATE tmp_attrs
+            SET value_text = release_group_token
+            WHERE attr_key = 'release_group';
+        END IF;
+    END IF;
+
+    IF tracker_name_value IS NULL THEN
+        SELECT value_text
+        INTO tracker_name_value
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'tracker_name';
+    END IF;
+
+    IF request_snapshot_id IS NOT NULL THEN
+        CREATE TEMP TABLE tmp_policy_rules AS
+        SELECT psr.rule_order,
+               pr.policy_rule_public_id,
+               pr.rule_type,
+               pr.action,
+               pr.severity,
+               pr.match_field,
+               pr.match_operator,
+               pr.match_value_text,
+               pr.match_value_int,
+               pr.match_value_uuid,
+               pr.value_set_id,
+               pr.is_case_insensitive,
+               ps.scope,
+               CASE ps.scope
+                   WHEN 'request' THEN 1
+                   WHEN 'profile' THEN 2
+                   WHEN 'user' THEN 3
+                   ELSE 4
+               END AS scope_rank
+        FROM policy_snapshot_rule psr
+        JOIN policy_rule pr
+            ON pr.policy_rule_public_id = psr.policy_rule_public_id
+        JOIN policy_set ps
+            ON ps.policy_set_id = pr.policy_set_id
+        WHERE psr.policy_snapshot_id = request_snapshot_id;
+
+        CREATE TEMP TABLE tmp_policy_matches (
+            policy_rule_public_id UUID,
+            action policy_action,
+            severity policy_severity,
+            rule_type policy_rule_type
+        ) ON COMMIT DROP;
+
+        SELECT MIN(scope_rank)
+        INTO allowlist_scope_indexer
+        FROM tmp_policy_rules
+        WHERE action = 'require'
+          AND rule_type = 'allow_indexer_instance';
+
+        SELECT MIN(scope_rank)
+        INTO allowlist_scope_title
+        FROM tmp_policy_rules
+        WHERE action = 'require'
+          AND rule_type = 'allow_title_regex';
+
+        SELECT MIN(scope_rank)
+        INTO allowlist_scope_release_group
+        FROM tmp_policy_rules
+        WHERE action = 'require'
+          AND rule_type = 'allow_release_group';
+
+        SELECT MIN(scope_rank)
+        INTO allowlist_scope_domain
+        FROM tmp_policy_rules
+        WHERE action = 'require'
+          AND rule_type = 'require_media_domain';
+
+        SELECT MIN(scope_rank)
+        INTO allowlist_scope_trust
+        FROM tmp_policy_rules
+        WHERE action = 'require'
+          AND rule_type = 'require_trust_tier_min';
+
+        IF allowlist_scope_indexer IS NOT NULL THEN
+            SELECT policy_rule_public_id
+            INTO require_indexer_rule
+            FROM tmp_policy_rules
+            WHERE action = 'require'
+              AND rule_type = 'allow_indexer_instance'
+              AND scope_rank = allowlist_scope_indexer
+            ORDER BY rule_order
+            LIMIT 1;
+
+            SELECT EXISTS (
+                SELECT 1
+                FROM tmp_policy_rules
+                WHERE action = 'require'
+                  AND rule_type = 'allow_indexer_instance'
+                  AND scope_rank = allowlist_scope_indexer
+                  AND policy_uuid_match_v1(
+                      indexer_instance_public_id_input,
+                      match_operator,
+                      match_value_uuid,
+                      value_set_id
+                  )
+            ) INTO require_indexer_matched;
+
+            IF require_indexer_matched IS NOT TRUE THEN
+                dropped_source := TRUE;
+            END IF;
+        END IF;
+
+        IF allowlist_scope_title IS NOT NULL THEN
+            SELECT policy_rule_public_id
+            INTO require_title_rule
+            FROM tmp_policy_rules
+            WHERE action = 'require'
+              AND rule_type = 'allow_title_regex'
+              AND scope_rank = allowlist_scope_title
+            ORDER BY rule_order
+            LIMIT 1;
+
+            SELECT EXISTS (
+                SELECT 1
+                FROM tmp_policy_rules
+                WHERE action = 'require'
+                  AND rule_type = 'allow_title_regex'
+                  AND scope_rank = allowlist_scope_title
+                  AND policy_text_match_v1(
+                      title_normalized_value,
+                      match_operator,
+                      match_value_text,
+                      value_set_id,
+                      is_case_insensitive
+                  )
+            ) INTO require_title_matched;
+
+            IF require_title_matched IS NOT TRUE THEN
+                dropped_canonical := TRUE;
+            END IF;
+        END IF;
+
+        IF allowlist_scope_release_group IS NOT NULL THEN
+            SELECT policy_rule_public_id
+            INTO require_release_group_rule
+            FROM tmp_policy_rules
+            WHERE action = 'require'
+              AND rule_type = 'allow_release_group'
+              AND scope_rank = allowlist_scope_release_group
+            ORDER BY rule_order
+            LIMIT 1;
+
+            SELECT EXISTS (
+                SELECT 1
+                FROM tmp_policy_rules
+                WHERE action = 'require'
+                  AND rule_type = 'allow_release_group'
+                  AND scope_rank = allowlist_scope_release_group
+                  AND policy_release_group_match_v1(
+                      canonical_id,
+                      release_group_token,
+                      match_operator,
+                      match_value_text,
+                      value_set_id,
+                      is_case_insensitive
+                  )
+            ) INTO require_release_group_matched;
+
+            IF require_release_group_matched IS NOT TRUE THEN
+                dropped_canonical := TRUE;
+            END IF;
+        END IF;
+
+        IF allowlist_scope_domain IS NOT NULL THEN
+            SELECT policy_rule_public_id
+            INTO require_domain_rule
+            FROM tmp_policy_rules
+            WHERE action = 'require'
+              AND rule_type = 'require_media_domain'
+              AND scope_rank = allowlist_scope_domain
+            ORDER BY rule_order
+            LIMIT 1;
+
+            SELECT EXISTS (
+                SELECT 1
+                FROM tmp_policy_rules pr
+                JOIN indexer_instance_media_domain imd
+                    ON imd.indexer_instance_id = instance_id
+                JOIN media_domain md
+                    ON md.media_domain_id = imd.media_domain_id
+                WHERE pr.action = 'require'
+                  AND pr.rule_type = 'require_media_domain'
+                  AND pr.scope_rank = allowlist_scope_domain
+                  AND policy_text_match_v1(
+                      md.media_domain_key::TEXT,
+                      pr.match_operator,
+                      pr.match_value_text,
+                      pr.value_set_id,
+                      pr.is_case_insensitive
+                  )
+            ) INTO require_domain_matched;
+
+            IF require_domain_matched IS NOT TRUE THEN
+                dropped_source := TRUE;
+            END IF;
+        END IF;
+
+        IF allowlist_scope_trust IS NOT NULL THEN
+            SELECT policy_rule_public_id
+            INTO require_trust_rule
+            FROM tmp_policy_rules
+            WHERE action = 'require'
+              AND rule_type = 'require_trust_tier_min'
+              AND scope_rank = allowlist_scope_trust
+            ORDER BY rule_order
+            LIMIT 1;
+
+            SELECT MAX(match_value_int)
+            INTO policy_min_rank
+            FROM tmp_policy_rules
+            WHERE action = 'require'
+              AND rule_type = 'require_trust_tier_min'
+              AND scope_rank = allowlist_scope_trust
+              AND match_value_int IS NOT NULL;
+
+            IF policy_min_rank IS NULL THEN
+                require_trust_matched := TRUE;
+            ELSE
+                require_trust_matched := instance_trust_rank >= policy_min_rank;
+                IF require_trust_matched IS NOT TRUE THEN
+                    dropped_source := TRUE;
+                END IF;
+            END IF;
+        END IF;
+
+        FOR policy_rule_record IN
+            SELECT *
+            FROM tmp_policy_rules
+            ORDER BY rule_order
+        LOOP
+            IF policy_rule_record.action = 'require' THEN
+                CONTINUE;
+            END IF;
+
+            rule_matched := FALSE;
+
+            IF policy_rule_record.match_field = 'infohash_v1' THEN
+                rule_matched := policy_text_match_v1(
+                    canonical_infohash_v1,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_text,
+                    policy_rule_record.value_set_id,
+                    policy_rule_record.is_case_insensitive
+                );
+            ELSIF policy_rule_record.match_field = 'infohash_v2' THEN
+                rule_matched := policy_text_match_v1(
+                    canonical_infohash_v2,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_text,
+                    policy_rule_record.value_set_id,
+                    policy_rule_record.is_case_insensitive
+                );
+            ELSIF policy_rule_record.match_field = 'magnet_hash' THEN
+                rule_matched := policy_text_match_v1(
+                    canonical_magnet_hash,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_text,
+                    policy_rule_record.value_set_id,
+                    policy_rule_record.is_case_insensitive
+                );
+            ELSIF policy_rule_record.match_field = 'title' THEN
+                rule_matched := policy_text_match_v1(
+                    title_normalized_value,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_text,
+                    policy_rule_record.value_set_id,
+                    policy_rule_record.is_case_insensitive
+                );
+            ELSIF policy_rule_record.match_field = 'release_group' THEN
+                rule_matched := policy_release_group_match_v1(
+                    canonical_id,
+                    release_group_token,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_text,
+                    policy_rule_record.value_set_id,
+                    policy_rule_record.is_case_insensitive
+                );
+            ELSIF policy_rule_record.match_field = 'uploader' THEN
+                rule_matched := policy_text_match_v1(
+                    uploader_input,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_text,
+                    policy_rule_record.value_set_id,
+                    policy_rule_record.is_case_insensitive
+                );
+            ELSIF policy_rule_record.match_field = 'tracker' THEN
+                rule_matched := policy_text_match_v1(
+                    tracker_name_value,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_text,
+                    policy_rule_record.value_set_id,
+                    policy_rule_record.is_case_insensitive
+                );
+            ELSIF policy_rule_record.match_field = 'indexer_instance_public_id' THEN
+                rule_matched := policy_uuid_match_v1(
+                    indexer_instance_public_id_input,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_uuid,
+                    policy_rule_record.value_set_id
+                );
+            ELSIF policy_rule_record.match_field = 'media_domain_key' THEN
+                rule_matched := EXISTS (
+                    SELECT 1
+                    FROM indexer_instance_media_domain imd
+                    JOIN media_domain md
+                        ON md.media_domain_id = imd.media_domain_id
+                    WHERE imd.indexer_instance_id = instance_id
+                      AND policy_text_match_v1(
+                          md.media_domain_key::TEXT,
+                          policy_rule_record.match_operator,
+                          policy_rule_record.match_value_text,
+                          policy_rule_record.value_set_id,
+                          policy_rule_record.is_case_insensitive
+                      )
+                );
+            ELSIF policy_rule_record.match_field = 'trust_tier_key' THEN
+                rule_matched := policy_text_match_v1(
+                    instance_trust_tier_key::TEXT,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_text,
+                    policy_rule_record.value_set_id,
+                    policy_rule_record.is_case_insensitive
+                );
+            ELSIF policy_rule_record.match_field = 'trust_tier_rank' THEN
+                rule_matched := policy_int_match_v1(
+                    instance_trust_rank,
+                    policy_rule_record.match_operator,
+                    policy_rule_record.match_value_int,
+                    policy_rule_record.value_set_id
+                );
+            END IF;
+
+            IF rule_matched THEN
+                IF policy_rule_record.action IN ('drop_canonical', 'drop_source', 'downrank', 'flag') THEN
+                    INSERT INTO tmp_policy_matches (
+                        policy_rule_public_id,
+                        action,
+                        severity,
+                        rule_type
+                    )
+                    VALUES (
+                        policy_rule_record.policy_rule_public_id,
+                        policy_rule_record.action,
+                        policy_rule_record.severity,
+                        policy_rule_record.rule_type
+                    );
+                END IF;
+
+                IF policy_rule_record.action = 'drop_canonical' THEN
+                    dropped_canonical := TRUE;
+                ELSIF policy_rule_record.action = 'drop_source' THEN
+                    dropped_source := TRUE;
+                ELSIF policy_rule_record.action = 'downrank' THEN
+                    downranked := TRUE;
+                    score_policy_adjust := score_policy_adjust + CASE policy_rule_record.severity
+                        WHEN 'hard' THEN -50
+                        WHEN 'soft' THEN -10
+                        ELSE -25
+                    END;
+                ELSIF policy_rule_record.action = 'flag' THEN
+                    flagged := TRUE;
+                ELSIF policy_rule_record.action = 'prefer' THEN
+                    IF policy_rule_record.rule_type = 'prefer_indexer_instance' THEN
+                        score_policy_adjust := score_policy_adjust + 15;
+                    ELSIF policy_rule_record.rule_type = 'prefer_trust_tier' THEN
+                        score_policy_adjust := score_policy_adjust + 10;
+                    ELSIF policy_rule_record.rule_type = 'allow_title_regex' THEN
+                        score_policy_adjust := score_policy_adjust + 8;
+                    ELSIF policy_rule_record.rule_type = 'allow_release_group' THEN
+                        score_policy_adjust := score_policy_adjust + 8;
+                    END IF;
+                END IF;
+            END IF;
+        END LOOP;
+    END IF;
+
+    IF dropped_canonical OR dropped_source THEN
+        score_total_context := -10000;
+    ELSE
+        SELECT score_total_base
+        INTO base_score
+        FROM canonical_torrent_source_base_score
+        WHERE canonical_torrent_id = canonical_id
+          AND canonical_torrent_source_id = source_id;
+
+        base_score := COALESCE(base_score, 0);
+
+        IF request_profile_id IS NOT NULL THEN
+            SELECT COALESCE(SUM(weight_override), 0)
+            INTO score_tag_adjust
+            FROM search_profile_tag_prefer stp
+            JOIN indexer_instance_tag it
+                ON it.tag_id = stp.tag_id
+            WHERE stp.search_profile_id = request_profile_id
+              AND it.indexer_instance_id = instance_id;
+        END IF;
+
+        IF score_tag_adjust < -15 THEN
+            score_tag_adjust := -15;
+        ELSIF score_tag_adjust > 15 THEN
+            score_tag_adjust := 15;
+        END IF;
+
+        score_total_context := base_score + score_policy_adjust + score_tag_adjust;
+        IF score_total_context < -10000 THEN
+            score_total_context := -10000;
+        ELSIF score_total_context > 10000 THEN
+            score_total_context := 10000;
+        END IF;
+    END IF;
+
+    INSERT INTO canonical_torrent_source_context_score (
+        context_key_type,
+        context_key_id,
+        canonical_torrent_id,
+        canonical_torrent_source_id,
+        score_total_context,
+        score_policy_adjust,
+        score_tag_adjust,
+        is_dropped,
+        computed_at
+    )
+    VALUES (
+        'search_request',
+        request_id,
+        canonical_id,
+        source_id,
+        score_total_context,
+        score_policy_adjust,
+        score_tag_adjust,
+        (dropped_canonical OR dropped_source),
+        now()
+    )
+    ON CONFLICT (context_key_type, context_key_id, canonical_torrent_id, canonical_torrent_source_id)
+    DO UPDATE SET
+        score_total_context = EXCLUDED.score_total_context,
+        score_policy_adjust = EXCLUDED.score_policy_adjust,
+        score_tag_adjust = EXCLUDED.score_tag_adjust,
+        is_dropped = EXCLUDED.is_dropped,
+        computed_at = EXCLUDED.computed_at;
+
+    IF NOT dropped_canonical AND NOT dropped_source THEN
+        SELECT score_total_context, canonical_torrent_source_id
+        INTO best_context_score, best_context_source
+        FROM canonical_torrent_source_context_score
+        WHERE context_key_type = 'search_request'
+          AND context_key_id = request_id
+          AND canonical_torrent_id = canonical_id
+        ORDER BY score_total_context DESC, canonical_torrent_source_id ASC
+        LIMIT 1;
+
+        should_update_best := FALSE;
+        IF best_context_source IS NULL THEN
+            should_update_best := TRUE;
+        ELSE
+            IF score_total_context >= best_context_score + 2 THEN
+                should_update_best := TRUE;
+            ELSE
+                SELECT last_seen_seeders
+                INTO best_context_seeders
+                FROM canonical_torrent_source
+                WHERE canonical_torrent_source_id = best_context_source;
+
+                IF seeders_input IS NOT NULL
+                    AND best_context_seeders IS NOT NULL
+                    AND best_context_seeders >= 20
+                    AND best_context_seeders < 100
+                    AND seeders_input >= 100 THEN
+                    should_update_best := TRUE;
+                END IF;
+            END IF;
+        END IF;
+
+        IF should_update_best THEN
+            INSERT INTO canonical_torrent_best_source_context (
+                context_key_type,
+                context_key_id,
+                canonical_torrent_id,
+                canonical_torrent_source_id,
+                computed_at
+            )
+            VALUES (
+                'search_request',
+                request_id,
+                canonical_id,
+                source_id,
+                now()
+            )
+            ON CONFLICT (context_key_type, context_key_id, canonical_torrent_id)
+            DO UPDATE SET
+                canonical_torrent_source_id = EXCLUDED.canonical_torrent_source_id,
+                computed_at = EXCLUDED.computed_at;
+        END IF;
+    END IF;
+
+    SELECT observation_id
+    INTO observation_id_value
+    FROM search_request_source_observation
+    WHERE search_request_id = request_id
+      AND indexer_instance_id = instance_id
+      AND (
+          (source_guid_value IS NOT NULL AND source_guid = source_guid_value)
+          OR (source_guid_value IS NULL AND canonical_torrent_source_id = source_id AND source_guid IS NULL)
+      )
+    LIMIT 1;
+
+    IF observation_id_value IS NULL AND source_guid_value IS NOT NULL THEN
+        SELECT observation_id
+        INTO observation_id_value
+        FROM search_request_source_observation
+        WHERE search_request_id = request_id
+          AND indexer_instance_id = instance_id
+          AND source_guid IS NULL
+          AND canonical_torrent_source_id = source_id
+        LIMIT 1;
+    END IF;
+
+    IF observation_id_value IS NULL THEN
+        INSERT INTO search_request_source_observation (
+            search_request_id,
+            indexer_instance_id,
+            canonical_torrent_id,
+            canonical_torrent_source_id,
+            observed_at,
+            seeders,
+            leechers,
+            published_at,
+            uploader,
+            source_guid,
+            details_url,
+            download_url,
+            magnet_uri,
+            title_raw,
+            size_bytes,
+            infohash_v1,
+            infohash_v2,
+            magnet_hash,
+            guid_conflict,
+            was_downranked,
+            was_flagged
+        )
+        VALUES (
+            request_id,
+            instance_id,
+            canonical_id,
+            source_id,
+            observed_at_value,
+            seeders_input,
+            leechers_input,
+            published_at_input,
+            uploader_input,
+            source_guid_value,
+            details_url_value,
+            download_url_value,
+            magnet_uri_value,
+            trimmed_title,
+            size_bytes_input,
+            infohash_v1_value,
+            infohash_v2_value,
+            magnet_hash_value,
+            guid_conflict_value,
+            downranked,
+            flagged
+        )
+        RETURNING observation_id INTO observation_id_value;
+        observation_inserted := TRUE;
+    ELSE
+        UPDATE search_request_source_observation
+        SET canonical_torrent_id = canonical_id,
+            canonical_torrent_source_id = source_id,
+            observed_at = observed_at_value,
+            seeders = seeders_input,
+            leechers = leechers_input,
+            published_at = published_at_input,
+            uploader = uploader_input,
+            source_guid = COALESCE(source_guid, source_guid_value),
+            details_url = details_url_value,
+            download_url = download_url_value,
+            magnet_uri = magnet_uri_value,
+            title_raw = trimmed_title,
+            size_bytes = size_bytes_input,
+            infohash_v1 = infohash_v1_value,
+            infohash_v2 = infohash_v2_value,
+            magnet_hash = magnet_hash_value,
+            guid_conflict = guid_conflict_value,
+            was_downranked = downranked,
+            was_flagged = flagged
+        WHERE observation_id = observation_id_value;
+        observation_inserted := FALSE;
+    END IF;
+
+    SELECT obs.title_raw
+    INTO best_title_display
+    FROM search_request_source_observation obs
+    JOIN indexer_instance inst
+        ON inst.indexer_instance_id = obs.indexer_instance_id
+    LEFT JOIN trust_tier tt
+        ON tt.trust_tier_key = inst.trust_tier_key
+    LEFT JOIN canonical_torrent_source_base_score bs
+        ON bs.canonical_torrent_id = canonical_id
+       AND bs.canonical_torrent_source_id = obs.canonical_torrent_source_id
+    WHERE obs.canonical_torrent_id = canonical_id
+    ORDER BY COALESCE(tt.rank, 0) DESC,
+             COALESCE(bs.score_total_base, 0) DESC,
+             obs.observed_at DESC,
+             obs.observation_id ASC
+    LIMIT 1;
+
+    IF best_title_display IS NOT NULL THEN
+        UPDATE canonical_torrent
+        SET title_display = best_title_display,
+            updated_at = now()
+        WHERE canonical_torrent_id = canonical_id;
+    END IF;
+
+    IF attr_keys_input IS NOT NULL THEN
+        INSERT INTO search_request_source_observation_attr (
+            observation_id,
+            attr_key,
+            value_text,
+            value_int,
+            value_bigint,
+            value_numeric,
+            value_bool,
+            value_uuid
+        )
+        SELECT observation_id_value,
+               attr_key,
+               value_text,
+               value_int,
+               value_bigint,
+               value_numeric,
+               value_bool,
+               value_uuid
+        FROM tmp_attrs
+        ON CONFLICT (observation_id, attr_key)
+        DO UPDATE SET
+            value_text = EXCLUDED.value_text,
+            value_int = EXCLUDED.value_int,
+            value_bigint = EXCLUDED.value_bigint,
+            value_numeric = EXCLUDED.value_numeric,
+            value_bool = EXCLUDED.value_bool,
+            value_uuid = EXCLUDED.value_uuid;
+
+        SELECT value_text
+        INTO existing_tracker_name
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'tracker_name';
+
+        SELECT value_int
+        INTO existing_tracker_category
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'tracker_category';
+
+        SELECT value_int
+        INTO existing_tracker_subcategory
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'tracker_subcategory';
+
+        SELECT value_int
+        INTO existing_files_count
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'files_count';
+
+        SELECT value_bigint
+        INTO existing_size_bytes_reported
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'size_bytes_reported';
+
+        SELECT value_text
+        INTO existing_imdb_id
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'imdb_id';
+
+        SELECT value_int
+        INTO existing_tmdb_id
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'tmdb_id';
+
+        SELECT value_int
+        INTO existing_tvdb_id
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'tvdb_id';
+
+        SELECT value_int
+        INTO existing_season
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'season';
+
+        SELECT value_int
+        INTO existing_episode
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'episode';
+
+        SELECT value_int
+        INTO existing_year
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = source_id
+          AND attr_key = 'year';
+
+        IF tracker_name_value IS NOT NULL THEN
+            IF existing_tracker_name IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_text
+                )
+                VALUES (
+                    source_id,
+                    'tracker_name',
+                    tracker_name_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_text = COALESCE(canonical_torrent_source_attr.value_text, EXCLUDED.value_text);
+            ELSIF existing_tracker_name <> tracker_name_value THEN
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'tracker_name',
+                    existing_tracker_name,
+                    tracker_name_value,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        IF tracker_category_value IS NOT NULL THEN
+            IF existing_tracker_category IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    source_id,
+                    'tracker_category',
+                    tracker_category_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
+            ELSIF existing_tracker_category <> tracker_category_value THEN
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'tracker_category',
+                    existing_tracker_category::TEXT,
+                    tracker_category_value::TEXT,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        IF tracker_subcategory_value IS NOT NULL THEN
+            IF existing_tracker_subcategory IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    source_id,
+                    'tracker_subcategory',
+                    tracker_subcategory_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
+            ELSIF existing_tracker_subcategory <> tracker_subcategory_value THEN
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'tracker_category',
+                    existing_tracker_subcategory::TEXT,
+                    tracker_subcategory_value::TEXT,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        IF size_bytes_reported_value IS NOT NULL THEN
+            IF existing_size_bytes_reported IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_bigint
+                )
+                VALUES (
+                    source_id,
+                    'size_bytes_reported',
+                    size_bytes_reported_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_bigint = COALESCE(canonical_torrent_source_attr.value_bigint, EXCLUDED.value_bigint);
+            END IF;
+        END IF;
+
+        IF files_count_value IS NOT NULL THEN
+            IF existing_files_count IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    source_id,
+                    'files_count',
+                    files_count_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
+            END IF;
+        END IF;
+
+        IF imdb_id_value IS NOT NULL THEN
+            IF existing_imdb_id IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_text
+                )
+                VALUES (
+                    source_id,
+                    'imdb_id',
+                    imdb_id_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_text = COALESCE(canonical_torrent_source_attr.value_text, EXCLUDED.value_text);
+            ELSIF existing_imdb_id <> imdb_id_value THEN
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'external_id',
+                    existing_imdb_id,
+                    imdb_id_value,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        IF tmdb_id_value IS NOT NULL THEN
+            IF existing_tmdb_id IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    source_id,
+                    'tmdb_id',
+                    tmdb_id_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
+            ELSIF existing_tmdb_id <> tmdb_id_value THEN
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'external_id',
+                    existing_tmdb_id::TEXT,
+                    tmdb_id_value::TEXT,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        IF tvdb_id_value IS NOT NULL THEN
+            IF existing_tvdb_id IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    source_id,
+                    'tvdb_id',
+                    tvdb_id_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
+            ELSIF existing_tvdb_id <> tvdb_id_value THEN
+                PERFORM log_source_metadata_conflict_v1(
+                    source_id,
+                    instance_id,
+                    'external_id',
+                    existing_tvdb_id::TEXT,
+                    tvdb_id_value::TEXT,
+                    observed_at_value
+                );
+            END IF;
+        END IF;
+
+        IF season_value IS NOT NULL THEN
+            IF existing_season IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    source_id,
+                    'season',
+                    season_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
+            END IF;
+        END IF;
+
+        IF episode_value IS NOT NULL THEN
+            IF existing_episode IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    source_id,
+                    'episode',
+                    episode_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
+            END IF;
+        END IF;
+
+        IF year_value IS NOT NULL THEN
+            IF existing_year IS NULL THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    source_id,
+                    'year',
+                    year_value
+                )
+                ON CONFLICT (canonical_torrent_source_id, attr_key)
+                DO UPDATE SET
+                    value_int = COALESCE(canonical_torrent_source_attr.value_int, EXCLUDED.value_int);
+            END IF;
+        END IF;
+    END IF;
+
+    IF release_group_token IS NOT NULL AND release_group_confidence >= 0.8 THEN
+        INSERT INTO canonical_torrent_signal (
+            canonical_torrent_id,
+            signal_key,
+            value_text,
+            confidence
+        )
+        VALUES (
+            canonical_id,
+            'release_group',
+            release_group_token,
+            release_group_confidence
+        )
+        ON CONFLICT (canonical_torrent_id, signal_key, value_text, value_int)
+        DO UPDATE SET
+            confidence = LEAST(
+                1.0,
+                GREATEST(canonical_torrent_signal.confidence, EXCLUDED.confidence) + 0.05
+            );
+    END IF;
+
+    IF language_primary_value IS NOT NULL THEN
+        INSERT INTO canonical_torrent_signal (
+            canonical_torrent_id,
+            signal_key,
+            value_text,
+            confidence
+        )
+        VALUES (
+            canonical_id,
+            'language',
+            language_primary_value,
+            signal_confidence_base
+        )
+        ON CONFLICT (canonical_torrent_id, signal_key, value_text, value_int)
+        DO UPDATE SET
+            confidence = LEAST(
+                1.0,
+                GREATEST(canonical_torrent_signal.confidence, EXCLUDED.confidence) + 0.05
+            );
+    END IF;
+
+    IF subtitles_primary_value IS NOT NULL THEN
+        INSERT INTO canonical_torrent_signal (
+            canonical_torrent_id,
+            signal_key,
+            value_text,
+            confidence
+        )
+        VALUES (
+            canonical_id,
+            'subtitles',
+            subtitles_primary_value,
+            signal_confidence_base
+        )
+        ON CONFLICT (canonical_torrent_id, signal_key, value_text, value_int)
+        DO UPDATE SET
+            confidence = LEAST(
+                1.0,
+                GREATEST(canonical_torrent_signal.confidence, EXCLUDED.confidence) + 0.05
+            );
+    END IF;
+
+    IF year_value IS NOT NULL THEN
+        INSERT INTO canonical_torrent_signal (
+            canonical_torrent_id,
+            signal_key,
+            value_int,
+            confidence
+        )
+        VALUES (
+            canonical_id,
+            'year',
+            year_value,
+            signal_confidence_base
+        )
+        ON CONFLICT (canonical_torrent_id, signal_key, value_text, value_int)
+        DO UPDATE SET
+            confidence = LEAST(
+                1.0,
+                GREATEST(canonical_torrent_signal.confidence, EXCLUDED.confidence) + 0.05
+            );
+    END IF;
+
+    IF season_value IS NOT NULL THEN
+        INSERT INTO canonical_torrent_signal (
+            canonical_torrent_id,
+            signal_key,
+            value_int,
+            confidence
+        )
+        VALUES (
+            canonical_id,
+            'season',
+            season_value,
+            signal_confidence_base
+        )
+        ON CONFLICT (canonical_torrent_id, signal_key, value_text, value_int)
+        DO UPDATE SET
+            confidence = LEAST(
+                1.0,
+                GREATEST(canonical_torrent_signal.confidence, EXCLUDED.confidence) + 0.05
+            );
+    END IF;
+
+    IF episode_value IS NOT NULL THEN
+        INSERT INTO canonical_torrent_signal (
+            canonical_torrent_id,
+            signal_key,
+            value_int,
+            confidence
+        )
+        VALUES (
+            canonical_id,
+            'episode',
+            episode_value,
+            signal_confidence_base
+        )
+        ON CONFLICT (canonical_torrent_id, signal_key, value_text, value_int)
+        DO UPDATE SET
+            confidence = LEAST(
+                1.0,
+                GREATEST(canonical_torrent_signal.confidence, EXCLUDED.confidence) + 0.05
+            );
+    END IF;
+
+    IF imdb_id_value IS NOT NULL THEN
+        INSERT INTO canonical_external_id (
+            canonical_torrent_id,
+            id_type,
+            id_value_text,
+            trust_tier_rank,
+            first_seen_at,
+            last_seen_at,
+            source_canonical_torrent_source_id
+        )
+        VALUES (
+            canonical_id,
+            'imdb',
+            lower(imdb_id_value),
+            instance_trust_rank,
+            observed_at_value,
+            observed_at_value,
+            source_id
+        )
+        ON CONFLICT (canonical_torrent_id, id_type, id_value_text)
+        DO UPDATE SET
+            last_seen_at = EXCLUDED.last_seen_at,
+            trust_tier_rank = GREATEST(canonical_external_id.trust_tier_rank, EXCLUDED.trust_tier_rank);
+    END IF;
+
+    IF tmdb_id_value IS NOT NULL THEN
+        INSERT INTO canonical_external_id (
+            canonical_torrent_id,
+            id_type,
+            id_value_int,
+            trust_tier_rank,
+            first_seen_at,
+            last_seen_at,
+            source_canonical_torrent_source_id
+        )
+        VALUES (
+            canonical_id,
+            'tmdb',
+            tmdb_id_value,
+            instance_trust_rank,
+            observed_at_value,
+            observed_at_value,
+            source_id
+        )
+        ON CONFLICT (canonical_torrent_id, id_type, id_value_int)
+        DO UPDATE SET
+            last_seen_at = EXCLUDED.last_seen_at,
+            trust_tier_rank = GREATEST(canonical_external_id.trust_tier_rank, EXCLUDED.trust_tier_rank);
+    END IF;
+
+    IF tvdb_id_value IS NOT NULL THEN
+        INSERT INTO canonical_external_id (
+            canonical_torrent_id,
+            id_type,
+            id_value_int,
+            trust_tier_rank,
+            first_seen_at,
+            last_seen_at,
+            source_canonical_torrent_source_id
+        )
+        VALUES (
+            canonical_id,
+            'tvdb',
+            tvdb_id_value,
+            instance_trust_rank,
+            observed_at_value,
+            observed_at_value,
+            source_id
+        )
+        ON CONFLICT (canonical_torrent_id, id_type, id_value_int)
+        DO UPDATE SET
+            last_seen_at = EXCLUDED.last_seen_at,
+            trust_tier_rank = GREATEST(canonical_external_id.trust_tier_rank, EXCLUDED.trust_tier_rank);
+    END IF;
+
+    SELECT id_value_text
+    INTO best_imdb_id
+    FROM canonical_external_id cei
+    LEFT JOIN canonical_torrent_source_base_score bs
+        ON bs.canonical_torrent_id = canonical_id
+       AND bs.canonical_torrent_source_id = cei.source_canonical_torrent_source_id
+    WHERE cei.canonical_torrent_id = canonical_id
+      AND cei.id_type = 'imdb'
+    ORDER BY cei.trust_tier_rank DESC,
+             COALESCE(bs.score_total_base, 0) DESC,
+             cei.last_seen_at DESC,
+             cei.canonical_external_id_id ASC
+    LIMIT 1;
+
+    IF best_imdb_id IS NOT NULL THEN
+        UPDATE canonical_torrent
+        SET imdb_id = best_imdb_id,
+            updated_at = now()
+        WHERE canonical_torrent_id = canonical_id;
+    END IF;
+
+    SELECT id_value_int
+    INTO best_tmdb_id
+    FROM canonical_external_id cei
+    LEFT JOIN canonical_torrent_source_base_score bs
+        ON bs.canonical_torrent_id = canonical_id
+       AND bs.canonical_torrent_source_id = cei.source_canonical_torrent_source_id
+    WHERE cei.canonical_torrent_id = canonical_id
+      AND cei.id_type = 'tmdb'
+    ORDER BY cei.trust_tier_rank DESC,
+             COALESCE(bs.score_total_base, 0) DESC,
+             cei.last_seen_at DESC,
+             cei.canonical_external_id_id ASC
+    LIMIT 1;
+
+    IF best_tmdb_id IS NOT NULL THEN
+        UPDATE canonical_torrent
+        SET tmdb_id = best_tmdb_id,
+            updated_at = now()
+        WHERE canonical_torrent_id = canonical_id;
+    END IF;
+
+    SELECT id_value_int
+    INTO best_tvdb_id
+    FROM canonical_external_id cei
+    LEFT JOIN canonical_torrent_source_base_score bs
+        ON bs.canonical_torrent_id = canonical_id
+       AND bs.canonical_torrent_source_id = cei.source_canonical_torrent_source_id
+    WHERE cei.canonical_torrent_id = canonical_id
+      AND cei.id_type = 'tvdb'
+    ORDER BY cei.trust_tier_rank DESC,
+             COALESCE(bs.score_total_base, 0) DESC,
+             cei.last_seen_at DESC,
+             cei.canonical_external_id_id ASC
+    LIMIT 1;
+
+    IF best_tvdb_id IS NOT NULL THEN
+        UPDATE canonical_torrent
+        SET tvdb_id = best_tvdb_id,
+            updated_at = now()
+        WHERE canonical_torrent_id = canonical_id;
+    END IF;
+
+    IF identity_strategy_value <> 'title_size_fallback' THEN
+        IF size_bytes_input IS NOT NULL AND size_bytes_input > 0 THEN
+            IF request_effective_domain_id IS NOT NULL THEN
+                SELECT media_domain_key::TEXT
+                INTO media_domain_key_value
+                FROM media_domain
+                WHERE media_domain_id = request_effective_domain_id;
+            ELSE
+                SELECT array_agg(DISTINCT media_domain_id)
+                INTO instance_domain_ids
+                FROM indexer_instance_media_domain
+                WHERE indexer_instance_id = instance_id;
+
+                IF instance_domain_ids IS NOT NULL
+                    AND array_length(instance_domain_ids, 1) = 1 THEN
+                    SELECT media_domain_key::TEXT
+                    INTO media_domain_key_value
+                    FROM media_domain
+                    WHERE media_domain_id = instance_domain_ids[1];
+                ELSE
+                    media_domain_key_value := NULL;
+                END IF;
+            END IF;
+
+            IF size_bytes_input <= size_cutoff
+                OR media_domain_key_value IN ('ebooks', 'audiobooks', 'software') THEN
+                size_sample_allowed := TRUE;
+            END IF;
+        END IF;
+
+        IF size_sample_allowed THEN
+            INSERT INTO canonical_size_sample (
+                canonical_torrent_id,
+                observed_at,
+                size_bytes
+            )
+            VALUES (
+                canonical_id,
+                observed_at_value,
+                size_bytes_input
+            )
+            ON CONFLICT DO NOTHING;
+
+            DELETE FROM canonical_size_sample
+            WHERE canonical_torrent_id = canonical_id
+              AND canonical_size_sample_id IN (
+                  SELECT canonical_size_sample_id
+                  FROM canonical_size_sample
+                  WHERE canonical_torrent_id = canonical_id
+                  ORDER BY observed_at DESC
+                  OFFSET 25
+              );
+
+            SELECT COUNT(*), percentile_cont(0.5) WITHIN GROUP (ORDER BY size_bytes),
+                   MIN(size_bytes), MAX(size_bytes)
+            INTO sample_count, sample_median, sample_min, sample_max
+            FROM canonical_size_sample
+            WHERE canonical_torrent_id = canonical_id;
+
+            IF sample_count IS NOT NULL AND sample_count > 0 THEN
+                SELECT size_bytes
+                INTO sample_first
+                FROM canonical_size_sample
+                WHERE canonical_torrent_id = canonical_id
+                ORDER BY observed_at ASC, canonical_size_sample_id ASC
+                LIMIT 1;
+
+                INSERT INTO canonical_size_rollup (
+                    canonical_torrent_id,
+                    sample_count,
+                    size_median,
+                    size_min,
+                    size_max,
+                    updated_at
+                )
+                VALUES (
+                    canonical_id,
+                    sample_count,
+                    sample_median::BIGINT,
+                    sample_min,
+                    sample_max,
+                    now()
+                )
+                ON CONFLICT (canonical_torrent_id)
+                DO UPDATE SET
+                    sample_count = EXCLUDED.sample_count,
+                    size_median = EXCLUDED.size_median,
+                    size_min = EXCLUDED.size_min,
+                    size_max = EXCLUDED.size_max,
+                    updated_at = EXCLUDED.updated_at;
+
+                UPDATE canonical_torrent
+                SET size_bytes = CASE
+                        WHEN sample_count >= 3 THEN sample_median::BIGINT
+                        ELSE COALESCE(sample_first, sample_min)
+                    END,
+                    updated_at = now()
+                WHERE canonical_torrent_id = canonical_id;
+            END IF;
+        END IF;
+    ELSIF identity_strategy_value = 'title_size_fallback' AND size_bytes_input IS NOT NULL THEN
+        UPDATE canonical_torrent
+        SET size_bytes = COALESCE(size_bytes, size_bytes_input),
+            updated_at = now()
+        WHERE canonical_torrent_id = canonical_id;
+    END IF;
+
+    IF NOT dropped_canonical AND NOT dropped_source THEN
+        INSERT INTO search_request_canonical (
+            search_request_id,
+            canonical_torrent_id
+        )
+        VALUES (
+            request_id,
+            canonical_id
+        )
+        ON CONFLICT (search_request_id, canonical_torrent_id) DO NOTHING
+        RETURNING search_request_canonical_id INTO canonical_link_id;
+
+        IF canonical_link_id IS NOT NULL THEN
+            SELECT search_page_id, page_number
+            INTO page_id, page_number_value
+            FROM search_page
+            WHERE search_request_id = request_id
+              AND sealed_at IS NULL
+            ORDER BY page_number DESC
+            LIMIT 1;
+
+            IF page_id IS NULL THEN
+                page_number_value := 1;
+                INSERT INTO search_page (search_request_id, page_number)
+                VALUES (request_id, page_number_value)
+                RETURNING search_page_id INTO page_id;
+            END IF;
+
+            SELECT COUNT(*)
+            INTO page_item_count
+            FROM search_page_item
+            WHERE search_page_id = page_id;
+
+            IF page_item_count >= request_page_size THEN
+                UPDATE search_page
+                SET sealed_at = now()
+                WHERE search_page_id = page_id;
+
+                page_number_value := page_number_value + 1;
+                INSERT INTO search_page (search_request_id, page_number)
+                VALUES (request_id, page_number_value)
+                RETURNING search_page_id INTO page_id;
+
+                page_item_count := 0;
+            END IF;
+
+            INSERT INTO search_page_item (
+                search_page_id,
+                search_request_canonical_id,
+                position
+            )
+            VALUES (
+                page_id,
+                canonical_link_id,
+                page_item_count + 1
+            );
+        END IF;
+    END IF;
+
+    IF request_snapshot_id IS NOT NULL THEN
+        INSERT INTO search_filter_decision (
+            search_request_id,
+            policy_rule_public_id,
+            policy_snapshot_id,
+            observation_id,
+            canonical_torrent_id,
+            canonical_torrent_source_id,
+            decision,
+            decided_at
+        )
+        SELECT request_id,
+               policy_rule_public_id,
+               request_snapshot_id,
+               observation_id_value,
+               canonical_id,
+               source_id,
+               action::decision_type,
+               now()
+        FROM tmp_policy_matches;
+
+        IF require_title_rule IS NOT NULL AND require_title_matched IS NOT TRUE THEN
+            INSERT INTO search_filter_decision (
+                search_request_id,
+                policy_rule_public_id,
+                policy_snapshot_id,
+                observation_id,
+                canonical_torrent_id,
+                canonical_torrent_source_id,
+                decision,
+                decided_at
+            )
+            VALUES (
+                request_id,
+                require_title_rule,
+                request_snapshot_id,
+                observation_id_value,
+                canonical_id,
+                source_id,
+                'drop_canonical',
+                now()
+            );
+        END IF;
+
+        IF require_release_group_rule IS NOT NULL AND require_release_group_matched IS NOT TRUE THEN
+            INSERT INTO search_filter_decision (
+                search_request_id,
+                policy_rule_public_id,
+                policy_snapshot_id,
+                observation_id,
+                canonical_torrent_id,
+                canonical_torrent_source_id,
+                decision,
+                decided_at
+            )
+            VALUES (
+                request_id,
+                require_release_group_rule,
+                request_snapshot_id,
+                observation_id_value,
+                canonical_id,
+                source_id,
+                'drop_canonical',
+                now()
+            );
+        END IF;
+
+        IF require_indexer_rule IS NOT NULL AND require_indexer_matched IS NOT TRUE THEN
+            INSERT INTO search_filter_decision (
+                search_request_id,
+                policy_rule_public_id,
+                policy_snapshot_id,
+                observation_id,
+                canonical_torrent_id,
+                canonical_torrent_source_id,
+                decision,
+                decided_at
+            )
+            VALUES (
+                request_id,
+                require_indexer_rule,
+                request_snapshot_id,
+                observation_id_value,
+                canonical_id,
+                source_id,
+                'drop_source',
+                now()
+            );
+        END IF;
+
+        IF require_domain_rule IS NOT NULL AND require_domain_matched IS NOT TRUE THEN
+            INSERT INTO search_filter_decision (
+                search_request_id,
+                policy_rule_public_id,
+                policy_snapshot_id,
+                observation_id,
+                canonical_torrent_id,
+                canonical_torrent_source_id,
+                decision,
+                decided_at
+            )
+            VALUES (
+                request_id,
+                require_domain_rule,
+                request_snapshot_id,
+                observation_id_value,
+                canonical_id,
+                source_id,
+                'drop_source',
+                now()
+            );
+        END IF;
+
+        IF require_trust_rule IS NOT NULL AND require_trust_matched IS NOT TRUE THEN
+            INSERT INTO search_filter_decision (
+                search_request_id,
+                policy_rule_public_id,
+                policy_snapshot_id,
+                observation_id,
+                canonical_torrent_id,
+                canonical_torrent_source_id,
+                decision,
+                decided_at
+            )
+            VALUES (
+                request_id,
+                require_trust_rule,
+                request_snapshot_id,
+                observation_id_value,
+                canonical_id,
+                source_id,
+                'drop_source',
+                now()
+            );
+        END IF;
+    END IF;
+
+    canonical_torrent_public_id := canonical_public_id;
+    canonical_torrent_source_public_id := source_public_id;
+    observation_created := observation_inserted;
+    durable_source_created := source_inserted;
+    canonical_changed := canonical_inserted;
+    RETURN NEXT;
+END;
+$_$;
+
+
+
+CREATE FUNCTION public.secret_create(actor_user_public_id uuid, secret_type_input public.secret_type, plaintext_value_input character varying) RETURNS uuid
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT secret_create_v1(actor_user_public_id => actor_user_public_id, secret_type_input => secret_type_input, plaintext_value_input => plaintext_value_input);
+$$;
+
+
+
+CREATE FUNCTION public.secret_create_v1(actor_user_public_id uuid, secret_type_input public.secret_type, plaintext_value_input character varying) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to create secret';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    secret_public_id UUID;
+    secret_id_value BIGINT;
+    key_id_value TEXT;
+    secret_key_value TEXT;
+    cipher_value BYTEA;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF secret_type_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_type_missing';
+    END IF;
+
+    IF plaintext_value_input IS NULL OR btrim(plaintext_value_input) = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_value_missing';
+    END IF;
+
+    key_id_value := current_setting('revaer.secret_key_id', true);
+    secret_key_value := current_setting('revaer.secret_key', true);
+
+    IF key_id_value IS NULL OR btrim(key_id_value) = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_missing';
+    END IF;
+
+    IF char_length(key_id_value) > 128 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_invalid';
+    END IF;
+
+    IF secret_key_value IS NULL OR btrim(secret_key_value) = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_missing';
+    END IF;
+
+    cipher_value := pgp_sym_encrypt(plaintext_value_input, secret_key_value, 'cipher-algo=aes256');
+
+    secret_public_id := gen_random_uuid();
+    INSERT INTO secret (
+        secret_public_id,
+        secret_type,
+        cipher_text,
+        key_id
+    )
+    VALUES (
+        secret_public_id,
+        secret_type_input,
+        cipher_value,
+        key_id_value
+    )
+    RETURNING secret_id INTO secret_id_value;
+
+    INSERT INTO secret_audit_log (
+        secret_id,
+        action,
+        actor_user_id,
+        detail
+    )
+    VALUES (
+        secret_id_value,
+        'create',
+        actor_user_id,
+        'secret_create'
+    );
+
+    RETURN secret_public_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.secret_metadata_list(actor_user_public_id uuid) RETURNS TABLE(secret_public_id uuid, secret_type public.secret_type, is_revoked boolean, created_at timestamp with time zone, rotated_at timestamp with time zone, binding_count bigint)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT *
+    FROM secret_metadata_list_v1(actor_user_public_id);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.secret_metadata_list_v1(actor_user_public_id uuid) RETURNS TABLE(secret_public_id uuid, secret_type public.secret_type, is_revoked boolean, created_at timestamp with time zone, rotated_at timestamp with time zone, binding_count bigint)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to list secret metadata';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_unauthorized';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        secret.secret_public_id,
+        secret.secret_type,
+        secret.is_revoked,
+        secret.created_at,
+        secret.rotated_at,
+        COUNT(secret_binding.secret_binding_id) AS binding_count
+    FROM secret
+    LEFT JOIN secret_binding
+        ON secret_binding.secret_id = secret.secret_id
+    GROUP BY
+        secret.secret_id,
+        secret.secret_public_id,
+        secret.secret_type,
+        secret.is_revoked,
+        secret.created_at,
+        secret.rotated_at
+    ORDER BY secret.created_at DESC, secret.secret_id DESC;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.secret_read(actor_user_public_id uuid, secret_public_id_input uuid) RETURNS TABLE(secret_type public.secret_type, cipher_text bytea, key_id character varying)
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT * FROM secret_read_v1(actor_user_public_id => actor_user_public_id, secret_public_id_input => secret_public_id_input);
+$$;
+
+
+
+CREATE FUNCTION public.secret_read_v1(actor_user_public_id uuid, secret_public_id_input uuid) RETURNS TABLE(secret_type public.secret_type, cipher_text bytea, key_id character varying)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to read secret';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    secret_is_revoked BOOLEAN;
+BEGIN
+    IF secret_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_missing';
+    END IF;
+
+    IF actor_user_public_id IS NOT NULL THEN
+        SELECT user_id, role
+        INTO actor_user_id, actor_role
+        FROM app_user
+        WHERE user_public_id = actor_user_public_id;
+
+        IF actor_user_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_not_found';
+        END IF;
+
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    SELECT secret.secret_type, secret.cipher_text, secret.key_id, secret.is_revoked
+    INTO secret_type, cipher_text, key_id, secret_is_revoked
+    FROM secret
+    WHERE secret_public_id = secret_public_id_input;
+
+    IF secret_type IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_not_found';
+    END IF;
+
+    IF secret_is_revoked THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_revoked';
+    END IF;
+
+    RETURN NEXT;
+    RETURN;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.secret_revoke(actor_user_public_id uuid, secret_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM secret_revoke_v1(actor_user_public_id => actor_user_public_id, secret_public_id_input => secret_public_id_input);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.secret_revoke_v1(actor_user_public_id uuid, secret_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to revoke secret';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    secret_id_value BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF secret_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_missing';
+    END IF;
+
+    SELECT secret_id
+    INTO secret_id_value
+    FROM secret
+    WHERE secret_public_id = secret_public_id_input;
+
+    IF secret_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_not_found';
+    END IF;
+
+    UPDATE secret
+    SET is_revoked = TRUE
+    WHERE secret_id = secret_id_value;
+
+    INSERT INTO secret_audit_log (
+        secret_id,
+        action,
+        actor_user_id,
+        detail
+    )
+    VALUES (
+        secret_id_value,
+        'revoke',
+        actor_user_id,
+        'secret_revoke'
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.secret_rotate(actor_user_public_id uuid, secret_public_id_input uuid, plaintext_value_input character varying) RETURNS uuid
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT secret_rotate_v1(actor_user_public_id => actor_user_public_id, secret_public_id_input => secret_public_id_input, plaintext_value_input => plaintext_value_input);
+$$;
+
+
+
+CREATE FUNCTION public.secret_rotate_v1(actor_user_public_id uuid, secret_public_id_input uuid, plaintext_value_input character varying) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to rotate secret';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    secret_id_value BIGINT;
+    key_id_value TEXT;
+    secret_key_value TEXT;
+    cipher_value BYTEA;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF secret_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_missing';
+    END IF;
+
+    IF plaintext_value_input IS NULL OR btrim(plaintext_value_input) = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_value_missing';
+    END IF;
+
+    SELECT secret_id
+    INTO secret_id_value
+    FROM secret
+    WHERE secret_public_id = secret_public_id_input
+      AND is_revoked = FALSE;
+
+    IF secret_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_not_found';
+    END IF;
+
+    key_id_value := current_setting('revaer.secret_key_id', true);
+    secret_key_value := current_setting('revaer.secret_key', true);
+
+    IF key_id_value IS NULL OR btrim(key_id_value) = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_missing';
+    END IF;
+
+    IF char_length(key_id_value) > 128 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_invalid';
+    END IF;
+
+    IF secret_key_value IS NULL OR btrim(secret_key_value) = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_missing';
+    END IF;
+
+    cipher_value := pgp_sym_encrypt(plaintext_value_input, secret_key_value, 'cipher-algo=aes256');
+
+    UPDATE secret
+    SET cipher_text = cipher_value,
+        rotated_at = now(),
+        key_id = key_id_value
+    WHERE secret_id = secret_id_value;
+
+    INSERT INTO secret_audit_log (
+        secret_id,
+        action,
+        actor_user_id,
+        detail
+    )
+    VALUES (
+        secret_id_value,
+        'rotate',
+        actor_user_id,
+        'secret_rotate'
+    );
+
+    RETURN secret_public_id_input;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.secret_session_configure(actor_user_public_id uuid, secret_key_id_input character varying, secret_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM secret_session_configure_v1(
+        actor_user_public_id,
+        secret_key_id_input,
+        secret_key_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.secret_session_configure_v1(actor_user_public_id uuid, secret_key_id_input character varying, secret_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to configure secret session';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    trimmed_key_id VARCHAR(128);
+    trimmed_secret VARCHAR(1024);
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF secret_key_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_id_missing';
+    END IF;
+
+    trimmed_key_id := trim(secret_key_id_input);
+
+    IF trimmed_key_id = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_id_missing';
+    END IF;
+
+    IF char_length(trimmed_key_id) > 128 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_id_invalid';
+    END IF;
+
+    IF secret_key_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_missing';
+    END IF;
+
+    trimmed_secret := trim(secret_key_input);
+
+    IF trimmed_secret = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_missing';
+    END IF;
+
+    IF char_length(trimmed_secret) > 1024 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_key_invalid';
+    END IF;
+
+    PERFORM set_config('revaer.secret_key_id', trimmed_key_id, false);
+    PERFORM set_config('revaer.secret_key', trimmed_secret, false);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.source_metadata_conflict_list(actor_user_public_id uuid, include_resolved_input boolean, limit_input integer) RETURNS TABLE(conflict_id bigint, conflict_type public.conflict_type, existing_value character varying, incoming_value character varying, observed_at timestamp with time zone, resolved_at timestamp with time zone, resolution public.conflict_resolution, resolution_note character varying)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM source_metadata_conflict_list_v1(
+        actor_user_public_id => actor_user_public_id,
+        include_resolved_input => include_resolved_input,
+        limit_input => limit_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.source_metadata_conflict_list_v1(actor_user_public_id uuid, include_resolved_input boolean, limit_input integer) RETURNS TABLE(conflict_id bigint, conflict_type public.conflict_type, existing_value character varying, incoming_value character varying, observed_at timestamp with time zone, resolved_at timestamp with time zone, resolution public.conflict_resolution, resolution_note character varying)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to list source metadata conflicts';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    include_resolved_value BOOLEAN;
+    row_limit INTEGER;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    include_resolved_value := COALESCE(include_resolved_input, FALSE);
+    row_limit := COALESCE(limit_input, 50);
+
+    IF row_limit < 1 OR row_limit > 200 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'limit_invalid';
+    END IF;
+
+    RETURN QUERY
+    SELECT source_metadata_conflict.source_metadata_conflict_id,
+           source_metadata_conflict.conflict_type,
+           source_metadata_conflict.existing_value,
+           source_metadata_conflict.incoming_value,
+           source_metadata_conflict.observed_at,
+           source_metadata_conflict.resolved_at,
+           source_metadata_conflict.resolution,
+           source_metadata_conflict.resolution_note
+    FROM source_metadata_conflict
+    WHERE include_resolved_value = TRUE
+       OR source_metadata_conflict.resolved_at IS NULL
+    ORDER BY source_metadata_conflict.observed_at DESC,
+             source_metadata_conflict.source_metadata_conflict_id DESC
+    LIMIT row_limit;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.source_metadata_conflict_reopen(actor_user_public_id uuid, conflict_id_input bigint, resolution_note_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM source_metadata_conflict_reopen_v1(actor_user_public_id => actor_user_public_id, conflict_id_input => conflict_id_input, resolution_note_input => resolution_note_input);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.source_metadata_conflict_reopen_v1(actor_user_public_id uuid, conflict_id_input bigint, resolution_note_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to reopen conflict';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    conflict_resolved_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF conflict_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_missing';
+    END IF;
+
+    IF resolution_note_input IS NOT NULL AND char_length(resolution_note_input) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'resolution_note_too_long';
+    END IF;
+
+    SELECT resolved_at
+    INTO conflict_resolved_at
+    FROM source_metadata_conflict
+    WHERE source_metadata_conflict_id = conflict_id_input;
+
+    IF conflict_resolved_at IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_not_resolved';
+    END IF;
+
+    UPDATE source_metadata_conflict
+    SET resolved_at = NULL,
+        resolved_by_user_id = NULL,
+        resolution = NULL,
+        resolution_note = NULL
+    WHERE source_metadata_conflict_id = conflict_id_input;
+
+    INSERT INTO source_metadata_conflict_audit_log (
+        conflict_id,
+        action,
+        actor_user_id,
+        occurred_at,
+        note
+    )
+    VALUES (
+        conflict_id_input,
+        'reopened',
+        actor_user_id,
+        now(),
+        resolution_note_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.source_metadata_conflict_resolve(actor_user_public_id uuid, conflict_id_input bigint, resolution_input public.conflict_resolution, resolution_note_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM source_metadata_conflict_resolve_v1(actor_user_public_id => actor_user_public_id, conflict_id_input => conflict_id_input, resolution_input => resolution_input, resolution_note_input => resolution_note_input);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.source_metadata_conflict_resolve_v1(actor_user_public_id uuid, conflict_id_input bigint, resolution_input public.conflict_resolution, resolution_note_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+    base_message CONSTANT text := 'Failed to resolve conflict';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    conflict_type_value conflict_type;
+    conflict_canonical_source_id BIGINT;
+    conflict_existing_value VARCHAR(256);
+    conflict_incoming_value VARCHAR(256);
+    conflict_resolved_at TIMESTAMPTZ;
+    source_guid_value VARCHAR(256);
+    source_indexer_instance_id BIGINT;
+    incoming_trimmed VARCHAR(256);
+    tracker_category_value INTEGER;
+    tracker_subcategory_value INTEGER;
+    tracker_parts TEXT[];
+    tracker_part_text TEXT;
+    tracker_part_sub TEXT;
+    has_tracker_name BOOLEAN;
+    has_tracker_category BOOLEAN;
+    has_tracker_subcategory BOOLEAN;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF conflict_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_missing';
+    END IF;
+
+    IF resolution_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'resolution_missing';
+    END IF;
+
+    IF resolution_note_input IS NOT NULL AND char_length(resolution_note_input) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'resolution_note_too_long';
+    END IF;
+
+    SELECT conflict_type,
+           canonical_torrent_source_id,
+           existing_value,
+           incoming_value,
+           resolved_at
+    INTO conflict_type_value,
+         conflict_canonical_source_id,
+         conflict_existing_value,
+         conflict_incoming_value,
+         conflict_resolved_at
+    FROM source_metadata_conflict
+    WHERE source_metadata_conflict_id = conflict_id_input;
+
+    IF conflict_canonical_source_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_not_found';
+    END IF;
+
+    IF conflict_resolved_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'conflict_already_resolved';
+    END IF;
+
+    IF resolution_input = 'accepted_incoming' THEN
+        incoming_trimmed := trim(conflict_incoming_value);
+        IF incoming_trimmed = '' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'incoming_value_invalid';
+        END IF;
+
+        IF conflict_type_value = 'source_guid' THEN
+            SELECT source_guid, indexer_instance_id
+            INTO source_guid_value, source_indexer_instance_id
+            FROM canonical_torrent_source
+            WHERE canonical_torrent_source_id = conflict_canonical_source_id;
+
+            IF source_guid_value IS NULL THEN
+                IF EXISTS (
+                    SELECT 1
+                    FROM canonical_torrent_source
+                    WHERE indexer_instance_id = source_indexer_instance_id
+                      AND source_guid = incoming_trimmed
+                ) THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'source_guid_conflict';
+                END IF;
+
+                UPDATE canonical_torrent_source
+                SET source_guid = incoming_trimmed,
+                    updated_at = now()
+                WHERE canonical_torrent_source_id = conflict_canonical_source_id;
+            END IF;
+        ELSIF conflict_type_value = 'tracker_name' THEN
+            SELECT EXISTS (
+                SELECT 1
+                FROM canonical_torrent_source_attr
+                WHERE canonical_torrent_source_id = conflict_canonical_source_id
+                  AND attr_key = 'tracker_name'
+            )
+            INTO has_tracker_name;
+
+            IF has_tracker_name IS FALSE THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_text
+                )
+                VALUES (
+                    conflict_canonical_source_id,
+                    'tracker_name',
+                    incoming_trimmed
+                );
+            END IF;
+        ELSIF conflict_type_value = 'tracker_category' THEN
+            tracker_parts := regexp_split_to_array(incoming_trimmed, '[:/]');
+
+            IF array_length(tracker_parts, 1) IS NULL OR array_length(tracker_parts, 1) > 2 THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'incoming_value_invalid';
+            END IF;
+
+            tracker_part_text := tracker_parts[1];
+            IF tracker_part_text !~ '^[0-9]+$' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'incoming_value_invalid';
+            END IF;
+
+            tracker_category_value := tracker_part_text::INTEGER;
+            tracker_subcategory_value := 0;
+
+            IF array_length(tracker_parts, 1) = 2 THEN
+                tracker_part_sub := tracker_parts[2];
+                IF tracker_part_sub !~ '^[0-9]+$' THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'incoming_value_invalid';
+                END IF;
+                tracker_subcategory_value := tracker_part_sub::INTEGER;
+            END IF;
+
+            SELECT EXISTS (
+                SELECT 1
+                FROM canonical_torrent_source_attr
+                WHERE canonical_torrent_source_id = conflict_canonical_source_id
+                  AND attr_key = 'tracker_category'
+            )
+            INTO has_tracker_category;
+
+            SELECT EXISTS (
+                SELECT 1
+                FROM canonical_torrent_source_attr
+                WHERE canonical_torrent_source_id = conflict_canonical_source_id
+                  AND attr_key = 'tracker_subcategory'
+            )
+            INTO has_tracker_subcategory;
+
+            IF has_tracker_category IS FALSE THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    conflict_canonical_source_id,
+                    'tracker_category',
+                    tracker_category_value
+                );
+            END IF;
+
+            IF has_tracker_subcategory IS FALSE THEN
+                INSERT INTO canonical_torrent_source_attr (
+                    canonical_torrent_source_id,
+                    attr_key,
+                    value_int
+                )
+                VALUES (
+                    conflict_canonical_source_id,
+                    'tracker_subcategory',
+                    tracker_subcategory_value
+                );
+            END IF;
+        END IF;
+    END IF;
+
+    UPDATE source_metadata_conflict
+    SET resolved_at = now(),
+        resolved_by_user_id = actor_user_id,
+        resolution = resolution_input,
+        resolution_note = resolution_note_input
+    WHERE source_metadata_conflict_id = conflict_id_input;
+
+    INSERT INTO source_metadata_conflict_audit_log (
+        conflict_id,
+        action,
+        actor_user_id,
+        occurred_at,
+        note
+    )
+    VALUES (
+        conflict_id_input,
+        'resolved',
+        actor_user_id,
+        now(),
+        resolution_note_input
+    );
+END;
+$_$;
+
+
+
+CREATE FUNCTION public.tag_create(actor_user_public_id uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT tag_create_v1(actor_user_public_id => actor_user_public_id, tag_key_input => tag_key_input, display_name_input => display_name_input);
+$$;
+
+
+
+CREATE FUNCTION public.tag_create_v1(actor_user_public_id uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to create tag';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    new_tag_id BIGINT;
+    new_tag_public_id UUID;
+    trimmed_tag_key VARCHAR(128);
+    trimmed_display_name VARCHAR(256);
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id
+    INTO actor_user_id
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF tag_key_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_missing';
+    END IF;
+
+    trimmed_tag_key := trim(tag_key_input);
+
+    IF trimmed_tag_key = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_empty';
+    END IF;
+
+    IF trimmed_tag_key <> lower(trimmed_tag_key) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_not_lowercase';
+    END IF;
+
+    IF char_length(trimmed_tag_key) > 128 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_too_long';
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM tag
+        WHERE tag_key = trimmed_tag_key
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_key_already_exists';
+    END IF;
+
+    new_tag_public_id := gen_random_uuid();
+
+    INSERT INTO tag (
+        tag_public_id,
+        tag_key,
+        display_name,
+        created_by_user_id,
+        updated_by_user_id
+    )
+    VALUES (
+        new_tag_public_id,
+        trimmed_tag_key,
+        trimmed_display_name,
+        actor_user_id,
+        actor_user_id
+    )
+    RETURNING tag_id INTO new_tag_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tag',
+        new_tag_id,
+        new_tag_public_id,
+        'create',
+        actor_user_id,
+        'tag_create'
+    );
+
+    RETURN new_tag_public_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tag_list(actor_user_public_id uuid) RETURNS TABLE(tag_public_id uuid, tag_key character varying, display_name character varying, updated_at timestamp with time zone)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT *
+    FROM tag_list_v1(actor_user_public_id);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tag_list_v1(actor_user_public_id uuid) RETURNS TABLE(tag_public_id uuid, tag_key character varying, display_name character varying, updated_at timestamp with time zone)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to list tags';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_unauthorized';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        tag.tag_public_id,
+        tag.tag_key,
+        tag.display_name,
+        tag.updated_at
+    FROM tag
+    WHERE tag.deleted_at IS NULL
+    ORDER BY tag.display_name ASC, tag.tag_id ASC;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tag_soft_delete(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM tag_soft_delete_v1(actor_user_public_id => actor_user_public_id, tag_public_id_input => tag_public_id_input, tag_key_input => tag_key_input);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tag_soft_delete_v1(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to delete tag';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    resolved_tag_id BIGINT;
+    resolved_tag_public_id UUID;
+    resolved_tag_key VARCHAR(128);
+    trimmed_tag_key VARCHAR(128);
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id
+    INTO actor_user_id
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF tag_public_id_input IS NULL AND tag_key_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_reference_missing';
+    END IF;
+
+    IF tag_key_input IS NOT NULL THEN
+        trimmed_tag_key := trim(tag_key_input);
+
+        IF trimmed_tag_key = '' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_empty';
+        END IF;
+
+        IF trimmed_tag_key <> lower(trimmed_tag_key) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_not_lowercase';
+        END IF;
+
+        IF char_length(trimmed_tag_key) > 128 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_too_long';
+        END IF;
+    END IF;
+
+    IF tag_public_id_input IS NOT NULL THEN
+        SELECT tag_id, tag_public_id, tag_key
+        INTO resolved_tag_id, resolved_tag_public_id, resolved_tag_key
+        FROM tag
+        WHERE tag_public_id = tag_public_id_input;
+
+        IF resolved_tag_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_not_found';
+        END IF;
+
+        IF trimmed_tag_key IS NOT NULL AND trimmed_tag_key <> resolved_tag_key THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'invalid_tag_reference';
+        END IF;
+    ELSE
+        SELECT tag_id, tag_public_id, tag_key
+        INTO resolved_tag_id, resolved_tag_public_id, resolved_tag_key
+        FROM tag
+        WHERE tag_key = trimmed_tag_key;
+
+        IF resolved_tag_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'unknown_key';
+        END IF;
+    END IF;
+
+    UPDATE tag
+    SET deleted_at = COALESCE(deleted_at, now()),
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    WHERE tag_id = resolved_tag_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tag',
+        resolved_tag_id,
+        resolved_tag_public_id,
+        'soft_delete',
+        actor_user_id,
+        'tag_soft_delete'
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tag_update(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT tag_update_v1(actor_user_public_id => actor_user_public_id, tag_public_id_input => tag_public_id_input, tag_key_input => tag_key_input, display_name_input => display_name_input);
+$$;
+
+
+
+CREATE FUNCTION public.tag_update_v1(actor_user_public_id uuid, tag_public_id_input uuid, tag_key_input character varying, display_name_input character varying) RETURNS uuid
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to update tag';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    resolved_tag_id BIGINT;
+    resolved_tag_public_id UUID;
+    resolved_tag_key VARCHAR(128);
+    resolved_deleted_at TIMESTAMPTZ;
+    trimmed_tag_key VARCHAR(128);
+    trimmed_display_name VARCHAR(256);
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id
+    INTO actor_user_id
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF tag_public_id_input IS NULL AND tag_key_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_reference_missing';
+    END IF;
+
+    IF tag_key_input IS NOT NULL THEN
+        trimmed_tag_key := trim(tag_key_input);
+
+        IF trimmed_tag_key = '' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_empty';
+        END IF;
+
+        IF trimmed_tag_key <> lower(trimmed_tag_key) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_not_lowercase';
+        END IF;
+
+        IF char_length(trimmed_tag_key) > 128 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_key_too_long';
+        END IF;
+    END IF;
+
+    IF tag_public_id_input IS NOT NULL THEN
+        SELECT tag_id, tag_public_id, tag_key, deleted_at
+        INTO resolved_tag_id, resolved_tag_public_id, resolved_tag_key, resolved_deleted_at
+        FROM tag
+        WHERE tag_public_id = tag_public_id_input;
+
+        IF resolved_tag_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'tag_not_found';
+        END IF;
+
+        IF trimmed_tag_key IS NOT NULL AND trimmed_tag_key <> resolved_tag_key THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'invalid_tag_reference';
+        END IF;
+    ELSE
+        SELECT tag_id, tag_public_id, tag_key, deleted_at
+        INTO resolved_tag_id, resolved_tag_public_id, resolved_tag_key, resolved_deleted_at
+        FROM tag
+        WHERE tag_key = trimmed_tag_key;
+
+        IF resolved_tag_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'unknown_key';
+        END IF;
+    END IF;
+
+    IF resolved_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tag_deleted';
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    UPDATE tag
+    SET display_name = trimmed_display_name,
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    WHERE tag_id = resolved_tag_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tag',
+        resolved_tag_id,
+        resolved_tag_public_id,
+        'update',
+        actor_user_id,
+        'tag_update'
+    );
+
+    RETURN resolved_tag_public_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_category_list() RETURNS TABLE(torznab_cat_id integer, name character varying)
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT torznab_cat_id, name
+    FROM torznab_category_list_v1();
+$$;
+
+
+
+CREATE FUNCTION public.torznab_category_list_v1() RETURNS TABLE(torznab_cat_id integer, name character varying)
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT torznab_cat_id, name
+    FROM torznab_category
+    ORDER BY torznab_cat_id ASC;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_download_prepare(torznab_instance_public_id_input uuid, canonical_torrent_source_public_id_input uuid) RETURNS TABLE(redirect_url character varying)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM torznab_download_prepare_v1(
+        torznab_instance_public_id_input,
+        canonical_torrent_source_public_id_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_download_prepare_v1(torznab_instance_public_id_input uuid, canonical_torrent_source_public_id_input uuid) RETURNS TABLE(redirect_url character varying)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to prepare torznab download';
+    errcode CONSTANT text := 'P0001';
+    detail_source_not_in_profile CONSTANT text := 'source_not_in_profile';
+    instance_id_value BIGINT;
+    profile_id_value BIGINT;
+    instance_enabled BOOLEAN;
+    instance_deleted_at TIMESTAMPTZ;
+    source_id_value BIGINT;
+    source_instance_id BIGINT;
+    magnet_uri_value VARCHAR(2048);
+    download_url_value VARCHAR(2048);
+    source_infohash_v1 CHAR(40);
+    source_infohash_v2 CHAR(64);
+    source_magnet_hash CHAR(64);
+    canonical_id_value BIGINT;
+    request_id_value BIGINT;
+    canonical_infohash_v1 CHAR(40);
+    canonical_infohash_v2 CHAR(64);
+    canonical_magnet_hash CHAR(64);
+    final_infohash_v1 CHAR(40);
+    final_infohash_v2 CHAR(64);
+    final_magnet_hash CHAR(64);
+    allowlist_exists BOOLEAN;
+    tag_allowlist_exists BOOLEAN;
+    in_allowlist BOOLEAN;
+    in_blocklist BOOLEAN;
+    in_tag_allowlist BOOLEAN;
+    in_tag_blocklist BOOLEAN;
+BEGIN
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    IF canonical_torrent_source_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'canonical_source_missing';
+    END IF;
+
+    SELECT instance.torznab_instance_id,
+           instance.search_profile_id,
+           instance.is_enabled,
+           instance.deleted_at
+    INTO instance_id_value,
+         profile_id_value,
+         instance_enabled,
+         instance_deleted_at
+    FROM torznab_instance AS instance
+    WHERE instance.torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    IF instance_enabled = FALSE THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_disabled';
+    END IF;
+
+    SELECT source.canonical_torrent_source_id,
+           source.indexer_instance_id,
+           source.last_seen_magnet_uri,
+           source.last_seen_download_url,
+           source.infohash_v1,
+           source.infohash_v2,
+           source.magnet_hash
+    INTO source_id_value,
+         source_instance_id,
+         magnet_uri_value,
+         download_url_value,
+         source_infohash_v1,
+         source_infohash_v2,
+         source_magnet_hash
+    FROM canonical_torrent_source AS source
+    WHERE source.canonical_torrent_source_public_id = canonical_torrent_source_public_id_input;
+
+    IF source_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'canonical_source_not_found';
+    END IF;
+
+    SELECT EXISTS(
+        SELECT 1 FROM search_profile_indexer_allow
+        WHERE search_profile_id = profile_id_value
+    )
+    INTO allowlist_exists;
+
+    IF allowlist_exists THEN
+        SELECT EXISTS(
+            SELECT 1 FROM search_profile_indexer_allow
+            WHERE search_profile_id = profile_id_value
+              AND indexer_instance_id = source_instance_id
+        )
+        INTO in_allowlist;
+
+        IF NOT in_allowlist THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = detail_source_not_in_profile;
+        END IF;
+    END IF;
+
+    SELECT EXISTS(
+        SELECT 1 FROM search_profile_indexer_block
+        WHERE search_profile_id = profile_id_value
+          AND indexer_instance_id = source_instance_id
+    )
+    INTO in_blocklist;
+
+    IF in_blocklist THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = detail_source_not_in_profile;
+    END IF;
+
+    SELECT EXISTS(
+        SELECT 1 FROM search_profile_tag_allow
+        WHERE search_profile_id = profile_id_value
+    )
+    INTO tag_allowlist_exists;
+
+    IF tag_allowlist_exists THEN
+        SELECT EXISTS(
+            SELECT 1 FROM search_profile_tag_allow sta
+            JOIN indexer_instance_tag it
+                ON it.tag_id = sta.tag_id
+            WHERE sta.search_profile_id = profile_id_value
+              AND it.indexer_instance_id = source_instance_id
+        )
+        INTO in_tag_allowlist;
+
+        IF NOT in_tag_allowlist THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = detail_source_not_in_profile;
+        END IF;
+    END IF;
+
+    SELECT EXISTS(
+        SELECT 1 FROM search_profile_tag_block stb
+        JOIN indexer_instance_tag it
+            ON it.tag_id = stb.tag_id
+        WHERE stb.search_profile_id = profile_id_value
+          AND it.indexer_instance_id = source_instance_id
+    )
+    INTO in_tag_blocklist;
+
+    IF in_tag_blocklist THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = detail_source_not_in_profile;
+    END IF;
+
+    SELECT observation.canonical_torrent_id,
+           observation.search_request_id
+    INTO canonical_id_value,
+         request_id_value
+    FROM search_request_source_observation AS observation
+    WHERE observation.canonical_torrent_source_id = source_id_value
+      AND observation.canonical_torrent_id IS NOT NULL
+    ORDER BY observation.observed_at DESC
+    LIMIT 1;
+
+    IF canonical_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'canonical_not_found';
+    END IF;
+
+    SELECT canonical.infohash_v1,
+           canonical.infohash_v2,
+           canonical.magnet_hash
+    INTO canonical_infohash_v1,
+         canonical_infohash_v2,
+         canonical_magnet_hash
+    FROM canonical_torrent AS canonical
+    WHERE canonical.canonical_torrent_id = canonical_id_value;
+
+    final_infohash_v1 := COALESCE(canonical_infohash_v1, source_infohash_v1);
+    final_infohash_v2 := COALESCE(canonical_infohash_v2, source_infohash_v2);
+    final_magnet_hash := COALESCE(canonical_magnet_hash, source_magnet_hash);
+
+    IF final_infohash_v1 IS NULL AND final_infohash_v2 IS NULL AND final_magnet_hash IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'source_missing_hash';
+    END IF;
+
+    magnet_uri_value := NULLIF(trim(magnet_uri_value), '');
+    download_url_value := NULLIF(trim(download_url_value), '');
+
+    IF magnet_uri_value IS NOT NULL THEN
+        redirect_url := magnet_uri_value;
+    ELSIF download_url_value IS NOT NULL THEN
+        redirect_url := download_url_value;
+    ELSE
+        redirect_url := NULL;
+    END IF;
+
+    IF redirect_url IS NULL THEN
+        INSERT INTO acquisition_attempt (
+            torznab_instance_id,
+            origin,
+            canonical_torrent_id,
+            canonical_torrent_source_id,
+            search_request_id,
+            user_id,
+            infohash_v1,
+            infohash_v2,
+            magnet_hash,
+            torrent_client_name,
+            started_at,
+            finished_at,
+            status,
+            failure_class,
+            failure_detail
+        )
+        VALUES (
+            instance_id_value,
+            'torznab',
+            canonical_id_value,
+            source_id_value,
+            request_id_value,
+            NULL,
+            final_infohash_v1,
+            final_infohash_v2,
+            final_magnet_hash,
+            'unknown',
+            now(),
+            now(),
+            'failed',
+            'client_error',
+            'no_download_target'
+        );
+    ELSE
+        INSERT INTO acquisition_attempt (
+            torznab_instance_id,
+            origin,
+            canonical_torrent_id,
+            canonical_torrent_source_id,
+            search_request_id,
+            user_id,
+            infohash_v1,
+            infohash_v2,
+            magnet_hash,
+            torrent_client_name,
+            started_at,
+            status
+        )
+        VALUES (
+            instance_id_value,
+            'torznab',
+            canonical_id_value,
+            source_id_value,
+            request_id_value,
+            NULL,
+            final_infohash_v1,
+            final_infohash_v2,
+            final_magnet_hash,
+            'unknown',
+            now(),
+            'started'
+        );
+    END IF;
+
+    RETURN NEXT;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_authenticate(torznab_instance_public_id_input uuid, api_key_plaintext_input character varying) RETURNS TABLE(torznab_instance_id bigint, search_profile_id bigint, display_name character varying)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM torznab_instance_authenticate_v1(
+        torznab_instance_public_id_input,
+        api_key_plaintext_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_authenticate_v1(torznab_instance_public_id_input uuid, api_key_plaintext_input character varying) RETURNS TABLE(torznab_instance_id bigint, search_profile_id bigint, display_name character varying)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to authenticate torznab instance';
+    errcode CONSTANT text := 'P0001';
+    instance_id_value BIGINT;
+    profile_id_value BIGINT;
+    instance_enabled BOOLEAN;
+    instance_deleted_at TIMESTAMPTZ;
+    api_key_hash_value TEXT;
+    display_name_value VARCHAR(256);
+BEGIN
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    IF api_key_plaintext_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_missing';
+    END IF;
+
+    SELECT instance.torznab_instance_id,
+           instance.search_profile_id,
+           instance.api_key_hash,
+           instance.is_enabled,
+           instance.deleted_at,
+           instance.display_name
+    INTO instance_id_value,
+         profile_id_value,
+         api_key_hash_value,
+         instance_enabled,
+         instance_deleted_at,
+         display_name_value
+    FROM torznab_instance AS instance
+    WHERE instance.torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    IF instance_enabled = FALSE THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_disabled';
+    END IF;
+
+    IF api_key_hash_value IS NULL OR api_key_hash_value = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_hash_missing';
+    END IF;
+
+    IF crypt(api_key_plaintext_input, api_key_hash_value) <> api_key_hash_value THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_invalid';
+    END IF;
+
+    torznab_instance_id := instance_id_value;
+    search_profile_id := profile_id_value;
+    display_name := display_name_value;
+    RETURN NEXT;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_create(actor_user_public_id uuid, search_profile_public_id_input uuid, display_name_input character varying) RETURNS TABLE(torznab_instance_public_id uuid, api_key_plaintext character varying)
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT * FROM torznab_instance_create_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, display_name_input => display_name_input);
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_create_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, display_name_input character varying) RETURNS TABLE(torznab_instance_public_id uuid, api_key_plaintext character varying)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to create torznab instance';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    profile_id BIGINT;
+    profile_user_id BIGINT;
+    profile_deleted_at TIMESTAMPTZ;
+    instance_id BIGINT;
+    instance_public_id UUID;
+    trimmed_display_name VARCHAR(256);
+    raw_key TEXT;
+    api_key_hash_value TEXT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF search_profile_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_missing';
+    END IF;
+
+    SELECT search_profile_id, user_id, deleted_at
+    INTO profile_id, profile_user_id, profile_deleted_at
+    FROM search_profile
+    WHERE search_profile_public_id = search_profile_public_id_input;
+
+    IF profile_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_not_found';
+    END IF;
+
+    IF profile_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_deleted';
+    END IF;
+
+    IF profile_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF profile_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM torznab_instance
+        WHERE display_name = trimmed_display_name
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_already_exists';
+    END IF;
+
+    raw_key := encode(gen_random_bytes(32), 'base64');
+    api_key_plaintext := regexp_replace(translate(raw_key, '+/', '-_'), '=', '', 'g');
+    api_key_hash_value := crypt(api_key_plaintext, gen_salt('bf', 12));
+
+    IF api_key_hash_value IS NULL OR api_key_hash_value = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_hash_failed';
+    END IF;
+
+    instance_public_id := gen_random_uuid();
+
+    INSERT INTO torznab_instance (
+        search_profile_id,
+        torznab_instance_public_id,
+        display_name,
+        api_key_hash,
+        is_enabled
+    )
+    VALUES (
+        profile_id,
+        instance_public_id,
+        trimmed_display_name,
+        api_key_hash_value,
+        TRUE
+    )
+    RETURNING torznab_instance_id INTO instance_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'torznab_instance',
+        instance_id,
+        instance_public_id,
+        'create',
+        actor_user_id,
+        'torznab_instance_create'
+    );
+
+    torznab_instance_public_id := instance_public_id;
+    RETURN NEXT;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_enable_disable(actor_user_public_id uuid, torznab_instance_public_id_input uuid, is_enabled_input boolean) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM torznab_instance_enable_disable_v1(actor_user_public_id => actor_user_public_id, torznab_instance_public_id_input => torznab_instance_public_id_input, is_enabled_input => is_enabled_input);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_enable_disable_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid, is_enabled_input boolean) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to update torznab instance';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    instance_id BIGINT;
+    profile_id BIGINT;
+    profile_user_id BIGINT;
+    profile_deleted_at TIMESTAMPTZ;
+    instance_deleted_at TIMESTAMPTZ;
+    current_is_enabled BOOLEAN;
+    audit_action audit_action;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    SELECT torznab_instance_id, search_profile_id, is_enabled, deleted_at
+    INTO instance_id, profile_id, current_is_enabled, instance_deleted_at
+    FROM torznab_instance
+    WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    SELECT user_id, deleted_at
+    INTO profile_user_id, profile_deleted_at
+    FROM search_profile
+    WHERE search_profile_id = profile_id;
+
+    IF profile_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_deleted';
+    END IF;
+
+    IF profile_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF profile_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    IF is_enabled_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'is_enabled_missing';
+    END IF;
+
+    IF current_is_enabled IS DISTINCT FROM is_enabled_input THEN
+        IF is_enabled_input THEN
+            audit_action := 'enable';
+        ELSE
+            audit_action := 'disable';
+        END IF;
+    ELSE
+        audit_action := 'update';
+    END IF;
+
+    UPDATE torznab_instance
+    SET is_enabled = is_enabled_input,
+        updated_at = now()
+    WHERE torznab_instance_id = instance_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'torznab_instance',
+        instance_id,
+        torznab_instance_public_id_input,
+        audit_action,
+        actor_user_id,
+        'torznab_instance_enable_disable'
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_rotate_key(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS character varying
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT torznab_instance_rotate_key_v1(actor_user_public_id => actor_user_public_id, torznab_instance_public_id_input => torznab_instance_public_id_input);
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_rotate_key_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS character varying
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to rotate torznab api key';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    instance_id BIGINT;
+    profile_id BIGINT;
+    profile_user_id BIGINT;
+    profile_deleted_at TIMESTAMPTZ;
+    instance_deleted_at TIMESTAMPTZ;
+    raw_key TEXT;
+    api_key_plaintext_value TEXT;
+    api_key_hash_value TEXT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    SELECT torznab_instance_id, search_profile_id, deleted_at
+    INTO instance_id, profile_id, instance_deleted_at
+    FROM torznab_instance
+    WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    SELECT user_id, deleted_at
+    INTO profile_user_id, profile_deleted_at
+    FROM search_profile
+    WHERE search_profile_id = profile_id;
+
+    IF profile_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_deleted';
+    END IF;
+
+    IF profile_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF profile_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    raw_key := encode(gen_random_bytes(32), 'base64');
+    api_key_plaintext_value := regexp_replace(translate(raw_key, '+/', '-_'), '=', '', 'g');
+    api_key_hash_value := crypt(api_key_plaintext_value, gen_salt('bf', 12));
+
+    IF api_key_hash_value IS NULL OR api_key_hash_value = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'api_key_hash_failed';
+    END IF;
+
+    UPDATE torznab_instance
+    SET api_key_hash = api_key_hash_value,
+        updated_at = now()
+    WHERE torznab_instance_id = instance_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'torznab_instance',
+        instance_id,
+        torznab_instance_public_id_input,
+        'update',
+        actor_user_id,
+        'torznab_instance_rotate_key'
+    );
+
+    RETURN api_key_plaintext_value;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_soft_delete(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM torznab_instance_soft_delete_v1(actor_user_public_id => actor_user_public_id, torznab_instance_public_id_input => torznab_instance_public_id_input);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.torznab_instance_soft_delete_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to delete torznab instance';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    instance_id BIGINT;
+    profile_id BIGINT;
+    profile_user_id BIGINT;
+    profile_deleted_at TIMESTAMPTZ;
+    instance_deleted_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    SELECT torznab_instance_id, search_profile_id, deleted_at
+    INTO instance_id, profile_id, instance_deleted_at
+    FROM torznab_instance
+    WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    SELECT user_id, deleted_at
+    INTO profile_user_id, profile_deleted_at
+    FROM search_profile
+    WHERE search_profile_id = profile_id;
+
+    IF profile_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_deleted';
+    END IF;
+
+    IF profile_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF profile_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    UPDATE torznab_instance
+    SET deleted_at = COALESCE(deleted_at, now()),
+        updated_at = now()
+    WHERE torznab_instance_id = instance_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'torznab_instance',
+        instance_id,
+        torznab_instance_public_id_input,
+        'soft_delete',
+        actor_user_id,
+        'torznab_instance_soft_delete'
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_delete(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM tracker_category_mapping_delete_v1(
+        actor_user_public_id,
+        indexer_definition_upstream_slug_input,
+        tracker_category_input,
+        tracker_subcategory_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_delete(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM tracker_category_mapping_delete_v1(
+        actor_user_public_id,
+        torznab_instance_public_id_input,
+        indexer_definition_upstream_slug_input,
+        indexer_instance_public_id_input,
+        tracker_category_input,
+        tracker_subcategory_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_delete_v1(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to delete tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    definition_id BIGINT;
+    mapping_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id
+    INTO actor_user_id
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF indexer_definition_upstream_slug_input IS NOT NULL
+        AND btrim(indexer_definition_upstream_slug_input) != '' THEN
+        SELECT indexer_definition_id
+        INTO definition_id
+        FROM indexer_definition
+        WHERE upstream_slug = indexer_definition_upstream_slug_input;
+
+        IF definition_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'indexer_definition_not_found';
+        END IF;
+    ELSE
+        definition_id := NULL;
+    END IF;
+
+    SELECT tracker_category_mapping_id
+    INTO mapping_id
+    FROM tracker_category_mapping
+    WHERE tracker_category = tracker_category_input
+      AND tracker_subcategory = tracker_subcategory_input
+      AND (
+          (definition_id IS NULL AND indexer_definition_id IS NULL)
+          OR indexer_definition_id = definition_id
+      );
+
+    IF mapping_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'mapping_not_found';
+    END IF;
+
+    DELETE FROM tracker_category_mapping
+    WHERE tracker_category_mapping_id = mapping_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tracker_category_mapping',
+        mapping_id,
+        NULL,
+        'delete',
+        actor_user_id,
+        'tracker_category_mapping_delete'
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_delete_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to delete tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    definition_id BIGINT;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    instance_definition_id BIGINT;
+    torznab_scope_id BIGINT;
+    torznab_scope_deleted_at TIMESTAMPTZ;
+    normalized_slug VARCHAR(128);
+    mapping_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF tracker_category_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_category_missing';
+    END IF;
+
+    IF tracker_category_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_category_invalid';
+    END IF;
+
+    IF tracker_subcategory_input IS NULL THEN
+        tracker_subcategory_input := 0;
+    END IF;
+
+    IF tracker_subcategory_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_subcategory_invalid';
+    END IF;
+
+    IF torznab_instance_public_id_input IS NOT NULL THEN
+        SELECT torznab_instance_id, deleted_at
+        INTO torznab_scope_id, torznab_scope_deleted_at
+        FROM torznab_instance
+        WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+        IF torznab_scope_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_not_found';
+        END IF;
+
+        IF torznab_scope_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_deleted';
+        END IF;
+    ELSE
+        torznab_scope_id := NULL;
+    END IF;
+
+    IF indexer_definition_upstream_slug_input IS NOT NULL THEN
+        normalized_slug := lower(trim(indexer_definition_upstream_slug_input));
+
+        IF normalized_slug = '' OR normalized_slug <> indexer_definition_upstream_slug_input THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_slug_invalid';
+        END IF;
+
+        SELECT indexer_definition_id
+        INTO definition_id
+        FROM indexer_definition
+        WHERE upstream_source = 'prowlarr_indexers'
+          AND upstream_slug = normalized_slug;
+
+        IF definition_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_definition_not_found';
+        END IF;
+    ELSE
+        definition_id := NULL;
+    END IF;
+
+    IF indexer_instance_public_id_input IS NOT NULL THEN
+        SELECT indexer_instance_id, deleted_at, indexer_definition_id
+        INTO instance_id, instance_deleted_at, instance_definition_id
+        FROM indexer_instance
+        WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+        IF instance_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_not_found';
+        END IF;
+
+        IF instance_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_deleted';
+        END IF;
+
+        IF definition_id IS NOT NULL AND definition_id <> instance_definition_id THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_scope_conflict';
+        END IF;
+
+        definition_id := instance_definition_id;
+    ELSE
+        instance_id := NULL;
+    END IF;
+
+    SELECT tracker_category_mapping_id
+    INTO mapping_id
+    FROM tracker_category_mapping
+    WHERE tracker_category = tracker_category_input
+      AND tracker_subcategory = tracker_subcategory_input
+      AND (
+          (torznab_scope_id IS NULL AND torznab_instance_id IS NULL)
+          OR torznab_instance_id = torznab_scope_id
+      )
+      AND (
+          (instance_id IS NULL AND indexer_instance_id IS NULL)
+          OR indexer_instance_id = instance_id
+      )
+      AND (
+          (definition_id IS NULL AND indexer_definition_id IS NULL)
+          OR indexer_definition_id = definition_id
+      );
+
+    IF mapping_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'mapping_not_found';
+    END IF;
+
+    DELETE FROM tracker_category_mapping
+    WHERE tracker_category_mapping_id = mapping_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tracker_category_mapping',
+        mapping_id,
+        NULL,
+        'delete',
+        actor_user_id,
+        'tracker_category_mapping_delete'
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_resolve_feed(torznab_instance_public_id_input uuid, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS TABLE(torznab_cat_id integer)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM tracker_category_mapping_resolve_feed_v1(
+        torznab_instance_public_id_input,
+        indexer_instance_public_id_input,
+        tracker_category_input,
+        tracker_subcategory_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_resolve_feed_v1(torznab_instance_public_id_input uuid, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer) RETURNS TABLE(torznab_cat_id integer)
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to resolve tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    torznab_scope_id BIGINT;
+    torznab_scope_deleted_at TIMESTAMPTZ;
+    instance_id BIGINT;
+    definition_id BIGINT;
+    resolved_cat_id INTEGER;
+BEGIN
+    IF torznab_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_missing';
+    END IF;
+
+    IF indexer_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_missing';
+    END IF;
+
+    SELECT torznab_instance_id, deleted_at
+    INTO torznab_scope_id, torznab_scope_deleted_at
+    FROM torznab_instance
+    WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+    IF torznab_scope_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_not_found';
+    END IF;
+
+    IF torznab_scope_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_deleted';
+    END IF;
+
+    SELECT indexer_instance_id, indexer_definition_id
+    INTO instance_id, definition_id
+    FROM indexer_instance
+    WHERE indexer_instance_public_id = indexer_instance_public_id_input
+      AND deleted_at IS NULL;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_not_found';
+    END IF;
+
+    IF tracker_subcategory_input IS NULL THEN
+        tracker_subcategory_input := 0;
+    END IF;
+
+    IF tracker_category_input IS NULL THEN
+        resolved_cat_id := 8000;
+    ELSE
+        SELECT tc.torznab_cat_id
+        INTO resolved_cat_id
+        FROM tracker_category_mapping tcm
+        JOIN torznab_category tc
+          ON tc.torznab_category_id = tcm.torznab_category_id
+        WHERE tcm.tracker_category = tracker_category_input
+          AND tcm.tracker_subcategory = tracker_subcategory_input
+          AND (
+              (tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id = instance_id)
+              OR (tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id = definition_id)
+              OR (tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id IS NULL)
+              OR (tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id = instance_id)
+              OR (tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id = definition_id)
+              OR (tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id IS NULL)
+          )
+        ORDER BY
+            CASE
+                WHEN tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id = instance_id THEN 1
+                WHEN tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id = definition_id THEN 2
+                WHEN tcm.torznab_instance_id = torznab_scope_id AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id IS NULL THEN 3
+                WHEN tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id = instance_id THEN 4
+                WHEN tcm.torznab_instance_id IS NULL AND tcm.indexer_instance_id IS NULL AND tcm.indexer_definition_id = definition_id THEN 5
+                ELSE 6
+            END
+        LIMIT 1;
+
+        IF resolved_cat_id IS NULL THEN
+            resolved_cat_id := 8000;
+        END IF;
+    END IF;
+
+    RETURN QUERY SELECT resolved_cat_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_upsert(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM tracker_category_mapping_upsert_v1(actor_user_public_id => actor_user_public_id, indexer_definition_upstream_slug_input => indexer_definition_upstream_slug_input, tracker_category_input => tracker_category_input, tracker_subcategory_input => tracker_subcategory_input, torznab_cat_id_input => torznab_cat_id_input, media_domain_key_input => media_domain_key_input);
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_upsert(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM tracker_category_mapping_upsert_v1(
+        actor_user_public_id,
+        torznab_instance_public_id_input,
+        indexer_definition_upstream_slug_input,
+        indexer_instance_public_id_input,
+        tracker_category_input,
+        tracker_subcategory_input,
+        torznab_cat_id_input,
+        media_domain_key_input
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_upsert_v1(actor_user_public_id uuid, indexer_definition_upstream_slug_input character varying, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to upsert tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    definition_id BIGINT;
+    torznab_category_id_value BIGINT;
+    media_domain_id_value BIGINT;
+    normalized_slug VARCHAR(128);
+    normalized_media_domain VARCHAR(128);
+    mapping_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF tracker_category_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tracker_category_missing';
+    END IF;
+
+    IF tracker_category_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tracker_category_invalid';
+    END IF;
+
+    IF tracker_subcategory_input IS NULL THEN
+        tracker_subcategory_input := 0;
+    END IF;
+
+    IF tracker_subcategory_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tracker_subcategory_invalid';
+    END IF;
+
+    IF torznab_cat_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_category_missing';
+    END IF;
+
+    SELECT torznab_category_id
+    INTO torznab_category_id_value
+    FROM torznab_category
+    WHERE torznab_cat_id = torznab_cat_id_input;
+
+    IF torznab_category_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'torznab_category_not_found';
+    END IF;
+
+    IF media_domain_key_input IS NOT NULL THEN
+        normalized_media_domain := lower(trim(media_domain_key_input));
+
+        IF normalized_media_domain = '' OR normalized_media_domain <> media_domain_key_input THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'media_domain_key_invalid';
+        END IF;
+
+        SELECT media_domain_id
+        INTO media_domain_id_value
+        FROM media_domain
+        WHERE media_domain_key::TEXT = normalized_media_domain;
+
+        IF media_domain_id_value IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'unknown_key';
+        END IF;
+    ELSE
+        media_domain_id_value := NULL;
+    END IF;
+
+    IF indexer_definition_upstream_slug_input IS NOT NULL THEN
+        normalized_slug := lower(trim(indexer_definition_upstream_slug_input));
+
+        IF normalized_slug = '' OR normalized_slug <> indexer_definition_upstream_slug_input THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'indexer_slug_invalid';
+        END IF;
+
+        SELECT indexer_definition_id
+        INTO definition_id
+        FROM indexer_definition
+        WHERE upstream_source = 'prowlarr_indexers'
+          AND upstream_slug = normalized_slug;
+
+        IF definition_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'indexer_definition_not_found';
+        END IF;
+    ELSE
+        definition_id := NULL;
+    END IF;
+
+    INSERT INTO tracker_category_mapping (
+        indexer_definition_id,
+        tracker_category,
+        tracker_subcategory,
+        torznab_category_id,
+        media_domain_id,
+        confidence
+    )
+    VALUES (
+        definition_id,
+        tracker_category_input,
+        tracker_subcategory_input,
+        torznab_category_id_value,
+        media_domain_id_value,
+        1.0
+    )
+    ON CONFLICT (
+        coalesce(indexer_definition_id, 0::BIGINT),
+        tracker_category,
+        tracker_subcategory
+    )
+    DO UPDATE SET
+        torznab_category_id = EXCLUDED.torznab_category_id,
+        media_domain_id = EXCLUDED.media_domain_id,
+        confidence = EXCLUDED.confidence
+    RETURNING tracker_category_mapping_id INTO mapping_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tracker_category_mapping',
+        mapping_id,
+        NULL,
+        'update',
+        actor_user_id,
+        'tracker_category_mapping_upsert'
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.tracker_category_mapping_upsert_v1(actor_user_public_id uuid, torznab_instance_public_id_input uuid, indexer_definition_upstream_slug_input character varying, indexer_instance_public_id_input uuid, tracker_category_input integer, tracker_subcategory_input integer, torznab_cat_id_input integer, media_domain_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to upsert tracker category mapping';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    definition_id BIGINT;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    instance_definition_id BIGINT;
+    torznab_scope_id BIGINT;
+    torznab_scope_deleted_at TIMESTAMPTZ;
+    torznab_category_id_value BIGINT;
+    media_domain_id_value BIGINT;
+    normalized_slug VARCHAR(128);
+    normalized_media_domain VARCHAR(128);
+    mapping_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF tracker_category_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_category_missing';
+    END IF;
+
+    IF tracker_category_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_category_invalid';
+    END IF;
+
+    IF tracker_subcategory_input IS NULL THEN
+        tracker_subcategory_input := 0;
+    END IF;
+
+    IF tracker_subcategory_input < 0 THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'tracker_subcategory_invalid';
+    END IF;
+
+    IF torznab_cat_id_input IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_category_missing';
+    END IF;
+
+    SELECT torznab_category_id
+    INTO torznab_category_id_value
+    FROM torznab_category
+    WHERE torznab_cat_id = torznab_cat_id_input;
+
+    IF torznab_category_id_value IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_category_not_found';
+    END IF;
+
+    IF media_domain_key_input IS NOT NULL THEN
+        normalized_media_domain := lower(trim(media_domain_key_input));
+
+        IF normalized_media_domain = '' OR normalized_media_domain <> media_domain_key_input THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'media_domain_key_invalid';
+        END IF;
+
+        SELECT media_domain_id
+        INTO media_domain_id_value
+        FROM media_domain
+        WHERE media_domain_key::TEXT = normalized_media_domain;
+
+        IF media_domain_id_value IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'media_domain_not_found';
+        END IF;
+    ELSE
+        media_domain_id_value := NULL;
+    END IF;
+
+    IF torznab_instance_public_id_input IS NOT NULL THEN
+        SELECT torznab_instance_id, deleted_at
+        INTO torznab_scope_id, torznab_scope_deleted_at
+        FROM torznab_instance
+        WHERE torznab_instance_public_id = torznab_instance_public_id_input;
+
+        IF torznab_scope_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_not_found';
+        END IF;
+
+        IF torznab_scope_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'torznab_instance_deleted';
+        END IF;
+    ELSE
+        torznab_scope_id := NULL;
+    END IF;
+
+    IF indexer_definition_upstream_slug_input IS NOT NULL THEN
+        normalized_slug := lower(trim(indexer_definition_upstream_slug_input));
+
+        IF normalized_slug = '' OR normalized_slug <> indexer_definition_upstream_slug_input THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_slug_invalid';
+        END IF;
+
+        SELECT indexer_definition_id
+        INTO definition_id
+        FROM indexer_definition
+        WHERE upstream_source = 'prowlarr_indexers'
+          AND upstream_slug = normalized_slug;
+
+        IF definition_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_definition_not_found';
+        END IF;
+    ELSE
+        definition_id := NULL;
+    END IF;
+
+    IF indexer_instance_public_id_input IS NOT NULL THEN
+        SELECT indexer_instance_id, deleted_at, indexer_definition_id
+        INTO instance_id, instance_deleted_at, instance_definition_id
+        FROM indexer_instance
+        WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+        IF instance_id IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_not_found';
+        END IF;
+
+        IF instance_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_instance_deleted';
+        END IF;
+
+        IF definition_id IS NOT NULL AND definition_id <> instance_definition_id THEN
+            RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = base_message, DETAIL = 'indexer_scope_conflict';
+        END IF;
+
+        definition_id := instance_definition_id;
+    ELSE
+        instance_id := NULL;
+    END IF;
+
+    INSERT INTO tracker_category_mapping (
+        torznab_instance_id,
+        indexer_definition_id,
+        indexer_instance_id,
+        tracker_category,
+        tracker_subcategory,
+        torznab_category_id,
+        media_domain_id,
+        confidence
+    )
+    VALUES (
+        torznab_scope_id,
+        definition_id,
+        instance_id,
+        tracker_category_input,
+        tracker_subcategory_input,
+        torznab_category_id_value,
+        media_domain_id_value,
+        1.0
+    )
+    ON CONFLICT (
+        coalesce(torznab_instance_id, 0::BIGINT),
+        coalesce(indexer_instance_id, 0::BIGINT),
+        coalesce(indexer_definition_id, 0::BIGINT),
+        tracker_category,
+        tracker_subcategory
+    )
+    DO UPDATE SET
+        torznab_category_id = EXCLUDED.torznab_category_id,
+        media_domain_id = EXCLUDED.media_domain_id,
+        confidence = EXCLUDED.confidence
+    RETURNING tracker_category_mapping_id INTO mapping_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'tracker_category_mapping',
+        mapping_id,
+        NULL,
+        'update',
+        actor_user_id,
+        'tracker_category_mapping_upsert'
+    );
+END;
+$$;
+
+
+
+CREATE FUNCTION public.trust_tier_seed_defaults() RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$DECLARE
+    base_message CONSTANT text := 'Failed to seed trust tiers';
+    errcode CONSTANT text := 'P0001';
+
+BEGIN
+    INSERT INTO trust_tier (trust_tier_key, display_name, default_weight, rank)
+    VALUES
+        ('public', 'Public', 0, 10),
+        ('semi_private', 'Semi-Private', 5, 20),
+        ('private', 'Private', 10, 30),
+        ('invite_only', 'Invite Only', 15, 40)
+    ON CONFLICT (trust_tier_key) DO NOTHING;
+
+    IF EXISTS (
+        SELECT 1
+        FROM trust_tier
+        WHERE trust_tier_key = 'public'
+          AND (
+              display_name IS DISTINCT FROM 'Public'
+              OR default_weight IS DISTINCT FROM 0
+              OR rank IS DISTINCT FROM 10
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM trust_tier
+        WHERE trust_tier_key = 'semi_private'
+          AND (
+              display_name IS DISTINCT FROM 'Semi-Private'
+              OR default_weight IS DISTINCT FROM 5
+              OR rank IS DISTINCT FROM 20
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM trust_tier
+        WHERE trust_tier_key = 'private'
+          AND (
+              display_name IS DISTINCT FROM 'Private'
+              OR default_weight IS DISTINCT FROM 10
+              OR rank IS DISTINCT FROM 30
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM trust_tier
+        WHERE trust_tier_key = 'invite_only'
+          AND (
+              display_name IS DISTINCT FROM 'Invite Only'
+              OR default_weight IS DISTINCT FROM 15
+              OR rank IS DISTINCT FROM 40
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.bump_app_profile_version(_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET version = version + 1
+    WHERE id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.bump_revision(_source_table text) RETURNS bigint
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    new_revision BIGINT;
+BEGIN
+    UPDATE public.settings_revision
+    SET revision = revision + 1,
+        updated_at = now()
+    WHERE id = 1
+    RETURNING revision INTO new_revision;
+
+    PERFORM pg_notify('revaer_settings_changed', format('%s:%s:UPDATE', _source_table, new_revision));
+    RETURN new_revision;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.cleanup_expired_setup_tokens() RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    DELETE FROM public.setup_tokens
+    WHERE consumed_at IS NULL
+      AND expires_at <= now();
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.consume_setup_token(_token_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.setup_tokens
+    SET consumed_at = now()
+    WHERE id = _token_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.delete_api_key(_key_id text) RETURNS bigint
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    removed BIGINT;
+BEGIN
+    DELETE FROM public.auth_api_keys WHERE key_id = _key_id;
+    GET DIAGNOSTICS removed = ROW_COUNT;
+    RETURN removed;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.delete_secret(_name text) RETURNS bigint
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    removed BIGINT;
+BEGIN
+    DELETE FROM public.settings_secret WHERE name = _name;
+    GET DIAGNOSTICS removed = ROW_COUNT;
+    RETURN removed;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.factory_reset() RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM revaer_config.factory_reset_without_media_defaults_v1();
+    PERFORM revaer_config.seed_media_configuration_defaults();
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.factory_reset_without_media_defaults_v1() RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    base_rate_limit_message CONSTANT text := 'Failed to seed rate limit policies';
+    errcode CONSTANT text := 'P0001';
+    rec RECORD;
+BEGIN
+    PERFORM set_config('lock_timeout', '5s', true);
+
+    FOR rec IN
+        SELECT schemaname, tablename
+        FROM pg_tables
+        WHERE schemaname IN ('public', 'revaer_runtime')
+          AND tablename <> '_sqlx_migrations'
+    LOOP
+        EXECUTE format(
+            'TRUNCATE TABLE %I.%I RESTART IDENTITY CASCADE',
+            rec.schemaname,
+            rec.tablename
+        );
+    END LOOP;
+
+    INSERT INTO public.settings_revision (id, revision)
+    VALUES (1, 0)
+    ON CONFLICT (id) DO UPDATE
+    SET revision = EXCLUDED.revision,
+        updated_at = now();
+
+    INSERT INTO public.app_profile (id, mode, instance_name)
+    VALUES (
+        '00000000-0000-0000-0000-000000000001',
+        'setup',
+        'revaer'
+    );
+
+    INSERT INTO public.engine_profile (id, implementation, resume_dir, download_root)
+    VALUES (
+        '00000000-0000-0000-0000-000000000002',
+        'libtorrent',
+        '.server_root/resume',
+        '.server_root/downloads'
+    );
+
+    INSERT INTO public.fs_policy (id, library_root)
+    VALUES (
+        '00000000-0000-0000-0000-000000000003',
+        '.server_root/library'
+    );
+
+    PERFORM revaer_config.update_app_telemetry(
+        '00000000-0000-0000-0000-000000000001',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL
+    );
+    PERFORM revaer_config.update_app_immutable_keys(
+        '00000000-0000-0000-0000-000000000001',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.replace_app_label_policies(
+        '00000000-0000-0000-0000-000000000001',
+        ARRAY[]::TEXT[],
+        ARRAY[]::TEXT[],
+        ARRAY[]::TEXT[],
+        ARRAY[]::BIGINT[],
+        ARRAY[]::BIGINT[],
+        ARRAY[]::INTEGER[],
+        ARRAY[]::BOOLEAN[],
+        ARRAY[]::DOUBLE PRECISION[],
+        ARRAY[]::BIGINT[],
+        ARRAY[]::DOUBLE PRECISION[],
+        ARRAY[]::BIGINT[],
+        ARRAY[]::BOOLEAN[]
+    );
+
+    PERFORM revaer_config.set_engine_list_values(
+        '00000000-0000-0000-0000-000000000002',
+        'listen_interfaces',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_engine_list_values(
+        '00000000-0000-0000-0000-000000000002',
+        'dht_bootstrap_nodes',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_engine_list_values(
+        '00000000-0000-0000-0000-000000000002',
+        'dht_router_nodes',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_engine_ip_filter(
+        '00000000-0000-0000-0000-000000000002',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_engine_alt_speed(
+        '00000000-0000-0000-0000-000000000002',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_tracker_config(
+        '00000000-0000-0000-0000-000000000002',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        FALSE,
+        FALSE,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        FALSE,
+        NULL,
+        NULL,
+        NULL,
+        TRUE,
+        NULL,
+        NULL,
+        NULL,
+        ARRAY[]::TEXT[],
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_peer_classes(
+        '00000000-0000-0000-0000-000000000002',
+        ARRAY[]::SMALLINT[],
+        ARRAY[]::TEXT[],
+        ARRAY[]::SMALLINT[],
+        ARRAY[]::SMALLINT[],
+        ARRAY[]::SMALLINT[],
+        ARRAY[]::BOOLEAN[],
+        ARRAY[]::SMALLINT[]
+    );
+
+    PERFORM revaer_config.set_fs_list(
+        '00000000-0000-0000-0000-000000000003',
+        'cleanup_keep',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_fs_list(
+        '00000000-0000-0000-0000-000000000003',
+        'cleanup_drop',
+        ARRAY[]::TEXT[]
+    );
+    PERFORM revaer_config.set_fs_list(
+        '00000000-0000-0000-0000-000000000003',
+        'allow_paths',
+        ARRAY['.server_root/downloads', '.server_root/library']::TEXT[]
+    );
+
+    INSERT INTO app_user (
+        user_id,
+        user_public_id,
+        email,
+        email_normalized,
+        is_email_verified,
+        display_name,
+        role,
+        created_at
+    ) OVERRIDING SYSTEM VALUE
+    SELECT
+        0,
+        '00000000-0000-0000-0000-000000000000',
+        'system@revaer.local',
+        'system@revaer.local',
+        TRUE,
+        'System',
+        'owner',
+        now()
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM app_user
+        WHERE user_id = 0
+           OR user_public_id = '00000000-0000-0000-0000-000000000000'
+    );
+
+    PERFORM trust_tier_seed_defaults();
+    PERFORM media_domain_seed_defaults();
+
+    IF NOT EXISTS (SELECT 1 FROM deployment_config) THEN
+        INSERT INTO deployment_config DEFAULT VALUES;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM deployment_maintenance_state) THEN
+        INSERT INTO deployment_maintenance_state DEFAULT VALUES;
+    END IF;
+
+    WITH seed_categories (torznab_cat_id, name) AS (
+        VALUES
+            (2000, 'Movies'),
+            (2010, 'Movies/2010'),
+            (2020, 'Movies/2020'),
+            (2030, 'Movies/2030'),
+            (2040, 'Movies/2040'),
+            (2045, 'Movies/2045'),
+            (2050, 'Movies/2050'),
+            (2060, 'Movies/2060'),
+            (3000, 'Audio'),
+            (3010, 'Audio/3010'),
+            (3020, 'Audio/3020'),
+            (4000, 'Software'),
+            (4050, 'Software/4050'),
+            (5000, 'TV'),
+            (5010, 'TV/5010'),
+            (5020, 'TV/5020'),
+            (5030, 'TV/5030'),
+            (5040, 'TV/5040'),
+            (5045, 'TV/5045'),
+            (5050, 'TV/5050'),
+            (5060, 'TV/5060'),
+            (5070, 'TV/5070'),
+            (5075, 'TV/5075'),
+            (5080, 'TV/5080'),
+            (6000, 'Adult'),
+            (6010, 'Adult/6010'),
+            (6020, 'Adult/6020'),
+            (6030, 'Adult/6030'),
+            (6040, 'Adult/6040'),
+            (7000, 'Books'),
+            (7010, 'Books/7010'),
+            (7020, 'Books/7020'),
+            (8000, 'Other')
+    )
+    INSERT INTO torznab_category (torznab_cat_id, name)
+    SELECT torznab_cat_id, name
+    FROM seed_categories
+    ON CONFLICT (torznab_cat_id) DO NOTHING;
+
+    WITH seed_mapping (media_domain_key, torznab_cat_id, is_primary) AS (
+        VALUES
+            ('movies'::media_domain_key, 2000, TRUE),
+            ('movies'::media_domain_key, 2010, FALSE),
+            ('movies'::media_domain_key, 2020, FALSE),
+            ('movies'::media_domain_key, 2030, FALSE),
+            ('movies'::media_domain_key, 2040, FALSE),
+            ('movies'::media_domain_key, 2045, FALSE),
+            ('movies'::media_domain_key, 2050, FALSE),
+            ('movies'::media_domain_key, 2060, FALSE),
+            ('tv'::media_domain_key, 5000, TRUE),
+            ('tv'::media_domain_key, 5010, FALSE),
+            ('tv'::media_domain_key, 5020, FALSE),
+            ('tv'::media_domain_key, 5030, FALSE),
+            ('tv'::media_domain_key, 5040, FALSE),
+            ('tv'::media_domain_key, 5045, FALSE),
+            ('tv'::media_domain_key, 5050, FALSE),
+            ('tv'::media_domain_key, 5060, FALSE),
+            ('tv'::media_domain_key, 5070, FALSE),
+            ('tv'::media_domain_key, 5075, FALSE),
+            ('tv'::media_domain_key, 5080, FALSE),
+            ('audiobooks'::media_domain_key, 3020, TRUE),
+            ('ebooks'::media_domain_key, 7000, FALSE),
+            ('ebooks'::media_domain_key, 7010, TRUE),
+            ('ebooks'::media_domain_key, 7020, FALSE),
+            ('software'::media_domain_key, 4000, TRUE),
+            ('software'::media_domain_key, 4050, FALSE),
+            ('adult_movies'::media_domain_key, 6000, TRUE),
+            ('adult_movies'::media_domain_key, 6010, FALSE),
+            ('adult_movies'::media_domain_key, 6020, FALSE),
+            ('adult_movies'::media_domain_key, 6030, FALSE),
+            ('adult_movies'::media_domain_key, 6040, FALSE),
+            ('adult_scenes'::media_domain_key, 6000, TRUE),
+            ('adult_scenes'::media_domain_key, 6010, FALSE),
+            ('adult_scenes'::media_domain_key, 6020, FALSE),
+            ('adult_scenes'::media_domain_key, 6030, FALSE),
+            ('adult_scenes'::media_domain_key, 6040, FALSE)
+    )
+    INSERT INTO media_domain_to_torznab_category (
+        media_domain_id,
+        torznab_category_id,
+        is_primary
+    )
+    SELECT
+        media_domain.media_domain_id,
+        torznab_category.torznab_category_id,
+        seed_mapping.is_primary
+    FROM seed_mapping
+    JOIN media_domain
+        ON media_domain.media_domain_key = seed_mapping.media_domain_key
+    JOIN torznab_category
+        ON torznab_category.torznab_cat_id = seed_mapping.torznab_cat_id
+    ON CONFLICT (media_domain_id, torznab_category_id) DO UPDATE
+        SET is_primary = EXCLUDED.is_primary;
+
+    WITH seed_tracker_mapping (tracker_category, torznab_cat_id, media_domain_key) AS (
+        VALUES
+            (2000, 2000, 'movies'::media_domain_key),
+            (2010, 2010, 'movies'::media_domain_key),
+            (2020, 2020, 'movies'::media_domain_key),
+            (2030, 2030, 'movies'::media_domain_key),
+            (2040, 2040, 'movies'::media_domain_key),
+            (2045, 2045, 'movies'::media_domain_key),
+            (2050, 2050, 'movies'::media_domain_key),
+            (2060, 2060, 'movies'::media_domain_key),
+            (5000, 5000, 'tv'::media_domain_key),
+            (5010, 5010, 'tv'::media_domain_key),
+            (5020, 5020, 'tv'::media_domain_key),
+            (5030, 5030, 'tv'::media_domain_key),
+            (5040, 5040, 'tv'::media_domain_key),
+            (5045, 5045, 'tv'::media_domain_key),
+            (5050, 5050, 'tv'::media_domain_key),
+            (5060, 5060, 'tv'::media_domain_key),
+            (5070, 5070, 'tv'::media_domain_key),
+            (5075, 5075, 'tv'::media_domain_key),
+            (5080, 5080, 'tv'::media_domain_key),
+            (7000, 7000, 'ebooks'::media_domain_key),
+            (7010, 7010, 'ebooks'::media_domain_key),
+            (7020, 7020, 'ebooks'::media_domain_key),
+            (3020, 3020, 'audiobooks'::media_domain_key),
+            (4000, 4000, 'software'::media_domain_key),
+            (4050, 4050, 'software'::media_domain_key),
+            (6000, 6000, 'adult_movies'::media_domain_key),
+            (6010, 6010, 'adult_movies'::media_domain_key),
+            (6020, 6020, 'adult_movies'::media_domain_key),
+            (6030, 6030, 'adult_movies'::media_domain_key),
+            (6040, 6040, 'adult_movies'::media_domain_key),
+            (3000, 3000, NULL::media_domain_key),
+            (3010, 3010, NULL::media_domain_key),
+            (8000, 8000, NULL::media_domain_key)
+    )
+    INSERT INTO tracker_category_mapping (
+        indexer_definition_id,
+        tracker_category,
+        tracker_subcategory,
+        torznab_category_id,
+        media_domain_id
+    )
+    SELECT
+        NULL,
+        seed_tracker_mapping.tracker_category,
+        0,
+        torznab_category.torznab_category_id,
+        media_domain.media_domain_id
+    FROM seed_tracker_mapping
+    JOIN torznab_category
+        ON torznab_category.torznab_cat_id = seed_tracker_mapping.torznab_cat_id
+    LEFT JOIN media_domain
+        ON media_domain.media_domain_key = seed_tracker_mapping.media_domain_key
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tracker_category_mapping existing
+        WHERE existing.indexer_definition_id IS NULL
+          AND existing.tracker_category = seed_tracker_mapping.tracker_category
+          AND existing.tracker_subcategory = 0
+    );
+
+    INSERT INTO rate_limit_policy (
+        rate_limit_policy_public_id,
+        display_name,
+        requests_per_minute,
+        burst,
+        concurrent_requests,
+        is_system
+    )
+    VALUES
+        (gen_random_uuid(), 'default_indexer', 60, 30, 2, TRUE),
+        (gen_random_uuid(), 'default_routing', 120, 60, 4, TRUE)
+    ON CONFLICT (display_name) DO NOTHING;
+
+    IF EXISTS (
+        SELECT 1
+        FROM rate_limit_policy
+        WHERE display_name = 'default_indexer'
+          AND (
+              requests_per_minute IS DISTINCT FROM 60
+              OR burst IS DISTINCT FROM 30
+              OR concurrent_requests IS DISTINCT FROM 2
+              OR is_system IS DISTINCT FROM TRUE
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_rate_limit_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM rate_limit_policy
+        WHERE display_name = 'default_routing'
+          AND (
+              requests_per_minute IS DISTINCT FROM 120
+              OR burst IS DISTINCT FROM 60
+              OR concurrent_requests IS DISTINCT FROM 4
+              OR is_system IS DISTINCT FROM TRUE
+          )
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_rate_limit_message,
+            DETAIL = 'seed_values_mismatch';
+    END IF;
+
+    WITH seed_jobs (job_key, cadence_seconds, enabled) AS (
+        VALUES
+            ('retention_purge'::job_key, 3600, TRUE),
+            ('reputation_rollup_1h'::job_key, 300, TRUE),
+            ('reputation_rollup_24h'::job_key, 3600, TRUE),
+            ('reputation_rollup_7d'::job_key, 21600, TRUE),
+            ('connectivity_profile_refresh'::job_key, 300, TRUE),
+            ('canonical_backfill_best_source'::job_key, 86400, TRUE),
+            ('base_score_refresh_recent'::job_key, 3600, TRUE),
+            ('canonical_prune_low_confidence'::job_key, 86400, TRUE),
+            ('policy_snapshot_gc'::job_key, 86400, TRUE),
+            ('policy_snapshot_refcount_repair'::job_key, 86400, TRUE),
+            ('rate_limit_state_purge'::job_key, 3600, TRUE),
+            ('rss_poll'::job_key, 60, TRUE),
+            ('rss_subscription_backfill'::job_key, 300, TRUE)
+    )
+    INSERT INTO job_schedule (
+        job_key,
+        cadence_seconds,
+        jitter_seconds,
+        enabled,
+        next_run_at
+    )
+    SELECT
+        seed_jobs.job_key,
+        seed_jobs.cadence_seconds,
+        0,
+        seed_jobs.enabled,
+        now() + make_interval(
+            secs => random_jitter_seconds(seed_jobs.cadence_seconds - 1)
+        )
+    FROM seed_jobs
+    ON CONFLICT (job_key) DO NOTHING;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.fetch_active_setup_token() RETURNS TABLE(id uuid, token_hash text, expires_at timestamp with time zone)
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT st.id, st.token_hash, st.expires_at
+    FROM public.setup_tokens AS st
+    WHERE st.consumed_at IS NULL
+    ORDER BY st.issued_at DESC
+    LIMIT 1
+    FOR UPDATE;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.fetch_api_key_auth(_key_id text) RETURNS TABLE(hash text, enabled boolean, label text, rate_limit_burst integer, rate_limit_per_seconds bigint, expires_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ak.hash,
+           ak.enabled,
+           ak.label,
+           ak.rate_limit_burst,
+           ak.rate_limit_per_seconds,
+           ak.expires_at
+    FROM public.auth_api_keys AS ak
+    WHERE ak.key_id = _key_id
+      AND (ak.expires_at IS NULL OR ak.expires_at > now());
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.fetch_api_key_hash(_key_id text) RETURNS text
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    digest TEXT;
+BEGIN
+    SELECT hash INTO digest FROM public.auth_api_keys WHERE key_id = _key_id;
+    RETURN digest;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.fetch_api_keys() RETURNS TABLE(key_id text, label text, enabled boolean, rate_limit_burst integer, rate_limit_per_seconds bigint, expires_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ak.key_id,
+           ak.label,
+           ak.enabled,
+           ak.rate_limit_burst,
+           ak.rate_limit_per_seconds,
+           ak.expires_at
+    FROM public.auth_api_keys AS ak
+    WHERE ak.enabled = TRUE
+      AND (ak.expires_at IS NULL OR ak.expires_at > now())
+    ORDER BY ak.created_at;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.fetch_app_profile_row(_id uuid) RETURNS TABLE(id uuid, instance_name text, mode text, auth_mode text, version bigint, http_port integer, bind_addr text, local_networks text[], telemetry_level text, telemetry_format text, telemetry_otel_enabled boolean, telemetry_otel_service_name text, telemetry_otel_endpoint text, immutable_keys text[])
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ap.id,
+           ap.instance_name,
+           ap.mode,
+           ap.auth_mode,
+           ap.version,
+           ap.http_port,
+           ap.bind_addr::TEXT,
+           COALESCE(
+               (
+                   SELECT array_agg(cidr ORDER BY ord)
+                   FROM public.app_profile_local_networks
+                   WHERE profile_id = ap.id
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           ap.telemetry_level,
+           ap.telemetry_format,
+           ap.telemetry_otel_enabled,
+           ap.telemetry_otel_service_name,
+           ap.telemetry_otel_endpoint,
+           COALESCE(
+               (
+                   SELECT array_agg(key ORDER BY ord)
+                   FROM public.app_profile_immutable_keys
+                   WHERE profile_id = ap.id
+               ),
+               ARRAY[]::TEXT[]
+           )
+    FROM public.app_profile AS ap
+    WHERE ap.id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.fetch_engine_profile_row(_id uuid) RETURNS TABLE(id uuid, implementation text, listen_port integer, dht boolean, encryption text, max_active integer, max_download_bps bigint, max_upload_bps bigint, seed_ratio_limit double precision, seed_time_limit bigint, sequential_default boolean, auto_managed boolean, auto_manage_prefer_seeds boolean, dont_count_slow_torrents boolean, super_seeding boolean, choking_algorithm text, seed_choking_algorithm text, strict_super_seeding boolean, optimistic_unchoke_slots integer, max_queued_disk_bytes bigint, resume_dir text, download_root text, storage_mode text, use_partfile boolean, cache_size integer, cache_expiry integer, coalesce_reads boolean, coalesce_writes boolean, use_disk_cache_pool boolean, disk_read_mode text, disk_write_mode text, verify_piece_hashes boolean, enable_lsd boolean, enable_upnp boolean, enable_natpmp boolean, enable_pex boolean, listen_interfaces text[], dht_bootstrap_nodes text[], dht_router_nodes text[], ipv6_mode text, anonymous_mode boolean, force_proxy boolean, prefer_rc4 boolean, allow_multiple_connections_per_ip boolean, enable_outgoing_utp boolean, enable_incoming_utp boolean, outgoing_port_min integer, outgoing_port_max integer, peer_dscp integer, connections_limit integer, connections_limit_per_torrent integer, unchoke_slots integer, half_open_limit integer, stats_interval_ms integer, alt_speed_download_bps bigint, alt_speed_upload_bps bigint, alt_speed_schedule_start_minutes integer, alt_speed_schedule_end_minutes integer, alt_speed_days text[], ip_filter_blocklist_url text, ip_filter_etag text, ip_filter_last_updated_at timestamp with time zone, ip_filter_last_error text, ip_filter_cidrs text[], tracker_user_agent text, tracker_announce_ip text, tracker_listen_interface text, tracker_request_timeout_ms integer, tracker_announce_to_all boolean, tracker_replace_trackers boolean, tracker_proxy_host text, tracker_proxy_port integer, tracker_proxy_kind text, tracker_proxy_username_secret text, tracker_proxy_password_secret text, tracker_auth_username_secret text, tracker_auth_password_secret text, tracker_auth_cookie_secret text, tracker_ssl_cert text, tracker_ssl_private_key text, tracker_ssl_ca_cert text, tracker_ssl_verify boolean, tracker_proxy_peers boolean, tracker_default_urls text[], tracker_extra_urls text[], peer_class_ids smallint[], peer_class_labels text[], peer_class_download_priorities smallint[], peer_class_upload_priorities smallint[], peer_class_connection_limit_factors smallint[], peer_class_ignore_unchoke_slots boolean[], peer_class_default_ids smallint[])
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ep.id,
+           ep.implementation,
+           ep.listen_port,
+           ep.dht,
+           ep.encryption,
+           ep.max_active,
+           ep.max_download_bps,
+           ep.max_upload_bps,
+           ep.seed_ratio_limit,
+           ep.seed_time_limit,
+           ep.sequential_default,
+           ep.auto_managed,
+           ep.auto_manage_prefer_seeds,
+           ep.dont_count_slow_torrents,
+           ep.super_seeding,
+           ep.choking_algorithm,
+           ep.seed_choking_algorithm,
+           ep.strict_super_seeding,
+           ep.optimistic_unchoke_slots,
+           ep.max_queued_disk_bytes,
+           ep.resume_dir,
+           ep.download_root,
+           ep.storage_mode,
+           ep.use_partfile,
+           ep.cache_size,
+           ep.cache_expiry,
+           ep.coalesce_reads,
+           ep.coalesce_writes,
+           ep.use_disk_cache_pool,
+           ep.disk_read_mode,
+           ep.disk_write_mode,
+           ep.verify_piece_hashes,
+           ep.enable_lsd,
+           ep.enable_upnp,
+           ep.enable_natpmp,
+           ep.enable_pex,
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.engine_profile_list_values
+                   WHERE profile_id = ep.id AND kind = 'listen_interfaces'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.engine_profile_list_values
+                   WHERE profile_id = ep.id AND kind = 'dht_bootstrap_nodes'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.engine_profile_list_values
+                   WHERE profile_id = ep.id AND kind = 'dht_router_nodes'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           ep.ipv6_mode,
+           ep.anonymous_mode,
+           ep.force_proxy,
+           ep.prefer_rc4,
+           ep.allow_multiple_connections_per_ip,
+           ep.enable_outgoing_utp,
+           ep.enable_incoming_utp,
+           ep.outgoing_port_min,
+           ep.outgoing_port_max,
+           ep.peer_dscp,
+           ep.connections_limit,
+           ep.connections_limit_per_torrent,
+           ep.unchoke_slots,
+           ep.half_open_limit,
+           ep.stats_interval_ms,
+           ea.download_bps,
+           ea.upload_bps,
+           ea.schedule_start_minutes,
+           ea.schedule_end_minutes,
+           COALESCE(
+               (
+                   SELECT array_agg(day ORDER BY ord)
+                   FROM public.engine_alt_speed_days
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           eif.blocklist_url,
+           eif.etag,
+           eif.last_updated_at,
+           eif.last_error,
+           COALESCE(
+               (
+                   SELECT array_agg(cidr ORDER BY ord)
+                   FROM public.engine_ip_filter_entries
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           etc.user_agent,
+           etc.announce_ip,
+           etc.listen_interface,
+           etc.request_timeout_ms,
+           etc.announce_to_all,
+           etc.replace_trackers,
+           etc.proxy_host,
+           etc.proxy_port,
+           etc.proxy_kind,
+           etc.proxy_username_secret,
+           etc.proxy_password_secret,
+           etc.auth_username_secret,
+           etc.auth_password_secret,
+           etc.auth_cookie_secret,
+           etc.ssl_cert,
+           etc.ssl_private_key,
+           etc.ssl_ca_cert,
+           etc.ssl_tracker_verify,
+           etc.proxy_peers,
+           COALESCE(
+               (
+                   SELECT array_agg(url ORDER BY ord)
+                   FROM public.engine_tracker_endpoints
+                   WHERE profile_id = ep.id AND kind = 'default'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(url ORDER BY ord)
+                   FROM public.engine_tracker_endpoints
+                   WHERE profile_id = ep.id AND kind = 'extra'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(class_id ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(label ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(download_priority ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(upload_priority ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(connection_limit_factor ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(ignore_unchoke_slots ORDER BY class_id)
+                   FROM public.engine_peer_classes
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::BOOLEAN[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(class_id ORDER BY class_id)
+                   FROM public.engine_peer_class_defaults
+                   WHERE profile_id = ep.id
+               ),
+               ARRAY[]::SMALLINT[]
+           )
+    FROM public.engine_profile AS ep
+    LEFT JOIN public.engine_alt_speed AS ea ON ea.profile_id = ep.id
+    LEFT JOIN public.engine_ip_filter AS eif ON eif.profile_id = ep.id
+    LEFT JOIN public.engine_tracker_config AS etc ON etc.profile_id = ep.id
+    WHERE ep.id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.fetch_fs_policy_row(_id uuid) RETURNS TABLE(id uuid, library_root text, "extract" boolean, par2 text, flatten boolean, move_mode text, chmod_file text, chmod_dir text, owner text, "group" text, umask text, cleanup_keep text[], cleanup_drop text[], allow_paths text[])
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT fp.id,
+           fp.library_root,
+           fp."extract",
+           fp.par2,
+           fp.flatten,
+           fp.move_mode,
+           fp.chmod_file,
+           fp.chmod_dir,
+           fp.owner,
+           fp."group",
+           fp.umask,
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.fs_policy_list_values
+                   WHERE policy_id = fp.id AND kind = 'cleanup_keep'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.fs_policy_list_values
+                   WHERE policy_id = fp.id AND kind = 'cleanup_drop'
+               ),
+               ARRAY[]::TEXT[]
+           ),
+           COALESCE(
+               (
+                   SELECT array_agg(value ORDER BY ord)
+                   FROM public.fs_policy_list_values
+                   WHERE policy_id = fp.id AND kind = 'allow_paths'
+               ),
+               ARRAY[]::TEXT[]
+           )
+    FROM public.fs_policy AS fp
+    WHERE fp.id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.fetch_revision() RETURNS bigint
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+DECLARE
+    current_revision BIGINT;
+BEGIN
+    SELECT revision INTO current_revision FROM public.settings_revision WHERE id = 1;
+    RETURN current_revision;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.fetch_secret_by_name(_name text) RETURNS TABLE(name text, ciphertext bytea)
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ss.name, ss.ciphertext
+    FROM public.settings_secret AS ss
+    WHERE ss.name = _name;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.insert_api_key(_key_id text, _hash text, _label text, _enabled boolean, _burst integer, _per_seconds bigint, _expires_at timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.auth_api_keys AS ak (
+        key_id,
+        hash,
+        label,
+        enabled,
+        expires_at,
+        rate_limit_burst,
+        rate_limit_per_seconds
+    )
+    VALUES (
+        _key_id,
+        _hash,
+        _label,
+        _enabled,
+        _expires_at,
+        _burst,
+        _per_seconds
+    )
+    ON CONFLICT (key_id) DO UPDATE
+    SET hash = EXCLUDED.hash,
+        label = EXCLUDED.label,
+        enabled = EXCLUDED.enabled,
+        expires_at = EXCLUDED.expires_at,
+        rate_limit_burst = EXCLUDED.rate_limit_burst,
+        rate_limit_per_seconds = EXCLUDED.rate_limit_per_seconds;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.insert_setup_token(_token_hash text, _expires_at timestamp with time zone, _issued_by text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.setup_tokens (token_hash, expires_at, issued_by)
+    VALUES (_token_hash, _expires_at, _issued_by);
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.invalidate_active_setup_tokens() RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.setup_tokens
+    SET consumed_at = now()
+    WHERE consumed_at IS NULL;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.list_app_label_policies(_profile_id uuid) RETURNS TABLE(kind text, name text, download_dir text, rate_limit_download_bps bigint, rate_limit_upload_bps bigint, queue_position integer, auto_managed boolean, seed_ratio_limit double precision, seed_time_limit bigint, cleanup_seed_ratio_limit double precision, cleanup_seed_time_limit bigint, cleanup_remove_data boolean)
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT alp.kind,
+           alp.name,
+           alp.download_dir,
+           alp.rate_limit_download_bps,
+           alp.rate_limit_upload_bps,
+           alp.queue_position,
+           alp.auto_managed,
+           alp.seed_ratio_limit,
+           alp.seed_time_limit,
+           alp.cleanup_seed_ratio_limit,
+           alp.cleanup_seed_time_limit,
+           alp.cleanup_remove_data
+    FROM public.app_label_policies AS alp
+    WHERE alp.profile_id = _profile_id
+    ORDER BY alp.kind, alp.name;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.replace_app_label_policies(_profile_id uuid, _kinds text[], _names text[], _download_dirs text[], _rate_limit_download_bps bigint[], _rate_limit_upload_bps bigint[], _queue_positions integer[], _auto_managed boolean[], _seed_ratio_limits double precision[], _seed_time_limits bigint[], _cleanup_seed_ratio_limits double precision[], _cleanup_seed_time_limits bigint[], _cleanup_remove_data boolean[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    DELETE FROM public.app_label_policies WHERE profile_id = _profile_id;
+
+    INSERT INTO public.app_label_policies (
+        profile_id,
+        kind,
+        name,
+        download_dir,
+        rate_limit_download_bps,
+        rate_limit_upload_bps,
+        queue_position,
+        auto_managed,
+        seed_ratio_limit,
+        seed_time_limit,
+        cleanup_seed_ratio_limit,
+        cleanup_seed_time_limit,
+        cleanup_remove_data
+    )
+    SELECT _profile_id,
+           btrim(kind),
+           btrim(name),
+           NULLIF(btrim(download_dir), ''),
+           rate_limit_download_bps,
+           rate_limit_upload_bps,
+           queue_position,
+           auto_managed,
+           seed_ratio_limit,
+           seed_time_limit,
+           cleanup_seed_ratio_limit,
+           cleanup_seed_time_limit,
+           cleanup_remove_data
+    FROM unnest(
+        COALESCE(_kinds, ARRAY[]::TEXT[]),
+        COALESCE(_names, ARRAY[]::TEXT[]),
+        COALESCE(_download_dirs, ARRAY[]::TEXT[]),
+        COALESCE(_rate_limit_download_bps, ARRAY[]::BIGINT[]),
+        COALESCE(_rate_limit_upload_bps, ARRAY[]::BIGINT[]),
+        COALESCE(_queue_positions, ARRAY[]::INTEGER[]),
+        COALESCE(_auto_managed, ARRAY[]::BOOLEAN[]),
+        COALESCE(_seed_ratio_limits, ARRAY[]::DOUBLE PRECISION[]),
+        COALESCE(_seed_time_limits, ARRAY[]::BIGINT[]),
+        COALESCE(_cleanup_seed_ratio_limits, ARRAY[]::DOUBLE PRECISION[]),
+        COALESCE(_cleanup_seed_time_limits, ARRAY[]::BIGINT[]),
+        COALESCE(_cleanup_remove_data, ARRAY[]::BOOLEAN[])
+    ) AS t(
+        kind,
+        name,
+        download_dir,
+        rate_limit_download_bps,
+        rate_limit_upload_bps,
+        queue_position,
+        auto_managed,
+        seed_ratio_limit,
+        seed_time_limit,
+        cleanup_seed_ratio_limit,
+        cleanup_seed_time_limit,
+        cleanup_remove_data
+    )
+    WHERE btrim(kind) <> ''
+      AND btrim(name) <> '';
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.seed_media_configuration_defaults() RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO media_compatibility_target (
+        compatibility_target_key,
+        version,
+        display_name,
+        video_codec,
+        audio_codec,
+        subtitle_policy
+    )
+    VALUES
+        ('hevc-aac', 1, 'HEVC/AAC', 'hevc', 'aac', media_subtitle_policy_selected_v1()),
+        ('plex-apple-tv', 1, 'Plex Apple TV HEVC/AAC', 'hevc', 'aac', media_subtitle_policy_selected_v1()),
+        ('plex-general-hevc-aac', 1, 'Plex General HEVC/AAC', 'hevc', 'aac', media_subtitle_policy_selected_v1())
+    ON CONFLICT (lower(compatibility_target_key), version) DO UPDATE SET
+        display_name = EXCLUDED.display_name,
+        video_codec = EXCLUDED.video_codec,
+        audio_codec = EXCLUDED.audio_codec,
+        subtitle_policy = EXCLUDED.subtitle_policy,
+        enabled = TRUE,
+        updated_at = now();
+
+    INSERT INTO media_policy_profile (
+        policy_key,
+        version,
+        display_name,
+        video_intent
+    )
+    VALUES
+        (media_policy_safe_dry_run_v1(), 1, 'Safe dry run', media_policy_general_v1()),
+        (media_policy_general_v1(), 1, 'General media', media_policy_general_v1()),
+        (media_policy_anime_v1(), 1, 'Anime', media_policy_anime_v1()),
+        (media_policy_archival_v1(), 1, 'Archival', media_policy_archival_v1())
+    ON CONFLICT (lower(policy_key), version) DO UPDATE SET
+        display_name = EXCLUDED.display_name,
+        video_intent = EXCLUDED.video_intent,
+        enabled = TRUE,
+        updated_at = now();
+
+    INSERT INTO media_job_retention_policy (
+        policy_key,
+        completed_retention_days,
+        failed_diagnostic_retention_days,
+        completed_enabled,
+        completed_mode,
+        completed_limit,
+        failed_diagnostic_enabled,
+        failed_diagnostic_mode,
+        failed_diagnostic_limit
+    )
+    VALUES (
+        media_retention_policy_default_v1(),
+        30,
+        30,
+        FALSE,
+        media_retention_mode_age_v1(),
+        30,
+        TRUE,
+        media_retention_mode_age_v1(),
+        30
+    )
+    ON CONFLICT (lower(policy_key)) DO UPDATE SET
+        completed_retention_days = EXCLUDED.completed_retention_days,
+        failed_diagnostic_retention_days = EXCLUDED.failed_diagnostic_retention_days,
+        completed_enabled = EXCLUDED.completed_enabled,
+        completed_mode = EXCLUDED.completed_mode,
+        completed_limit = EXCLUDED.completed_limit,
+        failed_diagnostic_enabled = EXCLUDED.failed_diagnostic_enabled,
+        failed_diagnostic_mode = EXCLUDED.failed_diagnostic_mode,
+        failed_diagnostic_limit = EXCLUDED.failed_diagnostic_limit,
+        enabled = TRUE,
+        updated_at = now();
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.set_engine_alt_speed(_profile_id uuid, _download_bps bigint, _upload_bps bigint, _schedule_start_minutes integer, _schedule_end_minutes integer, _days text[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.engine_alt_speed AS eas (
+        profile_id,
+        download_bps,
+        upload_bps,
+        schedule_start_minutes,
+        schedule_end_minutes
+    )
+    VALUES (
+        _profile_id,
+        _download_bps,
+        _upload_bps,
+        _schedule_start_minutes,
+        _schedule_end_minutes
+    )
+    ON CONFLICT (profile_id) DO UPDATE
+    SET download_bps = EXCLUDED.download_bps,
+        upload_bps = EXCLUDED.upload_bps,
+        schedule_start_minutes = EXCLUDED.schedule_start_minutes,
+        schedule_end_minutes = EXCLUDED.schedule_end_minutes,
+        updated_at = now();
+
+    DELETE FROM public.engine_alt_speed_days
+    WHERE profile_id = _profile_id;
+
+    INSERT INTO public.engine_alt_speed_days (profile_id, ord, day)
+    SELECT _profile_id,
+           ord,
+           day
+    FROM unnest(COALESCE(_days, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(day, ord)
+    WHERE day IN ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun');
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.set_engine_ip_filter(_profile_id uuid, _blocklist_url text, _etag text, _last_updated_at timestamp with time zone, _last_error text, _cidrs text[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.engine_ip_filter AS eif (
+        profile_id,
+        blocklist_url,
+        etag,
+        last_updated_at,
+        last_error
+    )
+    VALUES (
+        _profile_id,
+        NULLIF(_blocklist_url, ''),
+        NULLIF(_etag, ''),
+        _last_updated_at,
+        NULLIF(_last_error, '')
+    )
+    ON CONFLICT (profile_id) DO UPDATE
+    SET blocklist_url = EXCLUDED.blocklist_url,
+        etag = EXCLUDED.etag,
+        last_updated_at = EXCLUDED.last_updated_at,
+        last_error = EXCLUDED.last_error,
+        updated_at = now();
+
+    DELETE FROM public.engine_ip_filter_entries
+    WHERE profile_id = _profile_id;
+
+    INSERT INTO public.engine_ip_filter_entries (profile_id, ord, cidr)
+    SELECT _profile_id,
+           ord,
+           btrim(value)
+    FROM unnest(COALESCE(_cidrs, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.set_engine_list_values(_profile_id uuid, _kind text, _values text[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    IF _kind NOT IN ('listen_interfaces', 'dht_bootstrap_nodes', 'dht_router_nodes') THEN
+        RAISE EXCEPTION 'engine list kind % is not supported', _kind;
+    END IF;
+
+    DELETE FROM public.engine_profile_list_values
+    WHERE profile_id = _profile_id AND kind = _kind;
+
+    INSERT INTO public.engine_profile_list_values (profile_id, kind, ord, value)
+    SELECT _profile_id,
+           _kind,
+           ord,
+           btrim(value)
+    FROM unnest(COALESCE(_values, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.set_fs_list(_policy_id uuid, _kind text, _values text[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    IF _kind NOT IN ('cleanup_keep', 'cleanup_drop', 'allow_paths') THEN
+        RAISE EXCEPTION 'fs policy list kind % is not supported', _kind;
+    END IF;
+
+    DELETE FROM public.fs_policy_list_values
+    WHERE policy_id = _policy_id AND kind = _kind;
+
+    INSERT INTO public.fs_policy_list_values (policy_id, kind, ord, value)
+    SELECT _policy_id,
+           _kind,
+           ord,
+           btrim(value)
+    FROM unnest(COALESCE(_values, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.set_peer_classes(_profile_id uuid, _class_ids smallint[], _labels text[], _download_priorities smallint[], _upload_priorities smallint[], _connection_limit_factors smallint[], _ignore_unchoke_slots boolean[], _default_class_ids smallint[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    DELETE FROM public.engine_peer_class_defaults WHERE profile_id = _profile_id;
+    DELETE FROM public.engine_peer_classes WHERE profile_id = _profile_id;
+
+    INSERT INTO public.engine_peer_classes AS epc (
+        profile_id,
+        class_id,
+        label,
+        download_priority,
+        upload_priority,
+        connection_limit_factor,
+        ignore_unchoke_slots
+    )
+    SELECT _profile_id,
+           class_id,
+           COALESCE(NULLIF(btrim(label), ''), format('class_%s', class_id)),
+           download_priority,
+           upload_priority,
+           connection_limit_factor,
+           ignore_unchoke_slots
+    FROM unnest(
+        COALESCE(_class_ids, ARRAY[]::SMALLINT[]),
+        COALESCE(_labels, ARRAY[]::TEXT[]),
+        COALESCE(_download_priorities, ARRAY[]::SMALLINT[]),
+        COALESCE(_upload_priorities, ARRAY[]::SMALLINT[]),
+        COALESCE(_connection_limit_factors, ARRAY[]::SMALLINT[]),
+        COALESCE(_ignore_unchoke_slots, ARRAY[]::BOOLEAN[])
+    ) AS t(
+        class_id,
+        label,
+        download_priority,
+        upload_priority,
+        connection_limit_factor,
+        ignore_unchoke_slots
+    )
+    WHERE class_id BETWEEN 0 AND 31
+      AND download_priority BETWEEN 1 AND 255
+      AND upload_priority BETWEEN 1 AND 255
+      AND connection_limit_factor >= 1;
+
+    INSERT INTO public.engine_peer_class_defaults (profile_id, class_id)
+    SELECT _profile_id, class_id
+    FROM unnest(COALESCE(_default_class_ids, ARRAY[]::SMALLINT[])) AS class_id
+    WHERE EXISTS (
+        SELECT 1
+        FROM public.engine_peer_classes epc
+        WHERE epc.profile_id = _profile_id
+          AND epc.class_id = class_id
+    )
+    ON CONFLICT (profile_id, class_id) DO NOTHING;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.set_tracker_config(_profile_id uuid, _user_agent text, _announce_ip text, _listen_interface text, _request_timeout_ms integer, _announce_to_all boolean, _replace_trackers boolean, _proxy_host text, _proxy_port integer, _proxy_kind text, _proxy_username_secret text, _proxy_password_secret text, _proxy_peers boolean, _ssl_cert text, _ssl_private_key text, _ssl_ca_cert text, _ssl_tracker_verify boolean, _auth_username_secret text, _auth_password_secret text, _auth_cookie_secret text, _default_urls text[], _extra_urls text[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.engine_tracker_config AS etc (
+        profile_id,
+        user_agent,
+        announce_ip,
+        listen_interface,
+        request_timeout_ms,
+        announce_to_all,
+        replace_trackers,
+        proxy_host,
+        proxy_port,
+        proxy_kind,
+        proxy_username_secret,
+        proxy_password_secret,
+        proxy_peers,
+        ssl_cert,
+        ssl_private_key,
+        ssl_ca_cert,
+        ssl_tracker_verify,
+        auth_username_secret,
+        auth_password_secret,
+        auth_cookie_secret
+    )
+    VALUES (
+        _profile_id,
+        NULLIF(_user_agent, ''),
+        NULLIF(_announce_ip, ''),
+        NULLIF(_listen_interface, ''),
+        _request_timeout_ms,
+        COALESCE(_announce_to_all, FALSE),
+        COALESCE(_replace_trackers, FALSE),
+        NULLIF(_proxy_host, ''),
+        _proxy_port,
+        NULLIF(_proxy_kind, ''),
+        NULLIF(_proxy_username_secret, ''),
+        NULLIF(_proxy_password_secret, ''),
+        COALESCE(_proxy_peers, FALSE),
+        NULLIF(_ssl_cert, ''),
+        NULLIF(_ssl_private_key, ''),
+        NULLIF(_ssl_ca_cert, ''),
+        COALESCE(_ssl_tracker_verify, TRUE),
+        NULLIF(_auth_username_secret, ''),
+        NULLIF(_auth_password_secret, ''),
+        NULLIF(_auth_cookie_secret, '')
+    )
+    ON CONFLICT (profile_id) DO UPDATE
+    SET user_agent = EXCLUDED.user_agent,
+        announce_ip = EXCLUDED.announce_ip,
+        listen_interface = EXCLUDED.listen_interface,
+        request_timeout_ms = EXCLUDED.request_timeout_ms,
+        announce_to_all = EXCLUDED.announce_to_all,
+        replace_trackers = EXCLUDED.replace_trackers,
+        proxy_host = EXCLUDED.proxy_host,
+        proxy_port = EXCLUDED.proxy_port,
+        proxy_kind = EXCLUDED.proxy_kind,
+        proxy_username_secret = EXCLUDED.proxy_username_secret,
+        proxy_password_secret = EXCLUDED.proxy_password_secret,
+        proxy_peers = EXCLUDED.proxy_peers,
+        ssl_cert = EXCLUDED.ssl_cert,
+        ssl_private_key = EXCLUDED.ssl_private_key,
+        ssl_ca_cert = EXCLUDED.ssl_ca_cert,
+        ssl_tracker_verify = EXCLUDED.ssl_tracker_verify,
+        auth_username_secret = EXCLUDED.auth_username_secret,
+        auth_password_secret = EXCLUDED.auth_password_secret,
+        auth_cookie_secret = EXCLUDED.auth_cookie_secret,
+        updated_at = now();
+
+    DELETE FROM public.engine_tracker_endpoints
+    WHERE profile_id = _profile_id;
+
+    INSERT INTO public.engine_tracker_endpoints (profile_id, kind, url, ord)
+    SELECT _profile_id,
+           'default',
+           btrim(url),
+           ord
+    FROM unnest(COALESCE(_default_urls, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(url, ord)
+    WHERE btrim(url) <> '';
+
+    INSERT INTO public.engine_tracker_endpoints (profile_id, kind, url, ord)
+    SELECT _profile_id,
+           'extra',
+           btrim(url),
+           ord
+    FROM unnest(COALESCE(_extra_urls, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(url, ord)
+    WHERE btrim(url) <> '';
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_api_key_enabled(_key_id text, _enabled boolean) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET enabled = _enabled,
+        updated_at = now()
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_api_key_expires_at(_key_id text, _expires_at timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET expires_at = _expires_at
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_api_key_hash(_key_id text, _hash text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET hash = _hash,
+        updated_at = now()
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_api_key_label(_key_id text, _label text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET label = _label,
+        updated_at = now()
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_api_key_rate_limit(_key_id text, _burst integer, _per_seconds bigint) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.auth_api_keys
+    SET rate_limit_burst = _burst,
+        rate_limit_per_seconds = _per_seconds
+    WHERE key_id = _key_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_app_auth_mode(_id uuid, _auth_mode text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET auth_mode = _auth_mode
+    WHERE id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_app_bind_addr(_id uuid, _bind_addr text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET bind_addr = _bind_addr::INET
+    WHERE id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_app_http_port(_id uuid, _port integer) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET http_port = _port
+    WHERE id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_app_immutable_keys(_profile_id uuid, _keys text[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    DELETE FROM public.app_profile_immutable_keys WHERE profile_id = _profile_id;
+
+    INSERT INTO public.app_profile_immutable_keys (profile_id, key, ord)
+    SELECT _profile_id,
+           btrim(value),
+           ord
+    FROM unnest(COALESCE(_keys, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_app_instance_name(_id uuid, _instance_name text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET instance_name = _instance_name
+    WHERE id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_app_local_networks(_profile_id uuid, _cidrs text[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    DELETE FROM public.app_profile_local_networks WHERE profile_id = _profile_id;
+
+    INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord)
+    SELECT _profile_id,
+           btrim(value),
+           ord
+    FROM unnest(COALESCE(_cidrs, ARRAY[]::TEXT[])) WITH ORDINALITY AS t(value, ord)
+    WHERE btrim(value) <> '';
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_app_mode(_id uuid, _mode text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET mode = _mode
+    WHERE id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_app_telemetry(_id uuid, _level text, _format text, _otel_enabled boolean, _otel_service_name text, _otel_endpoint text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.app_profile
+    SET telemetry_level = _level,
+        telemetry_format = _format,
+        telemetry_otel_enabled = _otel_enabled,
+        telemetry_otel_service_name = _otel_service_name,
+        telemetry_otel_endpoint = _otel_endpoint
+    WHERE id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_engine_profile(_id uuid, _implementation text, _listen_port integer, _dht boolean, _encryption text, _max_active integer, _max_download_bps bigint, _max_upload_bps bigint, _seed_ratio_limit double precision, _seed_time_limit bigint, _sequential_default boolean, _auto_managed boolean, _auto_manage_prefer_seeds boolean, _dont_count_slow_torrents boolean, _super_seeding boolean, _choking_algorithm text, _seed_choking_algorithm text, _strict_super_seeding boolean, _optimistic_unchoke_slots integer, _max_queued_disk_bytes bigint, _resume_dir text, _download_root text, _storage_mode text, _use_partfile boolean, _cache_size integer, _cache_expiry integer, _coalesce_reads boolean, _coalesce_writes boolean, _use_disk_cache_pool boolean, _disk_read_mode text, _disk_write_mode text, _verify_piece_hashes boolean, _lsd boolean, _upnp boolean, _natpmp boolean, _pex boolean, _ipv6_mode text, _anonymous_mode boolean, _force_proxy boolean, _prefer_rc4 boolean, _allow_multiple_connections_per_ip boolean, _enable_outgoing_utp boolean, _enable_incoming_utp boolean, _outgoing_port_min integer, _outgoing_port_max integer, _peer_dscp integer, _connections_limit integer, _connections_limit_per_torrent integer, _unchoke_slots integer, _half_open_limit integer, _stats_interval_ms integer) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE public.engine_profile
+    SET implementation = _implementation,
+        listen_port = _listen_port,
+        dht = _dht,
+        encryption = _encryption,
+        max_active = _max_active,
+        max_download_bps = _max_download_bps,
+        max_upload_bps = _max_upload_bps,
+        seed_ratio_limit = _seed_ratio_limit,
+        seed_time_limit = _seed_time_limit,
+        sequential_default = _sequential_default,
+        auto_managed = _auto_managed,
+        auto_manage_prefer_seeds = _auto_manage_prefer_seeds,
+        dont_count_slow_torrents = _dont_count_slow_torrents,
+        super_seeding = _super_seeding,
+        choking_algorithm = _choking_algorithm,
+        seed_choking_algorithm = _seed_choking_algorithm,
+        strict_super_seeding = _strict_super_seeding,
+        optimistic_unchoke_slots = _optimistic_unchoke_slots,
+        max_queued_disk_bytes = _max_queued_disk_bytes,
+        resume_dir = _resume_dir,
+        download_root = _download_root,
+        storage_mode = _storage_mode,
+        use_partfile = _use_partfile,
+        cache_size = _cache_size,
+        cache_expiry = _cache_expiry,
+        coalesce_reads = _coalesce_reads,
+        coalesce_writes = _coalesce_writes,
+        use_disk_cache_pool = _use_disk_cache_pool,
+        disk_read_mode = _disk_read_mode,
+        disk_write_mode = _disk_write_mode,
+        verify_piece_hashes = _verify_piece_hashes,
+        enable_lsd = _lsd,
+        enable_upnp = _upnp,
+        enable_natpmp = _natpmp,
+        enable_pex = _pex,
+        ipv6_mode = _ipv6_mode,
+        anonymous_mode = _anonymous_mode,
+        force_proxy = _force_proxy,
+        prefer_rc4 = _prefer_rc4,
+        allow_multiple_connections_per_ip = _allow_multiple_connections_per_ip,
+        enable_outgoing_utp = _enable_outgoing_utp,
+        enable_incoming_utp = _enable_incoming_utp,
+        outgoing_port_min = _outgoing_port_min,
+        outgoing_port_max = _outgoing_port_max,
+        peer_dscp = _peer_dscp,
+        connections_limit = _connections_limit,
+        connections_limit_per_torrent = _connections_limit_per_torrent,
+        unchoke_slots = _unchoke_slots,
+        half_open_limit = _half_open_limit,
+        stats_interval_ms = _stats_interval_ms
+    WHERE id = _id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_fs_array_field(_id uuid, _column text, _values text[]) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM revaer_config.set_fs_list(_id, _column, _values);
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_config.update_fs_boolean_field(_id uuid, _column text, _value boolean) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $_$
+BEGIN
+    IF _column NOT IN ('extract', 'flatten') THEN
+        RAISE EXCEPTION 'Unsupported fs_policy boolean column: %', _column;
+    END IF;
+
+    EXECUTE format('UPDATE public.fs_policy SET %I = $1 WHERE id = $2', _column)
+    USING _value, _id;
+END;
+$_$;
+
+
+
+CREATE FUNCTION revaer_config.update_fs_optional_string_field(_id uuid, _column text, _value text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $_$
+BEGIN
+    IF _column NOT IN ('chmod_file', 'chmod_dir', 'owner', 'group', 'umask') THEN
+        RAISE EXCEPTION 'Unsupported fs_policy optional string column: %', _column;
+    END IF;
+
+    EXECUTE format('UPDATE public.fs_policy SET %I = $1 WHERE id = $2', _column)
+    USING _value, _id;
+END;
+$_$;
+
+
+
+CREATE FUNCTION revaer_config.update_fs_string_field(_id uuid, _column text, _value text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $_$
+BEGIN
+    IF _column NOT IN ('library_root', 'par2', 'move_mode') THEN
+        RAISE EXCEPTION 'Unsupported fs_policy string column: %', _column;
+    END IF;
+
+    EXECUTE format('UPDATE public.fs_policy SET %I = $1 WHERE id = $2', _column)
+    USING _value, _id;
+END;
+$_$;
+
+
+
+CREATE FUNCTION revaer_config.upsert_secret(_name text, _ciphertext bytea, _actor text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_config', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO public.settings_secret (name, ciphertext, created_by, created_at)
+    VALUES (_name, _ciphertext, _actor, now())
+    ON CONFLICT (name)
+    DO UPDATE
+    SET ciphertext = EXCLUDED.ciphertext,
+        created_by = EXCLUDED.created_by,
+        created_at = now();
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_runtime.delete_torrent(_torrent_id uuid) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_runtime', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    DELETE FROM revaer_runtime.torrents WHERE torrent_id = _torrent_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_runtime.fs_job_state(_torrent_id uuid) RETURNS TABLE(status text, attempt smallint, src_path text, dst_path text, transfer_mode text, last_error text, updated_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_runtime', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        fs.status::TEXT,
+        fs.attempt,
+        fs.src_path,
+        fs.dst_path,
+        fs.transfer_mode,
+        fs.last_error,
+        fs.updated_at
+    FROM revaer_runtime.fs_jobs AS fs
+    WHERE fs.torrent_id = _torrent_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_runtime.list_torrent_files(_torrent_id uuid) RETURNS TABLE(file_index integer, path text, size_bytes bigint, bytes_completed bigint, priority text, selected boolean)
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_runtime', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT tf.file_index,
+           tf.path,
+           tf.size_bytes,
+           tf.bytes_completed,
+           tf.priority,
+           tf.selected
+    FROM revaer_runtime.torrent_files AS tf
+    WHERE tf.torrent_id = _torrent_id
+    ORDER BY tf.file_index;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_runtime.list_torrents() RETURNS TABLE(torrent_id uuid, name text, state text, state_message text, progress_bytes_downloaded bigint, progress_bytes_total bigint, progress_eta_seconds bigint, download_bps bigint, upload_bps bigint, ratio double precision, sequential boolean, library_path text, download_dir text, comment text, source text, private boolean, added_at timestamp with time zone, completed_at timestamp with time zone, updated_at timestamp with time zone)
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'revaer_runtime', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT t.torrent_id,
+           t.name,
+           t.state::TEXT,
+           t.state_message,
+           t.progress_bytes_downloaded,
+           t.progress_bytes_total,
+           t.progress_eta_seconds,
+           t.download_bps,
+           t.upload_bps,
+           t.ratio,
+           t.sequential,
+           t.library_path,
+           t.download_dir,
+           t.comment,
+           t.source,
+           t.private,
+           t.added_at,
+           t.completed_at,
+           t.updated_at
+    FROM revaer_runtime.torrents AS t;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_runtime.mark_fs_job_completed(_torrent_id uuid, _src_path text, _dst_path text, _transfer_mode text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_runtime', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO revaer_runtime.fs_jobs (
+        torrent_id,
+        src_path,
+        dst_path,
+        transfer_mode,
+        status,
+        attempt
+    )
+    VALUES (
+        _torrent_id,
+        _src_path,
+        _dst_path,
+        _transfer_mode,
+        'moved'::revaer_runtime.fs_status,
+        1
+    )
+    ON CONFLICT (torrent_id) DO UPDATE
+    SET
+        src_path = EXCLUDED.src_path,
+        dst_path = EXCLUDED.dst_path,
+        transfer_mode = EXCLUDED.transfer_mode,
+        status = 'moved'::revaer_runtime.fs_status,
+        attempt = CASE
+            WHEN revaer_runtime.fs_jobs.attempt > 0 THEN revaer_runtime.fs_jobs.attempt
+            ELSE 1
+        END,
+        last_error = NULL,
+        updated_at = now();
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_runtime.mark_fs_job_failed(_torrent_id uuid, _error text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_runtime', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    UPDATE revaer_runtime.fs_jobs
+    SET
+        status = 'failed'::revaer_runtime.fs_status,
+        attempt = attempt + 1,
+        last_error = _error,
+        updated_at = now()
+    WHERE torrent_id = _torrent_id;
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_runtime.mark_fs_job_started(_torrent_id uuid, _src_path text) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_runtime', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO revaer_runtime.fs_jobs (
+        torrent_id,
+        src_path,
+        status,
+        attempt
+    )
+    VALUES (
+        _torrent_id,
+        _src_path,
+        'moving'::revaer_runtime.fs_status,
+        1
+    )
+    ON CONFLICT (torrent_id) DO UPDATE
+    SET
+        src_path = CASE
+            WHEN revaer_runtime.fs_jobs.status = 'failed'::revaer_runtime.fs_status
+                THEN revaer_runtime.fs_jobs.src_path
+            ELSE EXCLUDED.src_path
+        END,
+        status = CASE
+            WHEN revaer_runtime.fs_jobs.status IN (
+                'moved'::revaer_runtime.fs_status,
+                'failed'::revaer_runtime.fs_status
+            ) THEN revaer_runtime.fs_jobs.status
+            ELSE 'moving'::revaer_runtime.fs_status
+        END,
+        attempt = CASE
+            WHEN revaer_runtime.fs_jobs.status IN (
+                'moved'::revaer_runtime.fs_status,
+                'failed'::revaer_runtime.fs_status
+            ) THEN revaer_runtime.fs_jobs.attempt
+            ELSE revaer_runtime.fs_jobs.attempt + 1
+        END,
+        last_error = CASE
+            WHEN revaer_runtime.fs_jobs.status = 'failed'::revaer_runtime.fs_status
+                THEN revaer_runtime.fs_jobs.last_error
+            ELSE NULL
+        END,
+        updated_at = now();
+END;
+$$;
+
+
+
+CREATE FUNCTION revaer_runtime.upsert_torrent(_torrent_id uuid, _name text, _state text, _state_message text, _progress_bytes_downloaded bigint, _progress_bytes_total bigint, _progress_eta_seconds bigint, _download_bps bigint, _upload_bps bigint, _ratio double precision, _sequential boolean, _library_path text, _download_dir text, _comment text, _source text, _private boolean, _file_indexes integer[], _file_paths text[], _file_sizes bigint[], _file_bytes_completed bigint[], _file_priorities text[], _file_selected boolean[], _added_at timestamp with time zone, _completed_at timestamp with time zone, _updated_at timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql
+    SET search_path TO 'revaer_runtime', 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO revaer_runtime.torrents (
+        torrent_id,
+        name,
+        state,
+        state_message,
+        progress_bytes_downloaded,
+        progress_bytes_total,
+        progress_eta_seconds,
+        download_bps,
+        upload_bps,
+        ratio,
+        sequential,
+        library_path,
+        download_dir,
+        comment,
+        source,
+        private,
+        added_at,
+        completed_at,
+        updated_at
+    )
+    VALUES (
+        _torrent_id,
+        _name,
+        _state::revaer_runtime.torrent_state,
+        _state_message,
+        _progress_bytes_downloaded,
+        _progress_bytes_total,
+        _progress_eta_seconds,
+        _download_bps,
+        _upload_bps,
+        _ratio,
+        _sequential,
+        _library_path,
+        _download_dir,
+        NULLIF(_comment, ''),
+        NULLIF(_source, ''),
+        _private,
+        _added_at,
+        _completed_at,
+        _updated_at
+    )
+    ON CONFLICT (torrent_id) DO UPDATE
+    SET name = EXCLUDED.name,
+        state = EXCLUDED.state,
+        state_message = EXCLUDED.state_message,
+        progress_bytes_downloaded = EXCLUDED.progress_bytes_downloaded,
+        progress_bytes_total = EXCLUDED.progress_bytes_total,
+        progress_eta_seconds = EXCLUDED.progress_eta_seconds,
+        download_bps = EXCLUDED.download_bps,
+        upload_bps = EXCLUDED.upload_bps,
+        ratio = EXCLUDED.ratio,
+        sequential = EXCLUDED.sequential,
+        library_path = EXCLUDED.library_path,
+        download_dir = EXCLUDED.download_dir,
+        comment = EXCLUDED.comment,
+        source = EXCLUDED.source,
+        private = EXCLUDED.private,
+        added_at = EXCLUDED.added_at,
+        completed_at = EXCLUDED.completed_at,
+        updated_at = EXCLUDED.updated_at;
+
+    DELETE FROM revaer_runtime.torrent_files
+    WHERE torrent_id = _torrent_id;
+
+    INSERT INTO revaer_runtime.torrent_files (
+        torrent_id,
+        file_index,
+        path,
+        size_bytes,
+        bytes_completed,
+        priority,
+        selected
+    )
+    SELECT _torrent_id,
+           file_index,
+           path,
+           size_bytes,
+           bytes_completed,
+           priority,
+           selected
+    FROM unnest(
+        COALESCE(_file_indexes, ARRAY[]::INTEGER[]),
+        COALESCE(_file_paths, ARRAY[]::TEXT[]),
+        COALESCE(_file_sizes, ARRAY[]::BIGINT[]),
+        COALESCE(_file_bytes_completed, ARRAY[]::BIGINT[]),
+        COALESCE(_file_priorities, ARRAY[]::TEXT[]),
+        COALESCE(_file_selected, ARRAY[]::BOOLEAN[])
+    ) AS t(
+        file_index,
+        path,
+        size_bytes,
+        bytes_completed,
+        priority,
+        selected
+    );
+END;
+$$;
+
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+
+CREATE TABLE public.acquisition_attempt (
+    acquisition_attempt_id bigint NOT NULL,
+    torznab_instance_id bigint,
+    origin public.acquisition_origin NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    search_request_id bigint,
+    user_id bigint,
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    torrent_client_id character varying(128),
+    torrent_client_name public.torrent_client_name NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone,
+    status public.acquisition_status NOT NULL,
+    failure_class public.acquisition_failure_class,
+    failure_detail character varying(256),
+    CONSTRAINT acquisition_attempt_failure_class_chk CHECK ((((status = 'failed'::public.acquisition_status) AND (failure_class IS NOT NULL)) OR ((status <> 'failed'::public.acquisition_status) AND (failure_class IS NULL)))),
+    CONSTRAINT acquisition_attempt_identifier_chk CHECK (((infohash_v1 IS NOT NULL) OR (infohash_v2 IS NOT NULL) OR (magnet_hash IS NOT NULL))),
+    CONSTRAINT acquisition_attempt_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT acquisition_attempt_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT acquisition_attempt_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text)))
+);
+
+
+
+ALTER TABLE public.acquisition_attempt ALTER COLUMN acquisition_attempt_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.acquisition_attempt_acquisition_attempt_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.app_label_policies (
+    profile_id uuid NOT NULL,
+    kind text NOT NULL,
+    name text NOT NULL,
+    download_dir text,
+    rate_limit_download_bps bigint,
+    rate_limit_upload_bps bigint,
+    queue_position integer,
+    auto_managed boolean,
+    seed_ratio_limit double precision,
+    seed_time_limit bigint,
+    cleanup_seed_ratio_limit double precision,
+    cleanup_seed_time_limit bigint,
+    cleanup_remove_data boolean,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_label_policies_kind_check CHECK ((kind = ANY (ARRAY['category'::text, 'tag'::text])))
+);
+
+
+
+CREATE TABLE public.app_profile (
+    id uuid NOT NULL,
+    version bigint DEFAULT 0 NOT NULL,
+    mode text NOT NULL,
+    auth_mode text DEFAULT 'none'::text NOT NULL,
+    instance_name text NOT NULL,
+    http_port integer DEFAULT 7070 NOT NULL,
+    bind_addr inet DEFAULT '127.0.0.1'::inet NOT NULL,
+    telemetry_level text,
+    telemetry_format text,
+    telemetry_otel_enabled boolean,
+    telemetry_otel_service_name text,
+    telemetry_otel_endpoint text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_profile_auth_mode_check CHECK ((auth_mode = ANY (ARRAY['api_key'::text, 'none'::text]))),
+    CONSTRAINT app_profile_mode_check CHECK ((mode = ANY (ARRAY['setup'::text, 'active'::text]))),
+    CONSTRAINT app_profile_singleton CHECK ((id = '00000000-0000-0000-0000-000000000001'::uuid))
+);
+
+
+
+CREATE TABLE public.app_profile_immutable_keys (
+    profile_id uuid NOT NULL,
+    key text NOT NULL,
+    ord integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.app_profile_local_networks (
+    profile_id uuid NOT NULL,
+    cidr text NOT NULL,
+    ord integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.app_user (
+    user_id bigint NOT NULL,
+    user_public_id uuid NOT NULL,
+    email character varying(320) NOT NULL,
+    email_normalized character varying(320) NOT NULL,
+    is_email_verified boolean DEFAULT false NOT NULL,
+    display_name character varying(256) NOT NULL,
+    role public.deployment_role NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT app_user_email_normalized_lc CHECK (((email_normalized)::text = lower(TRIM(BOTH FROM email_normalized))))
+);
+
+
+
+ALTER TABLE public.app_user ALTER COLUMN user_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.app_user_user_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.auth_api_keys (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    key_id text NOT NULL,
+    hash text NOT NULL,
+    label text,
+    enabled boolean DEFAULT true NOT NULL,
+    expires_at timestamp with time zone,
+    rate_limit_burst integer,
+    rate_limit_per_seconds bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.canonical_disambiguation_rule (
+    canonical_disambiguation_rule_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    rule_type public.disambiguation_rule_type NOT NULL,
+    identity_left_type public.disambiguation_identity_type NOT NULL,
+    identity_left_value_text character varying(64),
+    identity_left_value_uuid uuid,
+    identity_right_type public.disambiguation_identity_type NOT NULL,
+    identity_right_value_text character varying(64),
+    identity_right_value_uuid uuid,
+    reason character varying(256),
+    CONSTRAINT canonical_disambiguation_rule_distinct_chk CHECK ((((identity_left_type IS DISTINCT FROM identity_right_type) OR ((identity_left_value_text)::text IS DISTINCT FROM (identity_right_value_text)::text)) OR (identity_left_value_uuid IS DISTINCT FROM identity_right_value_uuid))),
+    CONSTRAINT canonical_disambiguation_rule_left_hash_chk CHECK (((identity_left_type = 'canonical_public_id'::public.disambiguation_identity_type) OR ((identity_left_type = 'infohash_v1'::public.disambiguation_identity_type) AND ((identity_left_value_text)::text ~ '^[0-9a-f]{40}$'::text)) OR ((identity_left_type = 'infohash_v2'::public.disambiguation_identity_type) AND ((identity_left_value_text)::text ~ '^[0-9a-f]{64}$'::text)) OR ((identity_left_type = 'magnet_hash'::public.disambiguation_identity_type) AND ((identity_left_value_text)::text ~ '^[0-9a-f]{64}$'::text)))),
+    CONSTRAINT canonical_disambiguation_rule_left_type_chk CHECK ((((identity_left_type = 'canonical_public_id'::public.disambiguation_identity_type) AND (identity_left_value_uuid IS NOT NULL)) OR ((identity_left_type <> 'canonical_public_id'::public.disambiguation_identity_type) AND (identity_left_value_text IS NOT NULL)))),
+    CONSTRAINT canonical_disambiguation_rule_left_value_chk CHECK (((((identity_left_value_text IS NOT NULL))::integer + ((identity_left_value_uuid IS NOT NULL))::integer) = 1)),
+    CONSTRAINT canonical_disambiguation_rule_right_hash_chk CHECK (((identity_right_type = 'canonical_public_id'::public.disambiguation_identity_type) OR ((identity_right_type = 'infohash_v1'::public.disambiguation_identity_type) AND ((identity_right_value_text)::text ~ '^[0-9a-f]{40}$'::text)) OR ((identity_right_type = 'infohash_v2'::public.disambiguation_identity_type) AND ((identity_right_value_text)::text ~ '^[0-9a-f]{64}$'::text)) OR ((identity_right_type = 'magnet_hash'::public.disambiguation_identity_type) AND ((identity_right_value_text)::text ~ '^[0-9a-f]{64}$'::text)))),
+    CONSTRAINT canonical_disambiguation_rule_right_type_chk CHECK ((((identity_right_type = 'canonical_public_id'::public.disambiguation_identity_type) AND (identity_right_value_uuid IS NOT NULL)) OR ((identity_right_type <> 'canonical_public_id'::public.disambiguation_identity_type) AND (identity_right_value_text IS NOT NULL)))),
+    CONSTRAINT canonical_disambiguation_rule_right_value_chk CHECK (((((identity_right_value_text IS NOT NULL))::integer + ((identity_right_value_uuid IS NOT NULL))::integer) = 1))
+);
+
+
+
+ALTER TABLE public.canonical_disambiguation_rule ALTER COLUMN canonical_disambiguation_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_disambiguation_rule_canonical_disambiguation_rule_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.canonical_external_id (
+    canonical_external_id_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    id_type public.identifier_type NOT NULL,
+    id_value_text character varying(16),
+    id_value_int integer,
+    source_canonical_torrent_source_id bigint,
+    trust_tier_rank smallint NOT NULL,
+    first_seen_at timestamp with time zone NOT NULL,
+    last_seen_at timestamp with time zone NOT NULL,
+    CONSTRAINT canonical_external_id_imdb_chk CHECK (((id_type <> 'imdb'::public.identifier_type) OR ((id_value_text IS NOT NULL) AND ((id_value_text)::text ~ '^tt[0-9]{7,9}$'::text)))),
+    CONSTRAINT canonical_external_id_single_value_chk CHECK (((((id_value_text IS NOT NULL))::integer + ((id_value_int IS NOT NULL))::integer) = 1)),
+    CONSTRAINT canonical_external_id_tmdb_chk CHECK (((id_type <> 'tmdb'::public.identifier_type) OR ((id_value_int IS NOT NULL) AND (id_value_int > 0)))),
+    CONSTRAINT canonical_external_id_trust_tier_rank_check CHECK ((trust_tier_rank >= 0)),
+    CONSTRAINT canonical_external_id_tvdb_chk CHECK (((id_type <> 'tvdb'::public.identifier_type) OR ((id_value_int IS NOT NULL) AND (id_value_int > 0))))
+);
+
+
+
+ALTER TABLE public.canonical_external_id ALTER COLUMN canonical_external_id_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_external_id_canonical_external_id_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.canonical_size_rollup (
+    canonical_size_rollup_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    sample_count integer NOT NULL,
+    size_median bigint NOT NULL,
+    size_min bigint NOT NULL,
+    size_max bigint NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_size_rollup_sample_count_check CHECK ((sample_count > 0)),
+    CONSTRAINT canonical_size_rollup_size_max_check CHECK ((size_max > 0)),
+    CONSTRAINT canonical_size_rollup_size_median_check CHECK ((size_median > 0)),
+    CONSTRAINT canonical_size_rollup_size_min_check CHECK ((size_min > 0))
+);
+
+
+
+ALTER TABLE public.canonical_size_rollup ALTER COLUMN canonical_size_rollup_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_size_rollup_canonical_size_rollup_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.canonical_size_sample (
+    canonical_size_sample_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    observed_at timestamp with time zone NOT NULL,
+    size_bytes bigint NOT NULL,
+    CONSTRAINT canonical_size_sample_size_bytes_check CHECK ((size_bytes > 0))
+);
+
+
+
+ALTER TABLE public.canonical_size_sample ALTER COLUMN canonical_size_sample_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_size_sample_canonical_size_sample_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.canonical_torrent (
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_public_id uuid NOT NULL,
+    identity_confidence numeric(4,3) NOT NULL,
+    identity_strategy public.identity_strategy NOT NULL,
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    title_size_hash character(64),
+    imdb_id character varying(16),
+    tmdb_id integer,
+    tvdb_id integer,
+    ids_confidence numeric(4,3),
+    title_display character varying(512) NOT NULL,
+    title_normalized character varying(512) NOT NULL,
+    size_bytes bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_identity_confidence_check CHECK (((identity_confidence >= (0)::numeric) AND (identity_confidence <= (1)::numeric))),
+    CONSTRAINT canonical_torrent_identity_strategy_chk CHECK ((((identity_strategy = 'infohash_v2'::public.identity_strategy) AND (infohash_v2 IS NOT NULL)) OR ((identity_strategy = 'infohash_v1'::public.identity_strategy) AND (infohash_v1 IS NOT NULL)) OR ((identity_strategy = 'magnet_hash'::public.identity_strategy) AND (magnet_hash IS NOT NULL)) OR ((identity_strategy = 'title_size_fallback'::public.identity_strategy) AND (title_size_hash IS NOT NULL)))),
+    CONSTRAINT canonical_torrent_ids_confidence_chk CHECK (((ids_confidence IS NULL) OR ((ids_confidence >= (0)::numeric) AND (ids_confidence <= (1)::numeric)))),
+    CONSTRAINT canonical_torrent_imdb_id_chk CHECK (((imdb_id IS NULL) OR ((imdb_id)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT canonical_torrent_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT canonical_torrent_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_size_bytes_chk CHECK (((size_bytes IS NULL) OR (size_bytes >= 0))),
+    CONSTRAINT canonical_torrent_title_normalized_lc CHECK (((title_normalized)::text = lower((title_normalized)::text))),
+    CONSTRAINT canonical_torrent_title_size_hash_chk CHECK (((title_size_hash IS NULL) OR (title_size_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_title_size_requires_size_chk CHECK (((title_size_hash IS NULL) OR (size_bytes IS NOT NULL))),
+    CONSTRAINT canonical_torrent_tmdb_id_chk CHECK (((tmdb_id IS NULL) OR (tmdb_id > 0))),
+    CONSTRAINT canonical_torrent_tvdb_id_chk CHECK (((tvdb_id IS NULL) OR (tvdb_id > 0)))
+);
+
+
+
+CREATE TABLE public.canonical_torrent_best_source_context (
+    canonical_torrent_best_source_context_id bigint NOT NULL,
+    context_key_type public.context_key_type NOT NULL,
+    context_key_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_best_source_context_context_key_id_check CHECK ((context_key_id > 0))
+);
+
+
+
+ALTER TABLE public.canonical_torrent_best_source_context ALTER COLUMN canonical_torrent_best_source_context_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_best_source_canonical_torrent_best_sourc_seq1
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.canonical_torrent_best_source_global (
+    canonical_torrent_best_source_global_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE public.canonical_torrent_best_source_global ALTER COLUMN canonical_torrent_best_source_global_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_best_source_canonical_torrent_best_source_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.canonical_torrent ALTER COLUMN canonical_torrent_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_canonical_torrent_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.canonical_torrent_signal (
+    canonical_torrent_signal_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    signal_key public.signal_key NOT NULL,
+    value_text character varying(128),
+    value_int integer,
+    confidence numeric(4,3) NOT NULL,
+    parser_version smallint DEFAULT 1 NOT NULL,
+    CONSTRAINT canonical_torrent_signal_confidence_check CHECK (((confidence >= (0)::numeric) AND (confidence <= (1)::numeric))),
+    CONSTRAINT canonical_torrent_signal_single_value_chk CHECK (((((value_text IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) = 1))
+);
+
+
+
+ALTER TABLE public.canonical_torrent_signal ALTER COLUMN canonical_torrent_signal_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_signal_canonical_torrent_signal_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.canonical_torrent_source (
+    canonical_torrent_source_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    canonical_torrent_source_public_id uuid NOT NULL,
+    source_guid character varying(256),
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    title_normalized character varying(512) NOT NULL,
+    size_bytes bigint,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_seeders integer,
+    last_seen_leechers integer,
+    last_seen_published_at timestamp with time zone,
+    last_seen_download_url character varying(2048),
+    last_seen_magnet_uri character varying(2048),
+    last_seen_details_url character varying(2048),
+    last_seen_uploader character varying(256),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_source_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT canonical_torrent_source_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_source_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT canonical_torrent_source_seen_leechers_chk CHECK (((last_seen_leechers IS NULL) OR (last_seen_leechers >= 0))),
+    CONSTRAINT canonical_torrent_source_seen_seeders_chk CHECK (((last_seen_seeders IS NULL) OR (last_seen_seeders >= 0))),
+    CONSTRAINT canonical_torrent_source_size_bytes_chk CHECK (((size_bytes IS NULL) OR (size_bytes >= 0))),
+    CONSTRAINT canonical_torrent_source_title_normalized_lc CHECK (((title_normalized)::text = lower((title_normalized)::text)))
+);
+
+
+
+CREATE TABLE public.canonical_torrent_source_attr (
+    canonical_torrent_source_attr_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    attr_key public.durable_source_attr_key NOT NULL,
+    value_text character varying(512),
+    value_int integer,
+    value_bigint bigint,
+    value_numeric numeric(12,4),
+    value_bool boolean,
+    CONSTRAINT canonical_torrent_source_attr_episode_chk CHECK (((attr_key <> 'episode'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_files_count_chk CHECK (((attr_key <> 'files_count'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_imdb_chk CHECK (((attr_key <> 'imdb_id'::public.durable_source_attr_key) OR ((value_text)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT canonical_torrent_source_attr_key_type_chk CHECK ((((attr_key = ANY (ARRAY['tracker_name'::public.durable_source_attr_key, 'imdb_id'::public.durable_source_attr_key])) AND (value_text IS NOT NULL)) OR ((attr_key = 'size_bytes_reported'::public.durable_source_attr_key) AND (value_bigint IS NOT NULL)) OR ((attr_key = ANY (ARRAY['tracker_category'::public.durable_source_attr_key, 'tracker_subcategory'::public.durable_source_attr_key, 'files_count'::public.durable_source_attr_key, 'season'::public.durable_source_attr_key, 'episode'::public.durable_source_attr_key, 'year'::public.durable_source_attr_key, 'tmdb_id'::public.durable_source_attr_key, 'tvdb_id'::public.durable_source_attr_key])) AND (value_int IS NOT NULL)))),
+    CONSTRAINT canonical_torrent_source_attr_season_chk CHECK (((attr_key <> 'season'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_single_value_chk CHECK ((((((((value_text IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) + ((value_bigint IS NOT NULL))::integer) + ((value_numeric IS NOT NULL))::integer) + ((value_bool IS NOT NULL))::integer) = 1)),
+    CONSTRAINT canonical_torrent_source_attr_size_bytes_chk CHECK (((attr_key <> 'size_bytes_reported'::public.durable_source_attr_key) OR ((value_bigint IS NOT NULL) AND (value_bigint >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_tmdb_chk CHECK (((attr_key <> 'tmdb_id'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT canonical_torrent_source_attr_tracker_category_chk CHECK (((attr_key <> 'tracker_category'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_tracker_subcategory_chk CHECK (((attr_key <> 'tracker_subcategory'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT canonical_torrent_source_attr_tvdb_chk CHECK (((attr_key <> 'tvdb_id'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT canonical_torrent_source_attr_year_chk CHECK (((attr_key <> 'year'::public.durable_source_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0))))
+);
+
+
+
+ALTER TABLE public.canonical_torrent_source_attr ALTER COLUMN canonical_torrent_source_attr_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_source_attr_canonical_torrent_source_attr_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.canonical_torrent_source_base_score (
+    canonical_torrent_source_base_score_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    score_total_base numeric(12,4) NOT NULL,
+    score_seed numeric(12,4) NOT NULL,
+    score_leech numeric(12,4) NOT NULL,
+    score_age numeric(12,4) NOT NULL,
+    score_trust numeric(12,4) NOT NULL,
+    score_health numeric(12,4) NOT NULL,
+    score_reputation numeric(12,4) NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_source_base_score_score_total_base_check CHECK (((score_total_base >= ('-10000'::integer)::numeric) AND (score_total_base <= (10000)::numeric)))
+);
+
+
+
+ALTER TABLE public.canonical_torrent_source_base_score ALTER COLUMN canonical_torrent_source_base_score_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_source_base_canonical_torrent_source_base_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.canonical_torrent_source ALTER COLUMN canonical_torrent_source_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_source_canonical_torrent_source_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
