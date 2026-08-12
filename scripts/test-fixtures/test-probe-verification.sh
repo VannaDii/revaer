@@ -30,7 +30,7 @@ cat >"${fake_ffprobe}" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 cat <<'JSON'
-{"streams":[{"index":0,"codec_name":"h264","codec_type":"video","disposition":{"default":1,"forced":0},"tags":{}}]}
+{"streams":[{"index":0,"codec_name":"h264","codec_type":"video","disposition":{"default":1,"forced":0},"tags":{}},{"index":1,"codec_name":null,"codec_type":"attachment","disposition":{"default":0,"forced":0},"tags":{"filename":"note.txt","mimetype":"text/plain"}}]}
 JSON
 EOF
 chmod 0700 "${fake_ffprobe}"
@@ -40,6 +40,10 @@ export REVAER_FIXTURE_PROBE_DIR="${probe_directory}"
 export REVAER_FIXTURE_FFPROBE_BIN="${fake_ffprobe}"
 
 scripts/test-fixtures/probe-fixtures.sh --update
+if [[ "$(jq -r '.streams[] | select(.codec_type == "attachment") | .codec_name' "${probe_directory}/sample.json")" != "attachment" ]]; then
+  printf 'test-probe-verification: attachment codec was not normalized\n' >&2
+  exit 1
+fi
 before_sha="$(fixture_sha256 "${probe_directory}/sample.json")"
 scripts/test-fixtures/probe-fixtures.sh --check
 after_sha="$(fixture_sha256 "${probe_directory}/sample.json")"

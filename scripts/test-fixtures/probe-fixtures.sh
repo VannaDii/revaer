@@ -46,7 +46,7 @@ canonical_filter='{
   streams: [
     .streams[] |
     {
-      codec_name: .codec_name,
+      codec_name: (if .codec_type == "attachment" then "attachment" else .codec_name end),
       codec_type: .codec_type,
       disposition: {
         default: (.disposition.default // 0),
