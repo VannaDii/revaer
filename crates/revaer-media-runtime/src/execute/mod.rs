@@ -428,6 +428,10 @@ pub struct VideoStreamConstraints {
 pub struct AudioStreamConstraints {
     /// Desired stream id after target compilation.
     pub stream_id: u32,
+    /// Desired channel count.
+    pub channel_count: Option<u32>,
+    /// Desired canonical channel layout label.
+    pub channel_layout: Option<String>,
     /// Desired average bitrate in bits per second.
     pub bitrate_bps: Option<u32>,
     /// Desired sample rate in hertz.
@@ -5245,6 +5249,8 @@ mod tests {
         let policy = VideoTranscodePolicy {
             audio_stream_constraints: vec![AudioStreamConstraints {
                 stream_id: 0,
+                channel_count: Some(2),
+                channel_layout: Some("stereo".to_string()),
                 bitrate_bps: Some(160_000),
                 sample_rate_hz: Some(48_000),
                 loudness_profile: Some("dialog-normalized".to_string()),
