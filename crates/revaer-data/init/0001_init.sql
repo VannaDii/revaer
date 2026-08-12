@@ -35997,3 +35997,7698 @@ ALTER TABLE public.canonical_torrent_source ALTER COLUMN canonical_torrent_sourc
 
 
 
+CREATE TABLE public.canonical_torrent_source_context_score (
+    canonical_torrent_source_context_score_id bigint NOT NULL,
+    context_key_type public.context_key_type NOT NULL,
+    context_key_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    score_total_context numeric(12,4) NOT NULL,
+    score_policy_adjust numeric(12,4) NOT NULL,
+    score_tag_adjust numeric(12,4) NOT NULL,
+    is_dropped boolean DEFAULT false NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT canonical_torrent_source_context_scor_score_total_context_check CHECK (((score_total_context >= ('-10000'::integer)::numeric) AND (score_total_context <= (10000)::numeric))),
+    CONSTRAINT canonical_torrent_source_context_score_context_key_id_check CHECK ((context_key_id > 0))
+);
+
+
+
+ALTER TABLE public.canonical_torrent_source_context_score ALTER COLUMN canonical_torrent_source_context_score_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.canonical_torrent_source_cont_canonical_torrent_source_cont_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.config_audit_log (
+    audit_log_id bigint NOT NULL,
+    entity_type public.audit_entity_type NOT NULL,
+    entity_pk_bigint bigint,
+    entity_public_id uuid,
+    action public.audit_action NOT NULL,
+    changed_by_user_id bigint NOT NULL,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    change_summary character varying(1024) NOT NULL,
+    change_detail character varying(1024),
+    CONSTRAINT config_audit_entity_ref_chk CHECK (((entity_pk_bigint IS NOT NULL) OR (entity_public_id IS NOT NULL)))
+);
+
+
+
+ALTER TABLE public.config_audit_log ALTER COLUMN audit_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.config_audit_log_audit_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.deployment_config (
+    deployment_config_id bigint NOT NULL,
+    default_page_size integer DEFAULT 50 NOT NULL,
+    retention_search_days integer DEFAULT 7 NOT NULL,
+    retention_health_events_days integer DEFAULT 14 NOT NULL,
+    retention_reputation_days integer DEFAULT 180 NOT NULL,
+    retention_outbound_request_log_days integer DEFAULT 14 NOT NULL,
+    retention_source_metadata_conflict_days integer DEFAULT 30 NOT NULL,
+    retention_source_metadata_conflict_audit_days integer DEFAULT 90 NOT NULL,
+    retention_rss_item_seen_days integer DEFAULT 30 NOT NULL,
+    connectivity_refresh_seconds integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT deployment_config_connectivity_refresh_seconds_check CHECK (((connectivity_refresh_seconds >= 30) AND (connectivity_refresh_seconds <= 3600))),
+    CONSTRAINT deployment_config_default_page_size_check CHECK (((default_page_size >= 10) AND (default_page_size <= 200))),
+    CONSTRAINT deployment_config_retention_health_events_days_check CHECK (((retention_health_events_days >= 1) AND (retention_health_events_days <= 90))),
+    CONSTRAINT deployment_config_retention_outbound_request_log_days_check CHECK (((retention_outbound_request_log_days >= 1) AND (retention_outbound_request_log_days <= 90))),
+    CONSTRAINT deployment_config_retention_reputation_days_check CHECK (((retention_reputation_days >= 30) AND (retention_reputation_days <= 3650))),
+    CONSTRAINT deployment_config_retention_rss_item_seen_days_check CHECK (((retention_rss_item_seen_days >= 1) AND (retention_rss_item_seen_days <= 365))),
+    CONSTRAINT deployment_config_retention_search_days_check CHECK (((retention_search_days >= 1) AND (retention_search_days <= 90))),
+    CONSTRAINT deployment_config_retention_source_metadata_conflict_audi_check CHECK (((retention_source_metadata_conflict_audit_days >= 7) AND (retention_source_metadata_conflict_audit_days <= 3650))),
+    CONSTRAINT deployment_config_retention_source_metadata_conflict_days_check CHECK (((retention_source_metadata_conflict_days >= 1) AND (retention_source_metadata_conflict_days <= 365)))
+);
+
+
+
+ALTER TABLE public.deployment_config ALTER COLUMN deployment_config_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.deployment_config_deployment_config_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.deployment_maintenance_state (
+    deployment_maintenance_state_id bigint NOT NULL,
+    rss_subscription_backfill_completed_at timestamp with time zone,
+    last_updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE public.deployment_maintenance_state ALTER COLUMN deployment_maintenance_state_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.deployment_maintenance_state_deployment_maintenance_state_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.engine_alt_speed (
+    profile_id uuid NOT NULL,
+    download_bps bigint,
+    upload_bps bigint,
+    schedule_start_minutes integer,
+    schedule_end_minutes integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.engine_alt_speed_days (
+    profile_id uuid NOT NULL,
+    ord integer NOT NULL,
+    day text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_alt_speed_days_day_check CHECK ((day = ANY (ARRAY['mon'::text, 'tue'::text, 'wed'::text, 'thu'::text, 'fri'::text, 'sat'::text, 'sun'::text])))
+);
+
+
+
+CREATE TABLE public.engine_ip_filter (
+    profile_id uuid NOT NULL,
+    blocklist_url text,
+    etag text,
+    last_updated_at timestamp with time zone,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.engine_ip_filter_entries (
+    profile_id uuid NOT NULL,
+    ord integer NOT NULL,
+    cidr text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.engine_peer_class_defaults (
+    profile_id uuid NOT NULL,
+    class_id smallint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.engine_peer_classes (
+    profile_id uuid NOT NULL,
+    class_id smallint NOT NULL,
+    label text NOT NULL,
+    download_priority smallint NOT NULL,
+    upload_priority smallint NOT NULL,
+    connection_limit_factor smallint DEFAULT 100 NOT NULL,
+    ignore_unchoke_slots boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_peer_class_connection_limit_factor_bounds CHECK ((connection_limit_factor >= 1)),
+    CONSTRAINT engine_peer_class_download_priority_bounds CHECK (((download_priority >= 1) AND (download_priority <= 255))),
+    CONSTRAINT engine_peer_class_id_bounds CHECK (((class_id >= 0) AND (class_id <= 31))),
+    CONSTRAINT engine_peer_class_upload_priority_bounds CHECK (((upload_priority >= 1) AND (upload_priority <= 255)))
+);
+
+
+
+CREATE TABLE public.engine_profile (
+    id uuid NOT NULL,
+    implementation text NOT NULL,
+    listen_port integer,
+    dht boolean DEFAULT false NOT NULL,
+    encryption text DEFAULT 'require'::text NOT NULL,
+    max_active integer,
+    max_download_bps bigint,
+    max_upload_bps bigint,
+    seed_ratio_limit double precision,
+    seed_time_limit bigint,
+    sequential_default boolean DEFAULT true NOT NULL,
+    auto_managed boolean DEFAULT true NOT NULL,
+    auto_manage_prefer_seeds boolean DEFAULT false NOT NULL,
+    dont_count_slow_torrents boolean DEFAULT true NOT NULL,
+    super_seeding boolean DEFAULT false NOT NULL,
+    choking_algorithm text DEFAULT 'fixed_slots'::text NOT NULL,
+    seed_choking_algorithm text DEFAULT 'round_robin'::text NOT NULL,
+    strict_super_seeding boolean DEFAULT false NOT NULL,
+    optimistic_unchoke_slots integer,
+    max_queued_disk_bytes bigint,
+    resume_dir text NOT NULL,
+    download_root text NOT NULL,
+    storage_mode text DEFAULT 'sparse'::text NOT NULL,
+    use_partfile boolean DEFAULT true NOT NULL,
+    cache_size integer,
+    cache_expiry integer,
+    coalesce_reads boolean DEFAULT true NOT NULL,
+    coalesce_writes boolean DEFAULT true NOT NULL,
+    use_disk_cache_pool boolean DEFAULT true NOT NULL,
+    disk_read_mode text,
+    disk_write_mode text,
+    verify_piece_hashes boolean DEFAULT true NOT NULL,
+    enable_lsd boolean DEFAULT false NOT NULL,
+    enable_upnp boolean DEFAULT false NOT NULL,
+    enable_natpmp boolean DEFAULT false NOT NULL,
+    enable_pex boolean DEFAULT false NOT NULL,
+    ipv6_mode text DEFAULT 'disabled'::text NOT NULL,
+    anonymous_mode boolean DEFAULT false NOT NULL,
+    force_proxy boolean DEFAULT false NOT NULL,
+    prefer_rc4 boolean DEFAULT false NOT NULL,
+    allow_multiple_connections_per_ip boolean DEFAULT false NOT NULL,
+    enable_outgoing_utp boolean DEFAULT false NOT NULL,
+    enable_incoming_utp boolean DEFAULT false NOT NULL,
+    outgoing_port_min integer,
+    outgoing_port_max integer,
+    peer_dscp integer,
+    connections_limit integer,
+    connections_limit_per_torrent integer,
+    unchoke_slots integer,
+    half_open_limit integer,
+    stats_interval_ms integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_profile_singleton CHECK ((id = '00000000-0000-0000-0000-000000000002'::uuid))
+);
+
+
+
+CREATE TABLE public.engine_profile_list_values (
+    profile_id uuid NOT NULL,
+    kind text NOT NULL,
+    ord integer NOT NULL,
+    value text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_profile_list_values_kind_check CHECK ((kind = ANY (ARRAY['listen_interfaces'::text, 'dht_bootstrap_nodes'::text, 'dht_router_nodes'::text])))
+);
+
+
+
+CREATE TABLE public.engine_tracker_config (
+    profile_id uuid NOT NULL,
+    user_agent text,
+    announce_ip text,
+    listen_interface text,
+    request_timeout_ms integer,
+    announce_to_all boolean DEFAULT false NOT NULL,
+    replace_trackers boolean DEFAULT false NOT NULL,
+    proxy_host text,
+    proxy_port integer,
+    proxy_kind text,
+    proxy_username_secret text,
+    proxy_password_secret text,
+    proxy_peers boolean DEFAULT false NOT NULL,
+    ssl_cert text,
+    ssl_private_key text,
+    ssl_ca_cert text,
+    ssl_tracker_verify boolean,
+    auth_username_secret text,
+    auth_password_secret text,
+    auth_cookie_secret text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.engine_tracker_endpoints (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    kind text NOT NULL,
+    url text NOT NULL,
+    ord integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT engine_tracker_endpoints_kind_check CHECK ((kind = ANY (ARRAY['default'::text, 'extra'::text])))
+);
+
+
+
+CREATE SEQUENCE public.engine_tracker_endpoints_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+
+ALTER SEQUENCE public.engine_tracker_endpoints_id_seq OWNED BY public.engine_tracker_endpoints.id;
+
+
+
+CREATE TABLE public.fs_policy (
+    id uuid NOT NULL,
+    library_root text NOT NULL,
+    "extract" boolean DEFAULT false NOT NULL,
+    par2 text DEFAULT 'off'::text NOT NULL,
+    flatten boolean DEFAULT false NOT NULL,
+    move_mode text DEFAULT 'hardlink'::text NOT NULL,
+    chmod_file text,
+    chmod_dir text,
+    owner text,
+    "group" text,
+    umask text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT fs_policy_singleton CHECK ((id = '00000000-0000-0000-0000-000000000003'::uuid))
+);
+
+
+
+CREATE TABLE public.fs_policy_list_values (
+    policy_id uuid NOT NULL,
+    kind text NOT NULL,
+    ord integer NOT NULL,
+    value text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT fs_policy_list_values_kind_check CHECK ((kind = ANY (ARRAY['cleanup_keep'::text, 'cleanup_drop'::text, 'allow_paths'::text])))
+);
+
+
+
+CREATE TABLE public.import_indexer_result (
+    import_indexer_result_id bigint NOT NULL,
+    import_job_id bigint NOT NULL,
+    prowlarr_identifier character varying(256) NOT NULL,
+    upstream_slug character varying(128),
+    indexer_instance_id bigint,
+    status public.import_indexer_result_status NOT NULL,
+    detail character varying(512),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    resolved_is_enabled boolean,
+    resolved_priority integer,
+    missing_secret_fields integer DEFAULT 0 NOT NULL,
+    CONSTRAINT import_indexer_result_missing_secret_fields_check CHECK ((missing_secret_fields >= 0)),
+    CONSTRAINT import_indexer_result_resolved_priority_check CHECK (((resolved_priority IS NULL) OR ((resolved_priority >= 0) AND (resolved_priority <= 100))))
+);
+
+
+
+ALTER TABLE public.import_indexer_result ALTER COLUMN import_indexer_result_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.import_indexer_result_import_indexer_result_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.import_indexer_result_media_domain (
+    import_indexer_result_media_domain_id bigint NOT NULL,
+    import_indexer_result_id bigint NOT NULL,
+    media_domain_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.import_indexer_result_media_domain ALTER COLUMN import_indexer_result_media_domain_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.import_indexer_result_media_d_import_indexer_result_media_d_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.import_indexer_result_tag (
+    import_indexer_result_tag_id bigint NOT NULL,
+    import_indexer_result_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.import_indexer_result_tag ALTER COLUMN import_indexer_result_tag_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.import_indexer_result_tag_import_indexer_result_tag_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.import_job (
+    import_job_id bigint NOT NULL,
+    import_job_public_id uuid NOT NULL,
+    target_search_profile_id bigint,
+    target_torznab_instance_id bigint,
+    created_by_user_id bigint NOT NULL,
+    source public.import_source NOT NULL,
+    is_dry_run boolean DEFAULT false NOT NULL,
+    status public.import_job_status NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    error_detail character varying(1024),
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE public.import_job ALTER COLUMN import_job_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.import_job_import_job_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_cf_state (
+    indexer_cf_state_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    state public.cf_state NOT NULL,
+    last_changed_at timestamp with time zone NOT NULL,
+    cf_session_id character varying(256),
+    cf_session_expires_at timestamp with time zone,
+    cooldown_until timestamp with time zone,
+    backoff_seconds integer,
+    consecutive_failures integer DEFAULT 0 NOT NULL,
+    last_error_class public.error_class,
+    CONSTRAINT indexer_cf_state_backoff_seconds_check CHECK (((backoff_seconds IS NULL) OR (backoff_seconds >= 0))),
+    CONSTRAINT indexer_cf_state_consecutive_failures_check CHECK ((consecutive_failures >= 0))
+);
+
+
+
+ALTER TABLE public.indexer_cf_state ALTER COLUMN indexer_cf_state_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_cf_state_indexer_cf_state_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_connectivity_profile (
+    indexer_instance_id bigint NOT NULL,
+    status public.connectivity_status NOT NULL,
+    error_class public.error_class,
+    latency_p50_ms integer,
+    latency_p95_ms integer,
+    success_rate_1h numeric(5,4),
+    success_rate_24h numeric(5,4),
+    last_checked_at timestamp with time zone NOT NULL,
+    CONSTRAINT indexer_connectivity_profile_error_class_chk CHECK ((((status = 'healthy'::public.connectivity_status) AND (error_class IS NULL)) OR (status <> 'healthy'::public.connectivity_status))),
+    CONSTRAINT indexer_connectivity_profile_latency_p50_ms_check CHECK (((latency_p50_ms IS NULL) OR (latency_p50_ms >= 0))),
+    CONSTRAINT indexer_connectivity_profile_latency_p95_ms_check CHECK (((latency_p95_ms IS NULL) OR (latency_p95_ms >= 0))),
+    CONSTRAINT indexer_connectivity_profile_success_rate_1h_check CHECK (((success_rate_1h IS NULL) OR ((success_rate_1h >= (0)::numeric) AND (success_rate_1h <= (1)::numeric)))),
+    CONSTRAINT indexer_connectivity_profile_success_rate_24h_check CHECK (((success_rate_24h IS NULL) OR ((success_rate_24h >= (0)::numeric) AND (success_rate_24h <= (1)::numeric))))
+);
+
+
+
+CREATE TABLE public.indexer_definition (
+    indexer_definition_id bigint NOT NULL,
+    upstream_source public.upstream_source NOT NULL,
+    upstream_slug character varying(128) NOT NULL,
+    display_name character varying(256) NOT NULL,
+    protocol public.protocol NOT NULL,
+    engine public.engine NOT NULL,
+    schema_version integer NOT NULL,
+    definition_hash character(64) NOT NULL,
+    is_deprecated boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT indexer_definition_hash_hex CHECK ((definition_hash ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT indexer_definition_hash_lc CHECK (((definition_hash)::text = lower((definition_hash)::text))),
+    CONSTRAINT indexer_definition_slug_lc CHECK (((upstream_slug)::text = lower((upstream_slug)::text)))
+);
+
+
+
+CREATE TABLE public.indexer_definition_field (
+    indexer_definition_field_id bigint NOT NULL,
+    indexer_definition_id bigint NOT NULL,
+    name character varying(128) NOT NULL,
+    label character varying(256) NOT NULL,
+    field_type public.field_type NOT NULL,
+    is_required boolean NOT NULL,
+    is_advanced boolean NOT NULL,
+    display_order integer DEFAULT 1000 NOT NULL,
+    default_value_plain character varying(512),
+    default_value_int integer,
+    default_value_decimal numeric(12,4),
+    default_value_bool boolean,
+    CONSTRAINT indexer_definition_field_default_single_chk CHECK (((((((default_value_plain IS NOT NULL))::integer + ((default_value_int IS NOT NULL))::integer) + ((default_value_decimal IS NOT NULL))::integer) + ((default_value_bool IS NOT NULL))::integer) <= 1)),
+    CONSTRAINT indexer_definition_field_name_lc CHECK (((name)::text = lower((name)::text))),
+    CONSTRAINT indexer_definition_field_secret_default_chk CHECK (((field_type <> ALL (ARRAY['password'::public.field_type, 'api_key'::public.field_type, 'cookie'::public.field_type, 'token'::public.field_type, 'header_value'::public.field_type])) OR ((default_value_plain IS NULL) AND (default_value_int IS NULL) AND (default_value_decimal IS NULL) AND (default_value_bool IS NULL))))
+);
+
+
+
+ALTER TABLE public.indexer_definition_field ALTER COLUMN indexer_definition_field_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_indexer_definition_field_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_definition_field_option (
+    indexer_definition_field_option_id bigint NOT NULL,
+    indexer_definition_field_id bigint NOT NULL,
+    option_value character varying(128) NOT NULL,
+    option_label character varying(256) NOT NULL,
+    sort_order integer NOT NULL
+);
+
+
+
+ALTER TABLE public.indexer_definition_field_option ALTER COLUMN indexer_definition_field_option_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_opti_indexer_definition_field_opti_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_definition_field_validation (
+    indexer_definition_field_validation_id bigint NOT NULL,
+    indexer_definition_field_id bigint NOT NULL,
+    validation_type public.validation_type NOT NULL,
+    int_value integer,
+    numeric_value numeric(12,4),
+    text_value character varying(512),
+    text_value_norm character varying(512) GENERATED ALWAYS AS (
+CASE
+    WHEN (text_value IS NULL) THEN NULL::text
+    WHEN (validation_type = 'regex'::public.validation_type) THEN TRIM(BOTH FROM text_value)
+    ELSE lower(TRIM(BOTH FROM text_value))
+END) STORED,
+    value_set_id bigint,
+    depends_on_field_name character varying(128),
+    depends_on_operator public.depends_on_operator,
+    depends_on_value_plain character varying(512),
+    depends_on_value_plain_norm character varying(512) GENERATED ALWAYS AS (
+CASE
+    WHEN (depends_on_value_plain IS NULL) THEN NULL::text
+    ELSE lower(TRIM(BOTH FROM depends_on_value_plain))
+END) STORED,
+    depends_on_value_int integer,
+    depends_on_value_bool boolean,
+    depends_on_value_set_id bigint,
+    CONSTRAINT indexer_definition_field_validation_allowed_value_chk CHECK (((validation_type <> 'allowed_value'::public.validation_type) OR (((text_value IS NOT NULL) AND (value_set_id IS NULL)) OR ((text_value IS NULL) AND (value_set_id IS NOT NULL))))),
+    CONSTRAINT indexer_definition_field_validation_depends_name_lc CHECK (((depends_on_field_name IS NULL) OR ((depends_on_field_name)::text = lower((depends_on_field_name)::text)))),
+    CONSTRAINT indexer_definition_field_validation_min_len_chk CHECK (((validation_type <> ALL (ARRAY['min_length'::public.validation_type, 'max_length'::public.validation_type])) OR ((int_value IS NOT NULL) AND (int_value >= 0)))),
+    CONSTRAINT indexer_definition_field_validation_min_val_chk CHECK (((validation_type <> ALL (ARRAY['min_value'::public.validation_type, 'max_value'::public.validation_type])) OR (numeric_value IS NOT NULL))),
+    CONSTRAINT indexer_definition_field_validation_regex_chk CHECK (((validation_type <> 'regex'::public.validation_type) OR (text_value IS NOT NULL))),
+    CONSTRAINT indexer_definition_field_validation_required_if_chk CHECK (((validation_type <> 'required_if_field_equals'::public.validation_type) OR ((depends_on_field_name IS NOT NULL) AND (depends_on_operator IS NOT NULL) AND ((((((depends_on_value_plain IS NOT NULL))::integer + ((depends_on_value_int IS NOT NULL))::integer) + ((depends_on_value_bool IS NOT NULL))::integer) + ((depends_on_value_set_id IS NOT NULL))::integer) = 1))))
+);
+
+
+
+ALTER TABLE public.indexer_definition_field_validation ALTER COLUMN indexer_definition_field_validation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_vali_indexer_definition_field_vali_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_definition_field_value_set (
+    value_set_id bigint NOT NULL,
+    indexer_definition_field_validation_id bigint NOT NULL,
+    value_set_type public.value_set_type NOT NULL,
+    name character varying(256),
+    CONSTRAINT indexer_definition_field_value_set_type_chk CHECK ((value_set_type = ANY (ARRAY['text'::public.value_set_type, 'int'::public.value_set_type, 'bigint'::public.value_set_type])))
+);
+
+
+
+CREATE TABLE public.indexer_definition_field_value_set_item (
+    value_set_item_id bigint NOT NULL,
+    value_set_id bigint NOT NULL,
+    value_text character varying(256),
+    value_int integer,
+    value_bigint bigint,
+    CONSTRAINT indexer_definition_field_value_set_item_single_chk CHECK ((((((value_text IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) + ((value_bigint IS NOT NULL))::integer) = 1)),
+    CONSTRAINT indexer_definition_field_value_set_item_text_lc CHECK (((value_text IS NULL) OR ((value_text)::text = lower((value_text)::text))))
+);
+
+
+
+ALTER TABLE public.indexer_definition_field_value_set_item ALTER COLUMN value_set_item_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_value_set_item_value_set_item_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.indexer_definition_field_value_set ALTER COLUMN value_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_field_value_set_value_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.indexer_definition ALTER COLUMN indexer_definition_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_definition_indexer_definition_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_health_event (
+    indexer_health_event_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    event_type public.health_event_type NOT NULL,
+    latency_ms integer,
+    http_status integer,
+    error_class public.error_class,
+    detail character varying(1024),
+    CONSTRAINT indexer_health_event_latency_ms_check CHECK (((latency_ms IS NULL) OR (latency_ms >= 0)))
+);
+
+
+
+ALTER TABLE public.indexer_health_event ALTER COLUMN indexer_health_event_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_health_event_indexer_health_event_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_health_notification_hook (
+    indexer_health_notification_hook_id bigint NOT NULL,
+    indexer_health_notification_hook_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    channel public.indexer_health_notification_channel NOT NULL,
+    display_name character varying(120) NOT NULL,
+    status_threshold public.indexer_health_notification_threshold DEFAULT 'failing'::public.indexer_health_notification_threshold NOT NULL,
+    webhook_url character varying(2048),
+    email character varying(320),
+    email_normalized character varying(320),
+    is_enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    CONSTRAINT indexer_health_notification_hook_channel_payload_ck CHECK ((((channel = 'webhook'::public.indexer_health_notification_channel) AND (webhook_url IS NOT NULL) AND (email IS NULL) AND (email_normalized IS NULL)) OR ((channel = 'email'::public.indexer_health_notification_channel) AND (webhook_url IS NULL) AND (email IS NOT NULL) AND (email_normalized IS NOT NULL)))),
+    CONSTRAINT indexer_health_notification_hook_email_normalized_lc CHECK (((email_normalized IS NULL) OR ((email_normalized)::text = lower(TRIM(BOTH FROM email_normalized)))))
+);
+
+
+
+ALTER TABLE public.indexer_health_notification_hook ALTER COLUMN indexer_health_notification_hook_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_health_notification_h_indexer_health_notification_h_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_instance (
+    indexer_instance_id bigint NOT NULL,
+    indexer_instance_public_id uuid NOT NULL,
+    indexer_definition_id bigint NOT NULL,
+    display_name character varying(256) NOT NULL,
+    is_enabled boolean NOT NULL,
+    migration_state public.indexer_instance_migration_state,
+    migration_detail character varying(256),
+    enable_rss boolean DEFAULT true NOT NULL,
+    enable_automatic_search boolean DEFAULT true NOT NULL,
+    enable_interactive_search boolean DEFAULT true NOT NULL,
+    priority integer DEFAULT 50 NOT NULL,
+    trust_tier_key public.trust_tier_key,
+    routing_policy_id bigint,
+    connect_timeout_ms integer DEFAULT 5000 NOT NULL,
+    read_timeout_ms integer DEFAULT 15000 NOT NULL,
+    max_parallel_requests integer DEFAULT 2 NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT indexer_instance_connect_timeout_ms_check CHECK (((connect_timeout_ms >= 500) AND (connect_timeout_ms <= 60000))),
+    CONSTRAINT indexer_instance_max_parallel_requests_check CHECK (((max_parallel_requests >= 1) AND (max_parallel_requests <= 16))),
+    CONSTRAINT indexer_instance_priority_check CHECK (((priority >= 0) AND (priority <= 100))),
+    CONSTRAINT indexer_instance_read_timeout_ms_check CHECK (((read_timeout_ms >= 500) AND (read_timeout_ms <= 120000)))
+);
+
+
+
+CREATE TABLE public.indexer_instance_field_value (
+    indexer_instance_field_value_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    field_name character varying(128) NOT NULL,
+    field_type public.field_type NOT NULL,
+    value_plain character varying(2048),
+    value_int integer,
+    value_decimal numeric(12,4),
+    value_bool boolean,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    CONSTRAINT indexer_instance_field_name_lc CHECK (((field_name)::text = lower((field_name)::text))),
+    CONSTRAINT indexer_instance_field_name_len_chk CHECK (((length((field_name)::text) >= 1) AND (length((field_name)::text) <= 128))),
+    CONSTRAINT indexer_instance_field_value_non_secret_chk CHECK (((field_type = ANY (ARRAY['password'::public.field_type, 'api_key'::public.field_type, 'cookie'::public.field_type, 'token'::public.field_type, 'header_value'::public.field_type])) OR ((((((value_plain IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) + ((value_decimal IS NOT NULL))::integer) + ((value_bool IS NOT NULL))::integer) = 1))),
+    CONSTRAINT indexer_instance_field_value_secret_chk CHECK (((field_type <> ALL (ARRAY['password'::public.field_type, 'api_key'::public.field_type, 'cookie'::public.field_type, 'token'::public.field_type, 'header_value'::public.field_type])) OR ((value_plain IS NULL) AND (value_int IS NULL) AND (value_decimal IS NULL) AND (value_bool IS NULL))))
+);
+
+
+
+ALTER TABLE public.indexer_instance_field_value ALTER COLUMN indexer_instance_field_value_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_field_value_indexer_instance_field_value_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_instance_import_blob (
+    indexer_instance_import_blob_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    source_system public.import_source_system NOT NULL,
+    import_payload_text text NOT NULL,
+    import_payload_format public.import_payload_format NOT NULL,
+    imported_at timestamp with time zone NOT NULL
+);
+
+
+
+ALTER TABLE public.indexer_instance_import_blob ALTER COLUMN indexer_instance_import_blob_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_import_blob_indexer_instance_import_blob_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.indexer_instance ALTER COLUMN indexer_instance_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_indexer_instance_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_instance_media_domain (
+    indexer_instance_media_domain_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    media_domain_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.indexer_instance_media_domain ALTER COLUMN indexer_instance_media_domain_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_media_domain_indexer_instance_media_domain_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_instance_rate_limit (
+    indexer_instance_rate_limit_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    rate_limit_policy_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.indexer_instance_rate_limit ALTER COLUMN indexer_instance_rate_limit_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_rate_limit_indexer_instance_rate_limit_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_instance_tag (
+    indexer_instance_tag_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.indexer_instance_tag ALTER COLUMN indexer_instance_tag_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_instance_tag_indexer_instance_tag_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_rss_item_seen (
+    rss_item_seen_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    item_guid character varying(256),
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    first_seen_at timestamp with time zone NOT NULL,
+    CONSTRAINT indexer_rss_item_seen_identifier_chk CHECK (((item_guid IS NOT NULL) OR (infohash_v1 IS NOT NULL) OR (infohash_v2 IS NOT NULL) OR (magnet_hash IS NOT NULL))),
+    CONSTRAINT indexer_rss_item_seen_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT indexer_rss_item_seen_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT indexer_rss_item_seen_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text)))
+);
+
+
+
+ALTER TABLE public.indexer_rss_item_seen ALTER COLUMN rss_item_seen_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_rss_item_seen_rss_item_seen_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_rss_subscription (
+    indexer_rss_subscription_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    is_enabled boolean DEFAULT true NOT NULL,
+    interval_seconds integer DEFAULT 900 NOT NULL,
+    last_polled_at timestamp with time zone,
+    next_poll_at timestamp with time zone,
+    backoff_seconds integer,
+    last_error_class public.error_class,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT indexer_rss_subscription_interval_seconds_check CHECK (((interval_seconds >= 300) AND (interval_seconds <= 86400))),
+    CONSTRAINT indexer_rss_subscription_next_poll_chk CHECK ((((is_enabled = true) AND (next_poll_at IS NOT NULL)) OR ((is_enabled = false) AND (next_poll_at IS NULL))))
+);
+
+
+
+ALTER TABLE public.indexer_rss_subscription ALTER COLUMN indexer_rss_subscription_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_rss_subscription_indexer_rss_subscription_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.indexer_run_cursor (
+    indexer_run_cursor_id bigint NOT NULL,
+    search_request_indexer_run_id bigint NOT NULL,
+    cursor_type public.cursor_type NOT NULL,
+    "offset" integer,
+    "limit" integer,
+    page integer,
+    since timestamp with time zone,
+    opaque_token character varying(1024),
+    CONSTRAINT indexer_run_cursor_limit_chk CHECK ((("limit" IS NULL) OR ("limit" > 0))),
+    CONSTRAINT indexer_run_cursor_offset_chk CHECK ((("offset" IS NULL) OR ("offset" >= 0))),
+    CONSTRAINT indexer_run_cursor_page_chk CHECK (((page IS NULL) OR (page > 0))),
+    CONSTRAINT indexer_run_cursor_type_fields_chk CHECK ((((cursor_type = 'offset_limit'::public.cursor_type) AND ("offset" IS NOT NULL) AND ("limit" IS NOT NULL) AND (page IS NULL) AND (since IS NULL) AND (opaque_token IS NULL)) OR ((cursor_type = 'page_number'::public.cursor_type) AND (page IS NOT NULL) AND ("offset" IS NULL) AND ("limit" IS NULL) AND (since IS NULL) AND (opaque_token IS NULL)) OR ((cursor_type = 'since_time'::public.cursor_type) AND (since IS NOT NULL) AND ("offset" IS NULL) AND ("limit" IS NULL) AND (page IS NULL) AND (opaque_token IS NULL)) OR ((cursor_type = 'opaque_token'::public.cursor_type) AND (opaque_token IS NOT NULL) AND ("offset" IS NULL) AND ("limit" IS NULL) AND (page IS NULL) AND (since IS NULL))))
+);
+
+
+
+ALTER TABLE public.indexer_run_cursor ALTER COLUMN indexer_run_cursor_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indexer_run_cursor_indexer_run_cursor_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.job_schedule (
+    job_schedule_id bigint NOT NULL,
+    job_key public.job_key NOT NULL,
+    cadence_seconds integer NOT NULL,
+    jitter_seconds integer DEFAULT 0 NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    last_run_at timestamp with time zone,
+    next_run_at timestamp with time zone NOT NULL,
+    locked_until timestamp with time zone,
+    lock_owner character varying(128),
+    CONSTRAINT job_schedule_cadence_seconds_check CHECK (((cadence_seconds >= 30) AND (cadence_seconds <= 604800))),
+    CONSTRAINT job_schedule_check CHECK (((jitter_seconds >= 0) AND (jitter_seconds <= cadence_seconds)))
+);
+
+
+
+ALTER TABLE public.job_schedule ALTER COLUMN job_schedule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.job_schedule_job_schedule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_capability_snapshot (
+    media_capability_snapshot_id bigint NOT NULL,
+    ffmpeg_version text NOT NULL,
+    ffprobe_version text NOT NULL,
+    codec_name text NOT NULL,
+    encode_supported boolean DEFAULT false NOT NULL,
+    decode_supported boolean DEFAULT true NOT NULL,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    observed_by_user_id bigint NOT NULL,
+    snapshot_run_public_id uuid NOT NULL,
+    CONSTRAINT media_capability_codec_nonempty CHECK ((btrim(codec_name) <> ''::text)),
+    CONSTRAINT media_capability_versions_nonempty CHECK (((btrim(ffmpeg_version) <> ''::text) AND (btrim(ffprobe_version) <> ''::text)))
+);
+
+
+
+CREATE TABLE public.media_capability_snapshot_encoder (
+    media_capability_snapshot_encoder_id bigint NOT NULL,
+    snapshot_run_public_id uuid NOT NULL,
+    encoder_name text NOT NULL,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    observed_by_user_id bigint NOT NULL,
+    CONSTRAINT media_capability_snapshot_encoder_name_nonempty CHECK ((btrim(encoder_name) <> ''::text))
+);
+
+
+
+ALTER TABLE public.media_capability_snapshot_encoder ALTER COLUMN media_capability_snapshot_encoder_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_capability_snapshot_enc_media_capability_snapshot_enc_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_capability_snapshot_feature (
+    media_capability_snapshot_feature_id bigint NOT NULL,
+    snapshot_run_public_id uuid NOT NULL,
+    feature_family text NOT NULL,
+    feature_name text NOT NULL,
+    supported boolean DEFAULT true NOT NULL,
+    detail_text text,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    observed_by_user_id bigint NOT NULL,
+    CONSTRAINT media_capability_snapshot_feature_family_nonempty CHECK ((btrim(feature_family) <> ''::text)),
+    CONSTRAINT media_capability_snapshot_feature_name_nonempty CHECK ((btrim(feature_name) <> ''::text))
+);
+
+
+
+ALTER TABLE public.media_capability_snapshot_feature ALTER COLUMN media_capability_snapshot_feature_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_capability_snapshot_fea_media_capability_snapshot_fea_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.media_capability_snapshot ALTER COLUMN media_capability_snapshot_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_capability_snapshot_media_capability_snapshot_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_capability_snapshot_run (
+    snapshot_run_public_id uuid NOT NULL,
+    status text NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    observed_by_user_id bigint NOT NULL,
+    error_code text,
+    CONSTRAINT media_capability_snapshot_run_error_nonempty CHECK (((error_code IS NULL) OR (btrim(error_code) <> ''::text))),
+    CONSTRAINT media_capability_snapshot_run_status_known CHECK ((status = ANY (ARRAY[public.media_capability_run_status_running_v1(), public.media_capability_run_status_completed_v1(), public.media_capability_run_status_failed_v1()])))
+);
+
+
+
+CREATE TABLE public.media_compatibility_target (
+    media_compatibility_target_id bigint NOT NULL,
+    compatibility_target_key text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    display_name text NOT NULL,
+    video_codec text NOT NULL,
+    audio_codec text NOT NULL,
+    subtitle_policy text DEFAULT public.media_subtitle_policy_selected_v1() NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    audio_channels integer,
+    audio_channel_layout text,
+    CONSTRAINT media_compatibility_target_audio_channels_positive CHECK (((audio_channels IS NULL) OR (audio_channels > 0))),
+    CONSTRAINT media_compatibility_target_audio_layout_count_matches CHECK (((audio_channel_layout IS NULL) OR (audio_channels IS NULL) OR (public.media_audio_channel_layout_count_v1(audio_channel_layout) = audio_channels))),
+    CONSTRAINT media_compatibility_target_audio_layout_known CHECK (((audio_channel_layout IS NULL) OR (public.media_audio_channel_layout_count_v1(audio_channel_layout) IS NOT NULL))),
+    CONSTRAINT media_compatibility_target_audio_layout_nonempty CHECK (((audio_channel_layout IS NULL) OR (NULLIF(btrim(audio_channel_layout), ''::text) IS NOT NULL))),
+    CONSTRAINT media_compatibility_target_codecs_nonempty CHECK (((btrim(video_codec) <> ''::text) AND (btrim(audio_codec) <> ''::text))),
+    CONSTRAINT media_compatibility_target_display_contract CHECK (public.media_display_valid_v1(display_name)),
+    CONSTRAINT media_compatibility_target_display_nonempty CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT media_compatibility_target_key_contract CHECK (public.media_key_valid_v1(compatibility_target_key)),
+    CONSTRAINT media_compatibility_target_key_nonempty CHECK ((btrim(compatibility_target_key) <> ''::text)),
+    CONSTRAINT media_compatibility_target_subtitle_policy_known CHECK ((subtitle_policy = ANY (ARRAY[public.media_subtitle_policy_selected_v1(), public.media_subtitle_policy_all_v1(), public.media_subtitle_policy_none_v1()]))),
+    CONSTRAINT media_compatibility_target_version_positive CHECK ((version > 0))
+);
+
+
+
+ALTER TABLE public.media_compatibility_target ALTER COLUMN media_compatibility_target_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_compatibility_target_media_compatibility_target_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_desired_target_audio_stream (
+    media_desired_target_stream_id bigint NOT NULL,
+    channel_count integer,
+    channel_layout text,
+    audio_bitrate_bps integer,
+    audio_sample_rate_hz integer,
+    audio_loudness_profile text,
+    audio_dynamic_range text,
+    CONSTRAINT media_desired_target_audio_bitrate_positive CHECK (((audio_bitrate_bps IS NULL) OR (audio_bitrate_bps > 0))),
+    CONSTRAINT media_desired_target_audio_channels_positive CHECK (((channel_count IS NULL) OR (channel_count > 0))),
+    CONSTRAINT media_desired_target_audio_dynamic_range_known CHECK (((audio_dynamic_range IS NULL) OR (audio_dynamic_range = ANY (ARRAY['preserve'::text, 'speech'::text])))),
+    CONSTRAINT media_desired_target_audio_layout_count_matches CHECK (((channel_layout IS NULL) OR (channel_count IS NULL) OR (public.media_audio_channel_layout_count_v1(channel_layout) = channel_count))),
+    CONSTRAINT media_desired_target_audio_layout_known CHECK (((channel_layout IS NULL) OR (public.media_audio_channel_layout_count_v1(channel_layout) IS NOT NULL))),
+    CONSTRAINT media_desired_target_audio_layout_nonempty CHECK (((channel_layout IS NULL) OR (btrim(channel_layout) <> ''::text))),
+    CONSTRAINT media_desired_target_audio_loudness_profile_known CHECK (((audio_loudness_profile IS NULL) OR (audio_loudness_profile = 'dialog-normalized'::text))),
+    CONSTRAINT media_desired_target_audio_sample_rate_positive CHECK (((audio_sample_rate_hz IS NULL) OR (audio_sample_rate_hz > 0)))
+);
+
+
+
+CREATE TABLE public.media_desired_target_container_chapter (
+    media_desired_target_container_chapter_id bigint NOT NULL,
+    media_desired_target_profile_id bigint NOT NULL,
+    start_millis bigint NOT NULL,
+    end_millis bigint NOT NULL,
+    sort_order integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_desired_target_container_chapter_range_valid CHECK (((start_millis >= 0) AND (end_millis > start_millis)))
+);
+
+
+
+CREATE SEQUENCE public.media_desired_target_containe_media_desired_target_contain_seq1
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+
+ALTER SEQUENCE public.media_desired_target_containe_media_desired_target_contain_seq1 OWNED BY public.media_desired_target_container_chapter.media_desired_target_container_chapter_id;
+
+
+
+CREATE TABLE public.media_desired_target_container_chapter_metadata (
+    media_desired_target_container_chapter_metadata_id bigint NOT NULL,
+    media_desired_target_container_chapter_id bigint NOT NULL,
+    metadata_key text NOT NULL,
+    metadata_value text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_desired_target_container_chapter_metadata_key_valid CHECK (((btrim(metadata_key) <> ''::text) AND (metadata_key = lower(btrim(metadata_key))) AND (octet_length(metadata_key) <= 128))),
+    CONSTRAINT media_desired_target_container_chapter_metadata_value_valid CHECK (((btrim(metadata_value) <> ''::text) AND (octet_length(metadata_value) <= 4096)))
+);
+
+
+
+CREATE SEQUENCE public.media_desired_target_containe_media_desired_target_contain_seq2
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+
+ALTER SEQUENCE public.media_desired_target_containe_media_desired_target_contain_seq2 OWNED BY public.media_desired_target_container_chapter_metadata.media_desired_target_container_chapter_metadata_id;
+
+
+
+CREATE TABLE public.media_desired_target_container_metadata (
+    media_desired_target_container_metadata_id bigint NOT NULL,
+    media_desired_target_profile_id bigint NOT NULL,
+    metadata_key text NOT NULL,
+    metadata_value text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_desired_target_container_metadata_key_valid CHECK (((btrim(metadata_key) <> ''::text) AND (metadata_key = lower(btrim(metadata_key))) AND (octet_length(metadata_key) <= 128))),
+    CONSTRAINT media_desired_target_container_metadata_value_valid CHECK (((btrim(metadata_value) <> ''::text) AND (octet_length(metadata_value) <= 4096)))
+);
+
+
+
+CREATE SEQUENCE public.media_desired_target_containe_media_desired_target_containe_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+
+ALTER SEQUENCE public.media_desired_target_containe_media_desired_target_containe_seq OWNED BY public.media_desired_target_container_metadata.media_desired_target_container_metadata_id;
+
+
+
+CREATE TABLE public.media_desired_target_container (
+    media_desired_target_profile_id bigint NOT NULL,
+    container_format text NOT NULL,
+    container_metadata_policy text DEFAULT 'preserve'::text NOT NULL,
+    container_chapter_policy text DEFAULT 'preserve'::text NOT NULL,
+    container_attachment_policy text DEFAULT 'preserve'::text NOT NULL,
+    CONSTRAINT media_desired_target_container_attachment_policy_known CHECK ((container_attachment_policy = ANY (ARRAY['preserve'::text, 'strip'::text]))),
+    CONSTRAINT media_desired_target_container_chapter_policy_known CHECK ((container_chapter_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text]))),
+    CONSTRAINT media_desired_target_container_format_nonempty CHECK ((btrim(container_format) <> ''::text)),
+    CONSTRAINT media_desired_target_container_metadata_policy_known CHECK ((container_metadata_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text])))
+);
+
+
+
+CREATE TABLE public.media_desired_target_profile (
+    media_desired_target_profile_id bigint NOT NULL,
+    media_desired_target_profile_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    target_key text NOT NULL,
+    version integer NOT NULL,
+    display_name text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    activated_at timestamp with time zone,
+    CONSTRAINT media_desired_target_profile_display_contract CHECK (public.media_display_valid_v1(display_name)),
+    CONSTRAINT media_desired_target_profile_display_nonempty CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT media_desired_target_profile_key_contract CHECK (public.media_key_valid_v1(target_key)),
+    CONSTRAINT media_desired_target_profile_key_nonempty CHECK ((btrim(target_key) <> ''::text)),
+    CONSTRAINT media_desired_target_profile_version_positive CHECK ((version > 0))
+);
+
+
+
+ALTER TABLE public.media_desired_target_profile ALTER COLUMN media_desired_target_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_desired_target_profile_media_desired_target_profile_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_desired_target_stream (
+    media_desired_target_stream_id bigint NOT NULL,
+    media_desired_target_profile_id bigint NOT NULL,
+    stream_key text NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text,
+    language_code text,
+    optional boolean DEFAULT false NOT NULL,
+    sort_order integer NOT NULL,
+    codec text NOT NULL,
+    title text,
+    default_disposition boolean DEFAULT false NOT NULL,
+    forced_disposition boolean DEFAULT false NOT NULL,
+    subtitle_placement text,
+    image_subtitle_action text,
+    video_profile text,
+    video_level text,
+    video_bitrate_bps integer,
+    color_primaries text,
+    color_transfer text,
+    color_space text,
+    hdr_format text,
+    hdr10_mastering_red_x text,
+    hdr10_mastering_red_y text,
+    hdr10_mastering_green_x text,
+    hdr10_mastering_green_y text,
+    hdr10_mastering_blue_x text,
+    hdr10_mastering_blue_y text,
+    hdr10_mastering_white_point_x text,
+    hdr10_mastering_white_point_y text,
+    hdr10_mastering_min_luminance text,
+    hdr10_mastering_max_luminance text,
+    hdr10_max_content_light_level text,
+    hdr10_max_frame_average_light_level text,
+    video_width_px integer,
+    video_height_px integer,
+    video_pixel_format text,
+    video_average_frame_rate text,
+    video_bit_depth integer,
+    color_range text,
+    CONSTRAINT media_desired_target_stream_codec_nonempty CHECK ((btrim(codec) <> ''::text)),
+    CONSTRAINT media_desired_target_stream_forced_subtitle_only CHECK (((NOT forced_disposition) OR (stream_kind = 'subtitle'::text))),
+    CONSTRAINT media_desired_target_stream_hdr10_color_volume_shape CHECK ((((stream_kind = 'video'::text) AND ((video_bitrate_bps IS NULL) OR (video_bitrate_bps > 0)) AND ((public.media_hdr10_color_volume_field_count_v1(hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level) = 0) OR COALESCE(((hdr_format = 'hdr10'::text) AND public.media_hdr10_color_volume_valid_v1(hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level)), false))) OR ((stream_kind <> 'video'::text) AND (video_profile IS NULL) AND (video_level IS NULL) AND (video_bitrate_bps IS NULL) AND (color_primaries IS NULL) AND (color_transfer IS NULL) AND (color_space IS NULL) AND (hdr_format IS NULL) AND (hdr10_mastering_red_x IS NULL) AND (hdr10_mastering_red_y IS NULL) AND (hdr10_mastering_green_x IS NULL) AND (hdr10_mastering_green_y IS NULL) AND (hdr10_mastering_blue_x IS NULL) AND (hdr10_mastering_blue_y IS NULL) AND (hdr10_mastering_white_point_x IS NULL) AND (hdr10_mastering_white_point_y IS NULL) AND (hdr10_mastering_min_luminance IS NULL) AND (hdr10_mastering_max_luminance IS NULL) AND (hdr10_max_content_light_level IS NULL) AND (hdr10_max_frame_average_light_level IS NULL)))),
+    CONSTRAINT media_desired_target_stream_hdr_format_known CHECK (((hdr_format IS NULL) OR (hdr_format = 'hdr10'::text))),
+    CONSTRAINT media_desired_target_stream_key_contract CHECK (public.media_key_valid_v1(stream_key)),
+    CONSTRAINT media_desired_target_stream_key_nonempty CHECK ((btrim(stream_key) <> ''::text)),
+    CONSTRAINT media_desired_target_stream_kind_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text, 'attachment'::text, 'data'::text]))),
+    CONSTRAINT media_desired_target_stream_language_nonempty CHECK (((language_code IS NULL) OR (btrim(language_code) <> ''::text))),
+    CONSTRAINT media_desired_target_stream_retained_color_volume_passthrough CHECK (((stream_kind <> ALL (ARRAY['attachment'::text, 'data'::text])) OR ((title IS NULL) AND (NOT default_disposition) AND (NOT forced_disposition) AND (subtitle_placement IS NULL) AND (image_subtitle_action IS NULL) AND (video_profile IS NULL) AND (video_level IS NULL) AND (video_bitrate_bps IS NULL) AND (color_primaries IS NULL) AND (color_transfer IS NULL) AND (color_space IS NULL) AND (hdr_format IS NULL) AND (hdr10_mastering_red_x IS NULL) AND (hdr10_mastering_red_y IS NULL) AND (hdr10_mastering_green_x IS NULL) AND (hdr10_mastering_green_y IS NULL) AND (hdr10_mastering_blue_x IS NULL) AND (hdr10_mastering_blue_y IS NULL) AND (hdr10_mastering_white_point_x IS NULL) AND (hdr10_mastering_white_point_y IS NULL) AND (hdr10_mastering_min_luminance IS NULL) AND (hdr10_mastering_max_luminance IS NULL) AND (hdr10_max_content_light_level IS NULL) AND (hdr10_max_frame_average_light_level IS NULL)))),
+    CONSTRAINT media_desired_target_stream_role_known CHECK (((semantic_role IS NULL) OR (semantic_role = ANY (ARRAY['primary'::text, 'forced'::text, 'commentary'::text, 'descriptive_audio'::text, 'sdh'::text, 'signs_songs'::text, 'karaoke'::text, 'unknown'::text])))),
+    CONSTRAINT media_desired_target_stream_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_desired_target_stream_subtitle_shape CHECK ((((stream_kind = 'subtitle'::text) AND (subtitle_placement = ANY (ARRAY['embedded'::text, 'sidecar'::text, 'both'::text, 'none'::text])) AND (image_subtitle_action = ANY (ARRAY['preserve'::text, 'remove'::text, 'fail'::text]))) OR ((stream_kind <> 'subtitle'::text) AND (subtitle_placement IS NULL) AND (image_subtitle_action IS NULL)))),
+    CONSTRAINT media_desired_target_stream_title_contract CHECK (((title IS NULL) OR public.media_display_valid_v1(title))),
+    CONSTRAINT media_desired_target_stream_video_bit_depth_color_range_shape CHECK ((((video_bit_depth IS NULL) AND (color_range IS NULL)) OR ((stream_kind = 'video'::text) AND public.media_video_bit_depth_supported_v1(video_bit_depth) AND ((video_bit_depth IS NULL) OR COALESCE((public.media_video_pixel_format_bit_depth_v1(video_pixel_format) = video_bit_depth), false)) AND public.media_video_color_range_known_v1(color_range)))),
+    CONSTRAINT media_desired_target_stream_video_bitrate_bound CHECK (((video_bitrate_bps IS NULL) OR (video_bitrate_bps <= 1000000000))),
+    CONSTRAINT media_desired_target_stream_video_color_known CHECK ((public.media_video_color_value_known_v1('color_primaries'::text, color_primaries) AND public.media_video_color_value_known_v1('color_transfer'::text, color_transfer) AND public.media_video_color_value_known_v1('color_space'::text, color_space))),
+    CONSTRAINT media_desired_target_stream_video_level_known CHECK (public.media_video_level_known_v1(codec, video_level)),
+    CONSTRAINT media_desired_target_stream_video_shape CHECK ((((stream_kind = 'video'::text) AND ((video_bitrate_bps IS NULL) OR (video_bitrate_bps > 0))) OR ((stream_kind <> 'video'::text) AND (video_profile IS NULL) AND (video_level IS NULL) AND (video_bitrate_bps IS NULL) AND (color_primaries IS NULL) AND (color_transfer IS NULL) AND (color_space IS NULL) AND (hdr_format IS NULL)))),
+    CONSTRAINT media_desired_target_stream_video_technical_shape CHECK ((((video_width_px IS NULL) AND (video_height_px IS NULL) AND (video_pixel_format IS NULL) AND (video_average_frame_rate IS NULL)) OR ((stream_kind = 'video'::text) AND (((video_width_px IS NULL) AND (video_height_px IS NULL)) OR ((video_width_px IS NOT NULL) AND (video_height_px IS NOT NULL) AND (video_width_px > 0) AND (video_height_px > 0) AND (video_width_px <= 16384) AND (video_height_px <= 16384) AND (((video_width_px)::bigint * (video_height_px)::bigint) <= 134217728))) AND public.media_video_pixel_format_valid_v1(video_pixel_format) AND public.media_video_frame_rate_valid_v1(video_average_frame_rate))))
+);
+
+
+
+ALTER TABLE public.media_desired_target_stream ALTER COLUMN media_desired_target_stream_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_desired_target_stream_media_desired_target_stream_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_discovery_schedule (
+    media_discovery_schedule_id bigint NOT NULL,
+    media_discovery_schedule_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    media_profile_id bigint NOT NULL,
+    media_profile_root_id bigint NOT NULL,
+    interval_value integer NOT NULL,
+    interval_unit text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    next_run_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_discovery_schedule_enabled_due CHECK (((NOT enabled) OR (next_run_at IS NOT NULL))),
+    CONSTRAINT media_discovery_schedule_interval_bounds CHECK (((interval_value >= 1) AND (interval_value <= 525600))),
+    CONSTRAINT media_discovery_schedule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_discovery_schedule_unit_known CHECK ((interval_unit = ANY (ARRAY['minutes'::text, 'hours'::text, 'days'::text])))
+);
+
+
+
+ALTER TABLE public.media_discovery_schedule ALTER COLUMN media_discovery_schedule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_discovery_schedule_media_discovery_schedule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_discovery_source_fingerprint (
+    media_discovery_source_fingerprint_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    source_path text NOT NULL,
+    source_size_bytes bigint NOT NULL,
+    source_modified_ns bigint NOT NULL,
+    source_sha256 text NOT NULL,
+    last_media_job_public_id uuid,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    source_identity text,
+    source_changed_ns bigint,
+    CONSTRAINT media_discovery_source_identity_valid CHECK ((((source_identity IS NULL) AND (source_changed_ns IS NULL)) OR ((source_identity ~ '^[0-9a-f]{16}:[0-9a-f]{16}$'::text) AND (source_changed_ns >= 0)))),
+    CONSTRAINT media_discovery_source_modified_nonnegative CHECK ((source_modified_ns >= 0)),
+    CONSTRAINT media_discovery_source_path_nonempty CHECK ((btrim(source_path) <> ''::text)),
+    CONSTRAINT media_discovery_source_sha256_valid CHECK ((source_sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT media_discovery_source_size_nonnegative CHECK ((source_size_bytes >= 0))
+);
+
+
+
+ALTER TABLE public.media_discovery_source_fingerprint ALTER COLUMN media_discovery_source_fingerprint_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_discovery_source_finger_media_discovery_source_finger_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_discovery_watcher (
+    media_discovery_watcher_id bigint NOT NULL,
+    media_discovery_watcher_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    media_profile_id bigint NOT NULL,
+    media_profile_root_id bigint NOT NULL,
+    debounce_millis integer NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_discovery_watcher_debounce_bounds CHECK (((debounce_millis >= 100) AND (debounce_millis <= 600000))),
+    CONSTRAINT media_discovery_watcher_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+
+ALTER TABLE public.media_discovery_watcher ALTER COLUMN media_discovery_watcher_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_discovery_watcher_media_discovery_watcher_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_domain (
+    media_domain_id bigint NOT NULL,
+    media_domain_key public.media_domain_key NOT NULL,
+    display_name character varying(256) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE public.media_domain ALTER COLUMN media_domain_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_domain_media_domain_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_domain_to_torznab_category (
+    media_domain_to_torznab_category_id bigint NOT NULL,
+    media_domain_id bigint NOT NULL,
+    torznab_category_id bigint NOT NULL,
+    is_primary boolean DEFAULT false NOT NULL
+);
+
+
+
+ALTER TABLE public.media_domain_to_torznab_category ALTER COLUMN media_domain_to_torznab_category_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_domain_to_torznab_categ_media_domain_to_torznab_categ_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job (
+    media_job_id bigint NOT NULL,
+    media_job_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    media_profile_id bigint NOT NULL,
+    source_path text NOT NULL,
+    output_path text,
+    status public.media_job_status DEFAULT public.media_job_status_queued_v1() NOT NULL,
+    queued_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    last_error text,
+    dry_run boolean DEFAULT true NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    heartbeat_at timestamp with time zone,
+    intent_source_root text NOT NULL,
+    intent_output_root text NOT NULL,
+    intent_compatibility_target_key text,
+    intent_policy_key text NOT NULL,
+    intent_compatibility_target_id bigint,
+    intent_compatibility_target_version integer,
+    intent_target_video_codec text,
+    intent_target_audio_codec text,
+    intent_target_subtitle_policy text,
+    intent_policy_profile_id bigint,
+    intent_policy_version integer,
+    intent_policy_video_intent text,
+    intent_target_audio_channels integer,
+    intent_target_audio_channel_layout text,
+    intent_desired_target_profile_id bigint,
+    intent_desired_target_key text,
+    intent_desired_target_version integer,
+    intent_desired_container_format text,
+    intent_unmatched_stream_policy text,
+    cancel_generation bigint DEFAULT 0 NOT NULL,
+    cancel_acknowledged_generation bigint DEFAULT 0 NOT NULL,
+    intent_verification_strictness text DEFAULT 'balanced'::text NOT NULL,
+    intent_verification_duration_tolerance_millis bigint DEFAULT 1000 NOT NULL,
+    intent_verification_mux_validation boolean DEFAULT true NOT NULL,
+    intent_verification_decode_all_streams boolean DEFAULT true NOT NULL,
+    intent_verification_keyframe_seek boolean DEFAULT true NOT NULL,
+    intent_verification_playback_probe boolean DEFAULT false NOT NULL,
+    intent_desired_container_metadata_policy text,
+    intent_desired_container_chapter_policy text,
+    intent_desired_container_attachment_policy text,
+    intent_unmatched_video_action text DEFAULT 'fail'::text NOT NULL,
+    intent_unmatched_audio_action text DEFAULT 'preserve'::text NOT NULL,
+    intent_unmatched_subtitle_action text DEFAULT 'preserve'::text NOT NULL,
+    intent_unmatched_attachment_action text DEFAULT 'preserve'::text NOT NULL,
+    intent_unmatched_data_action text DEFAULT 'remove'::text NOT NULL,
+    current_attempt_id bigint,
+    diagnostics_pruned_at timestamp with time zone,
+    intent_source_identity text,
+    intent_source_size_bytes bigint,
+    intent_source_modified_ns bigint,
+    intent_source_changed_ns bigint,
+    intent_source_sha256 text,
+    discovery_source_size_bytes bigint,
+    discovery_source_modified_ns bigint,
+    discovery_source_sha256 text,
+    CONSTRAINT media_job_cancel_acknowledged_bounded CHECK ((cancel_acknowledged_generation <= cancel_generation)),
+    CONSTRAINT media_job_cancel_acknowledged_nonnegative CHECK ((cancel_acknowledged_generation >= 0)),
+    CONSTRAINT media_job_cancel_generation_nonnegative CHECK ((cancel_generation >= 0)),
+    CONSTRAINT media_job_compatibility_key_contract CHECK (((intent_compatibility_target_key IS NULL) OR public.media_key_valid_v1(intent_compatibility_target_key))),
+    CONSTRAINT media_job_desired_target_key_contract CHECK (((intent_desired_target_key IS NULL) OR public.media_key_valid_v1(intent_desired_target_key))),
+    CONSTRAINT media_job_diagnostics_pruned_terminal CHECK (((diagnostics_pruned_at IS NULL) OR (status = ANY (ARRAY[public.media_job_status_failed_v1(), public.media_job_status_cancelled_v1()])))),
+    CONSTRAINT media_job_discovery_fingerprint_complete CHECK ((((discovery_source_size_bytes IS NULL) AND (discovery_source_modified_ns IS NULL) AND (discovery_source_sha256 IS NULL)) OR ((discovery_source_size_bytes >= 0) AND (discovery_source_modified_ns >= 0) AND (discovery_source_sha256 ~ '^[0-9a-f]{64}$'::text)))),
+    CONSTRAINT media_job_intent_compatibility_target_nonempty CHECK (((intent_compatibility_target_key IS NULL) OR (btrim(intent_compatibility_target_key) <> ''::text))),
+    CONSTRAINT media_job_intent_desired_target_complete CHECK ((((intent_desired_target_profile_id IS NULL) AND (intent_desired_target_key IS NULL) AND (intent_desired_target_version IS NULL) AND (intent_desired_container_format IS NULL) AND (intent_desired_container_metadata_policy IS NULL) AND (intent_desired_container_chapter_policy IS NULL) AND (intent_desired_container_attachment_policy IS NULL)) OR ((intent_desired_target_profile_id IS NOT NULL) AND (btrim(intent_desired_target_key) <> ''::text) AND (intent_desired_target_version > 0) AND (btrim(intent_desired_container_format) <> ''::text) AND (intent_desired_container_metadata_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text])) AND (intent_desired_container_chapter_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text])) AND (intent_desired_container_attachment_policy = ANY (ARRAY['preserve'::text, 'strip'::text]))))),
+    CONSTRAINT media_job_intent_policy_key_nonempty CHECK ((btrim(intent_policy_key) <> ''::text)),
+    CONSTRAINT media_job_intent_policy_nonempty CHECK (((intent_policy_profile_id IS NULL) OR ((intent_policy_version IS NOT NULL) AND (intent_policy_video_intent = ANY (ARRAY[public.media_policy_general_v1(), public.media_policy_anime_v1(), public.media_policy_archival_v1()]))))),
+    CONSTRAINT media_job_intent_roots_nonempty CHECK (((btrim(intent_source_root) <> ''::text) AND (btrim(intent_output_root) <> ''::text))),
+    CONSTRAINT media_job_intent_target_audio_channels_positive CHECK (((intent_target_audio_channels IS NULL) OR (intent_target_audio_channels > 0))),
+    CONSTRAINT media_job_intent_target_audio_layout_count_matches CHECK (((intent_target_audio_channel_layout IS NULL) OR (intent_target_audio_channels IS NULL) OR (public.media_audio_channel_layout_count_v1(intent_target_audio_channel_layout) = intent_target_audio_channels))),
+    CONSTRAINT media_job_intent_target_audio_layout_known CHECK (((intent_target_audio_channel_layout IS NULL) OR (public.media_audio_channel_layout_count_v1(intent_target_audio_channel_layout) IS NOT NULL))),
+    CONSTRAINT media_job_intent_target_audio_layout_nonempty CHECK (((intent_target_audio_channel_layout IS NULL) OR (NULLIF(btrim(intent_target_audio_channel_layout), ''::text) IS NOT NULL))),
+    CONSTRAINT media_job_intent_target_codecs_nonempty CHECK ((((intent_compatibility_target_id IS NULL) AND (intent_target_video_codec IS NULL) AND (intent_target_audio_codec IS NULL) AND (intent_target_subtitle_policy IS NULL)) OR ((intent_compatibility_target_id IS NOT NULL) AND (intent_compatibility_target_version IS NOT NULL) AND (btrim(intent_target_video_codec) <> ''::text) AND (btrim(intent_target_audio_codec) <> ''::text) AND (intent_target_subtitle_policy = ANY (ARRAY[public.media_subtitle_policy_selected_v1(), public.media_subtitle_policy_all_v1(), public.media_subtitle_policy_none_v1()]))))),
+    CONSTRAINT media_job_intent_unmatched_attachment_action_known CHECK ((intent_unmatched_attachment_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_job_intent_unmatched_audio_action_known CHECK ((intent_unmatched_audio_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_job_intent_unmatched_data_action_known CHECK ((intent_unmatched_data_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_job_intent_unmatched_stream_policy_known CHECK (((intent_unmatched_stream_policy IS NULL) OR (intent_unmatched_stream_policy = ANY (ARRAY['remove'::text, 'preserve'::text, 'reject'::text])))),
+    CONSTRAINT media_job_intent_unmatched_subtitle_action_known CHECK ((intent_unmatched_subtitle_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_job_intent_unmatched_video_action_known CHECK ((intent_unmatched_video_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_job_paths_nonempty CHECK ((btrim(source_path) <> ''::text)),
+    CONSTRAINT media_job_policy_key_contract CHECK (((intent_policy_key IS NULL) OR public.media_key_valid_v1(intent_policy_key))),
+    CONSTRAINT media_job_source_fingerprint_snapshot_valid CHECK ((((intent_source_identity IS NULL) AND (intent_source_size_bytes IS NULL) AND (intent_source_modified_ns IS NULL) AND (intent_source_changed_ns IS NULL) AND (intent_source_sha256 IS NULL)) OR ((intent_source_identity ~ '^[0-9a-f]{16}:[0-9a-f]{16}$'::text) AND (intent_source_size_bytes >= 0) AND (intent_source_modified_ns >= 0) AND (intent_source_changed_ns >= 0) AND (intent_source_sha256 ~ '^[0-9a-f]{64}$'::text)))),
+    CONSTRAINT media_job_verification_duration_tolerance_bounded CHECK (((intent_verification_duration_tolerance_millis >= 0) AND (intent_verification_duration_tolerance_millis <= 60000))),
+    CONSTRAINT media_job_verification_fast_checks CHECK (((intent_verification_strictness <> 'fast'::text) OR ((NOT intent_verification_decode_all_streams) AND (NOT intent_verification_keyframe_seek) AND (NOT intent_verification_playback_probe)))),
+    CONSTRAINT media_job_verification_strict_checks CHECK (((intent_verification_strictness <> 'strict'::text) OR (intent_verification_mux_validation AND intent_verification_decode_all_streams AND intent_verification_keyframe_seek AND intent_verification_playback_probe))),
+    CONSTRAINT media_job_verification_strictness_known CHECK ((intent_verification_strictness = ANY (ARRAY['strict'::text, 'balanced'::text, 'fast'::text])))
+);
+
+
+
+CREATE TABLE public.media_job_artifact (
+    media_job_artifact_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    artifact_index integer NOT NULL,
+    artifact_kind text NOT NULL,
+    artifact_path text NOT NULL,
+    size_bytes bigint,
+    content_type text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_artifact_content_type_bounded CHECK (((content_type IS NULL) OR (char_length(btrim(content_type)) <= 128))),
+    CONSTRAINT media_job_artifact_index_nonnegative CHECK ((artifact_index >= 0)),
+    CONSTRAINT media_job_artifact_kind_bounded CHECK ((char_length(btrim(artifact_kind)) <= 64)),
+    CONSTRAINT media_job_artifact_kind_nonempty CHECK ((btrim(artifact_kind) <> ''::text)),
+    CONSTRAINT media_job_artifact_path_bounded CHECK ((char_length(btrim(artifact_path)) <= 1024)),
+    CONSTRAINT media_job_artifact_path_managed CHECK (public.media_job_artifact_path_is_managed_v1(artifact_path)),
+    CONSTRAINT media_job_artifact_path_nonempty CHECK ((btrim(artifact_path) <> ''::text)),
+    CONSTRAINT media_job_artifact_size_nonnegative CHECK (((size_bytes IS NULL) OR (size_bytes >= 0)))
+);
+
+
+
+ALTER TABLE public.media_job_artifact ALTER COLUMN media_job_artifact_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_artifact_media_job_artifact_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_attempt (
+    media_job_attempt_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    attempt_number integer NOT NULL,
+    claim_generation bigint NOT NULL,
+    status public.media_job_status DEFAULT public.media_job_status_queued_v1() NOT NULL,
+    queued_at timestamp with time zone DEFAULT now() NOT NULL,
+    claimed_at timestamp with time zone,
+    heartbeat_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    last_error text,
+    cancel_generation_at_claim bigint,
+    CONSTRAINT media_job_attempt_lifecycle CHECK ((((status = public.media_job_status_queued_v1()) AND (claimed_at IS NULL) AND (heartbeat_at IS NULL) AND (completed_at IS NULL)) OR ((status = ANY (ARRAY[public.media_job_status_running_v1(), public.media_job_status_verifying_v1()])) AND (claimed_at IS NOT NULL) AND (heartbeat_at IS NOT NULL) AND (completed_at IS NULL)) OR ((status = ANY (ARRAY[public.media_job_status_completed_v1(), public.media_job_status_failed_v1(), public.media_job_status_cancelled_v1()])) AND (claimed_at IS NOT NULL) AND (completed_at IS NOT NULL)))),
+    CONSTRAINT media_job_attempt_number_positive CHECK ((attempt_number > 0))
+);
+
+
+
+ALTER TABLE public.media_job_attempt ALTER COLUMN claim_generation ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_attempt_claim_generation_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.media_job_attempt ALTER COLUMN media_job_attempt_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_attempt_media_job_attempt_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_compact_audit (
+    media_job_compact_audit_id bigint NOT NULL,
+    media_job_id bigint,
+    audit_index integer NOT NULL,
+    fact_kind text NOT NULL,
+    fact_text text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_public_id uuid NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_compact_audit_index_nonnegative CHECK ((audit_index >= 0)),
+    CONSTRAINT media_job_compact_audit_kind_bounded CHECK ((char_length(btrim(fact_kind)) <= 64)),
+    CONSTRAINT media_job_compact_audit_kind_nonempty CHECK ((btrim(fact_kind) <> ''::text)),
+    CONSTRAINT media_job_compact_audit_text_bounded CHECK ((char_length(btrim(fact_text)) <= 1024)),
+    CONSTRAINT media_job_compact_audit_text_nonempty CHECK ((btrim(fact_text) <> ''::text))
+);
+
+
+
+CREATE TABLE public.media_job_compact_audit_archive (
+    media_job_public_id uuid NOT NULL,
+    attempt_number integer NOT NULL,
+    audit_index integer NOT NULL,
+    fact_kind text NOT NULL,
+    fact_text text NOT NULL,
+    created_at timestamp with time zone NOT NULL,
+    archived_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE public.media_job_compact_audit ALTER COLUMN media_job_compact_audit_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_compact_audit_media_job_compact_audit_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_configuration_snapshot (
+    media_job_id bigint NOT NULL,
+    profile_configuration_version bigint NOT NULL,
+    media_policy_profile_id bigint,
+    policy_version integer,
+    media_desired_target_profile_id bigint,
+    desired_target_version integer,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_job_configuration_snapshot_profile_version_positive CHECK ((profile_configuration_version > 0))
+);
+
+
+
+CREATE TABLE public.media_job_desired_target_chapter_metadata (
+    media_job_desired_target_chapter_metadata_id bigint NOT NULL,
+    media_job_desired_target_chapter_id bigint NOT NULL,
+    metadata_key text NOT NULL,
+    metadata_value text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_job_desired_target_chapter_metadata_key_valid CHECK (((btrim(metadata_key) <> ''::text) AND (metadata_key = lower(btrim(metadata_key))) AND (octet_length(metadata_key) <= 128))),
+    CONSTRAINT media_job_desired_target_chapter_metadata_value_valid CHECK (((btrim(metadata_value) <> ''::text) AND (octet_length(metadata_value) <= 4096)))
+);
+
+
+
+CREATE SEQUENCE public.media_job_desired_target_chap_media_job_desired_target_cha_seq1
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+
+ALTER SEQUENCE public.media_job_desired_target_chap_media_job_desired_target_cha_seq1 OWNED BY public.media_job_desired_target_chapter_metadata.media_job_desired_target_chapter_metadata_id;
+
+
+
+CREATE TABLE public.media_job_desired_target_chapter (
+    media_job_desired_target_chapter_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    start_millis bigint NOT NULL,
+    end_millis bigint NOT NULL,
+    sort_order integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_job_desired_target_chapter_range_valid CHECK (((start_millis >= 0) AND (end_millis > start_millis)))
+);
+
+
+
+CREATE SEQUENCE public.media_job_desired_target_chap_media_job_desired_target_chap_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+
+ALTER SEQUENCE public.media_job_desired_target_chap_media_job_desired_target_chap_seq OWNED BY public.media_job_desired_target_chapter.media_job_desired_target_chapter_id;
+
+
+
+CREATE TABLE public.media_job_desired_target_metadata (
+    media_job_desired_target_metadata_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    metadata_key text NOT NULL,
+    metadata_value text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_job_desired_target_metadata_key_valid CHECK (((btrim(metadata_key) <> ''::text) AND (metadata_key = lower(btrim(metadata_key))) AND (octet_length(metadata_key) <= 128))),
+    CONSTRAINT media_job_desired_target_metadata_value_valid CHECK (((btrim(metadata_value) <> ''::text) AND (octet_length(metadata_value) <= 4096)))
+);
+
+
+
+CREATE SEQUENCE public.media_job_desired_target_meta_media_job_desired_target_meta_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+
+ALTER SEQUENCE public.media_job_desired_target_meta_media_job_desired_target_meta_seq OWNED BY public.media_job_desired_target_metadata.media_job_desired_target_metadata_id;
+
+
+
+CREATE TABLE public.media_job_desired_target_stream (
+    media_job_desired_target_stream_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    stream_key text NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text,
+    language_code text,
+    optional boolean NOT NULL,
+    sort_order integer NOT NULL,
+    codec text NOT NULL,
+    channel_count integer,
+    channel_layout text,
+    title text,
+    default_disposition boolean NOT NULL,
+    forced_disposition boolean NOT NULL,
+    subtitle_placement text,
+    image_subtitle_action text,
+    video_profile text,
+    video_level text,
+    video_bitrate_bps integer,
+    color_primaries text,
+    color_transfer text,
+    color_space text,
+    hdr_format text,
+    audio_bitrate_bps integer,
+    audio_sample_rate_hz integer,
+    audio_loudness_profile text,
+    audio_dynamic_range text,
+    hdr10_mastering_red_x text,
+    hdr10_mastering_red_y text,
+    hdr10_mastering_green_x text,
+    hdr10_mastering_green_y text,
+    hdr10_mastering_blue_x text,
+    hdr10_mastering_blue_y text,
+    hdr10_mastering_white_point_x text,
+    hdr10_mastering_white_point_y text,
+    hdr10_mastering_min_luminance text,
+    hdr10_mastering_max_luminance text,
+    hdr10_max_content_light_level text,
+    hdr10_max_frame_average_light_level text,
+    video_width_px integer,
+    video_height_px integer,
+    video_pixel_format text,
+    video_average_frame_rate text,
+    video_bit_depth integer,
+    color_range text,
+    CONSTRAINT media_job_desired_target_stream_audio_constraints CHECK ((((stream_kind = 'audio'::text) AND ((audio_bitrate_bps IS NULL) OR (audio_bitrate_bps > 0)) AND ((audio_sample_rate_hz IS NULL) OR (audio_sample_rate_hz > 0)) AND ((audio_loudness_profile IS NULL) OR (audio_loudness_profile = 'dialog-normalized'::text)) AND ((audio_dynamic_range IS NULL) OR (audio_dynamic_range = ANY (ARRAY['preserve'::text, 'speech'::text])))) OR ((stream_kind <> 'audio'::text) AND (audio_bitrate_bps IS NULL) AND (audio_sample_rate_hz IS NULL) AND (audio_loudness_profile IS NULL) AND (audio_dynamic_range IS NULL)))),
+    CONSTRAINT media_job_desired_target_stream_audio_layout_count_matches CHECK (((channel_layout IS NULL) OR (channel_count IS NULL) OR (public.media_audio_channel_layout_count_v1(channel_layout) = channel_count))),
+    CONSTRAINT media_job_desired_target_stream_audio_layout_known CHECK (((channel_layout IS NULL) OR (public.media_audio_channel_layout_count_v1(channel_layout) IS NOT NULL))),
+    CONSTRAINT media_job_desired_target_stream_audio_shape CHECK (((stream_kind = 'audio'::text) OR ((channel_count IS NULL) AND (channel_layout IS NULL)))),
+    CONSTRAINT media_job_desired_target_stream_codec_nonempty CHECK ((btrim(codec) <> ''::text)),
+    CONSTRAINT media_job_desired_target_stream_hdr10_color_volume_shape CHECK ((((stream_kind = 'video'::text) AND ((video_bitrate_bps IS NULL) OR (video_bitrate_bps > 0)) AND ((public.media_hdr10_color_volume_field_count_v1(hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level) = 0) OR COALESCE(((hdr_format = 'hdr10'::text) AND public.media_hdr10_color_volume_valid_v1(hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level)), false))) OR ((stream_kind <> 'video'::text) AND (video_profile IS NULL) AND (video_level IS NULL) AND (video_bitrate_bps IS NULL) AND (color_primaries IS NULL) AND (color_transfer IS NULL) AND (color_space IS NULL) AND (hdr_format IS NULL) AND (hdr10_mastering_red_x IS NULL) AND (hdr10_mastering_red_y IS NULL) AND (hdr10_mastering_green_x IS NULL) AND (hdr10_mastering_green_y IS NULL) AND (hdr10_mastering_blue_x IS NULL) AND (hdr10_mastering_blue_y IS NULL) AND (hdr10_mastering_white_point_x IS NULL) AND (hdr10_mastering_white_point_y IS NULL) AND (hdr10_mastering_min_luminance IS NULL) AND (hdr10_mastering_max_luminance IS NULL) AND (hdr10_max_content_light_level IS NULL) AND (hdr10_max_frame_average_light_level IS NULL)))),
+    CONSTRAINT media_job_desired_target_stream_hdr_format_known CHECK (((hdr_format IS NULL) OR (hdr_format = 'hdr10'::text))),
+    CONSTRAINT media_job_desired_target_stream_key_contract CHECK (public.media_key_valid_v1(stream_key)),
+    CONSTRAINT media_job_desired_target_stream_key_nonempty CHECK ((btrim(stream_key) <> ''::text)),
+    CONSTRAINT media_job_desired_target_stream_kind_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text, 'attachment'::text, 'data'::text]))),
+    CONSTRAINT media_job_desired_target_stream_retained_color_volume_passthrou CHECK (((stream_kind <> ALL (ARRAY['attachment'::text, 'data'::text])) OR ((channel_count IS NULL) AND (channel_layout IS NULL) AND (audio_bitrate_bps IS NULL) AND (audio_sample_rate_hz IS NULL) AND (audio_loudness_profile IS NULL) AND (audio_dynamic_range IS NULL) AND (video_profile IS NULL) AND (video_level IS NULL) AND (video_bitrate_bps IS NULL) AND (color_primaries IS NULL) AND (color_transfer IS NULL) AND (color_space IS NULL) AND (hdr_format IS NULL) AND (hdr10_mastering_red_x IS NULL) AND (hdr10_mastering_red_y IS NULL) AND (hdr10_mastering_green_x IS NULL) AND (hdr10_mastering_green_y IS NULL) AND (hdr10_mastering_blue_x IS NULL) AND (hdr10_mastering_blue_y IS NULL) AND (hdr10_mastering_white_point_x IS NULL) AND (hdr10_mastering_white_point_y IS NULL) AND (hdr10_mastering_min_luminance IS NULL) AND (hdr10_mastering_max_luminance IS NULL) AND (hdr10_max_content_light_level IS NULL) AND (hdr10_max_frame_average_light_level IS NULL) AND (title IS NULL) AND (NOT default_disposition) AND (NOT forced_disposition) AND (subtitle_placement IS NULL) AND (image_subtitle_action IS NULL)))),
+    CONSTRAINT media_job_desired_target_stream_role_known CHECK (((semantic_role IS NULL) OR (semantic_role = ANY (ARRAY['primary'::text, 'forced'::text, 'commentary'::text, 'descriptive_audio'::text, 'sdh'::text, 'signs_songs'::text, 'karaoke'::text, 'unknown'::text])))),
+    CONSTRAINT media_job_desired_target_stream_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_job_desired_target_stream_subtitle_shape CHECK ((((stream_kind = 'subtitle'::text) AND (subtitle_placement = ANY (ARRAY['embedded'::text, 'sidecar'::text, 'both'::text, 'none'::text])) AND (image_subtitle_action = ANY (ARRAY['preserve'::text, 'remove'::text, 'fail'::text]))) OR ((stream_kind <> 'subtitle'::text) AND (subtitle_placement IS NULL) AND (image_subtitle_action IS NULL)))),
+    CONSTRAINT media_job_desired_target_stream_title_contract CHECK (((title IS NULL) OR public.media_display_valid_v1(title))),
+    CONSTRAINT media_job_desired_target_stream_video_bit_depth_color_range_sha CHECK ((((video_bit_depth IS NULL) AND (color_range IS NULL)) OR ((stream_kind = 'video'::text) AND public.media_video_bit_depth_supported_v1(video_bit_depth) AND ((video_bit_depth IS NULL) OR COALESCE((public.media_video_pixel_format_bit_depth_v1(video_pixel_format) = video_bit_depth), false)) AND public.media_video_color_range_known_v1(color_range)))),
+    CONSTRAINT media_job_desired_target_stream_video_bitrate_bound CHECK (((video_bitrate_bps IS NULL) OR (video_bitrate_bps <= 1000000000))),
+    CONSTRAINT media_job_desired_target_stream_video_color_known CHECK ((public.media_video_color_value_known_v1('color_primaries'::text, color_primaries) AND public.media_video_color_value_known_v1('color_transfer'::text, color_transfer) AND public.media_video_color_value_known_v1('color_space'::text, color_space))),
+    CONSTRAINT media_job_desired_target_stream_video_level_known CHECK (public.media_video_level_known_v1(codec, video_level)),
+    CONSTRAINT media_job_desired_target_stream_video_shape CHECK ((((stream_kind = 'video'::text) AND ((video_bitrate_bps IS NULL) OR (video_bitrate_bps > 0))) OR ((stream_kind <> 'video'::text) AND (video_profile IS NULL) AND (video_level IS NULL) AND (video_bitrate_bps IS NULL) AND (color_primaries IS NULL) AND (color_transfer IS NULL) AND (color_space IS NULL) AND (hdr_format IS NULL)))),
+    CONSTRAINT media_job_desired_target_stream_video_technical_shape CHECK ((((video_width_px IS NULL) AND (video_height_px IS NULL) AND (video_pixel_format IS NULL) AND (video_average_frame_rate IS NULL)) OR ((stream_kind = 'video'::text) AND (((video_width_px IS NULL) AND (video_height_px IS NULL)) OR ((video_width_px IS NOT NULL) AND (video_height_px IS NOT NULL) AND (video_width_px > 0) AND (video_height_px > 0) AND (video_width_px <= 16384) AND (video_height_px <= 16384) AND (((video_width_px)::bigint * (video_height_px)::bigint) <= 134217728))) AND public.media_video_pixel_format_valid_v1(video_pixel_format) AND public.media_video_frame_rate_valid_v1(video_average_frame_rate))))
+);
+
+
+
+ALTER TABLE public.media_job_desired_target_stream ALTER COLUMN media_job_desired_target_stream_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_desired_target_stre_media_job_desired_target_stre_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_file_rule_snapshot (
+    media_job_id bigint NOT NULL,
+    rule_kind text NOT NULL,
+    matcher_kind text NOT NULL,
+    matcher_value text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+
+CREATE TABLE public.media_job_filter_snapshot (
+    media_job_id bigint NOT NULL,
+    min_size_bytes bigint,
+    max_size_bytes bigint,
+    min_duration_millis bigint,
+    max_duration_millis bigint,
+    include_samples boolean NOT NULL,
+    include_trailers boolean NOT NULL,
+    exclude_trash boolean NOT NULL,
+    exclude_quarantine boolean NOT NULL
+);
+
+
+
+ALTER TABLE public.media_job ALTER COLUMN media_job_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_media_job_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_operation (
+    media_job_operation_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    operation_index integer NOT NULL,
+    operation_kind text NOT NULL,
+    stream_id integer,
+    command_bin text NOT NULL,
+    arg_1 text,
+    arg_2 text,
+    arg_3 text,
+    arg_4 text,
+    arg_5 text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_operation_bin_nonempty CHECK ((btrim(command_bin) <> ''::text)),
+    CONSTRAINT media_job_operation_index_nonnegative CHECK ((operation_index >= 0)),
+    CONSTRAINT media_job_operation_kind_nonempty CHECK ((btrim(operation_kind) <> ''::text))
+);
+
+
+
+ALTER TABLE public.media_job_operation ALTER COLUMN media_job_operation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_operation_media_job_operation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_phase (
+    media_job_phase_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    phase_index integer NOT NULL,
+    phase_name text NOT NULL,
+    phase_status public.media_job_status NOT NULL,
+    details_text text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_phase_index_nonnegative CHECK ((phase_index >= 0)),
+    CONSTRAINT media_job_phase_name_nonempty CHECK ((btrim(phase_name) <> ''::text))
+);
+
+
+
+ALTER TABLE public.media_job_phase ALTER COLUMN media_job_phase_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_phase_media_job_phase_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_plan_reason (
+    media_job_plan_reason_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    reason_index integer NOT NULL,
+    candidate_index integer,
+    selected boolean DEFAULT false NOT NULL,
+    reason_code text NOT NULL,
+    reason_text text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_plan_reason_candidate_nonnegative CHECK (((candidate_index IS NULL) OR (candidate_index >= 0))),
+    CONSTRAINT media_job_plan_reason_code_nonempty CHECK ((btrim(reason_code) <> ''::text)),
+    CONSTRAINT media_job_plan_reason_index_nonnegative CHECK ((reason_index >= 0)),
+    CONSTRAINT media_job_plan_reason_text_nonempty CHECK ((btrim(reason_text) <> ''::text))
+);
+
+
+
+ALTER TABLE public.media_job_plan_reason ALTER COLUMN media_job_plan_reason_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_plan_reason_media_job_plan_reason_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_policy_behavior_snapshot (
+    media_job_id bigint NOT NULL,
+    unmatched_video_action text,
+    unmatched_audio_action text,
+    unmatched_subtitle_action text,
+    unmatched_attachment_action text,
+    unmatched_data_action text,
+    unsupported_format_action text,
+    require_all_compatibility_targets boolean,
+    max_concurrency integer,
+    max_retries integer,
+    max_runtime_seconds integer,
+    max_io_megabytes_per_second integer,
+    min_free_space_bytes bigint,
+    pause_on_battery boolean,
+    minimum_battery_percent integer,
+    thermal_pressure_limit text,
+    pause_when_thermal_exceeded boolean,
+    dry_run boolean,
+    replacement_mode text,
+    quarantine_enabled boolean,
+    preserve_permissions boolean,
+    preserve_ownership boolean,
+    workspace_retention_hours integer,
+    diagnostics_enabled boolean,
+    stale_cleanup_hours integer,
+    max_workspace_bytes bigint,
+    backup_enabled boolean,
+    backup_retention_days integer,
+    backup_min_free_space_bytes bigint,
+    verification_strictness text,
+    verification_duration_tolerance_millis bigint,
+    verification_mux_validation boolean,
+    verification_decode_all_streams boolean,
+    verification_keyframe_seek boolean,
+    verification_playback_probe boolean
+);
+
+
+
+CREATE TABLE public.media_job_policy_compatibility_target_snapshot (
+    media_job_id bigint NOT NULL,
+    compatibility_target_key text NOT NULL,
+    compatibility_target_version integer NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+
+CREATE TABLE public.media_job_policy_maintenance_window_snapshot (
+    media_job_id bigint NOT NULL,
+    day_of_week smallint NOT NULL,
+    start_time time without time zone NOT NULL,
+    end_time time without time zone NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+
+CREATE TABLE public.media_job_policy_operation_cost_snapshot (
+    media_job_id bigint NOT NULL,
+    operation_kind text NOT NULL,
+    cost_weight integer NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+
+CREATE TABLE public.media_job_policy_retention_rule_snapshot (
+    media_job_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text,
+    language_code text,
+    codec_or_format text,
+    action text NOT NULL,
+    placement text,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+
+CREATE TABLE public.media_job_retention_policy (
+    media_job_retention_policy_id bigint NOT NULL,
+    policy_key text NOT NULL,
+    completed_retention_days integer NOT NULL,
+    failed_diagnostic_retention_days integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_enabled boolean DEFAULT false NOT NULL,
+    completed_mode text DEFAULT public.media_retention_mode_age_v1() NOT NULL,
+    completed_limit integer DEFAULT 30 NOT NULL,
+    failed_diagnostic_enabled boolean DEFAULT true NOT NULL,
+    failed_diagnostic_mode text DEFAULT public.media_retention_mode_age_v1() NOT NULL,
+    failed_diagnostic_limit integer DEFAULT 30 NOT NULL,
+    workspace_retention_hours integer DEFAULT 24 NOT NULL,
+    diagnostic_workspace_retention_hours integer DEFAULT 720 NOT NULL,
+    workspace_cleanup_batch_size integer DEFAULT 128 NOT NULL,
+    CONSTRAINT media_job_retention_policy_completed_bounds CHECK (((completed_retention_days >= 1) AND (completed_retention_days <= 3650))),
+    CONSTRAINT media_job_retention_policy_completed_limit_bounds CHECK (((completed_limit >= 1) AND (completed_limit <= 3650))),
+    CONSTRAINT media_job_retention_policy_completed_mode_known CHECK ((completed_mode = ANY (ARRAY[public.media_retention_mode_age_v1(), public.media_retention_mode_count_v1()]))),
+    CONSTRAINT media_job_retention_policy_diagnostic_workspace_hours_bounds CHECK (((diagnostic_workspace_retention_hours >= 1) AND (diagnostic_workspace_retention_hours <= 87600))),
+    CONSTRAINT media_job_retention_policy_failed_bounds CHECK (((failed_diagnostic_retention_days >= 1) AND (failed_diagnostic_retention_days <= 3650))),
+    CONSTRAINT media_job_retention_policy_failed_limit_bounds CHECK (((failed_diagnostic_limit >= 1) AND (failed_diagnostic_limit <= 3650))),
+    CONSTRAINT media_job_retention_policy_failed_mode_known CHECK ((failed_diagnostic_mode = ANY (ARRAY[public.media_retention_mode_age_v1(), public.media_retention_mode_count_v1()]))),
+    CONSTRAINT media_job_retention_policy_key_contract CHECK (public.media_key_valid_v1(policy_key)),
+    CONSTRAINT media_job_retention_policy_key_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_job_retention_policy_workspace_batch_bounds CHECK (((workspace_cleanup_batch_size >= 1) AND (workspace_cleanup_batch_size <= 4096))),
+    CONSTRAINT media_job_retention_policy_workspace_hours_bounds CHECK (((workspace_retention_hours >= 1) AND (workspace_retention_hours <= 87600)))
+);
+
+
+
+ALTER TABLE public.media_job_retention_policy ALTER COLUMN media_job_retention_policy_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_retention_policy_media_job_retention_policy_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_root_snapshot (
+    media_job_id bigint NOT NULL,
+    root_kind text NOT NULL,
+    requested_path text NOT NULL,
+    canonical_path text NOT NULL,
+    filesystem_device bigint,
+    filesystem_inode bigint,
+    media_type text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+
+CREATE TABLE public.media_job_stream_classification_rule_snapshot (
+    media_job_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text NOT NULL,
+    match_kind text NOT NULL,
+    match_pattern text NOT NULL,
+    confidence smallint NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+
+CREATE TABLE public.media_job_subtitle_discovery_rule_snapshot (
+    media_job_id bigint NOT NULL,
+    discovery_pattern text NOT NULL,
+    precedence integer NOT NULL,
+    enabled boolean NOT NULL
+);
+
+
+
+CREATE TABLE public.media_job_terminal_outbox (
+    media_job_terminal_outbox_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    event_kind text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_at timestamp with time zone,
+    CONSTRAINT media_job_terminal_outbox_event_valid CHECK ((event_kind = 'completed'::text))
+);
+
+
+
+ALTER TABLE public.media_job_terminal_outbox ALTER COLUMN media_job_terminal_outbox_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_terminal_outbox_media_job_terminal_outbox_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_verification_check (
+    media_job_verification_check_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    check_index integer NOT NULL,
+    check_kind text NOT NULL,
+    check_status text NOT NULL,
+    expected_value text,
+    actual_value text,
+    details_text text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_verification_check_index_nonnegative CHECK ((check_index >= 0)),
+    CONSTRAINT media_job_verification_check_kind_nonempty CHECK ((btrim(check_kind) <> ''::text)),
+    CONSTRAINT media_job_verification_check_status_valid CHECK ((check_status = ANY (ARRAY['passed'::text, 'failed'::text, 'skipped'::text])))
+);
+
+
+
+ALTER TABLE public.media_job_verification_check ALTER COLUMN media_job_verification_check_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_verification_check_media_job_verification_check_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_job_violation (
+    media_job_violation_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    violation_index integer NOT NULL,
+    violation_kind text NOT NULL,
+    severity text NOT NULL,
+    stream_id integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_violation_index_nonnegative CHECK ((violation_index >= 0)),
+    CONSTRAINT media_job_violation_kind_nonempty CHECK ((btrim(violation_kind) <> ''::text)),
+    CONSTRAINT media_job_violation_severity_valid CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
+);
+
+
+
+ALTER TABLE public.media_job_violation ALTER COLUMN media_job_violation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_violation_media_job_violation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_policy_backup (
+    media_policy_profile_id bigint NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    retention_days integer,
+    min_free_space_bytes bigint,
+    CONSTRAINT media_policy_backup_complete CHECK (((NOT enabled) OR ((retention_days IS NOT NULL) AND (min_free_space_bytes IS NOT NULL)))),
+    CONSTRAINT media_policy_backup_retention_bounds CHECK (((retention_days IS NULL) OR ((retention_days >= 1) AND (retention_days <= 3650)))),
+    CONSTRAINT media_policy_backup_space_bounds CHECK (((min_free_space_bytes IS NULL) OR ((min_free_space_bytes >= 0) AND (min_free_space_bytes <= '1152921504606846976'::bigint))))
+);
+
+
+
+CREATE TABLE public.media_policy_compatibility_rule (
+    media_policy_profile_id bigint NOT NULL,
+    unsupported_format_action text NOT NULL,
+    require_all_targets boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_compatibility_rule_action_known CHECK ((unsupported_format_action = ANY (ARRAY['transcode'::text, 'drop'::text, 'fail'::text])))
+);
+
+
+
+CREATE TABLE public.media_policy_compatibility_target (
+    media_policy_profile_id bigint NOT NULL,
+    media_compatibility_target_id bigint NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_compatibility_target_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+
+CREATE TABLE public.media_policy_maintenance_window (
+    media_policy_profile_id bigint NOT NULL,
+    day_of_week smallint NOT NULL,
+    start_time time without time zone NOT NULL,
+    end_time time without time zone NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_maintenance_window_day_bounds CHECK (((day_of_week >= 0) AND (day_of_week <= 6))),
+    CONSTRAINT media_policy_maintenance_window_not_empty CHECK ((start_time <> end_time)),
+    CONSTRAINT media_policy_maintenance_window_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+
+CREATE TABLE public.media_policy_operation_cost (
+    media_policy_profile_id bigint NOT NULL,
+    operation_kind text NOT NULL,
+    cost_weight integer NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_operation_cost_kind_nonempty CHECK ((btrim(operation_kind) <> ''::text)),
+    CONSTRAINT media_policy_operation_cost_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_policy_operation_cost_weight_bounds CHECK (((cost_weight >= 0) AND (cost_weight <= 1000000)))
+);
+
+
+
+CREATE TABLE public.media_policy_output (
+    media_policy_profile_id bigint NOT NULL,
+    dry_run boolean DEFAULT true NOT NULL,
+    replacement_mode text NOT NULL,
+    quarantine_enabled boolean DEFAULT true NOT NULL,
+    preserve_permissions boolean DEFAULT true NOT NULL,
+    preserve_ownership boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_output_replacement_known CHECK ((replacement_mode = ANY (ARRAY['disabled'::text, 'atomic_replace'::text, 'side_by_side'::text])))
+);
+
+
+
+CREATE TABLE public.media_policy_profile (
+    media_policy_profile_id bigint NOT NULL,
+    policy_key text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    display_name text NOT NULL,
+    video_intent text DEFAULT public.media_policy_general_v1() NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    unmatched_stream_policy text DEFAULT 'remove'::text NOT NULL,
+    verification_strictness text DEFAULT 'balanced'::text NOT NULL,
+    verification_duration_tolerance_millis bigint DEFAULT 1000 NOT NULL,
+    verification_mux_validation boolean DEFAULT true NOT NULL,
+    verification_decode_all_streams boolean DEFAULT true NOT NULL,
+    verification_keyframe_seek boolean DEFAULT true NOT NULL,
+    verification_playback_probe boolean DEFAULT false NOT NULL,
+    unmatched_video_action text DEFAULT 'fail'::text NOT NULL,
+    unmatched_audio_action text DEFAULT 'preserve'::text NOT NULL,
+    unmatched_subtitle_action text DEFAULT 'preserve'::text NOT NULL,
+    unmatched_attachment_action text DEFAULT 'preserve'::text NOT NULL,
+    unmatched_data_action text DEFAULT 'remove'::text NOT NULL,
+    CONSTRAINT media_policy_profile_display_contract CHECK (public.media_display_valid_v1(display_name)),
+    CONSTRAINT media_policy_profile_display_nonempty CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT media_policy_profile_intent_known CHECK ((video_intent = ANY (ARRAY[public.media_policy_general_v1(), public.media_policy_anime_v1(), public.media_policy_archival_v1()]))),
+    CONSTRAINT media_policy_profile_key_contract CHECK (public.media_key_valid_v1(policy_key)),
+    CONSTRAINT media_policy_profile_key_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_policy_profile_unmatched_attachment_action_known CHECK ((unmatched_attachment_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_policy_profile_unmatched_audio_action_known CHECK ((unmatched_audio_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_policy_profile_unmatched_data_action_known CHECK ((unmatched_data_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_policy_profile_unmatched_stream_policy_known CHECK ((unmatched_stream_policy = ANY (ARRAY['remove'::text, 'preserve'::text, 'reject'::text]))),
+    CONSTRAINT media_policy_profile_unmatched_subtitle_action_known CHECK ((unmatched_subtitle_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_policy_profile_unmatched_video_action_known CHECK ((unmatched_video_action = ANY (ARRAY['remove'::text, 'preserve'::text, 'fail'::text]))),
+    CONSTRAINT media_policy_profile_version_positive CHECK ((version > 0)),
+    CONSTRAINT media_policy_verification_duration_tolerance_bounded CHECK (((verification_duration_tolerance_millis >= 0) AND (verification_duration_tolerance_millis <= 60000))),
+    CONSTRAINT media_policy_verification_fast_checks CHECK (((verification_strictness <> 'fast'::text) OR ((NOT verification_decode_all_streams) AND (NOT verification_keyframe_seek) AND (NOT verification_playback_probe)))),
+    CONSTRAINT media_policy_verification_strict_checks CHECK (((verification_strictness <> 'strict'::text) OR (verification_mux_validation AND verification_decode_all_streams AND verification_keyframe_seek AND verification_playback_probe))),
+    CONSTRAINT media_policy_verification_strictness_known CHECK ((verification_strictness = ANY (ARRAY['strict'::text, 'balanced'::text, 'fast'::text])))
+);
+
+
+
+ALTER TABLE public.media_policy_profile ALTER COLUMN media_policy_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_policy_profile_media_policy_profile_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_policy_retention_rule (
+    media_policy_retention_rule_id bigint NOT NULL,
+    media_policy_profile_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text,
+    language_code text,
+    codec_or_format text,
+    action text NOT NULL,
+    placement text,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_retention_rule_action_known CHECK ((action = ANY (ARRAY['retain'::text, 'drop'::text, 'convert'::text, 'extract'::text]))),
+    CONSTRAINT media_policy_retention_rule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_policy_retention_rule_stream_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text, 'attachment'::text, 'data'::text])))
+);
+
+
+
+ALTER TABLE public.media_policy_retention_rule ALTER COLUMN media_policy_retention_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_policy_retention_rule_media_policy_retention_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_policy_runtime_limit (
+    media_policy_profile_id bigint NOT NULL,
+    max_concurrency integer NOT NULL,
+    max_retries integer NOT NULL,
+    max_runtime_seconds integer NOT NULL,
+    max_io_megabytes_per_second integer NOT NULL,
+    min_free_space_bytes bigint NOT NULL,
+    pause_on_battery boolean DEFAULT true NOT NULL,
+    minimum_battery_percent integer,
+    thermal_pressure_limit text DEFAULT 'serious'::text NOT NULL,
+    pause_when_thermal_exceeded boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_runtime_limit_battery_bounds CHECK (((minimum_battery_percent IS NULL) OR ((minimum_battery_percent >= 1) AND (minimum_battery_percent <= 100)))),
+    CONSTRAINT media_policy_runtime_limit_battery_complete CHECK ((pause_on_battery OR (minimum_battery_percent IS NULL))),
+    CONSTRAINT media_policy_runtime_limit_concurrency_bounds CHECK (((max_concurrency >= 1) AND (max_concurrency <= 256))),
+    CONSTRAINT media_policy_runtime_limit_io_bounds CHECK (((max_io_megabytes_per_second >= 1) AND (max_io_megabytes_per_second <= 1048576))),
+    CONSTRAINT media_policy_runtime_limit_retry_bounds CHECK (((max_retries >= 0) AND (max_retries <= 100))),
+    CONSTRAINT media_policy_runtime_limit_runtime_bounds CHECK (((max_runtime_seconds >= 1) AND (max_runtime_seconds <= 604800))),
+    CONSTRAINT media_policy_runtime_limit_space_bounds CHECK (((min_free_space_bytes >= 0) AND (min_free_space_bytes <= '1152921504606846976'::bigint))),
+    CONSTRAINT media_policy_runtime_limit_thermal_known CHECK ((thermal_pressure_limit = ANY (ARRAY['nominal'::text, 'fair'::text, 'serious'::text, 'critical'::text])))
+);
+
+
+
+CREATE TABLE public.media_policy_unmatched_stream_behavior (
+    media_policy_profile_id bigint NOT NULL,
+    video_action text NOT NULL,
+    audio_action text NOT NULL,
+    subtitle_action text NOT NULL,
+    attachment_action text NOT NULL,
+    data_action text NOT NULL,
+    CONSTRAINT media_policy_unmatched_stream_actions_known CHECK (((video_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (audio_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (subtitle_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (attachment_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (data_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text]))))
+);
+
+
+
+CREATE TABLE public.media_policy_verification (
+    media_policy_profile_id bigint NOT NULL,
+    strictness text NOT NULL,
+    duration_tolerance_millis bigint NOT NULL,
+    mux_validation boolean NOT NULL,
+    decode_all_streams boolean NOT NULL,
+    keyframe_seek boolean NOT NULL,
+    playback_probe boolean NOT NULL,
+    CONSTRAINT media_policy_verification_duration_bounds CHECK (((duration_tolerance_millis >= 0) AND (duration_tolerance_millis <= 60000))),
+    CONSTRAINT media_policy_verification_strict_complete CHECK (((strictness <> 'strict'::text) OR (mux_validation AND decode_all_streams AND keyframe_seek AND playback_probe))),
+    CONSTRAINT media_policy_verification_strictness_known CHECK ((strictness = ANY (ARRAY['strict'::text, 'balanced'::text, 'fast'::text])))
+);
+
+
+
+CREATE TABLE public.media_policy_workspace (
+    media_policy_profile_id bigint NOT NULL,
+    retention_hours integer NOT NULL,
+    diagnostics_enabled boolean DEFAULT true NOT NULL,
+    stale_cleanup_hours integer NOT NULL,
+    max_workspace_bytes bigint NOT NULL,
+    CONSTRAINT media_policy_workspace_cleanup_bounds CHECK (((stale_cleanup_hours >= 1) AND (stale_cleanup_hours <= 87600))),
+    CONSTRAINT media_policy_workspace_retention_bounds CHECK (((retention_hours >= 1) AND (retention_hours <= 87600))),
+    CONSTRAINT media_policy_workspace_size_bounds CHECK (((max_workspace_bytes >= 1) AND (max_workspace_bytes <= '1152921504606846976'::bigint)))
+);
+
+
+
+CREATE TABLE public.media_profile (
+    media_profile_id bigint NOT NULL,
+    media_profile_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_key text NOT NULL,
+    source_root text NOT NULL,
+    output_root text NOT NULL,
+    dry_run_only boolean DEFAULT true NOT NULL,
+    retention_days integer DEFAULT 30 NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    compatibility_target_key text,
+    policy_key text DEFAULT 'safe_dry_run'::text NOT NULL,
+    watcher_enabled boolean DEFAULT false NOT NULL,
+    schedule_enabled boolean DEFAULT false NOT NULL,
+    schedule_interval_minutes integer,
+    desired_target_profile_id bigint,
+    configuration_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT media_profile_compatibility_key_contract CHECK (((compatibility_target_key IS NULL) OR public.media_key_valid_v1(compatibility_target_key))),
+    CONSTRAINT media_profile_compatibility_target_nonempty CHECK (((compatibility_target_key IS NULL) OR (btrim(compatibility_target_key) <> ''::text))),
+    CONSTRAINT media_profile_configuration_version_positive CHECK ((configuration_version > 0)),
+    CONSTRAINT media_profile_key_contract CHECK (public.media_key_valid_v1(profile_key)),
+    CONSTRAINT media_profile_key_nonempty CHECK ((btrim(profile_key) <> ''::text)),
+    CONSTRAINT media_profile_policy_key_contract CHECK (public.media_key_valid_v1(policy_key)),
+    CONSTRAINT media_profile_policy_key_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_profile_retention_bounds CHECK (((retention_days >= 1) AND (retention_days <= 3650))),
+    CONSTRAINT media_profile_roots_nonempty CHECK (((btrim(source_root) <> ''::text) AND (btrim(output_root) <> ''::text))),
+    CONSTRAINT media_profile_schedule_interval_bounds CHECK (((schedule_interval_minutes IS NULL) OR ((schedule_interval_minutes >= 1) AND (schedule_interval_minutes <= 525600)))),
+    CONSTRAINT media_profile_schedule_requires_interval CHECK (((schedule_enabled = false) OR (schedule_interval_minutes IS NOT NULL)))
+);
+
+
+
+CREATE TABLE public.media_profile_file_rule (
+    media_profile_file_rule_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    rule_kind text NOT NULL,
+    matcher_kind text NOT NULL,
+    matcher_value text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_file_rule_kind_known CHECK ((rule_kind = ANY (ARRAY['include'::text, 'exclude'::text]))),
+    CONSTRAINT media_profile_file_rule_matcher_known CHECK ((matcher_kind = ANY (ARRAY['glob'::text, 'extension'::text]))),
+    CONSTRAINT media_profile_file_rule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_profile_file_rule_value_bounded CHECK (((char_length(btrim(matcher_value)) >= 1) AND (char_length(btrim(matcher_value)) <= 512)))
+);
+
+
+
+ALTER TABLE public.media_profile_file_rule ALTER COLUMN media_profile_file_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_file_rule_media_profile_file_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_profile_filter (
+    media_profile_id bigint NOT NULL,
+    min_size_bytes bigint,
+    max_size_bytes bigint,
+    min_duration_millis bigint,
+    max_duration_millis bigint,
+    include_samples boolean DEFAULT false NOT NULL,
+    include_trailers boolean DEFAULT false NOT NULL,
+    exclude_trash boolean DEFAULT true NOT NULL,
+    exclude_quarantine boolean DEFAULT true NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_filter_duration_bounds CHECK ((((min_duration_millis IS NULL) OR (min_duration_millis >= 0)) AND ((max_duration_millis IS NULL) OR (max_duration_millis >= 0)) AND ((min_duration_millis IS NULL) OR (max_duration_millis IS NULL) OR (min_duration_millis <= max_duration_millis)))),
+    CONSTRAINT media_profile_filter_is_bounded CHECK (((min_size_bytes IS NOT NULL) OR (max_size_bytes IS NOT NULL) OR (min_duration_millis IS NOT NULL) OR (max_duration_millis IS NOT NULL))),
+    CONSTRAINT media_profile_filter_size_bounds CHECK ((((min_size_bytes IS NULL) OR (min_size_bytes >= 0)) AND ((max_size_bytes IS NULL) OR (max_size_bytes >= 0)) AND ((min_size_bytes IS NULL) OR (max_size_bytes IS NULL) OR (min_size_bytes <= max_size_bytes))))
+);
+
+
+
+CREATE TABLE public.media_profile_import_draft (
+    media_profile_import_draft_id bigint NOT NULL,
+    media_profile_import_draft_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_key text NOT NULL,
+    source_root text NOT NULL,
+    output_root text NOT NULL,
+    source_root_resolved boolean NOT NULL,
+    output_root_resolved boolean NOT NULL,
+    retention_days integer NOT NULL,
+    compatibility_target_key text,
+    desired_target_key text,
+    desired_target_version integer,
+    policy_key text NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_import_draft_desired_target_complete CHECK ((((desired_target_key IS NULL) AND (desired_target_version IS NULL)) OR ((desired_target_key IS NOT NULL) AND (btrim(desired_target_key) <> ''::text) AND (desired_target_version IS NOT NULL) AND (desired_target_version > 0)))),
+    CONSTRAINT media_profile_import_draft_key_nonempty CHECK ((btrim(profile_key) <> ''::text)),
+    CONSTRAINT media_profile_import_draft_policy_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_profile_import_draft_retention_bounds CHECK (((retention_days >= 1) AND (retention_days <= 3650))),
+    CONSTRAINT media_profile_import_draft_roots_nonempty CHECK (((btrim(source_root) <> ''::text) AND (btrim(output_root) <> ''::text))),
+    CONSTRAINT media_profile_import_draft_unresolved CHECK (((NOT source_root_resolved) OR (NOT output_root_resolved)))
+);
+
+
+
+ALTER TABLE public.media_profile_import_draft ALTER COLUMN media_profile_import_draft_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_import_draft_media_profile_import_draft_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.media_profile ALTER COLUMN media_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_media_profile_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_profile_root (
+    media_profile_root_id bigint NOT NULL,
+    media_profile_root_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    media_profile_id bigint NOT NULL,
+    root_kind text NOT NULL,
+    requested_path text NOT NULL,
+    canonical_path text NOT NULL,
+    filesystem_device bigint,
+    filesystem_inode bigint,
+    media_type text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    identity_verified_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_root_enabled_verified CHECK (((NOT enabled) OR (identity_verified_at IS NOT NULL))),
+    CONSTRAINT media_profile_root_identity_complete CHECK ((((filesystem_device IS NULL) AND (filesystem_inode IS NULL) AND (identity_verified_at IS NULL)) OR ((filesystem_device IS NOT NULL) AND (filesystem_inode IS NOT NULL) AND (filesystem_device >= 0) AND (filesystem_inode >= 0) AND (identity_verified_at IS NOT NULL)))),
+    CONSTRAINT media_profile_root_kind_known CHECK ((root_kind = ANY (ARRAY['source'::text, 'output'::text, 'workspace'::text, 'backup'::text, 'quarantine'::text]))),
+    CONSTRAINT media_profile_root_media_type_nonempty CHECK ((btrim(media_type) <> ''::text)),
+    CONSTRAINT media_profile_root_paths_absolute CHECK (((requested_path ~~ '/%'::text) AND (canonical_path ~~ '/%'::text))),
+    CONSTRAINT media_profile_root_paths_bounded CHECK ((((char_length(requested_path) >= 1) AND (char_length(requested_path) <= 4096)) AND ((char_length(canonical_path) >= 1) AND (char_length(canonical_path) <= 4096)))),
+    CONSTRAINT media_profile_root_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+
+ALTER TABLE public.media_profile_root ALTER COLUMN media_profile_root_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_root_media_profile_root_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_stream_classification_rule (
+    media_stream_classification_rule_id bigint NOT NULL,
+    media_policy_profile_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text NOT NULL,
+    match_kind text NOT NULL,
+    match_pattern text NOT NULL,
+    confidence smallint NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_stream_classification_rule_confidence_bounds CHECK (((confidence >= 0) AND (confidence <= 100))),
+    CONSTRAINT media_stream_classification_rule_match_known CHECK ((match_kind = ANY (ARRAY['title_contains'::text, 'title_regex'::text, 'disposition'::text, 'language'::text, 'codec'::text, 'filename_glob'::text]))),
+    CONSTRAINT media_stream_classification_rule_pattern_bounded CHECK (((char_length(btrim(match_pattern)) >= 1) AND (char_length(btrim(match_pattern)) <= 512))),
+    CONSTRAINT media_stream_classification_rule_role_bounded CHECK (((char_length(btrim(semantic_role)) >= 1) AND (char_length(btrim(semantic_role)) <= 64))),
+    CONSTRAINT media_stream_classification_rule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_stream_classification_rule_stream_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text, 'attachment'::text, 'data'::text])))
+);
+
+
+
+ALTER TABLE public.media_stream_classification_rule ALTER COLUMN media_stream_classification_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_stream_classification_r_media_stream_classification_r_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_subtitle_discovery_rule (
+    media_subtitle_discovery_rule_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    discovery_pattern text NOT NULL,
+    precedence integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_subtitle_discovery_rule_pattern_bounded CHECK (((char_length(btrim(discovery_pattern)) >= 1) AND (char_length(btrim(discovery_pattern)) <= 512))),
+    CONSTRAINT media_subtitle_discovery_rule_precedence_nonnegative CHECK ((precedence >= 0))
+);
+
+
+
+ALTER TABLE public.media_subtitle_discovery_rule ALTER COLUMN media_subtitle_discovery_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_subtitle_discovery_rule_media_subtitle_discovery_rule_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.media_target (
+    media_target_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    target_key text NOT NULL,
+    video_codec text,
+    audio_codec text,
+    subtitle_codec text,
+    priority smallint DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_target_key_contract CHECK (public.media_key_valid_v1(target_key)),
+    CONSTRAINT media_target_key_nonempty CHECK ((btrim(target_key) <> ''::text))
+);
+
+
+
+ALTER TABLE public.media_target ALTER COLUMN media_target_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_target_media_target_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.outbound_request_log (
+    outbound_request_log_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    routing_policy_id bigint,
+    search_request_id bigint,
+    request_type public.outbound_request_type NOT NULL,
+    correlation_id uuid NOT NULL,
+    retry_seq smallint NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone NOT NULL,
+    outcome public.outbound_request_outcome NOT NULL,
+    via_mitigation public.outbound_via_mitigation NOT NULL,
+    rate_limit_denied_scope public.rate_limit_scope,
+    error_class public.error_class,
+    http_status integer,
+    latency_ms integer,
+    parse_ok boolean DEFAULT false NOT NULL,
+    result_count integer,
+    cf_detected boolean DEFAULT false NOT NULL,
+    page_number integer,
+    page_cursor_key character varying(64),
+    page_cursor_is_hashed boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT outbound_request_log_latency_chk CHECK (((latency_ms IS NULL) OR (latency_ms >= 0))),
+    CONSTRAINT outbound_request_log_outcome_chk CHECK ((((outcome = 'success'::public.outbound_request_outcome) AND (error_class IS NULL) AND (parse_ok = true)) OR ((outcome = 'failure'::public.outbound_request_outcome) AND (error_class IS NOT NULL)))),
+    CONSTRAINT outbound_request_log_page_number_chk CHECK (((page_number IS NULL) OR (page_number >= 1))),
+    CONSTRAINT outbound_request_log_rate_limit_scope_chk CHECK ((((rate_limit_denied_scope IS NULL) AND (error_class IS DISTINCT FROM 'rate_limited'::public.error_class)) OR ((rate_limit_denied_scope IS NOT NULL) AND (error_class = 'rate_limited'::public.error_class)))),
+    CONSTRAINT outbound_request_log_result_count_chk CHECK (((result_count IS NULL) OR (result_count >= 0))),
+    CONSTRAINT outbound_request_log_retry_seq_check CHECK ((retry_seq >= 0))
+);
+
+
+
+ALTER TABLE public.outbound_request_log ALTER COLUMN outbound_request_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.outbound_request_log_outbound_request_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.policy_rule (
+    policy_rule_id bigint NOT NULL,
+    policy_set_id bigint NOT NULL,
+    policy_rule_public_id uuid NOT NULL,
+    rule_type public.policy_rule_type NOT NULL,
+    match_field public.policy_match_field NOT NULL,
+    match_operator public.policy_match_operator NOT NULL,
+    sort_order integer DEFAULT 1000 NOT NULL,
+    match_value_text character varying(512),
+    match_value_int integer,
+    match_value_uuid uuid,
+    value_set_id bigint,
+    action public.policy_action NOT NULL,
+    severity public.policy_severity NOT NULL,
+    is_case_insensitive boolean DEFAULT true NOT NULL,
+    is_disabled boolean DEFAULT false NOT NULL,
+    rationale character varying(1024),
+    expires_at timestamp with time zone,
+    immutable_flag boolean DEFAULT false NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE public.policy_rule ALTER COLUMN policy_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_rule_policy_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.policy_rule_value_set (
+    value_set_id bigint NOT NULL,
+    policy_rule_id bigint NOT NULL,
+    value_set_type public.value_set_type NOT NULL
+);
+
+
+
+CREATE TABLE public.policy_rule_value_set_item (
+    value_set_item_id bigint NOT NULL,
+    value_set_id bigint NOT NULL,
+    value_text character varying(256),
+    value_bigint bigint,
+    value_int integer,
+    value_uuid uuid,
+    CONSTRAINT policy_rule_value_set_item_single_chk CHECK (((((((value_text IS NOT NULL))::integer + ((value_bigint IS NOT NULL))::integer) + ((value_int IS NOT NULL))::integer) + ((value_uuid IS NOT NULL))::integer) = 1)),
+    CONSTRAINT policy_rule_value_set_item_text_lc CHECK (((value_text IS NULL) OR ((value_text)::text = lower((value_text)::text))))
+);
+
+
+
+ALTER TABLE public.policy_rule_value_set_item ALTER COLUMN value_set_item_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_rule_value_set_item_value_set_item_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.policy_rule_value_set ALTER COLUMN value_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_rule_value_set_value_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.policy_set (
+    policy_set_id bigint NOT NULL,
+    policy_set_public_id uuid NOT NULL,
+    user_id bigint,
+    display_name character varying(256) NOT NULL,
+    scope public.policy_scope NOT NULL,
+    is_enabled boolean NOT NULL,
+    sort_order integer DEFAULT 1000 NOT NULL,
+    is_auto_created boolean DEFAULT false NOT NULL,
+    created_for_search_request_id bigint,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+
+ALTER TABLE public.policy_set ALTER COLUMN policy_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_set_policy_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.policy_snapshot (
+    policy_snapshot_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    snapshot_hash character(64) NOT NULL,
+    ref_count integer DEFAULT 0 NOT NULL,
+    excluded_disabled_count integer DEFAULT 0 NOT NULL,
+    excluded_expired_count integer DEFAULT 0 NOT NULL
+);
+
+
+
+ALTER TABLE public.policy_snapshot ALTER COLUMN policy_snapshot_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_snapshot_policy_snapshot_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.policy_snapshot_rule (
+    policy_snapshot_rule_id bigint NOT NULL,
+    policy_snapshot_id bigint NOT NULL,
+    policy_rule_public_id uuid NOT NULL,
+    rule_order integer NOT NULL
+);
+
+
+
+ALTER TABLE public.policy_snapshot_rule ALTER COLUMN policy_snapshot_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_snapshot_rule_policy_snapshot_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.query_presets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    expression text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.rate_limit_policy (
+    rate_limit_policy_id bigint NOT NULL,
+    rate_limit_policy_public_id uuid NOT NULL,
+    display_name character varying(256) NOT NULL,
+    requests_per_minute integer NOT NULL,
+    burst integer NOT NULL,
+    concurrent_requests integer NOT NULL,
+    is_system boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT rate_limit_policy_burst_check CHECK (((burst >= 0) AND (burst <= 6000))),
+    CONSTRAINT rate_limit_policy_concurrent_requests_check CHECK (((concurrent_requests >= 1) AND (concurrent_requests <= 64))),
+    CONSTRAINT rate_limit_policy_requests_per_minute_check CHECK (((requests_per_minute >= 1) AND (requests_per_minute <= 6000)))
+);
+
+
+
+ALTER TABLE public.rate_limit_policy ALTER COLUMN rate_limit_policy_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.rate_limit_policy_rate_limit_policy_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.rate_limit_state (
+    rate_limit_state_id bigint NOT NULL,
+    scope_type public.rate_limit_scope NOT NULL,
+    scope_id bigint NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    tokens_used integer NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT rate_limit_state_tokens_used_check CHECK ((tokens_used >= 0))
+);
+
+
+
+ALTER TABLE public.rate_limit_state ALTER COLUMN rate_limit_state_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.rate_limit_state_rate_limit_state_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.routing_policy (
+    routing_policy_id bigint NOT NULL,
+    routing_policy_public_id uuid NOT NULL,
+    display_name character varying(256) NOT NULL,
+    mode public.routing_policy_mode NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+
+CREATE TABLE public.routing_policy_parameter (
+    routing_policy_parameter_id bigint NOT NULL,
+    routing_policy_id bigint NOT NULL,
+    param_key public.routing_param_key NOT NULL,
+    value_plain character varying(2048),
+    value_int integer,
+    value_bool boolean,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE public.routing_policy_parameter ALTER COLUMN routing_policy_parameter_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.routing_policy_parameter_routing_policy_parameter_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.routing_policy_rate_limit (
+    routing_policy_rate_limit_id bigint NOT NULL,
+    routing_policy_id bigint NOT NULL,
+    rate_limit_policy_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.routing_policy_rate_limit ALTER COLUMN routing_policy_rate_limit_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.routing_policy_rate_limit_routing_policy_rate_limit_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.routing_policy ALTER COLUMN routing_policy_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.routing_policy_routing_policy_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_filter_decision (
+    search_filter_decision_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    policy_rule_public_id uuid NOT NULL,
+    policy_snapshot_id bigint NOT NULL,
+    observation_id bigint,
+    canonical_torrent_id bigint,
+    canonical_torrent_source_id bigint,
+    decision public.decision_type NOT NULL,
+    decision_detail character varying(512),
+    decided_at timestamp with time zone NOT NULL,
+    CONSTRAINT search_filter_decision_target_chk CHECK (((canonical_torrent_id IS NOT NULL) OR (canonical_torrent_source_id IS NOT NULL)))
+);
+
+
+
+ALTER TABLE public.search_filter_decision ALTER COLUMN search_filter_decision_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_filter_decision_search_filter_decision_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_page (
+    search_page_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    page_number integer NOT NULL,
+    sealed_at timestamp with time zone,
+    CONSTRAINT search_page_page_number_check CHECK ((page_number >= 1))
+);
+
+
+
+CREATE TABLE public.search_page_item (
+    search_page_item_id bigint NOT NULL,
+    search_page_id bigint NOT NULL,
+    search_request_canonical_id bigint NOT NULL,
+    "position" integer NOT NULL,
+    CONSTRAINT search_page_item_position_check CHECK (("position" >= 1))
+);
+
+
+
+ALTER TABLE public.search_page_item ALTER COLUMN search_page_item_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_page_item_search_page_item_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.search_page ALTER COLUMN search_page_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_page_search_page_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_profile (
+    search_profile_id bigint NOT NULL,
+    search_profile_public_id uuid NOT NULL,
+    user_id bigint,
+    display_name character varying(256) NOT NULL,
+    is_default boolean NOT NULL,
+    page_size integer DEFAULT 50 NOT NULL,
+    default_media_domain_id bigint,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT search_profile_page_size_check CHECK (((page_size >= 10) AND (page_size <= 200)))
+);
+
+
+
+CREATE TABLE public.search_profile_indexer_allow (
+    search_profile_indexer_allow_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.search_profile_indexer_allow ALTER COLUMN search_profile_indexer_allow_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_indexer_allow_search_profile_indexer_allow_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_profile_indexer_block (
+    search_profile_indexer_block_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.search_profile_indexer_block ALTER COLUMN search_profile_indexer_block_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_indexer_block_search_profile_indexer_block_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_profile_media_domain (
+    search_profile_media_domain_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    media_domain_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.search_profile_media_domain ALTER COLUMN search_profile_media_domain_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_media_domain_search_profile_media_domain_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_profile_policy_set (
+    search_profile_policy_set_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    policy_set_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.search_profile_policy_set ALTER COLUMN search_profile_policy_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_policy_set_search_profile_policy_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.search_profile ALTER COLUMN search_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_search_profile_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_profile_tag_allow (
+    search_profile_tag_allow_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.search_profile_tag_allow ALTER COLUMN search_profile_tag_allow_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_tag_allow_search_profile_tag_allow_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_profile_tag_block (
+    search_profile_tag_block_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.search_profile_tag_block ALTER COLUMN search_profile_tag_block_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_tag_block_search_profile_tag_block_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_profile_tag_prefer (
+    search_profile_tag_prefer_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    tag_id bigint NOT NULL,
+    weight_override integer DEFAULT 5,
+    CONSTRAINT search_profile_tag_prefer_weight_override_check CHECK (((weight_override IS NULL) OR ((weight_override >= '-50'::integer) AND (weight_override <= 50))))
+);
+
+
+
+ALTER TABLE public.search_profile_tag_prefer ALTER COLUMN search_profile_tag_prefer_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_tag_prefer_search_profile_tag_prefer_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_profile_trust_tier (
+    search_profile_trust_tier_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    trust_tier_id bigint NOT NULL,
+    weight_override integer,
+    CONSTRAINT search_profile_trust_tier_weight_override_check CHECK (((weight_override IS NULL) OR ((weight_override >= '-50'::integer) AND (weight_override <= 50))))
+);
+
+
+
+ALTER TABLE public.search_profile_trust_tier ALTER COLUMN search_profile_trust_tier_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_trust_tier_search_profile_trust_tier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_request (
+    search_request_id bigint NOT NULL,
+    search_request_public_id uuid NOT NULL,
+    user_id bigint,
+    search_profile_id bigint,
+    policy_set_id bigint,
+    policy_snapshot_id bigint NOT NULL,
+    requested_media_domain_id bigint,
+    effective_media_domain_id bigint,
+    query_text character varying(512) NOT NULL,
+    query_type public.query_type NOT NULL,
+    torznab_mode public.torznab_mode,
+    page_size integer DEFAULT 50 NOT NULL,
+    season_number integer,
+    episode_number integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    canceled_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    status public.search_status NOT NULL,
+    failure_class public.failure_class,
+    error_detail character varying(1024),
+    CONSTRAINT search_request_canceled_at_chk CHECK ((((status = 'canceled'::public.search_status) AND (canceled_at IS NOT NULL)) OR ((status <> 'canceled'::public.search_status) AND (canceled_at IS NULL)))),
+    CONSTRAINT search_request_episode_number_chk CHECK (((episode_number IS NULL) OR (episode_number >= 0))),
+    CONSTRAINT search_request_failure_class_chk CHECK ((((status = 'failed'::public.search_status) AND (failure_class IS NOT NULL)) OR ((status <> 'failed'::public.search_status) AND (failure_class IS NULL)))),
+    CONSTRAINT search_request_finished_at_chk CHECK ((((status = ANY (ARRAY['finished'::public.search_status, 'failed'::public.search_status, 'canceled'::public.search_status])) AND (finished_at IS NOT NULL)) OR ((status = 'running'::public.search_status) AND (finished_at IS NULL)))),
+    CONSTRAINT search_request_page_size_check CHECK (((page_size >= 10) AND (page_size <= 200))),
+    CONSTRAINT search_request_season_episode_mode_chk CHECK ((((torznab_mode IS NULL) AND (((query_type = 'season_episode'::public.query_type) AND (season_number IS NOT NULL) AND (episode_number IS NOT NULL)) OR ((query_type <> 'season_episode'::public.query_type) AND (season_number IS NULL) AND (episode_number IS NULL)))) OR ((torznab_mode = 'tv'::public.torznab_mode) AND ((episode_number IS NULL) OR (season_number IS NOT NULL))) OR ((torznab_mode = ANY (ARRAY['generic'::public.torznab_mode, 'movie'::public.torznab_mode])) AND (season_number IS NULL) AND (episode_number IS NULL)))),
+    CONSTRAINT search_request_season_number_chk CHECK (((season_number IS NULL) OR (season_number >= 0)))
+);
+
+
+
+CREATE TABLE public.search_request_canonical (
+    search_request_canonical_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE public.search_request_canonical ALTER COLUMN search_request_canonical_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_canonical_search_request_canonical_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_request_identifier (
+    search_request_identifier_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    id_type public.identifier_type NOT NULL,
+    id_value_normalized character varying(32) NOT NULL,
+    id_value_raw character varying(64) NOT NULL,
+    CONSTRAINT search_request_identifier_imdb_chk CHECK (((id_type <> 'imdb'::public.identifier_type) OR ((id_value_normalized)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT search_request_identifier_tmdb_chk CHECK (((id_type <> 'tmdb'::public.identifier_type) OR ((id_value_normalized)::text ~ '^[0-9]{1,10}$'::text))),
+    CONSTRAINT search_request_identifier_tvdb_chk CHECK (((id_type <> 'tvdb'::public.identifier_type) OR ((id_value_normalized)::text ~ '^[0-9]{1,10}$'::text)))
+);
+
+
+
+ALTER TABLE public.search_request_identifier ALTER COLUMN search_request_identifier_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_identifier_search_request_identifier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_request_indexer_run (
+    search_request_indexer_run_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    next_attempt_at timestamp with time zone,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    rate_limited_attempt_count integer DEFAULT 0 NOT NULL,
+    last_error_class public.error_class,
+    last_rate_limit_scope public.rate_limit_scope,
+    last_correlation_id uuid,
+    status public.run_status NOT NULL,
+    error_class public.error_class,
+    error_detail character varying(1024),
+    items_seen_count integer DEFAULT 0 NOT NULL,
+    items_emitted_count integer DEFAULT 0 NOT NULL,
+    canonical_added_count integer DEFAULT 0 NOT NULL,
+    CONSTRAINT search_request_indexer_run_attempt_count_check CHECK ((attempt_count >= 0)),
+    CONSTRAINT search_request_indexer_run_canonical_added_count_check CHECK ((canonical_added_count >= 0)),
+    CONSTRAINT search_request_indexer_run_error_class_chk CHECK ((((status = 'failed'::public.run_status) AND (error_class IS NOT NULL)) OR ((status <> 'failed'::public.run_status) AND (error_class IS NULL)))),
+    CONSTRAINT search_request_indexer_run_finished_at_chk CHECK ((((status = ANY (ARRAY['finished'::public.run_status, 'failed'::public.run_status, 'canceled'::public.run_status])) AND (finished_at IS NOT NULL)) OR ((status = ANY (ARRAY['queued'::public.run_status, 'running'::public.run_status])) AND (finished_at IS NULL)))),
+    CONSTRAINT search_request_indexer_run_items_emitted_count_check CHECK ((items_emitted_count >= 0)),
+    CONSTRAINT search_request_indexer_run_items_seen_count_check CHECK ((items_seen_count >= 0)),
+    CONSTRAINT search_request_indexer_run_rate_limit_scope_chk CHECK ((((last_error_class = 'rate_limited'::public.error_class) AND (last_rate_limit_scope IS NOT NULL)) OR ((last_error_class IS DISTINCT FROM 'rate_limited'::public.error_class) AND (last_rate_limit_scope IS NULL)))),
+    CONSTRAINT search_request_indexer_run_rate_limited_attempt_count_check CHECK ((rate_limited_attempt_count >= 0)),
+    CONSTRAINT search_request_indexer_run_started_at_chk CHECK ((((status = 'queued'::public.run_status) AND (started_at IS NULL)) OR ((status <> 'queued'::public.run_status) AND (started_at IS NOT NULL))))
+);
+
+
+
+CREATE TABLE public.search_request_indexer_run_correlation (
+    search_request_indexer_run_correlation_id bigint NOT NULL,
+    search_request_indexer_run_id bigint NOT NULL,
+    correlation_id uuid NOT NULL,
+    page_number integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT search_request_indexer_run_correlation_page_chk CHECK (((page_number IS NULL) OR (page_number >= 1)))
+);
+
+
+
+ALTER TABLE public.search_request_indexer_run_correlation ALTER COLUMN search_request_indexer_run_correlation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_indexer_run_co_search_request_indexer_run_co_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.search_request_indexer_run ALTER COLUMN search_request_indexer_run_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_indexer_run_search_request_indexer_run_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.search_request ALTER COLUMN search_request_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_search_request_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_request_source_observation (
+    observation_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    canonical_torrent_id bigint,
+    canonical_torrent_source_id bigint,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    seeders integer,
+    leechers integer,
+    published_at timestamp with time zone,
+    uploader character varying(256),
+    source_guid character varying(256),
+    details_url character varying(2048),
+    download_url character varying(2048),
+    magnet_uri character varying(2048),
+    title_raw character varying(512) NOT NULL,
+    size_bytes bigint,
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    guid_conflict boolean DEFAULT false NOT NULL,
+    was_downranked boolean DEFAULT false NOT NULL,
+    was_flagged boolean DEFAULT false NOT NULL,
+    CONSTRAINT search_request_source_observation_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT search_request_source_observation_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT search_request_source_observation_leechers_chk CHECK (((leechers IS NULL) OR (leechers >= 0))),
+    CONSTRAINT search_request_source_observation_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT search_request_source_observation_seeders_chk CHECK (((seeders IS NULL) OR (seeders >= 0))),
+    CONSTRAINT search_request_source_observation_size_bytes_chk CHECK (((size_bytes IS NULL) OR (size_bytes >= 0)))
+);
+
+
+
+CREATE TABLE public.search_request_source_observation_attr (
+    observation_attr_id bigint NOT NULL,
+    observation_id bigint NOT NULL,
+    attr_key public.observation_attr_key NOT NULL,
+    value_text character varying(512),
+    value_int integer,
+    value_bigint bigint,
+    value_numeric numeric(12,4),
+    value_bool boolean,
+    value_uuid uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT search_request_source_observation_attr_episode_chk CHECK (((attr_key <> 'episode'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_files_count_chk CHECK (((attr_key <> 'files_count'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_imdb_chk CHECK (((attr_key <> 'imdb_id'::public.observation_attr_key) OR ((value_text)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT search_request_source_observation_attr_key_type_chk CHECK ((((attr_key = ANY (ARRAY['tracker_name'::public.observation_attr_key, 'release_group'::public.observation_attr_key, 'language_primary'::public.observation_attr_key, 'subtitles_primary'::public.observation_attr_key, 'imdb_id'::public.observation_attr_key])) AND (value_text IS NOT NULL)) OR ((attr_key = 'size_bytes_reported'::public.observation_attr_key) AND (value_bigint IS NOT NULL)) OR ((attr_key = ANY (ARRAY['tracker_category'::public.observation_attr_key, 'tracker_subcategory'::public.observation_attr_key, 'files_count'::public.observation_attr_key, 'season'::public.observation_attr_key, 'episode'::public.observation_attr_key, 'year'::public.observation_attr_key, 'tmdb_id'::public.observation_attr_key, 'tvdb_id'::public.observation_attr_key, 'minimum_seed_time_hours'::public.observation_attr_key])) AND (value_int IS NOT NULL)) OR ((attr_key = 'minimum_ratio'::public.observation_attr_key) AND (value_numeric IS NOT NULL)) OR ((attr_key = ANY (ARRAY['freeleech'::public.observation_attr_key, 'internal_flag'::public.observation_attr_key, 'scene_flag'::public.observation_attr_key])) AND (value_bool IS NOT NULL)))),
+    CONSTRAINT search_request_source_observation_attr_min_ratio_chk CHECK (((attr_key <> 'minimum_ratio'::public.observation_attr_key) OR ((value_numeric IS NOT NULL) AND (value_numeric >= (0)::numeric)))),
+    CONSTRAINT search_request_source_observation_attr_min_seed_time_chk CHECK (((attr_key <> 'minimum_seed_time_hours'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_season_chk CHECK (((attr_key <> 'season'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_single_value_chk CHECK (((((((((value_text IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) + ((value_bigint IS NOT NULL))::integer) + ((value_numeric IS NOT NULL))::integer) + ((value_bool IS NOT NULL))::integer) + ((value_uuid IS NOT NULL))::integer) = 1)),
+    CONSTRAINT search_request_source_observation_attr_size_bytes_chk CHECK (((attr_key <> 'size_bytes_reported'::public.observation_attr_key) OR ((value_bigint IS NOT NULL) AND (value_bigint >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_tmdb_chk CHECK (((attr_key <> 'tmdb_id'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT search_request_source_observation_attr_tracker_category_chk CHECK (((attr_key <> 'tracker_category'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_tracker_subcategory_chk CHECK (((attr_key <> 'tracker_subcategory'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_tvdb_chk CHECK (((attr_key <> 'tvdb_id'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT search_request_source_observation_attr_year_chk CHECK (((attr_key <> 'year'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0))))
+);
+
+
+
+ALTER TABLE public.search_request_source_observation_attr ALTER COLUMN observation_attr_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_source_observation_attr_observation_attr_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.search_request_source_observation ALTER COLUMN observation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_source_observation_observation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_request_torznab_category_effective (
+    search_request_torznab_category_effective_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    torznab_category_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.search_request_torznab_category_effective ALTER COLUMN search_request_torznab_category_effective_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_torznab_catego_search_request_torznab_categ_seq1
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.search_request_torznab_category_requested (
+    search_request_torznab_category_requested_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    torznab_category_id bigint NOT NULL
+);
+
+
+
+ALTER TABLE public.search_request_torznab_category_requested ALTER COLUMN search_request_torznab_category_requested_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_torznab_catego_search_request_torznab_catego_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.secret (
+    secret_id bigint NOT NULL,
+    secret_public_id uuid NOT NULL,
+    secret_type public.secret_type NOT NULL,
+    cipher_text bytea NOT NULL,
+    key_id character varying(128) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    rotated_at timestamp with time zone,
+    is_revoked boolean DEFAULT false NOT NULL,
+    CONSTRAINT secret_key_id_len_chk CHECK (((char_length((key_id)::text) >= 1) AND (char_length((key_id)::text) <= 128)))
+);
+
+
+
+CREATE TABLE public.secret_audit_log (
+    secret_audit_log_id bigint NOT NULL,
+    secret_id bigint NOT NULL,
+    action public.secret_audit_action NOT NULL,
+    actor_user_id bigint,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    detail character varying(256) NOT NULL,
+    CONSTRAINT secret_audit_detail_len_chk CHECK (((char_length((detail)::text) >= 1) AND (char_length((detail)::text) <= 256)))
+);
+
+
+
+ALTER TABLE public.secret_audit_log ALTER COLUMN secret_audit_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.secret_audit_log_secret_audit_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.secret_binding (
+    secret_binding_id bigint NOT NULL,
+    secret_id bigint NOT NULL,
+    bound_table public.secret_bound_table NOT NULL,
+    bound_id bigint NOT NULL,
+    binding_name public.secret_binding_name NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT secret_binding_name_chk CHECK ((((bound_table = 'indexer_instance_field_value'::public.secret_bound_table) AND (binding_name = ANY (ARRAY['api_key'::public.secret_binding_name, 'password'::public.secret_binding_name, 'cookie'::public.secret_binding_name, 'token'::public.secret_binding_name, 'header_value'::public.secret_binding_name]))) OR ((bound_table = 'routing_policy_parameter'::public.secret_bound_table) AND (binding_name = ANY (ARRAY['proxy_password'::public.secret_binding_name, 'socks_password'::public.secret_binding_name])))))
+);
+
+
+
+ALTER TABLE public.secret_binding ALTER COLUMN secret_binding_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.secret_binding_secret_binding_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.secret ALTER COLUMN secret_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.secret_secret_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.settings_revision (
+    id smallint DEFAULT 1 NOT NULL,
+    revision bigint DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settings_revision_id_check CHECK ((id = 1))
+);
+
+
+
+CREATE TABLE public.settings_secret (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    ciphertext bytea NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.setup_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    token_hash text NOT NULL,
+    issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    consumed_at timestamp with time zone,
+    issued_by text
+);
+
+
+
+CREATE TABLE public.source_metadata_conflict (
+    source_metadata_conflict_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    conflict_type public.conflict_type NOT NULL,
+    existing_value character varying(256) NOT NULL,
+    incoming_value character varying(256) NOT NULL,
+    observed_at timestamp with time zone NOT NULL,
+    resolved_at timestamp with time zone,
+    resolved_by_user_id bigint,
+    resolution public.conflict_resolution,
+    resolution_note character varying(256)
+);
+
+
+
+CREATE TABLE public.source_metadata_conflict_audit_log (
+    source_metadata_conflict_audit_log_id bigint NOT NULL,
+    conflict_id bigint NOT NULL,
+    action public.source_metadata_conflict_action NOT NULL,
+    actor_user_id bigint,
+    occurred_at timestamp with time zone NOT NULL,
+    note character varying(256)
+);
+
+
+
+ALTER TABLE public.source_metadata_conflict_audit_log ALTER COLUMN source_metadata_conflict_audit_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.source_metadata_conflict_audi_source_metadata_conflict_audi_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.source_metadata_conflict ALTER COLUMN source_metadata_conflict_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.source_metadata_conflict_source_metadata_conflict_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.source_reputation (
+    source_reputation_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    window_key public.reputation_window NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    request_success_rate numeric(5,4) NOT NULL,
+    acquisition_success_rate numeric(5,4) NOT NULL,
+    fake_rate numeric(5,4) NOT NULL,
+    dmca_rate numeric(5,4) NOT NULL,
+    request_count integer NOT NULL,
+    request_success_count integer NOT NULL,
+    acquisition_count integer NOT NULL,
+    acquisition_success_count integer NOT NULL,
+    min_samples integer NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT source_reputation_acquisition_count_check CHECK ((acquisition_count >= 0)),
+    CONSTRAINT source_reputation_acquisition_success_count_check CHECK ((acquisition_success_count >= 0)),
+    CONSTRAINT source_reputation_acquisition_success_rate_check CHECK (((acquisition_success_rate >= (0)::numeric) AND (acquisition_success_rate <= (1)::numeric))),
+    CONSTRAINT source_reputation_dmca_rate_check CHECK (((dmca_rate >= (0)::numeric) AND (dmca_rate <= (1)::numeric))),
+    CONSTRAINT source_reputation_fake_rate_check CHECK (((fake_rate >= (0)::numeric) AND (fake_rate <= (1)::numeric))),
+    CONSTRAINT source_reputation_min_samples_check CHECK ((min_samples >= 0)),
+    CONSTRAINT source_reputation_request_count_check CHECK ((request_count >= 0)),
+    CONSTRAINT source_reputation_request_success_count_check CHECK ((request_success_count >= 0)),
+    CONSTRAINT source_reputation_request_success_rate_check CHECK (((request_success_rate >= (0)::numeric) AND (request_success_rate <= (1)::numeric)))
+);
+
+
+
+ALTER TABLE public.source_reputation ALTER COLUMN source_reputation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.source_reputation_source_reputation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.tag (
+    tag_id bigint NOT NULL,
+    tag_public_id uuid NOT NULL,
+    tag_key character varying(128) NOT NULL,
+    display_name character varying(256) NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT tag_key_lc CHECK (((tag_key)::text = lower((tag_key)::text)))
+);
+
+
+
+ALTER TABLE public.tag ALTER COLUMN tag_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.tag_tag_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.torznab_category (
+    torznab_category_id bigint NOT NULL,
+    torznab_cat_id integer NOT NULL,
+    name character varying(128) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE public.torznab_category ALTER COLUMN torznab_category_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.torznab_category_torznab_category_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.torznab_instance (
+    torznab_instance_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    torznab_instance_public_id uuid NOT NULL,
+    display_name character varying(256) NOT NULL,
+    api_key_hash text NOT NULL,
+    is_enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+
+ALTER TABLE public.torznab_instance ALTER COLUMN torznab_instance_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.torznab_instance_torznab_instance_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.tracker_category_mapping (
+    tracker_category_mapping_id bigint NOT NULL,
+    indexer_definition_id bigint,
+    tracker_category integer NOT NULL,
+    tracker_subcategory integer DEFAULT 0 NOT NULL,
+    torznab_category_id bigint NOT NULL,
+    media_domain_id bigint,
+    confidence numeric(4,3) DEFAULT 1.0 NOT NULL,
+    indexer_instance_id bigint,
+    torznab_instance_id bigint,
+    CONSTRAINT tracker_category_mapping_tracker_category_check CHECK ((tracker_category >= 0)),
+    CONSTRAINT tracker_category_mapping_tracker_subcategory_check CHECK ((tracker_subcategory >= 0))
+);
+
+
+
+ALTER TABLE public.tracker_category_mapping ALTER COLUMN tracker_category_mapping_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.tracker_category_mapping_tracker_category_mapping_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.trust_tier (
+    trust_tier_id bigint NOT NULL,
+    trust_tier_key public.trust_tier_key NOT NULL,
+    display_name character varying(256) NOT NULL,
+    default_weight numeric(12,4) NOT NULL,
+    rank smallint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT trust_tier_default_weight_check CHECK (((default_weight >= ('-50'::integer)::numeric) AND (default_weight <= (50)::numeric)))
+);
+
+
+
+ALTER TABLE public.trust_tier ALTER COLUMN trust_tier_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.trust_tier_trust_tier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE public.user_result_action (
+    user_result_action_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    action public.user_action NOT NULL,
+    reason_code public.user_reason_code NOT NULL,
+    reason_text character varying(512),
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE public.user_result_action_kv (
+    user_result_action_kv_id bigint NOT NULL,
+    user_result_action_id bigint NOT NULL,
+    key public.user_action_kv_key NOT NULL,
+    value character varying(512) NOT NULL
+);
+
+
+
+ALTER TABLE public.user_result_action_kv ALTER COLUMN user_result_action_kv_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.user_result_action_kv_user_result_action_kv_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+ALTER TABLE public.user_result_action ALTER COLUMN user_result_action_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.user_result_action_user_result_action_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+
+CREATE TABLE revaer_runtime.fs_jobs (
+    id bigint NOT NULL,
+    torrent_id uuid NOT NULL,
+    src_path text NOT NULL,
+    dst_path text,
+    transfer_mode text,
+    status revaer_runtime.fs_status DEFAULT 'pending'::revaer_runtime.fs_status NOT NULL,
+    attempt smallint DEFAULT 0 NOT NULL,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE SEQUENCE revaer_runtime.fs_jobs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+
+ALTER SEQUENCE revaer_runtime.fs_jobs_id_seq OWNED BY revaer_runtime.fs_jobs.id;
+
+
+
+CREATE TABLE revaer_runtime.torrent_files (
+    torrent_id uuid NOT NULL,
+    file_index integer NOT NULL,
+    path text NOT NULL,
+    size_bytes bigint NOT NULL,
+    bytes_completed bigint NOT NULL,
+    priority text NOT NULL,
+    selected boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+CREATE TABLE revaer_runtime.torrents (
+    torrent_id uuid NOT NULL,
+    name text,
+    state revaer_runtime.torrent_state NOT NULL,
+    state_message text,
+    progress_bytes_downloaded bigint DEFAULT 0 NOT NULL,
+    progress_bytes_total bigint DEFAULT 0 NOT NULL,
+    progress_eta_seconds bigint,
+    download_bps bigint DEFAULT 0 NOT NULL,
+    upload_bps bigint DEFAULT 0 NOT NULL,
+    ratio double precision DEFAULT 0 NOT NULL,
+    sequential boolean DEFAULT false NOT NULL,
+    library_path text,
+    download_dir text,
+    comment text,
+    source text,
+    private boolean,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+
+ALTER TABLE ONLY public.engine_tracker_endpoints ALTER COLUMN id SET DEFAULT nextval('public.engine_tracker_endpoints_id_seq'::regclass);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_chapter ALTER COLUMN media_desired_target_container_chapter_id SET DEFAULT nextval('public.media_desired_target_containe_media_desired_target_contain_seq1'::regclass);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_chapter_metadata ALTER COLUMN media_desired_target_container_chapter_metadata_id SET DEFAULT nextval('public.media_desired_target_containe_media_desired_target_contain_seq2'::regclass);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_metadata ALTER COLUMN media_desired_target_container_metadata_id SET DEFAULT nextval('public.media_desired_target_containe_media_desired_target_containe_seq'::regclass);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_chapter ALTER COLUMN media_job_desired_target_chapter_id SET DEFAULT nextval('public.media_job_desired_target_chap_media_job_desired_target_chap_seq'::regclass);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_chapter_metadata ALTER COLUMN media_job_desired_target_chapter_metadata_id SET DEFAULT nextval('public.media_job_desired_target_chap_media_job_desired_target_cha_seq1'::regclass);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_metadata ALTER COLUMN media_job_desired_target_metadata_id SET DEFAULT nextval('public.media_job_desired_target_meta_media_job_desired_target_meta_seq'::regclass);
+
+
+
+ALTER TABLE ONLY revaer_runtime.fs_jobs ALTER COLUMN id SET DEFAULT nextval('revaer_runtime.fs_jobs_id_seq'::regclass);
+
+
+
+
+
+
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', 'public', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+
+INSERT INTO public.app_profile (id, version, mode, auth_mode, instance_name, http_port, bind_addr, telemetry_level, telemetry_format, telemetry_otel_enabled, telemetry_otel_service_name, telemetry_otel_endpoint, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', 0, 'setup', 'api_key', 'revaer', 7070, '127.0.0.1', NULL, NULL, NULL, NULL, NULL, '2026-08-12 17:23:32.744686+00', '2026-08-12 17:23:32.744686+00');
+
+
+
+INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', '127.0.0.0/8', 1, '2026-08-12 17:23:33.107991+00', '2026-08-12 17:23:33.107991+00');
+INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', '10.0.0.0/8', 2, '2026-08-12 17:23:33.107991+00', '2026-08-12 17:23:33.107991+00');
+INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', '172.16.0.0/12', 3, '2026-08-12 17:23:33.107991+00', '2026-08-12 17:23:33.107991+00');
+INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', '192.168.0.0/16', 4, '2026-08-12 17:23:33.107991+00', '2026-08-12 17:23:33.107991+00');
+INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', '169.254.0.0/16', 5, '2026-08-12 17:23:33.107991+00', '2026-08-12 17:23:33.107991+00');
+INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', '::1/128', 6, '2026-08-12 17:23:33.107991+00', '2026-08-12 17:23:33.107991+00');
+INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', 'fe80::/10', 7, '2026-08-12 17:23:33.107991+00', '2026-08-12 17:23:33.107991+00');
+INSERT INTO public.app_profile_local_networks (profile_id, cidr, ord, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', 'fd00::/8', 8, '2026-08-12 17:23:33.107991+00', '2026-08-12 17:23:33.107991+00');
+
+
+
+INSERT INTO public.app_user (user_id, user_public_id, email, email_normalized, is_email_verified, display_name, role, created_at) OVERRIDING SYSTEM VALUE VALUES (0, '00000000-0000-0000-0000-000000000000', 'system@revaer.local', 'system@revaer.local', true, 'System', 'owner', '2026-08-12 17:23:34.067765+00');
+
+
+
+INSERT INTO public.engine_profile (id, implementation, listen_port, dht, encryption, max_active, max_download_bps, max_upload_bps, seed_ratio_limit, seed_time_limit, sequential_default, auto_managed, auto_manage_prefer_seeds, dont_count_slow_torrents, super_seeding, choking_algorithm, seed_choking_algorithm, strict_super_seeding, optimistic_unchoke_slots, max_queued_disk_bytes, resume_dir, download_root, storage_mode, use_partfile, cache_size, cache_expiry, coalesce_reads, coalesce_writes, use_disk_cache_pool, disk_read_mode, disk_write_mode, verify_piece_hashes, enable_lsd, enable_upnp, enable_natpmp, enable_pex, ipv6_mode, anonymous_mode, force_proxy, prefer_rc4, allow_multiple_connections_per_ip, enable_outgoing_utp, enable_incoming_utp, outgoing_port_min, outgoing_port_max, peer_dscp, connections_limit, connections_limit_per_torrent, unchoke_slots, half_open_limit, stats_interval_ms, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000002', 'libtorrent', NULL, false, 'require', NULL, NULL, NULL, NULL, NULL, true, true, false, true, false, 'fixed_slots', 'round_robin', false, NULL, NULL, '.server_root/resume', '.server_root/downloads', 'sparse', true, NULL, NULL, true, true, true, NULL, NULL, true, false, false, false, false, 'disabled', false, false, false, false, false, false, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-08-12 17:23:32.744686+00', '2026-08-12 17:23:32.744686+00');
+
+
+
+INSERT INTO public.fs_policy (id, library_root, "extract", par2, flatten, move_mode, chmod_file, chmod_dir, owner, "group", umask, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000003', '.server_root/library', false, 'off', false, 'hardlink', NULL, NULL, NULL, NULL, NULL, '2026-08-12 17:23:32.744686+00', '2026-08-12 17:23:32.744686+00');
+
+
+
+INSERT INTO public.fs_policy_list_values (policy_id, kind, ord, value, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000003', 'allow_paths', 1, '.server_root/downloads', '2026-08-12 17:23:32.744686+00', '2026-08-12 17:23:32.744686+00');
+INSERT INTO public.fs_policy_list_values (policy_id, kind, ord, value, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000003', 'allow_paths', 2, '.server_root/library', '2026-08-12 17:23:32.744686+00', '2026-08-12 17:23:32.744686+00');
+
+
+
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (1, 'retention_purge', 3600, 0, true, NULL, '2026-08-12 17:51:41.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (2, 'reputation_rollup_1h', 300, 0, true, NULL, '2026-08-12 17:23:58.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (3, 'reputation_rollup_24h', 3600, 0, true, NULL, '2026-08-12 17:55:18.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (4, 'reputation_rollup_7d', 21600, 0, true, NULL, '2026-08-12 18:19:21.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (5, 'connectivity_profile_refresh', 300, 0, true, NULL, '2026-08-12 17:23:52.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (6, 'canonical_backfill_best_source', 86400, 0, true, NULL, '2026-08-13 11:10:34.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (7, 'base_score_refresh_recent', 3600, 0, true, NULL, '2026-08-12 17:52:09.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (8, 'canonical_prune_low_confidence', 86400, 0, true, NULL, '2026-08-13 16:50:37.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (9, 'policy_snapshot_gc', 86400, 0, true, NULL, '2026-08-13 14:57:25.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (10, 'policy_snapshot_refcount_repair', 86400, 0, true, NULL, '2026-08-13 03:13:47.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (11, 'rate_limit_state_purge', 3600, 0, true, NULL, '2026-08-12 17:51:28.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (12, 'rss_poll', 60, 0, true, NULL, '2026-08-12 17:24:16.067765+00', NULL, NULL);
+INSERT INTO public.job_schedule (job_schedule_id, job_key, cadence_seconds, jitter_seconds, enabled, last_run_at, next_run_at, locked_until, lock_owner) OVERRIDING SYSTEM VALUE VALUES (13, 'rss_subscription_backfill', 300, 0, true, NULL, '2026-08-12 17:27:56.067765+00', NULL, NULL);
+
+
+
+INSERT INTO public.media_compatibility_target (media_compatibility_target_id, compatibility_target_key, version, display_name, video_codec, audio_codec, subtitle_policy, enabled, created_at, updated_at, audio_channels, audio_channel_layout) OVERRIDING SYSTEM VALUE VALUES (1, 'hevc-aac', 1, 'HEVC/AAC', 'hevc', 'aac', 'selected', true, '2026-08-12 17:23:34.341408+00', '2026-08-12 17:23:34.341408+00', NULL, NULL);
+INSERT INTO public.media_compatibility_target (media_compatibility_target_id, compatibility_target_key, version, display_name, video_codec, audio_codec, subtitle_policy, enabled, created_at, updated_at, audio_channels, audio_channel_layout) OVERRIDING SYSTEM VALUE VALUES (2, 'plex-apple-tv', 1, 'Plex Apple TV HEVC/AAC', 'hevc', 'aac', 'selected', true, '2026-08-12 17:23:34.341408+00', '2026-08-12 17:23:34.341408+00', NULL, NULL);
+INSERT INTO public.media_compatibility_target (media_compatibility_target_id, compatibility_target_key, version, display_name, video_codec, audio_codec, subtitle_policy, enabled, created_at, updated_at, audio_channels, audio_channel_layout) OVERRIDING SYSTEM VALUE VALUES (3, 'plex-general-hevc-aac', 1, 'Plex General HEVC/AAC', 'hevc', 'aac', 'selected', true, '2026-08-12 17:23:34.341408+00', '2026-08-12 17:23:34.341408+00', NULL, NULL);
+
+
+
+INSERT INTO public.media_domain (media_domain_id, media_domain_key, display_name, created_at) OVERRIDING SYSTEM VALUE VALUES (1, 'movies', 'Movies', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.media_domain (media_domain_id, media_domain_key, display_name, created_at) OVERRIDING SYSTEM VALUE VALUES (2, 'tv', 'TV', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.media_domain (media_domain_id, media_domain_key, display_name, created_at) OVERRIDING SYSTEM VALUE VALUES (3, 'audiobooks', 'Audiobooks', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.media_domain (media_domain_id, media_domain_key, display_name, created_at) OVERRIDING SYSTEM VALUE VALUES (4, 'ebooks', 'Ebooks', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.media_domain (media_domain_id, media_domain_key, display_name, created_at) OVERRIDING SYSTEM VALUE VALUES (5, 'software', 'Software', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.media_domain (media_domain_id, media_domain_key, display_name, created_at) OVERRIDING SYSTEM VALUE VALUES (6, 'adult_movies', 'Adult Movies', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.media_domain (media_domain_id, media_domain_key, display_name, created_at) OVERRIDING SYSTEM VALUE VALUES (7, 'adult_scenes', 'Adult Scenes', '2026-08-12 17:23:34.067765+00');
+
+
+
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (1, 2000, 'Movies', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (2, 2010, 'Movies/2010', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (3, 2020, 'Movies/2020', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (4, 2030, 'Movies/2030', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (5, 2040, 'Movies/2040', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (6, 2045, 'Movies/2045', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (7, 2050, 'Movies/2050', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (8, 2060, 'Movies/2060', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (9, 3000, 'Audio', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (10, 3010, 'Audio/3010', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (11, 3020, 'Audio/3020', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (12, 4000, 'Software', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (13, 4050, 'Software/4050', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (14, 5000, 'TV', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (15, 5010, 'TV/5010', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (16, 5020, 'TV/5020', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (17, 5030, 'TV/5030', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (18, 5040, 'TV/5040', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (19, 5045, 'TV/5045', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (20, 5050, 'TV/5050', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (21, 5060, 'TV/5060', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (22, 5070, 'TV/5070', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (23, 5075, 'TV/5075', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (24, 5080, 'TV/5080', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (25, 6000, 'Adult', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (26, 6010, 'Adult/6010', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (27, 6020, 'Adult/6020', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (28, 6030, 'Adult/6030', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (29, 6040, 'Adult/6040', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (30, 7000, 'Books', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (31, 7010, 'Books/7010', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (32, 7020, 'Books/7020', '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.torznab_category (torznab_category_id, torznab_cat_id, name, created_at) OVERRIDING SYSTEM VALUE VALUES (33, 8000, 'Other', '2026-08-12 17:23:34.067765+00');
+
+
+
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (1, 1, 1, true);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (2, 1, 2, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (3, 1, 3, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (4, 1, 4, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (5, 1, 5, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (6, 1, 6, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (7, 1, 7, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (8, 1, 8, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (9, 3, 11, true);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (10, 5, 12, true);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (11, 5, 13, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (12, 2, 14, true);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (13, 2, 15, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (14, 2, 16, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (15, 2, 17, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (16, 2, 18, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (17, 2, 19, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (18, 2, 20, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (19, 2, 21, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (20, 2, 22, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (21, 2, 23, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (22, 2, 24, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (23, 7, 25, true);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (24, 6, 25, true);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (25, 7, 26, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (26, 6, 26, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (27, 7, 27, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (28, 6, 27, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (29, 7, 28, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (30, 6, 28, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (31, 7, 29, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (32, 6, 29, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (33, 4, 30, false);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (34, 4, 31, true);
+INSERT INTO public.media_domain_to_torznab_category (media_domain_to_torznab_category_id, media_domain_id, torznab_category_id, is_primary) OVERRIDING SYSTEM VALUE VALUES (35, 4, 32, false);
+
+
+
+INSERT INTO public.media_job_retention_policy (media_job_retention_policy_id, policy_key, completed_retention_days, failed_diagnostic_retention_days, enabled, created_at, updated_at, completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit, workspace_retention_hours, diagnostic_workspace_retention_hours, workspace_cleanup_batch_size) OVERRIDING SYSTEM VALUE VALUES (1, 'default', 30, 30, true, '2026-08-12 17:23:34.341408+00', '2026-08-12 17:23:34.341408+00', false, 'age', 30, true, 'age', 30, 24, 720, 128);
+
+
+
+INSERT INTO public.media_policy_profile (media_policy_profile_id, policy_key, version, display_name, video_intent, enabled, created_at, updated_at, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, unmatched_video_action, unmatched_audio_action, unmatched_subtitle_action, unmatched_attachment_action, unmatched_data_action) OVERRIDING SYSTEM VALUE VALUES (1, 'safe_dry_run', 1, 'Safe dry run', 'general', true, '2026-08-12 17:23:34.341408+00', '2026-08-12 17:23:34.341408+00', 'remove', 'strict', 100, true, true, true, true, 'fail', 'preserve', 'preserve', 'preserve', 'remove');
+INSERT INTO public.media_policy_profile (media_policy_profile_id, policy_key, version, display_name, video_intent, enabled, created_at, updated_at, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, unmatched_video_action, unmatched_audio_action, unmatched_subtitle_action, unmatched_attachment_action, unmatched_data_action) OVERRIDING SYSTEM VALUE VALUES (2, 'general', 1, 'General media', 'general', true, '2026-08-12 17:23:34.341408+00', '2026-08-12 17:23:34.341408+00', 'remove', 'balanced', 1000, true, true, true, false, 'fail', 'preserve', 'preserve', 'preserve', 'remove');
+INSERT INTO public.media_policy_profile (media_policy_profile_id, policy_key, version, display_name, video_intent, enabled, created_at, updated_at, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, unmatched_video_action, unmatched_audio_action, unmatched_subtitle_action, unmatched_attachment_action, unmatched_data_action) OVERRIDING SYSTEM VALUE VALUES (3, 'anime', 1, 'Anime', 'anime', true, '2026-08-12 17:23:34.341408+00', '2026-08-12 17:23:34.341408+00', 'remove', 'balanced', 1000, true, true, true, false, 'fail', 'preserve', 'preserve', 'preserve', 'remove');
+INSERT INTO public.media_policy_profile (media_policy_profile_id, policy_key, version, display_name, video_intent, enabled, created_at, updated_at, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, unmatched_video_action, unmatched_audio_action, unmatched_subtitle_action, unmatched_attachment_action, unmatched_data_action) OVERRIDING SYSTEM VALUE VALUES (4, 'archival', 1, 'Archival', 'archival', true, '2026-08-12 17:23:34.341408+00', '2026-08-12 17:23:34.341408+00', 'remove', 'strict', 100, true, true, true, true, 'fail', 'preserve', 'preserve', 'preserve', 'remove');
+
+
+
+INSERT INTO public.media_policy_backup (media_policy_profile_id, enabled, retention_days, min_free_space_bytes) VALUES (1, false, NULL, NULL);
+INSERT INTO public.media_policy_backup (media_policy_profile_id, enabled, retention_days, min_free_space_bytes) VALUES (2, false, NULL, NULL);
+INSERT INTO public.media_policy_backup (media_policy_profile_id, enabled, retention_days, min_free_space_bytes) VALUES (3, false, NULL, NULL);
+INSERT INTO public.media_policy_backup (media_policy_profile_id, enabled, retention_days, min_free_space_bytes) VALUES (4, false, NULL, NULL);
+
+
+
+INSERT INTO public.media_policy_compatibility_rule (media_policy_profile_id, unsupported_format_action, require_all_targets) VALUES (1, 'fail', true);
+INSERT INTO public.media_policy_compatibility_rule (media_policy_profile_id, unsupported_format_action, require_all_targets) VALUES (2, 'fail', true);
+INSERT INTO public.media_policy_compatibility_rule (media_policy_profile_id, unsupported_format_action, require_all_targets) VALUES (3, 'fail', true);
+INSERT INTO public.media_policy_compatibility_rule (media_policy_profile_id, unsupported_format_action, require_all_targets) VALUES (4, 'fail', true);
+
+
+
+INSERT INTO public.media_policy_output (media_policy_profile_id, dry_run, replacement_mode, quarantine_enabled, preserve_permissions, preserve_ownership) VALUES (1, true, 'disabled', true, true, true);
+INSERT INTO public.media_policy_output (media_policy_profile_id, dry_run, replacement_mode, quarantine_enabled, preserve_permissions, preserve_ownership) VALUES (2, true, 'disabled', true, true, true);
+INSERT INTO public.media_policy_output (media_policy_profile_id, dry_run, replacement_mode, quarantine_enabled, preserve_permissions, preserve_ownership) VALUES (3, true, 'disabled', true, true, true);
+INSERT INTO public.media_policy_output (media_policy_profile_id, dry_run, replacement_mode, quarantine_enabled, preserve_permissions, preserve_ownership) VALUES (4, true, 'disabled', true, true, true);
+
+
+
+INSERT INTO public.media_policy_runtime_limit (media_policy_profile_id, max_concurrency, max_retries, max_runtime_seconds, max_io_megabytes_per_second, min_free_space_bytes, pause_on_battery, minimum_battery_percent, thermal_pressure_limit, pause_when_thermal_exceeded) VALUES (1, 1, 0, 21600, 1024, 10737418240, true, 20, 'serious', true);
+INSERT INTO public.media_policy_runtime_limit (media_policy_profile_id, max_concurrency, max_retries, max_runtime_seconds, max_io_megabytes_per_second, min_free_space_bytes, pause_on_battery, minimum_battery_percent, thermal_pressure_limit, pause_when_thermal_exceeded) VALUES (2, 1, 0, 21600, 1024, 10737418240, true, 20, 'serious', true);
+INSERT INTO public.media_policy_runtime_limit (media_policy_profile_id, max_concurrency, max_retries, max_runtime_seconds, max_io_megabytes_per_second, min_free_space_bytes, pause_on_battery, minimum_battery_percent, thermal_pressure_limit, pause_when_thermal_exceeded) VALUES (3, 1, 0, 21600, 1024, 10737418240, true, 20, 'serious', true);
+INSERT INTO public.media_policy_runtime_limit (media_policy_profile_id, max_concurrency, max_retries, max_runtime_seconds, max_io_megabytes_per_second, min_free_space_bytes, pause_on_battery, minimum_battery_percent, thermal_pressure_limit, pause_when_thermal_exceeded) VALUES (4, 1, 0, 21600, 1024, 10737418240, true, 20, 'serious', true);
+
+
+
+INSERT INTO public.media_policy_unmatched_stream_behavior (media_policy_profile_id, video_action, audio_action, subtitle_action, attachment_action, data_action) VALUES (1, 'fail', 'fail', 'fail', 'fail', 'fail');
+INSERT INTO public.media_policy_unmatched_stream_behavior (media_policy_profile_id, video_action, audio_action, subtitle_action, attachment_action, data_action) VALUES (2, 'fail', 'fail', 'fail', 'fail', 'fail');
+INSERT INTO public.media_policy_unmatched_stream_behavior (media_policy_profile_id, video_action, audio_action, subtitle_action, attachment_action, data_action) VALUES (3, 'fail', 'fail', 'fail', 'fail', 'fail');
+INSERT INTO public.media_policy_unmatched_stream_behavior (media_policy_profile_id, video_action, audio_action, subtitle_action, attachment_action, data_action) VALUES (4, 'fail', 'fail', 'fail', 'fail', 'fail');
+
+
+
+INSERT INTO public.media_policy_verification (media_policy_profile_id, strictness, duration_tolerance_millis, mux_validation, decode_all_streams, keyframe_seek, playback_probe) VALUES (1, 'strict', 100, true, true, true, true);
+INSERT INTO public.media_policy_verification (media_policy_profile_id, strictness, duration_tolerance_millis, mux_validation, decode_all_streams, keyframe_seek, playback_probe) VALUES (2, 'balanced', 1000, true, true, true, false);
+INSERT INTO public.media_policy_verification (media_policy_profile_id, strictness, duration_tolerance_millis, mux_validation, decode_all_streams, keyframe_seek, playback_probe) VALUES (3, 'balanced', 1000, true, true, true, false);
+INSERT INTO public.media_policy_verification (media_policy_profile_id, strictness, duration_tolerance_millis, mux_validation, decode_all_streams, keyframe_seek, playback_probe) VALUES (4, 'strict', 100, true, true, true, true);
+
+
+
+INSERT INTO public.media_policy_workspace (media_policy_profile_id, retention_hours, diagnostics_enabled, stale_cleanup_hours, max_workspace_bytes) VALUES (1, 24, true, 48, 107374182400);
+INSERT INTO public.media_policy_workspace (media_policy_profile_id, retention_hours, diagnostics_enabled, stale_cleanup_hours, max_workspace_bytes) VALUES (2, 24, true, 48, 107374182400);
+INSERT INTO public.media_policy_workspace (media_policy_profile_id, retention_hours, diagnostics_enabled, stale_cleanup_hours, max_workspace_bytes) VALUES (3, 24, true, 48, 107374182400);
+INSERT INTO public.media_policy_workspace (media_policy_profile_id, retention_hours, diagnostics_enabled, stale_cleanup_hours, max_workspace_bytes) VALUES (4, 24, true, 48, 107374182400);
+
+
+
+INSERT INTO public.rate_limit_policy (rate_limit_policy_id, rate_limit_policy_public_id, display_name, requests_per_minute, burst, concurrent_requests, is_system, created_at, updated_at, deleted_at) OVERRIDING SYSTEM VALUE VALUES (1, 'dac87673-3995-4c62-8f1d-e4603f1cd030', 'default_indexer', 60, 30, 2, true, '2026-08-12 17:23:34.067765+00', '2026-08-12 17:23:34.067765+00', NULL);
+INSERT INTO public.rate_limit_policy (rate_limit_policy_id, rate_limit_policy_public_id, display_name, requests_per_minute, burst, concurrent_requests, is_system, created_at, updated_at, deleted_at) OVERRIDING SYSTEM VALUE VALUES (2, '23186381-3f6a-4f3b-a9cd-a196c323ccc4', 'default_routing', 120, 60, 4, true, '2026-08-12 17:23:34.067765+00', '2026-08-12 17:23:34.067765+00', NULL);
+
+
+
+INSERT INTO public.settings_revision (id, revision, updated_at) VALUES (1, 1, '2026-08-12 17:23:32.744686+00');
+
+
+
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (1, NULL, 2000, 0, 1, 1, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (2, NULL, 2010, 0, 2, 1, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (3, NULL, 2020, 0, 3, 1, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (4, NULL, 2030, 0, 4, 1, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (5, NULL, 2040, 0, 5, 1, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (6, NULL, 2045, 0, 6, 1, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (7, NULL, 2050, 0, 7, 1, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (8, NULL, 2060, 0, 8, 1, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (9, NULL, 3000, 0, 9, NULL, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (10, NULL, 3010, 0, 10, NULL, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (11, NULL, 3020, 0, 11, 3, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (12, NULL, 4000, 0, 12, 5, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (13, NULL, 4050, 0, 13, 5, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (14, NULL, 5000, 0, 14, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (15, NULL, 5010, 0, 15, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (16, NULL, 5020, 0, 16, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (17, NULL, 5030, 0, 17, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (18, NULL, 5040, 0, 18, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (19, NULL, 5045, 0, 19, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (20, NULL, 5050, 0, 20, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (21, NULL, 5060, 0, 21, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (22, NULL, 5070, 0, 22, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (23, NULL, 5075, 0, 23, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (24, NULL, 5080, 0, 24, 2, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (25, NULL, 6000, 0, 25, 6, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (26, NULL, 6010, 0, 26, 6, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (27, NULL, 6020, 0, 27, 6, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (28, NULL, 6030, 0, 28, 6, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (29, NULL, 6040, 0, 29, 6, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (30, NULL, 7000, 0, 30, 4, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (31, NULL, 7010, 0, 31, 4, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (32, NULL, 7020, 0, 32, 4, 1.000, NULL, NULL);
+INSERT INTO public.tracker_category_mapping (tracker_category_mapping_id, indexer_definition_id, tracker_category, tracker_subcategory, torznab_category_id, media_domain_id, confidence, indexer_instance_id, torznab_instance_id) OVERRIDING SYSTEM VALUE VALUES (33, NULL, 8000, 0, 33, NULL, 1.000, NULL, NULL);
+
+
+
+INSERT INTO public.trust_tier (trust_tier_id, trust_tier_key, display_name, default_weight, rank, created_at) OVERRIDING SYSTEM VALUE VALUES (1, 'public', 'Public', 0.0000, 10, '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.trust_tier (trust_tier_id, trust_tier_key, display_name, default_weight, rank, created_at) OVERRIDING SYSTEM VALUE VALUES (2, 'semi_private', 'Semi-Private', 5.0000, 20, '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.trust_tier (trust_tier_id, trust_tier_key, display_name, default_weight, rank, created_at) OVERRIDING SYSTEM VALUE VALUES (3, 'private', 'Private', 10.0000, 30, '2026-08-12 17:23:34.067765+00');
+INSERT INTO public.trust_tier (trust_tier_id, trust_tier_key, display_name, default_weight, rank, created_at) OVERRIDING SYSTEM VALUE VALUES (4, 'invite_only', 'Invite Only', 15.0000, 40, '2026-08-12 17:23:34.067765+00');
+
+
+
+SELECT pg_catalog.setval('public.app_user_user_id_seq', 1, false);
+
+
+
+SELECT pg_catalog.setval('public.job_schedule_job_schedule_id_seq', 13, true);
+
+
+
+SELECT pg_catalog.setval('public.media_compatibility_target_media_compatibility_target_id_seq', 3, true);
+
+
+
+SELECT pg_catalog.setval('public.media_domain_media_domain_id_seq', 7, true);
+
+
+
+SELECT pg_catalog.setval('public.media_domain_to_torznab_categ_media_domain_to_torznab_categ_seq', 35, true);
+
+
+
+SELECT pg_catalog.setval('public.media_job_retention_policy_media_job_retention_policy_id_seq', 1, true);
+
+
+
+SELECT pg_catalog.setval('public.media_policy_profile_media_policy_profile_id_seq', 4, true);
+
+
+
+SELECT pg_catalog.setval('public.rate_limit_policy_rate_limit_policy_id_seq', 2, true);
+
+
+
+SELECT pg_catalog.setval('public.torznab_category_torznab_category_id_seq', 33, true);
+
+
+
+SELECT pg_catalog.setval('public.tracker_category_mapping_tracker_category_mapping_id_seq', 33, true);
+
+
+
+SELECT pg_catalog.setval('public.trust_tier_trust_tier_id_seq', 4, true);
+
+
+
+
+
+
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', 'public', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+SET default_tablespace = '';
+
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_pkey PRIMARY KEY (acquisition_attempt_id);
+
+
+
+ALTER TABLE ONLY public.app_label_policies
+    ADD CONSTRAINT app_label_policies_pkey PRIMARY KEY (profile_id, kind, name);
+
+
+
+ALTER TABLE ONLY public.app_profile_immutable_keys
+    ADD CONSTRAINT app_profile_immutable_keys_pkey PRIMARY KEY (profile_id, key);
+
+
+
+ALTER TABLE ONLY public.app_profile_local_networks
+    ADD CONSTRAINT app_profile_local_networks_pkey PRIMARY KEY (profile_id, cidr);
+
+
+
+ALTER TABLE ONLY public.app_profile
+    ADD CONSTRAINT app_profile_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_email_normalized_uq UNIQUE (email_normalized);
+
+
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_email_uq UNIQUE (email);
+
+
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_pkey PRIMARY KEY (user_id);
+
+
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_user_public_id_uq UNIQUE (user_public_id);
+
+
+
+ALTER TABLE ONLY public.auth_api_keys
+    ADD CONSTRAINT auth_api_keys_key_id_key UNIQUE (key_id);
+
+
+
+ALTER TABLE ONLY public.auth_api_keys
+    ADD CONSTRAINT auth_api_keys_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.canonical_disambiguation_rule
+    ADD CONSTRAINT canonical_disambiguation_rule_pkey PRIMARY KEY (canonical_disambiguation_rule_id);
+
+
+
+ALTER TABLE ONLY public.canonical_disambiguation_rule
+    ADD CONSTRAINT canonical_disambiguation_rule_uq UNIQUE (identity_left_type, identity_left_value_text, identity_left_value_uuid, identity_right_type, identity_right_value_text, identity_right_value_uuid);
+
+
+
+ALTER TABLE ONLY public.canonical_external_id
+    ADD CONSTRAINT canonical_external_id_pkey PRIMARY KEY (canonical_external_id_id);
+
+
+
+ALTER TABLE ONLY public.canonical_size_rollup
+    ADD CONSTRAINT canonical_size_rollup_pkey PRIMARY KEY (canonical_size_rollup_id);
+
+
+
+ALTER TABLE ONLY public.canonical_size_rollup
+    ADD CONSTRAINT canonical_size_rollup_uq UNIQUE (canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.canonical_size_sample
+    ADD CONSTRAINT canonical_size_sample_pkey PRIMARY KEY (canonical_size_sample_id);
+
+
+
+ALTER TABLE ONLY public.canonical_size_sample
+    ADD CONSTRAINT canonical_size_sample_uq UNIQUE (canonical_torrent_id, observed_at, size_bytes);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_context_pkey PRIMARY KEY (canonical_torrent_best_source_context_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_context_uq UNIQUE (context_key_type, context_key_id, canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source_global_pkey PRIMARY KEY (canonical_torrent_best_source_global_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source_global_uq UNIQUE (canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent
+    ADD CONSTRAINT canonical_torrent_pkey PRIMARY KEY (canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent
+    ADD CONSTRAINT canonical_torrent_public_id_uq UNIQUE (canonical_torrent_public_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_signal
+    ADD CONSTRAINT canonical_torrent_signal_pkey PRIMARY KEY (canonical_torrent_signal_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_signal
+    ADD CONSTRAINT canonical_torrent_signal_uq UNIQUE (canonical_torrent_id, signal_key, value_text, value_int);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_attr
+    ADD CONSTRAINT canonical_torrent_source_attr_pkey PRIMARY KEY (canonical_torrent_source_attr_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_attr
+    ADD CONSTRAINT canonical_torrent_source_attr_uq UNIQUE (canonical_torrent_source_id, attr_key);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base_score_pkey PRIMARY KEY (canonical_torrent_source_base_score_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base_score_uq UNIQUE (canonical_torrent_id, canonical_torrent_source_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_context_score_pkey PRIMARY KEY (canonical_torrent_source_context_score_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_context_score_uq UNIQUE (context_key_type, context_key_id, canonical_torrent_id, canonical_torrent_source_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source
+    ADD CONSTRAINT canonical_torrent_source_pkey PRIMARY KEY (canonical_torrent_source_id);
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source
+    ADD CONSTRAINT canonical_torrent_source_public_id_uq UNIQUE (canonical_torrent_source_public_id);
+
+
+
+ALTER TABLE ONLY public.config_audit_log
+    ADD CONSTRAINT config_audit_log_pkey PRIMARY KEY (audit_log_id);
+
+
+
+ALTER TABLE ONLY public.deployment_config
+    ADD CONSTRAINT deployment_config_pkey PRIMARY KEY (deployment_config_id);
+
+
+
+ALTER TABLE ONLY public.deployment_maintenance_state
+    ADD CONSTRAINT deployment_maintenance_state_pkey PRIMARY KEY (deployment_maintenance_state_id);
+
+
+
+ALTER TABLE ONLY public.engine_alt_speed_days
+    ADD CONSTRAINT engine_alt_speed_days_pkey PRIMARY KEY (profile_id, ord);
+
+
+
+ALTER TABLE ONLY public.engine_alt_speed
+    ADD CONSTRAINT engine_alt_speed_pkey PRIMARY KEY (profile_id);
+
+
+
+ALTER TABLE ONLY public.engine_ip_filter_entries
+    ADD CONSTRAINT engine_ip_filter_entries_pkey PRIMARY KEY (profile_id, ord);
+
+
+
+ALTER TABLE ONLY public.engine_ip_filter
+    ADD CONSTRAINT engine_ip_filter_pkey PRIMARY KEY (profile_id);
+
+
+
+ALTER TABLE ONLY public.engine_peer_class_defaults
+    ADD CONSTRAINT engine_peer_class_defaults_pkey PRIMARY KEY (profile_id, class_id);
+
+
+
+ALTER TABLE ONLY public.engine_peer_classes
+    ADD CONSTRAINT engine_peer_classes_pkey PRIMARY KEY (profile_id, class_id);
+
+
+
+ALTER TABLE ONLY public.engine_profile_list_values
+    ADD CONSTRAINT engine_profile_list_values_pkey PRIMARY KEY (profile_id, kind, ord);
+
+
+
+ALTER TABLE ONLY public.engine_profile
+    ADD CONSTRAINT engine_profile_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.engine_tracker_config
+    ADD CONSTRAINT engine_tracker_config_pkey PRIMARY KEY (profile_id);
+
+
+
+ALTER TABLE ONLY public.engine_tracker_endpoints
+    ADD CONSTRAINT engine_tracker_endpoints_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.fs_policy_list_values
+    ADD CONSTRAINT fs_policy_list_values_pkey PRIMARY KEY (policy_id, kind, ord);
+
+
+
+ALTER TABLE ONLY public.fs_policy
+    ADD CONSTRAINT fs_policy_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domain_pkey PRIMARY KEY (import_indexer_result_media_domain_id);
+
+
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domain_uq UNIQUE (import_indexer_result_id, media_domain_id);
+
+
+
+ALTER TABLE ONLY public.import_indexer_result
+    ADD CONSTRAINT import_indexer_result_pkey PRIMARY KEY (import_indexer_result_id);
+
+
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_pkey PRIMARY KEY (import_indexer_result_tag_id);
+
+
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_uq UNIQUE (import_indexer_result_id, tag_id);
+
+
+
+ALTER TABLE ONLY public.import_indexer_result
+    ADD CONSTRAINT import_indexer_result_uq UNIQUE (import_job_id, prowlarr_identifier);
+
+
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_pkey PRIMARY KEY (import_job_id);
+
+
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_public_id_uq UNIQUE (import_job_public_id);
+
+
+
+ALTER TABLE ONLY public.indexer_cf_state
+    ADD CONSTRAINT indexer_cf_state_instance_uq UNIQUE (indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.indexer_cf_state
+    ADD CONSTRAINT indexer_cf_state_pkey PRIMARY KEY (indexer_cf_state_id);
+
+
+
+ALTER TABLE ONLY public.indexer_connectivity_profile
+    ADD CONSTRAINT indexer_connectivity_profile_pkey PRIMARY KEY (indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field
+    ADD CONSTRAINT indexer_definition_field_name_uq UNIQUE (indexer_definition_id, name);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_option
+    ADD CONSTRAINT indexer_definition_field_option_pkey PRIMARY KEY (indexer_definition_field_option_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_option
+    ADD CONSTRAINT indexer_definition_field_option_uq UNIQUE (indexer_definition_field_id, option_value);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field
+    ADD CONSTRAINT indexer_definition_field_pkey PRIMARY KEY (indexer_definition_field_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_validation_pkey PRIMARY KEY (indexer_definition_field_validation_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set_item
+    ADD CONSTRAINT indexer_definition_field_value_set_item_pkey PRIMARY KEY (value_set_item_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set
+    ADD CONSTRAINT indexer_definition_field_value_set_pkey PRIMARY KEY (value_set_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set
+    ADD CONSTRAINT indexer_definition_field_value_set_uq UNIQUE (indexer_definition_field_validation_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition
+    ADD CONSTRAINT indexer_definition_pkey PRIMARY KEY (indexer_definition_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition
+    ADD CONSTRAINT indexer_definition_upstream_uq UNIQUE (upstream_source, upstream_slug);
+
+
+
+ALTER TABLE ONLY public.indexer_health_event
+    ADD CONSTRAINT indexer_health_event_pkey PRIMARY KEY (indexer_health_event_id);
+
+
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_pkey PRIMARY KEY (indexer_health_notification_hook_id);
+
+
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_public_id_uq UNIQUE (indexer_health_notification_hook_public_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_display_name_uq UNIQUE (display_name);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_pkey PRIMARY KEY (indexer_instance_field_value_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_uq UNIQUE (indexer_instance_id, field_name);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_import_blob
+    ADD CONSTRAINT indexer_instance_import_blob_pkey PRIMARY KEY (indexer_instance_import_blob_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_import_blob
+    ADD CONSTRAINT indexer_instance_import_blob_uq UNIQUE (indexer_instance_id, source_system);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_pkey PRIMARY KEY (indexer_instance_media_domain_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_uq UNIQUE (indexer_instance_id, media_domain_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_pkey PRIMARY KEY (indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_public_id_uq UNIQUE (indexer_instance_public_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_pkey PRIMARY KEY (indexer_instance_rate_limit_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_uq UNIQUE (indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_pkey PRIMARY KEY (indexer_instance_tag_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_uq UNIQUE (indexer_instance_id, tag_id);
+
+
+
+ALTER TABLE ONLY public.indexer_rss_item_seen
+    ADD CONSTRAINT indexer_rss_item_seen_pkey PRIMARY KEY (rss_item_seen_id);
+
+
+
+ALTER TABLE ONLY public.indexer_rss_subscription
+    ADD CONSTRAINT indexer_rss_subscription_instance_uq UNIQUE (indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.indexer_rss_subscription
+    ADD CONSTRAINT indexer_rss_subscription_pkey PRIMARY KEY (indexer_rss_subscription_id);
+
+
+
+ALTER TABLE ONLY public.indexer_run_cursor
+    ADD CONSTRAINT indexer_run_cursor_pkey PRIMARY KEY (indexer_run_cursor_id);
+
+
+
+ALTER TABLE ONLY public.indexer_run_cursor
+    ADD CONSTRAINT indexer_run_cursor_uq UNIQUE (search_request_indexer_run_id);
+
+
+
+ALTER TABLE ONLY public.job_schedule
+    ADD CONSTRAINT job_schedule_job_key_uq UNIQUE (job_key);
+
+
+
+ALTER TABLE ONLY public.job_schedule
+    ADD CONSTRAINT job_schedule_pkey PRIMARY KEY (job_schedule_id);
+
+
+
+ALTER TABLE ONLY public.media_capability_snapshot_encoder
+    ADD CONSTRAINT media_capability_snapshot_encoder_pkey PRIMARY KEY (media_capability_snapshot_encoder_id);
+
+
+
+ALTER TABLE ONLY public.media_capability_snapshot_feature
+    ADD CONSTRAINT media_capability_snapshot_feature_pkey PRIMARY KEY (media_capability_snapshot_feature_id);
+
+
+
+ALTER TABLE ONLY public.media_capability_snapshot
+    ADD CONSTRAINT media_capability_snapshot_pkey PRIMARY KEY (media_capability_snapshot_id);
+
+
+
+ALTER TABLE ONLY public.media_capability_snapshot_run
+    ADD CONSTRAINT media_capability_snapshot_run_pkey PRIMARY KEY (snapshot_run_public_id);
+
+
+
+ALTER TABLE ONLY public.media_compatibility_target
+    ADD CONSTRAINT media_compatibility_target_pkey PRIMARY KEY (media_compatibility_target_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_audio_stream
+    ADD CONSTRAINT media_desired_target_audio_stream_pkey PRIMARY KEY (media_desired_target_stream_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_chapter_metadata
+    ADD CONSTRAINT media_desired_target_container_chapter_metadata_key_unique UNIQUE (media_desired_target_container_chapter_id, metadata_key);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_chapter_metadata
+    ADD CONSTRAINT media_desired_target_container_chapter_metadata_pkey PRIMARY KEY (media_desired_target_container_chapter_metadata_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_chapter
+    ADD CONSTRAINT media_desired_target_container_chapter_order_unique UNIQUE (media_desired_target_profile_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_chapter
+    ADD CONSTRAINT media_desired_target_container_chapter_pkey PRIMARY KEY (media_desired_target_container_chapter_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_chapter
+    ADD CONSTRAINT media_desired_target_container_chapter_start_unique UNIQUE (media_desired_target_profile_id, start_millis);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_metadata
+    ADD CONSTRAINT media_desired_target_container_metadata_key_unique UNIQUE (media_desired_target_profile_id, metadata_key);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_metadata
+    ADD CONSTRAINT media_desired_target_container_metadata_pkey PRIMARY KEY (media_desired_target_container_metadata_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container
+    ADD CONSTRAINT media_desired_target_container_pkey PRIMARY KEY (media_desired_target_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_profile
+    ADD CONSTRAINT media_desired_target_profile_media_desired_target_profile_p_key UNIQUE (media_desired_target_profile_public_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_profile
+    ADD CONSTRAINT media_desired_target_profile_pkey PRIMARY KEY (media_desired_target_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_stream
+    ADD CONSTRAINT media_desired_target_stream_pkey PRIMARY KEY (media_desired_target_stream_id);
+
+
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_discovery_schedule_public_id_key UNIQUE (media_discovery_schedule_public_id);
+
+
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_id_sort_order_key UNIQUE (media_profile_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_root_id_key UNIQUE (media_profile_root_id);
+
+
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_pkey PRIMARY KEY (media_discovery_schedule_id);
+
+
+
+ALTER TABLE ONLY public.media_discovery_source_fingerprint
+    ADD CONSTRAINT media_discovery_source_fingerprint_pkey PRIMARY KEY (media_discovery_source_fingerprint_id);
+
+
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_discovery_watcher_public_id_key UNIQUE (media_discovery_watcher_public_id);
+
+
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_id_sort_order_key UNIQUE (media_profile_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_root_id_key UNIQUE (media_profile_root_id);
+
+
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_pkey PRIMARY KEY (media_discovery_watcher_id);
+
+
+
+ALTER TABLE ONLY public.media_domain
+    ADD CONSTRAINT media_domain_key_uq UNIQUE (media_domain_key);
+
+
+
+ALTER TABLE ONLY public.media_domain
+    ADD CONSTRAINT media_domain_pkey PRIMARY KEY (media_domain_id);
+
+
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_pkey PRIMARY KEY (media_domain_to_torznab_category_id);
+
+
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_uq UNIQUE (media_domain_id, torznab_category_id);
+
+
+
+ALTER TABLE ONLY public.media_job_artifact
+    ADD CONSTRAINT media_job_artifact_pkey PRIMARY KEY (media_job_artifact_id);
+
+
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_claim_generation_key UNIQUE (claim_generation);
+
+
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_media_job_id_attempt_number_key UNIQUE (media_job_id, attempt_number);
+
+
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_media_job_id_media_job_attempt_id_key UNIQUE (media_job_id, media_job_attempt_id);
+
+
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_pkey PRIMARY KEY (media_job_attempt_id);
+
+
+
+ALTER TABLE ONLY public.media_job_compact_audit_archive
+    ADD CONSTRAINT media_job_compact_audit_archive_pkey PRIMARY KEY (media_job_public_id, attempt_number, audit_index);
+
+
+
+ALTER TABLE ONLY public.media_job_compact_audit
+    ADD CONSTRAINT media_job_compact_audit_pkey PRIMARY KEY (media_job_compact_audit_id);
+
+
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snapshot_pkey PRIMARY KEY (media_job_id);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_chapter_metadata
+    ADD CONSTRAINT media_job_desired_target_chapter_metadata_key_unique UNIQUE (media_job_desired_target_chapter_id, metadata_key);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_chapter_metadata
+    ADD CONSTRAINT media_job_desired_target_chapter_metadata_pkey PRIMARY KEY (media_job_desired_target_chapter_metadata_id);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_chapter
+    ADD CONSTRAINT media_job_desired_target_chapter_order_unique UNIQUE (media_job_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_chapter
+    ADD CONSTRAINT media_job_desired_target_chapter_pkey PRIMARY KEY (media_job_desired_target_chapter_id);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_chapter
+    ADD CONSTRAINT media_job_desired_target_chapter_start_unique UNIQUE (media_job_id, start_millis);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_metadata
+    ADD CONSTRAINT media_job_desired_target_metadata_key_unique UNIQUE (media_job_id, metadata_key);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_metadata
+    ADD CONSTRAINT media_job_desired_target_metadata_pkey PRIMARY KEY (media_job_desired_target_metadata_id);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_stream
+    ADD CONSTRAINT media_job_desired_target_stream_pkey PRIMARY KEY (media_job_desired_target_stream_id);
+
+
+
+ALTER TABLE ONLY public.media_job_file_rule_snapshot
+    ADD CONSTRAINT media_job_file_rule_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_job_filter_snapshot
+    ADD CONSTRAINT media_job_filter_snapshot_pkey PRIMARY KEY (media_job_id);
+
+
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_media_job_public_id_key UNIQUE (media_job_public_id);
+
+
+
+ALTER TABLE ONLY public.media_job_operation
+    ADD CONSTRAINT media_job_operation_pkey PRIMARY KEY (media_job_operation_id);
+
+
+
+ALTER TABLE ONLY public.media_job_phase
+    ADD CONSTRAINT media_job_phase_pkey PRIMARY KEY (media_job_phase_id);
+
+
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_pkey PRIMARY KEY (media_job_id);
+
+
+
+ALTER TABLE ONLY public.media_job_plan_reason
+    ADD CONSTRAINT media_job_plan_reason_pkey PRIMARY KEY (media_job_plan_reason_id);
+
+
+
+ALTER TABLE ONLY public.media_job_policy_behavior_snapshot
+    ADD CONSTRAINT media_job_policy_behavior_snapshot_pkey PRIMARY KEY (media_job_id);
+
+
+
+ALTER TABLE ONLY public.media_job_policy_compatibility_target_snapshot
+    ADD CONSTRAINT media_job_policy_compatibility_target_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_job_policy_maintenance_window_snapshot
+    ADD CONSTRAINT media_job_policy_maintenance_window_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_job_policy_operation_cost_snapshot
+    ADD CONSTRAINT media_job_policy_operation_cost_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_job_policy_retention_rule_snapshot
+    ADD CONSTRAINT media_job_policy_retention_rule_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_job_retention_policy
+    ADD CONSTRAINT media_job_retention_policy_pkey PRIMARY KEY (media_job_retention_policy_id);
+
+
+
+ALTER TABLE ONLY public.media_job_root_snapshot
+    ADD CONSTRAINT media_job_root_snapshot_pkey PRIMARY KEY (media_job_id, root_kind, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_job_stream_classification_rule_snapshot
+    ADD CONSTRAINT media_job_stream_classification_rule_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_job_subtitle_discovery_rule_snapshot
+    ADD CONSTRAINT media_job_subtitle_discovery_rule_snapshot_pkey PRIMARY KEY (media_job_id, precedence);
+
+
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_job_unique UNIQUE (media_job_id);
+
+
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_pkey PRIMARY KEY (media_job_terminal_outbox_id);
+
+
+
+ALTER TABLE ONLY public.media_job_verification_check
+    ADD CONSTRAINT media_job_verification_check_pkey PRIMARY KEY (media_job_verification_check_id);
+
+
+
+ALTER TABLE ONLY public.media_job_violation
+    ADD CONSTRAINT media_job_violation_pkey PRIMARY KEY (media_job_violation_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_backup
+    ADD CONSTRAINT media_policy_backup_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_compatibility_rule
+    ADD CONSTRAINT media_policy_compatibility_rule_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_ta_media_policy_profile_id_sort__key UNIQUE (media_policy_profile_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_target_pkey PRIMARY KEY (media_policy_profile_id, media_compatibility_target_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_maintenance_window
+    ADD CONSTRAINT media_policy_maintenance_wind_media_policy_profile_id_sort__key UNIQUE (media_policy_profile_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_policy_maintenance_window
+    ADD CONSTRAINT media_policy_maintenance_window_pkey PRIMARY KEY (media_policy_profile_id, day_of_week, start_time);
+
+
+
+ALTER TABLE ONLY public.media_policy_operation_cost
+    ADD CONSTRAINT media_policy_operation_cost_media_policy_profile_id_sort_or_key UNIQUE (media_policy_profile_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_policy_operation_cost
+    ADD CONSTRAINT media_policy_operation_cost_pkey PRIMARY KEY (media_policy_profile_id, operation_kind);
+
+
+
+ALTER TABLE ONLY public.media_policy_output
+    ADD CONSTRAINT media_policy_output_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_profile
+    ADD CONSTRAINT media_policy_profile_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_retention_rule
+    ADD CONSTRAINT media_policy_retention_rule_media_policy_profile_id_sort_or_key UNIQUE (media_policy_profile_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_policy_retention_rule
+    ADD CONSTRAINT media_policy_retention_rule_pkey PRIMARY KEY (media_policy_retention_rule_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_runtime_limit
+    ADD CONSTRAINT media_policy_runtime_limit_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_unmatched_stream_behavior
+    ADD CONSTRAINT media_policy_unmatched_stream_behavior_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_verification
+    ADD CONSTRAINT media_policy_verification_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_workspace
+    ADD CONSTRAINT media_policy_workspace_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_profile_file_rule
+    ADD CONSTRAINT media_profile_file_rule_media_profile_id_sort_order_key UNIQUE (media_profile_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_profile_file_rule
+    ADD CONSTRAINT media_profile_file_rule_pkey PRIMARY KEY (media_profile_file_rule_id);
+
+
+
+ALTER TABLE ONLY public.media_profile_filter
+    ADD CONSTRAINT media_profile_filter_pkey PRIMARY KEY (media_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_profile_import_draft
+    ADD CONSTRAINT media_profile_import_draft_media_profile_import_draft_publi_key UNIQUE (media_profile_import_draft_public_id);
+
+
+
+ALTER TABLE ONLY public.media_profile_import_draft
+    ADD CONSTRAINT media_profile_import_draft_pkey PRIMARY KEY (media_profile_import_draft_id);
+
+
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_media_profile_public_id_key UNIQUE (media_profile_public_id);
+
+
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_pkey PRIMARY KEY (media_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_profile_root
+    ADD CONSTRAINT media_profile_root_media_profile_root_public_id_key UNIQUE (media_profile_root_public_id);
+
+
+
+ALTER TABLE ONLY public.media_profile_root
+    ADD CONSTRAINT media_profile_root_pkey PRIMARY KEY (media_profile_root_id);
+
+
+
+ALTER TABLE ONLY public.media_stream_classification_rule
+    ADD CONSTRAINT media_stream_classification_r_media_policy_profile_id_sort__key UNIQUE (media_policy_profile_id, sort_order);
+
+
+
+ALTER TABLE ONLY public.media_stream_classification_rule
+    ADD CONSTRAINT media_stream_classification_rule_pkey PRIMARY KEY (media_stream_classification_rule_id);
+
+
+
+ALTER TABLE ONLY public.media_subtitle_discovery_rule
+    ADD CONSTRAINT media_subtitle_discovery_rule_media_profile_id_precedence_key UNIQUE (media_profile_id, precedence);
+
+
+
+ALTER TABLE ONLY public.media_subtitle_discovery_rule
+    ADD CONSTRAINT media_subtitle_discovery_rule_pkey PRIMARY KEY (media_subtitle_discovery_rule_id);
+
+
+
+ALTER TABLE ONLY public.media_target
+    ADD CONSTRAINT media_target_pkey PRIMARY KEY (media_target_id);
+
+
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_pkey PRIMARY KEY (outbound_request_log_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_pkey PRIMARY KEY (policy_rule_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_public_id_uq UNIQUE (policy_rule_public_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule_value_set_item
+    ADD CONSTRAINT policy_rule_value_set_item_pkey PRIMARY KEY (value_set_item_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule_value_set
+    ADD CONSTRAINT policy_rule_value_set_pkey PRIMARY KEY (value_set_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule_value_set
+    ADD CONSTRAINT policy_rule_value_set_uq UNIQUE (policy_rule_id);
+
+
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_pkey PRIMARY KEY (policy_set_id);
+
+
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_public_id_uq UNIQUE (policy_set_public_id);
+
+
+
+ALTER TABLE ONLY public.policy_snapshot
+    ADD CONSTRAINT policy_snapshot_hash_uq UNIQUE (snapshot_hash);
+
+
+
+ALTER TABLE ONLY public.policy_snapshot
+    ADD CONSTRAINT policy_snapshot_pkey PRIMARY KEY (policy_snapshot_id);
+
+
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_order_uq UNIQUE (policy_snapshot_id, rule_order);
+
+
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_pkey PRIMARY KEY (policy_snapshot_rule_id);
+
+
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_public_uq UNIQUE (policy_snapshot_id, policy_rule_public_id);
+
+
+
+ALTER TABLE ONLY public.query_presets
+    ADD CONSTRAINT query_presets_name_key UNIQUE (name);
+
+
+
+ALTER TABLE ONLY public.query_presets
+    ADD CONSTRAINT query_presets_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.rate_limit_policy
+    ADD CONSTRAINT rate_limit_policy_display_name_uq UNIQUE (display_name);
+
+
+
+ALTER TABLE ONLY public.rate_limit_policy
+    ADD CONSTRAINT rate_limit_policy_pkey PRIMARY KEY (rate_limit_policy_id);
+
+
+
+ALTER TABLE ONLY public.rate_limit_policy
+    ADD CONSTRAINT rate_limit_policy_public_id_uq UNIQUE (rate_limit_policy_public_id);
+
+
+
+ALTER TABLE ONLY public.rate_limit_state
+    ADD CONSTRAINT rate_limit_state_pkey PRIMARY KEY (rate_limit_state_id);
+
+
+
+ALTER TABLE ONLY public.rate_limit_state
+    ADD CONSTRAINT rate_limit_state_uq UNIQUE (scope_type, scope_id, window_start);
+
+
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_display_name_uq UNIQUE (display_name);
+
+
+
+ALTER TABLE ONLY public.routing_policy_parameter
+    ADD CONSTRAINT routing_policy_parameter_pkey PRIMARY KEY (routing_policy_parameter_id);
+
+
+
+ALTER TABLE ONLY public.routing_policy_parameter
+    ADD CONSTRAINT routing_policy_parameter_uq UNIQUE (routing_policy_id, param_key);
+
+
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_pkey PRIMARY KEY (routing_policy_id);
+
+
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_public_id_uq UNIQUE (routing_policy_public_id);
+
+
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_pkey PRIMARY KEY (routing_policy_rate_limit_id);
+
+
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_uq UNIQUE (routing_policy_id);
+
+
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_pkey PRIMARY KEY (search_filter_decision_id);
+
+
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_canonical_uq UNIQUE (search_request_canonical_id);
+
+
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_pkey PRIMARY KEY (search_page_item_id);
+
+
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_position_uq UNIQUE (search_page_id, "position");
+
+
+
+ALTER TABLE ONLY public.search_page
+    ADD CONSTRAINT search_page_pkey PRIMARY KEY (search_page_id);
+
+
+
+ALTER TABLE ONLY public.search_page
+    ADD CONSTRAINT search_page_uq UNIQUE (search_request_id, page_number);
+
+
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_pkey PRIMARY KEY (search_profile_indexer_allow_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_uq UNIQUE (search_profile_id, indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_pkey PRIMARY KEY (search_profile_indexer_block_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_uq UNIQUE (search_profile_id, indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_pkey PRIMARY KEY (search_profile_media_domain_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_uq UNIQUE (search_profile_id, media_domain_id);
+
+
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_pkey PRIMARY KEY (search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_pkey PRIMARY KEY (search_profile_policy_set_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_uq UNIQUE (search_profile_id, policy_set_id);
+
+
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_public_id_uq UNIQUE (search_profile_public_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_pkey PRIMARY KEY (search_profile_tag_allow_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_uq UNIQUE (search_profile_id, tag_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_pkey PRIMARY KEY (search_profile_tag_block_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_uq UNIQUE (search_profile_id, tag_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_pkey PRIMARY KEY (search_profile_tag_prefer_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_uq UNIQUE (search_profile_id, tag_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_pkey PRIMARY KEY (search_profile_trust_tier_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_uq UNIQUE (search_profile_id, trust_tier_id);
+
+
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_pkey PRIMARY KEY (search_request_canonical_id);
+
+
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_uq UNIQUE (search_request_id, canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.search_request_identifier
+    ADD CONSTRAINT search_request_identifier_pkey PRIMARY KEY (search_request_identifier_id);
+
+
+
+ALTER TABLE ONLY public.search_request_identifier
+    ADD CONSTRAINT search_request_identifier_uq UNIQUE (search_request_id, id_type);
+
+
+
+ALTER TABLE ONLY public.search_request_indexer_run_correlation
+    ADD CONSTRAINT search_request_indexer_run_correlation_pkey PRIMARY KEY (search_request_indexer_run_correlation_id);
+
+
+
+ALTER TABLE ONLY public.search_request_indexer_run_correlation
+    ADD CONSTRAINT search_request_indexer_run_correlation_uq UNIQUE (search_request_indexer_run_id, correlation_id);
+
+
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_pkey PRIMARY KEY (search_request_indexer_run_id);
+
+
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_uq UNIQUE (search_request_id, indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_pkey PRIMARY KEY (search_request_id);
+
+
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_public_id_uq UNIQUE (search_request_public_id);
+
+
+
+ALTER TABLE ONLY public.search_request_source_observation_attr
+    ADD CONSTRAINT search_request_source_observation_attr_pkey PRIMARY KEY (observation_attr_id);
+
+
+
+ALTER TABLE ONLY public.search_request_source_observation_attr
+    ADD CONSTRAINT search_request_source_observation_attr_uq UNIQUE (observation_id, attr_key);
+
+
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_pkey PRIMARY KEY (observation_id);
+
+
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effective_pkey PRIMARY KEY (search_request_torznab_category_effective_id);
+
+
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effective_uq UNIQUE (search_request_id, torznab_category_id);
+
+
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_requested_pkey PRIMARY KEY (search_request_torznab_category_requested_id);
+
+
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_requested_uq UNIQUE (search_request_id, torznab_category_id);
+
+
+
+ALTER TABLE ONLY public.secret_audit_log
+    ADD CONSTRAINT secret_audit_log_pkey PRIMARY KEY (secret_audit_log_id);
+
+
+
+ALTER TABLE ONLY public.secret_binding
+    ADD CONSTRAINT secret_binding_pkey PRIMARY KEY (secret_binding_id);
+
+
+
+ALTER TABLE ONLY public.secret_binding
+    ADD CONSTRAINT secret_binding_uq UNIQUE (bound_table, bound_id, binding_name);
+
+
+
+ALTER TABLE ONLY public.secret
+    ADD CONSTRAINT secret_pkey PRIMARY KEY (secret_id);
+
+
+
+ALTER TABLE ONLY public.secret
+    ADD CONSTRAINT secret_public_id_uq UNIQUE (secret_public_id);
+
+
+
+ALTER TABLE ONLY public.settings_revision
+    ADD CONSTRAINT settings_revision_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.settings_secret
+    ADD CONSTRAINT settings_secret_name_key UNIQUE (name);
+
+
+
+ALTER TABLE ONLY public.settings_secret
+    ADD CONSTRAINT settings_secret_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.setup_tokens
+    ADD CONSTRAINT setup_tokens_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY public.source_metadata_conflict_audit_log
+    ADD CONSTRAINT source_metadata_conflict_audit_log_pkey PRIMARY KEY (source_metadata_conflict_audit_log_id);
+
+
+
+ALTER TABLE ONLY public.source_metadata_conflict
+    ADD CONSTRAINT source_metadata_conflict_pkey PRIMARY KEY (source_metadata_conflict_id);
+
+
+
+ALTER TABLE ONLY public.source_reputation
+    ADD CONSTRAINT source_reputation_pkey PRIMARY KEY (source_reputation_id);
+
+
+
+ALTER TABLE ONLY public.source_reputation
+    ADD CONSTRAINT source_reputation_uq UNIQUE (indexer_instance_id, window_key, window_start);
+
+
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_key_uq UNIQUE (tag_key);
+
+
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_pkey PRIMARY KEY (tag_id);
+
+
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_public_id_uq UNIQUE (tag_public_id);
+
+
+
+ALTER TABLE ONLY public.torznab_category
+    ADD CONSTRAINT torznab_category_cat_id_uq UNIQUE (torznab_cat_id);
+
+
+
+ALTER TABLE ONLY public.torznab_category
+    ADD CONSTRAINT torznab_category_pkey PRIMARY KEY (torznab_category_id);
+
+
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_display_name_uq UNIQUE (display_name);
+
+
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_pkey PRIMARY KEY (torznab_instance_id);
+
+
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_public_id_uq UNIQUE (torznab_instance_public_id);
+
+
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_pkey PRIMARY KEY (tracker_category_mapping_id);
+
+
+
+ALTER TABLE ONLY public.trust_tier
+    ADD CONSTRAINT trust_tier_key_uq UNIQUE (trust_tier_key);
+
+
+
+ALTER TABLE ONLY public.trust_tier
+    ADD CONSTRAINT trust_tier_pkey PRIMARY KEY (trust_tier_id);
+
+
+
+ALTER TABLE ONLY public.user_result_action_kv
+    ADD CONSTRAINT user_result_action_kv_pkey PRIMARY KEY (user_result_action_kv_id);
+
+
+
+ALTER TABLE ONLY public.user_result_action_kv
+    ADD CONSTRAINT user_result_action_kv_uq UNIQUE (user_result_action_id, key);
+
+
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_pkey PRIMARY KEY (user_result_action_id);
+
+
+
+ALTER TABLE ONLY revaer_runtime.fs_jobs
+    ADD CONSTRAINT fs_jobs_pkey PRIMARY KEY (id);
+
+
+
+ALTER TABLE ONLY revaer_runtime.torrent_files
+    ADD CONSTRAINT torrent_files_pkey PRIMARY KEY (torrent_id, file_index);
+
+
+
+ALTER TABLE ONLY revaer_runtime.torrents
+    ADD CONSTRAINT torrents_pkey PRIMARY KEY (torrent_id);
+
+
+
+CREATE UNIQUE INDEX acquisition_attempt_client_uq ON public.acquisition_attempt USING btree (torrent_client_name, torrent_client_id) WHERE ((torrent_client_id IS NOT NULL) AND (torrent_client_name <> 'unknown'::public.torrent_client_name));
+
+
+
+CREATE UNIQUE INDEX app_profile_immutable_keys_order ON public.app_profile_immutable_keys USING btree (profile_id, ord);
+
+
+
+CREATE UNIQUE INDEX app_profile_local_networks_order ON public.app_profile_local_networks USING btree (profile_id, ord);
+
+
+
+CREATE INDEX auth_api_keys_enabled_idx ON public.auth_api_keys USING btree (enabled) WHERE (enabled = true);
+
+
+
+CREATE UNIQUE INDEX canonical_external_id_int_uq ON public.canonical_external_id USING btree (canonical_torrent_id, id_type, id_value_int) WHERE (id_value_int IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX canonical_external_id_text_uq ON public.canonical_external_id USING btree (canonical_torrent_id, id_type, id_value_text) WHERE (id_value_text IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX canonical_torrent_infohash_v1_uq ON public.canonical_torrent USING btree (infohash_v1) WHERE (infohash_v1 IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX canonical_torrent_infohash_v2_uq ON public.canonical_torrent USING btree (infohash_v2) WHERE (infohash_v2 IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX canonical_torrent_magnet_hash_uq ON public.canonical_torrent USING btree (magnet_hash) WHERE (magnet_hash IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX canonical_torrent_source_guid_uq ON public.canonical_torrent_source USING btree (indexer_instance_id, source_guid) WHERE (source_guid IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX canonical_torrent_title_size_hash_uq ON public.canonical_torrent USING btree (title_size_hash) WHERE (title_size_hash IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX engine_alt_speed_days_dedup ON public.engine_alt_speed_days USING btree (profile_id, day);
+
+
+
+CREATE UNIQUE INDEX engine_ip_filter_entries_dedup ON public.engine_ip_filter_entries USING btree (profile_id, cidr);
+
+
+
+CREATE UNIQUE INDEX engine_profile_list_values_dedup ON public.engine_profile_list_values USING btree (profile_id, kind, value);
+
+
+
+CREATE UNIQUE INDEX engine_tracker_endpoints_dedup ON public.engine_tracker_endpoints USING btree (profile_id, kind, url);
+
+
+
+CREATE UNIQUE INDEX engine_tracker_endpoints_order ON public.engine_tracker_endpoints USING btree (profile_id, kind, ord);
+
+
+
+CREATE UNIQUE INDEX fs_policy_list_values_dedup ON public.fs_policy_list_values USING btree (policy_id, kind, value);
+
+
+
+CREATE INDEX idx_acquisition_infohash_v1_started ON public.acquisition_attempt USING btree (infohash_v1, started_at DESC) WHERE (infohash_v1 IS NOT NULL);
+
+
+
+CREATE INDEX idx_acquisition_infohash_v2_started ON public.acquisition_attempt USING btree (infohash_v2, started_at DESC) WHERE (infohash_v2 IS NOT NULL);
+
+
+
+CREATE INDEX idx_acquisition_magnet_started ON public.acquisition_attempt USING btree (magnet_hash, started_at DESC) WHERE (magnet_hash IS NOT NULL);
+
+
+
+CREATE INDEX idx_canon_source_base_score ON public.canonical_torrent_source_base_score USING btree (canonical_torrent_id, score_total_base DESC);
+
+
+
+CREATE INDEX idx_canon_source_context_score ON public.canonical_torrent_source_context_score USING btree (context_key_type, context_key_id, canonical_torrent_id, score_total_context DESC);
+
+
+
+CREATE INDEX idx_canon_source_idx_magnet ON public.canonical_torrent_source USING btree (indexer_instance_id, magnet_hash) WHERE ((magnet_hash IS NOT NULL) AND (source_guid IS NULL));
+
+
+
+CREATE INDEX idx_canon_source_idx_title_size ON public.canonical_torrent_source USING btree (indexer_instance_id, title_normalized, size_bytes) WHERE ((size_bytes IS NOT NULL) AND (source_guid IS NULL) AND (infohash_v2 IS NULL) AND (infohash_v1 IS NULL) AND (magnet_hash IS NULL));
+
+
+
+CREATE INDEX idx_canon_source_idx_v1 ON public.canonical_torrent_source USING btree (indexer_instance_id, infohash_v1) WHERE ((infohash_v1 IS NOT NULL) AND (source_guid IS NULL));
+
+
+
+CREATE INDEX idx_canon_source_idx_v2 ON public.canonical_torrent_source USING btree (indexer_instance_id, infohash_v2) WHERE ((infohash_v2 IS NOT NULL) AND (source_guid IS NULL));
+
+
+
+CREATE INDEX idx_canon_source_last_seen ON public.canonical_torrent_source USING btree (last_seen_at DESC);
+
+
+
+CREATE INDEX idx_canonical_torrent_title_norm ON public.canonical_torrent USING btree (title_normalized);
+
+
+
+CREATE INDEX idx_canonical_torrent_title_size ON public.canonical_torrent USING btree (title_normalized, size_bytes) WHERE (size_bytes IS NOT NULL);
+
+
+
+CREATE INDEX idx_canonical_torrent_updated_at ON public.canonical_torrent USING btree (updated_at DESC);
+
+
+
+CREATE INDEX idx_cf_state_status_changed ON public.indexer_cf_state USING btree (state, last_changed_at DESC);
+
+
+
+CREATE INDEX idx_connectivity_profile_status ON public.indexer_connectivity_profile USING btree (status);
+
+
+
+CREATE INDEX idx_disambig_left_identity ON public.canonical_disambiguation_rule USING btree (identity_left_type, identity_left_value_text, identity_left_value_uuid);
+
+
+
+CREATE INDEX idx_disambig_pair_identity ON public.canonical_disambiguation_rule USING btree (identity_left_type, identity_left_value_text, identity_left_value_uuid, identity_right_type, identity_right_value_text, identity_right_value_uuid);
+
+
+
+CREATE INDEX idx_disambig_right_identity ON public.canonical_disambiguation_rule USING btree (identity_right_type, identity_right_value_text, identity_right_value_uuid);
+
+
+
+CREATE INDEX idx_health_event_instance_error_time ON public.indexer_health_event USING btree (indexer_instance_id, error_class, occurred_at DESC) WHERE (error_class IS NOT NULL);
+
+
+
+CREATE INDEX idx_health_event_instance_time ON public.indexer_health_event USING btree (indexer_instance_id, occurred_at DESC);
+
+
+
+CREATE INDEX idx_health_event_instance_type_time ON public.indexer_health_event USING btree (indexer_instance_id, event_type, occurred_at DESC);
+
+
+
+CREATE INDEX idx_health_event_time ON public.indexer_health_event USING btree (occurred_at DESC);
+
+
+
+CREATE INDEX idx_instance_rate_limit_policy ON public.indexer_instance_rate_limit USING btree (rate_limit_policy_id);
+
+
+
+CREATE INDEX idx_job_schedule_enabled_next ON public.job_schedule USING btree (enabled, next_run_at) WHERE (enabled = true);
+
+
+
+CREATE INDEX idx_outbound_log_correlation_retry ON public.outbound_request_log USING btree (correlation_id, retry_seq);
+
+
+
+CREATE INDEX idx_outbound_log_instance_error_started ON public.outbound_request_log USING btree (indexer_instance_id, error_class, started_at DESC) WHERE (error_class IS NOT NULL);
+
+
+
+CREATE INDEX idx_outbound_log_instance_outcome_started ON public.outbound_request_log USING btree (indexer_instance_id, outcome, started_at DESC);
+
+
+
+CREATE INDEX idx_outbound_log_instance_started ON public.outbound_request_log USING btree (indexer_instance_id, started_at DESC);
+
+
+
+CREATE INDEX idx_outbound_log_instance_type_started ON public.outbound_request_log USING btree (indexer_instance_id, request_type, started_at DESC);
+
+
+
+CREATE INDEX idx_outbound_log_started ON public.outbound_request_log USING btree (started_at DESC);
+
+
+
+CREATE INDEX idx_policy_rule_set_sort_pub ON public.policy_rule USING btree (policy_set_id, sort_order, policy_rule_public_id);
+
+
+
+CREATE INDEX idx_policy_rule_set_type ON public.policy_rule USING btree (policy_set_id, rule_type);
+
+
+
+CREATE INDEX idx_policy_snapshot_created_at ON public.policy_snapshot USING btree (created_at DESC);
+
+
+
+CREATE INDEX idx_policy_snapshot_rule_public ON public.policy_snapshot_rule USING btree (policy_rule_public_id);
+
+
+
+CREATE INDEX idx_routing_rate_limit_policy ON public.routing_policy_rate_limit USING btree (rate_limit_policy_id);
+
+
+
+CREATE INDEX idx_rss_subscription_enabled_next ON public.indexer_rss_subscription USING btree (is_enabled, next_poll_at) WHERE (is_enabled = true);
+
+
+
+CREATE INDEX idx_run_correlation_id ON public.search_request_indexer_run_correlation USING btree (correlation_id);
+
+
+
+CREATE INDEX idx_run_correlation_run_created ON public.search_request_indexer_run_correlation USING btree (search_request_indexer_run_id, created_at DESC);
+
+
+
+CREATE INDEX idx_search_filter_decision_canon_time ON public.search_filter_decision USING btree (canonical_torrent_id, decided_at DESC) WHERE (canonical_torrent_id IS NOT NULL);
+
+
+
+CREATE INDEX idx_search_filter_decision_observation_time ON public.search_filter_decision USING btree (observation_id, decided_at DESC);
+
+
+
+CREATE INDEX idx_search_filter_decision_request_source_time ON public.search_filter_decision USING btree (search_request_id, canonical_torrent_source_id, decided_at DESC) WHERE (canonical_torrent_source_id IS NOT NULL);
+
+
+
+CREATE INDEX idx_search_filter_decision_request_time ON public.search_filter_decision USING btree (search_request_id, decided_at DESC);
+
+
+
+CREATE INDEX idx_search_filter_decision_snapshot_time ON public.search_filter_decision USING btree (policy_snapshot_id, decided_at DESC);
+
+
+
+CREATE INDEX idx_search_filter_decision_source_time ON public.search_filter_decision USING btree (canonical_torrent_source_id, decided_at DESC) WHERE (canonical_torrent_source_id IS NOT NULL);
+
+
+
+CREATE INDEX idx_search_page_request_sealed ON public.search_page USING btree (search_request_id, sealed_at);
+
+
+
+CREATE INDEX idx_search_profile_policy_set_profile ON public.search_profile_policy_set USING btree (search_profile_id);
+
+
+
+CREATE INDEX idx_search_request_domain_created_at ON public.search_request USING btree (effective_media_domain_id, created_at DESC);
+
+
+
+CREATE INDEX idx_search_request_status_created_at ON public.search_request USING btree (status, created_at DESC);
+
+
+
+CREATE INDEX idx_search_request_user_created_at ON public.search_request USING btree (user_id, created_at DESC);
+
+
+
+CREATE INDEX idx_source_metadata_conflict_source_time ON public.source_metadata_conflict USING btree (canonical_torrent_source_id, observed_at DESC);
+
+
+
+CREATE INDEX idx_source_reputation_window_start ON public.source_reputation USING btree (window_key, window_start DESC);
+
+
+
+CREATE INDEX idx_srch_obs_attr_key ON public.search_request_source_observation_attr USING btree (attr_key);
+
+
+
+CREATE INDEX idx_srch_obs_attr_observation ON public.search_request_source_observation_attr USING btree (observation_id);
+
+
+
+CREATE INDEX idx_srch_obs_req_canon_time ON public.search_request_source_observation USING btree (search_request_id, canonical_torrent_id, observed_at DESC);
+
+
+
+CREATE INDEX idx_srch_obs_req_indexer_time ON public.search_request_source_observation USING btree (search_request_id, indexer_instance_id, observed_at DESC);
+
+
+
+CREATE INDEX idx_srch_obs_req_source_time ON public.search_request_source_observation USING btree (search_request_id, canonical_torrent_source_id, observed_at DESC);
+
+
+
+CREATE INDEX idx_srch_req_cat_effective ON public.search_request_torznab_category_effective USING btree (search_request_id);
+
+
+
+CREATE INDEX idx_srch_req_cat_requested ON public.search_request_torznab_category_requested USING btree (search_request_id);
+
+
+
+CREATE INDEX idx_torznab_instance_enabled ON public.torznab_instance USING btree (is_enabled);
+
+
+
+CREATE INDEX idx_torznab_instance_profile ON public.torznab_instance USING btree (search_profile_id);
+
+
+
+CREATE INDEX idx_tracker_map_def_cat_sub ON public.tracker_category_mapping USING btree (indexer_definition_id, tracker_category, tracker_subcategory);
+
+
+
+CREATE INDEX idx_tracker_map_global_cat_sub ON public.tracker_category_mapping USING btree (tracker_category, tracker_subcategory) WHERE (indexer_definition_id IS NULL);
+
+
+
+CREATE INDEX idx_tracker_map_instance_cat_sub ON public.tracker_category_mapping USING btree (indexer_instance_id, tracker_category, tracker_subcategory) WHERE (indexer_instance_id IS NOT NULL);
+
+
+
+CREATE INDEX idx_tracker_map_torznab_instance_cat_sub ON public.tracker_category_mapping USING btree (torznab_instance_id, tracker_category, tracker_subcategory) WHERE (torznab_instance_id IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX indexer_definition_field_validation_uq ON public.indexer_definition_field_validation USING btree (indexer_definition_field_id, validation_type, COALESCE(depends_on_field_name, ''::character varying), COALESCE(depends_on_operator, 'eq'::public.depends_on_operator), ((depends_on_operator IS NULL)), COALESCE(text_value_norm, ''::character varying), COALESCE(int_value, '-1'::integer), COALESCE(numeric_value, ('-1'::integer)::numeric), COALESCE(value_set_id, (0)::bigint), COALESCE(depends_on_value_set_id, (0)::bigint), COALESCE(depends_on_value_plain_norm, ''::character varying), COALESCE(depends_on_value_int, '-1'::integer), COALESCE(depends_on_value_bool, false));
+
+
+
+CREATE INDEX indexer_health_notification_hook_enabled_idx ON public.indexer_health_notification_hook USING btree (is_enabled, status_threshold, channel);
+
+
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_guid_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, item_guid) WHERE (item_guid IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_infohash_v1_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, infohash_v1) WHERE (infohash_v1 IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_infohash_v2_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, infohash_v2) WHERE (infohash_v2 IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_magnet_hash_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, magnet_hash) WHERE (magnet_hash IS NOT NULL);
+
+
+
+CREATE INDEX ix_media_capability_snapshot_encoder_run_observed ON public.media_capability_snapshot_encoder USING btree (snapshot_run_public_id, observed_at DESC, media_capability_snapshot_encoder_id DESC);
+
+
+
+CREATE INDEX ix_media_capability_snapshot_feature_run_observed ON public.media_capability_snapshot_feature USING btree (snapshot_run_public_id, observed_at DESC, media_capability_snapshot_feature_id DESC);
+
+
+
+CREATE INDEX ix_media_capability_snapshot_observed_at ON public.media_capability_snapshot USING btree (observed_at DESC);
+
+
+
+CREATE INDEX ix_media_capability_snapshot_run_observed ON public.media_capability_snapshot USING btree (snapshot_run_public_id, observed_at DESC, media_capability_snapshot_id DESC);
+
+
+
+CREATE INDEX ix_media_job_active_heartbeat ON public.media_job USING btree (status, heartbeat_at, started_at, media_job_id) WHERE (status = ANY (ARRAY[public.media_job_status_running_v1(), public.media_job_status_verifying_v1()]));
+
+
+
+CREATE INDEX ix_media_job_attempt_current ON public.media_job_attempt USING btree (media_job_id, attempt_number DESC, media_job_attempt_id DESC);
+
+
+
+CREATE INDEX ix_media_job_diagnostic_prune ON public.media_job USING btree (completed_at, media_job_id) WHERE ((diagnostics_pruned_at IS NULL) AND (status = ANY (ARRAY['failed'::public.media_job_status, 'cancelled'::public.media_job_status])));
+
+
+
+CREATE INDEX ix_media_job_history_all ON public.media_job USING btree (queued_at DESC, media_job_id DESC);
+
+
+
+CREATE INDEX ix_media_job_history_profile ON public.media_job USING btree (media_profile_id, queued_at DESC, media_job_id DESC);
+
+
+
+CREATE INDEX ix_media_job_history_profile_status ON public.media_job USING btree (media_profile_id, status, queued_at DESC, media_job_id DESC);
+
+
+
+CREATE INDEX ix_media_job_history_status ON public.media_job USING btree (status, queued_at DESC, media_job_id DESC);
+
+
+
+CREATE INDEX ix_media_job_profile_status ON public.media_job USING btree (media_profile_id, status, queued_at DESC);
+
+
+
+CREATE INDEX ix_media_job_terminal_outbox_unpublished ON public.media_job_terminal_outbox USING btree (created_at, media_job_terminal_outbox_id) WHERE (published_at IS NULL);
+
+
+
+CREATE INDEX ix_media_job_worker_queue ON public.media_job USING btree (status, queued_at, media_job_id) WHERE (status = public.media_job_status_queued_v1());
+
+
+
+CREATE INDEX ix_media_profile_root_canonical_enabled ON public.media_profile_root USING btree (canonical_path, media_profile_root_id) WHERE enabled;
+
+
+
+CREATE UNIQUE INDEX media_domain_primary_torznab_uq ON public.media_domain_to_torznab_category USING btree (media_domain_id) WHERE (is_primary = true);
+
+
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_bigint_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_bigint) WHERE (value_bigint IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_int_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_int) WHERE (value_int IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_text_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_text) WHERE (value_text IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_uuid_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_uuid) WHERE (value_uuid IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX search_request_source_observation_guid_uq ON public.search_request_source_observation USING btree (search_request_id, indexer_instance_id, source_guid) WHERE (source_guid IS NOT NULL);
+
+
+
+CREATE UNIQUE INDEX search_request_source_observation_source_uq ON public.search_request_source_observation USING btree (search_request_id, indexer_instance_id, canonical_torrent_source_id) WHERE (source_guid IS NULL);
+
+
+
+CREATE UNIQUE INDEX setup_tokens_active_unique ON public.setup_tokens USING btree ((true)) WHERE (consumed_at IS NULL);
+
+
+
+CREATE UNIQUE INDEX tracker_category_mapping_uq ON public.tracker_category_mapping USING btree (COALESCE(torznab_instance_id, (0)::bigint), COALESCE(indexer_instance_id, (0)::bigint), COALESCE(indexer_definition_id, (0)::bigint), tracker_category, tracker_subcategory);
+
+
+
+CREATE UNIQUE INDEX uq_media_capability_snapshot_encoder_run_name ON public.media_capability_snapshot_encoder USING btree (snapshot_run_public_id, lower(encoder_name));
+
+
+
+CREATE UNIQUE INDEX uq_media_capability_snapshot_feature_run_family_name ON public.media_capability_snapshot_feature USING btree (snapshot_run_public_id, lower(feature_family), lower(feature_name));
+
+
+
+CREATE UNIQUE INDEX uq_media_compatibility_target_key_version ON public.media_compatibility_target USING btree (lower(compatibility_target_key), version);
+
+
+
+CREATE UNIQUE INDEX uq_media_desired_target_profile_key_version ON public.media_desired_target_profile USING btree (lower(target_key), version);
+
+
+
+CREATE UNIQUE INDEX uq_media_desired_target_stream_key ON public.media_desired_target_stream USING btree (media_desired_target_profile_id, lower(stream_key));
+
+
+
+CREATE UNIQUE INDEX uq_media_desired_target_stream_order ON public.media_desired_target_stream USING btree (media_desired_target_profile_id, sort_order);
+
+
+
+CREATE UNIQUE INDEX uq_media_discovery_source_fingerprint_profile_path ON public.media_discovery_source_fingerprint USING btree (media_profile_id, source_path);
+
+
+
+CREATE UNIQUE INDEX uq_media_job_artifact_attempt_index ON public.media_job_artifact USING btree (media_job_attempt_id, artifact_index);
+
+
+
+CREATE UNIQUE INDEX uq_media_job_compact_audit_attempt_index ON public.media_job_compact_audit USING btree (media_job_attempt_id, audit_index);
+
+
+
+CREATE UNIQUE INDEX uq_media_job_desired_target_stream_key ON public.media_job_desired_target_stream USING btree (media_job_id, lower(stream_key));
+
+
+
+CREATE UNIQUE INDEX uq_media_job_desired_target_stream_order ON public.media_job_desired_target_stream USING btree (media_job_id, sort_order);
+
+
+
+CREATE UNIQUE INDEX uq_media_job_operation_attempt_index ON public.media_job_operation USING btree (media_job_attempt_id, operation_index);
+
+
+
+CREATE UNIQUE INDEX uq_media_job_phase_attempt_index ON public.media_job_phase USING btree (media_job_attempt_id, phase_index);
+
+
+
+CREATE UNIQUE INDEX uq_media_job_plan_reason_attempt_index ON public.media_job_plan_reason USING btree (media_job_attempt_id, reason_index);
+
+
+
+CREATE UNIQUE INDEX uq_media_job_retention_policy_key ON public.media_job_retention_policy USING btree (lower(policy_key));
+
+
+
+CREATE UNIQUE INDEX uq_media_job_verification_check_attempt_index ON public.media_job_verification_check USING btree (media_job_attempt_id, check_index);
+
+
+
+CREATE UNIQUE INDEX uq_media_job_violation_attempt_index ON public.media_job_violation USING btree (media_job_attempt_id, violation_index);
+
+
+
+CREATE UNIQUE INDEX uq_media_policy_profile_key_version ON public.media_policy_profile USING btree (lower(policy_key), version);
+
+
+
+CREATE UNIQUE INDEX uq_media_profile_import_draft_key ON public.media_profile_import_draft USING btree (lower(profile_key));
+
+
+
+CREATE UNIQUE INDEX uq_media_profile_profile_key_active ON public.media_profile USING btree (lower(profile_key)) WHERE (deleted_at IS NULL);
+
+
+
+CREATE UNIQUE INDEX uq_media_profile_root_identity_enabled ON public.media_profile_root USING btree (filesystem_device, filesystem_inode) WHERE enabled;
+
+
+
+CREATE UNIQUE INDEX uq_media_profile_root_order ON public.media_profile_root USING btree (media_profile_id, root_kind, sort_order);
+
+
+
+CREATE UNIQUE INDEX uq_media_target_profile_target_key ON public.media_target USING btree (media_profile_id, lower(target_key));
+
+
+
+CREATE UNIQUE INDEX revaer_runtime_fs_jobs_torrent_idx ON revaer_runtime.fs_jobs USING btree (torrent_id);
+
+
+
+CREATE TRIGGER app_label_policies_touch_updated_at BEFORE UPDATE ON public.app_label_policies FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER app_profile_bump_revision AFTER INSERT OR UPDATE ON public.app_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+
+CREATE TRIGGER app_profile_immutable_keys_touch_updated_at BEFORE UPDATE ON public.app_profile_immutable_keys FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER app_profile_local_networks_touch_updated_at BEFORE UPDATE ON public.app_profile_local_networks FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER app_profile_touch_updated_at BEFORE UPDATE ON public.app_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER auth_api_keys_bump_revision AFTER INSERT OR DELETE OR UPDATE ON public.auth_api_keys FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+
+CREATE TRIGGER auth_api_keys_touch_updated_at BEFORE UPDATE ON public.auth_api_keys FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER engine_alt_speed_days_touch_updated_at BEFORE UPDATE ON public.engine_alt_speed_days FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER engine_alt_speed_touch_updated_at BEFORE UPDATE ON public.engine_alt_speed FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER engine_ip_filter_entries_touch_updated_at BEFORE UPDATE ON public.engine_ip_filter_entries FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER engine_ip_filter_touch_updated_at BEFORE UPDATE ON public.engine_ip_filter FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER engine_profile_bump_revision AFTER INSERT OR UPDATE ON public.engine_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+
+CREATE TRIGGER engine_profile_list_values_touch_updated_at BEFORE UPDATE ON public.engine_profile_list_values FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER engine_profile_touch_updated_at BEFORE UPDATE ON public.engine_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER engine_tracker_config_touch_updated_at BEFORE UPDATE ON public.engine_tracker_config FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER engine_tracker_endpoints_touch_updated_at BEFORE UPDATE ON public.engine_tracker_endpoints FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER fs_policy_bump_revision AFTER INSERT OR UPDATE ON public.fs_policy FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+
+CREATE TRIGGER fs_policy_list_values_touch_updated_at BEFORE UPDATE ON public.fs_policy_list_values FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER fs_policy_touch_updated_at BEFORE UPDATE ON public.fs_policy FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER media_desired_target_stream_insert_guard BEFORE INSERT ON public.media_desired_target_stream FOR EACH ROW EXECUTE FUNCTION public.media_desired_target_stream_insert_guard_v1();
+
+
+
+CREATE TRIGGER media_job_attempt_guard_trigger BEFORE UPDATE ON public.media_job_attempt FOR EACH ROW EXECUTE FUNCTION public.media_job_attempt_guard_v1();
+
+
+
+CREATE TRIGGER media_job_capture_configuration_trigger AFTER INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_capture_configuration_v1();
+
+
+
+CREATE TRIGGER media_job_configuration_immutable_trigger BEFORE UPDATE ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_configuration_immutable_v1();
+
+
+
+CREATE TRIGGER media_job_configuration_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_configuration_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE CONSTRAINT TRIGGER media_job_current_attempt_required_trigger AFTER INSERT OR UPDATE OF current_attempt_id ON public.media_job DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.media_job_current_attempt_required_v1();
+
+
+
+CREATE TRIGGER media_job_desired_target_snapshot_guard BEFORE INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_desired_target_snapshot_guard_v1();
+
+
+
+CREATE TRIGGER media_job_desired_target_video_technical_snapshot BEFORE INSERT ON public.media_job_desired_target_stream FOR EACH ROW EXECUTE FUNCTION public.media_job_desired_target_video_technical_snapshot_v1();
+
+
+
+CREATE TRIGGER media_job_file_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_file_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_filter_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_filter_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_initial_attempt_trigger AFTER INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_initial_attempt_v1();
+
+
+
+CREATE TRIGGER media_job_policy_behavior_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_behavior_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_policy_compatibility_target_snapshot_immutable_trigge BEFORE DELETE OR UPDATE ON public.media_job_policy_compatibility_target_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_policy_maintenance_window_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_maintenance_window_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_policy_operation_cost_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_operation_cost_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_policy_retention_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_retention_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_root_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_root_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_snapshot_source_fingerprint_before_insert BEFORE INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_source_fingerprint_v1();
+
+
+
+CREATE TRIGGER media_job_stream_classification_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_stream_classification_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_subtitle_discovery_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_subtitle_discovery_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+
+CREATE TRIGGER media_job_unmatched_stream_actions_fill_v1 BEFORE INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_unmatched_stream_actions_fill_v1();
+
+
+
+CREATE TRIGGER media_policy_backup_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_backup FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_compatibility_rule_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_compatibility_rule FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_compatibility_target_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_compatibility_target FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_maintenance_window_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_maintenance_window FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_operation_cost_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_operation_cost FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_output_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_output FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_profile_immutable_trigger BEFORE UPDATE ON public.media_policy_profile FOR EACH ROW EXECUTE FUNCTION public.media_policy_profile_immutable_v1();
+
+
+
+CREATE TRIGGER media_policy_retention_rule_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_retention_rule FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_runtime_limit_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_runtime_limit FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_seed_bounded_defaults_trigger AFTER INSERT ON public.media_policy_profile FOR EACH ROW EXECUTE FUNCTION public.media_policy_seed_bounded_defaults_trigger_v1();
+
+
+
+CREATE TRIGGER media_policy_unmatched_stream_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_unmatched_stream_behavior FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_verification_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_verification FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_policy_workspace_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_workspace FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER media_profile_all_root_overlap_trigger BEFORE INSERT OR UPDATE OF source_root, output_root, deleted_at ON public.media_profile FOR EACH ROW EXECUTE FUNCTION public.media_profile_validate_all_root_overlap_trigger_v1();
+
+
+
+CREATE TRIGGER media_profile_desired_target_activation_guard BEFORE UPDATE OF desired_target_profile_id ON public.media_profile FOR EACH ROW EXECUTE FUNCTION public.media_profile_desired_target_activation_guard_v1();
+
+
+
+CREATE TRIGGER media_stream_classification_rule_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_stream_classification_rule FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+
+CREATE TRIGGER query_presets_bump_revision AFTER INSERT OR DELETE OR UPDATE ON public.query_presets FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+
+CREATE TRIGGER query_presets_touch_updated_at BEFORE UPDATE ON public.query_presets FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER search_request_finalize_on_runs_terminal_trigger AFTER INSERT OR UPDATE OF status ON public.search_request_indexer_run FOR EACH ROW EXECUTE FUNCTION public.search_request_finalize_on_runs_terminal_v1();
+
+
+
+CREATE TRIGGER trg_media_job_desired_target_audio_constraints_snapshot BEFORE INSERT ON public.media_job_desired_target_stream FOR EACH ROW EXECUTE FUNCTION public.media_job_desired_target_audio_constraints_snapshot_v1();
+
+
+
+CREATE TRIGGER revaer_runtime_fs_jobs_touch_updated_at BEFORE UPDATE ON revaer_runtime.fs_jobs FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER revaer_runtime_torrents_touch_updated_at BEFORE UPDATE ON revaer_runtime.torrents FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+CREATE TRIGGER torrent_files_touch_updated_at BEFORE UPDATE ON revaer_runtime.torrent_files FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id);
+
+
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_torznab_instance_id_fkey FOREIGN KEY (torznab_instance_id) REFERENCES public.torznab_instance(torznab_instance_id);
+
+
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.app_label_policies
+    ADD CONSTRAINT app_label_policies_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.app_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.app_profile_immutable_keys
+    ADD CONSTRAINT app_profile_immutable_keys_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.app_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.app_profile_local_networks
+    ADD CONSTRAINT app_profile_local_networks_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.app_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_disambiguation_rule
+    ADD CONSTRAINT canonical_disambiguation_rule_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.canonical_external_id
+    ADD CONSTRAINT canonical_external_id_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_external_id
+    ADD CONSTRAINT canonical_external_id_source_canonical_torrent_source_id_fkey FOREIGN KEY (source_canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+
+ALTER TABLE ONLY public.canonical_size_rollup
+    ADD CONSTRAINT canonical_size_rollup_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_size_sample
+    ADD CONSTRAINT canonical_size_sample_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source__canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_canonical_torrent_source_id_fkey1 FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_context_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source_global_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_signal
+    ADD CONSTRAINT canonical_torrent_signal_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_attr
+    ADD CONSTRAINT canonical_torrent_source_attr_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base__canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base_score_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_conte_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_context_scor_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.canonical_torrent_source
+    ADD CONSTRAINT canonical_torrent_source_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.config_audit_log
+    ADD CONSTRAINT config_audit_log_changed_by_user_id_fkey FOREIGN KEY (changed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.engine_alt_speed_days
+    ADD CONSTRAINT engine_alt_speed_days_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.engine_alt_speed
+    ADD CONSTRAINT engine_alt_speed_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.engine_ip_filter_entries
+    ADD CONSTRAINT engine_ip_filter_entries_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.engine_ip_filter
+    ADD CONSTRAINT engine_ip_filter_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.engine_peer_class_defaults
+    ADD CONSTRAINT engine_peer_class_defaults_fk FOREIGN KEY (profile_id, class_id) REFERENCES public.engine_peer_classes(profile_id, class_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.engine_peer_class_defaults
+    ADD CONSTRAINT engine_peer_class_defaults_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.engine_peer_classes
+    ADD CONSTRAINT engine_peer_classes_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.engine_profile_list_values
+    ADD CONSTRAINT engine_profile_list_values_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.engine_tracker_config
+    ADD CONSTRAINT engine_tracker_config_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.engine_tracker_endpoints
+    ADD CONSTRAINT engine_tracker_endpoints_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.fs_policy_list_values
+    ADD CONSTRAINT fs_policy_list_values_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.fs_policy(id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.import_indexer_result
+    ADD CONSTRAINT import_indexer_result_import_job_id_fkey FOREIGN KEY (import_job_id) REFERENCES public.import_job(import_job_id);
+
+
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domai_import_indexer_result_id_fkey FOREIGN KEY (import_indexer_result_id) REFERENCES public.import_indexer_result(import_indexer_result_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domain_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_import_indexer_result_id_fkey FOREIGN KEY (import_indexer_result_id) REFERENCES public.import_indexer_result(import_indexer_result_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_target_search_profile_id_fkey FOREIGN KEY (target_search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_target_torznab_instance_id_fkey FOREIGN KEY (target_torznab_instance_id) REFERENCES public.torznab_instance(torznab_instance_id);
+
+
+
+ALTER TABLE ONLY public.indexer_cf_state
+    ADD CONSTRAINT indexer_cf_state_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_connectivity_profile
+    ADD CONSTRAINT indexer_connectivity_profile_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field
+    ADD CONSTRAINT indexer_definition_field_indexer_definition_id_fkey FOREIGN KEY (indexer_definition_id) REFERENCES public.indexer_definition(indexer_definition_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_option
+    ADD CONSTRAINT indexer_definition_field_optio_indexer_definition_field_id_fkey FOREIGN KEY (indexer_definition_field_id) REFERENCES public.indexer_definition_field(indexer_definition_field_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_valid_indexer_definition_field_id_fkey FOREIGN KEY (indexer_definition_field_id) REFERENCES public.indexer_definition_field(indexer_definition_field_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_validation_depends_value_set_fk FOREIGN KEY (depends_on_value_set_id) REFERENCES public.indexer_definition_field_value_set(value_set_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_validation_value_set_fk FOREIGN KEY (value_set_id) REFERENCES public.indexer_definition_field_value_set(value_set_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set
+    ADD CONSTRAINT indexer_definition_field_valu_indexer_definition_field_val_fkey FOREIGN KEY (indexer_definition_field_validation_id) REFERENCES public.indexer_definition_field_validation(indexer_definition_field_validation_id);
+
+
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set_item
+    ADD CONSTRAINT indexer_definition_field_value_set_item_value_set_id_fkey FOREIGN KEY (value_set_id) REFERENCES public.indexer_definition_field_value_set(value_set_id);
+
+
+
+ALTER TABLE ONLY public.indexer_health_event
+    ADD CONSTRAINT indexer_health_event_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_import_blob
+    ADD CONSTRAINT indexer_instance_import_blob_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_indexer_definition_id_fkey FOREIGN KEY (indexer_definition_id) REFERENCES public.indexer_definition(indexer_definition_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_rate_limit_policy_id_fkey FOREIGN KEY (rate_limit_policy_id) REFERENCES public.rate_limit_policy(rate_limit_policy_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.indexer_rss_item_seen
+    ADD CONSTRAINT indexer_rss_item_seen_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_rss_subscription
+    ADD CONSTRAINT indexer_rss_subscription_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.indexer_run_cursor
+    ADD CONSTRAINT indexer_run_cursor_search_request_indexer_run_id_fkey FOREIGN KEY (search_request_indexer_run_id) REFERENCES public.search_request_indexer_run(search_request_indexer_run_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_capability_snapshot_encoder
+    ADD CONSTRAINT media_capability_snapshot_encoder_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.media_capability_snapshot_feature
+    ADD CONSTRAINT media_capability_snapshot_feature_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.media_capability_snapshot
+    ADD CONSTRAINT media_capability_snapshot_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.media_capability_snapshot_run
+    ADD CONSTRAINT media_capability_snapshot_run_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_audio_stream
+    ADD CONSTRAINT media_desired_target_audio_st_media_desired_target_stream__fkey FOREIGN KEY (media_desired_target_stream_id) REFERENCES public.media_desired_target_stream(media_desired_target_stream_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_metadata
+    ADD CONSTRAINT media_desired_target_contain_media_desired_target_profile_fkey1 FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_chapter
+    ADD CONSTRAINT media_desired_target_contain_media_desired_target_profile_fkey2 FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container_chapter_metadata
+    ADD CONSTRAINT media_desired_target_containe_media_desired_target_contain_fkey FOREIGN KEY (media_desired_target_container_chapter_id) REFERENCES public.media_desired_target_container_chapter(media_desired_target_container_chapter_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_desired_target_container
+    ADD CONSTRAINT media_desired_target_containe_media_desired_target_profile_fkey FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_desired_target_profile
+    ADD CONSTRAINT media_desired_target_profile_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.media_desired_target_stream
+    ADD CONSTRAINT media_desired_target_stream_media_desired_target_profile_i_fkey FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_root_id_fkey FOREIGN KEY (media_profile_root_id) REFERENCES public.media_profile_root(media_profile_root_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_discovery_source_fingerprint
+    ADD CONSTRAINT media_discovery_source_fingerprint_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_root_id_fkey FOREIGN KEY (media_profile_root_id) REFERENCES public.media_profile_root(media_profile_root_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+
+ALTER TABLE ONLY public.media_job_artifact
+    ADD CONSTRAINT media_job_artifact_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_artifact
+    ADD CONSTRAINT media_job_artifact_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_compact_audit
+    ADD CONSTRAINT media_job_compact_audit_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_compact_audit
+    ADD CONSTRAINT media_job_compact_audit_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snaps_media_desired_target_profile_fkey FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snapshot_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_current_attempt_fk FOREIGN KEY (media_job_id, current_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id);
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_chapter_metadata
+    ADD CONSTRAINT media_job_desired_target_chap_media_job_desired_target_cha_fkey FOREIGN KEY (media_job_desired_target_chapter_id) REFERENCES public.media_job_desired_target_chapter(media_job_desired_target_chapter_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_chapter
+    ADD CONSTRAINT media_job_desired_target_chapter_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_metadata
+    ADD CONSTRAINT media_job_desired_target_metadata_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_desired_target_stream
+    ADD CONSTRAINT media_job_desired_target_stream_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_file_rule_snapshot
+    ADD CONSTRAINT media_job_file_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_filter_snapshot
+    ADD CONSTRAINT media_job_filter_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_intent_compatibility_target_id_fkey FOREIGN KEY (intent_compatibility_target_id) REFERENCES public.media_compatibility_target(media_compatibility_target_id);
+
+
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_intent_desired_target_profile_id_fkey FOREIGN KEY (intent_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_intent_policy_profile_id_fkey FOREIGN KEY (intent_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_job_operation
+    ADD CONSTRAINT media_job_operation_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_operation
+    ADD CONSTRAINT media_job_operation_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_phase
+    ADD CONSTRAINT media_job_phase_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_phase
+    ADD CONSTRAINT media_job_phase_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_plan_reason
+    ADD CONSTRAINT media_job_plan_reason_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_plan_reason
+    ADD CONSTRAINT media_job_plan_reason_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_policy_behavior_snapshot
+    ADD CONSTRAINT media_job_policy_behavior_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_policy_compatibility_target_snapshot
+    ADD CONSTRAINT media_job_policy_compatibility_target_snapsho_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_policy_maintenance_window_snapshot
+    ADD CONSTRAINT media_job_policy_maintenance_window_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_policy_operation_cost_snapshot
+    ADD CONSTRAINT media_job_policy_operation_cost_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_policy_retention_rule_snapshot
+    ADD CONSTRAINT media_job_policy_retention_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_root_snapshot
+    ADD CONSTRAINT media_job_root_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_stream_classification_rule_snapshot
+    ADD CONSTRAINT media_job_stream_classification_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_subtitle_discovery_rule_snapshot
+    ADD CONSTRAINT media_job_subtitle_discovery_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_verification_check
+    ADD CONSTRAINT media_job_verification_check_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_verification_check
+    ADD CONSTRAINT media_job_verification_check_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_violation
+    ADD CONSTRAINT media_job_violation_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_job_violation
+    ADD CONSTRAINT media_job_violation_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_backup
+    ADD CONSTRAINT media_policy_backup_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_compatibility_rule
+    ADD CONSTRAINT media_policy_compatibility_rule_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_ta_media_compatibility_target_i_fkey FOREIGN KEY (media_compatibility_target_id) REFERENCES public.media_compatibility_target(media_compatibility_target_id);
+
+
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_target_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_maintenance_window
+    ADD CONSTRAINT media_policy_maintenance_window_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_operation_cost
+    ADD CONSTRAINT media_policy_operation_cost_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_output
+    ADD CONSTRAINT media_policy_output_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_retention_rule
+    ADD CONSTRAINT media_policy_retention_rule_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_runtime_limit
+    ADD CONSTRAINT media_policy_runtime_limit_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_unmatched_stream_behavior
+    ADD CONSTRAINT media_policy_unmatched_stream_beha_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_verification
+    ADD CONSTRAINT media_policy_verification_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_policy_workspace
+    ADD CONSTRAINT media_policy_workspace_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_desired_target_profile_id_fkey FOREIGN KEY (desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id);
+
+
+
+ALTER TABLE ONLY public.media_profile_file_rule
+    ADD CONSTRAINT media_profile_file_rule_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_profile_filter
+    ADD CONSTRAINT media_profile_filter_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_profile_import_draft
+    ADD CONSTRAINT media_profile_import_draft_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.media_profile_root
+    ADD CONSTRAINT media_profile_root_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_stream_classification_rule
+    ADD CONSTRAINT media_stream_classification_rule_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_subtitle_discovery_rule
+    ADD CONSTRAINT media_subtitle_discovery_rule_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.media_target
+    ADD CONSTRAINT media_target_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id);
+
+
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_policy_set_id_fkey FOREIGN KEY (policy_set_id) REFERENCES public.policy_set(policy_set_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_value_set_fk FOREIGN KEY (value_set_id) REFERENCES public.policy_rule_value_set(value_set_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule_value_set_item
+    ADD CONSTRAINT policy_rule_value_set_item_value_set_id_fkey FOREIGN KEY (value_set_id) REFERENCES public.policy_rule_value_set(value_set_id);
+
+
+
+ALTER TABLE ONLY public.policy_rule_value_set
+    ADD CONSTRAINT policy_rule_value_set_policy_rule_id_fkey FOREIGN KEY (policy_rule_id) REFERENCES public.policy_rule(policy_rule_id);
+
+
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_created_for_search_request_id_fkey FOREIGN KEY (created_for_search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_policy_snapshot_id_fkey FOREIGN KEY (policy_snapshot_id) REFERENCES public.policy_snapshot(policy_snapshot_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.routing_policy_parameter
+    ADD CONSTRAINT routing_policy_parameter_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id);
+
+
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_rate_limit_policy_id_fkey FOREIGN KEY (rate_limit_policy_id) REFERENCES public.rate_limit_policy(rate_limit_policy_id);
+
+
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_observation_id_fkey FOREIGN KEY (observation_id) REFERENCES public.search_request_source_observation(observation_id);
+
+
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_policy_snapshot_id_fkey FOREIGN KEY (policy_snapshot_id) REFERENCES public.policy_snapshot(policy_snapshot_id);
+
+
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_search_page_id_fkey FOREIGN KEY (search_page_id) REFERENCES public.search_page(search_page_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_search_request_canonical_id_fkey FOREIGN KEY (search_request_canonical_id) REFERENCES public.search_request_canonical(search_request_canonical_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_page
+    ADD CONSTRAINT search_page_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_default_media_domain_id_fkey FOREIGN KEY (default_media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_policy_set_id_fkey FOREIGN KEY (policy_set_id) REFERENCES public.policy_set(policy_set_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_trust_tier_id_fkey FOREIGN KEY (trust_tier_id) REFERENCES public.trust_tier(trust_tier_id);
+
+
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_effective_media_domain_id_fkey FOREIGN KEY (effective_media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+
+ALTER TABLE ONLY public.search_request_identifier
+    ADD CONSTRAINT search_request_identifier_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_request_indexer_run_correlation
+    ADD CONSTRAINT search_request_indexer_run_co_search_request_indexer_run_i_fkey FOREIGN KEY (search_request_indexer_run_id) REFERENCES public.search_request_indexer_run(search_request_indexer_run_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_policy_set_id_fkey FOREIGN KEY (policy_set_id) REFERENCES public.policy_set(policy_set_id);
+
+
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_policy_snapshot_id_fkey FOREIGN KEY (policy_snapshot_id) REFERENCES public.policy_snapshot(policy_snapshot_id);
+
+
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_requested_media_domain_id_fkey FOREIGN KEY (requested_media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observat_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+
+ALTER TABLE ONLY public.search_request_source_observation_attr
+    ADD CONSTRAINT search_request_source_observation_attr_observation_id_fkey FOREIGN KEY (observation_id) REFERENCES public.search_request_source_observation(observation_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effect_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effectiv_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_reques_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_requeste_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.secret_audit_log
+    ADD CONSTRAINT secret_audit_log_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.secret_audit_log
+    ADD CONSTRAINT secret_audit_log_secret_id_fkey FOREIGN KEY (secret_id) REFERENCES public.secret(secret_id) ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY public.secret_binding
+    ADD CONSTRAINT secret_binding_secret_id_fkey FOREIGN KEY (secret_id) REFERENCES public.secret(secret_id) ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY public.source_metadata_conflict_audit_log
+    ADD CONSTRAINT source_metadata_conflict_audit_log_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.source_metadata_conflict_audit_log
+    ADD CONSTRAINT source_metadata_conflict_audit_log_conflict_id_fkey FOREIGN KEY (conflict_id) REFERENCES public.source_metadata_conflict(source_metadata_conflict_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.source_metadata_conflict
+    ADD CONSTRAINT source_metadata_conflict_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.source_metadata_conflict
+    ADD CONSTRAINT source_metadata_conflict_resolved_by_user_id_fkey FOREIGN KEY (resolved_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.source_reputation
+    ADD CONSTRAINT source_reputation_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_created_by_fk FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_updated_by_fk FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_indexer_definition_id_fkey FOREIGN KEY (indexer_definition_id) REFERENCES public.indexer_definition(indexer_definition_id);
+
+
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_torznab_instance_id_fkey FOREIGN KEY (torznab_instance_id) REFERENCES public.torznab_instance(torznab_instance_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+
+ALTER TABLE ONLY public.user_result_action_kv
+    ADD CONSTRAINT user_result_action_kv_user_result_action_id_fkey FOREIGN KEY (user_result_action_id) REFERENCES public.user_result_action(user_result_action_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id);
+
+
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+
+ALTER TABLE ONLY revaer_runtime.fs_jobs
+    ADD CONSTRAINT fs_jobs_torrent_id_fkey FOREIGN KEY (torrent_id) REFERENCES revaer_runtime.torrents(torrent_id) ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY revaer_runtime.torrent_files
+    ADD CONSTRAINT torrent_files_torrent_id_fkey FOREIGN KEY (torrent_id) REFERENCES revaer_runtime.torrents(torrent_id) ON DELETE CASCADE;
+
