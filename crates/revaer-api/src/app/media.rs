@@ -677,6 +677,36 @@ pub struct MediaJobResponse {
     pub last_error: Option<String>,
 }
 
+/// Bounded recent-job summary with diagnostic collection counts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaRecentJobSummaryResponse {
+    /// Existing job fields.
+    pub job: MediaJobResponse,
+    /// Owning profile.
+    pub media_profile_public_id: Uuid,
+    /// Operation count.
+    pub operation_count: i64,
+    /// Violation count.
+    pub violation_count: i64,
+    /// Plan-reason count.
+    pub plan_reason_count: i64,
+    /// Verification-check count.
+    pub verification_check_count: i64,
+    /// Artifact count.
+    pub artifact_count: i64,
+    /// Compact-audit count.
+    pub compact_audit_count: i64,
+}
+
+/// Application-level recent-job keyset page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MediaRecentJobPageResponse {
+    /// Bounded page rows.
+    pub jobs: Vec<MediaRecentJobSummaryResponse>,
+    /// Next keyset position.
+    pub next_cursor: Option<(DateTime<Utc>, Uuid)>,
+}
+
 /// Discovery preview row for one candidate source path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaDiscoveryPreviewResponse {
@@ -929,6 +959,14 @@ pub trait MediaFacade: Send + Sync {
         status: Option<&str>,
     ) -> Result<Vec<MediaJobResponse>, MediaServiceError>;
 
+    /// Read one bounded recent-job page.
+    async fn media_job_recent(
+        &self,
+        limit: i32,
+        cursor: Option<(DateTime<Utc>, Uuid)>,
+        media_profile_public_id: Option<Uuid>,
+    ) -> Result<MediaRecentJobPageResponse, MediaServiceError>;
+
     /// Read one media job by public id.
     async fn media_job_get(
         &self,
@@ -1073,6 +1111,18 @@ impl MediaFacade for NoopMedia {
 
     async fn media_profile_list(&self) -> Result<Vec<MediaProfileResponse>, MediaServiceError> {
         media_unavailable()
+    }
+
+    async fn media_job_recent(
+        &self,
+        _limit: i32,
+        _cursor: Option<(DateTime<Utc>, Uuid)>,
+        _media_profile_public_id: Option<Uuid>,
+    ) -> Result<MediaRecentJobPageResponse, MediaServiceError> {
+        Ok(MediaRecentJobPageResponse {
+            jobs: Vec::new(),
+            next_cursor: None,
+        })
     }
 
     async fn media_compatibility_target_list(

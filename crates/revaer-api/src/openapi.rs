@@ -130,6 +130,7 @@ enum MediaParameterSet {
     None,
     PathUuid(&'static str),
     JobListQuery,
+    RecentJobQuery,
     IncludeLocalPaths,
 }
 
@@ -141,6 +142,11 @@ impl MediaParameterSet {
             Self::JobListQuery => vec![
                 query_uuid_parameter("media_profile_public_id"),
                 query_string_parameter("status"),
+            ],
+            Self::RecentJobQuery => vec![
+                query_uuid_parameter("media_profile_public_id"),
+                query_string_parameter("cursor"),
+                query_string_parameter("limit"),
             ],
             Self::IncludeLocalPaths => vec![query_bool_parameter("include_local_paths")],
         }
@@ -564,6 +570,30 @@ fn media_job_core_paths() -> Vec<(&'static str, Value)> {
                 "200",
                 "Media job",
                 Some("MediaJobResponse"),
+                None,
+                MediaParameterSet::PathUuid("media_job_public_id"),
+            ),
+        ),
+        media_single_path(
+            "/v1/media/jobs/recent",
+            media_op(
+                "get",
+                "List recent media jobs",
+                "200",
+                "Recent media job page",
+                Some("MediaRecentJobPageResponse"),
+                None,
+                MediaParameterSet::RecentJobQuery,
+            ),
+        ),
+        media_single_path(
+            "/v1/media/jobs/{media_job_public_id}/diagnostics",
+            media_op(
+                "get",
+                "Read media job diagnostics",
+                "200",
+                "Media job diagnostics",
+                Some("MediaJobDiagnosticsResponse"),
                 None,
                 MediaParameterSet::PathUuid("media_job_public_id"),
             ),
@@ -1410,6 +1440,7 @@ fn media_discovery_watcher_schemas() -> Vec<(&'static str, Value)> {
 fn media_job_schemas() -> Vec<(&'static str, Value)> {
     let mut schemas = Vec::new();
     schemas.extend(media_job_core_schemas());
+    schemas.extend(media_job_recent_schemas());
     schemas.extend(media_job_operation_schemas());
     schemas.extend(media_job_violation_schemas());
     schemas.extend(media_job_plan_reason_schemas());
@@ -1445,6 +1476,87 @@ fn media_job_core_schemas() -> Vec<(&'static str, Value)> {
         (
             "MediaJobListResponse",
             object_schema(&["jobs"], [("jobs", array_ref_schema("MediaJobResponse"))]),
+        ),
+    ]
+}
+
+fn media_job_recent_schemas() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "MediaRecentJobPageResponse",
+            object_schema(
+                &["jobs"],
+                [
+                    ("jobs", array_ref_schema("MediaRecentJobSummaryResponse")),
+                    ("next_cursor", string_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaRecentJobSummaryResponse",
+            object_schema(
+                &[
+                    "media_job_public_id",
+                    "media_profile_public_id",
+                    "diagnostic_counts",
+                ],
+                [
+                    ("media_job_public_id", uuid_schema()),
+                    ("media_profile_public_id", uuid_schema()),
+                    ("diagnostic_counts", schema_ref("MediaJobDiagnosticCounts")),
+                ],
+            ),
+        ),
+        (
+            "MediaJobDiagnosticCounts",
+            object_schema(
+                &[
+                    "operations",
+                    "violations",
+                    "plan_reasons",
+                    "verification_checks",
+                    "artifacts",
+                    "compact_audits",
+                ],
+                [
+                    ("operations", integer_schema()),
+                    ("violations", integer_schema()),
+                    ("plan_reasons", integer_schema()),
+                    ("verification_checks", integer_schema()),
+                    ("artifacts", integer_schema()),
+                    ("compact_audits", integer_schema()),
+                ],
+            ),
+        ),
+        (
+            "MediaJobDiagnosticsResponse",
+            object_schema(
+                &[
+                    "operations",
+                    "violations",
+                    "plan_reasons",
+                    "verification_checks",
+                    "artifacts",
+                    "compact_audits",
+                ],
+                [
+                    ("operations", array_ref_schema("MediaJobOperationResponse")),
+                    ("violations", array_ref_schema("MediaJobViolationResponse")),
+                    (
+                        "plan_reasons",
+                        array_ref_schema("MediaJobPlanReasonResponse"),
+                    ),
+                    (
+                        "verification_checks",
+                        array_ref_schema("MediaJobVerificationCheckResponse"),
+                    ),
+                    ("artifacts", array_ref_schema("MediaJobArtifactResponse")),
+                    (
+                        "compact_audits",
+                        array_ref_schema("MediaJobCompactAuditResponse"),
+                    ),
+                ],
+            ),
         ),
     ]
 }
@@ -2207,6 +2319,10 @@ mod tests {
             "MediaJobCreateResponse",
             "MediaJobListResponse",
             "MediaJobResponse",
+            "MediaRecentJobPageResponse",
+            "MediaRecentJobSummaryResponse",
+            "MediaJobDiagnosticCounts",
+            "MediaJobDiagnosticsResponse",
             "MediaJobOperationAppendRequest",
             "MediaJobOperationListResponse",
             "MediaJobOperationResponse",

@@ -494,6 +494,7 @@ impl ApiServer {
 
     fn v1_media_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
         Self::v1_media_profile_job_routes(state)
+            .merge(Self::v1_media_recent_job_routes(state))
             .merge(Self::v1_media_job_record_routes(state))
             .merge(Self::v1_media_capability_yaml_routes(state))
     }
@@ -588,6 +589,19 @@ impl ApiServer {
                 get(media_handlers::list_media_discovery_watchers)
                     .post(media_handlers::run_media_discovery_watcher)
                     .route_layer(require_api),
+            )
+    }
+
+    fn v1_media_recent_job_routes(state: &Arc<ApiState>) -> Router<Arc<ApiState>> {
+        let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
+        Router::new()
+            .route(
+                "/v1/media/jobs/recent",
+                get(media_handlers::list_recent_media_jobs).route_layer(require_api.clone()),
+            )
+            .route(
+                "/v1/media/jobs/{media_job_public_id}/diagnostics",
+                get(media_handlers::get_media_job_diagnostics).route_layer(require_api),
             )
     }
 
