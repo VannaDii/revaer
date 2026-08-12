@@ -17,6 +17,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
 
+use crate::media_workspace_retention::{WorkspaceRetentionError, WorkspaceRetentionRunner};
+
 const DEFAULT_RETENTION_TICK_INTERVAL: Duration = Duration::from_hours(1);
 
 #[async_trait]
@@ -53,6 +55,7 @@ impl MediaRetentionClock for SystemMediaRetentionClock {
 pub(crate) struct MediaRetentionRuntime {
     repository: Arc<dyn MediaRetentionRepository>,
     clock: Arc<dyn MediaRetentionClock>,
+    workspace_retention: Arc<dyn WorkspaceRetentionRunner>,
     telemetry: Metrics,
     tick_interval: Duration,
 }
@@ -60,10 +63,15 @@ pub(crate) struct MediaRetentionRuntime {
 impl MediaRetentionRuntime {
     /// Construct the production janitor with injected persistence and telemetry.
     #[must_use]
-    pub(crate) fn new(store: MediaStore, telemetry: Metrics) -> Self {
+    pub(crate) fn new(
+        store: MediaStore,
+        workspace_retention: Arc<dyn WorkspaceRetentionRunner>,
+        telemetry: Metrics,
+    ) -> Self {
         Self::with_dependencies(
             Arc::new(store),
             Arc::new(SystemMediaRetentionClock),
+            workspace_retention,
             telemetry,
             DEFAULT_RETENTION_TICK_INTERVAL,
         )
@@ -72,12 +80,14 @@ impl MediaRetentionRuntime {
     fn with_dependencies(
         repository: Arc<dyn MediaRetentionRepository>,
         clock: Arc<dyn MediaRetentionClock>,
+        workspace_retention: Arc<dyn WorkspaceRetentionRunner>,
         telemetry: Metrics,
         tick_interval: Duration,
     ) -> Self {
         Self {
             repository,
             clock,
+            workspace_retention,
             telemetry,
             tick_interval,
         }
@@ -103,7 +113,23 @@ impl MediaRetentionRuntime {
         }
     }
 
-    async fn run_tick(&self) -> Result<MediaJobRetentionRunRow, MediaRetentionRuntimeError> {
+    async fn run_tick(
+        &self,
+    ) -> Result<Option<MediaJobRetentionRunRow>, MediaRetentionRuntimeError> {
+        let workspace_report = self.workspace_retention.run_once().await?;
+        if !workspace_report.failures.is_empty() {
+            self.telemetry.inc_media_retention_run("deferred");
+            for failure in workspace_report.failures {
+                warn!(
+                    path = %failure.path.display(),
+                    operation = failure.operation,
+                    error_kind = ?failure.error_kind,
+                    "media retention deferred database pruning after workspace cleanup failure"
+                );
+            }
+            return Ok(None);
+        }
+
         let outcome = self.repository.run_retention(self.clock.now()).await?;
         let completed = nonnegative_count(outcome.completed_jobs_deleted)?;
         let failed = nonnegative_count(outcome.failed_jobs_pruned)?;
@@ -122,7 +148,7 @@ impl MediaRetentionRuntime {
             failed_detail_rows_deleted = outcome.failed_detail_rows_deleted,
             "media retention janitor tick completed"
         );
-        Ok(outcome)
+        Ok(Some(outcome))
     }
 }
 
@@ -136,13 +162,20 @@ enum MediaRetentionRuntimeError {
     Data(#[from] DataError),
     #[error("media retention returned a negative affected-row count: {0}")]
     NegativeCount(i32),
+    #[error("media workspace retention failed")]
+    Workspace(#[from] WorkspaceRetentionError),
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+    use std::io;
+    use std::path::PathBuf;
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+    use revaer_media_runtime::workspace::{WorkspaceCleanupFailure, WorkspaceCleanupReport};
     use tokio::time::sleep;
 
     struct FixedClock(DateTime<Utc>);
@@ -171,6 +204,37 @@ mod tests {
             self.expected
                 .map_err(|()| DataError::from(sqlx::Error::RowNotFound))
         }
+    }
+
+    struct StubWorkspaceRetention {
+        reports: Mutex<VecDeque<WorkspaceCleanupReport>>,
+        runs: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl WorkspaceRetentionRunner for StubWorkspaceRetention {
+        async fn run_once(&self) -> Result<WorkspaceCleanupReport, WorkspaceRetentionError> {
+            self.runs.fetch_add(1, Ordering::Relaxed);
+            self.reports
+                .lock()
+                .map_err(|_| WorkspaceRetentionError::InvalidPolicy("retention_test_lock"))?
+                .pop_front()
+                .ok_or(WorkspaceRetentionError::InvalidPolicy(
+                    "retention_test_report_missing",
+                ))
+        }
+    }
+
+    fn successful_workspace_retention() -> Arc<StubWorkspaceRetention> {
+        Arc::new(StubWorkspaceRetention {
+            reports: Mutex::new(VecDeque::from([WorkspaceCleanupReport {
+                examined_entries: 0,
+                removed: Vec::new(),
+                failures: Vec::new(),
+                limit_reached: false,
+            }])),
+            runs: AtomicUsize::new(0),
+        })
     }
 
     fn fixed_time() -> anyhow::Result<DateTime<Utc>> {
@@ -211,11 +275,15 @@ mod tests {
         let runtime = MediaRetentionRuntime::with_dependencies(
             repository.clone(),
             Arc::new(FixedClock(now)),
+            successful_workspace_retention(),
             Metrics::new()?,
             Duration::from_secs(1),
         );
 
-        let outcome = runtime.run_tick().await?;
+        let outcome = runtime
+            .run_tick()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("database retention was unexpectedly deferred"))?;
 
         assert_eq!(outcome.completed_jobs_deleted, 2);
         assert_eq!(
@@ -240,6 +308,7 @@ mod tests {
                 observed: Mutex::new(Vec::new()),
             }),
             Arc::new(FixedClock(fixed_time()?)),
+            successful_workspace_retention(),
             Metrics::new()?,
             Duration::from_secs(1),
         );
@@ -268,10 +337,28 @@ mod tests {
             observed: Mutex::new(Vec::new()),
         });
         let telemetry = Metrics::new()?;
+        let workspace_retention = Arc::new(StubWorkspaceRetention {
+            reports: Mutex::new(VecDeque::from([
+                WorkspaceCleanupReport {
+                    examined_entries: 0,
+                    removed: Vec::new(),
+                    failures: Vec::new(),
+                    limit_reached: false,
+                },
+                WorkspaceCleanupReport {
+                    examined_entries: 0,
+                    removed: Vec::new(),
+                    failures: Vec::new(),
+                    limit_reached: false,
+                },
+            ])),
+            runs: AtomicUsize::new(0),
+        });
 
         let first = MediaRetentionRuntime::with_dependencies(
             repository.clone(),
             Arc::new(FixedClock(fixed_time()?)),
+            workspace_retention.clone(),
             telemetry.clone(),
             Duration::from_mins(1),
         )
@@ -282,12 +369,79 @@ mod tests {
         let restarted = MediaRetentionRuntime::with_dependencies(
             repository.clone(),
             Arc::new(FixedClock(fixed_time()?)),
+            workspace_retention.clone(),
             telemetry,
             Duration::from_mins(1),
         )
         .spawn();
         wait_for_observations(&repository, 2).await?;
         restarted.abort();
+        assert_eq!(workspace_retention.runs.load(Ordering::Relaxed), 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn partial_workspace_failure_defers_database_pruning_until_retry() -> anyhow::Result<()> {
+        let repository = Arc::new(StubRepository {
+            expected: Ok(MediaJobRetentionRunRow {
+                completed_jobs_deleted: 1,
+                failed_jobs_pruned: 0,
+                failed_detail_rows_deleted: 0,
+            }),
+            observed: Mutex::new(Vec::new()),
+        });
+        let workspace_retention = Arc::new(StubWorkspaceRetention {
+            reports: Mutex::new(VecDeque::from([
+                WorkspaceCleanupReport {
+                    examined_entries: 2,
+                    removed: vec![PathBuf::from("removed-job")],
+                    failures: vec![WorkspaceCleanupFailure {
+                        path: PathBuf::from("retry-job"),
+                        operation: "workspace.cleanup_remove",
+                        error_kind: io::ErrorKind::PermissionDenied,
+                    }],
+                    limit_reached: false,
+                },
+                WorkspaceCleanupReport {
+                    examined_entries: 1,
+                    removed: vec![PathBuf::from("retry-job")],
+                    failures: Vec::new(),
+                    limit_reached: false,
+                },
+            ])),
+            runs: AtomicUsize::new(0),
+        });
+        let runtime = MediaRetentionRuntime::with_dependencies(
+            repository.clone(),
+            Arc::new(FixedClock(fixed_time()?)),
+            workspace_retention,
+            Metrics::new()?,
+            Duration::from_secs(1),
+        );
+
+        assert!(runtime.run_tick().await?.is_none());
+        assert!(
+            repository
+                .observed
+                .lock()
+                .map_err(|error| anyhow::anyhow!("retention test lock failed: {error}"))?
+                .is_empty()
+        );
+        assert!(runtime.run_tick().await?.is_some());
+        assert_eq!(
+            repository
+                .observed
+                .lock()
+                .map_err(|error| anyhow::anyhow!("retention test lock failed: {error}"))?
+                .len(),
+            1
+        );
+        assert!(
+            runtime
+                .telemetry
+                .render()?
+                .contains("media_retention_runs_total{outcome=\"deferred\"} 1")
+        );
         Ok(())
     }
 
