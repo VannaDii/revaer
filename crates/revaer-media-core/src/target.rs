@@ -1,6 +1,7 @@
 //! Desired-target compilation into a concrete output graph.
 
 use crate::classify::{SemanticRole, infer_role};
+use crate::hdr10::{Hdr10ColorVolumeParts, validate_color_volume};
 use crate::model::{
     ContainerChapterEntry, ContainerMetadataEntry, DesiredGraph, DesiredStreamBinding, MediaGraph,
     MediaStream, StreamKind,
@@ -117,6 +118,8 @@ pub struct TargetStream {
     pub color_space: Option<String>,
     /// Desired HDR format label.
     pub hdr_format: Option<String>,
+    /// Desired exact HDR10 mastering-display and content-light side-data contract.
+    pub hdr10_color_volume: Option<Hdr10ColorVolume>,
     /// Desired stream title. `None` removes the source title.
     pub title: Option<String>,
     /// Complete desired disposition set.
@@ -126,6 +129,36 @@ pub struct TargetStream {
     pub subtitle_placement: Option<SubtitlePlacement>,
     /// Image-subtitle action. Non-subtitle rows leave this unset.
     pub image_subtitle_action: Option<ImageSubtitleAction>,
+}
+
+/// Exact HDR10 mastering-display and content-light side-data contract.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Hdr10ColorVolume {
+    /// Red primary x chromaticity coordinate.
+    pub mastering_red_x: String,
+    /// Red primary y chromaticity coordinate.
+    pub mastering_red_y: String,
+    /// Green primary x chromaticity coordinate.
+    pub mastering_green_x: String,
+    /// Green primary y chromaticity coordinate.
+    pub mastering_green_y: String,
+    /// Blue primary x chromaticity coordinate.
+    pub mastering_blue_x: String,
+    /// Blue primary y chromaticity coordinate.
+    pub mastering_blue_y: String,
+    /// White point x chromaticity coordinate.
+    pub mastering_white_point_x: String,
+    /// White point y chromaticity coordinate.
+    pub mastering_white_point_y: String,
+    /// Minimum mastering-display luminance.
+    pub mastering_min_luminance: String,
+    /// Maximum mastering-display luminance.
+    pub mastering_max_luminance: String,
+    /// Maximum content light level.
+    pub max_content_light_level: String,
+    /// Maximum frame-average light level.
+    pub max_frame_average_light_level: String,
 }
 
 /// Desired placement for a selected subtitle.
@@ -508,6 +541,22 @@ pub enum TargetCompileError {
         stream_key: String,
         /// Requested HDR format.
         hdr_format: String,
+    },
+    /// The target requested exact HDR10 side data without the HDR10 format contract.
+    #[error("desired target HDR10 side data requires hdr10 format on stream {stream_key}")]
+    Hdr10ColorVolumeRequiresHdr10 {
+        /// Target stream identity.
+        stream_key: String,
+    },
+    /// The target requested invalid HDR10 mastering-display or content-light values.
+    #[error("invalid desired target HDR10 color volume {field} on stream {stream_key}: {value}")]
+    InvalidHdr10ColorVolume {
+        /// Target stream identity.
+        stream_key: String,
+        /// Invalid field name.
+        field: &'static str,
+        /// Invalid field value.
+        value: String,
     },
     /// The target requested a video level without a supported codec contract.
     #[error("unsupported desired target video level on stream {stream_key}: {codec} {video_level}")]
@@ -1611,6 +1660,7 @@ fn validate_video_target_stream(
     }
     validate_video_constraints(stream, key)?;
     validate_video_hdr_format(stream, key)?;
+    validate_hdr10_color_volume(stream, key)?;
     validate_video_level(stream, key)?;
     validate_video_color_value(key, "color_primaries", stream.color_primaries.as_deref())?;
     validate_video_color_value(key, "color_transfer", stream.color_transfer.as_deref())?;
@@ -1705,6 +1755,59 @@ fn validate_video_hdr_format(stream: &TargetStream, key: &str) -> Result<(), Tar
     })
 }
 
+fn validate_hdr10_color_volume(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
+    let Some(volume) = &stream.hdr10_color_volume else {
+        return Ok(());
+    };
+    if stream
+        .hdr_format
+        .as_deref()
+        .is_none_or(|format| !format.trim().eq_ignore_ascii_case("hdr10"))
+    {
+        return Err(TargetCompileError::Hdr10ColorVolumeRequiresHdr10 {
+            stream_key: key.to_string(),
+        });
+    }
+    validate_hdr10_color_volume_values(volume, key)
+}
+
+fn validate_hdr10_color_volume_values(
+    volume: &Hdr10ColorVolume,
+    key: &str,
+) -> Result<(), TargetCompileError> {
+    validate_color_volume(hdr10_color_volume_parts(volume))
+        .map_err(|error| invalid_hdr10_color_volume(key, error.field, &error.value))
+}
+
+fn hdr10_color_volume_parts(volume: &Hdr10ColorVolume) -> Hdr10ColorVolumeParts<'_> {
+    Hdr10ColorVolumeParts {
+        mastering_red_x: &volume.mastering_red_x,
+        mastering_red_y: &volume.mastering_red_y,
+        mastering_green_x: &volume.mastering_green_x,
+        mastering_green_y: &volume.mastering_green_y,
+        mastering_blue_x: &volume.mastering_blue_x,
+        mastering_blue_y: &volume.mastering_blue_y,
+        mastering_white_point_x: &volume.mastering_white_point_x,
+        mastering_white_point_y: &volume.mastering_white_point_y,
+        mastering_min_luminance: &volume.mastering_min_luminance,
+        mastering_max_luminance: &volume.mastering_max_luminance,
+        max_content_light_level: &volume.max_content_light_level,
+        max_frame_average_light_level: &volume.max_frame_average_light_level,
+    }
+}
+
+fn invalid_hdr10_color_volume(
+    stream_key: &str,
+    field: &'static str,
+    value: &str,
+) -> TargetCompileError {
+    TargetCompileError::InvalidHdr10ColorVolume {
+        stream_key: stream_key.to_string(),
+        field,
+        value: value.to_string(),
+    }
+}
+
 fn validate_video_level(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
     let Some(video_level) = stream.video_level.as_deref() else {
         return Ok(());
@@ -1761,6 +1864,7 @@ const fn has_video_shape(stream: &TargetStream) -> bool {
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
         || stream.hdr_format.is_some()
+        || stream.hdr10_color_volume.is_some()
 }
 
 const fn has_subtitle_shape(stream: &TargetStream) -> bool {
@@ -2019,8 +2123,9 @@ fn normalized_dispositions(dispositions: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DesiredTarget, ImageSubtitleAction, LanguageToken, MAX_CONTAINER_CHAPTER_METADATA_ENTRIES,
-        MAX_CONTAINER_CHAPTERS, MAX_CONTAINER_METADATA_ENTRIES, MAX_CONTAINER_METADATA_KEY_BYTES,
+        DesiredTarget, Hdr10ColorVolume, ImageSubtitleAction, LanguageToken,
+        MAX_CONTAINER_CHAPTER_METADATA_ENTRIES, MAX_CONTAINER_CHAPTERS,
+        MAX_CONTAINER_METADATA_ENTRIES, MAX_CONTAINER_METADATA_KEY_BYTES,
         MAX_CONTAINER_METADATA_VALUE_BYTES, SidecarOutputSource, SidecarSubtitleInput,
         SubtitlePlacement, TargetCompileError, TargetStream, UnmatchedStreamPolicies,
         UnmatchedStreamPolicy, compile_desired_target, compile_desired_target_with_sidecars,
@@ -2084,12 +2189,44 @@ mod tests {
             color_transfer: None,
             color_space: None,
             hdr_format: None,
+            hdr10_color_volume: None,
             title: None,
             dispositions: Vec::new(),
             subtitle_placement: (kind == StreamKind::Subtitle)
                 .then_some(SubtitlePlacement::Embedded),
             image_subtitle_action: (kind == StreamKind::Subtitle)
                 .then_some(ImageSubtitleAction::Fail),
+        }
+    }
+
+    fn valid_hdr10_color_volume() -> Hdr10ColorVolume {
+        Hdr10ColorVolume {
+            mastering_red_x: "34000/50000".to_string(),
+            mastering_red_y: "16000/50000".to_string(),
+            mastering_green_x: "13250/50000".to_string(),
+            mastering_green_y: "34500/50000".to_string(),
+            mastering_blue_x: "7500/50000".to_string(),
+            mastering_blue_y: "3000/50000".to_string(),
+            mastering_white_point_x: "15635/50000".to_string(),
+            mastering_white_point_y: "16450/50000".to_string(),
+            mastering_min_luminance: "50/10000".to_string(),
+            mastering_max_luminance: "10000000/10000".to_string(),
+            max_content_light_level: "1000".to_string(),
+            max_frame_average_light_level: "400".to_string(),
+        }
+    }
+
+    fn target_with_stream(stream: TargetStream) -> DesiredTarget {
+        DesiredTarget {
+            target_key: "invalid".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
+            container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
+            streams: vec![stream],
         }
     }
 
@@ -3124,6 +3261,109 @@ mod tests {
                 ))
             );
         }
+    }
+
+    #[test]
+    fn target_validation_rejects_invalid_hdr10_color_volume_contracts() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+
+        let mut exact_hdr10 = target_stream("video", StreamKind::Video, None, None, "hevc");
+        exact_hdr10.hdr_format = Some("hdr10".to_string());
+        exact_hdr10.hdr10_color_volume = Some(valid_hdr10_color_volume());
+        let hdr10_color_volume_target = target_with_stream(exact_hdr10);
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &hdr10_color_volume_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::RequiredStreamMissing(
+                "video".to_string()
+            ))
+        );
+
+        let mut hdr10_without_format =
+            target_stream("video", StreamKind::Video, None, None, "hevc");
+        hdr10_without_format.hdr10_color_volume = Some(valid_hdr10_color_volume());
+        let hdr10_without_format_target = target_with_stream(hdr10_without_format);
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &hdr10_without_format_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::Hdr10ColorVolumeRequiresHdr10 {
+                stream_key: "video".to_string(),
+            })
+        );
+
+        let mut invalid_hdr10_volume = valid_hdr10_color_volume();
+        invalid_hdr10_volume.mastering_red_x = "51000/50000".to_string();
+        let mut invalid_hdr10 = target_stream("video", StreamKind::Video, None, None, "hevc");
+        invalid_hdr10.hdr_format = Some("hdr10".to_string());
+        invalid_hdr10.hdr10_color_volume = Some(invalid_hdr10_volume);
+        let invalid_hdr10_target = target_with_stream(invalid_hdr10);
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &invalid_hdr10_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::InvalidHdr10ColorVolume {
+                stream_key: "video".to_string(),
+                field: "mastering_red",
+                value: "nonphysical".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn target_validation_rejects_chapter_stream_rows() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        let key = "chapter-main";
+        let unsupported_target = DesiredTarget {
+            target_key: "invalid".to_string(),
+            version: 1,
+            container: "matroska".to_string(),
+            container_metadata_policy: "preserve".to_string(),
+            container_metadata: Vec::new(),
+            container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
+            streams: vec![target_stream(
+                key,
+                StreamKind::Chapter,
+                None,
+                None,
+                "bin_data",
+            )],
+        };
+        assert_eq!(
+            compile_desired_target(
+                &source,
+                "/output/movie.mkv",
+                &unsupported_target,
+                UnmatchedStreamPolicy::Remove,
+            ),
+            Err(TargetCompileError::UnsupportedDesiredStreamKind(
+                key.to_string()
+            ))
+        );
     }
 
     #[test]

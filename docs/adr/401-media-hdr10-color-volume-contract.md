@@ -1,0 +1,87 @@
+# Media HDR10 color-volume contract
+
+- Status: Accepted
+- Date: 2026-08-04
+- Context:
+  - HDR10 verification already required color signaling, 10-bit pixel format, mastering-display/content-light side-data presence, scalar sanity, and physically valid mastering-display geometry.
+  - The desired-target model could not yet name exact HDR10 mastering-display and content-light values, so verification could prove payload validity but not user-selected value conformance.
+  - Desired-target and job-snapshot persistence must remain normalized and stored-procedure-backed; JSON/JSONB state is not permitted.
+- Decision:
+  - Add an optional `hdr10_color_volume` object to desired video streams, valid only with `hdr_format: hdr10`.
+  - Persist the contract as scalar desired-target and immutable job-snapshot columns for the red, green, blue, white-point, luminance, MaxCLL, and MaxFALL values.
+  - Apply the database change additively with migration 0180 and v7 stored procedures so the stack does not drop or rename historical HDR10 scalar columns without explicit operator consent.
+  - Reject partial, nonphysical, non-HDR10, and internally inconsistent HDR10 color-volume targets at API, YAML/import, core compiler, and database boundaries.
+  - Materialize exact HDR10 color-volume targets only through the verified `libx265` command contract by emitting `master-display` and `max-cll` x265 parameters; fail preflight when the captured encoder capabilities cannot support that exact contract.
+  - Verify candidate and final output side-data against the exact target-named values when the contract is present.
+  - Alternatives considered:
+    - Keep only payload presence and geometry validation: rejected because it cannot prove conformance to an explicitly requested mastering/content-light target.
+    - Store the contract as JSON: rejected because Revaer persists application state in normalized columns and stored procedures.
+    - Allow hardware HEVC encoders to carry exact color-volume targets through generic color flags: rejected because the implemented runtime verifier checks exact side-data values and generic flags do not prove those mastering-display/content-light values were authored.
+- Consequences:
+  - Positive outcomes:
+    - HDR10 target rows can now describe exact color-volume intent and carry it unchanged into queued jobs.
+    - FFmpeg command construction now authors the same exact values that candidate/final verification expects.
+    - Candidate/final verification fails closed when output side-data drifts from the declared values.
+  - Risks or trade-offs:
+    - Exact matching is stricter than generic HDR10 validity; operators must declare values that the selected encoder/muxer path can actually preserve, and exact target rows currently require an available `libx265` encoder.
+- Follow-up:
+  - Broader HDR/color semantics outside explicit HDR10 mastering-display/content-light targets remain open.
+
+## Task Record
+
+- Motivation:
+  - Close the gap left after HDR10 side-data geometry validation by allowing an immutable target to name the exact HDR10 color-volume values it expects.
+- Design notes:
+  - The public API uses one nested `hdr10_color_volume` object because that matches the operator-facing concept.
+  - Persistence uses normalized scalar columns on desired target streams and job desired-target stream snapshots, with versioned append/list stored procedures. Earlier migrations already introduced most HDR10 scalar columns; migration 0180 adds the target-named white-point columns and v7 procedure surface while leaving historical white-coordinate columns untouched.
+  - Migration 0189 adds `media_desired_target_graph_page_v2`, combining the complete v4 target policy row with the complete v7 HDR10 stream row. The earlier v1 bounded reader remains unchanged for existing callers.
+  - The v7 append and job-snapshot procedures mirror white-point values into the historical white-coordinate columns. This keeps the additive v6 constraint contract valid while the v7 read model exposes the unambiguous target-named fields.
+  - Desired-target and job-snapshot check constraints use fail-closed `COALESCE` semantics, and append stored procedures treat a missing `hdr_format` as invalid when any exact HDR10 color-volume field is present.
+  - The FFmpeg argv builder selects `libx265` for policies containing exact HDR10 color-volume constraints, emits per-output `-x265-params` values, and classifies unsupported encoder paths as stable preflight build errors.
+  - The runtime verifier reuses FFprobe side-data records and compares rational/decimal numeric values within a small tolerance.
+  - Shared HDR10 numeric parsing and mastering-display geometry helpers live in `revaer-media-core` so API, compiler, and runtime validation use one implementation instead of parallel copies.
+  - Video and audio target constraints now bind by replaying source-graph target-row selection before applying constraints to the compiled desired stream id. This preserves authored target identity when an unconstrained same-codec row appears before a constrained row.
+  - Preflight target compilation is isolated in a pure helper without changing target selection, inspection, capacity, readiness, or audit ordering; this keeps the worker lint-clean without suppressing the repository line-count rule.
+- Test coverage summary:
+  - Added API validation coverage for valid, missing-format, and nonphysical HDR10 color-volume requests.
+  - Added core compiler validation coverage for accepted HDR10 color-volume targets, missing HDR10 format, and nonphysical chromaticity.
+  - Added runtime verification coverage for exact HDR10 side-data match and value mismatch.
+  - Added command-builder coverage proving exact HDR10 color-volume targets select `libx265` and emit deterministic `master-display`/`max-cll` x265 parameters.
+  - Added preflight classification coverage for unsupported exact HDR10 color-volume encoder paths.
+  - Added service readiness coverage proving a desired target with exact HDR10 color-volume values rejects capability snapshots without `libx265`.
+  - Added YAML and stored-procedure coverage proving exact HDR10 color-volume values without `hdr_format: hdr10` fail closed before becoming target state.
+  - Added focused worker unit coverage proving command-policy and verification constraints bind to the second same-codec video stream when the first target row is unconstrained.
+  - Updated sidecar and language-boundary YAML fixtures to declare every required container policy field, preserving the intended parser and path-safety assertions.
+  - Added database fixture coverage proving the twelve scalar fields persist through desired-target list functions and immutable job snapshots.
+  - Added bounded graph-page coverage proving policy fields and exact HDR10 color-volume fields decode together through the production readiness loader.
+  - The focused bounded graph-page tests compiled and ran, but skipped their database bodies because the local Docker daemon was unavailable; integrated CI must execute them against PostgreSQL.
+  - Verified the repaired branch with `just fmt`, `just instruction-drift`, and `just policy`.
+  - Verified migration 0180 from an empty local catalog with `REVAER_DB_MANAGED=1 REVAER_DB_RESET=1 DATABASE_URL=postgres://revaer:revaer@localhost:5432/revaer_pr137_repair just db-start`.
+  - Regenerated API evidence with `just api-export`.
+  - Ran focused contract checks:
+    - `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-media-core --lib target::tests::target_validation_rejects_invalid_hdr10_color_volume_contracts`
+    - `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-media-runtime --lib desired_graph_exact_hdr10_color_volume`
+    - `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --lib hdr10_constraint`
+    - `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --lib profile_desired_target_readiness_rejects_exact_hdr10_without_x265`
+    - `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --lib validate_yaml_bundle_rejects_hdr10_volume_without_hdr_format`
+    - `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --lib media_job_runtime_rejects_candidate_hdr10_missing_side_data`
+    - `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-api --lib desired_target_writes_validate_complete_graph_and_profile_pin`
+    - `cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-data media::configuration::tests`
+  - Ran `just test-features-min` successfully after the rebase repair.
+  - Re-ran the all-feature `revaer-app` Clippy gate after extracting preflight target compilation to satisfy `clippy::too_many_lines` without a lint suppression.
+  - The desired-target and immutable job-snapshot database round-trip covers v7 HDR10 writes while the historical v6 shape constraints remain active, preventing a regression where either compatibility representation is left incomplete.
+  - Re-ran `just ci` successfully after the compatibility repair. Every workspace package met the 90% line-coverage floor, and the generated LCOV report contained 203 source files, 101,063 line records, and 94,038 covered line records.
+  - Re-ran `just ui-e2e` successfully with the repository Node wrapper; all 104 Playwright tests passed.
+  - Sonar Secrets Analysis completed successfully for all three changed files. Sonar file-level Agentic Analysis remains blocked by SonarCloud entitlement: the organization returns HTTP 403 for Agentic Analysis for each changed file. Full scanner submission remains enforced by GitHub Actions.
+- Observability updates:
+  - No new metrics, logs, or events were added. Mismatches continue through the existing video-constraint verification failure surface.
+- Status-doc validation:
+  - Updated ADR 318 to distinguish implemented exact HDR10 color-volume authoring and matching from broader HDR/color semantics that remain open.
+  - Updated `MEDIA_TRANSCODING.md` and ADR 318 to distinguish implemented exact HDR10 color-volume authoring and matching from broader HDR/color semantics that remain open.
+- Risk & rollback plan:
+  - Risk is limited to stricter handling of profiles that opt into exact HDR10 color-volume targets. Roll back by reverting migration 0180, the DTO/runtime mapping, x265 command materialization, the exact-match verifier, tests, and this ADR before deployment.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradiction was found.

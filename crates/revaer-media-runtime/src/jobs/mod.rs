@@ -629,6 +629,14 @@ const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata 
             code: "preflight_build_unsupported_codec",
             detail: "required transcode codec is unavailable",
         },
+        BuildArgsError::UnsupportedHdr10ColorVolumeEncoder(_) => PreflightErrorMetadata {
+            code: "preflight_build_unsupported_hdr10_color_volume_encoder",
+            detail: "exact HDR10 color-volume authoring requires a supported encoder",
+        },
+        BuildArgsError::InvalidHdr10ColorVolumeValue { .. } => PreflightErrorMetadata {
+            code: "preflight_build_invalid_hdr10_color_volume_values",
+            detail: "exact HDR10 color-volume values cannot be authored exactly",
+        },
         BuildArgsError::UnsupportedMuxer(_) => PreflightErrorMetadata {
             code: "preflight_build_unsupported_muxer",
             detail: "required output muxer is unavailable",
@@ -2540,6 +2548,7 @@ mod tests {
                     color_transfer: None,
                     color_space: None,
                     hdr_format: None,
+                    hdr10_color_volume: None,
                 },
                 crate::execute::VideoStreamConstraints {
                     stream_id: 1,
@@ -2550,6 +2559,7 @@ mod tests {
                     color_transfer: None,
                     color_space: None,
                     hdr_format: None,
+                    hdr10_color_volume: None,
                 },
             ],
             audio_stream_constraints: vec![crate::execute::AudioStreamConstraints {
@@ -3149,6 +3159,22 @@ mod tests {
         assert_eq!(
             preflight_error_detail(&err),
             "required output muxer cannot author replacement chapters"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+    }
+
+    #[test]
+    fn unsupported_hdr10_color_volume_encoder_preflight_classification_is_stable() {
+        let err = JobPreflightError::Build(BuildArgsError::UnsupportedHdr10ColorVolumeEncoder(
+            "hevc_nvenc".to_string(),
+        ));
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_unsupported_hdr10_color_volume_encoder"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "exact HDR10 color-volume authoring requires a supported encoder"
         );
         assert_eq!(preflight_failed_stage(&err), "build_steps");
     }

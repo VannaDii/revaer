@@ -20,6 +20,7 @@ use revaer_api_models::{
     MediaDesiredTargetChapterEntry as SharedMediaDesiredTargetChapterEntry,
     MediaDesiredTargetMetadataEntry as SharedMediaDesiredTargetMetadataEntry,
     MediaDesiredTargetStream as SharedMediaDesiredTargetStream,
+    MediaHdr10ColorVolume as SharedMediaHdr10ColorVolume,
     MediaJobArtifactResponse as SharedMediaJobArtifactResponse,
     MediaJobCompactAuditResponse as SharedMediaJobCompactAuditResponse,
     MediaJobOperationResponse as SharedMediaJobOperationResponse,
@@ -29,6 +30,7 @@ use revaer_api_models::{
     MediaJobViolationResponse as SharedMediaJobViolationResponse,
     MediaProfileReadinessResponse as SharedMediaProfileReadinessResponse, MediaVerificationToggle,
 };
+use revaer_media_core::hdr10::{Hdr10ColorVolumeParts, color_volume_is_valid};
 
 /// Create/update media profile parameters.
 #[derive(Debug, Clone)]
@@ -162,6 +164,34 @@ pub struct MediaCompatibilityTargetUpsertParams<'a> {
 
 /// Ordered desired-target stream parameters.
 pub type MediaDesiredTargetStreamParams = SharedMediaDesiredTargetStream;
+
+/// API-facing HDR10 color-volume target contract.
+pub type MediaHdr10ColorVolumeParams = SharedMediaHdr10ColorVolume;
+
+/// Returns whether an API-facing HDR10 color-volume contract is physically valid.
+#[must_use]
+pub fn media_hdr10_color_volume_is_valid(volume: &MediaHdr10ColorVolumeParams) -> bool {
+    color_volume_is_valid(media_hdr10_color_volume_parts(volume))
+}
+
+fn media_hdr10_color_volume_parts(
+    volume: &MediaHdr10ColorVolumeParams,
+) -> Hdr10ColorVolumeParts<'_> {
+    Hdr10ColorVolumeParts {
+        mastering_red_x: &volume.mastering_red_x,
+        mastering_red_y: &volume.mastering_red_y,
+        mastering_green_x: &volume.mastering_green_x,
+        mastering_green_y: &volume.mastering_green_y,
+        mastering_blue_x: &volume.mastering_blue_x,
+        mastering_blue_y: &volume.mastering_blue_y,
+        mastering_white_point_x: &volume.mastering_white_point_x,
+        mastering_white_point_y: &volume.mastering_white_point_y,
+        mastering_min_luminance: &volume.mastering_min_luminance,
+        mastering_max_luminance: &volume.mastering_max_luminance,
+        max_content_light_level: &volume.max_content_light_level,
+        max_frame_average_light_level: &volume.max_frame_average_light_level,
+    }
+}
 
 /// Desired-target container metadata parameters.
 pub type MediaDesiredTargetMetadataParams = SharedMediaDesiredTargetMetadataEntry;

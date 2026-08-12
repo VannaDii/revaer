@@ -192,6 +192,15 @@ pub struct MetadataEntry {
     pub value: String,
 }
 
+/// One normalized stream side-data record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SideDataInspection {
+    /// Lowercase side-data type.
+    pub side_data_type: String,
+    /// Normalized scalar side-data payload fields.
+    pub metadata: Vec<MetadataEntry>,
+}
+
 /// Normalized container-level inspection state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerInspection {
@@ -265,6 +274,8 @@ pub struct StreamInspection {
     pub metadata: Vec<MetadataEntry>,
     /// Normalized side-data type names.
     pub side_data_types: Vec<String>,
+    /// Normalized side-data records, including scalar HDR payload fields.
+    pub side_data: Vec<SideDataInspection>,
 }
 
 /// Complete normalized media inspection report.

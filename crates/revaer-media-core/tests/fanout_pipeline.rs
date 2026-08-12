@@ -35,6 +35,7 @@ fn audio_target(
         color_transfer: None,
         color_space: None,
         hdr_format: None,
+        hdr10_color_volume: None,
         title: Some(stream_key.to_string()),
         dispositions: Vec::new(),
         subtitle_placement: None,
