@@ -400,6 +400,7 @@
 -   [412](412-core-planner-review-repair.md) – Core planner review repair
 -   [413](413-pr-123-chapter-idempotence-and-supply-chain.md) – PR 123 chapter idempotence and supply chain remediation
 -   [414](414-sonar-api-verification-retries.md) – Sonar API verification retries
+-   [416](416-media-watcher-native-first-fallback.md) – Media watcher native-first fallback
 -   [417](417-cargo-lock-dependency-integrity.md) – Cargo lock dependency integrity
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation
@@ -431,3 +432,4 @@
 -   [475](475-pr110-openapi-schema-catalogue.md) – PR 110 OpenAPI schema catalogue correction
 -   [473](473-pr123-tuple-array-conversion.md) – PR 123 tuple array conversion correction
 -   [471](471-pr126-chapter-ordering-predicate.md) – PR 126 chapter ordering predicate correction
+-   [472](472-pr134-watcher-lock-lifetime.md) – PR 134 watcher lock lifetime correction
