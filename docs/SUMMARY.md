@@ -408,6 +408,7 @@
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [381: Libtorrent native pkg-config contract](adr/381-libtorrent-native-pkg-config-contract.md)
     -   [382: Justfile NVM Node wrapper](adr/382-justfile-nvm-node-wrapper.md)
+    -   [385: Factory reset transient contention retry](adr/385-factory-reset-transient-contention-retry.md)
     -   [387: Media attachment strip fixture evidence](adr/387-media-attachment-strip-fixture-evidence.md)
     -   [388: Media discovery desired target readiness](adr/388-media-discovery-desired-target-readiness.md)
     -   [390: Media FFprobe frame robustness](adr/390-media-ffprobe-frame-robustness.md)

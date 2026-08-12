@@ -152,6 +152,53 @@ fn sample_fs_policy_row() -> FsPolicyRow {
 }
 
 #[test]
+fn factory_reset_retry_sqlstates_are_limited_to_transient_contention() {
+    assert!(factory_reset_sqlstate_is_retryable(Some(
+        POSTGRES_DEADLOCK_DETECTED
+    )));
+    assert!(factory_reset_sqlstate_is_retryable(Some(
+        POSTGRES_SERIALIZATION_FAILURE
+    )));
+    assert!(factory_reset_sqlstate_is_retryable(Some(
+        POSTGRES_LOCK_NOT_AVAILABLE
+    )));
+
+    assert!(!factory_reset_sqlstate_is_retryable(None));
+    assert!(!factory_reset_sqlstate_is_retryable(Some("23505")));
+    assert!(!factory_reset_sqlstate_is_retryable(Some("42P01")));
+}
+
+#[test]
+fn factory_reset_retry_budget_allows_three_total_attempts() {
+    assert_eq!(
+        factory_reset_retry_delay(1, Some(POSTGRES_DEADLOCK_DETECTED)),
+        Some(FACTORY_RESET_RETRY_BASE_DELAY)
+    );
+    assert_eq!(
+        factory_reset_retry_delay(2, Some(POSTGRES_SERIALIZATION_FAILURE)),
+        Some(FACTORY_RESET_RETRY_BASE_DELAY.saturating_mul(2))
+    );
+    assert_eq!(
+        factory_reset_retry_delay(
+            FACTORY_RESET_MAX_ATTEMPTS,
+            Some(POSTGRES_LOCK_NOT_AVAILABLE)
+        ),
+        None
+    );
+}
+
+#[test]
+fn factory_reset_retry_fails_closed_outside_policy() {
+    assert_eq!(
+        factory_reset_retry_delay(0, Some(POSTGRES_DEADLOCK_DETECTED)),
+        None
+    );
+    assert_eq!(factory_reset_retry_delay(1, None), None);
+    assert_eq!(factory_reset_retry_delay(1, Some("08006")), None);
+    assert_eq!(factory_reset_retry_delay(1, Some("23505")), None);
+}
+
+#[test]
 fn app_mode_parses_and_formats() -> anyhow::Result<()> {
     assert_eq!(AppMode::from_str("setup")?, AppMode::Setup);
     assert_eq!(AppMode::from_str("active")?, AppMode::Active);
