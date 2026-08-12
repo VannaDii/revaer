@@ -27,6 +27,7 @@ applyTo:
 - Workflows that install Rust toolchains must use the repository's configured toolchain source of truth rather than hard-coded ad hoc channels unless a documented exception is required.
 - Workflow build, lint, test, coverage, and release gates must call `just` recipes. Do not reintroduce raw `cargo` pipelines into CI jobs.
 - Justfile recipes must run under non-login Bash so caller-selected Rust and NVM tool paths remain active inside every recipe.
+- Node-backed Justfile recipes must invoke `npm`, `npx`, `node`, and local JavaScript bin shims through `scripts/with-node.sh`. Local runs must select the explicit `REVAER_NODE_VERSION` or an installed NVM LTS version; only CI may retain its setup-provided PATH when NVM has no installed LTS alias.
 - `just check-assets` must run the canonical asset synchronizer and compare `crates/revaer-ui/static/nexus/**` from the repository root; a cwd-relative comparison that misses generated served assets is forbidden.
 - Generated Playwright API schema output must remain ignored and untracked. Regenerate it from the committed OpenAPI document at test time through `just api-test-client`, using `npm ci` so `tests/package-lock.json` is the complete dependency-resolution source of truth; keep the generated-source guardrail and its fixture tests in `just policy`.
 - Media fixture acquisition must use `test-fixtures/lock.json` as the immutable

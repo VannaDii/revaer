@@ -389,6 +389,7 @@
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [381](381-libtorrent-native-pkg-config-contract.md) – Libtorrent native pkg-config contract
+-   [382](382-justfile-nvm-node-wrapper.md) – Justfile NVM Node wrapper
 -   [387](387-media-attachment-strip-fixture-evidence.md) – Media attachment strip fixture evidence
 -   [388](388-media-discovery-desired-target-readiness.md) – Media discovery desired target readiness
 -   [390](390-media-ffprobe-frame-robustness.md) – Media FFprobe frame robustness

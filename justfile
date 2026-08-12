@@ -284,11 +284,11 @@ helm-publish chart_version app_version:
     bash release/scripts/helm-publish.sh "{{chart_version}}" "{{app_version}}"
 
 release-dev:
-    npm --prefix release ci
-    node release/node_modules/.bin/semantic-release --extends ./release/release.config.js
+    bash scripts/with-node.sh npm --prefix release ci
+    bash scripts/with-node.sh node release/node_modules/.bin/semantic-release --extends ./release/release.config.js
 
 release-lock:
-    npm --prefix release install --package-lock-only
+    bash scripts/with-node.sh npm --prefix release install --package-lock-only
 
 validate:
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}"
@@ -359,22 +359,22 @@ ui-build: sync-assets trunk-install
     cd crates/revaer-ui && NO_COLOR=true trunk build --release
 
 api-test-client:
-    npm --prefix tests ci
-    npm --prefix tests run gen:api-client
+    bash scripts/with-node.sh npm --prefix tests ci
+    bash scripts/with-node.sh npm --prefix tests run gen:api-client
     test -s tests/support/api/schema.ts
 
 ui-e2e: trunk-install
     just api-test-client
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
         if [ -n "${E2E_BROWSER_CHANNEL:-}" ]; then \
-            cd tests && npx playwright install-deps; \
+            cd tests && bash ../scripts/with-node.sh npx playwright install-deps; \
         else \
-            cd tests && npx playwright install --with-deps; \
+            cd tests && bash ../scripts/with-node.sh npx playwright install --with-deps; \
         fi; \
     else \
-        cd tests && npx playwright install; \
+        cd tests && bash ../scripts/with-node.sh npx playwright install; \
     fi
-    tests/node_modules/.bin/tsc --project tests/tsconfig.coverage.json
+    bash scripts/with-node.sh tests/node_modules/.bin/tsc --project tests/tsconfig.coverage.json
     set -e; \
     playwright_args=(); \
     project_tokens="$(printf "%s" "${E2E_PLAYWRIGHT_PROJECTS:-}" | tr "," " ")"; \
@@ -402,13 +402,13 @@ ui-e2e: trunk-install
         coverage_suffix="-shard-${PLAYWRIGHT_SHARD_INDEX}"; \
     fi; \
     coverage_dir="${JS_COVERAGE_DIR:-coverage/js/playwright${coverage_suffix}}"; \
-    state_key="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")"; \
+    state_key="$(bash scripts/with-node.sh node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")"; \
     rm -rf "${coverage_dir}"; \
     playwright_status=0; \
     REVAER_E2E_STATE_KEY="${state_key}" \
     JS_COVERAGE_DIR="${coverage_dir}" \
     E2E_ENV_DIR="${PWD}/tests" \
-    NODE_PATH="${PWD}/tests/node_modules" tests/node_modules/.bin/c8 \
+    NODE_PATH="${PWD}/tests/node_modules" bash scripts/with-node.sh tests/node_modules/.bin/c8 \
         --reporter=lcovonly \
         --reports-dir "${coverage_dir}" \
         --include 'target/js-coverage-tests/**/*.js' \
@@ -429,13 +429,13 @@ ui-e2e: trunk-install
     exit "${playwright_status}"
 
 ui-e2e-coverage:
-    node tests/scripts/check-e2e-coverage.js
+    bash scripts/with-node.sh node tests/scripts/check-e2e-coverage.js
 
 js-release-coverage:
-    npm --prefix tests install
+    bash scripts/with-node.sh npm --prefix tests install
     rm -rf coverage/js/release
     mkdir -p coverage/js/release
-    tests/node_modules/.bin/c8 \
+    bash scripts/with-node.sh tests/node_modules/.bin/c8 \
         --reporter=lcovonly \
         --reports-dir coverage/js/release \
         node scripts/js-coverage/semantic-release-npm-stub.mjs
