@@ -30,6 +30,15 @@ pub mod import_job_runtime;
 pub mod indexer_runtime;
 /// Indexer service wiring for API facade.
 pub mod indexers;
+/// Media service wiring for API facade.
+pub mod media;
+mod media_discovery_fingerprint;
+/// In-process media discovery runtime wiring.
+pub mod media_discovery_runtime;
+mod media_discovery_scan;
+mod media_discovery_watcher;
+/// In-process policy-driven media retention janitor wiring.
+pub mod media_retention_runtime;
 /// Torrent orchestrator wiring.
 #[cfg(feature = "libtorrent")]
 pub mod orchestrator;
