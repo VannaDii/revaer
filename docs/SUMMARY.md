@@ -408,6 +408,7 @@
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [387: Media attachment strip fixture evidence](adr/387-media-attachment-strip-fixture-evidence.md)
     -   [388: Media discovery desired target readiness](adr/388-media-discovery-desired-target-readiness.md)
+    -   [390: Media FFprobe frame robustness](adr/390-media-ffprobe-frame-robustness.md)
     -   [391: Media job chapter replacement evidence](adr/391-media-job-chapter-replacement-evidence.md)
     -   [392: Media job attachment strip evidence](adr/392-media-job-attachment-strip-evidence.md)
     -   [393: Media job attachment passthrough evidence](adr/393-media-job-attachment-passthrough-evidence.md)
