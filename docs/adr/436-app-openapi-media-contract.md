@@ -12,7 +12,7 @@
   - Each review remains bounded while schema references are available before route definitions consume them.
   - The schema-only layer intentionally exposes unused definitions until the route layer lands.
 - Follow-up:
-  - Complete the generated app route layer and verify semantic and byte equality with the generator output.
+  - Keep the app-local and canonical docs copies byte-identical when the canonical artifact layer lands.
 
 ## Task Record
 
@@ -21,7 +21,7 @@
 - Design notes:
   - This change contains generated OpenAPI data and task records only; runtime behavior remains in ADR 430.
 - Test coverage summary:
-  - Parse the artifact as JSON, validate it as OpenAPI, and compare its component schemas with generator output.
+  - Parsed the completed artifact as JSON and verified byte equality with generator output, including media schemas and routes.
 - Observability updates:
   - None; this is a generated contract artifact.
 - Status-doc validation:
