@@ -253,6 +253,7 @@ class WorkflowStructureGuardrails
       end
       validate_condition(path, "job #{job_name}", job["if"]) if job.key?("if")
       validate_permissions(path, "job #{job_name}", job["permissions"]) if job.key?("permissions")
+      validate_needs(path, job_name, job["needs"], jobs) if job.key?("needs")
       if job.key?("uses")
         @errors << "#{path}: reusable job #{job_name} must not define steps" if job.key?("steps")
         validate_uses(path, "job #{job_name}", job["uses"])
@@ -261,6 +262,19 @@ class WorkflowStructureGuardrails
       end
     end
     validate_build_images(path, jobs) if File.basename(path) == "build-images.yml"
+  end
+
+  def validate_needs(path, job_name, needs, jobs)
+    dependencies = needs.is_a?(Array) ? needs : [needs]
+    if dependencies.empty? || dependencies.any? { |dependency| !dependency.is_a?(String) || dependency.empty? }
+      @errors << "#{path}: job #{job_name} needs must name one or more jobs"
+      return
+    end
+    dependencies.each do |dependency|
+      next if jobs.key?(dependency)
+
+      @errors << "#{path}: job #{job_name} needs unknown job #{dependency.inspect}"
+    end
   end
 
   def validate_action(path, document)

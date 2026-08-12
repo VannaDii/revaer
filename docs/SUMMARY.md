@@ -387,3 +387,4 @@
     -   [410: Libtorrent 2.1 compatibility foundation](adr/410-libtorrent-21-compatibility.md)
     -   [411: Untracked generated API schema](adr/411-untracked-generated-api-schema.md)
     -   [412: Core planner review repair](adr/412-core-planner-review-repair.md)
+    -   [415: PR workflow dependency validation](adr/415-pr-workflow-dependency-validation.md)

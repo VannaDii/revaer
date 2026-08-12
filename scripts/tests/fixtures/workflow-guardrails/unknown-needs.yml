@@ -1,0 +1,9 @@
+name: Unknown job dependency
+on:
+  pull_request:
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    needs: missing-job
+    steps:
+      - run: just policy

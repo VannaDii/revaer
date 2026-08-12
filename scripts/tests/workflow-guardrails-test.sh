@@ -150,6 +150,7 @@ run_case fail duplicate-key.yml
 run_case fail root-sequence.yml
 run_case fail empty-jobs.yml
 run_case fail invalid-job.yml
+run_case fail unknown-needs.yml
 run_case fail direct-cargo.yml
 run_case fail alias.yml
 run_case fail invalid-yaml.yml
