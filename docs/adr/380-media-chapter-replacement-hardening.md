@@ -1,0 +1,61 @@
+# Media chapter replacement hardening
+
+- Status: Accepted
+- Date: 2026-08-11
+- Context:
+  - ADR 374 introduced exact authored container chapter values, and the rebuilt stack already plans chapter replacement as a mutating metadata rewrite plus remux.
+  - Worker-level synthetic evidence proves the queued-job path, but three production-hardening obligations from the original ADR 380 record were absent after stack reconstruction: muxer-specific authoring admission, deterministic FFmetadata cleanup, and real FFmpeg fixture evidence.
+  - FFmpeg accepts chapter metadata through a temporary FFmetadata input, but container support is not interchangeable. Accepting an unverified muxer would defer a deterministic contract error until process execution.
+  - Temporary FFmetadata contains authored values and must not remain after successful execution, command failure, verification failure, cancellation, or a separate recovery failure.
+- Decision:
+  - Accept authored replacement chapters only when the normalized declared output container is Matroska, the container exercised by the real fixture contract. Missing or other container declarations fail during execution-step construction with a stable chapter-muxer preflight error.
+  - Model FFmetadata deletion as an explicit idempotent execution step. Execute it in the normal sequence after output verification and as a failure handler for every earlier failure.
+  - Attempt all recovery and cleanup handlers even when one handler fails, while retaining the first handler error for reporting. This prevents a quarantine failure from suppressing FFmetadata cleanup.
+  - Add a focused real-media fixture test that runs the normal planner, modular runtime step builder, process-backed FFmpeg runner, and FFprobe inspector. Require exact equality with the authored chapter rows and prove the temporary FFmetadata path is absent afterward.
+  - Keep the existing strict chapter-value comparison unchanged. Unsupported chapter stream materialization remains fail-closed; this decision covers target-level container chapter rows only.
+  - Alternatives considered:
+    - Let FFmpeg reject unsupported containers: rejected because capability and contract errors belong in preflight before process execution.
+    - Delete FFmetadata only after successful FFmpeg completion: rejected because command, verification, cancellation, and recovery failures would retain authored temporary data.
+    - Weaken fixture assertions to chapter count or title presence: rejected because exact timeline and metadata equality is the existing desired-state contract.
+- Consequences:
+  - Positive outcomes:
+    - Unsupported chapter muxers fail before any FFmpeg process or temporary artifact is created.
+    - FFmetadata cleanup is explicit, idempotent, testable, and attempted across success and failure paths.
+    - Real FFmpeg and FFprobe evidence covers the same modular path used by runtime jobs.
+  - Risks or trade-offs:
+    - Matroska is the only admitted chapter-authoring container until another muxer has equivalent real-media evidence.
+    - A cleanup failure is surfaced as recovery detail; the primary execution error remains the sequence failure.
+- Follow-up:
+  - Add another chapter-authoring muxer only with explicit format semantics, exact inspection evidence, and an update to this admission contract.
+  - Keep authored attachment and data-stream creation separate until they have equivalent schema, execution, cleanup, and verification contracts.
+
+## Task Record
+
+- Motivation:
+  - Restore and complete the missing production hardening from ADR 380 without changing the already stricter authored chapter comparison contract.
+- Design notes:
+  - Added a chapter-specific unsupported-muxer error so ordinary unavailable muxers and unproven chapter-authoring muxers retain distinct preflight diagnostics.
+  - Kept temporary metadata beside the managed candidate output and represented deletion in the deterministic step list rather than hiding it in the process runner.
+  - Reused the current desired-graph binding helper, planner, job step builder, process runner, and modular FFprobe inspector in fixture evidence.
+- Test coverage summary:
+  - `cargo test -p revaer-media-runtime desired_graph_replace_container_chapters --all-features -- --nocapture`
+  - `cargo test -p revaer-media-runtime execute_step_sequence_ --all-features -- --nocapture`
+    - Includes cancellation arriving exactly at the cleanup step, proving cleanup bypasses the cancelled control path.
+  - `cargo test -p revaer-media-runtime unsupported_chapter_muxer_preflight_classification_is_stable --all-features -- --nocapture`
+  - `cargo test -p revaer-media-runtime --test media_fixtures real_ffmpeg_replaces_authored_container_chapters --all-features -- --ignored --nocapture`
+  - `cargo test -p revaer-app media_job_runtime_replaces_container_chapters_when_policy_selects_replace --all-features -- --nocapture`
+  - `just lint`
+  - `just clean-test-fixtures`
+  - `just ci` was attempted and stopped in database startup because the local Docker daemon was unavailable, so PostgreSQL could not be provisioned.
+  - `just ui-e2e` was attempted with NVM-managed Node 24.14.1; API client generation passed, but Playwright browser installation stalled without output and was terminated. Generated Node and API-client artifacts were removed afterward.
+- Observability updates:
+  - Added stable `preflight_build_unsupported_chapter_muxer` classification and detail for operator-visible preflight reports.
+  - Existing sequence errors continue to report the primary failure and the first recovery or cleanup failure.
+- Risk and rollback plan:
+  - Risk is limited to chapter-replacement admission and execution cleanup. Existing preserve and strip policies do not create FFmetadata and are unchanged.
+  - Roll back the chapter-specific admission and cleanup step together. Do not remove cleanup while retaining authored FFmetadata generation.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md` and `.github/instructions/rust.instructions.md` for runtime, test, panic-free, lint, and task-record requirements.
+  - No policy drift was found. ADR 380 was missing from the rebuilt branch even though ADR 391 referenced it; this record and both indexes restore that documentation chain.

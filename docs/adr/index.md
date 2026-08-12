@@ -387,6 +387,7 @@
 -   [377](377-media-manual-operator-loop.md) – Media manual operator loop
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
+-   [380](380-media-chapter-replacement-hardening.md) – Media chapter replacement hardening
 -   [381](381-libtorrent-native-pkg-config-contract.md) – Libtorrent native pkg-config contract
 -   [382](382-justfile-nvm-node-wrapper.md) – Justfile NVM Node wrapper
 -   [383](383-media-audio-channel-constraint-verification.md) – Media audio channel constraint verification
