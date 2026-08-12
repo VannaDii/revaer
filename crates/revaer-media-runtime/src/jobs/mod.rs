@@ -2550,6 +2550,8 @@ mod tests {
             ],
             audio_stream_constraints: vec![crate::execute::AudioStreamConstraints {
                 stream_id: 2,
+                channel_count: None,
+                channel_layout: None,
                 bitrate_bps: Some(320_000),
                 sample_rate_hz: None,
                 loudness_profile: None,
