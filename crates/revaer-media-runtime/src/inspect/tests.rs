@@ -200,6 +200,81 @@ fn normalizes_full_technical_metadata_and_dispositions() -> Result<(), Box<dyn s
 }
 
 #[test]
+fn accepts_unindexed_frame_records_without_attributing_side_data()
+-> Result<(), Box<dyn std::error::Error>> {
+    let directory = temp_directory("unindexed-frame")?;
+    let source = write_source(&directory)?;
+    let inspection = parse_source(
+        &source,
+        br#"{
+          "frames":[{
+            "media_type":"subtitle",
+            "side_data_list":[{"side_data_type":"unattributed"}]
+          }],
+          "streams":[{
+            "index":0,"codec_type":"subtitle","codec_name":"webvtt"
+          }],
+          "format":{"format_name":"matroska,webm"}
+        }"#,
+    )?;
+
+    assert_eq!(inspection.graph.streams[0].kind, StreamKind::Subtitle);
+    assert_eq!(inspection.streams[0].side_data_types, Vec::<String>::new());
+
+    remove_temp_directory(&directory)
+}
+
+#[test]
+fn merges_only_indexed_frame_side_data_into_its_stream() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = temp_directory("indexed-frame")?;
+    let source = write_source(&directory)?;
+    let inspection = parse_source(
+        &source,
+        br#"{
+          "frames":[
+            {"side_data_list":[{"side_data_type":"unattributed"}]},
+            {"stream_index":1,"side_data_list":[{"side_data_type":"HDR10+"}]}
+          ],
+          "streams":[
+            {"index":0,"codec_type":"video","codec_name":"h264"},
+            {"index":1,"codec_type":"video","codec_name":"hevc"}
+          ],
+          "format":{"format_name":"matroska"}
+        }"#,
+    )?;
+
+    assert_eq!(inspection.streams[0].side_data_types, Vec::<String>::new());
+    assert_eq!(inspection.streams[1].side_data_types, ["hdr10+"]);
+
+    remove_temp_directory(&directory)
+}
+
+#[test]
+fn source_probe_requests_a_bounded_frame_sample() -> Result<(), Box<dyn std::error::Error>> {
+    let directory = temp_directory("frame-probe-args")?;
+    let source = write_source(&directory)?;
+    let executor = Arc::new(QueueExecutor::from_stdout([SOURCE_JSON
+        .as_bytes()
+        .to_vec()]));
+    let adapter = adapter(
+        Arc::clone(&executor),
+        Vec::new(),
+        InspectionLimits::reviewed(),
+    );
+
+    adapter.inspect(&source)?;
+
+    let requests = executor.requests()?;
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].args.windows(2).any(|arguments| {
+        arguments == [OsString::from("-read_intervals"), OsString::from("%+#1")]
+    }));
+    assert!(requests[0].args.contains(&OsString::from("-show_frames")));
+
+    remove_temp_directory(&directory)
+}
+
+#[test]
 fn attachment_without_codec_name_uses_stable_marker() -> Result<(), Box<dyn std::error::Error>> {
     let directory = temp_directory("attachment-no-codec")?;
     let source = write_source(&directory)?;

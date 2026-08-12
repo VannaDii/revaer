@@ -7,8 +7,8 @@ use revaer_media_core::model::{
 use revaer_media_core::normalize::{normalize_graph, normalize_subtitle_codec};
 
 use super::ffprobe::{
-    FfprobeChapter, FfprobeDisposition, FfprobeFormat, FfprobeOutput, FfprobeSideData,
-    FfprobeStream, FfprobeTags,
+    FfprobeChapter, FfprobeDisposition, FfprobeFormat, FfprobeFrame, FfprobeOutput,
+    FfprobeSideData, FfprobeStream, FfprobeTags,
 };
 use super::model::{
     ChapterInspection, ContainerInspection, InspectError, MediaInspection, MetadataEntry,
@@ -31,10 +31,11 @@ pub(super) fn parse_source(
             "source contains no media streams".to_string(),
         ));
     }
+    let frame_side_data = frame_side_data_by_stream(&parsed.frames);
     let mut technical_streams = parsed
         .streams
         .iter()
-        .map(normalize_stream_inspection)
+        .map(|stream| normalize_stream_inspection(stream, &frame_side_data))
         .collect::<Result<Vec<_>, _>>()?;
     let graph_input = ProbeGraph {
         source_path: source.to_string(),
@@ -232,7 +233,14 @@ fn parse_stream_kind(value: &str) -> Result<StreamKind, InspectError> {
     }
 }
 
-fn normalize_stream_inspection(stream: &FfprobeStream) -> Result<StreamInspection, InspectError> {
+fn normalize_stream_inspection(
+    stream: &FfprobeStream,
+    frame_side_data: &BTreeMap<u32, Vec<&FfprobeSideData>>,
+) -> Result<StreamInspection, InspectError> {
+    let frame_values = frame_side_data
+        .get(&stream.index)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     Ok(StreamInspection {
         stream_id: stream.index,
         profile: normalize_optional_text(stream.profile.as_deref()),
@@ -256,8 +264,21 @@ fn normalize_stream_inspection(stream: &FfprobeStream) -> Result<StreamInspectio
             .tags
             .as_ref()
             .map_or_else(Vec::new, metadata_from_stream_tags),
-        side_data_types: normalize_side_data(&stream.side_data_list),
+        side_data_types: normalize_side_data(&stream.side_data_list, frame_values),
     })
+}
+
+fn frame_side_data_by_stream(frames: &[FfprobeFrame]) -> BTreeMap<u32, Vec<&FfprobeSideData>> {
+    let mut values: BTreeMap<u32, Vec<&FfprobeSideData>> = BTreeMap::new();
+    for frame in frames {
+        if let Some(stream_index) = frame.stream_index {
+            values
+                .entry(stream_index)
+                .or_default()
+                .extend(frame.side_data_list.iter());
+        }
+    }
+    values
 }
 
 fn normalize_container(format: Option<FfprobeFormat>) -> Result<ContainerInspection, InspectError> {
@@ -323,11 +344,19 @@ fn metadata_from_stream_tags(tags: &FfprobeTags) -> Vec<MetadataEntry> {
     normalize_metadata(values)
 }
 
-fn normalize_side_data(values: &[FfprobeSideData]) -> Vec<String> {
-    let mut normalized = values
+fn normalize_side_data(
+    stream_values: &[FfprobeSideData],
+    frame_values: &[&FfprobeSideData],
+) -> Vec<String> {
+    let mut normalized = stream_values
         .iter()
         .filter_map(|value| normalize_lowercase_text(Some(&value.side_data_type)))
         .collect::<Vec<_>>();
+    normalized.extend(
+        frame_values
+            .iter()
+            .filter_map(|value| normalize_lowercase_text(Some(&value.side_data_type))),
+    );
     normalized.sort();
     normalized.dedup();
     normalized
