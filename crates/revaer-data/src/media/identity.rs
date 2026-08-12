@@ -13,6 +13,31 @@ pub struct MediaRootIdentity {
 }
 
 impl MediaRootIdentity {
+    /// Construct an identity after a trusted resolver has verified the directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when either path is not absolute.
+    pub fn from_verified_parts(
+        requested_path: PathBuf,
+        canonical_path: PathBuf,
+        filesystem_device: u64,
+        filesystem_inode: u64,
+    ) -> Result<Self, MediaRootIdentityError> {
+        if !requested_path.is_absolute() {
+            return Err(MediaRootIdentityError::PathNotAbsolute(requested_path));
+        }
+        if !canonical_path.is_absolute() {
+            return Err(MediaRootIdentityError::PathNotAbsolute(canonical_path));
+        }
+        Ok(Self {
+            requested_path,
+            canonical_path,
+            filesystem_device,
+            filesystem_inode,
+        })
+    }
+
     /// Returns the operator-supplied absolute path.
     #[must_use]
     pub fn requested_path(&self) -> &Path {
@@ -123,12 +148,12 @@ impl MediaRootIdentityResolver for StdMediaRootIdentityResolver {
         {
             use std::os::unix::fs::MetadataExt;
 
-            Ok(MediaRootIdentity {
-                requested_path: path.to_path_buf(),
+            MediaRootIdentity::from_verified_parts(
+                path.to_path_buf(),
                 canonical_path,
-                filesystem_device: metadata.dev(),
-                filesystem_inode: metadata.ino(),
-            })
+                metadata.dev(),
+                metadata.ino(),
+            )
         }
 
         #[cfg(not(unix))]

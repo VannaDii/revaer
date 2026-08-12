@@ -1,0 +1,58 @@
+# Media integrity fences
+
+- Status: Accepted
+- Date: 2026-08-12
+- Context:
+  - Discovery persisted a source-plus-sidecar fingerprint, but inspection and execution later reopened pathnames. A source, ancestor, or owned sidecar could therefore change after validation, and publication did not prove that the destination still named the prepared original.
+  - A media attempt can be recovered and claimed by another worker while the original process remains alive. Attempt number alone did not distinguish worker generations, and retained audit evidence needed to survive bounded operational cleanup.
+  - Revaer is an unreleased v0 product. Retaining 183 historical migration steps added review and bootstrap risk without preserving any released upgrade contract.
+- Decision:
+  - Open configured roots and descendants descriptor-relative without following symlinks. Enumerate owned sidecars from a held parent directory, sort them deterministically, and copy the aggregate from verified regular-file handles into the managed workspace while comparing identities around every read.
+  - Resolve source and output roots through an injected filesystem identity boundary before enabling automation. Create the profile, verified roots, and normalized watcher or schedule rows atomically; legacy profile creation cannot enable automation.
+  - Re-resolve both effective roots before any patch that changes a root or automation setting. Replace both persisted root identities and synchronize profile, watcher, and schedule state in one stored-procedure transaction.
+  - Inspect, plan, and execute against the managed snapshot. Revalidate the original aggregate before execution and publication. During replacement, retain the opened original identity and a durable recovery copy, then verify the destination identity and bytes before publishing the candidate.
+  - Issue a monotonically increasing claim generation on every worker claim and require it for worker-owned mutations, heartbeats, cancellation acknowledgement, evidence, and terminal transitions. Reject stale claims in stored procedures without fallback behavior.
+  - Keep terminal replacement and outbox publication atomic and idempotent. Persist late-cancellation evidence in the same transaction that acknowledges a cancellation after finalization, including recovered finalization.
+  - Limit recovery procedures to their proven states, archive normalized compact audit evidence before retention removes completed rows, preserve bounded retention batches, and accept deterministic no-operation plans while continuing to require operation evidence for executable plans.
+  - Replace the unreleased migration history with one deterministic `0001_init.sql` containing the final schema and intentional seed rows. Pin every authored routine to its owning schema, `public`, and `pg_temp`; reject missing initialization history instead of ignoring it. Incremental migrations begin only after the stable v1 baseline is released.
+  - Repeated pathname canonicalization and heartbeat-plus-attempt authorization were rejected because neither binds later work to the object or worker authority previously validated.
+- Consequences:
+  - Source, sidecar, ancestor, destination, stale-worker, late-cancellation, and recovery races fail closed or converge on one durable terminal outcome with audit evidence.
+  - Automated profiles require existing absolute roots with stable device and inode identities. Portable non-automated imports remain forced dry runs.
+  - Snapshot capture adds bounded I/O and workspace usage. Claim generation increases interface breadth by making mutation authority explicit.
+  - Pre-v1 schema changes rewrite the initialization script and require clean-database validation. There is deliberately no upgrade guarantee for unreleased v0 databases.
+- Follow-up:
+  - Preserve deterministic filesystem-race, stale-worker, recovery, cancellation, retention, and publication regressions in required gates.
+  - Monitor fingerprint failures, workspace capacity rejections, and rejected worker mutations as operator-visible integrity signals.
+
+## Task Record
+
+- Motivation:
+  - Close the remaining input/publication race and worker-lifecycle race so every consumed artifact and every mutating worker remains bound to the identity previously authorized.
+- Design notes:
+  - The aggregate fingerprint implementation is the source of truth for discovery, manual jobs, capture, and revalidation. Production wiring injects the filesystem resolver and resolves the workspace root once at bootstrap.
+  - Descriptor-relative operations use the existing `rustix` dependency. Dry runs use and remove the same managed snapshot as executing jobs.
+  - Stored procedures enforce claim authority, terminal/outbox atomicity, late-cancel evidence, narrow recovery, and audit archiving. Rust interfaces carry the database-issued generation without permissive overloads.
+  - Profile patches that affect filesystem or automation state use a separate verified update path. Retention and catalog-only patches do not unnecessarily require mounted roots.
+  - Required Rust test recipes default to one test thread so disposable database migrations and filesystem race fixtures remain deterministic without skipping coverage.
+  - The canonical initialization script is a schema-only dump plus explicit seed rows from the validated final v0 database. SQLx migration bookkeeping is excluded, dump session tokens and comments are removed, and authored routines use fixed search paths.
+- Test coverage summary:
+  - Aggregate and replacement tests cover regular files, sorted sidecars, symlinked roots and ancestors, member-set changes, rename/replacement, parent swaps, destination drift, and crash recovery.
+  - Descriptor identity converts platform-specific timestamp nanoseconds through a checked signed boundary; regression coverage proves oversized unsigned values fail closed instead of truncating.
+  - Filesystem device identity conversion is platform-specific so macOS rejects negative device identifiers while Linux retains its native unsigned identity without a redundant conversion; strict lint passes on both targets.
+  - Database-backed profile, discovery, YAML, and worker tests cover verified automation, portable imports, source mutation, stale claims, retry/reclaim, no-operation plans, finalization, late cancellation, recovery, and retained audits.
+  - Clean-install validation applies only `0001_init.sql`, compares the resulting schema and seed state with the final v0 schema, and exercises the complete database-backed test suite.
+  - UI E2E provisions and removes an isolated absolute media workspace, compares canonical filesystem paths, covers verified automation mutation, and exercises every media API read model including recent jobs and aggregate diagnostics.
+  - Repository CI, UI E2E, positive LCOV publication, strict Sonar analysis, and remote PR checks remain mandatory before handoff.
+- Observability updates:
+  - Existing job failure telemetry exposes fingerprint, capacity, and replacement failures. Claim-aware phase, operation, violation, reason, check, artifact, audit, outbox, and terminal records identify the authorized attempt boundary.
+  - Compact immutable audits survive operational retention through the bounded audit read model.
+- Status-doc validation:
+  - `MEDIA_TRANSCODING.md`, the canonical initialization script, runtime lifecycle documentation, and operator-facing media configuration surfaces were reviewed. The changes enforce existing managed-workspace and verify-before-replacement requirements without overstating capability.
+- Risk & rollback plan:
+  - Additional snapshot I/O and strict root identity validation may reject previously accepted unsafe configurations. Roll back the application and recreate the unreleased v0 database from the matching initialization script; do not restore pathname execution, permissive worker procedures, or historical v0 migrations.
+- Dependency rationale:
+  - No dependency was added. The implementation uses `std`, existing `rustix` filesystem primitives, PostgreSQL transactions, and current workspace crates.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, `justfile`, active workflows, and media replacement/workspace conventions.
+  - The data instruction incorrectly required incremental migrations before a released baseline. It now requires one canonical pre-v1 initialization script and reserves incremental migrations for post-v1 upgrades. No lint, test, Sonar, dependency, database, recovery, or filesystem-security criterion was relaxed.

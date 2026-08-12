@@ -180,9 +180,7 @@ pub(super) async fn setup_media_db(label: &str) -> anyhow::Result<Option<MediaTe
         .connect(postgres.connection_string())
         .await?;
 
-    let mut migrator = sqlx::migrate!("./migrations");
-    migrator.set_ignore_missing(true);
-    migrator.run(&pool).await?;
+    sqlx::migrate!("./init").run(&pool).await?;
 
     let system_user_public_id = sqlx::query_scalar::<_, Uuid>(
         "SELECT user_public_id FROM app_user WHERE user_public_id = $1",

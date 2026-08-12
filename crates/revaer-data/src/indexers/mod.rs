@@ -96,9 +96,7 @@ pub(crate) async fn setup_indexer_db(label: &str) -> anyhow::Result<IndexerTestD
         .connect(postgres.connection_string())
         .await?;
 
-    let mut migrator = sqlx::migrate!("./migrations");
-    migrator.set_ignore_missing(true);
-    migrator.run(&pool).await?;
+    sqlx::migrate!("./init").run(&pool).await?;
 
     let now = sqlx::query_scalar("SELECT now()").fetch_one(&pool).await?;
 

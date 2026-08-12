@@ -1010,8 +1010,8 @@ mod tests {
 
     #[test]
     fn migration_guards_constant_query_bounded_target_graph() {
-        let migration = include_str!("../../migrations/0190_media_video_technical_constraints.sql");
-        assert!(migration.contains("media_desired_target_graph_page_v3(limit_input INT)"));
+        let migration = include_str!("../../init/0001_init.sql");
+        assert!(migration.contains("media_desired_target_graph_page_v3(limit_input integer)"));
         assert!(migration.contains("media_desired_target_list_v4()"));
         assert!(migration.contains("media_desired_target_stream_list_v8("));
         assert!(migration.contains("limit_input > 128"));
@@ -1045,7 +1045,7 @@ mod tests {
                     media_desired_target_profile_public_id: target_id,
                     stream_key: "video-main",
                     stream_kind: "video",
-                    semantic_role: Some("main"),
+                    semantic_role: Some("primary"),
                     language_code: None,
                     optional: false,
                     sort_order: 0,
@@ -1119,7 +1119,7 @@ mod tests {
                 container_format: "matroska",
                 container_metadata_policy: "strip",
                 container_chapter_policy: "replace",
-                container_attachment_policy: "remove",
+                container_attachment_policy: "strip",
             },
         )
         .await?;
@@ -1129,7 +1129,7 @@ mod tests {
                 media_desired_target_profile_public_id: target_id,
                 stream_key: "video-main",
                 stream_kind: "video",
-                semantic_role: Some("main"),
+                semantic_role: Some("primary"),
                 language_code: None,
                 optional: false,
                 sort_order: 0,
@@ -1184,7 +1184,7 @@ mod tests {
     fn assert_hdr10_graph_row(row: &super::MediaDesiredTargetGraphRow) {
         assert_eq!(row.target.container_metadata_policy, "strip");
         assert_eq!(row.target.container_chapter_policy, "replace");
-        assert_eq!(row.target.container_attachment_policy, "remove");
+        assert_eq!(row.target.container_attachment_policy, "strip");
         assert_eq!(row.stream.video_width_px, Some(3840));
         assert_eq!(row.stream.video_height_px, Some(2160));
         assert_eq!(

@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use super::{
     MediaRootIdentity, MediaRootIdentityError, MediaRootIdentityResolver,
-    StdMediaRootIdentityResolver,
+    StdMediaRootIdentityResolver, jobs::EnqueueDiscoveredMediaJobInput,
+    jobs::enqueue_discovered_media_job,
 };
 use crate::config::run_migrations;
 use chrono::{DateTime, Duration, Utc};
@@ -82,7 +83,7 @@ fn make_test_roots() -> anyhow::Result<TestRoots> {
 
 async fn create_profile(pool: &PgPool, key: &str, roots: &TestRoots) -> anyhow::Result<Uuid> {
     let profile_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT media_profile_create_v3($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+        "SELECT media_profile_create_v3($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
     )
     .bind(actor_id()?)
     .bind(key)
@@ -97,6 +98,9 @@ async fn create_profile(pool: &PgPool, key: &str, roots: &TestRoots) -> anyhow::
     .bind(30_i32)
     .bind(Option::<&str>::None)
     .bind("safe_dry_run")
+    .bind(false)
+    .bind(false)
+    .bind(Option::<i32>::None)
     .fetch_one(pool)
     .await?;
     Ok(profile_id)
@@ -116,15 +120,24 @@ async fn create_job(
         .output
         .canonical_path()
         .join(format!("output-{sequence}.mkv"));
-    let job_id = sqlx::query_scalar::<_, Uuid>("SELECT media_job_create_v1($1,$2,$3,$4,$5)")
-        .bind(actor_id()?)
-        .bind(profile_id)
-        .bind(path_text(&source)?)
-        .bind(path_text(&output)?)
-        .bind(true)
-        .fetch_one(pool)
-        .await?;
-    Ok(job_id)
+    let source_identity = format!("{sequence:016x}:{sequence:016x}");
+    let source_sha256 = format!("{sequence:064x}");
+    enqueue_discovered_media_job(
+        pool,
+        &EnqueueDiscoveredMediaJobInput {
+            actor_public_id: actor_id()?,
+            media_profile_public_id: profile_id,
+            source_path: path_text(&source)?,
+            output_path: Some(path_text(&output)?),
+            source_identity: &source_identity,
+            source_size_bytes: i64::try_from(sequence)?,
+            source_modified_ns: i64::try_from(sequence)?,
+            source_changed_ns: i64::try_from(sequence)?,
+            source_sha256: &source_sha256,
+        },
+    )
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("new test source fingerprint was deduplicated"))
 }
 
 fn database_message(error: &sqlx::Error) -> Option<&str> {

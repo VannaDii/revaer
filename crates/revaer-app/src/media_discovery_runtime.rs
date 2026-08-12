@@ -331,9 +331,13 @@ impl MediaDiscoveryRuntime {
             };
             let validation_path = PathBuf::from(&preview.source_path);
             let validation_root = PathBuf::from(&profile.source_root);
-            let expected_sha256 = fingerprint.sha256.clone();
+            let expected_fingerprint = fingerprint.clone();
             let valid = tokio::task::spawn_blocking(move || {
-                revalidate_media_aggregate(&validation_path, &validation_root, &expected_sha256)
+                revalidate_media_aggregate(
+                    &validation_path,
+                    &validation_root,
+                    &expected_fingerprint,
+                )
             })
             .await
             .map_err(|error| MediaDiscoveryRuntimeError::Join(error.to_string()))??;
@@ -591,9 +595,10 @@ mod tests {
     };
     use revaer_data::media::jobs::list_media_jobs;
     use revaer_data::media::profiles::{
-        MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput, update_media_profile,
-        upsert_media_profile,
+        CreateVerifiedMediaProfileInput, MediaProfileRow, UpdateMediaProfileInput,
+        create_verified_media_profile, update_media_profile,
     };
+    use revaer_data::media::{MediaRootIdentityResolver, StdMediaRootIdentityResolver};
     use revaer_runtime::media::MediaStore;
     use revaer_telemetry::Metrics;
     use revaer_test_support::postgres::start_postgres;
@@ -640,6 +645,45 @@ mod tests {
             schedule_interval_minutes,
             updated_at: Utc::now(),
         }
+    }
+
+    async fn create_watcher_profile(
+        store: &MediaStore,
+        profile_key: &str,
+        source_root: &Path,
+        output_root: &Path,
+        compatibility_target_key: Option<&str>,
+    ) -> anyhow::Result<Uuid> {
+        let resolver = StdMediaRootIdentityResolver;
+        let source = resolver.resolve(source_root)?;
+        let output = resolver.resolve(output_root)?;
+        Ok(create_verified_media_profile(
+            store.pool(),
+            &CreateVerifiedMediaProfileInput {
+                actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
+                profile_key,
+                source_requested_path: path_text(source.requested_path())?,
+                source_canonical_path: path_text(source.canonical_path())?,
+                source_filesystem_device: i64::try_from(source.filesystem_device())?,
+                source_filesystem_inode: i64::try_from(source.filesystem_inode())?,
+                output_requested_path: path_text(output.requested_path())?,
+                output_canonical_path: path_text(output.canonical_path())?,
+                output_filesystem_device: i64::try_from(output.filesystem_device())?,
+                output_filesystem_inode: i64::try_from(output.filesystem_inode())?,
+                retention_days: 30,
+                compatibility_target_key,
+                policy_key: "safe_dry_run",
+                watcher_enabled: true,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?)
+    }
+
+    fn path_text(path: &Path) -> anyhow::Result<&str> {
+        path.to_str()
+            .ok_or_else(|| anyhow::anyhow!("media root is not Unicode: {}", path.display()))
     }
 
     #[test]
@@ -822,8 +866,7 @@ mod tests {
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
+        let migrator = sqlx::migrate!("../revaer-data/init");
         migrator.run(&pool).await?;
         let store = MediaStore::new(pool);
         let temp = tempfile::tempdir()?;
@@ -831,28 +874,13 @@ mod tests {
         let output_root = temp.path().join("output");
         fs::create_dir_all(&source_root)?;
         fs::create_dir_all(&output_root)?;
-        let source_root_text = source_root
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("source root is not Unicode"))?;
-        let output_root_text = output_root
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("output root is not Unicode"))?;
         record_unsupported_hevc_aac_capability(store.pool()).await?;
-        let profile_id = upsert_media_profile(
-            store.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
-                profile_key: "watcher-only-runtime",
-                source_root: source_root_text,
-                output_root: output_root_text,
-                dry_run_only: true,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: true,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
+        let profile_id = create_watcher_profile(
+            &store,
+            "watcher-only-runtime",
+            &source_root,
+            &output_root,
+            None,
         )
         .await?;
         let runtime = MediaDiscoveryRuntime::with_tick_interval(
@@ -897,8 +925,7 @@ mod tests {
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
+        let migrator = sqlx::migrate!("../revaer-data/init");
         migrator.run(&pool).await?;
         let store = MediaStore::new(pool);
         let temp = tempfile::tempdir()?;
@@ -906,12 +933,6 @@ mod tests {
         let output_root = temp.path().join("output");
         fs::create_dir_all(&source_root)?;
         fs::create_dir_all(&output_root)?;
-        let source_root_text = source_root
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("source root is not Unicode"))?;
-        let output_root_text = output_root
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("output root is not Unicode"))?;
         record_unsupported_hevc_aac_capability(store.pool()).await?;
         upsert_media_compatibility_target(
             store.pool(),
@@ -928,21 +949,12 @@ mod tests {
             },
         )
         .await?;
-        let profile_id = upsert_media_profile(
-            store.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
-                profile_key: "watcher-runtime-capability-gate",
-                source_root: source_root_text,
-                output_root: output_root_text,
-                dry_run_only: false,
-                retention_days: 30,
-                compatibility_target_key: Some("watcher-unavailable-codec-target"),
-                policy_key: "safe_dry_run",
-                watcher_enabled: true,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
+        let profile_id = create_watcher_profile(
+            &store,
+            "watcher-runtime-capability-gate",
+            &source_root,
+            &output_root,
+            Some("watcher-unavailable-codec-target"),
         )
         .await?;
         update_media_profile(
@@ -994,8 +1006,7 @@ mod tests {
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
+        let migrator = sqlx::migrate!("../revaer-data/init");
         migrator.run(&pool).await?;
         let store = MediaStore::new(pool);
         let temp = tempfile::tempdir()?;
@@ -1003,29 +1014,14 @@ mod tests {
         let output_root = temp.path().join("output");
         fs::create_dir_all(&source_root)?;
         fs::create_dir_all(&output_root)?;
-        let source_root_text = source_root
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("source root is not Unicode"))?;
-        let output_root_text = output_root
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("output root is not Unicode"))?;
         record_unsupported_hevc_aac_capability(store.pool()).await?;
         create_unsupported_hevc_desired_target(store.pool()).await?;
-        let profile_id = upsert_media_profile(
-            store.pool(),
-            &UpsertMediaProfileInput {
-                actor_public_id: super::SYSTEM_USER_PUBLIC_ID,
-                profile_key: "watcher-runtime-desired-target-gate",
-                source_root: source_root_text,
-                output_root: output_root_text,
-                dry_run_only: false,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: true,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            },
+        let profile_id = create_watcher_profile(
+            &store,
+            "watcher-runtime-desired-target-gate",
+            &source_root,
+            &output_root,
+            None,
         )
         .await?;
         set_media_profile_desired_target(

@@ -22,6 +22,7 @@ check:
 test:
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
+    RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test --workspace --all-features
 
 test-native:
@@ -33,9 +34,11 @@ test-native:
 test-features-min:
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
+    RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-api --no-default-features
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
+    RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --no-default-features
 
 test-fixture-scripts:
@@ -116,7 +119,7 @@ sqlx-install:
 
 db-migrate: sqlx-install
     db_url="${DATABASE_URL:-${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}}"; \
-    DATABASE_URL="${db_url}" sqlx migrate run --source crates/revaer-data/migrations
+    DATABASE_URL="${db_url}" sqlx migrate run --source crates/revaer-data/init
 
 audit:
     set -euo pipefail; \
@@ -776,7 +779,7 @@ db-start:
     if [ "${reset_db}" = "1" ]; then \
         if echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
             echo "Resetting local database..."; \
-            if run_sqlx_with_recovery_retry env DATABASE_URL="${db_url}" sqlx database reset -y --database-url "${db_url}" --source crates/revaer-data/migrations; then \
+            if run_sqlx_with_recovery_retry env DATABASE_URL="${db_url}" sqlx database reset -y --database-url "${db_url}" --source crates/revaer-data/init; then \
                 reset_status="0"; \
             else \
                 reset_status="$?"; \
@@ -792,7 +795,7 @@ db-start:
             exit 1; \
         fi; \
     else \
-        if run_sqlx_with_recovery_retry env DATABASE_URL="${db_url}" sqlx migrate run --database-url "${db_url}" --source crates/revaer-data/migrations; then \
+        if run_sqlx_with_recovery_retry env DATABASE_URL="${db_url}" sqlx migrate run --database-url "${db_url}" --source crates/revaer-data/init; then \
             migrate_status="0"; \
         else \
             migrate_status="$?"; \
@@ -803,7 +806,7 @@ db-start:
             fi; \
             if echo "${db_url}" | grep -Eq '@(localhost|127\.0\.0\.1|host\.docker\.internal)(:|/)'; then \
                 echo "Migration history mismatch; resetting local database..."; \
-                if run_sqlx_with_recovery_retry env DATABASE_URL="${db_url}" sqlx database reset -y --database-url "${db_url}" --source crates/revaer-data/migrations; then \
+                if run_sqlx_with_recovery_retry env DATABASE_URL="${db_url}" sqlx database reset -y --database-url "${db_url}" --source crates/revaer-data/init; then \
                     reset_status="0"; \
                 else \
                     reset_status="$?"; \

@@ -112,6 +112,11 @@ export default async function globalSetup(): Promise<void> {
     const dbPrefix = process.env.E2E_DB_PREFIX ?? 'revaer_e2e';
     const fsRoot = process.env.E2E_FS_ROOT ?? root;
     const resolvedFsRoot = path.isAbsolute(fsRoot) ? fsRoot : path.resolve(root, fsRoot);
+    const mediaWorkspaceRoot = path.join(
+      testsDir,
+      '.runtime',
+      `media-workspace-${process.pid}-${randomBytes(8).toString('hex')}`,
+    );
 
     process.env.E2E_API_BASE_URL = apiBaseUrl;
     process.env.E2E_BASE_URL = baseUrl;
@@ -123,6 +128,7 @@ export default async function globalSetup(): Promise<void> {
     await requirePortFree(7070);
     await requirePortFree(uiPort);
     fs.mkdirSync(resolvedFsRoot, { recursive: true });
+    fs.mkdirSync(mediaWorkspaceRoot, { recursive: true });
 
     const adminUrl = await resolveAdminUrl(dbAdminUrl);
     const adminHost = urlParts(adminUrl).host;
@@ -151,12 +157,16 @@ export default async function globalSetup(): Promise<void> {
       apiBin,
       [],
       path.join(logDir, 'api.log'),
-      { DATABASE_URL: activeDbUrl },
+      {
+        DATABASE_URL: activeDbUrl,
+        REVAER_MEDIA_WORKSPACE_ROOT: mediaWorkspaceRoot,
+      },
       { cwd: root },
     );
     writeState({
       apiPid: apiProcess.pid,
       dbUrl: activeDbUrl,
+      mediaWorkspaceRoot,
     });
 
     assertApiDb(apiProcess.pid, activeDbUrl);
@@ -191,6 +201,7 @@ export default async function globalSetup(): Promise<void> {
     writeState({
       apiPid: apiProcess.pid,
       dbUrl: activeDbUrl,
+      mediaWorkspaceRoot,
       uiPid: uiProcess.pid,
     });
   } catch (error) {
@@ -662,7 +673,7 @@ async function createTempDb(adminUrl: string, prefix: string, root: string): Pro
   );
   runCommandWithEnv(
     'sqlx',
-    ['migrate', 'run', '--database-url', dbUrl, '--source', 'crates/revaer-data/migrations'],
+    ['migrate', 'run', '--database-url', dbUrl, '--source', 'crates/revaer-data/init'],
     { DATABASE_URL: dbUrl },
     { cwd: root },
   );

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Write};
 use std::os::fd::OwnedFd;
@@ -23,8 +23,22 @@ const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 #[derive(Debug, Clone)]
 struct PinnedDestination {
     path: PathBuf,
+    source_root: PathBuf,
+    relative_parent: PathBuf,
     parent: Arc<OwnedFd>,
+    parent_identity: FilesystemIdentity,
     file_name: OsString,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FilesystemIdentity {
+    device: u64,
+    inode: u64,
+    size: u64,
+    modified_seconds: i64,
+    modified_nanoseconds: i64,
+    changed_seconds: i64,
+    changed_nanoseconds: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -76,7 +90,9 @@ struct PreparedEntry {
     pinned_destination: PinnedDestination,
     staged: Option<PathBuf>,
     recovery: Option<PathBuf>,
+    pinned_original: Option<PathBuf>,
     existed: bool,
+    original_identity: Option<FilesystemIdentity>,
 }
 
 /// Prepared replacement whose stage and recovery copy are durable on the source filesystem.
@@ -163,6 +179,9 @@ pub enum ReplacementError {
     /// A requested removal destination does not exist as a regular file.
     #[error("replacement removal destination is missing: {0}")]
     RemovalDestinationMissing(PathBuf),
+    /// A destination changed after it was prepared and before atomic publication.
+    #[error("replacement destination identity changed: {0}")]
+    DestinationIdentityChanged(PathBuf),
     /// Transaction manifest is invalid or inconsistent with its directory.
     #[error("replacement manifest is invalid: {0}")]
     InvalidManifest(PathBuf),
@@ -312,7 +331,11 @@ impl ReplacementCommitter for SystemReplacementCommitter {
 
     fn rollback(&self, committed: CommittedReplacement) -> Result<(), ReplacementError> {
         let prepared = committed.prepared;
-        rollback_entries(&prepared.transaction_handle, &prepared.entries)?;
+        rollback_entries(
+            &prepared.transaction_handle,
+            &prepared.entries,
+            prepared.entries.len(),
+        )?;
         remove_transaction(&prepared.transaction_dir)
     }
 
@@ -477,6 +500,10 @@ fn prepare_entry(
     let destination = pinned_destination.path.clone();
     let mut original = open_existing_destination(&pinned_destination)?;
     let existed = original.is_some();
+    let original_identity = original
+        .as_ref()
+        .map(|file| opened_file_identity(file, &destination))
+        .transpose()?;
     let permissions = original
         .as_ref()
         .map(File::metadata)
@@ -504,6 +531,9 @@ fn prepare_entry(
             .as_mut()
             .ok_or_else(|| ReplacementError::RecoveryMissing(destination.clone()))?;
         copy_reader_to_new_file(input, &path, "replacement.copy_recovery")?;
+        if Some(opened_file_identity(input, &destination)?) != original_identity {
+            return Err(ReplacementError::DestinationIdentityChanged(destination));
+        }
         if let Some(value) = permissions {
             set_permissions(&path, value, "replacement.recovery_permissions")?;
         }
@@ -512,12 +542,16 @@ fn prepare_entry(
     } else {
         None
     };
+    let pinned_original =
+        existed.then(|| transaction_entry_path(transaction_dir, index, "original.pinned"));
     Ok(PreparedEntry {
         destination,
         pinned_destination,
         staged,
         recovery,
+        pinned_original,
         existed,
+        original_identity,
     })
 }
 
@@ -525,7 +559,8 @@ fn transaction_entry_path(transaction_dir: &Path, index: usize, suffix: &str) ->
     if index == 0 {
         return transaction_dir.join(match suffix {
             "candidate.stage" => STAGED_FILE_NAME,
-            _ => RECOVERY_FILE_NAME,
+            "original.recovery" => RECOVERY_FILE_NAME,
+            value => value,
         });
     }
     transaction_dir.join(format!("entry-{index}.{suffix}"))
@@ -534,13 +569,12 @@ fn transaction_entry_path(transaction_dir: &Path, index: usize, suffix: &str) ->
 fn resolve_existing_destination(
     source_root: &Path,
     path: &Path,
-    operation: &'static str,
+    _operation: &'static str,
 ) -> Result<PathBuf, ReplacementError> {
-    let destination = canonical_file(path, operation)?;
-    if destination.starts_with(source_root) {
-        Ok(destination)
+    if path.is_absolute() && path.starts_with(source_root) {
+        Ok(path.to_path_buf())
     } else {
-        Err(ReplacementError::SourceOutsideRoot(destination))
+        Err(ReplacementError::SourceOutsideRoot(path.to_path_buf()))
     }
 }
 
@@ -548,42 +582,34 @@ fn resolve_bundle_destination(
     source_root: &Path,
     path: &Path,
 ) -> Result<PathBuf, ReplacementError> {
-    if path.exists() {
-        return resolve_existing_destination(
-            source_root,
-            path,
-            "replacement.artifact_destination_canonicalize",
-        );
-    }
-    let file_name = path.file_name().ok_or_else(|| ReplacementError::Io {
+    let _file_name = path.file_name().ok_or_else(|| ReplacementError::Io {
         operation: "replacement.artifact_destination_resolve",
         path: path.to_path_buf(),
         source: io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name"),
     })?;
-    let parent = path.parent().ok_or_else(|| ReplacementError::Io {
+    let _parent = path.parent().ok_or_else(|| ReplacementError::Io {
         operation: "replacement.artifact_destination_resolve",
         path: path.to_path_buf(),
         source: io::Error::new(io::ErrorKind::InvalidInput, "destination has no parent"),
     })?;
-    let canonical_parent = canonicalize(parent, "replacement.artifact_parent_canonicalize")?;
-    let destination = canonical_parent.join(file_name);
-    if destination.starts_with(source_root) {
-        Ok(destination)
+    if path.is_absolute() && path.starts_with(source_root) {
+        Ok(path.to_path_buf())
     } else {
-        Err(ReplacementError::SourceOutsideRoot(destination))
+        Err(ReplacementError::SourceOutsideRoot(path.to_path_buf()))
     }
 }
 
 fn commit_entries(prepared: &PreparedReplacement) -> Result<(), ReplacementError> {
     for (index, entry) in prepared.entries.iter().enumerate() {
-        match &entry.staged {
-            Some(staged) => rename_from_transaction(
+        validate_pinned_parent(&entry.pinned_destination)?;
+        move_original_to_recovery(prepared, entry)?;
+        if let Some(staged) = &entry.staged {
+            rename_from_transaction_without_replace(
                 &prepared.transaction_handle,
                 staged,
                 &entry.pinned_destination,
                 "replacement.commit_rename",
-            )?,
-            None => unlink_destination(&entry.pinned_destination, "replacement.commit_remove")?,
+            )?;
         }
         if entry.staged.is_some() {
             sync_destination_file(&entry.pinned_destination, "replacement.committed_file_sync")?;
@@ -610,11 +636,21 @@ fn commit_entries(prepared: &PreparedReplacement) -> Result<(), ReplacementError
 fn rollback_entries(
     transaction_handle: &Arc<OwnedFd>,
     entries: &[PreparedEntry],
+    committed_entries: usize,
 ) -> Result<(), ReplacementError> {
-    for entry in entries.iter().rev() {
+    for (index, entry) in entries.iter().enumerate().rev() {
         if let Some(recovery) = &entry.recovery {
             if !transaction_entry_exists(transaction_handle, recovery)? {
                 return Err(ReplacementError::RecoveryMissing(recovery.clone()));
+            }
+            let original_was_moved = entry
+                .pinned_original
+                .as_deref()
+                .map(|path| transaction_entry_exists(transaction_handle, path))
+                .transpose()?
+                .unwrap_or(false);
+            if index >= committed_entries && !original_was_moved {
+                continue;
             }
             rename_from_transaction(
                 transaction_handle,
@@ -732,7 +768,7 @@ fn recover_transaction_state(
             )?;
             return Ok(ReplacementRecoveryAction::Finalized);
         }
-        rollback_entries(transaction_handle, &entries)?;
+        rollback_entries(transaction_handle, &entries, manifest.committed_entries)?;
         return Ok(if manifest.committed_entries == 0 {
             ReplacementRecoveryAction::DiscardedPrepared
         } else {
@@ -894,7 +930,8 @@ fn prepared_entries_from_manifest(
 ) -> Result<Vec<PreparedEntry>, ReplacementError> {
     entries
         .iter()
-        .map(|entry| {
+        .enumerate()
+        .map(|(index, entry)| {
             let destination = PathBuf::from(&entry.destination_path);
             if path_has_relative_components(&destination) {
                 return Err(ReplacementError::InvalidManifest(
@@ -913,7 +950,11 @@ fn prepared_entries_from_manifest(
                 pinned_destination,
                 staged,
                 recovery,
+                pinned_original: entry
+                    .existed
+                    .then(|| transaction_entry_path(transaction_path, index, "original.pinned")),
                 existed: entry.existed,
+                original_identity: None,
             })
         })
         .collect()
@@ -961,11 +1002,10 @@ fn validate_job_key(job_key: &str) -> Result<(), ReplacementError> {
 }
 
 fn canonical_source_root(path: &Path) -> Result<PathBuf, ReplacementError> {
-    let canonical = canonicalize(path, "replacement.source_root_canonicalize")?;
-    if !canonical.is_dir() {
-        return Err(ReplacementError::InvalidSourceRoot(canonical));
+    if !path.is_absolute() {
+        return Err(ReplacementError::InvalidSourceRoot(path.to_path_buf()));
     }
-    Ok(canonical)
+    Ok(path.to_path_buf())
 }
 
 fn open_source_root(path: &Path) -> Result<PinnedSourceRoot, ReplacementError> {
@@ -1010,9 +1050,13 @@ fn pin_destination(
         })?;
         handle = Arc::new(opened);
     }
+    let parent_identity = descriptor_identity(handle.as_ref(), destination)?;
     Ok(PinnedDestination {
         path: destination.to_path_buf(),
+        source_root: source_root.path.clone(),
+        relative_parent: parent.to_path_buf(),
         parent: handle,
+        parent_identity,
         file_name,
     })
 }
@@ -1112,6 +1156,269 @@ fn rename_from_transaction(
         operation,
         path: destination.path.clone(),
         source: rustix_error(source),
+    })
+}
+
+fn rename_from_transaction_without_replace(
+    transaction_handle: &Arc<OwnedFd>,
+    source: &Path,
+    destination: &PinnedDestination,
+    operation: &'static str,
+) -> Result<(), ReplacementError> {
+    let source_name = source
+        .file_name()
+        .ok_or_else(|| ReplacementError::InvalidManifest(source.to_path_buf()))?;
+    rustix::fs::renameat_with(
+        transaction_handle.as_ref(),
+        source_name,
+        destination.parent.as_ref(),
+        destination.file_name.as_os_str(),
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(|source| ReplacementError::Io {
+        operation,
+        path: destination.path.clone(),
+        source: rustix_error(source),
+    })
+}
+
+fn move_original_to_recovery(
+    prepared: &PreparedReplacement,
+    entry: &PreparedEntry,
+) -> Result<(), ReplacementError> {
+    let Some(expected_identity) = entry.original_identity else {
+        if destination_exists(&entry.pinned_destination)? {
+            return Err(ReplacementError::DestinationIdentityChanged(
+                entry.destination.clone(),
+            ));
+        }
+        return Ok(());
+    };
+    let recovery = entry
+        .recovery
+        .as_deref()
+        .ok_or_else(|| ReplacementError::RecoveryMissing(entry.destination.clone()))?;
+    let pinned_original = entry
+        .pinned_original
+        .as_deref()
+        .ok_or_else(|| ReplacementError::RecoveryMissing(entry.destination.clone()))?;
+    let pinned_name = pinned_original
+        .file_name()
+        .ok_or_else(|| ReplacementError::InvalidManifest(pinned_original.to_path_buf()))?;
+    rustix::fs::renameat_with(
+        entry.pinned_destination.parent.as_ref(),
+        entry.pinned_destination.file_name.as_os_str(),
+        prepared.transaction_handle.as_ref(),
+        pinned_name,
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(|source| ReplacementError::Io {
+        operation: "replacement.commit_pin_original",
+        path: entry.destination.clone(),
+        source: rustix_error(source),
+    })?;
+    let actual_identity = open_transaction_identity(
+        prepared.transaction_handle.as_ref(),
+        pinned_name,
+        pinned_original,
+    )?;
+    if file_identity_matches_after_rename(actual_identity, expected_identity)
+        && files_have_equal_contents(pinned_original, recovery)?
+    {
+        return Ok(());
+    }
+    rustix::fs::renameat_with(
+        prepared.transaction_handle.as_ref(),
+        pinned_name,
+        entry.pinned_destination.parent.as_ref(),
+        entry.pinned_destination.file_name.as_os_str(),
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(|source| ReplacementError::Io {
+        operation: "replacement.commit_restore_changed_destination",
+        path: entry.destination.clone(),
+        source: rustix_error(source),
+    })?;
+    Err(ReplacementError::DestinationIdentityChanged(
+        entry.destination.clone(),
+    ))
+}
+
+fn files_have_equal_contents(
+    left_path: &Path,
+    right_path: &Path,
+) -> Result<bool, ReplacementError> {
+    let left_file = File::open(left_path).map_err(|source| ReplacementError::Io {
+        operation: "replacement.commit_compare_original",
+        path: left_path.to_path_buf(),
+        source,
+    })?;
+    let right_file = File::open(right_path).map_err(|source| ReplacementError::Io {
+        operation: "replacement.commit_compare_recovery",
+        path: right_path.to_path_buf(),
+        source,
+    })?;
+    let mut left = BufReader::new(left_file);
+    let mut right = BufReader::new(right_file);
+    let mut left_buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
+    let mut right_buffer = vec![0_u8; 64 * 1024].into_boxed_slice();
+    loop {
+        let left_read = std::io::Read::read(&mut left, &mut left_buffer).map_err(|source| {
+            ReplacementError::Io {
+                operation: "replacement.commit_compare_original",
+                path: left_path.to_path_buf(),
+                source,
+            }
+        })?;
+        let right_read = std::io::Read::read(&mut right, &mut right_buffer).map_err(|source| {
+            ReplacementError::Io {
+                operation: "replacement.commit_compare_recovery",
+                path: right_path.to_path_buf(),
+                source,
+            }
+        })?;
+        if left_read != right_read || left_buffer[..left_read] != right_buffer[..left_read] {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+    }
+}
+
+const fn file_identity_matches_after_rename(
+    actual: FilesystemIdentity,
+    expected: FilesystemIdentity,
+) -> bool {
+    actual.device == expected.device
+        && actual.inode == expected.inode
+        && actual.size == expected.size
+        && actual.modified_seconds == expected.modified_seconds
+        && actual.modified_nanoseconds == expected.modified_nanoseconds
+}
+
+fn open_transaction_identity(
+    transaction_handle: &OwnedFd,
+    name: &OsStr,
+    path: &Path,
+) -> Result<FilesystemIdentity, ReplacementError> {
+    let file = rustix::fs::openat(
+        transaction_handle,
+        name,
+        rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|source| ReplacementError::Io {
+        operation: "replacement.commit_open_pinned_original",
+        path: path.to_path_buf(),
+        source: rustix_error(source),
+    })?;
+    opened_file_identity(&file, path)
+}
+
+fn validate_pinned_parent(destination: &PinnedDestination) -> Result<(), ReplacementError> {
+    let root = open_directory(
+        &destination.source_root,
+        "replacement.destination_root_revalidate",
+    )?;
+    let mut parent = root;
+    for component in destination.relative_parent.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(ReplacementError::InvalidManifest(destination.path.clone()));
+        };
+        parent = rustix::fs::openat(
+            &parent,
+            name,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(|source| ReplacementError::Io {
+            operation: "replacement.destination_parent_revalidate",
+            path: destination.path.clone(),
+            source: rustix_error(source),
+        })?;
+    }
+    let actual = descriptor_identity(&parent, &destination.path)?;
+    if actual.device == destination.parent_identity.device
+        && actual.inode == destination.parent_identity.inode
+    {
+        Ok(())
+    } else {
+        Err(ReplacementError::DestinationIdentityChanged(
+            destination.path.clone(),
+        ))
+    }
+}
+
+fn descriptor_identity(
+    descriptor: &OwnedFd,
+    path: &Path,
+) -> Result<FilesystemIdentity, ReplacementError> {
+    let stat = rustix::fs::fstat(descriptor).map_err(|source| ReplacementError::Io {
+        operation: "replacement.descriptor_identity",
+        path: path.to_path_buf(),
+        source: rustix_error(source),
+    })?;
+    #[cfg(target_os = "macos")]
+    let device = u64::try_from(stat.st_dev).map_err(|_| ReplacementError::Io {
+        operation: "replacement.descriptor_identity",
+        path: path.to_path_buf(),
+        source: io::Error::new(io::ErrorKind::InvalidData, "negative device identity"),
+    })?;
+    #[cfg(not(target_os = "macos"))]
+    let device = stat.st_dev;
+    Ok(FilesystemIdentity {
+        device,
+        inode: stat.st_ino,
+        size: u64::try_from(stat.st_size).map_err(|_| ReplacementError::Io {
+            operation: "replacement.descriptor_identity",
+            path: path.to_path_buf(),
+            source: io::Error::new(io::ErrorKind::InvalidData, "negative file size"),
+        })?,
+        modified_seconds: stat.st_mtime,
+        modified_nanoseconds: descriptor_timestamp_nanoseconds(stat.st_mtime_nsec, path)?,
+        changed_seconds: stat.st_ctime,
+        changed_nanoseconds: descriptor_timestamp_nanoseconds(stat.st_ctime_nsec, path)?,
+    })
+}
+
+fn descriptor_timestamp_nanoseconds(
+    value: impl TryInto<i64>,
+    path: &Path,
+) -> Result<i64, ReplacementError> {
+    value.try_into().map_err(|_| ReplacementError::Io {
+        operation: "replacement.descriptor_identity",
+        path: path.to_path_buf(),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            "timestamp nanoseconds exceed the signed identity range",
+        ),
+    })
+}
+
+fn opened_file_identity(file: &File, path: &Path) -> Result<FilesystemIdentity, ReplacementError> {
+    let metadata = file.metadata().map_err(|source| ReplacementError::Io {
+        operation: "replacement.destination_identity",
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(ReplacementError::DestinationIdentityChanged(
+            path.to_path_buf(),
+        ));
+    }
+    Ok(FilesystemIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+        size: metadata.len(),
+        modified_seconds: metadata.mtime(),
+        modified_nanoseconds: metadata.mtime_nsec(),
+        changed_seconds: metadata.ctime(),
+        changed_nanoseconds: metadata.ctime_nsec(),
     })
 }
 
@@ -1475,11 +1782,25 @@ mod tests {
         MANAGED_ROOT_NAME, MANIFEST_FILE_NAME, REPLACEMENTS_DIR_NAME, ReplacementArtifactRequest,
         ReplacementBundleRequest, ReplacementCommitter, ReplacementManifest, ReplacementPhase,
         ReplacementRecoveryAction, ReplacementRequest, SystemReplacementCommitter,
-        manifest_entries, transaction_job_key, write_manifest,
+        descriptor_timestamp_nanoseconds, manifest_entries, transaction_job_key, write_manifest,
     };
     use std::collections::BTreeSet;
     use std::fs;
     use std::os::unix::fs::symlink;
+    use std::path::Path;
+
+    #[test]
+    fn descriptor_timestamp_nanoseconds_rejects_unsigned_overflow() -> anyhow::Result<()> {
+        let path = Path::new("movie.mkv");
+        let Err(error) = descriptor_timestamp_nanoseconds(u64::MAX, path) else {
+            anyhow::bail!("oversized timestamp nanoseconds must fail closed");
+        };
+
+        assert!(
+            matches!(error, super::ReplacementError::Io { path: error_path, .. } if error_path == path)
+        );
+        Ok(())
+    }
 
     #[test]
     fn replacement_stages_on_source_root_and_finalizes_after_commit() -> anyhow::Result<()> {
@@ -1507,9 +1828,8 @@ mod tests {
             source_path: &source,
             candidate_path: &candidate,
         })?;
-        let canonical_source_root = fs::canonicalize(source_fs.path())?;
         let canonical_execution_root = fs::canonicalize(execution_fs.path())?;
-        assert!(prepared.staged_path().starts_with(canonical_source_root));
+        assert!(prepared.staged_path().starts_with(source_fs.path()));
         assert!(!prepared.staged_path().starts_with(canonical_execution_root));
         assert_eq!(fs::read(prepared.recovery_path())?, b"original");
         let active = committer.commit(prepared)?;
@@ -1651,6 +1971,36 @@ mod tests {
     }
 
     #[test]
+    fn startup_recovery_does_not_overwrite_destination_when_publication_never_started()
+    -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidate_root = tempfile::tempdir()?;
+        let source = root.path().join("movie.mkv");
+        let candidate = candidate_root.path().join("movie.mkv");
+        fs::write(&source, b"original")?;
+        fs::write(&candidate, b"candidate")?;
+        let committer = SystemReplacementCommitter;
+        let prepared = committer.prepare(ReplacementRequest {
+            job_key: "prepared-external-change",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+        drop(prepared);
+        fs::write(&source, b"external-change")?;
+
+        let recovered = committer.recover(root.path())?;
+
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(
+            recovered[0].action,
+            ReplacementRecoveryAction::DiscardedPrepared
+        );
+        assert_eq!(fs::read(&source)?, b"external-change");
+        Ok(())
+    }
+
+    #[test]
     fn startup_recovery_restores_uncertain_committed_source() -> anyhow::Result<()> {
         let root = tempfile::tempdir()?;
         let candidate_root = tempfile::tempdir()?;
@@ -1743,7 +2093,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_uses_pinned_destination_after_parent_swap() -> anyhow::Result<()> {
+    fn commit_rejects_parent_swap_without_writing_external_destination() -> anyhow::Result<()> {
         let root = tempfile::tempdir()?;
         let candidates = tempfile::tempdir()?;
         let external = tempfile::tempdir()?;
@@ -1766,11 +2116,63 @@ mod tests {
 
         fs::rename(&library, &retained_library)?;
         symlink(external.path(), &library)?;
-        let active = committer.commit(prepared)?;
+        let result = committer.commit(prepared);
 
-        assert_eq!(fs::read(retained_library.join("movie.mkv"))?, b"verified");
+        assert!(result.is_err());
+        assert_eq!(fs::read(retained_library.join("movie.mkv"))?, b"original");
         assert_eq!(fs::read(&external_sentinel)?, b"external");
-        committer.finalize(active)?;
+        Ok(())
+    }
+
+    #[test]
+    fn commit_rejects_source_replacement_after_prepare() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidates = tempfile::tempdir()?;
+        let source = root.path().join("movie.mkv");
+        let retained = root.path().join("movie.retained.mkv");
+        let candidate = candidates.path().join("movie.mkv");
+        fs::write(&source, b"original")?;
+        fs::write(&candidate, b"verified")?;
+        let committer = SystemReplacementCommitter;
+        let prepared = committer.prepare(ReplacementRequest {
+            job_key: "replace-before-commit",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+
+        fs::rename(&source, &retained)?;
+        fs::write(&source, b"attacker-replacement")?;
+        let result = committer.commit(prepared);
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&source)?, b"attacker-replacement");
+        assert_eq!(fs::read(&retained)?, b"original");
+        Ok(())
+    }
+
+    #[test]
+    fn prepare_rejects_symlinked_source_root() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let real_root = temp.path().join("real");
+        let linked_root = temp.path().join("linked");
+        let candidates = tempfile::tempdir()?;
+        fs::create_dir(&real_root)?;
+        let source = real_root.join("movie.mkv");
+        let candidate = candidates.path().join("movie.mkv");
+        fs::write(&source, b"original")?;
+        fs::write(&candidate, b"verified")?;
+        symlink(&real_root, &linked_root)?;
+
+        let result = SystemReplacementCommitter.prepare(ReplacementRequest {
+            job_key: "linked-root",
+            source_root: &linked_root,
+            source_path: &linked_root.join("movie.mkv"),
+            candidate_path: &candidate,
+        });
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(source)?, b"original");
         Ok(())
     }
 

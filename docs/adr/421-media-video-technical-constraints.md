@@ -31,6 +31,7 @@
 - Test coverage summary:
   - Clean-chain feature-matrix coverage retains the pre-activation phase and operation overloads and renames the prior target-stream v7 routine to the v6 delegate required by the new v7 contract; the canonical v0 initializer removes these transitional compatibility surfaces.
   - Clean-chain migration validation proves each revised v7 routine replaces its predecessor through an explicit drop-and-recreate boundary without leaving ambiguous overloads.
+  - Clean-database validation proves the v7 compatibility overload delegates to the existing HDR-aware v7 signature before v8 adds bit-depth and color-range inputs.
   - Added boundary tests for dimensions, frame area, bitrate, FPS terms/value, rational reduction, mismatch-only scheduling, upscale rejection, and candidate-output size and file type.
   - Added database tests for canonical FPS persistence and direct-procedure rejection of every resource ceiling.
   - Added attachment tests for workspace symlink rejection, payload overrun termination, count and aggregate-byte limits, digest comparison, cleanup, bounded stderr, deadline, and cancellation behavior.
