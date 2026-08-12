@@ -7,6 +7,8 @@ require "rexml/document"
 
 LineCoverage = Struct.new(:hits, :branches, keyword_init: true)
 
+class CoverageGenerationError < StandardError; end
+
 class GenericCoverage
   def initialize(repository_root)
     @repository_root = Pathname.new(repository_root).expand_path
@@ -26,7 +28,7 @@ class GenericCoverage
   end
 
   def write(output_path)
-    raise "script coverage did not contain any authored files" if @files.empty?
+    raise CoverageGenerationError, "script coverage did not contain any authored files" if @files.empty?
 
     document = REXML::Document.new
     document << REXML::XMLDecl.new("1.0", "UTF-8")
@@ -59,9 +61,9 @@ class GenericCoverage
   def normalize_path(path)
     expanded_path = Pathname.new(path).expand_path
     relative_path = expanded_path.relative_path_from(@repository_root).to_s
-    raise "coverage path escapes the repository: #{path}" if relative_path.start_with?("../")
+    raise CoverageGenerationError, "coverage path escapes the repository: #{path}" if relative_path.start_with?("../")
     unless relative_path.match?(/\Ascripts\/.+\.(?:rb|sh)\z/)
-      raise "coverage path is not an authored script: #{path}"
+      raise CoverageGenerationError, "coverage path is not an authored script: #{path}"
     end
 
     relative_path
@@ -70,7 +72,7 @@ end
 
 def kcov_report_path(directory)
   reports = Dir.glob(File.join(directory, "**", "sonarqube.xml")).map { |path| File.realpath(path) }.uniq
-  raise "kcov did not produce exactly one report" unless reports.length == 1
+  raise CoverageGenerationError, "kcov did not produce exactly one report" unless reports.length == 1
 
   reports.fetch(0)
 end
@@ -88,7 +90,7 @@ end
 
 def import_ruby(coverage, directory, repository_root)
   reports = Dir.glob(File.join(directory, "ruby-*.json")).sort
-  raise "Ruby coverage did not produce any reports" if reports.empty?
+  raise CoverageGenerationError, "Ruby coverage did not produce any reports" if reports.empty?
 
   reports.each do |path|
     JSON.parse(File.read(path, encoding: "UTF-8"), symbolize_names: true).fetch(:files).each do |file|

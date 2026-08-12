@@ -253,6 +253,7 @@ class WorkflowStructureGuardrails
       end
       validate_condition(path, "job #{job_name}", job["if"]) if job.key?("if")
       validate_permissions(path, "job #{job_name}", job["permissions"]) if job.key?("permissions")
+      validate_postgres_service(path, job_name, job)
       if job.key?("uses")
         @errors << "#{path}: reusable job #{job_name} must not define steps" if job.key?("steps")
         validate_uses(path, "job #{job_name}", job["uses"])
@@ -260,12 +261,55 @@ class WorkflowStructureGuardrails
         validate_steps(path, "job #{job_name}", job["steps"])
       end
     end
+    validate_pr_sonar_result_scope(path, jobs) if File.basename(path) == "pr.yml"
     validate_build_images(path, jobs) if File.basename(path) == "build-images.yml"
+  end
+
+  def validate_pr_sonar_result_scope(path, jobs)
+    coverage = jobs["coverage"]
+    steps = coverage.is_a?(Hash) ? coverage["steps"] : nil
+    verifier = steps&.find do |step|
+      step.is_a?(Hash) && step["name"] == "Verify Sonar published result"
+    end
+    expected = "${{ github.event.pull_request.number }}"
+    return if verifier.is_a?(Hash) && verifier.dig("env", "SONAR_PULL_REQUEST") == expected
+
+    @errors << "#{path}: PR Sonar result verification must query the submitted pull request"
   end
 
   def validate_action(path, document)
     runs = document["runs"]
     validate_steps(path, "composite action", runs["steps"]) if runs.is_a?(Hash) && runs["using"] == "composite"
+  end
+
+  def validate_postgres_service(path, job_name, job)
+    postgres = job.dig("services", "postgres")
+    return unless postgres.is_a?(Hash)
+
+    service_env = postgres["env"]
+    job_env = job["env"]
+    unless service_env.is_a?(Hash) && job_env.is_a?(Hash)
+      @errors << "#{path}: job #{job_name} Postgres service and job must define environment mappings"
+      return
+    end
+    user = service_env["POSTGRES_USER"]
+    password = service_env["POSTGRES_PASSWORD"]
+    database = service_env["POSTGRES_DB"]
+    unless [user, password, database].all? { |value| value.is_a?(String) && !value.empty? }
+      @errors << "#{path}: job #{job_name} Postgres service must define user, password, and database"
+      return
+    end
+
+    expected_url = "postgres://#{user}:#{password}@localhost:5432/#{database}"
+    %w[REVAER_TEST_DATABASE_URL DATABASE_URL].each do |key|
+      unless job_env[key] == expected_url
+        @errors << "#{path}: job #{job_name} #{key} must exactly match its Postgres service credential"
+      end
+    end
+    expected_admin_url = "postgres://#{user}:#{password}@localhost:5432/postgres"
+    if job_env.key?("E2E_DB_ADMIN_URL") && job_env["E2E_DB_ADMIN_URL"] != expected_admin_url
+      @errors << "#{path}: job #{job_name} E2E_DB_ADMIN_URL must exactly match its Postgres service credential"
+    end
   end
 
   def validate_steps(path, owner, steps)

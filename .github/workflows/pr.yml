@@ -103,8 +103,8 @@ jobs:
       contents: read
       pull-requests: read
     env:
-      REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
-      DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
+      REVAER_TEST_DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
+      DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
       SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
     services:
       postgres:
@@ -197,6 +197,7 @@ jobs:
         if: github.event.pull_request.head.repo.fork == false && env.SONAR_AUTH_TOKEN != ''
         env:
           SONAR_PROJECT_KEY: VannaDii_Revaer
+          SONAR_PULL_REQUEST: ${{ github.event.pull_request.number }}
         run: just sonar-verify-result
 
       - name: Package Sonar analysis evidence
@@ -300,8 +301,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
     env:
-      REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
-      DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
+      REVAER_TEST_DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
+      DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
     services:
       postgres:
         image: postgres:16-alpine
@@ -345,8 +346,8 @@ jobs:
       E2E_BASE_URL: http://localhost:8080
       E2E_DB_ADMIN_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/postgres"
       E2E_SKIP_DB_START: "1"
-      REVAER_TEST_DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
-      DATABASE_URL: ${{ vars.REVAER_DATABASE_URL}}
+      REVAER_TEST_DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
+      DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
       PLAYWRIGHT_SHARD_INDEX: ${{ matrix.shard }}
       PLAYWRIGHT_SHARD_TOTAL: 3
     services:

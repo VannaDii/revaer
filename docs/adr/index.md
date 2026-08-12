@@ -338,6 +338,7 @@
 -   [409](409-portable-helm-annotation-rendering.md) – Portable Helm annotation rendering
 -   [410](410-libtorrent-21-compatibility.md) – Libtorrent 2.1 compatibility foundation
 -   [411](411-untracked-generated-api-schema.md) – Untracked generated API schema
+-   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [461](461-adr-task-record-status-semantics.md) – ADR and task-record status semantics
 -   [462](462-pr88-shell-return.md) – PR 88 shell return correction
 -   [477](477-stacked-pr-check-emission.md) – Uniform stacked-PR check emission

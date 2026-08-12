@@ -88,6 +88,14 @@
   - Coverage-only TypeScript compilation embeds source text and source maps so Playwright worker V8 ranges resolve to actual authored lines. Input verification rejects collapsed reports by requiring at least 1,000 JavaScript/TypeScript line records with both covered and uncovered entries; the complete local suite reported 3,835 of 4,379 Playwright harness lines covered.
   - `just script-coverage` generates and validates nonempty Bash/Ruby generic coverage with both covered and uncovered records; `scripts/tests/script-coverage-test.sh` verifies native `kcov` generic-report import, Ruby line/branch merging, bootstrap output, and rejection of ambiguous collector reports. `scripts/tests/sonar-result-guardrails-test.sh` exercises positive metrics, pull-request scoping, and every post-scan rejection condition against a deterministic local API fixture.
   - `sonar verify --file ... --project VannaDii_Revaer` was attempted for every changed shell/Ruby file; SonarCloud returned HTTP 403 because Agentic Analysis is not enabled for the organization, so the repository scanner remains the authoritative remote verification path.
+  - The PR scanner reported five Ruby generic-exception findings in the generic
+    coverage converter; all five were replaced with the dedicated error type,
+    and `scripts/tests/script-coverage-test.sh` passed.
+  - The successful PR analysis published an `OK` quality gate, 82.0% new-code
+    coverage, positive overall coverage, zero unresolved issues, and zero
+    unreviewed hotspots, but the post-scan verifier omitted the pull-request
+    selector and queried unrelated project state. The workflow now passes the
+    exact PR number, and the structural guardrail rejects missing scope wiring.
 - Observability updates:
   - CI exposes tool installation, cache restoration, advisory refresh, and each canonical gate as separate log steps.
   - Image jobs retain Trivy SARIF even when findings fail the job and upload verified digest-bound compliance evidence per architecture when publication is enabled.
@@ -100,9 +108,15 @@
   - Base-image and APK pins are build inputs, not application dependencies. Updates require digest/version resolution, both target-architecture smoke builds, inventory synchronization, and review of this manifest.
   - `vendor/semantic-release-npm-stub` is a release-tooling-only replacement for the unused npm publish plugin that semantic-release depends on by default; the active release config publishes GitHub assets through `@semantic-release/github`, not npm.
   - `c8`, `typescript`, and `@types/node` are dev-only test harness dependencies used to compile the Playwright TypeScript harness with source maps and emit Sonar-compatible JavaScript/TypeScript LCOV from executed CI code.
+  - The test-harness `js-yaml` override is pinned to `4.3.1`, the first
+    release that resolves GHSA-5p4m-2wfm-xmqj; it is development-only and is
+    required transitively by the OpenAPI client generator.
   - `kcov` is a development-only coverage tool. CI builds the exact pinned commit and verifies the source archive hash; local environments may install the same version through their package manager. It is required because Sonar has no native Bash execution collector; no application or runtime dependency was added.
   - Ruby's standard Psych YAML parser is used by local and hosted policy jobs; no application or runtime dependency was added.
   - Ruby's standard `Coverage`, `JSON`, and `REXML` APIs collect branch-aware execution data and emit Sonar's generic XML without adding a gem dependency.
+  - Coverage conversion failures use a dedicated `CoverageGenerationError` so
+    callers receive a typed operational failure and the Ruby analyzer does not
+    report generic string-literal exceptions.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/revaer-ui.instructions.md`, `.github/instructions/rust.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
   - Drift found in line-oriented workflow/Sonar parsing, legacy Sonar exclusions, pre-build compliance evidence, nonblocking Trivy findings, predictable temporary storage, a reusable image job that assumed `just` existed, a PR Sonar path that omitted configured coverage and evidence, and scanner indexing of untracked npm dependencies. The policy, workflow, Sonar scope, coverage collectors, and regression tests now fail closed on those paths.
