@@ -401,6 +401,7 @@
 -   [394](394-media-job-data-passthrough-evidence.md) – Media job data passthrough evidence
 -   [401](401-media-hdr10-color-volume-contract.md) – Media HDR10 color-volume contract
 -   [402](402-ci-helm-setup-node24.md) – CI Helm setup Node 24 runtime
+-   [403](403-media-fixture-cleanup.md) – Media fixture cleanup
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
 -   [407](407-database-backed-coverage-execution.md) – Database-backed coverage execution
 -   [409](409-portable-helm-annotation-rendering.md) – Portable Helm annotation rendering

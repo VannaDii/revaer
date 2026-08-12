@@ -2230,6 +2230,9 @@ CI requirements:
 - Add a fixture preparation path that restores cached binary fixture
   directories when available and otherwise downloads/generates them through the
   checked-in scripts.
+- The PR media fixture job must run `just clean-test-fixtures` under an
+  always-run cleanup step after publishing the conversion report so generated
+  media directories are removed after successful and failed validations.
 - Key the cache by `test-fixtures/manifest.json`,
   `scripts/test-fixtures/*.sh`, and relevant tool versions so stale fixtures do
   not mask manifest changes.
