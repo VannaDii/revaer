@@ -627,6 +627,775 @@
         ],
         "type": "object"
       },
+      "MediaCapabilityCodecResponse": {
+        "properties": {
+          "codec_name": {
+            "type": "string"
+          },
+          "decode_supported": {
+            "type": "boolean"
+          },
+          "encode_supported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "codec_name",
+          "encode_supported",
+          "decode_supported"
+        ],
+        "type": "object"
+      },
+      "MediaCapabilityFeatureResponse": {
+        "properties": {
+          "detail_text": {
+            "type": "string"
+          },
+          "feature_family": {
+            "type": "string"
+          },
+          "feature_name": {
+            "type": "string"
+          },
+          "supported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "feature_family",
+          "feature_name",
+          "supported"
+        ],
+        "type": "object"
+      },
+      "MediaCapabilityLatestResponse": {
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/MediaCapabilitySnapshotResponse"
+          }
+        },
+        "type": "object"
+      },
+      "MediaCapabilityReadinessResponse": {
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/MediaCapabilitySnapshotResponse"
+          }
+        },
+        "required": [
+          "ready"
+        ],
+        "type": "object"
+      },
+      "MediaCapabilityRefreshResponse": {
+        "properties": {
+          "media_capability_snapshot_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "media_capability_snapshot_id"
+        ],
+        "type": "object"
+      },
+      "MediaCapabilitySnapshotResponse": {
+        "properties": {
+          "absent_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "codecs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCapabilityCodecResponse"
+            },
+            "type": "array"
+          },
+          "compliance_links": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "decoders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "demuxers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "encoders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCapabilityFeatureResponse"
+            },
+            "type": "array"
+          },
+          "ffmpeg_enable_gpl": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_nonfree": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_version3": {
+            "type": "boolean"
+          },
+          "ffmpeg_license_mode": {
+            "type": "string"
+          },
+          "ffmpeg_version": {
+            "type": "string"
+          },
+          "ffprobe_version": {
+            "type": "string"
+          },
+          "filesystem_utilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "hardware_accelerators": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "license_mode": {
+            "type": "string"
+          },
+          "media_capability_snapshot_id": {
+            "type": "integer"
+          },
+          "muxers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "snapshot_run_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subtitle_support": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "utility_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "media_capability_snapshot_id",
+          "snapshot_run_public_id",
+          "ffmpeg_version",
+          "ffprobe_version",
+          "codecs",
+          "encoders",
+          "decoders",
+          "muxers",
+          "demuxers",
+          "subtitle_support",
+          "hardware_accelerators",
+          "filesystem_utilities",
+          "utility_capabilities",
+          "license_mode",
+          "ffmpeg_license_mode",
+          "ffmpeg_enable_gpl",
+          "ffmpeg_enable_version3",
+          "ffmpeg_enable_nonfree",
+          "compliance_links",
+          "absent_capabilities",
+          "features",
+          "observed_at"
+        ],
+        "type": "object"
+      },
+      "MediaCompatibilityTargetListResponse": {
+        "properties": {
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCompatibilityTargetResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "type": "object"
+      },
+      "MediaCompatibilityTargetResponse": {
+        "properties": {
+          "audio_channel_layout": {
+            "type": "string"
+          },
+          "audio_channels": {
+            "type": "integer"
+          },
+          "audio_codec": {
+            "type": "string"
+          },
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "subtitle_policy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "video_codec": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "compatibility_target_key",
+          "version",
+          "display_name",
+          "video_codec",
+          "audio_codec",
+          "subtitle_policy"
+        ],
+        "type": "object"
+      },
+      "MediaCompatibilityTargetUpsertRequest": {
+        "properties": {
+          "audio_channel_layout": {
+            "type": "string"
+          },
+          "audio_channels": {
+            "type": "integer"
+          },
+          "audio_codec": {
+            "type": "string"
+          },
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "subtitle_policy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "video_codec": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "compatibility_target_key",
+          "version",
+          "display_name",
+          "video_codec",
+          "audio_codec",
+          "subtitle_policy"
+        ],
+        "type": "object"
+      },
+      "MediaComplianceResponse": {
+        "properties": {
+          "absent_license_excluded_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "exiftool_exception_path": {
+            "type": "string"
+          },
+          "ffmpeg_enable_gpl": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_nonfree": {
+            "type": "boolean"
+          },
+          "ffmpeg_enable_version3": {
+            "type": "boolean"
+          },
+          "ffmpeg_license_mode": {
+            "type": "string"
+          },
+          "image_license_mode": {
+            "type": "string"
+          },
+          "inventory_path": {
+            "type": "string"
+          },
+          "license_excluded_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "license_mode": {
+            "type": "string"
+          },
+          "sbom_path": {
+            "type": "string"
+          },
+          "sbom_url": {
+            "type": "string"
+          },
+          "source_compliance_bundle_digest": {
+            "type": "string"
+          },
+          "source_compliance_bundle_path": {
+            "type": "string"
+          },
+          "source_offer_path": {
+            "type": "string"
+          },
+          "source_offer_url": {
+            "type": "string"
+          },
+          "third_party_notices_path": {
+            "type": "string"
+          },
+          "third_party_notices_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "license_mode",
+          "image_license_mode",
+          "ffmpeg_license_mode",
+          "ffmpeg_enable_gpl",
+          "ffmpeg_enable_version3",
+          "ffmpeg_enable_nonfree",
+          "source_offer_path",
+          "source_offer_url",
+          "third_party_notices_path",
+          "third_party_notices_url",
+          "sbom_path",
+          "sbom_url",
+          "inventory_path",
+          "exiftool_exception_path",
+          "source_compliance_bundle_digest",
+          "source_compliance_bundle_path",
+          "license_excluded_capabilities",
+          "absent_license_excluded_capabilities"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetCreateRequest": {
+        "properties": {
+          "container_format": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "streams": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetStream"
+            },
+            "type": "array"
+          },
+          "target_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_key",
+          "version",
+          "display_name",
+          "container_format",
+          "streams"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetListResponse": {
+        "properties": {
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "targets"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetResponse": {
+        "properties": {
+          "container_format": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "media_desired_target_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "streams": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDesiredTargetStream"
+            },
+            "type": "array"
+          },
+          "target_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "media_desired_target_profile_public_id",
+          "target_key",
+          "version",
+          "display_name",
+          "container_format",
+          "streams"
+        ],
+        "type": "object"
+      },
+      "MediaDesiredTargetStream": {
+        "properties": {
+          "audio_bitrate_bps": {
+            "type": "integer"
+          },
+          "audio_sample_rate_hz": {
+            "type": "integer"
+          },
+          "channel_count": {
+            "type": "integer"
+          },
+          "channel_layout": {
+            "type": "string"
+          },
+          "codec": {
+            "type": "string"
+          },
+          "color_primaries": {
+            "type": "string"
+          },
+          "color_space": {
+            "type": "string"
+          },
+          "color_transfer": {
+            "type": "string"
+          },
+          "default_disposition": {
+            "type": "boolean"
+          },
+          "forced_disposition": {
+            "type": "boolean"
+          },
+          "hdr_format": {
+            "type": "string"
+          },
+          "image_subtitle_action": {
+            "type": "string"
+          },
+          "language_code": {
+            "type": "string"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "semantic_role": {
+            "type": "string"
+          },
+          "sort_order": {
+            "type": "integer"
+          },
+          "stream_key": {
+            "type": "string"
+          },
+          "stream_kind": {
+            "type": "string"
+          },
+          "subtitle_placement": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "video_bitrate_bps": {
+            "type": "integer"
+          },
+          "video_level": {
+            "type": "string"
+          },
+          "video_profile": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "stream_key",
+          "stream_kind",
+          "sort_order",
+          "codec"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryPreviewItemResponse": {
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path",
+          "dry_run",
+          "accepted"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryPreviewRequest": {
+        "properties": {
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source_paths": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1024,
+            "type": "array"
+          }
+        },
+        "required": [
+          "media_profile_public_id",
+          "source_paths"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryPreviewResponse": {
+        "properties": {
+          "previews": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoveryPreviewItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "previews"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryQueuedJobResponse": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "media_job_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_job_public_id",
+          "source_path",
+          "output_path",
+          "dry_run"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryRunRequest": {
+        "properties": {
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source_paths": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1024,
+            "type": "array"
+          }
+        },
+        "required": [
+          "media_profile_public_id",
+          "source_paths"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryRunResponse": {
+        "properties": {
+          "queued_jobs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoveryQueuedJobResponse"
+            },
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoverySkippedItemResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "queued_jobs",
+          "skipped"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryScheduleListResponse": {
+        "properties": {
+          "schedules": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoveryScheduleResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schedules"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryScheduleResponse": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_minutes": {
+            "type": "integer"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "profile_key": {
+            "type": "string"
+          },
+          "source_root": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_profile_public_id",
+          "profile_key",
+          "source_root",
+          "enabled",
+          "dry_run"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoverySkippedItemResponse": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryWatcherListResponse": {
+        "properties": {
+          "watchers": {
+            "items": {
+              "$ref": "#/components/schemas/MediaDiscoveryWatcherResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "watchers"
+        ],
+        "type": "object"
+      },
+      "MediaDiscoveryWatcherResponse": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "profile_key": {
+            "type": "string"
+          },
+          "source_root": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_profile_public_id",
+          "profile_key",
+          "source_root",
+          "enabled",
+          "dry_run"
+        ],
+        "type": "object"
+      },
       "MediaDomainMappingDeleteRequest": {
         "properties": {
           "media_domain_key": {
@@ -659,6 +1428,1242 @@
         "required": [
           "media_domain_key",
           "torznab_cat_id"
+        ],
+        "type": "object"
+      },
+      "MediaJobArtifactAppendRequest": {
+        "properties": {
+          "artifact_index": {
+            "type": "integer"
+          },
+          "artifact_kind": {
+            "type": "string"
+          },
+          "artifact_path": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifact_index",
+          "artifact_kind",
+          "artifact_path"
+        ],
+        "type": "object"
+      },
+      "MediaJobArtifactListResponse": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobArtifactResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifacts"
+        ],
+        "type": "object"
+      },
+      "MediaJobArtifactResponse": {
+        "properties": {
+          "artifact_index": {
+            "type": "integer"
+          },
+          "artifact_kind": {
+            "type": "string"
+          },
+          "artifact_path": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifact_index",
+          "artifact_kind",
+          "artifact_path",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobCompactAuditAppendRequest": {
+        "properties": {
+          "audit_index": {
+            "type": "integer"
+          },
+          "fact_kind": {
+            "type": "string"
+          },
+          "fact_text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "audit_index",
+          "fact_kind",
+          "fact_text"
+        ],
+        "type": "object"
+      },
+      "MediaJobCompactAuditListResponse": {
+        "properties": {
+          "audits": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobCompactAuditResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "audits"
+        ],
+        "type": "object"
+      },
+      "MediaJobCompactAuditResponse": {
+        "properties": {
+          "audit_index": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fact_kind": {
+            "type": "string"
+          },
+          "fact_text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "audit_index",
+          "fact_kind",
+          "fact_text",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobCreateRequest": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "replace_confirmation": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_profile_public_id",
+          "source_path",
+          "dry_run"
+        ],
+        "type": "object"
+      },
+      "MediaJobCreateResponse": {
+        "properties": {
+          "media_job_public_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_job_public_id"
+        ],
+        "type": "object"
+      },
+      "MediaJobDiagnosticCounts": {
+        "properties": {
+          "artifacts": {
+            "type": "integer"
+          },
+          "compact_audits": {
+            "type": "integer"
+          },
+          "operations": {
+            "type": "integer"
+          },
+          "plan_reasons": {
+            "type": "integer"
+          },
+          "verification_checks": {
+            "type": "integer"
+          },
+          "violations": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operations",
+          "violations",
+          "plan_reasons",
+          "verification_checks",
+          "artifacts",
+          "compact_audits"
+        ],
+        "type": "object"
+      },
+      "MediaJobDiagnosticsResponse": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobArtifactResponse"
+            },
+            "type": "array"
+          },
+          "compact_audits": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobCompactAuditResponse"
+            },
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobOperationResponse"
+            },
+            "type": "array"
+          },
+          "plan_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobPlanReasonResponse"
+            },
+            "type": "array"
+          },
+          "verification_checks": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobVerificationCheckResponse"
+            },
+            "type": "array"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobViolationResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "operations",
+          "violations",
+          "plan_reasons",
+          "verification_checks",
+          "artifacts",
+          "compact_audits"
+        ],
+        "type": "object"
+      },
+      "MediaJobListResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "type": "object"
+      },
+      "MediaJobOperationAppendRequest": {
+        "properties": {
+          "arg_1": {
+            "type": "string"
+          },
+          "arg_2": {
+            "type": "string"
+          },
+          "arg_3": {
+            "type": "string"
+          },
+          "arg_4": {
+            "type": "string"
+          },
+          "arg_5": {
+            "type": "string"
+          },
+          "command_bin": {
+            "type": "string"
+          },
+          "operation_index": {
+            "type": "integer"
+          },
+          "operation_kind": {
+            "enum": [
+              "remux",
+              "metadata_rewrite",
+              "disposition_rewrite",
+              "label_rewrite",
+              "stream_reorder",
+              "audio_transcode",
+              "video_transcode"
+            ],
+            "type": "string"
+          },
+          "stream_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation_index",
+          "operation_kind",
+          "command_bin"
+        ],
+        "type": "object"
+      },
+      "MediaJobOperationListResponse": {
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobOperationResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "operations"
+        ],
+        "type": "object"
+      },
+      "MediaJobOperationResponse": {
+        "properties": {
+          "arg_1": {
+            "type": "string"
+          },
+          "arg_2": {
+            "type": "string"
+          },
+          "arg_3": {
+            "type": "string"
+          },
+          "arg_4": {
+            "type": "string"
+          },
+          "arg_5": {
+            "type": "string"
+          },
+          "command_bin": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation_index": {
+            "type": "integer"
+          },
+          "operation_kind": {
+            "enum": [
+              "remux",
+              "metadata_rewrite",
+              "disposition_rewrite",
+              "label_rewrite",
+              "stream_reorder",
+              "audio_transcode",
+              "video_transcode"
+            ],
+            "type": "string"
+          },
+          "stream_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation_index",
+          "operation_kind",
+          "command_bin",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobPhaseAppendRequest": {
+        "properties": {
+          "details_text": {
+            "type": "string"
+          },
+          "phase_index": {
+            "type": "integer"
+          },
+          "phase_name": {
+            "type": "string"
+          },
+          "phase_status": {
+            "enum": [
+              "queued",
+              "running",
+              "verifying",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase_index",
+          "phase_name",
+          "phase_status"
+        ],
+        "type": "object"
+      },
+      "MediaJobPlanReasonAppendRequest": {
+        "properties": {
+          "candidate_index": {
+            "type": "integer"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "reason_index": {
+            "type": "integer"
+          },
+          "reason_text": {
+            "type": "string"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reason_index",
+          "selected",
+          "reason_code",
+          "reason_text"
+        ],
+        "type": "object"
+      },
+      "MediaJobPlanReasonListResponse": {
+        "properties": {
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobPlanReasonResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "reasons"
+        ],
+        "type": "object"
+      },
+      "MediaJobPlanReasonResponse": {
+        "properties": {
+          "candidate_index": {
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason_code": {
+            "type": "string"
+          },
+          "reason_index": {
+            "type": "integer"
+          },
+          "reason_text": {
+            "type": "string"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reason_index",
+          "selected",
+          "reason_code",
+          "reason_text",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobResponse": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "media_job_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "verifying",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_job_public_id",
+          "source_path",
+          "status",
+          "dry_run",
+          "queued_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobRetentionResponse": {
+        "properties": {
+          "completed_enabled": {
+            "type": "boolean"
+          },
+          "completed_limit": {
+            "type": "integer"
+          },
+          "completed_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          },
+          "failed_diagnostic_enabled": {
+            "type": "boolean"
+          },
+          "failed_diagnostic_limit": {
+            "type": "integer"
+          },
+          "failed_diagnostic_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed_enabled",
+          "completed_mode",
+          "completed_limit",
+          "failed_diagnostic_enabled",
+          "failed_diagnostic_mode",
+          "failed_diagnostic_limit"
+        ],
+        "type": "object"
+      },
+      "MediaJobRetentionUpdateRequest": {
+        "properties": {
+          "completed_enabled": {
+            "type": "boolean"
+          },
+          "completed_limit": {
+            "type": "integer"
+          },
+          "completed_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          },
+          "failed_diagnostic_enabled": {
+            "type": "boolean"
+          },
+          "failed_diagnostic_limit": {
+            "type": "integer"
+          },
+          "failed_diagnostic_mode": {
+            "enum": [
+              "age",
+              "count"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed_enabled",
+          "completed_mode",
+          "completed_limit",
+          "failed_diagnostic_enabled",
+          "failed_diagnostic_mode",
+          "failed_diagnostic_limit"
+        ],
+        "type": "object"
+      },
+      "MediaJobVerificationCheckAppendRequest": {
+        "properties": {
+          "actual_value": {
+            "type": "string"
+          },
+          "check_index": {
+            "type": "integer"
+          },
+          "check_kind": {
+            "type": "string"
+          },
+          "check_status": {
+            "enum": [
+              "passed",
+              "failed",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "details_text": {
+            "type": "string"
+          },
+          "expected_value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "check_index",
+          "check_kind",
+          "check_status"
+        ],
+        "type": "object"
+      },
+      "MediaJobVerificationCheckListResponse": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobVerificationCheckResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "checks"
+        ],
+        "type": "object"
+      },
+      "MediaJobVerificationCheckResponse": {
+        "properties": {
+          "actual_value": {
+            "type": "string"
+          },
+          "check_index": {
+            "type": "integer"
+          },
+          "check_kind": {
+            "type": "string"
+          },
+          "check_status": {
+            "enum": [
+              "passed",
+              "failed",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "details_text": {
+            "type": "string"
+          },
+          "expected_value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "check_index",
+          "check_kind",
+          "check_status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaJobViolationAppendRequest": {
+        "properties": {
+          "severity": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "type": "string"
+          },
+          "stream_id": {
+            "type": "integer"
+          },
+          "violation_index": {
+            "type": "integer"
+          },
+          "violation_kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "violation_index",
+          "violation_kind",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "MediaJobViolationListResponse": {
+        "properties": {
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/MediaJobViolationResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "violations"
+        ],
+        "type": "object"
+      },
+      "MediaJobViolationResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "type": "string"
+          },
+          "stream_id": {
+            "type": "integer"
+          },
+          "violation_index": {
+            "type": "integer"
+          },
+          "violation_kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "violation_index",
+          "violation_kind",
+          "severity",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "MediaPlanningPreviewRequest": {
+        "properties": {
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_profile_public_id",
+          "source_path"
+        ],
+        "type": "object"
+      },
+      "MediaPlanningPreviewResponse": {
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "output_path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accepted",
+          "source_path",
+          "dry_run"
+        ],
+        "type": "object"
+      },
+      "MediaPolicyListResponse": {
+        "properties": {
+          "policies": {
+            "items": {
+              "$ref": "#/components/schemas/MediaPolicyResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "policies"
+        ],
+        "type": "object"
+      },
+      "MediaPolicyResponse": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "verification_decode_all_streams": {
+            "type": "boolean"
+          },
+          "verification_duration_tolerance_millis": {
+            "format": "int64",
+            "maximum": 60000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verification_keyframe_seek": {
+            "type": "boolean"
+          },
+          "verification_mux_validation": {
+            "type": "boolean"
+          },
+          "verification_playback_probe": {
+            "type": "boolean"
+          },
+          "verification_strictness": {
+            "enum": [
+              "strict",
+              "balanced",
+              "fast"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "video_intent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_key",
+          "version",
+          "display_name",
+          "video_intent",
+          "verification_strictness",
+          "verification_duration_tolerance_millis",
+          "verification_mux_validation",
+          "verification_decode_all_streams",
+          "verification_keyframe_seek",
+          "verification_playback_probe"
+        ],
+        "type": "object"
+      },
+      "MediaPolicyUpsertRequest": {
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "verification_decode_all_streams": {
+            "type": "boolean"
+          },
+          "verification_duration_tolerance_millis": {
+            "format": "int64",
+            "maximum": 60000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "verification_keyframe_seek": {
+            "type": "boolean"
+          },
+          "verification_mux_validation": {
+            "type": "boolean"
+          },
+          "verification_playback_probe": {
+            "type": "boolean"
+          },
+          "verification_strictness": {
+            "enum": [
+              "strict",
+              "balanced",
+              "fast"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "video_intent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_key",
+          "version",
+          "display_name",
+          "video_intent",
+          "verification_strictness",
+          "verification_duration_tolerance_millis",
+          "verification_mux_validation",
+          "verification_decode_all_streams",
+          "verification_keyframe_seek",
+          "verification_playback_probe"
+        ],
+        "type": "object"
+      },
+      "MediaProfileDesiredTargetRequest": {
+        "properties": {
+          "target_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "MediaProfileListResponse": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/MediaProfileResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "profiles"
+        ],
+        "type": "object"
+      },
+      "MediaProfilePatchRequest": {
+        "properties": {
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "dry_run_only": {
+            "type": "boolean"
+          },
+          "output_root": {
+            "type": "string"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "schedule_enabled": {
+            "type": "boolean"
+          },
+          "schedule_interval_minutes": {
+            "type": "integer"
+          },
+          "source_root": {
+            "type": "string"
+          },
+          "watcher_enabled": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "MediaProfileResponse": {
+        "properties": {
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "desired_target_key": {
+            "type": "string"
+          },
+          "desired_target_version": {
+            "type": "integer"
+          },
+          "dry_run_only": {
+            "type": "boolean"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "output_root": {
+            "type": "string"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "profile_key": {
+            "type": "string"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "schedule_enabled": {
+            "type": "boolean"
+          },
+          "schedule_interval_minutes": {
+            "type": "integer"
+          },
+          "source_root": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "watcher_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "media_profile_public_id",
+          "profile_key",
+          "source_root",
+          "output_root",
+          "dry_run_only",
+          "retention_days",
+          "policy_key",
+          "watcher_enabled",
+          "schedule_enabled",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "MediaProfileUpsertRequest": {
+        "properties": {
+          "compatibility_target_key": {
+            "type": "string"
+          },
+          "dry_run_only": {
+            "type": "boolean"
+          },
+          "output_root": {
+            "type": "string"
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "profile_key": {
+            "type": "string"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "schedule_enabled": {
+            "type": "boolean"
+          },
+          "schedule_interval_minutes": {
+            "type": "integer"
+          },
+          "source_root": {
+            "type": "string"
+          },
+          "watcher_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "profile_key",
+          "source_root",
+          "output_root",
+          "dry_run_only",
+          "retention_days"
+        ],
+        "type": "object"
+      },
+      "MediaProfileValidationResponse": {
+        "properties": {
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "issues"
+        ],
+        "type": "object"
+      },
+      "MediaRecentJobPageResponse": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/MediaRecentJobSummaryResponse"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "type": "object"
+      },
+      "MediaRecentJobSummaryResponse": {
+        "properties": {
+          "diagnostic_counts": {
+            "$ref": "#/components/schemas/MediaJobDiagnosticCounts"
+          },
+          "media_job_public_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "media_profile_public_id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "media_job_public_id",
+          "media_profile_public_id",
+          "diagnostic_counts"
+        ],
+        "type": "object"
+      },
+      "MediaYamlApplyResponse": {
+        "properties": {
+          "forced_dry_run": {
+            "type": "boolean"
+          },
+          "media_profile_import_draft_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "media_profile_public_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "forced_dry_run",
+          "media_profile_public_ids",
+          "media_profile_import_draft_public_ids"
+        ],
+        "type": "object"
+      },
+      "MediaYamlExportResponse": {
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "yaml_payload": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "yaml_payload"
+        ],
+        "type": "object"
+      },
+      "MediaYamlImportRequest": {
+        "properties": {
+          "yaml_payload": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "yaml_payload"
+        ],
+        "type": "object"
+      },
+      "MediaYamlIssueResponse": {
+        "properties": {
+          "blocking": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "pointer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "pointer",
+          "blocking"
+        ],
+        "type": "object"
+      },
+      "MediaYamlValidationResponse": {
+        "properties": {
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/MediaYamlIssueResponse"
+            },
+            "type": "array"
+          },
+          "profile_count": {
+            "type": "integer"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "valid",
+          "issues",
+          "profile_count"
         ],
         "type": "object"
       },
