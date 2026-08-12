@@ -433,3 +433,4 @@
     -   [417: Cargo lock dependency integrity](adr/417-cargo-lock-dependency-integrity.md)
     -   [418: CI Postgres credential coherence](adr/418-ci-postgres-credential-coherence.md)
     -   [420: Media text input contract](adr/420-media-text-input-contract.md)
+    -   [421: API E2E Postgres credential coherence](adr/421-api-e2e-postgres-credential-coherence.md)
