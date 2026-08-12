@@ -10,9 +10,10 @@ run_case() {
   local expectation="$1"
   local fixture="$2"
   local sonar_variant="${3:-valid}"
+  local workflow_name="${4:-test.yml}"
   local case_root="${test_root}/$(basename "${fixture}" .yml)-${sonar_variant}"
   mkdir -p "${case_root}/workflows" "${case_root}/actions" "${case_root}/just"
-  cp "${fixture_root}/${fixture}" "${case_root}/workflows/test.yml"
+  cp "${fixture_root}/${fixture}" "${case_root}/workflows/${workflow_name}"
   cp "${repo_root}/sonar-project.properties" "${case_root}/sonar-project.properties"
   cp "${repo_root}/justfile" "${case_root}/justfile"
   cp "${repo_root}/just/quality.just" "${case_root}/just/quality.just"
@@ -140,6 +141,11 @@ run_image_case() {
 
 run_case pass valid.yml
 run_case pass decoys.yml
+run_case pass postgres-credentials.yml
+run_case fail postgres-credential-drift.yml
+run_case fail postgres-missing-environment.yml
+run_case fail postgres-incomplete-service.yml
+run_case fail postgres-admin-credential-drift.yml
 run_case fail unpinned-action.yml
 run_case fail input-in-run.yml
 run_case fail unknown-just.yml
@@ -176,6 +182,7 @@ run_image_case fail missing-build-steps
 run_image_case fail reordered-steps
 run_image_case fail missing-build-digest
 run_image_case fail weak-scan-severity
+run_case fail pr-sonar-missing-scope.yml valid pr.yml
 
 if ruby "${repo_root}/scripts/workflow-structure-guardrails.rb" \
   >"${test_root}/missing-options.stdout" 2>"${test_root}/missing-options.stderr"; then

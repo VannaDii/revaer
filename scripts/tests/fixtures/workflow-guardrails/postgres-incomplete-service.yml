@@ -1,0 +1,19 @@
+name: Postgres incomplete service
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      REVAER_TEST_DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
+      DATABASE_URL: "postgres://revaer:${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}@localhost:5432/revaer"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: revaer
+          POSTGRES_PASSWORD: "${{ format('{0}-{1}-{2}', github.run_id, github.run_attempt, github.job) }}"
+    steps:
+      - run: just check
