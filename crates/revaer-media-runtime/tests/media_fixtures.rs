@@ -1,5 +1,6 @@
 use revaer_media_core::model::{
-    DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind,
+    ContainerChapterEntry, ContainerMetadataEntry, DesiredGraph, DesiredStreamBinding, MediaGraph,
+    MediaStream, StreamKind,
 };
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_runtime::execute::{ProcessCommandRunner, execute_step_sequence};
@@ -426,6 +427,27 @@ fn verify_prepared_fixture_suite() -> TestResult {
         manifest.fixtures.len(),
         media_conversion_report_path(&root)?.display()
     );
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires downloaded media fixtures"]
+fn real_ffmpeg_replaces_authored_container_chapters() -> TestResult {
+    require_tool("ffmpeg")?;
+    require_tool("ffprobe")?;
+    let root = repo_root()?;
+    let manifest = load_manifest(&root)?;
+    let output_root = root.join("target/chapter-replacement-fixture-evidence");
+    if output_root.exists() {
+        fs::remove_dir_all(&output_root)?;
+    }
+    fs::create_dir_all(&output_root)?;
+    let mut report = MediaConversionReport::new(1);
+
+    let result = assert_container_chapter_replacement(&root, &manifest, &output_root, &mut report);
+    let cleanup = fs::remove_dir_all(&output_root);
+    result?;
+    cleanup?;
     Ok(())
 }
 
@@ -1014,7 +1036,9 @@ fn run_pipeline_cases(
     assert_multi_audio_selection(root, manifest, &output_root, report)?;
     assert_subtitle_selection(root, manifest, &output_root, report)?;
     assert_container_attachment_stripping(root, manifest, &output_root, report)?;
+    assert_container_chapter_replacement(root, manifest, &output_root, report)?;
     assert_transcoding_cases(root, manifest, &output_root, report)?;
+    assert_pipeline_report_has_operation(report, "metadata_rewrite")?;
     assert_pipeline_report_has_operation(report, "video_transcode")?;
     assert_pipeline_report_has_operation(report, "audio_transcode")?;
     Ok(())
@@ -1570,6 +1594,71 @@ fn assert_subtitle_selection(
         details: "removed all subtitle streams".to_string(),
     });
     Ok(())
+}
+
+fn assert_container_chapter_replacement(
+    root: &Path,
+    manifest: &FixtureManifest,
+    output_root: &Path,
+    report: &mut MediaConversionReport,
+) -> TestResult {
+    let fixture = fixture_by_id(manifest, "bbb-h264-mkv")?;
+    let source_path = root.join(&fixture.path);
+    let source = inspect_graph(&source_path)?;
+    let desired_chapters = vec![
+        chapter_entry(0, 1_000, "Fixture Opening"),
+        chapter_entry(1_000, 3_000, "Fixture Main"),
+    ];
+    let output_path = output_root.join("chapters-replaced.mkv");
+    let mut desired = desired_graph(path_text(&output_path)?, source.streams.clone())?;
+    desired.container_format = Some("matroska".to_string());
+    desired.container_chapter_policy = Some("replace".to_string());
+    desired.container_chapters.clone_from(&desired_chapters);
+
+    let materialized = materialize_desired_graph(&source_path, &source, &desired)?;
+    assert_operations(
+        "replace container chapters",
+        &materialized.operations,
+        &["metadata_rewrite", "remux"],
+    )?;
+    let output = inspect_graph(&materialized.verified_output_path)?;
+    if output.container_chapters != desired_chapters {
+        return fail(format!(
+            "{} chapter mismatch: expected {:?}, got {:?}",
+            materialized.verified_output_path.display(),
+            desired_chapters,
+            output.container_chapters
+        ));
+    }
+    let metadata_path = PathBuf::from(format!("{}.chapters.ffmetadata", desired.output_path));
+    if metadata_path.exists() {
+        return fail(format!(
+            "temporary chapter metadata remained after execution: {}",
+            metadata_path.display()
+        ));
+    }
+    report.record_pipeline_action(PipelineReportRow {
+        case_name: "replace container chapters".to_string(),
+        fixture_id: fixture.id.clone(),
+        input_path: fixture.path.clone(),
+        output_path: report_path(root, &materialized.verified_output_path),
+        operations: materialized.operations,
+        outcome: "passed".to_string(),
+        details: "published exact authored chapter timeline and removed temporary FFmetadata"
+            .to_string(),
+    });
+    Ok(())
+}
+
+fn chapter_entry(start_millis: i64, end_millis: i64, title: &str) -> ContainerChapterEntry {
+    ContainerChapterEntry {
+        start_millis,
+        end_millis,
+        metadata: vec![ContainerMetadataEntry {
+            key: "title".to_string(),
+            value: title.to_string(),
+        }],
+    }
 }
 
 fn inspect_graph(path: &Path) -> TestResult<MediaGraph> {

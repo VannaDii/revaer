@@ -4072,6 +4072,7 @@ fn replacement_output_path(steps: &[ExecutionStep]) -> Result<String, MediaJobRu
             ExecutionStep::CopySidecarSubtitle { .. }
             | ExecutionStep::BackupSource { .. }
             | ExecutionStep::WriteTextFile { .. }
+            | ExecutionStep::DeleteTextFileIfExists { .. }
             | ExecutionStep::Command { .. }
             | ExecutionStep::VerifyOutput { .. }
             | ExecutionStep::QuarantineFailedOutput { .. } => None,
@@ -4359,6 +4360,7 @@ const fn command_step(step: &ExecutionStep) -> Option<(&String, &Vec<String>)> {
         ExecutionStep::CopySidecarSubtitle { .. }
         | ExecutionStep::BackupSource { .. }
         | ExecutionStep::WriteTextFile { .. }
+        | ExecutionStep::DeleteTextFileIfExists { .. }
         | ExecutionStep::VerifyOutput { .. }
         | ExecutionStep::QuarantineFailedOutput { .. }
         | ExecutionStep::AtomicReplace { .. } => None,
