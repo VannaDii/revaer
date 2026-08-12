@@ -345,6 +345,7 @@
 -   [420](420-media-text-input-contract.md) – Media text input contract
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
 -   [431](431-lazy-media-job-diagnostics-ui.md) – Lazy media job diagnostics UI
+-   [433](433-media-api-source-service.md) – Media API source service
 -   [458](458-media-data-module-boundary.md) – Media data module boundary integration correction
 -   [461](461-adr-task-record-status-semantics.md) – ADR and task-record status semantics
 -   [462](462-pr88-shell-return.md) – PR 88 shell return correction
@@ -363,3 +364,4 @@
 -   [487](487-strict-sonar-analysis-foundation.md) – Strict Sonar analysis foundation implementation
 -   [488](488-single-sonar-scanner-execution.md) – Single authoritative Sonar scanner execution
 -   [495](495-pr77-attempt-fencing-integration.md) – PR 77 attempt-fencing integration
+-   [496](496-pr168-api-service-review.md) – PR 168 API service review remediation
