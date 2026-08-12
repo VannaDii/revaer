@@ -102,7 +102,7 @@ pub(super) fn validate_sidecar_output(
             path.display()
         )));
     }
-    let actual = normalize_subtitle_codec(&stream.codec_name);
+    let actual = normalize_subtitle_codec(stream.codec_name.as_deref().unwrap_or_default());
     let expected = expected_sidecar_codec(format);
     if actual != expected {
         return Err(InspectError::OutputMalformed(format!(
@@ -114,19 +114,27 @@ pub(super) fn validate_sidecar_output(
 }
 
 fn probe_stream_from(stream: FfprobeStream) -> ProbeStream {
+    let codec = codec_name_from_probe(&stream.codec_type, stream.codec_name);
     let (language, title) = stream
         .tags
         .map_or((None, None), |tags| (tags.language, tags.title));
     ProbeStream {
         stream_id: stream.index,
         kind: stream.codec_type,
-        codec: stream.codec_name,
+        codec,
         channels: stream.channels,
         channel_layout: stream.channel_layout,
         language,
         title,
         dispositions: dispositions_from_raw(stream.disposition),
     }
+}
+
+fn codec_name_from_probe(codec_type: &str, codec_name: Option<String>) -> String {
+    if codec_type.trim().eq_ignore_ascii_case("attachment") {
+        return "attachment".to_string();
+    }
+    codec_name.unwrap_or_default()
 }
 
 /// Convert probe-like output into a normalized domain graph.

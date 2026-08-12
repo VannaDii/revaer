@@ -406,6 +406,7 @@
     -   [377: Media manual operator loop](adr/377-media-manual-operator-loop.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
+    -   [387: Media attachment strip fixture evidence](adr/387-media-attachment-strip-fixture-evidence.md)
     -   [391: Media job chapter replacement evidence](adr/391-media-job-chapter-replacement-evidence.md)
     -   [392: Media job attachment strip evidence](adr/392-media-job-attachment-strip-evidence.md)
     -   [393: Media job attachment passthrough evidence](adr/393-media-job-attachment-passthrough-evidence.md)

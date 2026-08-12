@@ -118,6 +118,20 @@ if ! skip_existing subtitles-mkv test-fixtures/derived/subtitles.mkv; then
   move_generated "${temp}" test-fixtures/derived/subtitles.mkv
 fi
 
+if ! skip_existing attachment-mkv test-fixtures/derived/attachment.mkv; then
+  printf 'Revaer generated attachment fixture\n' >"${tmpdir}/attachment-note.txt"
+  temp="test-fixtures/derived/attachment.tmp.$$.mkv"
+  rm -f "${temp}"
+  ffmpeg -hide_banner -v error -y \
+    -i "${source_fixture}" \
+    -map 0:v:0 -c:v copy -an -sn \
+    -attach "${tmpdir}/attachment-note.txt" \
+    -metadata:s:t mimetype=text/plain \
+    -metadata:s:t filename=attachment-note.txt \
+    "${temp}"
+  move_generated "${temp}" test-fixtures/derived/attachment.mkv
+fi
+
 if ! skip_existing video-only-mp4 test-fixtures/derived/video-only.mp4; then
   temp="$(mktemp "${tmpdir}/video-only.XXXXXX")"
   ffmpeg -hide_banner -v error -y -i "${source_fixture}" -map 0:v:0 -c:v copy -an -sn -f mp4 "${temp}"
