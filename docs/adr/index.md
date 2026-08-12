@@ -340,6 +340,8 @@
 -   [410](410-libtorrent-21-compatibility.md) – Libtorrent 2.1 compatibility foundation
 -   [411](411-untracked-generated-api-schema.md) – Untracked generated API schema
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
+-   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
 -   [462](462-pr88-shell-return.md) – PR 88 shell return correction
 -   [463](463-pr-78-sonar-complexity-correction.md) – PR 78 Sonar complexity correction
+-   [464](464-pr171-media-identity-error-coverage.md) – PR 171 media identity error coverage
