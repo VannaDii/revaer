@@ -1,0 +1,57 @@
+# Media watcher native-first fallback
+
+- Status: Accepted
+- Date: 2026-08-11
+- Context:
+  - Watcher-only media discovery needs a correctness fallback when the operating-system watcher cannot be created, cannot register a source root, or reports that its event stream is degraded.
+  - The earlier watcher deliverable registered native and polling watchers concurrently. That doubled recurring filesystem work during healthy operation and treated access-open and access-close events as content changes.
+  - Native backends can report overflow through `notify`'s rescan flag, uncertain event kinds, missing paths, or oversized path batches. Processing those events as ordinary paths can miss media or create unbounded queue pressure.
+- Decision:
+  - Register only the recommended native watcher during healthy operation.
+  - Activate one polling watcher for a profile only when native creation or registration fails, or after the native callback reports degradation. A degraded callback also requests an immediate debounced rescan so correctness does not wait for the next synchronization tick.
+  - Ignore every access event, including read, open, close, and imprecise access events, plus removal events.
+  - Forward create and modify events only when they contain at most 256 concrete paths. Convert overflow flags, uncertain event kinds, missing-path mutation events, and oversized path batches into one profile rescan signal.
+  - Coalesce profile rescan signals without extending the first deadline, remove redundant pending paths for that profile, and ignore new path candidates until the bounded rescan is flushed.
+  - Expand precise directory events through the existing sorted media-file discovery traversal.
+  - Alternatives considered:
+    - Run native and polling watchers concurrently: rejected because polling is unnecessary recurring work while native delivery is healthy.
+    - Treat write-open or write-close as mutation evidence: rejected because access events are noisy and create duplicate work before stable fingerprinting.
+    - Forward uncertain events as individual paths: rejected because overflow means the event stream cannot establish a complete path set.
+- Consequences:
+  - Healthy profiles use native event delivery without polling traversal overhead.
+  - Native setup failures and degraded streams retain discovery correctness through polling and a coalesced rescan.
+  - Access noise cannot reset debounce timers or enqueue redundant fingerprint work.
+  - A profile can have at most one pending uncertain-event rescan, and repeated uncertain events cannot postpone its original deadline.
+  - Polling remains active for the lifetime of a degraded registration; native recovery occurs on profile re-registration or process restart.
+- Follow-up:
+  - Keep native backend health and fallback activation visible in logs.
+  - Revisit fallback recovery only with measured evidence that automatic native re-registration is operationally necessary.
+
+## Task Record
+
+- Motivation:
+  - Reconstruct the watcher native-event deliverable on the rebuilt stack while resolving PR 134's fallback, noise-filtering, and overflow-coalescing feedback.
+- Design notes:
+  - The watcher adapter owns backend selection and converts backend-specific uncertainty into a backend-neutral rescan event.
+  - The discovery runtime owns profile-level coalescing because it already owns debounce deadlines, configured roots, readiness checks, and queueing.
+  - The 256-path event ceiling bounds work admitted from any single native callback without limiting a full correctness rescan.
+- Test coverage summary:
+  - Watcher tests prove healthy native-only registration, fallback activation after degradation, deterministic polling delivery, ignored access/removal events, bounded precise paths, and one rescan signal for uncertain events.
+  - Runtime tests prove directory expansion and non-starving profile-level rescan coalescing, alongside the existing durable-version and capability-readiness tests.
+  - `just lint` passed.
+  - The focused watcher suite passed 6 tests and the focused discovery-runtime suite passed 10 tests with warnings denied.
+  - `just ui-e2e` passed all 104 tests under Node 24.14.1 and npm 11.12.1 selected through NVM.
+  - `just ci` reached the full workspace test suite but remains blocked by two unchanged chapter-preservation tests in `media_job_runtime`; both expect timeline verification but the rebuilt baseline rejects preserved compiled chapters as a desired-policy mismatch before verification.
+- Observability updates:
+  - Native setup failure, native degradation, fallback activation, and polling errors have distinct profile-scoped log messages.
+  - Repeated errors from the same degraded callback are suppressed until the polling callback successfully handles another event.
+- Status-doc validation:
+  - Product status and operator documentation are unaffected. The ADR index and documentation summary include this consolidated task record.
+- Risk & rollback plan:
+  - A two-second polling fallback can add traversal load only after native failure or degradation. The rescan debounce and per-event path ceiling bound callback-driven work.
+  - Roll back this ADR and both watcher modules together. Rollback restores native-only behavior and can reintroduce missed events when the native backend is unavailable.
+- Dependency rationale:
+  - No dependency was added. The existing `notify` dependency supplies both recommended and polling watcher implementations plus explicit rescan flags.
+- Stale-policy check:
+  - Reviewed `AGENTS.md` and `.github/instructions/rust.instructions.md`.
+  - No policy drift, contradiction, or stale reference was found.

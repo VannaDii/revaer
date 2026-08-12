@@ -55,6 +55,7 @@ pub(crate) struct MediaDiscoveryRuntime {
     watch_events: UnboundedReceiver<MediaWatchEvent>,
     watcher_profiles: BTreeMap<Uuid, MediaProfileRow>,
     pending_watch_events: BTreeMap<(Uuid, PathBuf), Instant>,
+    pending_watch_rescans: BTreeMap<Uuid, Instant>,
 }
 
 impl MediaDiscoveryRuntime {
@@ -75,6 +76,7 @@ impl MediaDiscoveryRuntime {
             watch_events,
             watcher_profiles: BTreeMap::new(),
             pending_watch_events: BTreeMap::new(),
+            pending_watch_rescans: BTreeMap::new(),
         }
     }
 
@@ -329,23 +331,97 @@ impl MediaDiscoveryRuntime {
     }
 
     fn record_watch_event(&mut self, event: &MediaWatchEvent) {
-        let Some(profile) = self.watcher_profiles.get(&event.media_profile_public_id) else {
-            return;
-        };
-        let Some(profile_path) = rebase_watch_event_path(&event.path, &profile.source_root) else {
-            return;
-        };
-        if !is_media_file(&profile_path) {
+        match event {
+            MediaWatchEvent::Path {
+                media_profile_public_id,
+                path,
+            } => self.record_watch_path(*media_profile_public_id, path),
+            MediaWatchEvent::Rescan {
+                media_profile_public_id,
+            } => self.record_watch_rescan(*media_profile_public_id),
+        }
+    }
+
+    fn record_watch_path(&mut self, profile_id: Uuid, event_path: &Path) {
+        if self.pending_watch_rescans.contains_key(&profile_id) {
             return;
         }
+        let Some(profile) = self.watcher_profiles.get(&profile_id) else {
+            return;
+        };
+        let Some(profile_path) = rebase_watch_event_path(event_path, &profile.source_root) else {
+            return;
+        };
+        self.record_watch_profile_path(profile_id, &profile_path);
+    }
+
+    fn record_watch_profile_path(&mut self, profile_id: Uuid, profile_path: &Path) {
+        if profile_path.is_dir() {
+            match discover_media_source_paths_from_path(profile_path) {
+                Ok(paths) => {
+                    for path in paths {
+                        self.record_watch_media_path(profile_id, PathBuf::from(path));
+                    }
+                }
+                Err(error) => {
+                    warn!(
+                        path = %profile_path.display(),
+                        error = %error,
+                        "media watcher directory event scan failed"
+                    );
+                    self.telemetry
+                        .inc_media_discovery_candidate("watcher", "scan_failed");
+                }
+            }
+            return;
+        }
+        if is_media_file(profile_path) {
+            self.record_watch_media_path(profile_id, profile_path.to_path_buf());
+        }
+    }
+
+    fn record_watch_media_path(&mut self, profile_id: Uuid, profile_path: PathBuf) {
         self.pending_watch_events.insert(
-            (event.media_profile_public_id, profile_path),
+            (profile_id, profile_path),
             Instant::now() + WATCH_DEBOUNCE_INTERVAL,
         );
     }
 
+    fn record_watch_rescan(&mut self, profile_id: Uuid) {
+        if !self.watcher_profiles.contains_key(&profile_id) {
+            return;
+        }
+        self.pending_watch_events
+            .retain(|(pending_profile_id, _), _| *pending_profile_id != profile_id);
+        self.pending_watch_rescans
+            .entry(profile_id)
+            .or_insert_with(|| Instant::now() + WATCH_DEBOUNCE_INTERVAL);
+    }
+
     async fn flush_watch_events(&mut self) -> Result<(), MediaDiscoveryRuntimeError> {
         let now = Instant::now();
+        let due_rescans = self
+            .pending_watch_rescans
+            .iter()
+            .filter(|(_, deadline)| **deadline <= now)
+            .map(|(profile_id, _)| *profile_id)
+            .collect::<Vec<_>>();
+        for profile_id in due_rescans {
+            self.pending_watch_rescans.remove(&profile_id);
+            let Some(profile) = self.watcher_profiles.get(&profile_id).cloned() else {
+                continue;
+            };
+            if !self
+                .profile_ready_for_execution(&profile, "watcher")
+                .await?
+            {
+                continue;
+            }
+            let source_paths = discover_media_source_paths(&profile.source_root)?;
+            self.queue_source_paths(&profile, source_paths, "watcher")
+                .await?;
+        }
+
         let due = self
             .pending_watch_events
             .iter()
@@ -407,8 +483,14 @@ enum MediaDiscoveryRuntimeError {
 fn discover_media_source_paths(
     source_root: &str,
 ) -> Result<Vec<String>, MediaDiscoveryRuntimeError> {
+    discover_media_source_paths_from_path(Path::new(source_root))
+}
+
+fn discover_media_source_paths_from_path(
+    source_root: &Path,
+) -> Result<Vec<String>, MediaDiscoveryRuntimeError> {
     let mut paths = Vec::new();
-    visit_media_source_paths(Path::new(source_root), &mut paths)?;
+    visit_media_source_paths(source_root, &mut paths)?;
     paths.sort();
     Ok(paths)
 }
@@ -461,6 +543,7 @@ mod tests {
         MediaDiscoveryRuntime, discover_media_source_paths, fingerprint_media_file, is_media_file,
         rebase_watch_event_path,
     };
+    use crate::media_discovery_watcher::MediaWatchEvent;
     use crate::runtime_shutdown;
     use chrono::Utc;
     use revaer_data::DataError;
@@ -558,6 +641,85 @@ mod tests {
         assert!(is_media_file(Path::new("/media/movie.ts")));
         assert!(is_media_file(Path::new("/media/movie.m4a")));
         assert!(!is_media_file(Path::new("/media/movie.srt")));
+    }
+
+    #[tokio::test]
+    async fn directory_watch_event_expands_only_media_files() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let source_root = temp.path().join("source");
+        let nested = source_root.join("nested");
+        fs::create_dir_all(&nested)?;
+        fs::write(nested.join("movie.webm"), b"media")?;
+        fs::write(nested.join("notes.txt"), b"ignored")?;
+        let mut profile = media_profile(true, false, None);
+        profile.source_root = source_root.to_string_lossy().into_owned();
+        let profile_id = profile.media_profile_public_id;
+        let mut runtime = MediaDiscoveryRuntime::with_tick_interval(
+            closed_media_store(),
+            Metrics::new()?,
+            Duration::from_secs(1),
+        );
+        runtime.watcher_profiles.insert(profile_id, profile);
+
+        runtime.record_watch_event(&MediaWatchEvent::Path {
+            media_profile_public_id: profile_id,
+            path: nested.canonicalize()?,
+        });
+
+        assert!(
+            runtime
+                .pending_watch_events
+                .contains_key(&(profile_id, nested.join("movie.webm")))
+        );
+        assert!(
+            !runtime
+                .pending_watch_events
+                .contains_key(&(profile_id, nested.join("notes.txt")))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn uncertain_events_coalesce_into_one_non_starving_profile_rescan() -> anyhow::Result<()>
+    {
+        let temp = tempfile::tempdir()?;
+        let source_root = temp.path().join("source");
+        fs::create_dir_all(&source_root)?;
+        let media_path = source_root.join("movie.mkv");
+        fs::write(&media_path, b"media")?;
+        let mut profile = media_profile(true, false, None);
+        profile.source_root = source_root.to_string_lossy().into_owned();
+        let profile_id = profile.media_profile_public_id;
+        let mut runtime = MediaDiscoveryRuntime::with_tick_interval(
+            closed_media_store(),
+            Metrics::new()?,
+            Duration::from_secs(1),
+        );
+        runtime.watcher_profiles.insert(profile_id, profile);
+        runtime.record_watch_event(&MediaWatchEvent::Path {
+            media_profile_public_id: profile_id,
+            path: media_path.canonicalize()?,
+        });
+        assert_eq!(runtime.pending_watch_events.len(), 1);
+
+        let rescan = MediaWatchEvent::Rescan {
+            media_profile_public_id: profile_id,
+        };
+        runtime.record_watch_event(&rescan);
+        let first_deadline = runtime.pending_watch_rescans.get(&profile_id).copied();
+        runtime.record_watch_event(&rescan);
+        runtime.record_watch_event(&MediaWatchEvent::Path {
+            media_profile_public_id: profile_id,
+            path: media_path.canonicalize()?,
+        });
+
+        assert!(runtime.pending_watch_events.is_empty());
+        assert_eq!(runtime.pending_watch_rescans.len(), 1);
+        assert_eq!(
+            runtime.pending_watch_rescans.get(&profile_id).copied(),
+            first_deadline
+        );
+        Ok(())
     }
 
     #[test]

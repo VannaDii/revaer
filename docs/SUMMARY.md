@@ -421,6 +421,7 @@
     -   [413: PR 123 chapter idempotence and supply chain remediation](adr/413-pr-123-chapter-idempotence-and-supply-chain.md)
     -   [414: Sonar API verification retries](adr/414-sonar-api-verification-retries.md)
     -   [415: PR workflow dependency validation](adr/415-pr-workflow-dependency-validation.md)
+    -   [416: Media watcher native-first fallback](adr/416-media-watcher-native-first-fallback.md)
     -   [417: Cargo lock dependency integrity](adr/417-cargo-lock-dependency-integrity.md)
     -   [418: CI Postgres credential coherence](adr/418-ci-postgres-credential-coherence.md)
     -   [420: Media text input contract](adr/420-media-text-input-contract.md)
