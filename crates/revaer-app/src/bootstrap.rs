@@ -11,9 +11,10 @@ use crate::import_job_runtime::ImportJobRuntime;
 use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
 use crate::media::MediaService;
-use crate::media_discovery_runtime::MediaDiscoveryRuntime;
+use crate::media_discovery_runtime::{MediaDiscoveryRuntime, MediaDiscoveryTask};
 use crate::media_job_runtime::MediaJobRuntime;
 use crate::media_retention_runtime::MediaRetentionRuntime;
+use crate::media_workspace_retention::MediaWorkspaceRetentionService;
 use revaer_api::TorrentHandles;
 use revaer_api::app::media::{MediaCapabilityRefreshParams, MediaFacade};
 use revaer_config::{AppMode, ConfigService, ConfigSnapshot, DbSessionConfig};
@@ -340,31 +341,15 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
     let import_job_runtime_task =
         ImportJobRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
-    let media_discovery_runtime_task =
-        MediaDiscoveryRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
-            .spawn();
-    let media_job_runtime_task = MediaJobRuntime::new(
-        MediaStore::new(config.pool().clone()),
-        events.clone(),
-        telemetry.clone(),
-        media_workspace_root,
-    )
-    .spawn();
-    let media_retention_runtime_task =
-        MediaRetentionRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
-            .spawn();
+    let media_runtime_tasks =
+        spawn_media_runtime_tasks(&config, &events, &telemetry, media_workspace_root);
     info!(addr = %addr, "Launching API listener");
 
     let serve_result = api.serve(addr).await;
 
     stop_runtime_task(indexer_runtime_task, "indexer").await;
     stop_runtime_task(import_job_runtime_task, "import_job").await;
-    media_discovery_runtime_task.abort();
-    if let Err(err) = media_discovery_runtime_task.join().await {
-        warn!(error = %err, task = "media_discovery", "runtime task join failed");
-    }
-    stop_runtime_task(media_job_runtime_task, "media_job").await;
-    stop_runtime_task(media_retention_runtime_task, "media_retention").await;
+    stop_media_runtime_tasks(media_runtime_tasks).await;
 
     #[cfg(feature = "libtorrent")]
     {
@@ -388,6 +373,50 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     serve_result.map_err(|err| AppError::api_server("api_server.serve", err))?;
     info!("API server shutdown complete");
     Ok(())
+}
+
+struct MediaRuntimeTasks {
+    discovery: MediaDiscoveryTask,
+    job: tokio::task::JoinHandle<()>,
+    retention: tokio::task::JoinHandle<()>,
+}
+
+fn spawn_media_runtime_tasks(
+    config: &ConfigService,
+    events: &EventBus,
+    telemetry: &Metrics,
+    workspace_root: PathBuf,
+) -> MediaRuntimeTasks {
+    let store = MediaStore::new(config.pool().clone());
+    let discovery = MediaDiscoveryRuntime::new(store.clone(), telemetry.clone()).spawn();
+    let job = MediaJobRuntime::new(
+        store.clone(),
+        events.clone(),
+        telemetry.clone(),
+        workspace_root.clone(),
+    )
+    .spawn();
+    let workspace_retention = Arc::new(MediaWorkspaceRetentionService::new(
+        store.clone(),
+        telemetry.clone(),
+        workspace_root,
+    ));
+    let retention =
+        MediaRetentionRuntime::new(store, workspace_retention, telemetry.clone()).spawn();
+    MediaRuntimeTasks {
+        discovery,
+        job,
+        retention,
+    }
+}
+
+async fn stop_media_runtime_tasks(tasks: MediaRuntimeTasks) {
+    tasks.discovery.abort();
+    if let Err(err) = tasks.discovery.join().await {
+        warn!(error = %err, task = "media_discovery", "runtime task join failed");
+    }
+    stop_runtime_task(tasks.job, "media_job").await;
+    stop_runtime_task(tasks.retention, "media_retention").await;
 }
 
 async fn stop_runtime_task<T>(task: tokio::task::JoinHandle<T>, task_name: &'static str) {

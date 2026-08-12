@@ -25,14 +25,16 @@ use revaer_data::media::jobs::{
     MediaJobCompactAuditRow, MediaJobControlRow, MediaJobDesiredTargetStreamRow,
     MediaJobOperationRow, MediaJobPlanReasonRow, MediaJobRetentionRunRow, MediaJobRow,
     MediaJobTerminalOutboxRow, MediaJobVerificationCheckRow, MediaJobViolationRow,
-    MediaRecentJobRow, append_media_job_artifact, append_media_job_compact_audit,
+    MediaRecentJobRow, MediaWorkspaceRetentionSnapshotRow, append_media_job_artifact,
+    append_media_job_compact_audit,
     append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
     append_media_job_verification_check, append_media_job_violation, cancel_media_job,
     create_media_job, enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
     list_media_job_compact_audits, list_media_job_desired_target_streams,
     list_media_job_operations, list_media_job_plan_reasons,
     list_media_job_terminal_outbox_unpublished, list_media_job_verification_checks,
-    list_media_job_violations, list_media_jobs, list_recent_media_jobs, mark_media_job_completed,
+    list_media_job_violations, list_media_jobs, list_recent_media_jobs,
+    load_media_workspace_retention_snapshot, mark_media_job_completed,
     mark_media_job_terminal_outbox_published, media_job_worker_acknowledge_cancel,
     media_job_worker_claim_next, media_job_worker_commit_replacement_terminal,
     media_job_worker_complete, media_job_worker_heartbeat, media_job_worker_mark_status,
@@ -190,6 +192,17 @@ impl MediaStore {
         input: UpdateMediaJobRetentionPolicyInput,
     ) -> DataResult<MediaJobRetentionPolicyRow> {
         update_media_job_retention_policy(&self.pool, input).await
+    }
+
+    /// Read workspace-retention bounds and active job keys from one stored-procedure snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn load_workspace_retention_snapshot(
+        &self,
+    ) -> DataResult<Vec<MediaWorkspaceRetentionSnapshotRow>> {
+        load_media_workspace_retention_snapshot(&self.pool).await
     }
 
     /// Create a media job.
