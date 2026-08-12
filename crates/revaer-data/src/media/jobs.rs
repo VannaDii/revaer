@@ -1455,7 +1455,7 @@ mod tests {
     static TEST_FINGERPRINT_VERSION: AtomicI64 = AtomicI64::new(1);
 
     fn schema_text() -> &'static str {
-        include_str!("../../init/0001_init.sql")
+        include_str!("../../init.sql")
     }
 
     fn compact_sql(sql: &str) -> String {
@@ -1970,52 +1970,52 @@ mod tests {
     }
 
     #[test]
-    fn migration_guards_media_job_path_bounds_validation() {
-        let migration_text = schema_text();
+    fn schema_guards_media_job_path_bounds_validation() {
+        let schema_text = schema_text();
 
         assert!(
-            migration_text.contains("media_job_normalized_absolute_path_v1"),
-            "media job path normalization helper must be present in migrations"
+            schema_text.contains("media_job_normalized_absolute_path_v1"),
+            "media job path normalization helper must be present in the initializer"
         );
         assert!(
-            migration_text.contains("media_job_validate_path_within_root_v1"),
-            "media job path root-bound validator must be present in migrations"
+            schema_text.contains("media_job_validate_path_within_root_v1"),
+            "media job path root-bound validator must be present in the initializer"
         );
         assert!(
-            migration_text.contains("media_job_source_path_outside_profile_root"),
-            "source-path rejection detail must be present in migrations"
+            schema_text.contains("media_job_source_path_outside_profile_root"),
+            "source-path rejection detail must be present in the initializer"
         );
         assert!(
-            migration_text.contains("media_job_output_path_outside_profile_root"),
-            "output-path rejection detail must be present in migrations"
+            schema_text.contains("media_job_output_path_outside_profile_root"),
+            "output-path rejection detail must be present in the initializer"
         );
     }
 
     #[test]
-    fn migration_guards_bounded_recent_job_read_model() {
-        let migration = include_str!("../../init/0001_init.sql");
-        assert!(migration.contains("media_job_recent_page_v1"));
-        assert!(migration.contains("limit_input + 1"));
-        assert!(migration.contains("operation_count"));
-        assert!(migration.contains("compact_audit_count"));
-        assert!(migration.contains("media_desired_target_graph_page_v1"));
-        assert!(migration.contains("LIMIT 1025"));
+    fn schema_guards_bounded_recent_job_read_model() {
+        let schema = include_str!("../../init.sql");
+        assert!(schema.contains("media_job_recent_page_v1"));
+        assert!(schema.contains("limit_input + 1"));
+        assert!(schema.contains("operation_count"));
+        assert!(schema.contains("compact_audit_count"));
+        assert!(schema.contains("media_desired_target_graph_page_v1"));
+        assert!(schema.contains("LIMIT 1025"));
     }
 
     #[test]
-    fn migration_guards_media_job_fingerprint_requirement() {
-        let migration_text = schema_text();
+    fn schema_guards_media_job_fingerprint_requirement() {
+        let schema_text = schema_text();
 
         assert!(
-            migration_text.contains("media_discovery_source_fingerprint"),
-            "source fingerprint table must be present in migrations"
+            schema_text.contains("media_discovery_source_fingerprint"),
+            "source fingerprint table must be present in the initializer"
         );
         assert!(
-            migration_text.contains("media_job_source_fingerprint_required"),
+            schema_text.contains("media_job_source_fingerprint_required"),
             "direct job creation must require persisted source fingerprints"
         );
 
-        let latest_create = routine_definition(migration_text, "media_job_create_v1");
+        let latest_create = routine_definition(schema_text, "media_job_create_v1");
         assert!(
             latest_create.contains("media_discovery_source_fingerprint")
                 && latest_create.contains("media_job_source_fingerprint_required"),
@@ -2024,19 +2024,19 @@ mod tests {
     }
 
     #[test]
-    fn migration_guards_container_metadata_values_policy() {
-        let migration_text = schema_text();
-        let latest_create = routine_definition(migration_text, "media_desired_target_create_v3");
-        let compact_migration = compact_sql(migration_text);
+    fn schema_guards_container_metadata_values_policy() {
+        let schema_text = schema_text();
+        let latest_create = routine_definition(schema_text, "media_desired_target_create_v3");
+        let compact_schema = compact_sql(schema_text);
 
         assert!(
-            compact_migration.contains(
+            compact_schema.contains(
                 "media_desired_target_container_metadata_policy_known CHECK ((container_metadata_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text])))"
             ),
             "desired-target container metadata constraint must accept preserve, strip, and replace"
         );
         assert!(
-            compact_migration.contains("intent_desired_container_metadata_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text])"),
+            compact_schema.contains("intent_desired_container_metadata_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text])"),
             "media job desired-target completeness constraint must snapshot preserve, strip, and replace"
         );
         assert!(
@@ -2044,44 +2044,44 @@ mod tests {
             "latest desired-target create procedure must reject policies other than preserve, strip, or replace"
         );
         assert!(
-            migration_text.contains("media_desired_target_metadata_append_v1")
-                && migration_text.contains("media_job_desired_target_metadata_list_v1")
-                && migration_text.contains("media_desired_target_metadata_required"),
+            schema_text.contains("media_desired_target_metadata_append_v1")
+                && schema_text.contains("media_job_desired_target_metadata_list_v1")
+                && schema_text.contains("media_desired_target_metadata_required"),
             "metadata replacement policy must have append, snapshot list, and required-row guards"
         );
         assert!(
-            migration_text.contains("media_desired_target_metadata_policy_mismatch"),
+            schema_text.contains("media_desired_target_metadata_policy_mismatch"),
             "metadata rows must be rejected unless the selected container metadata policy is replace"
         );
         assert!(
-            migration_text.contains("media_desired_target_metadata_count_exceeded")
-                && migration_text.contains("media_desired_target_metadata_bytes_exceeded")
-                && migration_text.contains("octet_length(metadata_key_value) > 128")
-                && migration_text.contains("octet_length(metadata_value_value) > 4096")
-                && migration_text.contains("> 65536"),
+            schema_text.contains("media_desired_target_metadata_count_exceeded")
+                && schema_text.contains("media_desired_target_metadata_bytes_exceeded")
+                && schema_text.contains("octet_length(metadata_key_value) > 128")
+                && schema_text.contains("octet_length(metadata_value_value) > 4096")
+                && schema_text.contains("> 65536"),
             "metadata append must bound row count, per-row UTF-8 bytes, and aggregate UTF-8 bytes"
         );
         assert!(
-            compact_migration.contains("AND target.enabled FOR SHARE;")
-                && compact_migration.contains("ORDER BY metadata.metadata_key LIMIT 65;"),
+            compact_schema.contains("AND target.enabled FOR SHARE;")
+                && compact_schema.contains("ORDER BY metadata.metadata_key LIMIT 65;"),
             "job creation must lock the desired target while snapshotting and bound defensive metadata reads"
         );
     }
 
     #[test]
-    fn migration_guards_container_chapter_values_policy() {
-        let migration_text = schema_text();
-        let latest_create = routine_definition(migration_text, "media_desired_target_create_v3");
-        let compact_migration = compact_sql(migration_text);
+    fn schema_guards_container_chapter_values_policy() {
+        let schema_text = schema_text();
+        let latest_create = routine_definition(schema_text, "media_desired_target_create_v3");
+        let compact_schema = compact_sql(schema_text);
 
         assert!(
-            compact_migration.contains(
+            compact_schema.contains(
                 "media_desired_target_container_chapter_policy_known CHECK ((container_chapter_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text])))"
             ),
             "desired-target container chapter constraint must accept preserve, strip, and replace"
         );
         assert!(
-            compact_migration.contains("intent_desired_container_chapter_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text])"),
+            compact_schema.contains("intent_desired_container_chapter_policy = ANY (ARRAY['preserve'::text, 'strip'::text, 'replace'::text])"),
             "media job desired-target completeness constraint must snapshot chapter preserve, strip, and replace"
         );
         assert!(
@@ -2089,42 +2089,42 @@ mod tests {
             "latest desired-target create procedure must reject chapter policies other than preserve, strip, or replace"
         );
         assert!(
-            migration_text.contains("media_desired_target_chapter_append_v1")
-                && migration_text.contains("media_desired_target_chapter_metadata_append_v1")
-                && migration_text.contains("media_job_desired_target_chapter_list_v1")
-                && migration_text.contains("media_desired_target_chapters_required"),
+            schema_text.contains("media_desired_target_chapter_append_v1")
+                && schema_text.contains("media_desired_target_chapter_metadata_append_v1")
+                && schema_text.contains("media_job_desired_target_chapter_list_v1")
+                && schema_text.contains("media_desired_target_chapters_required"),
             "chapter replacement policy must have append, metadata, snapshot list, and required-row guards"
         );
         assert!(
-            migration_text.contains("media_desired_target_chapter_policy_mismatch"),
+            schema_text.contains("media_desired_target_chapter_policy_mismatch"),
             "chapter rows must be rejected unless the selected container chapter policy is replace"
         );
         assert!(
-            migration_text.contains("media_desired_target_chapter_count_exceeded")
-                && migration_text.contains("media_desired_target_chapter_metadata_count_exceeded")
-                && migration_text.contains("media_desired_target_chapter_metadata_bytes_exceeded")
-                && migration_text.contains("octet_length(metadata_key_value) > 128")
-                && migration_text.contains("octet_length(metadata_value_value) > 4096")
-                && migration_text.contains("> 65536"),
+            schema_text.contains("media_desired_target_chapter_count_exceeded")
+                && schema_text.contains("media_desired_target_chapter_metadata_count_exceeded")
+                && schema_text.contains("media_desired_target_chapter_metadata_bytes_exceeded")
+                && schema_text.contains("octet_length(metadata_key_value) > 128")
+                && schema_text.contains("octet_length(metadata_value_value) > 4096")
+                && schema_text.contains("> 65536"),
             "chapter append procedures must bound chapters, metadata rows, per-row UTF-8 bytes, and aggregate UTF-8 bytes"
         );
     }
 
     #[test]
-    fn migration_guards_container_attachment_policy() {
-        let migration_text = schema_text();
-        let latest_create = routine_definition(migration_text, "media_desired_target_create_v4");
-        let latest_job_create = routine_definition(migration_text, "media_job_create_v1");
-        let compact_migration = compact_sql(migration_text);
+    fn schema_guards_container_attachment_policy() {
+        let schema_text = schema_text();
+        let latest_create = routine_definition(schema_text, "media_desired_target_create_v4");
+        let latest_job_create = routine_definition(schema_text, "media_job_create_v1");
+        let compact_schema = compact_sql(schema_text);
 
         assert!(
-            compact_migration.contains(
+            compact_schema.contains(
                 "media_desired_target_container_attachment_policy_known CHECK ((container_attachment_policy = ANY (ARRAY['preserve'::text, 'strip'::text])))"
             ),
             "desired-target container attachment constraint must accept preserve and strip"
         );
         assert!(
-            compact_migration.contains("intent_desired_container_attachment_policy = ANY (ARRAY['preserve'::text, 'strip'::text])"),
+            compact_schema.contains("intent_desired_container_attachment_policy = ANY (ARRAY['preserve'::text, 'strip'::text])"),
             "media job desired-target completeness constraint must snapshot attachment preserve and strip"
         );
         assert!(
@@ -2132,8 +2132,8 @@ mod tests {
             "latest desired-target create procedure must reject attachment policies other than preserve or strip"
         );
         assert!(
-            migration_text.contains("media_desired_target_list_v4")
-                && migration_text.contains("media_job_worker_claim_next_v5"),
+            schema_text.contains("media_desired_target_list_v4")
+                && schema_text.contains("media_job_worker_claim_next_v5"),
             "attachment policy must have desired-target list and worker-claim procedures"
         );
         assert!(
@@ -2144,38 +2144,37 @@ mod tests {
     }
 
     #[test]
-    fn migration_guards_per_kind_unmatched_stream_actions() {
-        let migration_text = schema_text();
-        let compact_migration = compact_sql(migration_text);
+    fn schema_guards_per_kind_unmatched_stream_actions() {
+        let schema_text = schema_text();
+        let compact_schema = compact_sql(schema_text);
 
         assert!(
-            compact_migration.contains("unmatched_video_action text DEFAULT 'fail'::text NOT NULL")
-                && compact_migration
+            compact_schema.contains("unmatched_video_action text DEFAULT 'fail'::text NOT NULL")
+                && compact_schema
                     .contains("unmatched_audio_action text DEFAULT 'preserve'::text NOT NULL")
-                && compact_migration
+                && compact_schema
                     .contains("unmatched_subtitle_action text DEFAULT 'preserve'::text NOT NULL")
-                && compact_migration
+                && compact_schema
                     .contains("unmatched_attachment_action text DEFAULT 'preserve'::text NOT NULL")
-                && compact_migration
+                && compact_schema
                     .contains("unmatched_data_action text DEFAULT 'remove'::text NOT NULL"),
             "policy profile must expose spec-default per-kind unmatched actions"
         );
         assert!(
-            migration_text.contains("media_policy_profile_upsert_v2")
-                && migration_text.contains("media_policy_profile_list_v2")
-                && migration_text.contains("media_job_worker_claim_next_v6"),
+            schema_text.contains("media_policy_profile_upsert_v2")
+                && schema_text.contains("media_policy_profile_list_v2")
+                && schema_text.contains("media_job_worker_claim_next_v6"),
             "policy API and worker claim procedures must carry per-kind unmatched actions"
         );
         assert!(
-            compact_migration.contains("'safe_dry_run', 1, 'Safe dry run'")
-                && compact_migration
-                    .contains("'fail', 'preserve', 'preserve', 'preserve', 'remove'"),
+            compact_schema.contains("'safe_dry_run', 1, 'Safe dry run'")
+                && compact_schema.contains("'fail', 'preserve', 'preserve', 'preserve', 'remove'"),
             "canonical seed policy must use the spec fallback mix"
         );
         assert!(
-            migration_text.contains("media_job_unmatched_stream_actions_fill_v1")
-                && migration_text.contains("intent_unmatched_video_action")
-                && migration_text.contains("intent_unmatched_data_action"),
+            schema_text.contains("media_job_unmatched_stream_actions_fill_v1")
+                && schema_text.contains("intent_unmatched_video_action")
+                && schema_text.contains("intent_unmatched_data_action"),
             "job creation must snapshot per-kind unmatched actions at enqueue time"
         );
     }
@@ -3486,9 +3485,9 @@ mod tests {
     }
 
     #[test]
-    fn migration_guards_manual_job_source_identity_snapshot() {
-        let migration_text = schema_text();
-        let manual_v2 = routine_definition(migration_text, "media_manual_job_create_v2");
+    fn schema_guards_manual_job_source_identity_snapshot() {
+        let schema_text = schema_text();
+        let manual_v2 = routine_definition(schema_text, "media_manual_job_create_v2");
         assert!(manual_v2.contains("source_identity_input text"));
         assert!(manual_v2.contains("source_changed_ns_input bigint"));
         assert!(manual_v2.contains("source_identity = EXCLUDED.source_identity"));

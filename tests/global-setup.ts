@@ -671,12 +671,21 @@ async function createTempDb(adminUrl: string, prefix: string, root: string): Pro
     ['database', 'create', '--database-url', dbUrl],
     { cwd: root },
   );
-  runCommandWithEnv(
-    'sqlx',
-    ['migrate', 'run', '--database-url', dbUrl, '--source', 'crates/revaer-data/init'],
-    { DATABASE_URL: dbUrl },
-    { cwd: root },
-  );
+  try {
+    runCommandWithEnv(
+      'cargo',
+      ['run', '--quiet', '-p', 'revaer-data', '--bin', 'revaer-db-init'],
+      { DATABASE_URL: dbUrl },
+      { cwd: root },
+    );
+  } catch (error) {
+    try {
+      runCommand('sqlx', ['database', 'drop', '--database-url', dbUrl, '-y'], { cwd: root });
+    } catch (cleanupError) {
+      console.error('Failed to clean up temporary E2E database after initialization failure.', cleanupError);
+    }
+    throw error;
+  }
   return dbUrl;
 }
 

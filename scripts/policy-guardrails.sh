@@ -20,6 +20,7 @@ readonly exclude_globs=(
 
 failures=0
 rust_files=()
+readonly sqlx_migration_pattern="sqlx::migrat[e]|sqlx[[:space:]]+migrat[e]|_sqlx[_]migrations|\"migrat[e]\"|'migrat[e]'"
 
 load_rust_files() {
   rust_files=()
@@ -152,6 +153,20 @@ else
 fi
 report_matches "Sonar suppression comments are forbidden in authored files" "${matches}"
 
+if [[ "${#authored_files[@]}" -gt 0 ]]; then
+  if command -v rg >/dev/null 2>&1; then
+    matches="$(rg -n "${sqlx_migration_pattern}" "${authored_files[@]}" || true)"
+  else
+    matches="$(grep -nE "${sqlx_migration_pattern}" "${authored_files[@]}" || true)"
+  fi
+else
+  matches=""
+fi
+report_matches "pre-v1 SQLx migration bookkeeping is forbidden" "${matches}"
+
+matches="$(git ls-files ':(glob)crates/**/migrations/**' ':(glob)crates/**/migration/**' || true)"
+report_matches "pre-v1 versioned migration files are forbidden" "${matches}"
+
 matches="$(
   search_rust_matches 'todo!|unimplemented!' ''
 )"
@@ -169,7 +184,7 @@ matches="$(
   search_rust_matches '(^|[^[:alpha:]_])(INSERT[[:space:]]+INTO|UPDATE[[:space:]]+("[^"]+"|[[:alpha:]_][[:alnum:]_".]*)[[:space:]]+SET[[:space:]]+[^=[:space:]][^=]*=|DELETE[[:space:]]+FROM|CREATE[[:space:]]+TABLE|ALTER[[:space:]]+TABLE|DROP[[:space:]]+TABLE|TRUNCATE[[:space:]]+TABLE)([^[:alpha:]_]|$)' '-i' \
     'crates/**/src/**/tests.rs'
 )"
-report_matches "inline DDL/DML is forbidden in Rust; use migrations or stored procedures" "${matches}"
+report_matches "inline DDL/DML is forbidden in Rust; use the schema initializer, post-v1 migrations, or stored procedures" "${matches}"
 
 matches="$(
   search_rust_matches '(^|[^[:alnum:]_])catch_unwind([^[:alnum:]_]|$)' '' \

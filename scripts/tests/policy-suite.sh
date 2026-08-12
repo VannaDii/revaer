@@ -5,6 +5,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${repo_root}"
 
 bash scripts/policy-guardrails.sh
+bash scripts/tests/policy-patterns-test.sh
+bash scripts/tests/local-postgres-url-test.sh
 bash scripts/workflow-guardrails.sh
 bash scripts/tests/workflow-guardrails-test.sh
 bash scripts/tests/trivy-sarif-policy-test.sh

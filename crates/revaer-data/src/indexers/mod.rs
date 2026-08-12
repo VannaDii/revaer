@@ -96,7 +96,7 @@ pub(crate) async fn setup_indexer_db(label: &str) -> anyhow::Result<IndexerTestD
         .connect(postgres.connection_string())
         .await?;
 
-    sqlx::migrate!("./init").run(&pool).await?;
+    crate::config::initialize_schema(&pool).await?;
 
     let now = sqlx::query_scalar("SELECT now()").fetch_one(&pool).await?;
 

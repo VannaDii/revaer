@@ -24,7 +24,7 @@ impl RuntimeStore {
     ///
     /// # Errors
     ///
-    /// Returns an error if migrations fail or the database cannot be reached.
+    /// Returns an error if schema initialization fails or the database cannot be reached.
     pub async fn new(pool: PgPool) -> DataResult<Self> {
         Ok(Self {
             inner: DataRuntimeStore::new(pool).await?,

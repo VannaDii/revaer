@@ -168,6 +168,7 @@ class WorkflowStructureGuardrails
   EXTERNAL_ACTION = %r{\A[^./][^/]*/[^@]+@[0-9a-f]{40}\z}
   IMAGE_INVENTORY_STEP = "Inventory digest-qualified image"
   IMAGE_SCAN_STEP = "Scan digest-qualified image"
+  PR_WORKFLOW = "pr.yml"
   PERMISSION_VALUES = Set.new(%w[none read write]).freeze
   SONAR_KEYS = Set.new(%w[
     sonar.projectKey sonar.organization sonar.sourceEncoding
@@ -261,9 +262,26 @@ class WorkflowStructureGuardrails
         validate_steps(path, "job #{job_name}", job["steps"])
       end
     end
-    validate_pr_sonar_result_scope(path, jobs) if File.basename(path) == "pr.yml"
-    validate_sonar_scm_context(path, jobs) if %w[pr.yml sonar.yml].include?(File.basename(path))
+    validate_pr_sonar_result_scope(path, jobs) if File.basename(path) == PR_WORKFLOW
+    validate_sonar_scm_context(path, jobs) if [PR_WORKFLOW, "sonar.yml"].include?(File.basename(path))
+    validate_ui_e2e_targets(path, jobs) if [PR_WORKFLOW, "sonar.yml"].include?(File.basename(path))
     validate_build_images(path, jobs) if File.basename(path) == "build-images.yml"
+  end
+
+  def validate_ui_e2e_targets(path, jobs)
+    jobs.each do |job_name, job|
+      steps = job.is_a?(Hash) ? job["steps"] : nil
+      next unless steps.is_a?(Array)
+      next unless steps.any? { |step| step.is_a?(Hash) && step["run"]&.lines&.any? { |line| line.strip == "just ui-e2e" } }
+
+      setup = steps.find do |step|
+        step.is_a?(Hash) && step["uses"] == "./.github/actions/setup-revaer"
+      end
+      targets = setup.is_a?(Hash) ? setup.dig("with", "targets") : nil
+      next if targets.is_a?(String) && targets.split(",").map(&:strip).include?("wasm32-unknown-unknown")
+
+      @errors << "#{path}: job #{job_name} must install wasm32-unknown-unknown before just ui-e2e"
+    end
   end
 
   def validate_pr_sonar_result_scope(path, jobs)
@@ -279,7 +297,7 @@ class WorkflowStructureGuardrails
   end
 
   def validate_sonar_scm_context(path, jobs)
-    job_name = File.basename(path) == "pr.yml" ? "coverage" : "sonar"
+    job_name = File.basename(path) == PR_WORKFLOW ? "coverage" : "sonar"
     job = jobs[job_name]
     steps = job.is_a?(Hash) ? job["steps"] : nil
     preparation = steps&.find do |step|
@@ -300,6 +318,27 @@ class WorkflowStructureGuardrails
   def validate_action(path, document)
     runs = document["runs"]
     validate_steps(path, "composite action", runs["steps"]) if runs.is_a?(Hash) && runs["using"] == "composite"
+    validate_setup_action(path, document) if File.basename(File.dirname(path)) == "setup-revaer"
+  end
+
+  def validate_setup_action(path, document)
+    inputs = document["inputs"]
+    targets = inputs.is_a?(Hash) ? inputs["targets"] : nil
+    unless targets.is_a?(Hash) && targets["default"] == ""
+      @errors << "#{path}: shared setup action must expose an optional targets input"
+    end
+
+    steps = document.dig("runs", "steps")
+    toolchain = steps&.find { |step| step.is_a?(Hash) && step["name"] == "Install Rust toolchain" }
+    unless toolchain.is_a?(Hash) && toolchain.dig("with", "targets") == "${{ inputs.targets }}"
+      @errors << "#{path}: shared setup action must pass its targets input to the Rust toolchain action"
+    end
+
+    apt = steps&.find { |step| step.is_a?(Hash) && step["name"] == "Install apt packages" }
+    command = apt.is_a?(Hash) ? apt["run"] : nil
+    unless command.is_a?(String) && command.match?(/coverage\).*?\bffmpeg\b/m)
+      @errors << "#{path}: shared coverage package profile must install ffmpeg"
+    end
   end
 
   def validate_postgres_service(path, job_name, job)

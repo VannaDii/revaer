@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::config::run_migrations;
+use crate::config::initialize_schema;
 use revaer_test_support::postgres::start_postgres;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
@@ -773,7 +773,7 @@ async fn setup_db() -> anyhow::Result<TestDb> {
         .connect(postgres.connection_string())
         .await?;
 
-    run_migrations(&pool).await?;
+    initialize_schema(&pool).await?;
     Ok(TestDb {
         _db: postgres,
         pool,

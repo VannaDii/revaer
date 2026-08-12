@@ -924,30 +924,28 @@ mod tests {
     }
 
     #[test]
-    fn migration_guards_cross_profile_discovery_root_overlap() -> anyhow::Result<()> {
-        let init_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("init")
-            .join("0001_init.sql");
-        let migration_body = std::fs::read_to_string(init_path)?;
+    fn schema_guards_cross_profile_discovery_root_overlap() -> anyhow::Result<()> {
+        let init_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("init.sql");
+        let initializer_body = std::fs::read_to_string(init_path)?;
 
         assert!(
-            migration_body.contains("media_profile_discovery_root_overlap"),
-            "media profile migrations must reject discovery roots claimed by another active profile"
+            initializer_body.contains("media_profile_discovery_root_overlap"),
+            "media profile initializer must reject discovery roots claimed by another active profile"
         );
         assert!(
-            migration_body.contains(
+            initializer_body.contains(
                 "pg_advisory_xact_lock(hashtextextended('media_profile_all_root_overlap_v1', 0))"
             ),
             "media profile overlap validation must serialize all profile writes"
         );
         assert!(
-            migration_body.contains(
+            initializer_body.contains(
                 "pg_advisory_xact_lock(hashtextextended('media_profile_root_identity_v1', 0))"
             ),
             "media profile identity validation must serialize all root write paths"
         );
         assert!(
-            migration_body.contains("media_profile_all_root_overlap_trigger"),
+            initializer_body.contains("media_profile_all_root_overlap_trigger"),
             "media profile roots must be validated for every insert and update"
         );
         Ok(())

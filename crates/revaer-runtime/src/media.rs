@@ -927,12 +927,11 @@ mod tests {
             return Ok(None);
         };
 
-        let migrator = sqlx::migrate!("../revaer-data/init");
-        let mut migrated = false;
+        let mut initialized = false;
         for _ in 0..30 {
-            match migrator.run(&pool).await {
+            match revaer_data::config::initialize_schema(&pool).await {
                 Ok(()) => {
-                    migrated = true;
+                    initialized = true;
                     break;
                 }
                 Err(err) if has_transient_postgres_startup_error_text(&format!("{err:#}")) => {
@@ -941,8 +940,10 @@ mod tests {
                 Err(err) => return Err(err.into()),
             }
         }
-        if !migrated {
-            eprintln!("skipping media store test: transient Postgres migration recovery timeout");
+        if !initialized {
+            eprintln!(
+                "skipping media store test: transient Postgres initialization recovery timeout"
+            );
             return Ok(None);
         }
 

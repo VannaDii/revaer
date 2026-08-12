@@ -11,13 +11,7 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn runtime_store_persists_status_and_fs_jobs() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping runtime_store_persists_status_and_fs_jobs: {err}");
-            return Ok(());
-        }
-    };
+    let postgres = start_postgres()?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
@@ -94,13 +88,7 @@ async fn runtime_store_persists_status_and_fs_jobs() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn runtime_store_round_trips_files_and_failed_state() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping runtime_store_round_trips_files_and_failed_state: {err}");
-            return Ok(());
-        }
-    };
+    let postgres = start_postgres()?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
@@ -212,13 +200,7 @@ async fn runtime_store_rejects_non_utf8_fs_job_paths() -> anyhow::Result<()> {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
 
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping runtime_store_rejects_non_utf8_fs_job_paths: {err}");
-            return Ok(());
-        }
-    };
+    let postgres = start_postgres()?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())

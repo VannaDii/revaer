@@ -2,8 +2,9 @@
 
 use crate::error::{DataError, Result};
 use chrono::{DateTime, Utc};
+use sha2::{Digest, Sha256};
 use sqlx::postgres::PgRow;
-use sqlx::{Executor, FromRow, PgPool, Postgres, Row};
+use sqlx::{Executor, FromRow, PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 /// LISTEN/NOTIFY channel for configuration revision broadcasts.
@@ -13,16 +14,368 @@ fn map_query_err(operation: &'static str) -> impl FnOnce(sqlx::Error) -> DataErr
     move |source| DataError::QueryFailed { operation, source }
 }
 
-/// Initialize the database schema shared with runtime.
+const SCHEMA_BASELINE: &str = "v0-2026-08-12.2";
+const SCHEMA_INITIALIZATION_LOCK: i64 = 7_308_656_709_110_483_316;
+const SCHEMA_CATALOG_DIGEST_QUERY: &str = r"
+WITH app_relations AS (
+    SELECT relation.oid, namespace.nspname, relation.relname, relation.relkind
+    FROM pg_catalog.pg_class AS relation
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+    WHERE (
+        EXISTS (
+            SELECT 1
+            FROM public.revaer_schema_table AS registered
+            WHERE registered.schema_name = namespace.nspname
+              AND registered.table_name = relation.relname
+        )
+        OR (namespace.nspname = 'public' AND relation.relname IN ('revaer_schema_state', 'revaer_schema_table'))
+        OR (
+            relation.relkind = 'S'
+            AND EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_depend AS ownership
+                JOIN pg_catalog.pg_class AS owned_table ON owned_table.oid = ownership.refobjid
+                JOIN pg_catalog.pg_namespace AS owned_namespace ON owned_namespace.oid = owned_table.relnamespace
+                JOIN public.revaer_schema_table AS registered
+                  ON registered.schema_name = owned_namespace.nspname
+                 AND registered.table_name = owned_table.relname
+                WHERE ownership.classid = 'pg_catalog.pg_class'::regclass
+                  AND ownership.objid = relation.oid
+                  AND ownership.deptype IN ('a', 'i')
+            )
+        )
+    )
+      AND NOT EXISTS (
+          SELECT 1
+          FROM pg_catalog.pg_depend AS dependency
+          WHERE dependency.classid = 'pg_catalog.pg_class'::regclass
+            AND dependency.objid = relation.oid
+            AND dependency.deptype = 'e'
+      )
+), catalog_objects AS (
+    SELECT 'schema|' || namespace.nspname || '|' || pg_catalog.pg_get_userbyid(namespace.nspowner) ||
+           '|' || COALESCE(namespace.nspacl::text, '') AS definition
+    FROM pg_catalog.pg_namespace AS namespace
+    WHERE namespace.nspname IN ('revaer_config', 'revaer_runtime')
+    UNION ALL
+    SELECT 'extension|' || extension.extname || '|' || extension.extversion
+    FROM pg_catalog.pg_extension AS extension
+    WHERE extension.extname IN ('pgcrypto', 'unaccent')
+    UNION ALL
+    SELECT 'registry|' || registry.schema_name || '|' || registry.table_name
+    FROM public.revaer_schema_table AS registry
+    UNION ALL
+    SELECT 'relation|' || relation.nspname || '|' || relation.relname || '|' || relation.relkind::text ||
+           '|' || class_value.relpersistence::text || '|' || pg_catalog.pg_get_userbyid(class_value.relowner) ||
+           '|' || COALESCE(class_value.relacl::text, '') || '|' || class_value.relrowsecurity ||
+           '|' || class_value.relforcerowsecurity
+    FROM app_relations AS relation
+    JOIN pg_catalog.pg_class AS class_value ON class_value.oid = relation.oid
+    UNION ALL
+    SELECT 'column|' || relation.nspname || '|' || relation.relname || '|' || attribute.attnum ||
+           '|' || attribute.attname || '|' || pg_catalog.format_type(attribute.atttypid, attribute.atttypmod) ||
+           '|' || attribute.attnotnull || '|' || attribute.attidentity::text || '|' || attribute.attgenerated::text ||
+           '|' || COALESCE(collation_namespace.nspname || '.' || collation_value.collname, '') ||
+           '|' || COALESCE(pg_catalog.pg_get_expr(default_value.adbin, default_value.adrelid), '')
+    FROM app_relations AS relation
+    JOIN pg_catalog.pg_attribute AS attribute ON attribute.attrelid = relation.oid
+    LEFT JOIN pg_catalog.pg_attrdef AS default_value
+        ON default_value.adrelid = relation.oid AND default_value.adnum = attribute.attnum
+    LEFT JOIN pg_catalog.pg_collation AS collation_value
+        ON collation_value.oid = attribute.attcollation
+    LEFT JOIN pg_catalog.pg_namespace AS collation_namespace
+        ON collation_namespace.oid = collation_value.collnamespace
+    WHERE attribute.attnum > 0 AND NOT attribute.attisdropped
+    UNION ALL
+    SELECT 'constraint|' || namespace.nspname || '|' || constraint_value.conname || '|' ||
+           pg_catalog.pg_get_constraintdef(constraint_value.oid, true)
+    FROM pg_catalog.pg_constraint AS constraint_value
+    JOIN app_relations AS relation ON relation.oid = constraint_value.conrelid
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = constraint_value.connamespace
+    UNION ALL
+    SELECT 'index|' || relation.nspname || '|' || relation.relname || '|' ||
+           pg_catalog.pg_get_indexdef(index_value.indexrelid)
+    FROM pg_catalog.pg_index AS index_value
+    JOIN app_relations AS relation ON relation.oid = index_value.indrelid
+    UNION ALL
+    SELECT 'sequence|' || relation.nspname || '|' || relation.relname || '|' ||
+           sequence.seqstart || '|' || sequence.seqincrement || '|' || sequence.seqmax || '|' ||
+           sequence.seqmin || '|' || sequence.seqcache || '|' || sequence.seqcycle || '|' ||
+           COALESCE((
+               SELECT owned_namespace.nspname || '.' || owned_table.relname || '.' || ownership.refobjsubid
+               FROM pg_catalog.pg_depend AS ownership
+               JOIN pg_catalog.pg_class AS owned_table ON owned_table.oid = ownership.refobjid
+               JOIN pg_catalog.pg_namespace AS owned_namespace ON owned_namespace.oid = owned_table.relnamespace
+               WHERE ownership.classid = 'pg_catalog.pg_class'::regclass
+                 AND ownership.objid = relation.oid
+                 AND ownership.deptype IN ('a', 'i')
+               ORDER BY ownership.refobjid, ownership.refobjsubid
+               LIMIT 1
+           ), '')
+    FROM pg_catalog.pg_sequence AS sequence
+    JOIN app_relations AS relation ON relation.oid = sequence.seqrelid
+    UNION ALL
+    SELECT 'routine|' || namespace.nspname || '|' || procedure.proname || '|' ||
+           pg_catalog.pg_get_function_identity_arguments(procedure.oid) || '|' ||
+           pg_catalog.pg_get_functiondef(procedure.oid) || '|' ||
+           pg_catalog.pg_get_userbyid(procedure.proowner) || '|' ||
+           COALESCE(procedure.proacl::text, '') || '|' || procedure.prosecdef || '|' ||
+           procedure.proleakproof || '|' || procedure.provolatile::text || '|' ||
+           procedure.proparallel::text
+    FROM pg_catalog.pg_proc AS procedure
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname IN ('public', 'revaer_config', 'revaer_runtime')
+      AND NOT EXISTS (
+          SELECT 1
+          FROM pg_catalog.pg_depend AS dependency
+          WHERE dependency.classid = 'pg_catalog.pg_proc'::regclass
+            AND dependency.objid = procedure.oid
+            AND dependency.deptype = 'e'
+      )
+    UNION ALL
+    SELECT 'cast|' || pg_catalog.format_type(cast_value.castsource, NULL) || '|' ||
+           pg_catalog.format_type(cast_value.casttarget, NULL) || '|' || cast_value.castcontext::text ||
+           '|' || cast_value.castmethod::text || '|' || COALESCE((
+               SELECT function_namespace.nspname || '.' || function_value.proname || '(' ||
+                      pg_catalog.pg_get_function_identity_arguments(function_value.oid) || ')'
+               FROM pg_catalog.pg_proc AS function_value
+               JOIN pg_catalog.pg_namespace AS function_namespace
+                 ON function_namespace.oid = function_value.pronamespace
+               WHERE function_value.oid = cast_value.castfunc
+           ), '')
+    FROM pg_catalog.pg_cast AS cast_value
+    JOIN pg_catalog.pg_type AS source_type ON source_type.oid = cast_value.castsource
+    JOIN pg_catalog.pg_namespace AS source_namespace ON source_namespace.oid = source_type.typnamespace
+    JOIN pg_catalog.pg_type AS target_type ON target_type.oid = cast_value.casttarget
+    JOIN pg_catalog.pg_namespace AS target_namespace ON target_namespace.oid = target_type.typnamespace
+    WHERE source_namespace.nspname IN ('public', 'revaer_config', 'revaer_runtime')
+       OR target_namespace.nspname IN ('public', 'revaer_config', 'revaer_runtime')
+    UNION ALL
+    SELECT 'trigger|' || relation.nspname || '|' || relation.relname || '|' ||
+           trigger_value.tgenabled::text || '|' || pg_catalog.pg_get_triggerdef(trigger_value.oid, true)
+    FROM pg_catalog.pg_trigger AS trigger_value
+    JOIN app_relations AS relation ON relation.oid = trigger_value.tgrelid
+    WHERE NOT trigger_value.tgisinternal
+    UNION ALL
+    SELECT 'policy|' || namespace.nspname || '|' || relation.relname || '|' || policy.polname ||
+           '|' || policy.polcmd::text || '|' || policy.polpermissive ||
+           '|' || COALESCE(pg_catalog.pg_get_expr(policy.polqual, policy.polrelid), '') ||
+           '|' || COALESCE(pg_catalog.pg_get_expr(policy.polwithcheck, policy.polrelid), '')
+    FROM pg_catalog.pg_policy AS policy
+    JOIN app_relations AS app_relation ON app_relation.oid = policy.polrelid
+    JOIN pg_catalog.pg_class AS relation ON relation.oid = app_relation.oid
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname IN ('public', 'revaer_config', 'revaer_runtime')
+    UNION ALL
+    SELECT 'enum|' || namespace.nspname || '|' || type_value.typname || '|' ||
+           enum_value.enumsortorder || '|' || enum_value.enumlabel || '|' ||
+           pg_catalog.pg_get_userbyid(type_value.typowner) || '|' || COALESCE(type_value.typacl::text, '')
+    FROM pg_catalog.pg_type AS type_value
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = type_value.typnamespace
+    JOIN pg_catalog.pg_enum AS enum_value ON enum_value.enumtypid = type_value.oid
+    WHERE namespace.nspname IN ('public', 'revaer_config', 'revaer_runtime')
+    UNION ALL
+    SELECT 'composite|' || namespace.nspname || '|' || type_value.typname || '|' ||
+           attribute.attnum || '|' || attribute.attname || '|' ||
+           pg_catalog.format_type(attribute.atttypid, attribute.atttypmod) || '|' ||
+           attribute.attnotnull || '|' || COALESCE(collation_namespace.nspname || '.' || collation_value.collname, '') ||
+           '|' || pg_catalog.pg_get_userbyid(type_value.typowner) || '|' || COALESCE(type_value.typacl::text, '')
+    FROM pg_catalog.pg_type AS type_value
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = type_value.typnamespace
+    JOIN pg_catalog.pg_class AS composite_relation
+      ON composite_relation.oid = type_value.typrelid AND composite_relation.relkind = 'c'
+    JOIN pg_catalog.pg_attribute AS attribute
+      ON attribute.attrelid = composite_relation.oid
+     AND attribute.attnum > 0
+     AND NOT attribute.attisdropped
+    LEFT JOIN pg_catalog.pg_collation AS collation_value
+      ON collation_value.oid = attribute.attcollation
+    LEFT JOIN pg_catalog.pg_namespace AS collation_namespace
+      ON collation_namespace.oid = collation_value.collnamespace
+    WHERE namespace.nspname IN ('public', 'revaer_config', 'revaer_runtime')
+)
+SELECT encode(public.digest(COALESCE(string_agg(definition, E'\n' ORDER BY definition), ''), 'sha256'), 'hex')
+FROM catalog_objects
+";
+const HEX: &[u8; 16] = b"0123456789abcdef";
+const SCHEMA_REGISTRY_DIGEST_QUERY: &str = "SELECT encode(public.digest(COALESCE(string_agg(schema_name || '.' || table_name, E'\\n' ORDER BY schema_name, table_name), ''), 'sha256'), 'hex') FROM public.revaer_schema_table";
+
+fn schema_source_digest() -> String {
+    let digest = Sha256::digest(include_bytes!("../init.sql"));
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
+async fn schema_catalog_digest<'e, E>(executor: E) -> std::result::Result<String, sqlx::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query_scalar(SCHEMA_CATALOG_DIGEST_QUERY)
+        .fetch_one(executor)
+        .await
+}
+
+async fn schema_registry_digest<'e, E>(executor: E) -> std::result::Result<String, sqlx::Error>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query_scalar(SCHEMA_REGISTRY_DIGEST_QUERY)
+        .fetch_one(executor)
+        .await
+}
+
+async fn validate_existing_schema(transaction: &mut Transaction<'_, Postgres>) -> Result<()> {
+    let marker: Option<(String, String, String, String)> = sqlx::query_as(
+        "SELECT baseline, source_digest, catalog_digest, registry_digest FROM public.revaer_schema_state",
+    )
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(|source| DataError::InitializationFailed { source })?;
+    let Some((baseline, source_digest, expected_catalog_digest, expected_registry_digest)) = marker
+    else {
+        return Err(DataError::SchemaBaselineMismatch { baseline: None });
+    };
+    if baseline != SCHEMA_BASELINE {
+        return Err(DataError::SchemaBaselineMismatch {
+            baseline: Some(baseline),
+        });
+    }
+    if source_digest != schema_source_digest() {
+        return Err(DataError::SchemaSourceMismatch);
+    }
+    let actual_registry_digest = schema_registry_digest(&mut **transaction)
+        .await
+        .map_err(|source| DataError::InitializationFailed { source })?;
+    if actual_registry_digest != expected_registry_digest {
+        return Err(DataError::SchemaCatalogMismatch);
+    }
+    let schema_complete: bool = sqlx::query_scalar(
+        "SELECT to_regnamespace('revaer_config') IS NOT NULL \
+             AND to_regnamespace('revaer_runtime') IS NOT NULL \
+             AND to_regclass('public.app_profile') IS NOT NULL \
+             AND to_regclass('public.media_job') IS NOT NULL \
+             AND to_regclass('public.revaer_schema_table') IS NOT NULL \
+             AND to_regprocedure('revaer_config.fetch_app_profile_row(uuid)') IS NOT NULL \
+             AND to_regprocedure('public.media_job_worker_claim_next_v8()') IS NOT NULL",
+    )
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(|source| DataError::InitializationFailed { source })?;
+    if !schema_complete {
+        return Err(DataError::SchemaBaselineIncomplete);
+    }
+    let actual_catalog_digest = schema_catalog_digest(&mut **transaction)
+        .await
+        .map_err(|source| DataError::InitializationFailed { source })?;
+    if actual_catalog_digest != expected_catalog_digest {
+        return Err(DataError::SchemaCatalogMismatch);
+    }
+    Ok(())
+}
+
+/// Initialize the unreleased v0 database schema shared with runtime.
 ///
 /// # Errors
 ///
-/// Returns an error when schema initialization fails.
-pub async fn run_migrations(pool: &PgPool) -> Result<()> {
-    sqlx::migrate!("./init")
-        .run(pool)
+/// Returns an error when initialization fails, the database contains a partial
+/// schema, or its baseline marker is not the supported v0 baseline.
+pub async fn initialize_schema(pool: &PgPool) -> Result<()> {
+    let mut transaction = pool
+        .begin()
         .await
-        .map_err(|source| DataError::MigrationFailed { source })?;
+        .map_err(|source| DataError::InitializationFailed { source })?;
+    sqlx::query("SET LOCAL lock_timeout = '10s'")
+        .execute(&mut *transaction)
+        .await
+        .map_err(|source| DataError::InitializationFailed { source })?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(SCHEMA_INITIALIZATION_LOCK)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|source| DataError::InitializationFailed { source })?;
+
+    let marker_exists: bool =
+        sqlx::query_scalar("SELECT to_regclass('public.revaer_schema_state') IS NOT NULL")
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(|source| DataError::InitializationFailed { source })?;
+    if marker_exists {
+        validate_existing_schema(&mut transaction).await?;
+        transaction
+            .commit()
+            .await
+            .map_err(|source| DataError::InitializationFailed { source })?;
+        return Ok(());
+    }
+
+    let partial_schema: bool = sqlx::query_scalar(
+        "SELECT to_regnamespace('revaer_config') IS NOT NULL \
+             OR to_regnamespace('revaer_runtime') IS NOT NULL \
+             OR EXISTS ( \
+                 SELECT 1 FROM pg_catalog.pg_class AS relation \
+                 JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace \
+                 WHERE namespace.nspname = 'public' \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM pg_catalog.pg_depend AS dependency \
+                       WHERE dependency.classid = 'pg_catalog.pg_class'::regclass \
+                         AND dependency.objid = relation.oid AND dependency.deptype = 'e' \
+                   ) \
+             ) \
+             OR EXISTS ( \
+                 SELECT 1 FROM pg_catalog.pg_proc AS procedure \
+                 JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = procedure.pronamespace \
+                 WHERE namespace.nspname = 'public' \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM pg_catalog.pg_depend AS dependency \
+                       WHERE dependency.classid = 'pg_catalog.pg_proc'::regclass \
+                         AND dependency.objid = procedure.oid AND dependency.deptype = 'e' \
+                   ) \
+             ) \
+             OR EXISTS ( \
+                 SELECT 1 FROM pg_catalog.pg_type AS type_value \
+                 JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = type_value.typnamespace \
+                 WHERE namespace.nspname = 'public' AND type_value.typtype IN ('d', 'e', 'r', 'm') \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM pg_catalog.pg_depend AS dependency \
+                       WHERE dependency.classid = 'pg_catalog.pg_type'::regclass \
+                         AND dependency.objid = type_value.oid AND dependency.deptype = 'e' \
+                   ) \
+             )",
+    )
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(|source| DataError::InitializationFailed { source })?;
+    if partial_schema {
+        return Err(DataError::SchemaBaselineMissing);
+    }
+
+    sqlx::raw_sql(include_str!("../init.sql"))
+        .execute(&mut *transaction)
+        .await
+        .map_err(|source| DataError::InitializationFailed { source })?;
+    let source_digest = schema_source_digest();
+    let catalog_digest = schema_catalog_digest(&mut *transaction)
+        .await
+        .map_err(|source| DataError::InitializationFailed { source })?;
+    let registry_digest = schema_registry_digest(&mut *transaction)
+        .await
+        .map_err(|source| DataError::InitializationFailed { source })?;
+    sqlx::query("SELECT public.revaer_schema_mark_initialized($1, $2, $3, $4)")
+        .bind(SCHEMA_BASELINE)
+        .bind(source_digest)
+        .bind(catalog_digest)
+        .bind(registry_digest)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|source| DataError::InitializationFailed { source })?;
+    transaction
+        .commit()
+        .await
+        .map_err(|source| DataError::InitializationFailed { source })?;
     Ok(())
 }
 
@@ -2152,5 +2505,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "../tests/unit/config_src_tests.rs"]
+#[path = "config/tests.rs"]
 mod tests;
