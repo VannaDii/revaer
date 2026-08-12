@@ -365,6 +365,7 @@
     -   [431: Lazy media job diagnostics UI](adr/431-lazy-media-job-diagnostics-ui.md)
     -   [433: Media API source service](adr/433-media-api-source-service.md)
     -   [434: Configuration RNG cleanup](adr/434-config-rng-cleanup.md)
+    -   [436: App OpenAPI media contract](adr/436-app-openapi-media-contract.md)
     -   [458: Media data module boundary integration correction](adr/458-media-data-module-boundary.md)
     -   [462: PR 88 shell return correction](adr/462-pr88-shell-return.md)
     -   [463: PR 78 Sonar complexity correction](adr/463-pr-78-sonar-complexity-correction.md)
