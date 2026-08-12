@@ -1,0 +1,52 @@
+# Media job data passthrough evidence
+
+- Status: Accepted
+- Date: 2026-08-02
+- Context:
+  - ADR 370 allowed exact passthrough for inspected opaque data streams when another supported media change requires FFmpeg materialization.
+  - ADR 370 proved stored job snapshot reconstruction and lower-level command construction, but the queued worker did not yet prove data passthrough through inspection, command construction, candidate verification, final verification, and source replacement.
+  - Authored data-stream creation and rewrite remain unsupported because the desired-target schema still does not model muxer-specific data payload semantics, rewrite rules, or verification beyond exact source retention.
+- Decision:
+  - Add worker-level evidence for a queued non-dry-run job whose persisted desired target preserves unmatched data streams.
+  - Keep the desired target authored-stream model unchanged: explicit data target rows still fail closed until a complete authored data contract exists.
+  - Alternatives considered:
+    - Treat snapshot and command-builder coverage as sufficient: rejected because it does not prove the production worker path agrees across job snapshot loading, desired graph compilation, FFmpeg argv, candidate verification, final verification, and replacement.
+    - Add authored data rows now: rejected because it would require a schema, API, YAML, runtime, fixture, and verifier contract outside this evidence slice.
+- Consequences:
+  - Positive outcomes:
+    - The worker now proves exact inspected data-stream passthrough through the same queued-job path used for destructive replacement.
+    - Attachment and data preservation both have queued-worker evidence.
+  - Risks or trade-offs:
+    - This is still exact source passthrough only; arbitrary data-stream creation, payload replacement, muxer-specific transformation, or metadata rewrite remains fail-closed.
+- Follow-up:
+  - Add first-class authored data-stream semantics before accepting data target rows that differ from inspected source streams.
+
+## Task Record
+
+- Motivation:
+  - Close the evidence gap between low-level exact data passthrough support and production worker behavior.
+- Design notes:
+  - Added a test-only inspector that reports a source graph containing a video stream plus an opaque data stream, then reports candidate and final output graphs containing the transcoded video stream plus the same data stream.
+  - The test uses a dedicated persisted HEVC desired target and a preserve-data policy so the default safe dry-run policy continues removing unmatched data.
+  - The worker assertion verifies FFmpeg maps both `0:0` and `0:1`, copies the data output stream, replaces the source bytes, and records passing candidate and final desired-graph checks.
+- Test coverage summary:
+  - Added `media_job_runtime_preserves_unmatched_data_when_policy_preserves`.
+  - Validation run:
+    - `cargo test -p revaer-app media_job_runtime_preserves_unmatched_data_when_policy_preserves --all-features -- --nocapture`
+    - `DATABASE_URL="$(bash scripts/local-postgres-url.sh postgres)" REVAER_TEST_DATABASE_URL="$(bash scripts/local-postgres-url.sh postgres)" cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --lib --all-features -- --nocapture`
+    - `just fmt`
+    - `cargo clippy -p revaer-app --lib --all-features -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+    - `just ci`
+    - `just ui-e2e`
+    - `bash scripts/with-node.sh node -v` reported `v24.14.1`; `bash scripts/with-node.sh npm -v` reported `11.12.1`, and the Node-backed `just ci` npm audits plus `just ui-e2e` ran through the NVM-aware wrapper.
+- Observability updates:
+  - No runtime logs, metrics, tracing, or events changed. Data preservation continues to surface through existing FFmpeg command evidence and candidate/final graph verification checks.
+- Status-doc validation:
+  - Re-checked `MEDIA_TRANSCODING.md`, ADR 318, and ADR 370. The service remains explicitly incomplete for authored attachment/data creation or rewrite and broader technical-property contracts.
+- Risk & rollback plan:
+  - Risk is limited to test coverage. Roll back by removing the new inspector/test and this ADR entry.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found.

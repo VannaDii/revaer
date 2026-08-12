@@ -387,6 +387,10 @@
 -   [377](377-media-manual-operator-loop.md) – Media manual operator loop
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
+-   [391](391-media-job-chapter-replacement-evidence.md) – Media job chapter replacement evidence
+-   [392](392-media-job-attachment-strip-evidence.md) – Media job attachment strip evidence
+-   [393](393-media-job-attachment-passthrough-evidence.md) – Media job attachment passthrough evidence
+-   [394](394-media-job-data-passthrough-evidence.md) – Media job data passthrough evidence
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
 -   [407](407-database-backed-coverage-execution.md) – Database-backed coverage execution
 -   [409](409-portable-helm-annotation-rendering.md) – Portable Helm annotation rendering
@@ -394,6 +398,7 @@
 -   [411](411-untracked-generated-api-schema.md) – Untracked generated API schema
 -   [412](412-core-planner-review-repair.md) – Core planner review repair
 -   [413](413-pr-123-chapter-idempotence-and-supply-chain.md) – PR 123 chapter idempotence and supply chain remediation
+-   [414](414-sonar-api-verification-retries.md) – Sonar API verification retries
 -   [417](417-cargo-lock-dependency-integrity.md) – Cargo lock dependency integrity
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation

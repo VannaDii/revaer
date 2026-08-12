@@ -1,0 +1,55 @@
+# Media Job Attachment Passthrough Evidence
+
+- Status: Accepted
+- Date: 2026-08-02
+- Context:
+  - ADR 369 allowed exact passthrough for inspected attachment streams when another supported media change requires FFmpeg materialization.
+  - ADR 392 proved target-level `container_attachment_policy: strip` at the queued worker boundary, but exact attachment preservation still relied on lower-level command-builder evidence.
+  - The first-release media contract requires attachments to be preserved unless an explicit target policy strips them or an unmatched-stream policy fails the job.
+- Decision:
+  - Add worker-level evidence for a queued non-dry-run job whose persisted desired target preserves container attachments and whose source inspection includes a Matroska font attachment.
+  - Keep the desired target authored-stream model unchanged: target rows still cannot create, rewrite, or mutate attachments because there is no payload, filename, MIME type, or verification contract for authored attachment rows.
+  - Alternatives considered:
+    - Treat command-builder coverage as sufficient: rejected because it does not prove job snapshot loading, target compilation, candidate verification, final verification, and replacement agree on the same attachment graph.
+    - Add authored attachment rows now: rejected because it would require a schema, API, YAML, execution, and verification contract outside this evidence slice.
+- Consequences:
+  - Positive outcomes:
+    - The worker now proves exact inspected attachment passthrough through the same queued-job path used for destructive replacement.
+    - Attachment stripping and attachment preservation are both covered at the worker boundary.
+  - Risks or trade-offs:
+    - This is still exact source passthrough only; arbitrary attachment creation, payload replacement, or attachment metadata rewrite remains fail-closed.
+- Follow-up:
+  - Add first-class authored attachment payload and verification support before accepting attachment target rows that differ from inspected source attachments.
+
+## Task Record
+
+- Motivation:
+  - Close the remaining evidence gap between low-level attachment passthrough command construction and production worker behavior.
+- Design notes:
+  - Added a test-only inspector that reports a source graph containing a video stream plus an attachment stream, then reports candidate and final output graphs containing the transcoded video stream plus the same attachment stream.
+  - The test uses the existing persisted HEVC desired target with default `container_attachment_policy: preserve`; unmatched attachment preservation comes from the queued profile snapshot.
+  - The worker assertion verifies FFmpeg maps both `0:0` and `0:1`, copies the attachment output stream, replaces the source bytes, and records passing candidate and final desired-graph checks.
+- Test coverage summary:
+  - Added `media_job_runtime_preserves_unmatched_attachments_when_policy_preserves`.
+  - Validation run:
+    - `cargo test -p revaer-app media_job_runtime_preserves_unmatched_attachments_when_policy_preserves --all-features -- --nocapture`
+    - `cargo test -p revaer-app media_job_runtime_strips_container_attachments_when_policy_selects_strip --all-features -- --nocapture`
+    - `just fmt`
+    - `git diff --check`
+    - `sonar analyze secrets crates/revaer-app/src/media_job_runtime.rs docs/SUMMARY.md docs/adr/318-media-transcoding-foundation.md docs/adr/index.md docs/adr/393-media-job-attachment-passthrough-evidence.md`
+    - `sonar list issues --project VannaDii_Revaer --statuses OPEN,CONFIRMED --format table`
+    - `just ci`
+    - `just ui-e2e`
+    - `just clean-test-fixtures`
+  - Sonar Agentic Analysis was attempted for every changed file with `sonar verify --file ... --project VannaDii_Revaer`, but the organization rejected the endpoint with HTTP 403 because Agentic Analysis is not enabled. Local `sonar-scanner` was also attempted, but this environment has no `SONAR_TOKEN`, so it could not submit analysis.
+- Observability updates:
+  - No new metrics, logs, or event kinds were added. Attachment preservation continues to be reflected in existing FFmpeg command evidence and candidate/final graph verification checks.
+- Status-doc validation:
+  - Re-checked `MEDIA_TRANSCODING.md`, ADR 318, ADR 369, and ADR 370. The service remains explicitly incomplete for authored attachment/data creation or rewrite.
+- Risk & rollback plan:
+  - Risk is limited to test coverage. Roll back by removing the new inspector/test and this ADR entry.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found.
