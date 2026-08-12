@@ -37,10 +37,87 @@ pub const MAX_CONTAINER_CHAPTERS: usize = 1_024;
 pub const MAX_CONTAINER_CHAPTER_METADATA_ENTRIES: usize = 64;
 /// Maximum aggregate chapter metadata UTF-8 bytes across one timeline.
 pub const MAX_CONTAINER_CHAPTER_METADATA_TOTAL_BYTES: usize = 65_536;
+/// Maximum accepted width or height for one desired video stream.
+pub const MAX_VIDEO_DIMENSION_PX: u32 = 16_384;
+/// Maximum accepted pixel area for one desired video frame.
+pub const MAX_VIDEO_FRAME_AREA_PX: u64 = 134_217_728;
+/// Maximum accepted desired average video bitrate.
+pub const MAX_VIDEO_BITRATE_BPS: u32 = 1_000_000_000;
+/// Maximum accepted average video frame rate.
+pub const MAX_VIDEO_FRAME_RATE: u64 = 240;
+/// Maximum numerator or denominator accepted in an authored frame-rate fraction.
+pub const MAX_VIDEO_FRAME_RATE_TERM: u64 = 1_000_000;
 
 /// Validated normalized ISO-639-3 language token used by desired targets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LanguageToken(String);
+
+/// Positive reduced rational used for exact video frame-rate comparison.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoFrameRate {
+    numerator: u64,
+    denominator: u64,
+}
+
+impl VideoFrameRate {
+    /// Parse a positive integer or fraction into checked reduced form.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        let value = value.trim();
+        if value.is_empty() {
+            return None;
+        }
+        let mut terms = value.split('/');
+        let numerator_text = terms.next()?;
+        let denominator_text = terms.next().unwrap_or("1");
+        if terms.next().is_some()
+            || !positive_integer_text(numerator_text)
+            || !positive_integer_text(denominator_text)
+        {
+            return None;
+        }
+        let numerator = numerator_text.parse::<u64>().ok()?;
+        let denominator = denominator_text.parse::<u64>().ok()?;
+        if numerator > MAX_VIDEO_FRAME_RATE_TERM
+            || denominator > MAX_VIDEO_FRAME_RATE_TERM
+            || u128::from(numerator) > u128::from(MAX_VIDEO_FRAME_RATE) * u128::from(denominator)
+        {
+            return None;
+        }
+        let divisor = greatest_common_divisor(numerator, denominator);
+        Some(Self {
+            numerator: numerator / divisor,
+            denominator: denominator / divisor,
+        })
+    }
+
+    /// Return the reduced numerator.
+    #[must_use]
+    pub const fn numerator(self) -> u64 {
+        self.numerator
+    }
+
+    /// Return the reduced denominator.
+    #[must_use]
+    pub const fn denominator(self) -> u64 {
+        self.denominator
+    }
+
+    /// Return the canonical ffmpeg fraction.
+    #[must_use]
+    pub fn canonical(self) -> String {
+        format!("{}/{}", self.numerator, self.denominator)
+    }
+}
+
+const fn greatest_common_divisor(mut left: u64, mut right: u64) -> u64 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
+}
 
 impl LanguageToken {
     /// Parse one lowercase three-letter ASCII language token.
@@ -110,6 +187,18 @@ pub struct TargetStream {
     pub video_level: Option<String>,
     /// Desired average video bitrate in bits per second.
     pub video_bitrate_bps: Option<u32>,
+    /// Desired video width in pixels.
+    pub video_width_px: Option<u32>,
+    /// Desired video height in pixels.
+    pub video_height_px: Option<u32>,
+    /// Desired video pixel format.
+    pub video_pixel_format: Option<String>,
+    /// Desired video component bit depth.
+    pub video_bit_depth: Option<u32>,
+    /// Desired average frame rate as an exact fraction.
+    pub video_average_frame_rate: Option<String>,
+    /// Desired video color range.
+    pub color_range: Option<String>,
     /// Desired video color primaries.
     pub color_primaries: Option<String>,
     /// Desired video transfer characteristic.
@@ -1664,7 +1753,18 @@ fn validate_video_target_stream(
     validate_video_level(stream, key)?;
     validate_video_color_value(key, "color_primaries", stream.color_primaries.as_deref())?;
     validate_video_color_value(key, "color_transfer", stream.color_transfer.as_deref())?;
-    validate_video_color_value(key, "color_space", stream.color_space.as_deref())
+    validate_video_color_value(key, "color_space", stream.color_space.as_deref())?;
+    if stream
+        .color_range
+        .as_deref()
+        .is_some_and(|value| !video_color_range_is_valid(value))
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "color_range",
+        });
+    }
+    Ok(())
 }
 
 fn validate_subtitle_target_stream(
@@ -1733,13 +1833,148 @@ fn validate_audio_constraints(stream: &TargetStream, key: &str) -> Result<(), Ta
 }
 
 fn validate_video_constraints(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
-    if stream.video_bitrate_bps == Some(0) {
+    if stream
+        .video_bitrate_bps
+        .is_some_and(|value| value == 0 || value > MAX_VIDEO_BITRATE_BPS)
+    {
         return Err(TargetCompileError::InvalidVideoConstraint {
             stream_key: key.to_string(),
             field: "video_bitrate_bps",
         });
     }
+    if stream
+        .video_width_px
+        .is_some_and(|value| value == 0 || value > MAX_VIDEO_DIMENSION_PX)
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "video_width_px",
+        });
+    }
+    if stream
+        .video_height_px
+        .is_some_and(|value| value == 0 || value > MAX_VIDEO_DIMENSION_PX)
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "video_height_px",
+        });
+    }
+    if stream.video_width_px.is_some() != stream.video_height_px.is_some() {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "video_resolution",
+        });
+    }
+    if let (Some(width), Some(height)) = (stream.video_width_px, stream.video_height_px)
+        && u64::from(width) * u64::from(height) > MAX_VIDEO_FRAME_AREA_PX
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "video_frame_area",
+        });
+    }
+    if stream
+        .video_pixel_format
+        .as_deref()
+        .is_some_and(|value| !video_pixel_format_is_valid(value))
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "video_pixel_format",
+        });
+    }
+    if stream
+        .video_bit_depth
+        .is_some_and(|value| !video_bit_depth_is_supported(value))
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "video_bit_depth",
+        });
+    }
+    if let Some(bit_depth) = stream.video_bit_depth
+        && stream
+            .video_pixel_format
+            .as_deref()
+            .and_then(video_pixel_format_bit_depth)
+            != Some(bit_depth)
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "video_bit_depth_pixel_format",
+        });
+    }
+    if stream
+        .video_average_frame_rate
+        .as_deref()
+        .is_some_and(|value| !video_average_frame_rate_is_valid(value))
+    {
+        return Err(TargetCompileError::InvalidVideoConstraint {
+            stream_key: key.to_string(),
+            field: "video_average_frame_rate",
+        });
+    }
     Ok(())
+}
+
+/// Return whether a desired video pixel format is safe to persist and pass to ffmpeg.
+#[must_use]
+pub fn video_pixel_format_is_valid(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
+/// Return the component bit depth for the pixel formats with explicit v1 support.
+#[must_use]
+pub fn video_pixel_format_bit_depth(value: &str) -> Option<u32> {
+    let value = value.trim().to_ascii_lowercase();
+    if !video_pixel_format_is_valid(&value) {
+        return None;
+    }
+    match value.as_str() {
+        "yuv420p" | "yuv422p" | "yuv444p" | "yuv410p" | "yuv411p" | "yuvj420p" | "yuvj422p"
+        | "yuvj444p" | "nv12" | "nv21" | "rgb24" | "bgr24" | "rgba" | "bgra" | "argb" | "abgr"
+        | "gray" | "pal8" => Some(8),
+        "yuv420p10le" | "yuv420p10be" | "yuv422p10le" | "yuv422p10be" | "yuv444p10le"
+        | "yuv444p10be" | "gbrp10le" | "gbrp10be" | "gray10le" | "gray10be" | "p010le"
+        | "p010be" => Some(10),
+        "yuv420p12le" | "yuv420p12be" | "yuv422p12le" | "yuv422p12be" | "yuv444p12le"
+        | "yuv444p12be" | "gbrp12le" | "gbrp12be" | "gray12le" | "gray12be" | "p012le"
+        | "p012be" => Some(12),
+        "yuv420p16le" | "yuv420p16be" | "yuv422p16le" | "yuv422p16be" | "yuv444p16le"
+        | "yuv444p16be" | "gbrp16le" | "gbrp16be" | "gray16le" | "gray16be" | "p016le"
+        | "p016be" | "rgba64le" | "rgba64be" | "bgra64le" | "bgra64be" => Some(16),
+        _ => None,
+    }
+}
+
+/// Return whether a desired video component bit depth has explicit v1 support.
+#[must_use]
+pub const fn video_bit_depth_is_supported(value: u32) -> bool {
+    matches!(value, 8 | 10 | 12 | 16)
+}
+
+/// Return whether a desired video color range is accepted by ffmpeg and ffprobe contracts.
+#[must_use]
+pub fn video_color_range_is_valid(value: &str) -> bool {
+    matches!(value.trim().to_ascii_lowercase().as_str(), "tv" | "pc")
+}
+
+/// Return whether a desired average frame rate is a positive integer or exact fraction.
+#[must_use]
+pub fn video_average_frame_rate_is_valid(value: &str) -> bool {
+    VideoFrameRate::parse(value).is_some()
+}
+
+fn positive_integer_text(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('0')
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && value.parse::<u64>().is_ok()
 }
 
 fn validate_video_hdr_format(stream: &TargetStream, key: &str) -> Result<(), TargetCompileError> {
@@ -1860,6 +2095,12 @@ const fn has_video_shape(stream: &TargetStream) -> bool {
     stream.video_profile.is_some()
         || stream.video_level.is_some()
         || stream.video_bitrate_bps.is_some()
+        || stream.video_width_px.is_some()
+        || stream.video_height_px.is_some()
+        || stream.video_pixel_format.is_some()
+        || stream.video_bit_depth.is_some()
+        || stream.video_average_frame_rate.is_some()
+        || stream.color_range.is_some()
         || stream.color_primaries.is_some()
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
@@ -2128,9 +2369,11 @@ mod tests {
         MAX_CONTAINER_METADATA_ENTRIES, MAX_CONTAINER_METADATA_KEY_BYTES,
         MAX_CONTAINER_METADATA_VALUE_BYTES, SidecarOutputSource, SidecarSubtitleInput,
         SubtitlePlacement, TargetCompileError, TargetStream, UnmatchedStreamPolicies,
-        UnmatchedStreamPolicy, compile_desired_target, compile_desired_target_with_sidecars,
-        compile_desired_target_with_sidecars_at, compile_desired_target_with_unmatched_policies,
-        is_single_path_component, parse_desired_target_yaml,
+        UnmatchedStreamPolicy, VideoFrameRate, compile_desired_target,
+        compile_desired_target_with_sidecars, compile_desired_target_with_sidecars_at,
+        compile_desired_target_with_unmatched_policies, is_single_path_component,
+        parse_desired_target_yaml, video_average_frame_rate_is_valid, video_bit_depth_is_supported,
+        video_color_range_is_valid, video_pixel_format_bit_depth, video_pixel_format_is_valid,
     };
     use crate::classify::SemanticRole;
     use crate::model::{
@@ -2185,6 +2428,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -3592,6 +3841,146 @@ mod tests {
                 field: "video_bitrate_bps",
             })
         );
+    }
+
+    #[test]
+    fn video_technical_constraint_validators_accept_supported_forms() {
+        assert!(video_pixel_format_is_valid(" yuv420p10le "));
+        assert!(video_pixel_format_is_valid("p010le"));
+        assert_eq!(video_pixel_format_bit_depth(" yuv420p10le "), Some(10));
+        assert_eq!(video_pixel_format_bit_depth("p010le"), Some(10));
+        assert_eq!(video_pixel_format_bit_depth("nv12"), Some(8));
+        assert_eq!(video_pixel_format_bit_depth("p016le"), Some(16));
+        assert!(video_bit_depth_is_supported(10));
+        assert!(video_color_range_is_valid(" tv "));
+        assert!(video_color_range_is_valid("pc"));
+        assert!(video_average_frame_rate_is_valid("24000/1001"));
+        assert!(video_average_frame_rate_is_valid("24"));
+        assert_eq!(
+            VideoFrameRate::parse("48000/2000").map(VideoFrameRate::canonical),
+            Some("24/1".to_string())
+        );
+    }
+
+    #[test]
+    fn video_technical_constraint_validators_reject_unsafe_forms() {
+        for value in ["", " ", "YUV420P", "yuv-420p", "yuv 420p"] {
+            assert!(!video_pixel_format_is_valid(value));
+        }
+        assert_eq!(video_pixel_format_bit_depth("yuv420p9le"), None);
+        assert!(!video_bit_depth_is_supported(9));
+        assert!(!video_color_range_is_valid("full"));
+        for value in [
+            "",
+            " ",
+            "0",
+            "0/1",
+            "1/0",
+            "01/1",
+            "1/01",
+            "24/",
+            "24/1/1",
+            "ntsc",
+            "241/1",
+            "1000001/1000000",
+        ] {
+            assert!(!video_average_frame_rate_is_valid(value));
+        }
+    }
+
+    #[test]
+    fn target_validation_rejects_invalid_video_technical_constraints() {
+        let source = MediaGraph {
+            source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: Vec::new(),
+            streams: Vec::new(),
+        };
+        for (mut invalid_video, field) in [
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_width_px = Some(0);
+                (stream, "video_width_px")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_width_px = Some(16_385);
+                stream.video_height_px = Some(1);
+                (stream, "video_width_px")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_bitrate_bps = Some(1_000_000_001);
+                (stream, "video_bitrate_bps")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_height_px = Some(0);
+                (stream, "video_height_px")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_width_px = Some(1920);
+                (stream, "video_resolution")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_width_px = Some(16_384);
+                stream.video_height_px = Some(16_384);
+                (stream, "video_frame_area")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_pixel_format = Some("YUV 420P".to_string());
+                (stream, "video_pixel_format")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_bit_depth = Some(9);
+                (stream, "video_bit_depth")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_bit_depth = Some(10);
+                (stream, "video_bit_depth_pixel_format")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_pixel_format = Some("yuv420p".to_string());
+                stream.video_bit_depth = Some(10);
+                (stream, "video_bit_depth_pixel_format")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_average_frame_rate = Some("0/1".to_string());
+                (stream, "video_average_frame_rate")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.video_average_frame_rate = Some("241/1".to_string());
+                (stream, "video_average_frame_rate")
+            },
+            {
+                let mut stream = target_stream("video", StreamKind::Video, None, None, "hevc");
+                stream.color_range = Some("full".to_string());
+                (stream, "color_range")
+            },
+        ] {
+            invalid_video.stream_key = format!("video-{field}");
+            assert_eq!(
+                compile_desired_target(
+                    &source,
+                    "/output/movie.mkv",
+                    &target_with_stream(invalid_video),
+                    UnmatchedStreamPolicy::Remove,
+                ),
+                Err(TargetCompileError::InvalidVideoConstraint {
+                    stream_key: format!("video-{field}"),
+                    field,
+                })
+            );
+        }
     }
 
     #[test]

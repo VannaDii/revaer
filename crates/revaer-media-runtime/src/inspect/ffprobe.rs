@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
@@ -37,6 +37,10 @@ pub(super) struct FfprobeStream {
     pub(super) width: Option<u32>,
     pub(super) height: Option<u32>,
     pub(super) pix_fmt: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_scalar_text")]
+    pub(super) bits_per_raw_sample: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_scalar_text")]
+    pub(super) bits_per_sample: Option<String>,
     pub(super) sample_aspect_ratio: Option<String>,
     pub(super) display_aspect_ratio: Option<String>,
     pub(super) avg_frame_rate: Option<String>,
@@ -91,4 +95,18 @@ pub(super) struct FfprobeSideData {
     pub(super) side_data_type: String,
     #[serde(flatten)]
     pub(super) extra: BTreeMap<String, Value>,
+}
+
+fn deserialize_optional_scalar_text<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match Option::<Value>::deserialize(deserializer)? {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(Value::Number(value)) => Ok(Some(value.to_string())),
+        Some(Value::Bool(_) | Value::Array(_) | Value::Object(_)) => Err(serde::de::Error::custom(
+            "ffprobe scalar must be a string or number",
+        )),
+    }
 }

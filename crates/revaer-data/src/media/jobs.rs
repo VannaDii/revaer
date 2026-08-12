@@ -30,7 +30,7 @@ const MEDIA_JOB_MARK_COMPLETED_V1: &str =
     "SELECT media_job_mark_completed_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_jobs_pruned, failed_detail_rows_deleted FROM media_job_retention_run_v1(as_of_input => $1)";
 const MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1: &str = "SELECT media_job_public_id, workspace_retention_seconds, diagnostic_workspace_retention_seconds, max_entries_per_tick FROM media_workspace_retention_snapshot_v1()";
-const MEDIA_JOB_WORKER_CLAIM_NEXT_V6: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, source_identity, source_size_bytes, source_modified_ns, source_changed_ns, source_sha256, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, desired_container_metadata_policy, desired_container_chapter_policy, desired_container_attachment_policy, unmatched_stream_policy, unmatched_video_action, unmatched_audio_action, unmatched_subtitle_action, unmatched_attachment_action, unmatched_data_action, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v6()";
+const MEDIA_JOB_WORKER_CLAIM_NEXT_V7: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, source_identity, source_size_bytes, source_modified_ns, source_changed_ns, source_sha256, compatibility_target_key, compatibility_target_version, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, desired_container_metadata_policy, desired_container_chapter_policy, desired_container_attachment_policy, unmatched_stream_policy, unmatched_video_action, unmatched_audio_action, unmatched_subtitle_action, unmatched_attachment_action, unmatched_data_action, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v7()";
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str =
     "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, status_input => $2::media_job_status, last_error_input => $3)";
@@ -50,7 +50,7 @@ const MEDIA_JOB_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, me
 const MEDIA_JOB_DESIRED_TARGET_CHAPTER_LIST_V1: &str = "SELECT start_millis, end_millis, metadata_key, metadata_value FROM media_job_desired_target_chapter_list_v1(media_job_public_id_input => $1)";
 const MEDIA_DISCOVERY_JOB_ENQUEUE_V2: &str = "SELECT media_discovery_job_enqueue_v2(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_identity_input => $5, source_size_bytes_input => $6, source_modified_ns_input => $7, source_changed_ns_input => $8, source_sha256_input => $9)";
 const MEDIA_MANUAL_JOB_CREATE_V2: &str = "SELECT media_manual_job_create_v2(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_identity_input => $5, source_size_bytes_input => $6, source_modified_ns_input => $7, source_changed_ns_input => $8, source_sha256_input => $9, dry_run_input => $10)";
-const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V7: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v7(media_job_public_id_input => $1)";
+const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V8: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, video_width_px, video_height_px, video_pixel_format, video_bit_depth, video_average_frame_rate, color_range, color_primaries, color_transfer, color_space, hdr_format, hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v8(media_job_public_id_input => $1)";
 
 /// Create media job payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -407,6 +407,8 @@ pub struct ClaimedMediaJobRow {
     pub source_sha256: String,
     /// Optional compatibility target key used by the worker planner.
     pub compatibility_target_key: Option<String>,
+    /// Optional compatibility target version snapshotted when queued.
+    pub compatibility_target_version: Option<i32>,
     /// Operational policy key used by the worker planner.
     pub policy_key: String,
     /// Desired target video codec snapshotted when queued.
@@ -516,6 +518,18 @@ pub struct MediaJobDesiredTargetStreamRow {
     pub video_level: Option<String>,
     /// Optional desired average video bitrate in bits per second.
     pub video_bitrate_bps: Option<i32>,
+    /// Optional desired video width in pixels.
+    pub video_width_px: Option<i32>,
+    /// Optional desired video height in pixels.
+    pub video_height_px: Option<i32>,
+    /// Optional desired video pixel format.
+    pub video_pixel_format: Option<String>,
+    /// Optional desired video component bit depth.
+    pub video_bit_depth: Option<i32>,
+    /// Optional desired average frame rate as an exact fraction.
+    pub video_average_frame_rate: Option<String>,
+    /// Optional desired video color range.
+    pub color_range: Option<String>,
     /// Optional desired video color primaries.
     pub color_primaries: Option<String>,
     /// Optional desired video transfer characteristic.
@@ -662,7 +676,7 @@ pub async fn list_media_job_desired_target_streams(
     pool: &PgPool,
     media_job_public_id: Uuid,
 ) -> Result<Vec<MediaJobDesiredTargetStreamRow>> {
-    sqlx::query_as::<_, MediaJobDesiredTargetStreamRow>(MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V7)
+    sqlx::query_as::<_, MediaJobDesiredTargetStreamRow>(MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V8)
         .bind(media_job_public_id)
         .fetch_all(pool)
         .await
@@ -1123,7 +1137,7 @@ pub async fn load_media_workspace_retention_snapshot(
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn media_job_worker_claim_next(pool: &PgPool) -> Result<Option<ClaimedMediaJobRow>> {
-    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V6)
+    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V7)
         .fetch_optional(pool)
         .await
         .map_err(try_op("media job worker claim next"))
@@ -2516,6 +2530,7 @@ mod tests {
             claimed.compatibility_target_key.as_deref(),
             Some("intent-stereo")
         );
+        assert_eq!(claimed.compatibility_target_version, Some(1));
         assert_eq!(claimed.policy_key, "safe_dry_run");
         assert_eq!(claimed.target_video_codec.as_deref(), Some("hevc"));
         assert_eq!(claimed.target_audio_codec.as_deref(), Some("aac"));

@@ -45,6 +45,9 @@ pub enum BuildArgsError {
     /// Exact HDR10 color-volume authoring requires an encoder with a verified side-data contract.
     #[error("exact HDR10 color-volume authoring is not supported by encoder: {0}")]
     UnsupportedHdr10ColorVolumeEncoder(String),
+    /// Video quality options require a reviewed encoder-specific contract.
+    #[error("video quality contract is not supported by encoder: {0}")]
+    UnsupportedVideoQualityEncoder(String),
     /// Exact HDR10 color-volume values cannot be represented by the selected encoder contract.
     #[error("exact HDR10 color-volume value is invalid for {field}: {value}")]
     InvalidHdr10ColorVolumeValue {
@@ -434,6 +437,8 @@ const VIDEO_ENCODER_FALLBACKS: &[&str] = &[
 const SOFTWARE_VIDEO_ENCODER_FALLBACKS: &[&str] = &["libx265", "hevc", "h265"];
 const VIDEO_TRANSCODE_PRESET: &str = "medium";
 const VIDEO_TRANSCODE_CRF: &str = "22";
+const VIDEO_TRANSCODE_CPU_USED: &str = "4";
+const MPEG4_TRANSCODE_QSCALE: &str = "5";
 
 /// Video transcode intent family for encoder safety decisions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -491,6 +496,18 @@ pub struct VideoStreamConstraints {
     pub level: Option<String>,
     /// Maximum permitted bitrate in bits per second.
     pub max_bitrate_bps: Option<MaxBitrateBps>,
+    /// Desired video width in pixels.
+    pub width_px: Option<u32>,
+    /// Desired video height in pixels.
+    pub height_px: Option<u32>,
+    /// Desired pixel format.
+    pub pixel_format: Option<String>,
+    /// Desired video component bit depth.
+    pub bit_depth: Option<u32>,
+    /// Desired average frame rate as an exact fraction.
+    pub average_frame_rate: Option<String>,
+    /// Desired color range.
+    pub color_range: Option<String>,
     /// Desired color primaries.
     pub color_primaries: Option<String>,
     /// Desired transfer characteristic.
@@ -1140,7 +1157,7 @@ fn build_ffmpeg_argv_with_video_policy(
             args.push("copy".to_string());
             args.push(format!("-c:{stream_id}"));
             args.push(video_encoder.to_string());
-            append_video_quality_args(&mut args, video_encoder);
+            append_video_quality_args(&mut args, video_encoder)?;
             let output_index = usize::try_from(stream_id).map_err(|_| {
                 BuildArgsError::InvalidOperations("stream id cannot fit output index")
             })?;
@@ -1466,16 +1483,8 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
     verify_desired_graph_stream_ids(source, desired, sidecar_embeddings)?;
     validate_materialized_stream_kinds(source, desired)?;
 
-    let selected_video_encoder = capabilities.and_then(|snapshot| {
-        validate_operation_capabilities(
-            operations,
-            snapshot,
-            select_video_encoder_for_policy(snapshot, &policy),
-            &policy,
-        )
-        .ok()
-        .and_then(|()| select_video_encoder_for_policy(snapshot, &policy))
-    });
+    let selected_video_encoder =
+        capabilities.and_then(|snapshot| select_video_encoder_for_policy(snapshot, &policy));
     if let Some(snapshot) = capabilities {
         validate_operation_capabilities(operations, snapshot, selected_video_encoder, &policy)?;
         validate_muxer_capability(desired, snapshot)?;
@@ -1508,15 +1517,16 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
         )?);
     }
 
-    append_desired_stream_args(
-        &mut args,
+    let stream_context = DesiredStreamArgContext {
         source,
         desired,
+        operations,
         sidecar_embeddings,
         capabilities,
         video_encoder,
-        &policy,
-    )?;
+        policy: &policy,
+    };
+    append_desired_stream_args(&mut args, &stream_context)?;
 
     if let Some(container_format) = desired
         .container_format
@@ -1543,44 +1553,60 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
     Ok(args)
 }
 
+struct DesiredStreamArgContext<'a> {
+    source: &'a MediaGraph,
+    desired: &'a DesiredGraph,
+    operations: &'a [PlannedOperation],
+    sidecar_embeddings: &'a [SidecarEmbedding],
+    capabilities: Option<&'a CapabilitySnapshot>,
+    video_encoder: &'a str,
+    policy: &'a VideoTranscodePolicy,
+}
+
 fn append_desired_stream_args(
     args: &mut Vec<String>,
-    source: &MediaGraph,
-    desired: &DesiredGraph,
-    sidecar_embeddings: &[SidecarEmbedding],
-    capabilities: Option<&CapabilitySnapshot>,
-    video_encoder: &str,
-    policy: &VideoTranscodePolicy,
+    context: &DesiredStreamArgContext<'_>,
 ) -> Result<(), BuildArgsError> {
     let mut audio_output_index = 0;
-    for (output_index, stream) in desired.streams.iter().enumerate() {
-        let constraints = audio_constraints_for_stream(policy, stream);
-        let output_codec = output_codec_for_desired_with_audio_policy(
-            source,
-            desired,
+    for (output_index, stream) in context.desired.streams.iter().enumerate() {
+        let audio_constraints = audio_constraints_for_stream(context.policy, stream);
+        let video_constraints = video_constraints_for_stream(context.policy, stream);
+        let output_codec = output_codec_for_desired_with_policy(
+            context.source,
+            context.desired,
             stream,
-            sidecar_embeddings,
-            video_encoder,
-            constraints,
+            context.sidecar_embeddings,
+            context.video_encoder,
+            audio_constraints,
+            video_constraints,
         )?;
-        if let Some(snapshot) = capabilities {
+        validate_transcode_operation_materialization(context.operations, stream, &output_codec)?;
+        if let Some(snapshot) = context.capabilities {
+            if stream.kind == StreamKind::Video {
+                validate_video_constraint_capability(video_constraints, &output_codec, snapshot)?;
+            }
             validate_output_codec_capability(snapshot, &output_codec)?;
         }
         args.push(format!("-c:{output_index}"));
         args.push(output_codec.clone());
         if stream.kind == StreamKind::Video && output_codec != "copy" {
-            let constraints = video_constraints_for_stream(policy, stream);
-            append_video_quality_args(args, &output_codec);
+            append_video_quality_args(args, &output_codec)?;
             append_video_constraint_args_for_encoder(
                 args,
                 output_index,
-                constraints,
+                video_constraints,
                 &output_codec,
             )?;
-            append_hdr_color_args(args, policy.hdr_color);
+            append_hdr_color_args(args, context.policy.hdr_color);
         }
         if stream.kind == StreamKind::Audio && output_codec != "copy" {
-            append_audio_shape_args(args, output_index, audio_output_index, stream, constraints);
+            append_audio_shape_args(
+                args,
+                output_index,
+                audio_output_index,
+                stream,
+                audio_constraints,
+            );
         }
         append_stream_metadata_args(args, output_index, stream);
         if stream.kind == StreamKind::Audio {
@@ -1721,6 +1747,7 @@ pub fn build_desired_graph_execution_steps_with_sidecars(
     } = artifacts;
     validate_operations(operations)?;
     verify_desired_graph_stream_ids(source, desired, sidecar_embeddings)?;
+    validate_materialized_stream_kinds(source, desired)?;
     if operations_are_noop(operations) {
         return Ok(vec![ExecutionStep::VerifyOutput {
             output_path: input_path.to_string(),
@@ -2094,13 +2121,14 @@ fn output_codec_for_stream(
     }
 }
 
-fn output_codec_for_desired_with_audio_policy(
+fn output_codec_for_desired_with_policy(
     source: &MediaGraph,
     desired_graph: &DesiredGraph,
     desired: &MediaStream,
     sidecar_embeddings: &[SidecarEmbedding],
     video_encoder: &str,
     audio_constraints: Option<&AudioStreamConstraints>,
+    video_constraints: Option<&VideoStreamConstraints>,
 ) -> Result<String, BuildArgsError> {
     let output_codec = output_codec_for_desired(
         source,
@@ -2112,7 +2140,50 @@ fn output_codec_for_desired_with_audio_policy(
     if output_codec == "copy" && audio_constraints_require_encoder(audio_constraints) {
         return audio_encoder_for_codec(desired.codec.trim());
     }
+    if output_codec == "copy" && video_constraints_require_encoder(video_constraints) {
+        return video_encoder_for_codec(&desired.codec.trim().to_ascii_lowercase(), video_encoder);
+    }
     Ok(output_codec)
+}
+
+fn validate_transcode_operation_materialization(
+    operations: &[PlannedOperation],
+    stream: &MediaStream,
+    output_codec: &str,
+) -> Result<(), BuildArgsError> {
+    if output_codec != "copy" {
+        return Ok(());
+    }
+    let transcode_kind = match stream.kind {
+        StreamKind::Video => OperationKind::VideoTranscode,
+        StreamKind::Audio => OperationKind::AudioTranscode,
+        StreamKind::Subtitle => OperationKind::SubtitleTranscode,
+        StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data => return Ok(()),
+    };
+    if operations.iter().any(|operation| {
+        operation.kind == transcode_kind && operation.output_stream_id == Some(stream.stream_id)
+    }) {
+        return Err(BuildArgsError::InvalidOperations(
+            "transcode operation must materialize an encoder",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_video_constraint_capability(
+    constraints: Option<&VideoStreamConstraints>,
+    output_codec: &str,
+    capabilities: &CapabilitySnapshot,
+) -> Result<(), BuildArgsError> {
+    if constraints.is_some_and(|constraint| constraint.hdr10_color_volume.is_some())
+        && (!output_codec.eq_ignore_ascii_case(HDR10_COLOR_VOLUME_ENCODER)
+            || !capabilities_has_encoder(capabilities, HDR10_COLOR_VOLUME_ENCODER))
+    {
+        return Err(BuildArgsError::UnsupportedHdr10ColorVolumeEncoder(
+            output_codec.to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn audio_shape_differs(source: &MediaStream, desired: &MediaStream) -> bool {
@@ -2180,6 +2251,25 @@ fn audio_constraints_require_encoder(constraints: Option<&AudioStreamConstraints
                 .dynamic_range
                 .as_deref()
                 .is_some_and(|behavior| behavior.trim().eq_ignore_ascii_case("speech"))
+    })
+}
+
+fn video_constraints_require_encoder(constraints: Option<&VideoStreamConstraints>) -> bool {
+    constraints.is_some_and(|constraint| {
+        constraint.profile.is_some()
+            || constraint.level.is_some()
+            || constraint.max_bitrate_bps.is_some()
+            || constraint.width_px.is_some()
+            || constraint.height_px.is_some()
+            || constraint.pixel_format.is_some()
+            || constraint.bit_depth.is_some()
+            || constraint.average_frame_rate.is_some()
+            || constraint.color_range.is_some()
+            || constraint.color_primaries.is_some()
+            || constraint.color_transfer.is_some()
+            || constraint.color_space.is_some()
+            || constraint.hdr_format.is_some()
+            || constraint.hdr10_color_volume.is_some()
     })
 }
 
@@ -2601,17 +2691,28 @@ fn video_policy_requires_hdr10_color_volume(policy: &VideoTranscodePolicy) -> bo
         .any(|constraint| constraint.hdr10_color_volume.is_some())
 }
 
-fn append_video_quality_args(args: &mut Vec<String>, video_encoder: &str) {
-    args.push("-preset".to_string());
-    args.push(VIDEO_TRANSCODE_PRESET.to_string());
+fn append_video_quality_args(
+    args: &mut Vec<String>,
+    video_encoder: &str,
+) -> Result<(), BuildArgsError> {
     match video_encoder {
+        "libx264" | "libx265" | "hevc" | "h265" => {
+            args.push("-preset".to_string());
+            args.push(VIDEO_TRANSCODE_PRESET.to_string());
+            args.push("-crf".to_string());
+            args.push(VIDEO_TRANSCODE_CRF.to_string());
+        }
         "hevc_nvenc" => {
+            args.push("-preset".to_string());
+            args.push(VIDEO_TRANSCODE_PRESET.to_string());
             args.push("-b:v".to_string());
             args.push("0".to_string());
             args.push("-cq".to_string());
             args.push(VIDEO_TRANSCODE_CRF.to_string());
         }
         "hevc_qsv" => {
+            args.push("-preset".to_string());
+            args.push(VIDEO_TRANSCODE_PRESET.to_string());
             args.push("-global_quality".to_string());
             args.push(VIDEO_TRANSCODE_CRF.to_string());
         }
@@ -2619,11 +2720,31 @@ fn append_video_quality_args(args: &mut Vec<String>, video_encoder: &str) {
             args.push("-qp".to_string());
             args.push(VIDEO_TRANSCODE_CRF.to_string());
         }
-        _ => {
+        "libvpx" | "libvpx-vp9" => {
+            args.push("-b:v".to_string());
+            args.push("0".to_string());
             args.push("-crf".to_string());
             args.push(VIDEO_TRANSCODE_CRF.to_string());
         }
+        "libaom-av1" => {
+            args.push("-b:v".to_string());
+            args.push("0".to_string());
+            args.push("-crf".to_string());
+            args.push(VIDEO_TRANSCODE_CRF.to_string());
+            args.push("-cpu-used".to_string());
+            args.push(VIDEO_TRANSCODE_CPU_USED.to_string());
+        }
+        "mpeg4" => {
+            args.push("-q:v".to_string());
+            args.push(MPEG4_TRANSCODE_QSCALE.to_string());
+        }
+        _ => {
+            return Err(BuildArgsError::UnsupportedVideoQualityEncoder(
+                video_encoder.to_string(),
+            ));
+        }
     }
+    Ok(())
 }
 
 fn video_constraints_for_stream<'a>(
@@ -2670,6 +2791,28 @@ fn append_video_constraint_args_for_encoder(
         args.push(format!("-bufsize:{output_index}"));
         args.push(vbv_buffer.to_string());
     }
+    if let (Some(width), Some(height)) = (constraints.width_px, constraints.height_px) {
+        args.push(format!("-s:{output_index}"));
+        args.push(format!("{width}x{height}"));
+    }
+    append_optional_stream_arg(
+        args,
+        "pix_fmt",
+        output_index,
+        constraints.pixel_format.as_deref(),
+    );
+    append_optional_stream_arg(
+        args,
+        "r",
+        output_index,
+        constraints.average_frame_rate.as_deref(),
+    );
+    append_optional_stream_arg(
+        args,
+        "color_range",
+        output_index,
+        constraints.color_range.as_deref(),
+    );
     let (color_primaries, color_transfer, color_space) =
         normalized_video_color_constraints(constraints);
     append_optional_stream_arg(
@@ -2999,6 +3142,18 @@ mod tests {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push((bin.to_string(), argv.to_vec()));
             Ok(())
+        }
+    }
+
+    struct FailingRunner;
+
+    impl super::CommandRunner for FailingRunner {
+        fn run(&self, bin: &str, _argv: &[String]) -> Result<(), super::ExecuteStepError> {
+            Err(super::ExecuteStepError::CommandFailed {
+                bin: bin.to_string(),
+                status_code: Some(9),
+                stderr: "forced failure".to_string(),
+            })
         }
     }
 
@@ -4031,6 +4186,41 @@ mod tests {
         ));
         assert!(!artifact.exists());
         fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn execute_step_sequence_reports_recovery_failure_when_output_missing_after_command_failure()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = temp_execution_root()?;
+        let output = root.join("workspace").join("movie.mkv");
+        let quarantine = root.join("quarantine").join("movie.mkv");
+        let steps = vec![
+            ExecutionStep::Command {
+                bin: "ffmpeg".to_string(),
+                argv: vec![output.to_string_lossy().into_owned()],
+            },
+            ExecutionStep::QuarantineFailedOutput {
+                output_path: output.to_string_lossy().into_owned(),
+                quarantine_path: quarantine.to_string_lossy().into_owned(),
+            },
+        ];
+
+        let result = execute_step_sequence(&steps, &FailingRunner);
+
+        assert!(matches!(
+            result,
+            Err(super::ExecuteSequenceError {
+                failed_step_index: 0,
+                failed: super::ExecuteStepError::CommandFailed { .. },
+                recovery: Some(super::ExecuteStepError::Io {
+                    operation: "execution.quarantine_failed_output",
+                    ..
+                })
+            })
+        ));
+        assert!(!output.exists());
+        assert!(!quarantine.exists());
         Ok(())
     }
 
@@ -5877,6 +6067,61 @@ mod tests {
     }
 
     #[test]
+    fn desired_graph_noop_rejects_attachment_mutation_for_step_materialization() {
+        let attachment = MediaStream {
+            stream_id: 2,
+            kind: StreamKind::Attachment,
+            codec: "ttf".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: Some("font".to_string()),
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: Vec::new(),
+            streams: vec![attachment.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: None,
+            stream_bindings: Vec::new(),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams: vec![MediaStream {
+                title: Some("renamed".to_string()),
+                ..attachment
+            }],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::NoOp,
+            stream_id: None,
+            output_stream_id: None,
+        }];
+
+        let result = build_desired_graph_execution_steps(
+            "/in.mkv",
+            "/out.mkv",
+            &source,
+            &desired,
+            &operations,
+            None,
+            VideoTranscodePolicy::default(),
+        );
+
+        assert_eq!(
+            result,
+            Err(BuildArgsError::UnsupportedDesiredStreamKind { stream_id: 2 })
+        );
+    }
+
+    #[test]
     fn desired_graph_execution_steps_reject_noop_targeting_stream() {
         let source = MediaGraph {
             source_path: "/in.mkv".to_string(),
@@ -6287,6 +6532,12 @@ mod tests {
                 profile: Some("main10".to_string()),
                 level: Some("5.1".to_string()),
                 max_bitrate_bps: MaxBitrateBps::new(8_000_000),
+                width_px: Some(3840),
+                height_px: Some(2160),
+                pixel_format: Some("yuv420p10le".to_string()),
+                bit_depth: Some(10),
+                average_frame_rate: Some("24000/1001".to_string()),
+                color_range: Some("tv".to_string()),
                 color_primaries: Some("bt2020".to_string()),
                 color_transfer: Some("smpte2084".to_string()),
                 color_space: Some("bt2020nc".to_string()),
@@ -6311,17 +6562,16 @@ mod tests {
     }
 
     fn assert_video_constraint_args(argv: &[String]) {
-        for (name, value) in [
-            ("-profile:0", "main10"),
-            ("-level:0", "5.1"),
-            ("-b:0", "7600000"),
-            ("-maxrate:0", "8000000"),
-            ("-bufsize:0", "16000000"),
-            ("-color_primaries:0", "bt2020"),
-            ("-color_trc:0", "smpte2084"),
-            ("-colorspace:0", "bt2020nc"),
+        for expected in [
+            ["-profile:0", "main10"],
+            ["-level:0", "5.1"],
+            ["-b:0", "7600000"],
+            ["-maxrate:0", "8000000"],
+            ["-bufsize:0", "16000000"],
+            ["-color_primaries:0", "bt2020"],
+            ["-color_trc:0", "smpte2084"],
+            ["-colorspace:0", "bt2020nc"],
         ] {
-            let expected: [&str; 2] = (name, value).into();
             assert!(argv.windows(2).any(|pair| pair == expected));
         }
     }
@@ -6333,6 +6583,12 @@ mod tests {
             profile: None,
             level: None,
             max_bitrate_bps: MaxBitrateBps::new(8_000_000),
+            width_px: None,
+            height_px: None,
+            pixel_format: None,
+            bit_depth: None,
+            average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -6341,7 +6597,7 @@ mod tests {
         };
         for encoder in ["libx265", "hevc_nvenc", "hevc_qsv", "hevc_vaapi"] {
             let mut argv = Vec::new();
-            append_video_quality_args(&mut argv, encoder);
+            assert!(append_video_quality_args(&mut argv, encoder).is_ok());
             assert!(
                 append_video_constraint_args_for_encoder(
                     &mut argv,
@@ -6419,6 +6675,12 @@ mod tests {
                 profile: Some("main10".to_string()),
                 level: None,
                 max_bitrate_bps: None,
+                width_px: None,
+                height_px: None,
+                pixel_format: None,
+                bit_depth: None,
+                average_frame_rate: None,
+                color_range: None,
                 color_primaries: None,
                 color_transfer: None,
                 color_space: None,
@@ -6509,6 +6771,12 @@ mod tests {
                 profile: None,
                 level: None,
                 max_bitrate_bps: None,
+                width_px: None,
+                height_px: None,
+                pixel_format: None,
+                bit_depth: None,
+                average_frame_rate: None,
+                color_range: None,
                 color_primaries: None,
                 color_transfer: None,
                 color_space: None,

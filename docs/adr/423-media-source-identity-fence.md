@@ -31,6 +31,7 @@
 - Test coverage summary:
   - Added deterministic unit tests for rename-to-symlink swaps, same-size and same-mtime inode replacement, mutation during hashing, mutation after claim, stable source matching, invalid descendants, and missing roots.
   - Added a migration-backed integration test proving `claim_next` returns the exact persisted identity and hash snapshot.
+  - Clean-chain migration validation proves the revised v3 claim row type is installed through an explicit drop-and-recreate boundary.
   - Ran the focused fingerprint tests and whole-workspace all-target all-feature compilation. The database integration test compiled but locally skipped because no test database URL was configured.
 - Observability updates:
   - Source fingerprint I/O failures and source fingerprint mismatches have stable runtime error codes and flow through the existing job failure telemetry and persisted failure path.

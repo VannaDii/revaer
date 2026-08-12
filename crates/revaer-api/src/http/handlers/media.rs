@@ -20,8 +20,11 @@ use revaer_media_core::{
         MAX_CONTAINER_CHAPTER_METADATA_ENTRIES, MAX_CONTAINER_CHAPTER_METADATA_TOTAL_BYTES,
         MAX_CONTAINER_CHAPTERS, MAX_CONTAINER_METADATA_ENTRIES, MAX_CONTAINER_METADATA_KEY_BYTES,
         MAX_CONTAINER_METADATA_TOTAL_BYTES, MAX_CONTAINER_METADATA_VALUE_BYTES,
-        MAX_DESIRED_TARGET_STREAMS, is_known_color_primaries, is_known_color_space,
-        is_known_color_transfer, is_known_video_level,
+        MAX_DESIRED_TARGET_STREAMS, MAX_VIDEO_BITRATE_BPS, MAX_VIDEO_DIMENSION_PX,
+        MAX_VIDEO_FRAME_AREA_PX, is_known_color_primaries, is_known_color_space,
+        is_known_color_transfer, is_known_video_level, video_average_frame_rate_is_valid,
+        video_bit_depth_is_supported, video_color_range_is_valid, video_pixel_format_bit_depth,
+        video_pixel_format_is_valid,
     },
 };
 use serde::Deserialize;
@@ -1587,6 +1590,15 @@ fn map_desired_target_stream_params(
             .map(str::to_ascii_lowercase),
         video_level: trim_and_filter_empty(stream.video_level.as_deref()).map(str::to_string),
         video_bitrate_bps: stream.video_bitrate_bps,
+        video_width_px: stream.video_width_px,
+        video_height_px: stream.video_height_px,
+        video_pixel_format: trim_and_filter_empty(stream.video_pixel_format.as_deref())
+            .map(str::to_ascii_lowercase),
+        video_bit_depth: stream.video_bit_depth,
+        video_average_frame_rate: trim_and_filter_empty(stream.video_average_frame_rate.as_deref())
+            .map(str::to_string),
+        color_range: trim_and_filter_empty(stream.color_range.as_deref())
+            .map(str::to_ascii_lowercase),
         color_primaries: trim_and_filter_empty(stream.color_primaries.as_deref())
             .map(str::to_ascii_lowercase),
         color_transfer: trim_and_filter_empty(stream.color_transfer.as_deref())
@@ -1991,12 +2003,87 @@ fn validate_target_scalar_values(stream: &MediaDesiredTargetStream) -> Result<()
     }) {
         return Err(ApiError::bad_request("audio_dynamic_range is invalid"));
     }
-    if stream.video_bitrate_bps.is_some_and(|bitrate| bitrate <= 0) {
+    if stream.video_bitrate_bps.is_some_and(|bitrate| {
+        u32::try_from(bitrate).map_or(true, |value| value == 0 || value > MAX_VIDEO_BITRATE_BPS)
+    }) {
         return Err(ApiError::bad_request(
-            "video_bitrate_bps must be greater than zero",
+            "video_bitrate_bps is outside the supported range",
         ));
     }
+    if stream.video_width_px.is_some_and(|width| {
+        u32::try_from(width).map_or(true, |value| value == 0 || value > MAX_VIDEO_DIMENSION_PX)
+    }) {
+        return Err(ApiError::bad_request(
+            "video_width_px is outside the supported range",
+        ));
+    }
+    if stream.video_height_px.is_some_and(|height| {
+        u32::try_from(height).map_or(true, |value| value == 0 || value > MAX_VIDEO_DIMENSION_PX)
+    }) {
+        return Err(ApiError::bad_request(
+            "video_height_px is outside the supported range",
+        ));
+    }
+    if stream.video_width_px.is_some() != stream.video_height_px.is_some() {
+        return Err(ApiError::bad_request(
+            "video width and height must be provided together",
+        ));
+    }
+    if video_frame_area_exceeds_limit(stream.video_width_px, stream.video_height_px) {
+        return Err(ApiError::bad_request(
+            "video frame area exceeds the supported range",
+        ));
+    }
+    if stream
+        .video_pixel_format
+        .as_deref()
+        .is_some_and(|value| !video_pixel_format_is_valid(value))
+    {
+        return Err(ApiError::bad_request("video_pixel_format is invalid"));
+    }
+    if stream.video_bit_depth.is_some_and(|value| {
+        u32::try_from(value).map_or(true, |value| !video_bit_depth_is_supported(value))
+    }) {
+        return Err(ApiError::bad_request("video_bit_depth is invalid"));
+    }
+    if stream.video_bit_depth.is_some_and(|bit_depth| {
+        stream
+            .video_pixel_format
+            .as_deref()
+            .and_then(video_pixel_format_bit_depth)
+            != u32::try_from(bit_depth).ok()
+    }) {
+        return Err(ApiError::bad_request(
+            "video_bit_depth must match video_pixel_format",
+        ));
+    }
+    if stream
+        .video_average_frame_rate
+        .as_deref()
+        .is_some_and(|value| !video_average_frame_rate_is_valid(value))
+    {
+        return Err(ApiError::bad_request("video_average_frame_rate is invalid"));
+    }
+    if stream
+        .color_range
+        .as_deref()
+        .is_some_and(|value| !video_color_range_is_valid(value))
+    {
+        return Err(ApiError::bad_request("color_range is invalid"));
+    }
     Ok(())
+}
+
+fn video_frame_area_exceeds_limit(width: Option<i32>, height: Option<i32>) -> bool {
+    let (Some(width), Some(height)) = (width, height) else {
+        return false;
+    };
+    let (Ok(width), Ok(height)) = (u64::try_from(width), u64::try_from(height)) else {
+        return true;
+    };
+    width
+        .checked_mul(height)
+        .is_none_or(|area| area > MAX_VIDEO_FRAME_AREA_PX)
 }
 
 fn validate_audio_target_shape_scope(
@@ -2042,6 +2129,12 @@ const fn has_video_target_shape_fields(stream: &MediaDesiredTargetStream) -> boo
     stream.video_profile.is_some()
         || stream.video_level.is_some()
         || stream.video_bitrate_bps.is_some()
+        || stream.video_width_px.is_some()
+        || stream.video_height_px.is_some()
+        || stream.video_pixel_format.is_some()
+        || stream.video_bit_depth.is_some()
+        || stream.video_average_frame_rate.is_some()
+        || stream.color_range.is_some()
         || stream.color_primaries.is_some()
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
@@ -2958,6 +3051,12 @@ mod tests {
             video_profile: Some("main10".to_string()),
             video_level: Some("5.1".to_string()),
             video_bitrate_bps: Some(8_000_000),
+            video_width_px: Some(3840),
+            video_height_px: Some(2160),
+            video_pixel_format: Some("yuv420p10le".to_string()),
+            video_bit_depth: Some(10),
+            video_average_frame_rate: Some("24000/1001".to_string()),
+            color_range: Some("tv".to_string()),
             color_primaries: Some("bt2020".to_string()),
             color_transfer: Some("smpte2084".to_string()),
             color_space: Some("bt2020nc".to_string()),
@@ -3036,6 +3135,53 @@ mod tests {
         invalid_video_bitrate.video_bitrate_bps = Some(0);
         assert!(validate_desired_target_streams(&[invalid_video_bitrate]).is_err());
 
+        let mut excessive_video_bitrate = valid_stream.clone();
+        excessive_video_bitrate.video_bitrate_bps = Some(1_000_000_001);
+        assert!(validate_desired_target_streams(&[excessive_video_bitrate]).is_err());
+
+        let mut invalid_video_width = valid_stream.clone();
+        invalid_video_width.video_width_px = Some(0);
+        assert!(validate_desired_target_streams(&[invalid_video_width]).is_err());
+
+        let mut excessive_video_width = valid_stream.clone();
+        excessive_video_width.video_width_px = Some(16_385);
+        assert!(validate_desired_target_streams(&[excessive_video_width]).is_err());
+
+        let mut excessive_video_area = valid_stream.clone();
+        excessive_video_area.video_width_px = Some(16_384);
+        excessive_video_area.video_height_px = Some(16_384);
+        assert!(validate_desired_target_streams(&[excessive_video_area]).is_err());
+
+        let mut incomplete_resolution = valid_stream.clone();
+        incomplete_resolution.video_height_px = None;
+        assert!(validate_desired_target_streams(&[incomplete_resolution]).is_err());
+
+        let mut invalid_pixel_format = valid_stream.clone();
+        invalid_pixel_format.video_pixel_format = Some("YUV 420".to_string());
+        assert!(validate_desired_target_streams(&[invalid_pixel_format]).is_err());
+
+        let mut unsupported_bit_depth = valid_stream.clone();
+        unsupported_bit_depth.video_bit_depth = Some(9);
+        assert!(validate_desired_target_streams(&[unsupported_bit_depth]).is_err());
+
+        let mut bit_depth_without_pixel_format = valid_stream.clone();
+        bit_depth_without_pixel_format.video_pixel_format = None;
+        bit_depth_without_pixel_format.video_bit_depth = Some(10);
+        assert!(validate_desired_target_streams(&[bit_depth_without_pixel_format]).is_err());
+
+        let mut mismatched_bit_depth = valid_stream.clone();
+        mismatched_bit_depth.video_pixel_format = Some("yuv420p".to_string());
+        mismatched_bit_depth.video_bit_depth = Some(10);
+        assert!(validate_desired_target_streams(&[mismatched_bit_depth]).is_err());
+
+        let mut invalid_frame_rate = valid_stream.clone();
+        invalid_frame_rate.video_average_frame_rate = Some("0/1".to_string());
+        assert!(validate_desired_target_streams(&[invalid_frame_rate]).is_err());
+
+        let mut excessive_frame_rate = valid_stream.clone();
+        excessive_frame_rate.video_average_frame_rate = Some("241/1".to_string());
+        assert!(validate_desired_target_streams(&[excessive_frame_rate]).is_err());
+
         let mut invalid_video_level = valid_stream.clone();
         invalid_video_level.video_level = Some("7.9".to_string());
         assert!(validate_desired_target_streams(&[invalid_video_level]).is_err());
@@ -3051,6 +3197,10 @@ mod tests {
         let mut invalid_color_space = valid_stream.clone();
         invalid_color_space.color_space = Some("unknown".to_string());
         assert!(validate_desired_target_streams(&[invalid_color_space]).is_err());
+
+        let mut invalid_color_range = valid_stream.clone();
+        invalid_color_range.color_range = Some("full".to_string());
+        assert!(validate_desired_target_streams(&[invalid_color_range]).is_err());
 
         let mut invalid_hdr_format = valid_stream.clone();
         invalid_hdr_format.hdr_format = Some("dolby_vision".to_string());
@@ -3110,6 +3260,12 @@ mod tests {
                     video_profile: None,
                     video_level: None,
                     video_bitrate_bps: None,
+                    video_width_px: None,
+                    video_height_px: None,
+                    video_pixel_format: None,
+                    video_bit_depth: None,
+                    video_average_frame_rate: None,
+                    color_range: None,
                     color_primaries: None,
                     color_transfer: None,
                     color_space: None,
@@ -3145,6 +3301,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -3214,6 +3376,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,

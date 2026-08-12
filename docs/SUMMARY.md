@@ -434,6 +434,7 @@
     -   [418: CI Postgres credential coherence](adr/418-ci-postgres-credential-coherence.md)
     -   [419: PR 76 media data review remediation](adr/419-pr76-media-data-review-remediation.md)
     -   [420: Media text input contract](adr/420-media-text-input-contract.md)
+    -   [421: Media video technical constraints](adr/421-media-video-technical-constraints.md)
     -   [422: Exact documentation tools](adr/422-exact-documentation-tools.md)
     -   [423: Media source identity fence](adr/423-media-source-identity-fence.md)
     -   [424: Media target stream limit and atomic snapshot](adr/424-media-target-stream-limit-atomic-snapshot.md)
@@ -462,3 +463,4 @@
     -   [473: PR 123 tuple array conversion correction](adr/473-pr123-tuple-array-conversion.md)
     -   [471: PR 126 chapter ordering predicate correction](adr/471-pr126-chapter-ordering-predicate.md)
     -   [472: PR 134 watcher lock lifetime correction](adr/472-pr134-watcher-lock-lifetime.md)
+    -   [466: Sonar published-result fetch retry correction](adr/466-sonar-result-fetch-retry.md)

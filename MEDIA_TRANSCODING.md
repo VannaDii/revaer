@@ -168,6 +168,9 @@ Included:
 - Immediate job enqueueing from enabled watchers and scheduled scans.
 - Capability discovery at startup and on demand.
 - Full media inspection through injected ffprobe-compatible adapters.
+- Exact video technical target constraints for width, height, pixel format,
+  supported bit depth paired with a known pixel format, average frame rate, and
+  color range.
 - Full open-source media toolchain in the Docker image.
 - Normalization of containers, streams, codecs, languages, dispositions, labels,
   roles, HDR metadata, sidecars, chapters, attachments, and metadata.
@@ -607,9 +610,10 @@ Primary objects:
   metadata mode, title policy, faststart behavior.
 - `media_target_stream`: stream kind, stream key, role, language, optional,
   sort order, codec/format, default/forced disposition, label mode/template.
-- `media_target_video_stream`: encoder preference, max width/height, max FPS,
-  max bitrate, pixel format, bit depth, HDR mode, Dolby Vision policy, HDR10
-  policy, tonemap policy, color space/range, deinterlace, crop, scale, quality.
+- `media_target_video_stream`: encoder preference, exact width/height, exact
+  average frame rate, max bitrate, pixel format, bit depth, HDR mode, Dolby
+  Vision policy, HDR10 policy, tonemap policy, color space/range, deinterlace,
+  crop, scale, quality.
 - `media_target_audio_stream`: codec, channels, min channels, LFE policy,
   channel layout, bitrate per channel, passthrough formats, loudness profile,
   downmix behavior, dynamic range behavior.
@@ -1519,6 +1523,23 @@ HDR10 target constraints:
   existing HDR10 color-signaling, 10-bit pixel-format, payload-presence,
   numeric-boundary, and mastering-geometry checks pass.
 
+Video technical constraints:
+
+- Desired dimensions are limited to 16,384 pixels per axis and 134,217,728
+  pixels per frame. Desired maximum bitrate is limited to 1,000,000,000 bits
+  per second.
+- Average frame rate is a positive integer or fraction with numerator and
+  denominator no greater than 1,000,000 and a value no greater than 240 FPS.
+  Persistence reduces the fraction, and verification compares reduced
+  rationals exactly.
+- A declared technical constraint schedules video encoding only when source
+  inspection proves a codec or technical mismatch. Matching inputs remain on
+  the lossless path.
+- Upscaling is limited to four times either source axis and sixteen times source
+  frame area. Candidate output size cannot exceed the bytes admitted by
+  workspace preflight, and process execution retains the 12-hour wall-clock
+  deadline defined by ADR 348.
+
 Resolution outcomes:
 
 ```rust
@@ -1786,6 +1807,13 @@ Required behavior:
   jobs.
 - Quarantine is bounded by size and retention duration.
 - Audit records persist compact facts and references, not large unbounded logs.
+- Retained-attachment payload verification materializes only inside the
+  admitted job input directory, rejects symlink roots, and deletes every
+  reserved payload file on success or failure.
+- Attachment verification processes at most 64 retained attachments with one
+  child process at a time, a five-minute aggregate deadline, a two-minute
+  per-process ceiling, a 256 MiB per-payload limit, and a 512 MiB aggregate
+  materialization limit. Cancellation kills and reaps the active child.
 
 Disk-impact estimate:
 
@@ -2219,7 +2247,9 @@ The fixture-backed acceptance matrix must cover at least:
 - Pipeline actions: remux or stream-copy materialization, audio transcode,
   video transcode, and combined audio/video transcode. For every transcode
   action, tests must assert the planned operation kind and validate the
-  resulting stream codec from `ffprobe` JSON.
+  resulting stream codec from `ffprobe` JSON. At least one real video
+  transcode fixture must also validate exact output width, height, pixel
+  format, and average frame rate from normalized `ffprobe` inspection.
 
 Do not use brittle duration assertions. Duration checks must allow a documented
 tolerance and should be secondary to graph, stream, codec, metadata, and

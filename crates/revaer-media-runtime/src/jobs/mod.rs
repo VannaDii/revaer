@@ -3,7 +3,7 @@
 use revaer_media_core::compliance::{Report as ComplianceReport, score_diff};
 use revaer_media_core::diff::diff_graphs;
 use revaer_media_core::explain::{Explanation, explain_plan};
-use revaer_media_core::model::{DesiredGraph, MediaGraph};
+use revaer_media_core::model::{DesiredGraph, MediaGraph, StreamKind};
 use revaer_media_core::pipeline::PlanningOutcome;
 use revaer_media_core::plan::{
     OperationKind, PlanGenerationError, PlanSelection, PlannedOperation, generate_plan,
@@ -18,9 +18,9 @@ use thiserror::Error;
 
 use crate::capabilities::CapabilitySnapshot;
 use crate::execute::{
-    BuildArgsError, DesiredGraphBuildContext, ExecutionStep, ExecutionStepAudit,
-    SubtitleArtifactPlan, VideoTranscodePolicy, build_desired_graph_execution_steps_with_sidecars,
-    compile_execution_step_audits,
+    AudioStreamConstraints, BuildArgsError, DesiredGraphBuildContext, ExecutionStep,
+    ExecutionStepAudit, SubtitleArtifactPlan, VideoStreamConstraints, VideoTranscodePolicy,
+    build_desired_graph_execution_steps_with_sidecars, compile_execution_step_audits,
 };
 use crate::inspect::{InspectAdapter, InspectError};
 use crate::workspace::{
@@ -632,6 +632,10 @@ const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata 
         BuildArgsError::UnsupportedHdr10ColorVolumeEncoder(_) => PreflightErrorMetadata {
             code: "preflight_build_unsupported_hdr10_color_volume_encoder",
             detail: "exact HDR10 color-volume authoring requires a supported encoder",
+        },
+        BuildArgsError::UnsupportedVideoQualityEncoder(_) => PreflightErrorMetadata {
+            code: "preflight_build_unsupported_video_quality_encoder",
+            detail: "video quality options require a reviewed encoder-specific contract",
         },
         BuildArgsError::InvalidHdr10ColorVolumeValue { .. } => PreflightErrorMetadata {
             code: "preflight_build_invalid_hdr10_color_volume_values",
@@ -1491,11 +1495,17 @@ pub fn evaluate_preflight_from_planning_outcome(
 }
 
 fn build_preflight_report_for_planned(
-    mut planned: PlannedJob,
+    planned: PlannedJob,
     input: PreflightBuildInput<'_>,
 ) -> Result<JobPreflightReport, JobPreflightError> {
     require_valid_capability_snapshot(Some(input.capabilities))
         .map_err(JobPreflightError::Capability)?;
+    let mut planned = apply_transcode_policy_required_operations(
+        planned,
+        &input.video_policy,
+        input.source_file_bytes,
+    )
+    .map_err(JobPreflightError::Plan)?;
     planned.estimated_workspace_bytes =
         estimate_live_workspace_demand(&planned, input.source_file_bytes, &input.video_policy);
     let capacity_report = input
@@ -1522,6 +1532,133 @@ fn build_preflight_report_for_planned(
         timeline,
         capacity_report,
     })
+}
+
+fn apply_transcode_policy_required_operations(
+    mut planned: PlannedJob,
+    video_policy: &VideoTranscodePolicy,
+    source_file_bytes: u64,
+) -> Result<PlannedJob, &'static str> {
+    apply_required_video_operations(&mut planned, &video_policy.stream_constraints)?;
+    apply_required_audio_operations(&mut planned, &video_policy.audio_stream_constraints)?;
+    verify_plan_against_graphs(&planned.source, &planned.desired, &planned.operations)?;
+    planned.estimated_workspace_bytes =
+        estimate_workspace_bytes(source_file_bytes, &planned.operations);
+    Ok(planned)
+}
+
+fn apply_required_video_operations(
+    planned: &mut PlannedJob,
+    stream_constraints: &[VideoStreamConstraints],
+) -> Result<(), &'static str> {
+    for constraints in stream_constraints {
+        if !video_constraints_require_operation(constraints) {
+            continue;
+        }
+        require_stream_kind(
+            planned,
+            constraints.stream_id,
+            StreamKind::Video,
+            "video constraint references unknown stream id",
+            "video constraint references non-video stream",
+        )?;
+        add_required_stream_operation(
+            planned,
+            constraints.stream_id,
+            OperationKind::VideoTranscode,
+        );
+    }
+    Ok(())
+}
+
+fn apply_required_audio_operations(
+    planned: &mut PlannedJob,
+    stream_constraints: &[AudioStreamConstraints],
+) -> Result<(), &'static str> {
+    for constraints in stream_constraints {
+        if !audio_constraints_require_operation(constraints) {
+            continue;
+        }
+        require_stream_kind(
+            planned,
+            constraints.stream_id,
+            StreamKind::Audio,
+            "audio constraint references unknown stream id",
+            "audio constraint references non-audio stream",
+        )?;
+        add_required_stream_operation(
+            planned,
+            constraints.stream_id,
+            OperationKind::AudioTranscode,
+        );
+    }
+    Ok(())
+}
+
+fn require_stream_kind(
+    planned: &PlannedJob,
+    stream_id: u32,
+    expected_kind: StreamKind,
+    unknown_error: &'static str,
+    kind_error: &'static str,
+) -> Result<(), &'static str> {
+    let Some(stream) = planned
+        .source
+        .streams
+        .iter()
+        .find(|stream| stream.stream_id == stream_id)
+    else {
+        return Err(unknown_error);
+    };
+    if stream.kind != expected_kind {
+        return Err(kind_error);
+    }
+    Ok(())
+}
+
+fn add_required_stream_operation(
+    planned: &mut PlannedJob,
+    stream_id: u32,
+    operation_kind: OperationKind,
+) {
+    if planned
+        .operations
+        .iter()
+        .any(|operation| operation.kind == operation_kind && operation.stream_id == Some(stream_id))
+    {
+        return;
+    }
+    if operations_are_noop(&planned.operations) {
+        planned.operations.clear();
+    }
+    planned.operations.push(PlannedOperation {
+        kind: operation_kind,
+        stream_id: Some(stream_id),
+        output_stream_id: Some(stream_id),
+    });
+}
+const fn video_constraints_require_operation(constraints: &VideoStreamConstraints) -> bool {
+    constraints.profile.is_some()
+        || constraints.level.is_some()
+        || constraints.max_bitrate_bps.is_some()
+        || constraints.width_px.is_some()
+        || constraints.height_px.is_some()
+        || constraints.pixel_format.is_some()
+        || constraints.bit_depth.is_some()
+        || constraints.average_frame_rate.is_some()
+        || constraints.color_range.is_some()
+        || constraints.color_primaries.is_some()
+        || constraints.color_transfer.is_some()
+        || constraints.color_space.is_some()
+        || constraints.hdr_format.is_some()
+        || constraints.hdr10_color_volume.is_some()
+}
+
+const fn audio_constraints_require_operation(constraints: &AudioStreamConstraints) -> bool {
+    constraints.bitrate_bps.is_some()
+        || constraints.sample_rate_hz.is_some()
+        || constraints.loudness_profile.is_some()
+        || constraints.dynamic_range.is_some()
 }
 
 /// Evaluate preflight from a complete target compilation and source inspection.
@@ -1758,7 +1895,8 @@ mod tests {
     };
     use crate::capabilities::{CapabilitySnapshot, CodecCapability};
     use crate::execute::{
-        HdrColorPolicy, MaxBitrateBps, VideoTranscodeIntent, VideoTranscodePolicy,
+        AudioStreamConstraints, HdrColorPolicy, MaxBitrateBps, VideoStreamConstraints,
+        VideoTranscodeIntent, VideoTranscodePolicy,
     };
     use crate::inspect::{
         ContainerInspection, InspectAdapter, InspectCancellation, InspectError, MediaInspection,
@@ -2526,6 +2664,339 @@ mod tests {
         }
     }
 
+    fn single_audio_graphs(source_codec: &str, desired_codec: &str) -> (MediaGraph, DesiredGraph) {
+        let source = MediaGraph {
+            source_path: "/input/podcast.m4a".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: vec!["mov".to_string()],
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Audio,
+                codec: source_codec.to_string(),
+                channels: Some(2),
+                channel_layout: Some("stereo".to_string()),
+                language: Some("eng".to_string()),
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/output/podcast.m4a".to_string(),
+            container_format: Some("mov".to_string()),
+            stream_bindings: Vec::new(),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Audio,
+                codec: desired_codec.to_string(),
+                channels: Some(2),
+                channel_layout: Some("stereo".to_string()),
+                language: Some("eng".to_string()),
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        (source, desired)
+    }
+
+    fn planned_audio_job_for_tests(
+        operations: Vec<PlannedOperation>,
+        estimated_workspace_bytes: u64,
+    ) -> PlannedJob {
+        let (source, desired) = single_audio_graphs("aac", "aac");
+        PlannedJob {
+            source: Box::new(source),
+            desired: Box::new(desired),
+            sidecar_embeddings: Vec::new(),
+            sidecar_outputs: Vec::new(),
+            sidecar_removals: Vec::new(),
+            operations,
+            compliance: report_for_status(Status::Compliant),
+            estimated_workspace_bytes,
+            source_duration_millis: None,
+        }
+    }
+
+    fn unconstrained_video_stream_policy(stream_id: u32) -> VideoStreamConstraints {
+        VideoStreamConstraints {
+            stream_id,
+            profile: None,
+            level: None,
+            max_bitrate_bps: None,
+            width_px: None,
+            height_px: None,
+            pixel_format: None,
+            bit_depth: None,
+            average_frame_rate: None,
+            color_range: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            hdr10_color_volume: None,
+        }
+    }
+
+    fn unconstrained_audio_stream_policy(stream_id: u32) -> AudioStreamConstraints {
+        AudioStreamConstraints {
+            stream_id,
+            channel_count: None,
+            channel_layout: None,
+            bitrate_bps: None,
+            sample_rate_hz: None,
+            loudness_profile: None,
+            dynamic_range: None,
+        }
+    }
+
+    #[test]
+    fn video_policy_required_operations_insert_transcode_for_technical_constraint() {
+        let planned = planned_job_for_tests(
+            vec![PlannedOperation {
+                kind: OperationKind::NoOp,
+                stream_id: None,
+                output_stream_id: None,
+            }],
+            0,
+        );
+        let mut constraint = unconstrained_video_stream_policy(0);
+        constraint.width_px = Some(1920);
+        constraint.height_px = Some(1080);
+        let policy = VideoTranscodePolicy {
+            stream_constraints: vec![constraint],
+            ..VideoTranscodePolicy::default()
+        };
+
+        let planned = super::apply_transcode_policy_required_operations(planned, &policy, 1_000)
+            .expect("technical video constraint should require a transcode operation");
+
+        assert_eq!(
+            planned.operations,
+            vec![PlannedOperation {
+                kind: OperationKind::VideoTranscode,
+                stream_id: Some(0),
+                output_stream_id: Some(0),
+            }]
+        );
+        assert_eq!(planned.estimated_workspace_bytes, 2_500);
+    }
+
+    #[test]
+    fn video_policy_required_operations_preserve_existing_transcode_operation() {
+        let planned = planned_job_for_tests(
+            vec![PlannedOperation {
+                kind: OperationKind::VideoTranscode,
+                stream_id: Some(0),
+                output_stream_id: Some(0),
+            }],
+            2_500,
+        );
+        let mut constraint = unconstrained_video_stream_policy(0);
+        constraint.pixel_format = Some("yuv420p10le".to_string());
+        let policy = VideoTranscodePolicy {
+            stream_constraints: vec![constraint],
+            ..VideoTranscodePolicy::default()
+        };
+
+        let planned = super::apply_transcode_policy_required_operations(planned, &policy, 1_000)
+            .expect("existing video transcode should satisfy video constraint operation needs");
+
+        assert_eq!(planned.operations.len(), 1);
+        assert_eq!(planned.operations[0].kind, OperationKind::VideoTranscode);
+        assert_eq!(planned.operations[0].stream_id, Some(0));
+        assert_eq!(planned.estimated_workspace_bytes, 2_500);
+    }
+
+    #[test]
+    fn video_policy_required_operations_reject_invalid_stream_bindings() {
+        let mut missing_constraint = unconstrained_video_stream_policy(99);
+        missing_constraint.average_frame_rate = Some("24000/1001".to_string());
+        let missing_policy = VideoTranscodePolicy {
+            stream_constraints: vec![missing_constraint],
+            ..VideoTranscodePolicy::default()
+        };
+        assert!(matches!(
+            super::apply_transcode_policy_required_operations(
+                planned_job_for_tests(Vec::new(), 0),
+                &missing_policy,
+                1_000,
+            ),
+            Err("video constraint references unknown stream id")
+        ));
+
+        let mut non_video_planned = planned_job_for_tests(Vec::new(), 0);
+        non_video_planned.source.streams[0].kind = StreamKind::Audio;
+        let mut non_video_constraint = unconstrained_video_stream_policy(0);
+        non_video_constraint.max_bitrate_bps = MaxBitrateBps::new(8_000_000);
+        let non_video_policy = VideoTranscodePolicy {
+            stream_constraints: vec![non_video_constraint],
+            ..VideoTranscodePolicy::default()
+        };
+        assert!(matches!(
+            super::apply_transcode_policy_required_operations(
+                non_video_planned,
+                &non_video_policy,
+                1_000,
+            ),
+            Err("video constraint references non-video stream")
+        ));
+    }
+
+    #[test]
+    fn video_policy_required_operations_ignore_empty_constraints() {
+        let planned = planned_job_for_tests(
+            vec![PlannedOperation {
+                kind: OperationKind::NoOp,
+                stream_id: None,
+                output_stream_id: None,
+            }],
+            1_000,
+        );
+        let policy = VideoTranscodePolicy {
+            stream_constraints: vec![unconstrained_video_stream_policy(0)],
+            ..VideoTranscodePolicy::default()
+        };
+
+        let planned = super::apply_transcode_policy_required_operations(planned, &policy, 1_000)
+            .expect("empty video constraints should not require a planned operation");
+
+        assert_eq!(
+            planned.operations,
+            vec![PlannedOperation {
+                kind: OperationKind::NoOp,
+                stream_id: None,
+                output_stream_id: None,
+            }]
+        );
+        assert_eq!(planned.estimated_workspace_bytes, 0);
+    }
+
+    #[test]
+    fn audio_policy_required_operations_insert_transcode_for_sample_rate_constraint() {
+        let planned = planned_audio_job_for_tests(
+            vec![PlannedOperation {
+                kind: OperationKind::NoOp,
+                stream_id: None,
+                output_stream_id: None,
+            }],
+            0,
+        );
+        let mut constraint = unconstrained_audio_stream_policy(0);
+        constraint.sample_rate_hz = Some(48_000);
+        let policy = VideoTranscodePolicy {
+            audio_stream_constraints: vec![constraint],
+            ..VideoTranscodePolicy::default()
+        };
+
+        let planned = super::apply_transcode_policy_required_operations(planned, &policy, 1_000)
+            .expect("technical audio constraint should require a transcode operation");
+
+        assert_eq!(
+            planned.operations,
+            vec![PlannedOperation {
+                kind: OperationKind::AudioTranscode,
+                stream_id: Some(0),
+                output_stream_id: Some(0),
+            }]
+        );
+        assert_eq!(planned.estimated_workspace_bytes, 1_500);
+    }
+
+    #[test]
+    fn audio_policy_required_operations_preserve_existing_transcode_operation() {
+        let planned = planned_audio_job_for_tests(
+            vec![PlannedOperation {
+                kind: OperationKind::AudioTranscode,
+                stream_id: Some(0),
+                output_stream_id: Some(0),
+            }],
+            1_500,
+        );
+        let mut constraint = unconstrained_audio_stream_policy(0);
+        constraint.loudness_profile = Some("dialog-normalized".to_string());
+        let policy = VideoTranscodePolicy {
+            audio_stream_constraints: vec![constraint],
+            ..VideoTranscodePolicy::default()
+        };
+
+        let planned = super::apply_transcode_policy_required_operations(planned, &policy, 1_000)
+            .expect("existing audio transcode should satisfy audio constraint operation needs");
+
+        assert_eq!(planned.operations.len(), 1);
+        assert_eq!(planned.operations[0].kind, OperationKind::AudioTranscode);
+        assert_eq!(planned.operations[0].stream_id, Some(0));
+        assert_eq!(planned.estimated_workspace_bytes, 1_500);
+    }
+
+    #[test]
+    fn audio_policy_required_operations_reject_invalid_stream_bindings() {
+        let mut missing_constraint = unconstrained_audio_stream_policy(99);
+        missing_constraint.bitrate_bps = Some(160_000);
+        let missing_policy = VideoTranscodePolicy {
+            audio_stream_constraints: vec![missing_constraint],
+            ..VideoTranscodePolicy::default()
+        };
+        assert!(matches!(
+            super::apply_transcode_policy_required_operations(
+                planned_audio_job_for_tests(Vec::new(), 0),
+                &missing_policy,
+                1_000,
+            ),
+            Err("audio constraint references unknown stream id")
+        ));
+
+        let mut non_audio_planned = planned_audio_job_for_tests(Vec::new(), 0);
+        non_audio_planned.source.streams[0].kind = StreamKind::Video;
+        let mut non_audio_constraint = unconstrained_audio_stream_policy(0);
+        non_audio_constraint.dynamic_range = Some("speech".to_string());
+        let non_audio_policy = VideoTranscodePolicy {
+            audio_stream_constraints: vec![non_audio_constraint],
+            ..VideoTranscodePolicy::default()
+        };
+        assert!(matches!(
+            super::apply_transcode_policy_required_operations(
+                non_audio_planned,
+                &non_audio_policy,
+                1_000,
+            ),
+            Err("audio constraint references non-audio stream")
+        ));
+    }
+
+    #[test]
+    fn audio_policy_required_operations_ignore_empty_constraints() {
+        let planned = planned_audio_job_for_tests(
+            vec![PlannedOperation {
+                kind: OperationKind::NoOp,
+                stream_id: None,
+                output_stream_id: None,
+            }],
+            1_000,
+        );
+        let policy = VideoTranscodePolicy {
+            audio_stream_constraints: vec![unconstrained_audio_stream_policy(0)],
+            ..VideoTranscodePolicy::default()
+        };
+
+        let planned = super::apply_transcode_policy_required_operations(planned, &policy, 1_000)
+            .expect("empty audio constraints should not require a planned operation");
+
+        assert_eq!(
+            planned.operations,
+            vec![PlannedOperation {
+                kind: OperationKind::NoOp,
+                stream_id: None,
+                output_stream_id: None,
+            }]
+        );
+        assert_eq!(planned.estimated_workspace_bytes, 0);
+    }
+
     #[test]
     fn duration_and_aggregate_output_rates_drive_workspace_demand() {
         let mut planned = planned_job_for_tests(
@@ -2544,6 +3015,12 @@ mod tests {
                     profile: None,
                     level: None,
                     max_bitrate_bps: MaxBitrateBps::new(100_000),
+                    width_px: None,
+                    height_px: None,
+                    pixel_format: None,
+                    bit_depth: None,
+                    average_frame_rate: None,
+                    color_range: None,
                     color_primaries: None,
                     color_transfer: None,
                     color_space: None,
@@ -2555,6 +3032,12 @@ mod tests {
                     profile: None,
                     level: None,
                     max_bitrate_bps: MaxBitrateBps::new(20_000_000),
+                    width_px: None,
+                    height_px: None,
+                    pixel_format: None,
+                    bit_depth: None,
+                    average_frame_rate: None,
+                    color_range: None,
                     color_primaries: None,
                     color_transfer: None,
                     color_space: None,
@@ -3175,6 +3658,22 @@ mod tests {
         assert_eq!(
             preflight_error_detail(&err),
             "exact HDR10 color-volume authoring requires a supported encoder"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+    }
+
+    #[test]
+    fn unsupported_video_quality_encoder_preflight_classification_is_stable() {
+        let err = JobPreflightError::Build(BuildArgsError::UnsupportedVideoQualityEncoder(
+            "experimental-video-encoder".to_string(),
+        ));
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_unsupported_video_quality_encoder"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "video quality options require a reviewed encoder-specific contract"
         );
         assert_eq!(preflight_failed_stage(&err), "build_steps");
     }

@@ -5,9 +5,9 @@
 //! - Persists phase, operation, verification, and compact-audit rows before terminal status.
 //! - Keeps runtime adapters injected so tests avoid real `ffmpeg` execution.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::num::TryFromIntError;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -48,7 +48,7 @@ use revaer_media_core::target::{
     MAX_CONTAINER_METADATA_ENTRIES, MAX_CONTAINER_METADATA_KEY_BYTES,
     MAX_CONTAINER_METADATA_TOTAL_BYTES, MAX_CONTAINER_METADATA_VALUE_BYTES, SidecarSubtitleInput,
     SubtitlePlacement, TargetStream, UnmatchedStreamPolicies, UnmatchedStreamPolicy,
-    compile_desired_target_with_sidecars_at_and_unmatched_policies,
+    VideoFrameRate, compile_desired_target_with_sidecars_at_and_unmatched_policies,
 };
 use revaer_media_runtime::capabilities::{CapabilitySnapshot, CodecCapability};
 use revaer_media_runtime::execute::{
@@ -110,6 +110,15 @@ const SPEECH_DYNAMIC_RANGE_MAX_LU: f64 = 12.0;
 const MAX_AUDIO_ANALYSIS_STDERR_BYTES: usize = 64 * 1024;
 const AUDIO_ANALYSIS_TRUNCATION_MARKER: &str = "...[truncated]\n";
 const AUDIO_ANALYSIS_TIMEOUT: Duration = Duration::from_mins(30);
+const MAX_ATTACHMENT_DIGEST_STDERR_BYTES: usize = 64 * 1024;
+const ATTACHMENT_DIGEST_TRUNCATION_MARKER: &str = "...[truncated]\n";
+const ATTACHMENT_DIGEST_DEADLINE: Duration = Duration::from_mins(5);
+const ATTACHMENT_DIGEST_PROCESS_TIMEOUT: Duration = Duration::from_mins(2);
+const MAX_RETAINED_ATTACHMENT_STREAMS: usize = 64;
+const MAX_ATTACHMENT_PAYLOAD_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_ATTACHMENT_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_VIDEO_UPSCALE_AXIS_FACTOR: u32 = 4;
+const MAX_VIDEO_UPSCALE_AREA_FACTOR: u64 = 16;
 
 type RuntimeInspector = dyn InspectAdapter + Send + Sync;
 type RuntimeCommandRunner = dyn CommandRunner + Send + Sync;
@@ -117,6 +126,7 @@ type RuntimeCapacityProbe = dyn FilesystemCapacityProbe + Send + Sync;
 type RuntimeReplacementCommitter = dyn ReplacementCommitter + Send + Sync;
 type RuntimeVerificationExecutor = dyn VerificationExecutor + Send + Sync;
 type RuntimeAudioAnalyzer = dyn AudioAnalysisAdapter + Send + Sync;
+type RuntimeAttachmentDigest = dyn AttachmentDigestAdapter + Send + Sync;
 
 struct MediaJobRuntimeComponents {
     inspector: Arc<RuntimeInspector>,
@@ -125,6 +135,7 @@ struct MediaJobRuntimeComponents {
     replacement_committer: Arc<RuntimeReplacementCommitter>,
     verification_executor: Arc<RuntimeVerificationExecutor>,
     audio_analyzer: Arc<RuntimeAudioAnalyzer>,
+    attachment_digest: Arc<RuntimeAttachmentDigest>,
     events: EventBus,
     telemetry: Metrics,
     tick_interval: Duration,
@@ -134,6 +145,7 @@ struct MediaJobRuntimeComponents {
 
 struct RuntimePreflightEvaluation {
     evaluation: JobPreflightEvaluation,
+    source_inspection: MediaInspection,
     source_graph: MediaGraph,
     desired: DesiredGraph,
     desired_target: Option<DesiredTargetSnapshot>,
@@ -150,6 +162,8 @@ struct PreflightReadyContext<'a> {
     expected_container_metadata: &'a [MetadataEntry],
     expected_chapters: &'a [ChapterInspection],
     expected_sidecars: &'a [SidecarSubtitle],
+    source_inspection: &'a MediaInspection,
+    attachment_materialization_root: &'a Path,
     planning_outcome: Option<&'a PlanningOutcome>,
     managed_workspace: Option<&'a revaer_media_runtime::workspace::ManagedWorkspace>,
     shutdown: Option<&'a RuntimeShutdownReceiver>,
@@ -169,11 +183,32 @@ struct RuntimePreflightBuildInput {
 }
 
 struct DesiredVerificationContext<'a> {
+    source_inspection: &'a MediaInspection,
     source_graph: &'a MediaGraph,
     desired: &'a DesiredGraph,
     desired_target: Option<&'a DesiredTargetSnapshot>,
     expected_container_metadata: &'a [MetadataEntry],
     expected_chapters: &'a [ChapterInspection],
+    attachment_materialization_root: &'a Path,
+}
+
+struct RuntimeGraphVerificationControl<'a> {
+    media_job_public_id: Uuid,
+    cancel_generation: i64,
+    shutdown: Option<&'a RuntimeShutdownReceiver>,
+}
+
+impl<'a> RuntimeGraphVerificationControl<'a> {
+    const fn from_job(
+        job: &ClaimedMediaJobRow,
+        shutdown: Option<&'a RuntimeShutdownReceiver>,
+    ) -> Self {
+        Self {
+            media_job_public_id: job.media_job_public_id,
+            cancel_generation: job.cancel_generation,
+            shutdown,
+        }
+    }
 }
 
 struct VerificationCheckOutcome<'a> {
@@ -188,6 +223,14 @@ struct SidecarPublicationContext<'a> {
     source_sidecars: &'a [SidecarSubtitle],
     outputs: &'a [DesiredSidecarOutput],
     removals: &'a [String],
+}
+
+struct VerifiedReplacementContext<'a> {
+    max_candidate_output_bytes: u64,
+    verification: &'a DesiredVerificationContext<'a>,
+    workspace: &'a revaer_media_runtime::workspace::ManagedWorkspace,
+    sidecar_publication: SidecarPublicationContext<'a>,
+    shutdown: Option<&'a RuntimeShutdownReceiver>,
 }
 
 #[derive(Debug, Default)]
@@ -234,7 +277,30 @@ struct AudioMeasurement {
 }
 
 trait AudioAnalysisAdapter {
-    fn measure(&self, source_path: &str, stream_id: u32) -> Result<AudioMeasurement, String>;
+    fn measure(
+        &self,
+        source_path: &str,
+        stream_id: u32,
+        control: &dyn ExecutionControl,
+    ) -> Result<AudioMeasurement, String>;
+}
+
+trait AttachmentDigestAdapter {
+    fn digest(
+        &self,
+        source_path: &str,
+        stream_id: u32,
+        materialization_root: &Path,
+        max_payload_bytes: u64,
+        deadline: Instant,
+        control: &dyn ExecutionControl,
+    ) -> Result<AttachmentPayloadDigest, String>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AttachmentPayloadDigest {
+    sha256: String,
+    bytes: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -243,7 +309,18 @@ struct SystemFfmpegAudioAnalysisAdapter {
 }
 
 #[derive(Debug, Clone)]
+struct SystemFfmpegAttachmentDigestAdapter {
+    ffmpeg_bin: String,
+}
+
+#[derive(Debug, Clone)]
 struct AudioAnalysisProcessOutput {
+    status: ExitStatus,
+    stderr: String,
+}
+
+#[derive(Debug, Clone)]
+struct AttachmentDigestProcessOutput {
     status: ExitStatus,
     stderr: String,
 }
@@ -256,8 +333,21 @@ impl Default for SystemFfmpegAudioAnalysisAdapter {
     }
 }
 
+impl Default for SystemFfmpegAttachmentDigestAdapter {
+    fn default() -> Self {
+        Self {
+            ffmpeg_bin: "ffmpeg".to_string(),
+        }
+    }
+}
+
 impl AudioAnalysisAdapter for SystemFfmpegAudioAnalysisAdapter {
-    fn measure(&self, source_path: &str, stream_id: u32) -> Result<AudioMeasurement, String> {
+    fn measure(
+        &self,
+        source_path: &str,
+        stream_id: u32,
+        control: &dyn ExecutionControl,
+    ) -> Result<AudioMeasurement, String> {
         let args = vec![
             "-hide_banner".to_string(),
             "-nostats".to_string(),
@@ -272,7 +362,7 @@ impl AudioAnalysisAdapter for SystemFfmpegAudioAnalysisAdapter {
             "null".to_string(),
             "-".to_string(),
         ];
-        let output = run_audio_analysis_process(&self.ffmpeg_bin, &args)?;
+        let output = run_audio_analysis_process(&self.ffmpeg_bin, &args, control)?;
         if !output.status.success() {
             let detail = if output.stderr.is_empty() {
                 format!("status {}", output.status)
@@ -285,18 +375,144 @@ impl AudioAnalysisAdapter for SystemFfmpegAudioAnalysisAdapter {
     }
 }
 
+impl AttachmentDigestAdapter for SystemFfmpegAttachmentDigestAdapter {
+    fn digest(
+        &self,
+        source_path: &str,
+        stream_id: u32,
+        materialization_root: &Path,
+        max_payload_bytes: u64,
+        deadline: Instant,
+        control: &dyn ExecutionControl,
+    ) -> Result<AttachmentPayloadDigest, String> {
+        let payload = AttachmentDigestTempPath::create(materialization_root)?;
+        let payload_path = payload.path().to_path_buf();
+        let payload_arg = payload_path.to_string_lossy().into_owned();
+        let args = vec![
+            "-y".to_string(),
+            "-hide_banner".to_string(),
+            "-nostats".to_string(),
+            "-nostdin".to_string(),
+            "-loglevel".to_string(),
+            "error".to_string(),
+            format!("-dump_attachment:{stream_id}"),
+            payload_arg,
+            "-i".to_string(),
+            source_path.to_string(),
+            "-map".to_string(),
+            format!("0:{stream_id}"),
+            "-f".to_string(),
+            "null".to_string(),
+            "-".to_string(),
+        ];
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or_else(|| "attachment digest deadline exceeded".to_string())?;
+        let output = run_attachment_digest_process_with_timeout(
+            &self.ffmpeg_bin,
+            &args,
+            remaining.min(ATTACHMENT_DIGEST_PROCESS_TIMEOUT),
+            Some((payload.file(), max_payload_bytes)),
+            control,
+        )?;
+        if !output.status.success() {
+            let detail = if output.stderr.is_empty() {
+                format!("status {}", output.status)
+            } else {
+                format!("status {}: {}", output.status, output.stderr)
+            };
+            return Err(format!("attachment digest command failed: {detail}"));
+        }
+        let bytes = payload
+            .file()
+            .metadata()
+            .map_err(|error| format!("attachment digest payload metadata failed: {error}"))?
+            .len();
+        if bytes > max_payload_bytes {
+            return Err(format!(
+                "attachment payload exceeds {max_payload_bytes} byte limit"
+            ));
+        }
+        let sha256 = hash_attachment_payload_file(payload.file())?;
+        Ok(AttachmentPayloadDigest { sha256, bytes })
+    }
+}
+
+#[derive(Debug)]
+struct AttachmentDigestTempPath {
+    path: PathBuf,
+    file: fs::File,
+}
+
+impl AttachmentDigestTempPath {
+    fn create(materialization_root: &Path) -> Result<Self, String> {
+        let metadata = fs::symlink_metadata(materialization_root)
+            .map_err(|error| format!("attachment digest workspace inspection failed: {error}"))?;
+        if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+            return Err("attachment digest workspace is not a trusted directory".to_string());
+        }
+        let canonical_root = fs::canonicalize(materialization_root)
+            .map_err(|error| format!("attachment digest workspace resolution failed: {error}"))?;
+        let path = canonical_root.join(format!(
+            "revaer-media-attachment-{}.payload",
+            Uuid::new_v4()
+        ));
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| format!("attachment digest temp file create failed: {error}"))?;
+        let payload_metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("attachment digest temp file inspection failed: {error}"))?;
+        if !payload_metadata.file_type().is_file() || payload_metadata.file_type().is_symlink() {
+            return Err("attachment digest temp path is not a trusted file".to_string());
+        }
+        Ok(Self { path, file })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    const fn file(&self) -> &fs::File {
+        &self.file
+    }
+}
+
+impl Drop for AttachmentDigestTempPath {
+    fn drop(&mut self) {
+        match fs::remove_file(&self.path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                warn!(
+                    path = %self.path.display(),
+                    error = %error,
+                    "media attachment digest temp file cleanup failed"
+                );
+            }
+        }
+    }
+}
+
 fn run_audio_analysis_process(
     ffmpeg_bin: &str,
     args: &[String],
+    control: &dyn ExecutionControl,
 ) -> Result<AudioAnalysisProcessOutput, String> {
-    run_audio_analysis_process_with_timeout(ffmpeg_bin, args, AUDIO_ANALYSIS_TIMEOUT)
+    run_audio_analysis_process_with_timeout(ffmpeg_bin, args, AUDIO_ANALYSIS_TIMEOUT, control)
 }
 
 fn run_audio_analysis_process_with_timeout(
     ffmpeg_bin: &str,
     args: &[String],
     timeout: Duration,
+    control: &dyn ExecutionControl,
 ) -> Result<AudioAnalysisProcessOutput, String> {
+    if control.cancellation_requested() {
+        return Err("audio analyzer command cancelled".to_string());
+    }
     let mut child = Command::new(ffmpeg_bin)
         .args(args)
         .stdin(Stdio::null())
@@ -311,6 +527,11 @@ fn run_audio_analysis_process_with_timeout(
     let stderr_reader = thread::spawn(move || read_bounded_audio_analysis_stderr(stderr));
     let started_at = Instant::now();
     let status = loop {
+        if control.cancellation_requested() {
+            terminate_audio_analysis_process(&mut child)?;
+            let _stderr = join_audio_analysis_stderr_reader(stderr_reader)?;
+            return Err("audio analyzer command cancelled".to_string());
+        }
         if started_at.elapsed() >= timeout {
             terminate_audio_analysis_process(&mut child)?;
             let _stderr = join_audio_analysis_stderr_reader(stderr_reader)?;
@@ -388,6 +609,172 @@ fn retain_audio_analysis_tail(retained: &mut Vec<u8>, chunk: &[u8], truncated: &
     retained.extend_from_slice(chunk);
 }
 
+fn run_attachment_digest_process_with_timeout(
+    ffmpeg_bin: &str,
+    args: &[String],
+    timeout: Duration,
+    payload_guard: Option<(&fs::File, u64)>,
+    control: &dyn ExecutionControl,
+) -> Result<AttachmentDigestProcessOutput, String> {
+    if control.cancellation_requested() {
+        return Err("attachment digest command cancelled".to_string());
+    }
+    let mut command = Command::new(ffmpeg_bin);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("attachment digest command spawn failed: {error}"))?;
+    let Some(stderr) = child.stderr.take() else {
+        terminate_attachment_digest_process(&mut child)?;
+        return Err("attachment digest stderr pipe unavailable".to_string());
+    };
+    let stderr_reader = thread::spawn(move || read_bounded_attachment_digest_stderr(stderr));
+    let started_at = Instant::now();
+    let status = loop {
+        if control.cancellation_requested() {
+            terminate_attachment_digest_process(&mut child)?;
+            let _stderr = join_attachment_digest_stderr_reader(stderr_reader)?;
+            return Err("attachment digest command cancelled".to_string());
+        }
+        if started_at.elapsed() >= timeout {
+            terminate_attachment_digest_process(&mut child)?;
+            let _stderr = join_attachment_digest_stderr_reader(stderr_reader)?;
+            return Err(format!(
+                "attachment digest command timed out after {timeout:?}"
+            ));
+        }
+        if let Some((payload_file, max_payload_bytes)) = payload_guard {
+            let payload_bytes = payload_file
+                .metadata()
+                .map_err(|error| format!("attachment digest payload metadata failed: {error}"))?
+                .len();
+            if payload_bytes > max_payload_bytes {
+                terminate_attachment_digest_process(&mut child)?;
+                let _stderr = join_attachment_digest_stderr_reader(stderr_reader)?;
+                return Err(format!(
+                    "attachment payload exceeds {max_payload_bytes} byte limit"
+                ));
+            }
+        }
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("attachment digest command wait failed: {error}"))?
+        {
+            terminate_attachment_digest_process_group(&child)?;
+            break status;
+        }
+        thread::sleep(Duration::from_millis(100));
+    };
+    let stderr = join_attachment_digest_stderr_reader(stderr_reader)?;
+    Ok(AttachmentDigestProcessOutput { status, stderr })
+}
+
+fn terminate_attachment_digest_process(child: &mut std::process::Child) -> Result<(), String> {
+    let group_result = terminate_attachment_digest_process_group(child);
+    if group_result.is_err() {
+        match child.kill() {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::InvalidInput => {}
+            Err(error) => return Err(format!("attachment digest command kill failed: {error}")),
+        }
+    }
+    child
+        .wait()
+        .map_err(|error| format!("attachment digest command reap failed: {error}"))?;
+    group_result
+}
+
+#[cfg(unix)]
+fn terminate_attachment_digest_process_group(child: &std::process::Child) -> Result<(), String> {
+    let process_group = rustix::process::Pid::from_child(child);
+    match rustix::process::kill_process_group(process_group, rustix::process::Signal::KILL) {
+        Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
+        Err(error) => Err(format!(
+            "attachment digest process-group termination failed: {error}"
+        )),
+    }
+}
+
+#[cfg(not(unix))]
+fn terminate_attachment_digest_process_group(_child: &std::process::Child) -> Result<(), String> {
+    Err("attachment digest process-group termination is unavailable".to_string())
+}
+
+fn join_attachment_digest_stderr_reader(
+    stderr_reader: thread::JoinHandle<io::Result<String>>,
+) -> Result<String, String> {
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "attachment digest stderr reader thread panicked".to_string())?
+        .map_err(|error| format!("attachment digest stderr read failed: {error}"))?;
+    Ok(stderr)
+}
+
+fn read_bounded_attachment_digest_stderr(mut stderr: impl Read) -> io::Result<String> {
+    let mut retained = Vec::with_capacity(MAX_ATTACHMENT_DIGEST_STDERR_BYTES);
+    let mut scratch = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        let read = stderr.read(&mut scratch)?;
+        if read == 0 {
+            break;
+        }
+        retain_attachment_digest_tail(&mut retained, &scratch[..read], &mut truncated);
+    }
+    let mut detail = String::from_utf8_lossy(&retained).trim().to_string();
+    if truncated {
+        detail.insert_str(0, ATTACHMENT_DIGEST_TRUNCATION_MARKER);
+    }
+    Ok(detail)
+}
+
+fn retain_attachment_digest_tail(retained: &mut Vec<u8>, chunk: &[u8], truncated: &mut bool) {
+    if chunk.len() >= MAX_ATTACHMENT_DIGEST_STDERR_BYTES {
+        retained.clear();
+        retained.extend_from_slice(&chunk[chunk.len() - MAX_ATTACHMENT_DIGEST_STDERR_BYTES..]);
+        *truncated = true;
+        return;
+    }
+    let overflow = retained
+        .len()
+        .saturating_add(chunk.len())
+        .saturating_sub(MAX_ATTACHMENT_DIGEST_STDERR_BYTES);
+    if overflow > 0 {
+        retained.drain(..overflow);
+        *truncated = true;
+    }
+    retained.extend_from_slice(chunk);
+}
+
+fn hash_attachment_payload_file(file: &fs::File) -> Result<String, String> {
+    let mut file = file
+        .try_clone()
+        .map_err(|error| format!("attachment payload clone failed: {error}"))?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("attachment payload seek failed: {error}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("attachment payload read failed: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 /// Runtime worker that progresses queued media jobs to terminal status.
 pub(crate) struct MediaJobRuntime {
     store: MediaStore,
@@ -397,6 +784,7 @@ pub(crate) struct MediaJobRuntime {
     replacement_committer: Arc<RuntimeReplacementCommitter>,
     verification_executor: Arc<RuntimeVerificationExecutor>,
     audio_analyzer: Arc<RuntimeAudioAnalyzer>,
+    attachment_digest: Arc<RuntimeAttachmentDigest>,
     events: EventBus,
     telemetry: Metrics,
     tick_interval: Duration,
@@ -424,6 +812,7 @@ impl MediaJobRuntime {
                 replacement_committer: Arc::new(SystemReplacementCommitter),
                 verification_executor: Arc::new(SystemVerificationExecutor),
                 audio_analyzer: Arc::new(SystemFfmpegAudioAnalysisAdapter::default()),
+                attachment_digest: Arc::new(SystemFfmpegAttachmentDigestAdapter::default()),
                 events,
                 telemetry,
                 tick_interval: DEFAULT_TICK_INTERVAL,
@@ -445,6 +834,7 @@ impl MediaJobRuntime {
             replacement_committer: components.replacement_committer,
             verification_executor: components.verification_executor,
             audio_analyzer: components.audio_analyzer,
+            attachment_digest: components.attachment_digest,
             events: components.events,
             telemetry: components.telemetry,
             tick_interval: components.tick_interval,
@@ -769,6 +1159,7 @@ impl MediaJobRuntime {
             .await?;
         let RuntimePreflightEvaluation {
             evaluation,
+            source_inspection,
             source_graph,
             desired,
             desired_target,
@@ -793,6 +1184,8 @@ impl MediaJobRuntime {
                         expected_container_metadata: &expected_container_metadata,
                         expected_chapters: &expected_chapters,
                         expected_sidecars: &expected_sidecars,
+                        source_inspection: &source_inspection,
+                        attachment_materialization_root: &workspace.input_path,
                         planning_outcome: planning_outcome.as_ref(),
                         managed_workspace,
                         shutdown,
@@ -838,11 +1231,13 @@ impl MediaJobRuntime {
         context: PreflightReadyContext<'_>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         let verification_context = DesiredVerificationContext {
+            source_inspection: context.source_inspection,
             source_graph: context.source_graph,
             desired: context.desired,
             desired_target: context.desired_target,
             expected_container_metadata: context.expected_container_metadata,
             expected_chapters: context.expected_chapters,
+            attachment_materialization_root: context.attachment_materialization_root,
         };
         self.append_phase(
             job.media_job_public_id,
@@ -886,18 +1281,22 @@ impl MediaJobRuntime {
             .await?;
         let sidecar_outputs = report.planned.sidecar_outputs.clone();
         let sidecar_removals = report.planned.sidecar_removals.clone();
+        let max_candidate_output_bytes = report.capacity_report.required_workspace_bytes;
         let committed = self
             .execute_verified_replacement(
                 job,
                 report.steps,
-                &verification_context,
-                managed_workspace,
-                &SidecarPublicationContext {
-                    source_sidecars: context.expected_sidecars,
-                    outputs: &sidecar_outputs,
-                    removals: &sidecar_removals,
+                VerifiedReplacementContext {
+                    max_candidate_output_bytes,
+                    verification: &verification_context,
+                    workspace: managed_workspace,
+                    sidecar_publication: SidecarPublicationContext {
+                        source_sidecars: context.expected_sidecars,
+                        outputs: &sidecar_outputs,
+                        removals: &sidecar_removals,
+                    },
+                    shutdown: context.shutdown,
                 },
-                context.shutdown,
             )
             .await?;
         managed_workspace.validate()?;
@@ -1071,13 +1470,11 @@ impl MediaJobRuntime {
         let cancellation_requested = monitor
             .await
             .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
-        if cancellation_requested {
-            return Err(MediaJobRuntimeError::Cancelled);
-        }
         let result = match execution {
             Err(error) if matches!(error.failed, ExecuteStepError::Cancelled) => {
                 Err(MediaJobRuntimeError::Cancelled)
             }
+            Ok(()) if cancellation_requested => Err(MediaJobRuntimeError::Cancelled),
             result => result.map_err(MediaJobRuntimeError::Execute),
         };
         workspace.validate()?;
@@ -1098,14 +1495,18 @@ impl MediaJobRuntime {
         &self,
         job: &ClaimedMediaJobRow,
         steps: Vec<ExecutionStep>,
-        verification_context: &DesiredVerificationContext<'_>,
-        workspace: &revaer_media_runtime::workspace::ManagedWorkspace,
-        sidecar_publication: &SidecarPublicationContext<'_>,
-        shutdown: Option<&RuntimeShutdownReceiver>,
+        context: VerifiedReplacementContext<'_>,
     ) -> Result<CommittedReplacement, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
         let candidate_output_path = self
-            .execute_and_verify_candidate(job, &steps, verification_context, workspace, shutdown)
+            .execute_and_verify_candidate(
+                job,
+                &steps,
+                context.max_candidate_output_bytes,
+                context.verification,
+                context.workspace,
+                context.shutdown,
+            )
             .await?;
         self.ensure_not_cancelled(job).await?;
         let replace_step = steps
@@ -1134,12 +1535,17 @@ impl MediaJobRuntime {
                 job,
                 source_path,
                 output_path,
-                sidecar_publication.outputs,
-                sidecar_publication.removals,
+                context.sidecar_publication.outputs,
+                context.sidecar_publication.removals,
             )
             .await?;
         let verification = self
-            .verify_final_desired_state(job, verification_context, sidecar_publication, shutdown)
+            .verify_final_desired_state(
+                job,
+                context.verification,
+                &context.sidecar_publication,
+                context.shutdown,
+            )
             .await;
         let verification = match verification {
             Ok(()) => self.ensure_not_cancelled(job).await,
@@ -1165,6 +1571,7 @@ impl MediaJobRuntime {
         &self,
         job: &ClaimedMediaJobRow,
         steps: &[ExecutionStep],
+        max_candidate_output_bytes: u64,
         verification_context: &DesiredVerificationContext<'_>,
         workspace: &revaer_media_runtime::workspace::ManagedWorkspace,
         shutdown: Option<&RuntimeShutdownReceiver>,
@@ -1178,12 +1585,18 @@ impl MediaJobRuntime {
         let pre_replace_steps = steps
             .iter()
             .filter(|step| !matches!(step, ExecutionStep::AtomicReplace { .. }))
-            .filter(|step| !matches!(step, ExecutionStep::QuarantineFailedOutput { .. }))
             .cloned()
             .collect::<Vec<_>>();
         self.execute_steps(job, pre_replace_steps, workspace, shutdown)
             .await?;
         self.ensure_not_cancelled(job).await?;
+        if let Err(error) = validate_candidate_output_growth(
+            Path::new(&candidate_output_path),
+            max_candidate_output_bytes,
+        ) {
+            self.quarantine_candidate(steps).await?;
+            return Err(error);
+        }
         let candidate_inspection = match self
             .inspect_media(job, candidate_output_path.clone(), shutdown)
             .await
@@ -1194,9 +1607,10 @@ impl MediaJobRuntime {
                 return Err(error);
             }
         };
+        let graph_control = RuntimeGraphVerificationControl::from_job(job, shutdown);
         let graph_verification = self
             .verify_graph_inspection(
-                job.media_job_public_id,
+                &graph_control,
                 10,
                 "candidate_graph",
                 &candidate_inspection,
@@ -1422,8 +1836,9 @@ impl MediaJobRuntime {
         let inspection = self
             .inspect_media(job, output_path.to_string(), shutdown)
             .await?;
+        let control = RuntimeGraphVerificationControl::from_job(job, shutdown);
         self.verify_graph_inspection(
-            job.media_job_public_id,
+            &control,
             check_index,
             check_kind,
             &inspection,
@@ -1442,8 +1857,9 @@ impl MediaJobRuntime {
         let inspection = self
             .inspect_media(job, job.source_path.clone(), shutdown)
             .await?;
+        let control = RuntimeGraphVerificationControl::from_job(job, shutdown);
         self.verify_graph_inspection(
-            job.media_job_public_id,
+            &control,
             20,
             "final_graph",
             &inspection,
@@ -1483,7 +1899,7 @@ impl MediaJobRuntime {
 
     async fn verify_graph_inspection(
         &self,
-        media_job_public_id: Uuid,
+        control: &RuntimeGraphVerificationControl<'_>,
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
@@ -1493,7 +1909,7 @@ impl MediaJobRuntime {
         let check_status = if matched { "passed" } else { "failed" };
         let actual_value = if matched { "matched" } else { "mismatched" };
         self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-            media_job_public_id,
+            media_job_public_id: control.media_job_public_id,
             check_index,
             check_kind,
             check_status,
@@ -1504,7 +1920,7 @@ impl MediaJobRuntime {
         .await?;
         if matched {
             self.verify_video_constraints_inspection(
-                media_job_public_id,
+                control.media_job_public_id,
                 video_constraint_check_index(check_kind, check_index),
                 video_constraint_check_kind(check_kind),
                 inspection,
@@ -1512,7 +1928,7 @@ impl MediaJobRuntime {
             )
             .await?;
             self.verify_audio_constraints_inspection(
-                media_job_public_id,
+                control,
                 audio_constraint_check_index(check_kind, check_index),
                 audio_constraint_check_kind(check_kind),
                 inspection,
@@ -1520,7 +1936,7 @@ impl MediaJobRuntime {
             )
             .await?;
             self.verify_container_metadata_inspection(
-                media_job_public_id,
+                control.media_job_public_id,
                 container_metadata_check_index(check_kind, check_index),
                 container_metadata_check_kind(check_kind),
                 inspection,
@@ -1528,17 +1944,33 @@ impl MediaJobRuntime {
             )
             .await?;
             self.verify_chapter_timeline_inspection(
-                media_job_public_id,
+                control.media_job_public_id,
                 chapter_timeline_check_index(check_kind, check_index),
                 chapter_timeline_check_kind(check_kind),
                 inspection,
                 verification_context.expected_chapters,
             )
+            .await?;
+            self.verify_retained_attachment_data_inspection(
+                control.media_job_public_id,
+                retained_stream_check_index(check_kind, check_index),
+                retained_stream_check_kind(check_kind),
+                inspection,
+                verification_context,
+            )
+            .await?;
+            self.verify_retained_attachment_payload_digests(
+                control,
+                retained_attachment_payload_check_index(check_kind, check_index),
+                retained_attachment_payload_check_kind(check_kind),
+                inspection,
+                verification_context,
+            )
             .await
         } else {
             self.telemetry.inc_media_job_failure("verification");
             self.publish_event(Event::MediaJobVerificationFailed {
-                media_job_public_id,
+                media_job_public_id: control.media_job_public_id,
                 check_kind: check_kind.to_string(),
                 error_code: "media_job_output_graph_mismatch".to_string(),
             });
@@ -1603,17 +2035,17 @@ impl MediaJobRuntime {
 
     async fn verify_audio_constraints_inspection(
         &self,
-        media_job_public_id: Uuid,
+        control: &RuntimeGraphVerificationControl<'_>,
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
         verification_context: &DesiredVerificationContext<'_>,
     ) -> Result<(), MediaJobRuntimeError> {
         let verification = self
-            .audio_constraints_match_inspection(inspection, verification_context)
+            .audio_constraints_match_inspection(control, inspection, verification_context)
             .await?;
         self.complete_verification_check(
-            media_job_public_id,
+            control.media_job_public_id,
             check_index,
             check_kind,
             VerificationCheckOutcome {
@@ -1651,6 +2083,85 @@ impl MediaJobRuntime {
         .await
     }
 
+    async fn verify_retained_attachment_data_inspection(
+        &self,
+        media_job_public_id: Uuid,
+        check_index: i32,
+        check_kind: &'static str,
+        inspection: &MediaInspection,
+        verification_context: &DesiredVerificationContext<'_>,
+    ) -> Result<(), MediaJobRuntimeError> {
+        let verification = retained_attachment_data_matches_inspection(
+            verification_context.source_inspection,
+            inspection,
+            verification_context.desired,
+        );
+        self.complete_verification_check(
+            media_job_public_id,
+            check_index,
+            check_kind,
+            VerificationCheckOutcome {
+                matched: verification.matched,
+                expected: verification.expected.as_str(),
+                actual: verification.actual.as_str(),
+                details: verification.details.as_deref(),
+                error_code: "media_job_output_retained_stream_mismatch",
+            },
+        )
+        .await
+    }
+
+    async fn verify_retained_attachment_payload_digests(
+        &self,
+        control: &RuntimeGraphVerificationControl<'_>,
+        check_index: i32,
+        check_kind: &'static str,
+        inspection: &MediaInspection,
+        verification_context: &DesiredVerificationContext<'_>,
+    ) -> Result<(), MediaJobRuntimeError> {
+        let signal = Arc::new(CancellationSignal::default());
+        let monitor_store = self.store.clone();
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let monitor = tokio::spawn(monitor_job_control(
+            monitor_store,
+            control.media_job_public_id,
+            control.cancel_generation,
+            Arc::clone(&signal),
+            stop_rx,
+            control.shutdown.cloned(),
+        ));
+        let verification = retained_attachment_payload_digests_match_inspection(
+            verification_context.source_inspection,
+            inspection,
+            verification_context.desired,
+            Arc::clone(&self.attachment_digest),
+            verification_context.attachment_materialization_root,
+            Arc::clone(&signal),
+        )
+        .await;
+        drop(stop_tx);
+        let cancellation_requested = monitor
+            .await
+            .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+        if cancellation_requested {
+            return Err(MediaJobRuntimeError::Cancelled);
+        }
+        let verification = verification?;
+        self.complete_verification_check(
+            control.media_job_public_id,
+            check_index,
+            check_kind,
+            VerificationCheckOutcome {
+                matched: verification.matched,
+                expected: verification.expected.as_str(),
+                actual: verification.actual.as_str(),
+                details: verification.details.as_deref(),
+                error_code: "media_job_output_attachment_payload_mismatch",
+            },
+        )
+        .await
+    }
+
     async fn complete_verification_check(
         &self,
         media_job_public_id: Uuid,
@@ -1683,17 +2194,38 @@ impl MediaJobRuntime {
 
     async fn audio_constraints_match_inspection(
         &self,
+        control: &RuntimeGraphVerificationControl<'_>,
         inspection: &MediaInspection,
         verification_context: &DesiredVerificationContext<'_>,
     ) -> Result<AudioConstraintVerification, MediaJobRuntimeError> {
-        audio_constraints_match_inspection(
+        let signal = Arc::new(CancellationSignal::default());
+        let monitor_store = self.store.clone();
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let monitor = tokio::spawn(monitor_job_control(
+            monitor_store,
+            control.media_job_public_id,
+            control.cancel_generation,
+            Arc::clone(&signal),
+            stop_rx,
+            control.shutdown.cloned(),
+        ));
+        let verification = audio_constraints_match_inspection(
             inspection,
             verification_context.source_graph,
             verification_context.desired,
             verification_context.desired_target,
             Arc::clone(&self.audio_analyzer),
+            Arc::clone(&signal),
         )
-        .await
+        .await;
+        drop(stop_tx);
+        let cancellation_requested = monitor
+            .await
+            .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+        if cancellation_requested {
+            return Err(MediaJobRuntimeError::Cancelled);
+        }
+        verification
     }
 
     async fn persist_safety_verification(
@@ -2713,40 +3245,37 @@ fn target_stream_from_snapshot(
         codec: row.codec,
         channels,
         channel_layout: row.channel_layout,
-        audio_bitrate_bps: row
-            .audio_bitrate_bps
-            .map(|value| {
-                u32::try_from(value).map_err(|_| {
-                    MediaJobRuntimeError::InvalidDesiredGraph(
-                        "media_job_desired_target_audio_bitrate_invalid",
-                    )
-                })
-            })
-            .transpose()?,
-        audio_sample_rate_hz: row
-            .audio_sample_rate_hz
-            .map(|value| {
-                u32::try_from(value).map_err(|_| {
-                    MediaJobRuntimeError::InvalidDesiredGraph(
-                        "media_job_desired_target_audio_sample_rate_invalid",
-                    )
-                })
-            })
-            .transpose()?,
+        audio_bitrate_bps: snapshot_i32_to_u32(
+            row.audio_bitrate_bps,
+            "media_job_desired_target_audio_bitrate_invalid",
+        )?,
+        audio_sample_rate_hz: snapshot_i32_to_u32(
+            row.audio_sample_rate_hz,
+            "media_job_desired_target_audio_sample_rate_invalid",
+        )?,
         audio_loudness_profile: row.audio_loudness_profile,
         audio_dynamic_range: row.audio_dynamic_range,
         video_profile: row.video_profile,
         video_level: row.video_level,
-        video_bitrate_bps: row
-            .video_bitrate_bps
-            .map(|value| {
-                u32::try_from(value).map_err(|_| {
-                    MediaJobRuntimeError::InvalidDesiredGraph(
-                        "media_job_desired_target_video_bitrate_invalid",
-                    )
-                })
-            })
-            .transpose()?,
+        video_bitrate_bps: snapshot_i32_to_u32(
+            row.video_bitrate_bps,
+            "media_job_desired_target_video_bitrate_invalid",
+        )?,
+        video_width_px: snapshot_i32_to_u32(
+            row.video_width_px,
+            "media_job_desired_target_video_width_invalid",
+        )?,
+        video_height_px: snapshot_i32_to_u32(
+            row.video_height_px,
+            "media_job_desired_target_video_height_invalid",
+        )?,
+        video_pixel_format: row.video_pixel_format,
+        video_bit_depth: snapshot_i32_to_u32(
+            row.video_bit_depth,
+            "media_job_desired_target_video_bit_depth_invalid",
+        )?,
+        video_average_frame_rate: row.video_average_frame_rate,
+        color_range: row.color_range,
         color_primaries: row.color_primaries,
         color_transfer: row.color_transfer,
         color_space: row.color_space,
@@ -2757,6 +3286,17 @@ fn target_stream_from_snapshot(
         subtitle_placement,
         image_subtitle_action,
     })
+}
+
+fn snapshot_i32_to_u32(
+    value: Option<i32>,
+    error_code: &'static str,
+) -> Result<Option<u32>, MediaJobRuntimeError> {
+    value
+        .map(|value| {
+            u32::try_from(value).map_err(|_| MediaJobRuntimeError::InvalidDesiredGraph(error_code))
+        })
+        .transpose()
 }
 
 fn hdr10_color_volume_from_job_stream(
@@ -3158,6 +3698,7 @@ fn video_policy_from_target_snapshot(
     target: Option<&DesiredTargetSnapshot>,
     source: &MediaGraph,
     desired: &DesiredGraph,
+    source_inspection: &MediaInspection,
 ) -> Result<VideoTranscodePolicy, MediaJobRuntimeError> {
     let Some(target) = target else {
         return Ok(policy);
@@ -3178,17 +3719,32 @@ fn video_policy_from_target_snapshot(
         .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
             "media_job_target_constraint_stream_unmatched",
         ))?;
-        policy.stream_constraints.push(VideoStreamConstraints {
-            stream_id: stream.stream_id,
-            profile: target_stream.video_profile.clone(),
-            level: target_stream.video_level.clone(),
-            max_bitrate_bps: max_bitrate_constraint(target_stream.video_bitrate_bps)?,
-            color_primaries: target_stream.color_primaries.clone(),
-            color_transfer: target_stream.color_transfer.clone(),
-            color_space: target_stream.color_space.clone(),
-            hdr_format: target_stream.hdr_format.clone(),
-            hdr10_color_volume: target_stream.hdr10_color_volume.clone(),
-        });
+        let constraints =
+            video_stream_constraints_from_target_stream(stream.stream_id, target_stream)?;
+        let source_stream = source
+            .streams
+            .iter()
+            .find(|candidate| candidate.stream_id == stream.stream_id)
+            .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_target_constraint_source_stream_missing",
+            ))?;
+        let inspected_stream = source_inspection
+            .streams
+            .iter()
+            .find(|candidate| candidate.stream_id == source_stream.stream_id)
+            .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_target_constraint_inspection_missing",
+            ))?;
+        validate_video_upscale_bounds(&constraints, inspected_stream)?;
+        let codec_mismatch = !source_stream
+            .codec
+            .trim()
+            .eq_ignore_ascii_case(stream.codec.trim());
+        if codec_mismatch
+            || video_constraint_stream_mismatch(&constraints, inspected_stream).is_some()
+        {
+            policy.stream_constraints.push(constraints);
+        }
     }
     consumed_stream_ids.clear();
     for target_stream in &target.target.streams {
@@ -3219,6 +3775,41 @@ fn video_policy_from_target_snapshot(
             });
     }
     Ok(policy)
+}
+
+fn validate_video_upscale_bounds(
+    constraints: &VideoStreamConstraints,
+    source: &StreamInspection,
+) -> Result<(), MediaJobRuntimeError> {
+    let (Some(target_width), Some(target_height)) = (constraints.width_px, constraints.height_px)
+    else {
+        return Ok(());
+    };
+    let (Some(source_width), Some(source_height)) = (source.width, source.height) else {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_target_constraint_source_dimensions_missing",
+        ));
+    };
+    if source_width == 0 || source_height == 0 {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_target_constraint_source_dimensions_invalid",
+        ));
+    }
+    if target_width > source_width.saturating_mul(MAX_VIDEO_UPSCALE_AXIS_FACTOR)
+        || target_height > source_height.saturating_mul(MAX_VIDEO_UPSCALE_AXIS_FACTOR)
+    {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_target_constraint_upscale_axis_exceeded",
+        ));
+    }
+    let source_area = u64::from(source_width) * u64::from(source_height);
+    let target_area = u64::from(target_width) * u64::from(target_height);
+    if target_area > source_area.saturating_mul(MAX_VIDEO_UPSCALE_AREA_FACTOR) {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_target_constraint_upscale_area_exceeded",
+        ));
+    }
+    Ok(())
 }
 
 fn desired_target_stream_for_constraints<'a>(
@@ -3338,18 +3929,10 @@ fn expected_video_constraints(
         ) else {
             return Err(video_target_constraint_unmatched(target_stream));
         };
-        constraints.push(VideoStreamConstraints {
-            stream_id: stream.stream_id,
-            profile: target_stream.video_profile.clone(),
-            level: target_stream.video_level.clone(),
-            max_bitrate_bps: max_bitrate_constraint(target_stream.video_bitrate_bps)
+        constraints.push(
+            video_stream_constraints_from_target_stream(stream.stream_id, target_stream)
                 .map_err(|_| video_target_constraint_unmatched(target_stream))?,
-            color_primaries: target_stream.color_primaries.clone(),
-            color_transfer: target_stream.color_transfer.clone(),
-            color_space: target_stream.color_space.clone(),
-            hdr_format: target_stream.hdr_format.clone(),
-            hdr10_color_volume: target_stream.hdr10_color_volume.clone(),
-        });
+        );
     }
     Ok(constraints)
 }
@@ -3369,7 +3952,40 @@ fn video_target_constraint_unmatched(target_stream: &TargetStream) -> VideoConst
     }
 }
 
+fn video_stream_constraints_from_target_stream(
+    stream_id: u32,
+    target_stream: &TargetStream,
+) -> Result<VideoStreamConstraints, MediaJobRuntimeError> {
+    Ok(VideoStreamConstraints {
+        stream_id,
+        profile: target_stream.video_profile.clone(),
+        level: target_stream.video_level.clone(),
+        max_bitrate_bps: max_bitrate_constraint(target_stream.video_bitrate_bps)?,
+        width_px: target_stream.video_width_px,
+        height_px: target_stream.video_height_px,
+        pixel_format: target_stream.video_pixel_format.clone(),
+        bit_depth: target_stream.video_bit_depth,
+        average_frame_rate: target_stream.video_average_frame_rate.clone(),
+        color_range: target_stream.color_range.clone(),
+        color_primaries: target_stream.color_primaries.clone(),
+        color_transfer: target_stream.color_transfer.clone(),
+        color_space: target_stream.color_space.clone(),
+        hdr_format: target_stream.hdr_format.clone(),
+        hdr10_color_volume: target_stream.hdr10_color_volume.clone(),
+    })
+}
+
 fn video_constraint_stream_mismatch(
+    constraint: &VideoStreamConstraints,
+    stream: &StreamInspection,
+) -> Option<VideoConstraintVerification> {
+    video_codec_constraint_mismatch(constraint, stream)
+        .or_else(|| video_technical_constraint_mismatch(constraint, stream))
+        .or_else(|| video_color_constraint_mismatch(constraint, stream))
+        .or_else(|| video_hdr_constraint_mismatch(constraint, stream))
+}
+
+fn video_codec_constraint_mismatch(
     constraint: &VideoStreamConstraints,
     stream: &StreamInspection,
 ) -> Option<VideoConstraintVerification> {
@@ -3416,8 +4032,101 @@ fn video_constraint_stream_mismatch(
             &actual_text,
         ));
     }
+    None
+}
+
+fn video_technical_constraint_mismatch(
+    constraint: &VideoStreamConstraints,
+    stream: &StreamInspection,
+) -> Option<VideoConstraintVerification> {
+    if let Some(expected) = constraint.width_px
+        && stream.width != Some(expected)
+    {
+        let expected_text = expected.to_string();
+        let actual_text = stream
+            .width
+            .map_or_else(|| "missing".to_string(), |value| value.to_string());
+        return Some(video_constraint_mismatch(
+            constraint.stream_id,
+            "width_px",
+            &expected_text,
+            &actual_text,
+        ));
+    }
+    if let Some(expected) = constraint.height_px
+        && stream.height != Some(expected)
+    {
+        let expected_text = expected.to_string();
+        let actual_text = stream
+            .height
+            .map_or_else(|| "missing".to_string(), |value| value.to_string());
+        return Some(video_constraint_mismatch(
+            constraint.stream_id,
+            "height_px",
+            &expected_text,
+            &actual_text,
+        ));
+    }
+    if let Some(expected) = constraint.pixel_format.as_deref()
+        && normalized_constraint_text(stream.pixel_format.as_deref())
+            .is_none_or(|actual| actual != normalized_constraint_value(expected))
+    {
+        return Some(video_constraint_mismatch(
+            constraint.stream_id,
+            "pixel_format",
+            expected,
+            stream.pixel_format.as_deref().unwrap_or("missing"),
+        ));
+    }
+    if let Some(expected) = constraint.bit_depth
+        && stream.bit_depth != Some(expected)
+    {
+        let expected_text = expected.to_string();
+        let actual_text = stream
+            .bit_depth
+            .map_or_else(|| "missing".to_string(), |value| value.to_string());
+        return Some(video_constraint_mismatch(
+            constraint.stream_id,
+            "bit_depth",
+            &expected_text,
+            &actual_text,
+        ));
+    }
+    if let Some(expected) = constraint.average_frame_rate.as_deref() {
+        let expected_rate = VideoFrameRate::parse(expected);
+        let actual_rate = stream
+            .average_frame_rate
+            .as_deref()
+            .and_then(VideoFrameRate::parse);
+        if expected_rate.is_none() || expected_rate != actual_rate {
+            return Some(video_constraint_mismatch(
+                constraint.stream_id,
+                "average_frame_rate",
+                expected,
+                stream.average_frame_rate.as_deref().unwrap_or("missing"),
+            ));
+        }
+    }
+    None
+}
+
+fn video_color_constraint_mismatch(
+    constraint: &VideoStreamConstraints,
+    stream: &StreamInspection,
+) -> Option<VideoConstraintVerification> {
     let (color_primaries, color_transfer, color_space) =
         normalized_expected_color_constraints(constraint);
+    if let Some(expected) = constraint.color_range.as_deref()
+        && normalized_constraint_text(stream.color_range.as_deref())
+            .is_none_or(|actual| actual != normalized_constraint_value(expected))
+    {
+        return Some(video_constraint_mismatch(
+            constraint.stream_id,
+            "color_range",
+            expected,
+            stream.color_range.as_deref().unwrap_or("missing"),
+        ));
+    }
     if let Some(expected) = color_primaries.as_deref()
         && normalized_constraint_text(stream.color_primaries.as_deref())
             .is_none_or(|actual| actual != normalized_constraint_value(expected))
@@ -3451,6 +4160,13 @@ fn video_constraint_stream_mismatch(
             stream.color_space.as_deref().unwrap_or("missing"),
         ));
     }
+    None
+}
+
+fn video_hdr_constraint_mismatch(
+    constraint: &VideoStreamConstraints,
+    stream: &StreamInspection,
+) -> Option<VideoConstraintVerification> {
     if let Some(expected) = constraint.hdr_format.as_deref()
         && !video_hdr_constraint_matches(expected, stream)
     {
@@ -3876,14 +4592,14 @@ fn compile_runtime_preflight(
     let expected_sidecars = input.inspection.sidecars.clone();
     let source_file_bytes = source_artifact_bytes(&input.source_path, &input.inspection.sidecars)?;
     let source_inspection = input.inspection;
-    let source_graph = &source_inspection.graph;
+    let source_graph = source_inspection.graph.clone();
     let planning_outcome = input
         .desired_target
         .as_ref()
         .filter(|snapshot| target_uses_embedded_outputs_only(&snapshot.target))
         .map(|snapshot| {
             compile_and_plan_with_unmatched_policies(
-                source_graph,
+                &source_graph,
                 &input.output_path,
                 &snapshot.target,
                 snapshot.unmatched_stream_policies,
@@ -3897,7 +4613,7 @@ fn compile_runtime_preflight(
         })
         .transpose()?;
     let compiled = compile_runtime_desired_target(
-        source_graph,
+        &source_graph,
         &input.output_path,
         &input.source_path,
         input.desired_target.as_ref(),
@@ -3916,8 +4632,9 @@ fn compile_runtime_preflight(
     let video_policy = video_policy_from_target_snapshot(
         input.base_video_policy,
         input.desired_target.as_ref(),
-        source_graph,
+        &source_graph,
         &compiled.graph,
+        &source_inspection,
     )?;
     let free_bytes = input
         .capacity_probe
@@ -3949,7 +4666,7 @@ fn compile_runtime_preflight(
         },
         |outcome| {
             evaluate_preflight_from_planning_outcome(
-                source_graph,
+                &source_graph,
                 &compiled,
                 outcome,
                 preflight_input.as_borrowed(),
@@ -3958,7 +4675,8 @@ fn compile_runtime_preflight(
     );
     Ok(RuntimePreflightEvaluation {
         evaluation,
-        source_graph: source_inspection.graph,
+        source_inspection,
+        source_graph,
         desired: compiled.graph,
         desired_target: input.desired_target,
         expected_container_metadata,
@@ -4014,6 +4732,12 @@ const fn target_stream_has_video_constraints(stream: &TargetStream) -> bool {
     stream.video_profile.is_some()
         || stream.video_level.is_some()
         || stream.video_bitrate_bps.is_some()
+        || stream.video_width_px.is_some()
+        || stream.video_height_px.is_some()
+        || stream.video_pixel_format.is_some()
+        || stream.video_bit_depth.is_some()
+        || stream.video_average_frame_rate.is_some()
+        || stream.color_range.is_some()
         || stream.color_primaries.is_some()
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
@@ -4034,6 +4758,7 @@ async fn audio_constraints_match_inspection(
     desired: &DesiredGraph,
     target: Option<&DesiredTargetSnapshot>,
     analyzer: Arc<RuntimeAudioAnalyzer>,
+    control: Arc<CancellationSignal>,
 ) -> Result<AudioConstraintVerification, MediaJobRuntimeError> {
     let constraints = match expected_audio_constraints(target, source, desired) {
         Ok(constraints) => constraints,
@@ -4073,6 +4798,7 @@ async fn audio_constraints_match_inspection(
                 Arc::clone(&analyzer),
                 inspection.graph.source_path.clone(),
                 constraint.stream_id,
+                Arc::clone(&control),
             )
             .await?
             {
@@ -4245,8 +4971,9 @@ async fn measure_audio_stream(
     analyzer: Arc<RuntimeAudioAnalyzer>,
     source_path: String,
     stream_id: u32,
+    control: Arc<CancellationSignal>,
 ) -> Result<Result<AudioMeasurement, String>, MediaJobRuntimeError> {
-    tokio::task::spawn_blocking(move || analyzer.measure(&source_path, stream_id))
+    tokio::task::spawn_blocking(move || analyzer.measure(&source_path, stream_id, control.as_ref()))
         .await
         .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))
 }
@@ -4560,6 +5287,508 @@ fn chapter_timeline_matches_inspection(
     }
 }
 
+fn retained_attachment_data_matches_inspection(
+    source: &MediaInspection,
+    output: &MediaInspection,
+    desired: &DesiredGraph,
+) -> InspectionVerification {
+    let mut retained_count = 0_usize;
+    for (desired_index, desired_stream) in desired.streams.iter().enumerate() {
+        if !matches!(
+            desired_stream.kind,
+            StreamKind::Attachment | StreamKind::Data
+        ) {
+            continue;
+        }
+        retained_count += 1;
+        let Some(source_graph_stream) = source.graph.streams.iter().find(|stream| {
+            stream.stream_id == desired_stream.stream_id && stream.kind == desired_stream.kind
+        }) else {
+            return retained_stream_verification_mismatch(
+                output,
+                retained_count,
+                desired_stream.stream_id,
+                "source_stream",
+                "present",
+                "missing",
+            );
+        };
+        if !stream_matches_desired((source_graph_stream, desired_stream)) {
+            return retained_stream_verification_mismatch(
+                output,
+                retained_count,
+                desired_stream.stream_id,
+                "source_graph",
+                "matches_desired",
+                "mismatched",
+            );
+        }
+        let Some(source_stream) = source
+            .streams
+            .iter()
+            .find(|stream| stream.stream_id == source_graph_stream.stream_id)
+        else {
+            return retained_stream_verification_mismatch(
+                output,
+                retained_count,
+                desired_stream.stream_id,
+                "source_inspection",
+                "present",
+                "missing",
+            );
+        };
+        let Some(output_graph_stream) = output.graph.streams.get(desired_index) else {
+            return retained_stream_verification_mismatch(
+                output,
+                retained_count,
+                desired_stream.stream_id,
+                "output_stream",
+                "present",
+                "missing",
+            );
+        };
+        let Some(output_stream) = output
+            .streams
+            .iter()
+            .find(|stream| stream.stream_id == output_graph_stream.stream_id)
+        else {
+            return retained_stream_verification_mismatch(
+                output,
+                retained_count,
+                desired_stream.stream_id,
+                "output_inspection",
+                "present",
+                "missing",
+            );
+        };
+        let expected = retained_stream_state(source_graph_stream, source_stream);
+        let actual = retained_stream_state(output_graph_stream, output_stream);
+        if expected != actual {
+            return retained_stream_verification_mismatch(
+                output,
+                retained_count,
+                desired_stream.stream_id,
+                "technical_state",
+                "source_exact",
+                "mismatched",
+            );
+        }
+    }
+    InspectionVerification {
+        matched: true,
+        expected: format!("{retained_count} retained_attachment_data_streams"),
+        actual: if retained_count == 0 {
+            "not_configured".to_string()
+        } else {
+            "matched".to_string()
+        },
+        details: None,
+    }
+}
+
+async fn retained_attachment_payload_digests_match_inspection(
+    source: &MediaInspection,
+    output: &MediaInspection,
+    desired: &DesiredGraph,
+    digester: Arc<RuntimeAttachmentDigest>,
+    materialization_root: &Path,
+    control: Arc<CancellationSignal>,
+) -> Result<InspectionVerification, MediaJobRuntimeError> {
+    if let Some(violation) = retained_attachment_count_violation(desired) {
+        return Ok(violation);
+    }
+    let Some(deadline) = Instant::now().checked_add(ATTACHMENT_DIGEST_DEADLINE) else {
+        return Err(MediaJobRuntimeError::Verification(
+            "media_job_attachment_digest_deadline_invalid",
+        ));
+    };
+    let mut retained_count = 0_usize;
+    let mut digest_session = AttachmentDigestSession {
+        digester,
+        cache: BTreeMap::new(),
+        materialization_root,
+        deadline,
+        total_materialized_bytes: 0,
+        control,
+    };
+    for (desired_index, desired_stream) in desired.streams.iter().enumerate() {
+        if desired_stream.kind != StreamKind::Attachment {
+            continue;
+        }
+        retained_count += 1;
+        let binding = match retained_attachment_payload_binding(
+            source,
+            output,
+            desired_stream,
+            desired_index,
+            retained_count,
+        ) {
+            Ok(binding) => binding,
+            Err(verification) => return Ok(verification),
+        };
+        let source_digest = match attachment_payload_digest(
+            &mut digest_session,
+            source.graph.source_path.clone(),
+            binding.source_stream_id,
+        )
+        .await?
+        {
+            Ok(digest) => digest,
+            Err(error) => {
+                return Ok(retained_attachment_payload_mismatch_with_details(
+                    output,
+                    retained_count,
+                    desired_stream.stream_id,
+                    "source_payload_sha256",
+                    "present",
+                    "unavailable",
+                    &error,
+                ));
+            }
+        };
+        let output_digest = match attachment_payload_digest(
+            &mut digest_session,
+            output.graph.source_path.clone(),
+            binding.output_stream_id,
+        )
+        .await?
+        {
+            Ok(digest) => digest,
+            Err(error) => {
+                return Ok(retained_attachment_payload_mismatch_with_details(
+                    output,
+                    retained_count,
+                    desired_stream.stream_id,
+                    "output_payload_sha256",
+                    "present",
+                    "unavailable",
+                    &error,
+                ));
+            }
+        };
+        if source_digest.sha256 != output_digest.sha256
+            || source_digest.bytes != output_digest.bytes
+        {
+            return Ok(retained_attachment_payload_mismatch(
+                output,
+                retained_count,
+                desired_stream.stream_id,
+                "payload_sha256",
+                "source_exact",
+                "mismatched",
+            ));
+        }
+    }
+    Ok(InspectionVerification {
+        matched: true,
+        expected: format!("{retained_count} retained_attachment_payloads"),
+        actual: if retained_count == 0 {
+            "not_configured".to_string()
+        } else {
+            "matched".to_string()
+        },
+        details: None,
+    })
+}
+
+fn retained_attachment_count_violation(desired: &DesiredGraph) -> Option<InspectionVerification> {
+    let count = desired
+        .streams
+        .iter()
+        .filter(|stream| stream.kind == StreamKind::Attachment)
+        .count();
+    (count > MAX_RETAINED_ATTACHMENT_STREAMS).then(|| InspectionVerification {
+        matched: false,
+        expected: format!("attachment_count<={MAX_RETAINED_ATTACHMENT_STREAMS}"),
+        actual: count.to_string(),
+        details: Some("retained attachment count exceeds verification limit".to_string()),
+    })
+}
+
+struct RetainedAttachmentPayloadBinding {
+    source_stream_id: u32,
+    output_stream_id: u32,
+}
+
+struct AttachmentDigestSession<'a> {
+    digester: Arc<RuntimeAttachmentDigest>,
+    cache: BTreeMap<(String, u32), Result<AttachmentPayloadDigest, String>>,
+    materialization_root: &'a Path,
+    deadline: Instant,
+    total_materialized_bytes: u64,
+    control: Arc<CancellationSignal>,
+}
+
+fn retained_attachment_payload_binding(
+    source: &MediaInspection,
+    output: &MediaInspection,
+    desired_stream: &MediaStream,
+    desired_index: usize,
+    retained_index: usize,
+) -> Result<RetainedAttachmentPayloadBinding, InspectionVerification> {
+    let Some(source_graph_stream) = source.graph.streams.iter().find(|stream| {
+        stream.stream_id == desired_stream.stream_id && stream.kind == StreamKind::Attachment
+    }) else {
+        return Err(retained_attachment_payload_mismatch(
+            output,
+            retained_index,
+            desired_stream.stream_id,
+            "source_stream",
+            "present",
+            "missing",
+        ));
+    };
+    if !stream_matches_desired((source_graph_stream, desired_stream)) {
+        return Err(retained_attachment_payload_mismatch(
+            output,
+            retained_index,
+            desired_stream.stream_id,
+            "source_graph",
+            "matches_desired",
+            "mismatched",
+        ));
+    }
+    let Some(output_graph_stream) = output.graph.streams.get(desired_index) else {
+        return Err(retained_attachment_payload_mismatch(
+            output,
+            retained_index,
+            desired_stream.stream_id,
+            "output_stream",
+            "present",
+            "missing",
+        ));
+    };
+    if output_graph_stream.kind != StreamKind::Attachment {
+        return Err(retained_attachment_payload_mismatch(
+            output,
+            retained_index,
+            desired_stream.stream_id,
+            "output_stream_kind",
+            "attachment",
+            "mismatched",
+        ));
+    }
+    Ok(RetainedAttachmentPayloadBinding {
+        source_stream_id: source_graph_stream.stream_id,
+        output_stream_id: output_graph_stream.stream_id,
+    })
+}
+
+async fn attachment_payload_digest(
+    session: &mut AttachmentDigestSession<'_>,
+    source_path: String,
+    stream_id: u32,
+) -> Result<Result<AttachmentPayloadDigest, String>, MediaJobRuntimeError> {
+    let key = (source_path, stream_id);
+    if let Some(result) = session.cache.get(&key) {
+        return Ok(result.clone());
+    }
+    let digest_key = key.clone();
+    let materialization_root = session.materialization_root.to_path_buf();
+    let digester = Arc::clone(&session.digester);
+    let control = Arc::clone(&session.control);
+    let deadline = session.deadline;
+    let result = tokio::task::spawn_blocking(move || {
+        digester.digest(
+            &digest_key.0,
+            digest_key.1,
+            &materialization_root,
+            MAX_ATTACHMENT_PAYLOAD_BYTES,
+            deadline,
+            control.as_ref(),
+        )
+    })
+    .await
+    .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
+    let result = match result {
+        Ok(digest) => {
+            let Some(total) = session.total_materialized_bytes.checked_add(digest.bytes) else {
+                return Ok(Err(
+                    "attachment payload aggregate byte count overflow".to_string()
+                ));
+            };
+            if total > MAX_ATTACHMENT_TOTAL_BYTES {
+                Err(format!(
+                    "attachment payloads exceed {MAX_ATTACHMENT_TOTAL_BYTES} aggregate byte limit"
+                ))
+            } else {
+                session.total_materialized_bytes = total;
+                Ok(digest)
+            }
+        }
+        Err(error) => Err(error),
+    };
+    session.cache.insert(key, result.clone());
+    Ok(result)
+}
+
+fn retained_stream_verification_mismatch(
+    output: &MediaInspection,
+    retained_index: usize,
+    stream_id: u32,
+    field: &'static str,
+    expected: &'static str,
+    actual: &'static str,
+) -> InspectionVerification {
+    InspectionVerification {
+        matched: false,
+        expected: format!("retained_stream:{stream_id}:{field}={expected}"),
+        actual: actual.to_string(),
+        details: Some(format!(
+            "retained attachment/data stream {retained_index} with source stream id {stream_id} {field} mismatch for {}",
+            output.graph.source_path
+        )),
+    }
+}
+
+fn retained_attachment_payload_mismatch(
+    output: &MediaInspection,
+    retained_index: usize,
+    stream_id: u32,
+    field: &'static str,
+    expected: &'static str,
+    actual: &'static str,
+) -> InspectionVerification {
+    let details = format!(
+        "retained attachment stream {retained_index} with source stream id {stream_id} {field} mismatch for {}",
+        output.graph.source_path
+    );
+    retained_attachment_payload_mismatch_with_details(
+        output,
+        retained_index,
+        stream_id,
+        field,
+        expected,
+        actual,
+        &details,
+    )
+}
+
+fn retained_attachment_payload_mismatch_with_details(
+    output: &MediaInspection,
+    retained_index: usize,
+    stream_id: u32,
+    field: &'static str,
+    expected: &'static str,
+    actual: &'static str,
+    details: &str,
+) -> InspectionVerification {
+    InspectionVerification {
+        matched: false,
+        expected: format!("retained_attachment:{stream_id}:{field}={expected}"),
+        actual: actual.to_string(),
+        details: Some(format!(
+            "retained attachment stream {retained_index} with source stream id {stream_id} payload verification failed for {}: {details}",
+            output.graph.source_path
+        )),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RetainedStreamState {
+    kind: StreamKind,
+    codec: String,
+    language: Option<String>,
+    title: Option<String>,
+    dispositions: Vec<String>,
+    channels: Option<u32>,
+    channel_layout: Option<String>,
+    profile: Option<String>,
+    duration_millis: Option<u64>,
+    bit_rate: Option<u64>,
+    sample_rate: Option<u32>,
+    width: Option<u32>,
+    height: Option<u32>,
+    pixel_format: Option<String>,
+    bit_depth: Option<u32>,
+    sample_aspect_ratio: Option<String>,
+    display_aspect_ratio: Option<String>,
+    average_frame_rate: Option<String>,
+    color_range: Option<String>,
+    color_space: Option<String>,
+    color_transfer: Option<String>,
+    color_primaries: Option<String>,
+    chroma_location: Option<String>,
+    field_order: Option<String>,
+    metadata: Vec<(String, String)>,
+    side_data_types: Vec<String>,
+    side_data: Vec<NormalizedSideDataState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct NormalizedSideDataState {
+    side_data_type: String,
+    metadata: Vec<(String, String)>,
+}
+
+fn retained_stream_state(
+    graph_stream: &MediaStream,
+    inspection_stream: &StreamInspection,
+) -> RetainedStreamState {
+    RetainedStreamState {
+        kind: graph_stream.kind,
+        codec: normalized_constraint_value(&graph_stream.codec),
+        language: normalized_language(graph_stream.language.as_deref()),
+        title: normalized_optional_text(graph_stream.title.as_deref()),
+        dispositions: normalized_dispositions(&graph_stream.dispositions),
+        channels: graph_stream.channels,
+        channel_layout: normalized_channel_layout(graph_stream.channel_layout.as_deref()),
+        profile: normalized_optional_text(inspection_stream.profile.as_deref()),
+        duration_millis: inspection_stream.duration_millis,
+        bit_rate: inspection_stream.bit_rate,
+        sample_rate: inspection_stream.sample_rate,
+        width: inspection_stream.width,
+        height: inspection_stream.height,
+        pixel_format: normalized_constraint_text(inspection_stream.pixel_format.as_deref()),
+        bit_depth: inspection_stream.bit_depth,
+        sample_aspect_ratio: normalized_optional_text(
+            inspection_stream.sample_aspect_ratio.as_deref(),
+        ),
+        display_aspect_ratio: normalized_optional_text(
+            inspection_stream.display_aspect_ratio.as_deref(),
+        ),
+        average_frame_rate: normalized_optional_text(
+            inspection_stream.average_frame_rate.as_deref(),
+        ),
+        color_range: normalized_constraint_text(inspection_stream.color_range.as_deref()),
+        color_space: normalized_constraint_text(inspection_stream.color_space.as_deref()),
+        color_transfer: normalized_constraint_text(inspection_stream.color_transfer.as_deref()),
+        color_primaries: normalized_constraint_text(inspection_stream.color_primaries.as_deref()),
+        chroma_location: normalized_constraint_text(inspection_stream.chroma_location.as_deref()),
+        field_order: normalized_constraint_text(inspection_stream.field_order.as_deref()),
+        metadata: normalized_metadata_entries(&inspection_stream.metadata),
+        side_data_types: normalized_side_data_types(&inspection_stream.side_data_types),
+        side_data: normalized_side_data_state(&inspection_stream.side_data),
+    }
+}
+
+fn normalized_side_data_types(values: &[String]) -> Vec<String> {
+    let mut normalized = values
+        .iter()
+        .map(|value| normalized_constraint_value(value))
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    normalized
+}
+
+fn normalized_side_data_state(values: &[SideDataInspection]) -> Vec<NormalizedSideDataState> {
+    let mut normalized = values
+        .iter()
+        .filter_map(|value| {
+            let side_data_type = normalized_constraint_text(Some(&value.side_data_type))?;
+            Some(NormalizedSideDataState {
+                side_data_type,
+                metadata: normalized_metadata_entries(&value.metadata),
+            })
+        })
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    normalized
+}
+
 fn normalized_chapter_timeline(chapters: &[ChapterInspection]) -> Vec<NormalizedChapter> {
     chapters
         .iter()
@@ -4605,6 +5834,42 @@ fn chapter_timeline_check_index(graph_check_kind: &'static str, fallback: i32) -
         "source_graph" => 4,
         "candidate_graph" => 18,
         "final_graph" => 24,
+        _ => fallback,
+    }
+}
+
+fn retained_stream_check_kind(graph_check_kind: &'static str) -> &'static str {
+    match graph_check_kind {
+        "source_graph" => "source_retained_attachment_data_streams",
+        "candidate_graph" => "candidate_retained_attachment_data_streams",
+        "final_graph" => "final_retained_attachment_data_streams",
+        _ => "retained_attachment_data_streams",
+    }
+}
+
+fn retained_stream_check_index(graph_check_kind: &'static str, fallback: i32) -> i32 {
+    match graph_check_kind {
+        "source_graph" => 6,
+        "candidate_graph" => 27,
+        "final_graph" => 28,
+        _ => fallback,
+    }
+}
+
+fn retained_attachment_payload_check_kind(graph_check_kind: &'static str) -> &'static str {
+    match graph_check_kind {
+        "source_graph" => "source_retained_attachment_payloads",
+        "candidate_graph" => "candidate_retained_attachment_payloads",
+        "final_graph" => "final_retained_attachment_payloads",
+        _ => "retained_attachment_payloads",
+    }
+}
+
+fn retained_attachment_payload_check_index(graph_check_kind: &'static str, fallback: i32) -> i32 {
+    match graph_check_kind {
+        "source_graph" => 7,
+        "candidate_graph" => 29,
+        "final_graph" => 30,
         _ => fallback,
     }
 }
@@ -4802,6 +6067,26 @@ fn replacement_output_path(steps: &[ExecutionStep]) -> Result<String, MediaJobRu
         .ok_or(MediaJobRuntimeError::Verification(
             "media_job_atomic_replace_step_missing",
         ))
+}
+
+fn validate_candidate_output_growth(
+    candidate_path: &Path,
+    max_candidate_output_bytes: u64,
+) -> Result<(), MediaJobRuntimeError> {
+    let metadata = fs::symlink_metadata(candidate_path).map_err(|_| {
+        MediaJobRuntimeError::Verification("media_job_candidate_output_metadata_failed")
+    })?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(MediaJobRuntimeError::Verification(
+            "media_job_candidate_output_not_regular_file",
+        ));
+    }
+    if metadata.len() > max_candidate_output_bytes {
+        return Err(MediaJobRuntimeError::Verification(
+            "media_job_candidate_output_growth_exceeded",
+        ));
+    }
+    Ok(())
 }
 
 fn media_graph_matches_desired(actual: &MediaGraph, desired: &DesiredGraph) -> bool {
@@ -5236,18 +6521,27 @@ const fn filesystem_step_kind(step: &ExecutionStep) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        AUDIO_ANALYSIS_TRUNCATION_MARKER, AudioAnalysisAdapter, AudioMeasurement,
-        AudioStreamConstraints, DesiredTargetSnapshot, FilesystemCapacityProbe,
-        MAX_AUDIO_ANALYSIS_STDERR_BYTES, MediaJobRuntime, MediaJobRuntimeComponents,
-        RuntimeAudioAnalyzer, RuntimeCapacityProbe, RuntimeCommandRunner, RuntimeInspector,
-        RuntimeReplacementCommitter, RuntimeVerificationExecutor, SystemFfmpegAudioAnalysisAdapter,
-        VideoStreamConstraints, audio_constraint_stream_mismatch, audio_measurement_mismatch,
-        container_chapters_from_ordered_snapshot, container_chapters_from_snapshot,
-        container_metadata_from_snapshot, desired_target_from_job, expected_audio_constraints,
-        parse_ebur128_summary, read_bounded_audio_analysis_stderr, run_audio_analysis_process,
-        run_audio_analysis_process_with_timeout, verification_policy_from_job,
-        video_constraint_stream_mismatch, video_hdr_constraint_matches,
-        video_policy_from_policy_intent, video_policy_from_target_snapshot,
+        ATTACHMENT_DIGEST_TRUNCATION_MARKER, AUDIO_ANALYSIS_TRUNCATION_MARKER,
+        AttachmentDigestAdapter, AttachmentDigestSession, AttachmentDigestTempPath,
+        AttachmentPayloadDigest, AudioAnalysisAdapter, AudioMeasurement, AudioStreamConstraints,
+        CancellationSignal, DesiredTargetSnapshot, FilesystemCapacityProbe,
+        MAX_ATTACHMENT_DIGEST_STDERR_BYTES, MAX_ATTACHMENT_PAYLOAD_BYTES,
+        MAX_ATTACHMENT_TOTAL_BYTES, MAX_AUDIO_ANALYSIS_STDERR_BYTES,
+        MAX_RETAINED_ATTACHMENT_STREAMS, MediaJobRuntime, MediaJobRuntimeComponents,
+        RuntimeAttachmentDigest, RuntimeAudioAnalyzer, RuntimeCapacityProbe, RuntimeCommandRunner,
+        RuntimeInspector, RuntimeReplacementCommitter, RuntimeVerificationExecutor,
+        SystemFfmpegAttachmentDigestAdapter, SystemFfmpegAudioAnalysisAdapter,
+        VideoStreamConstraints, attachment_payload_digest, audio_constraint_stream_mismatch,
+        audio_measurement_mismatch, container_chapters_from_ordered_snapshot,
+        container_chapters_from_snapshot, container_metadata_from_snapshot,
+        desired_target_from_job, expected_audio_constraints, hash_attachment_payload_file,
+        parse_ebur128_summary, read_bounded_attachment_digest_stderr,
+        read_bounded_audio_analysis_stderr, retained_attachment_payload_digests_match_inspection,
+        run_attachment_digest_process_with_timeout, run_audio_analysis_process,
+        run_audio_analysis_process_with_timeout, validate_candidate_output_growth,
+        verification_policy_from_job, video_constraint_stream_mismatch,
+        video_hdr_constraint_matches, video_policy_from_policy_intent,
+        video_policy_from_target_snapshot,
     };
     use crate::runtime_shutdown;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -5307,11 +6601,12 @@ mod tests {
     use revaer_test_support::postgres::start_postgres;
     use sha2::{Digest, Sha256};
     use sqlx::postgres::PgPoolOptions;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -5883,8 +7178,117 @@ mod tests {
     }
 
     impl AudioAnalysisAdapter for StaticAudioAnalyzer {
-        fn measure(&self, _source_path: &str, _stream_id: u32) -> Result<AudioMeasurement, String> {
+        fn measure(
+            &self,
+            _source_path: &str,
+            _stream_id: u32,
+            _control: &dyn ExecutionControl,
+        ) -> Result<AudioMeasurement, String> {
             self.measurement.map_err(str::to_string)
+        }
+    }
+
+    #[derive(Debug)]
+    struct StaticAttachmentDigest {
+        fallback: Result<String, String>,
+        digests: Mutex<BTreeMap<(String, u32), Result<String, String>>>,
+    }
+
+    type StaticAttachmentDigestEntries<'a> = Vec<((&'a str, u32), Result<&'a str, &'a str>)>;
+
+    impl StaticAttachmentDigest {
+        fn constant(digest: &str) -> Self {
+            Self {
+                fallback: Ok(digest.to_string()),
+                digests: Mutex::new(BTreeMap::new()),
+            }
+        }
+
+        fn mapped(entries: StaticAttachmentDigestEntries<'_>) -> Self {
+            let digests = entries
+                .into_iter()
+                .map(|((path, stream_id), result)| {
+                    (
+                        (path.to_string(), stream_id),
+                        result.map(str::to_string).map_err(str::to_string),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            Self {
+                fallback: Err("unexpected attachment digest request".to_string()),
+                digests: Mutex::new(digests),
+            }
+        }
+    }
+
+    impl AttachmentDigestAdapter for StaticAttachmentDigest {
+        fn digest(
+            &self,
+            source_path: &str,
+            stream_id: u32,
+            _materialization_root: &Path,
+            _max_payload_bytes: u64,
+            _deadline: Instant,
+            _control: &dyn ExecutionControl,
+        ) -> Result<AttachmentPayloadDigest, String> {
+            let digests = self
+                .digests
+                .lock()
+                .map_err(|_| "attachment digest map poisoned".to_string())?;
+            digests
+                .get(&(source_path.to_string(), stream_id))
+                .cloned()
+                .unwrap_or_else(|| self.fallback.clone())
+                .map(|sha256| AttachmentPayloadDigest { sha256, bytes: 1 })
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct SizedAttachmentDigest {
+        bytes: u64,
+    }
+
+    impl AttachmentDigestAdapter for SizedAttachmentDigest {
+        fn digest(
+            &self,
+            _source_path: &str,
+            _stream_id: u32,
+            _materialization_root: &Path,
+            _max_payload_bytes: u64,
+            _deadline: Instant,
+            _control: &dyn ExecutionControl,
+        ) -> Result<AttachmentPayloadDigest, String> {
+            Ok(AttachmentPayloadDigest {
+                sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_string(),
+                bytes: self.bytes,
+            })
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct CancellationAwareAudioAnalyzer {
+        started: AtomicBool,
+        cancellation_observed: AtomicBool,
+    }
+
+    impl AudioAnalysisAdapter for CancellationAwareAudioAnalyzer {
+        fn measure(
+            &self,
+            _source_path: &str,
+            _stream_id: u32,
+            control: &dyn ExecutionControl,
+        ) -> Result<AudioMeasurement, String> {
+            self.started.store(true, Ordering::Release);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline {
+                if control.cancellation_requested() {
+                    self.cancellation_observed.store(true, Ordering::Release);
+                    return Err("audio analyzer command cancelled".to_string());
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err("audio analyzer cancellation timeout".to_string())
         }
     }
 
@@ -5940,6 +7344,7 @@ mod tests {
                 width: (stream.kind == StreamKind::Video).then_some(1920),
                 height: (stream.kind == StreamKind::Video).then_some(1080),
                 pixel_format: (stream.kind == StreamKind::Video).then(|| "yuv420p10le".to_string()),
+                bit_depth: (stream.kind == StreamKind::Video).then_some(10),
                 sample_aspect_ratio: None,
                 display_aspect_ratio: None,
                 average_frame_rate: None,
@@ -6290,6 +7695,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -6326,11 +7737,23 @@ mod tests {
     }
 
     fn video_level_constraint(expected_level: &str) -> VideoStreamConstraints {
+        let mut constraint = unconstrained_video_constraint();
+        constraint.level = Some(expected_level.to_string());
+        constraint
+    }
+
+    fn unconstrained_video_constraint() -> VideoStreamConstraints {
         VideoStreamConstraints {
             stream_id: 0,
             profile: None,
-            level: Some(expected_level.to_string()),
+            level: None,
             max_bitrate_bps: None,
+            width_px: None,
+            height_px: None,
+            pixel_format: None,
+            bit_depth: None,
+            average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -6350,6 +7773,7 @@ mod tests {
             width: None,
             height: None,
             pixel_format: None,
+            bit_depth: None,
             sample_aspect_ratio: None,
             display_aspect_ratio: None,
             average_frame_rate: None,
@@ -6379,6 +7803,7 @@ mod tests {
             width: None,
             height: None,
             pixel_format: None,
+            bit_depth: None,
             sample_aspect_ratio: None,
             display_aspect_ratio: None,
             average_frame_rate: None,
@@ -6536,17 +7961,9 @@ mod tests {
     #[test]
     fn hdr10_constraint_accepts_exact_authored_side_data_values() {
         let inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
-        let constraint = VideoStreamConstraints {
-            stream_id: 0,
-            profile: None,
-            level: None,
-            max_bitrate_bps: None,
-            color_primaries: None,
-            color_transfer: None,
-            color_space: None,
-            hdr_format: Some("hdr10".to_string()),
-            hdr10_color_volume: Some(hdr10_color_volume_constraint()),
-        };
+        let mut constraint = unconstrained_video_constraint();
+        constraint.hdr_format = Some("hdr10".to_string());
+        constraint.hdr10_color_volume = Some(hdr10_color_volume_constraint());
 
         assert!(video_constraint_stream_mismatch(&constraint, &inspection.streams[0]).is_none());
     }
@@ -6555,17 +7972,9 @@ mod tests {
     fn hdr10_constraint_rejects_authored_content_light_mismatch() -> anyhow::Result<()> {
         let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "hevc"));
         set_hdr10_content_light_value(&mut inspection, "max_average", "399")?;
-        let constraint = VideoStreamConstraints {
-            stream_id: 0,
-            profile: None,
-            level: None,
-            max_bitrate_bps: None,
-            color_primaries: None,
-            color_transfer: None,
-            color_space: None,
-            hdr_format: Some("hdr10".to_string()),
-            hdr10_color_volume: Some(hdr10_color_volume_constraint()),
-        };
+        let mut constraint = unconstrained_video_constraint();
+        constraint.hdr_format = Some("hdr10".to_string());
+        constraint.hdr10_color_volume = Some(hdr10_color_volume_constraint());
         let mismatch = video_constraint_stream_mismatch(&constraint, &inspection.streams[0])
             .expect("exact HDR10 metadata mismatch should fail verification");
 
@@ -6747,13 +8156,150 @@ mod tests {
         stream.video_profile = Some("main10".to_string());
         let snapshot = constrained_target_snapshot(stream);
         let base_policy = video_policy_from_policy_intent(Some("general"))?;
+        let inspection = complete_test_inspection(source.clone());
 
-        let error =
-            video_policy_from_target_snapshot(base_policy, Some(&snapshot), &source, &desired)
-                .expect_err("unmatched constrained target video stream should fail closed");
+        let error = video_policy_from_target_snapshot(
+            base_policy,
+            Some(&snapshot),
+            &source,
+            &desired,
+            &inspection,
+        )
+        .expect_err("unmatched constrained target video stream should fail closed");
 
         assert_eq!(error.code(), "media_job_target_constraint_stream_unmatched");
         Ok(())
+    }
+
+    #[test]
+    fn video_policy_skips_matching_inspected_constraints() -> anyhow::Result<()> {
+        let source = video_graph("/tmp/source.mkv", "h264");
+        let inspection = complete_test_inspection(source.clone());
+        let streams = source.streams.clone();
+        let desired = DesiredGraph {
+            output_path: "/tmp/output.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: super::identity_stream_bindings(&streams),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams,
+        };
+        let mut stream = target_stream("main-video", StreamKind::Video, "h264");
+        stream.video_width_px = Some(1920);
+        stream.video_height_px = Some(1080);
+        stream.video_pixel_format = Some("yuv420p10le".to_string());
+        stream.video_bit_depth = Some(10);
+        let snapshot = constrained_target_snapshot(stream);
+
+        let policy = video_policy_from_target_snapshot(
+            video_policy_from_policy_intent(Some("general"))?,
+            Some(&snapshot),
+            &source,
+            &desired,
+            &inspection,
+        )?;
+
+        assert!(policy.stream_constraints.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn video_policy_schedules_only_mismatching_inspected_constraints() -> anyhow::Result<()> {
+        let source = video_graph("/tmp/source.mkv", "h264");
+        let inspection = complete_test_inspection(source.clone());
+        let streams = source.streams.clone();
+        let desired = DesiredGraph {
+            output_path: "/tmp/output.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: super::identity_stream_bindings(&streams),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams,
+        };
+        let mut stream = target_stream("main-video", StreamKind::Video, "h264");
+        stream.video_width_px = Some(1280);
+        stream.video_height_px = Some(720);
+        let snapshot = constrained_target_snapshot(stream);
+
+        let policy = video_policy_from_target_snapshot(
+            video_policy_from_policy_intent(Some("general"))?,
+            Some(&snapshot),
+            &source,
+            &desired,
+            &inspection,
+        )?;
+
+        assert_eq!(policy.stream_constraints.len(), 1);
+        assert_eq!(policy.stream_constraints[0].width_px, Some(1280));
+        Ok(())
+    }
+
+    #[test]
+    fn video_policy_rejects_excessive_upscale() -> anyhow::Result<()> {
+        let source = video_graph("/tmp/source.mkv", "h264");
+        let inspection = complete_test_inspection(source.clone());
+        let streams = source.streams.clone();
+        let desired = DesiredGraph {
+            output_path: "/tmp/output.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: super::identity_stream_bindings(&streams),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams,
+        };
+        let mut stream = target_stream("main-video", StreamKind::Video, "h264");
+        stream.video_width_px = Some(8_000);
+        stream.video_height_px = Some(4_000);
+        let snapshot = constrained_target_snapshot(stream);
+
+        let error = video_policy_from_target_snapshot(
+            video_policy_from_policy_intent(Some("general"))?,
+            Some(&snapshot),
+            &source,
+            &desired,
+            &inspection,
+        )
+        .expect_err("upscale beyond the admitted axis factor must fail closed");
+
+        assert_eq!(
+            error.code(),
+            "media_job_target_constraint_upscale_axis_exceeded"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn video_frame_rate_verification_compares_reduced_rationals() {
+        let constraint = VideoStreamConstraints {
+            stream_id: 0,
+            profile: None,
+            level: None,
+            max_bitrate_bps: None,
+            width_px: None,
+            height_px: None,
+            pixel_format: None,
+            bit_depth: None,
+            average_frame_rate: Some("48000/2000".to_string()),
+            color_range: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            hdr10_color_volume: None,
+        };
+        let mut inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "h264"));
+        inspection.streams[0].average_frame_rate = Some("24/1".to_string());
+
+        assert!(video_constraint_stream_mismatch(&constraint, &inspection.streams[0]).is_none());
     }
 
     #[test]
@@ -6876,6 +8422,98 @@ mod tests {
                 status_code: None,
                 stderr: String::new(),
             })
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct PartialOutputFailingCommandRunner;
+
+    impl PartialOutputFailingCommandRunner {
+        fn write_partial_output(bin: &str, argv: &[String]) -> Result<(), ExecuteStepError> {
+            let Some(output_path) = argv.last() else {
+                return Err(ExecuteStepError::CommandFailed {
+                    bin: bin.to_string(),
+                    status_code: Some(9),
+                    stderr: "missing output path".to_string(),
+                });
+            };
+            fs::write(output_path, b"partial-candidate").map_err(|source| {
+                ExecuteStepError::Io {
+                    operation: "test.partial_candidate_write",
+                    path: PathBuf::from(output_path),
+                    source,
+                }
+            })?;
+            Err(ExecuteStepError::CommandFailed {
+                bin: bin.to_string(),
+                status_code: Some(9),
+                stderr: "forced command failure after partial output".to_string(),
+            })
+        }
+    }
+
+    impl CommandRunner for PartialOutputFailingCommandRunner {
+        fn run(&self, bin: &str, argv: &[String]) -> Result<(), ExecuteStepError> {
+            Self::write_partial_output(bin, argv)
+        }
+
+        fn run_controlled(
+            &self,
+            bin: &str,
+            argv: &[String],
+            control: &dyn ExecutionControl,
+        ) -> Result<(), ExecuteStepError> {
+            if control.cancellation_requested() {
+                return Err(ExecuteStepError::Cancelled);
+            }
+            Self::write_partial_output(bin, argv)
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct CancellationRacingPartialOutputFailingCommandRunner {
+        started: AtomicBool,
+    }
+
+    impl CommandRunner for CancellationRacingPartialOutputFailingCommandRunner {
+        fn run(&self, bin: &str, _argv: &[String]) -> Result<(), ExecuteStepError> {
+            Err(ExecuteStepError::CommandFailed {
+                bin: format!("uncontrolled_test_runner:{bin}"),
+                status_code: None,
+                stderr: String::new(),
+            })
+        }
+
+        fn run_controlled(
+            &self,
+            bin: &str,
+            argv: &[String],
+            control: &dyn ExecutionControl,
+        ) -> Result<(), ExecuteStepError> {
+            self.started.store(true, Ordering::Release);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline {
+                if control.cancellation_requested() {
+                    return PartialOutputFailingCommandRunner::write_partial_output(bin, argv);
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(ExecuteStepError::CommandFailed {
+                bin: format!("cancellation_signal_timeout:{bin}"),
+                status_code: None,
+                stderr: String::new(),
+            })
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct CancelAfterFirstPoll {
+        polls: AtomicUsize,
+    }
+
+    impl ExecutionControl for CancelAfterFirstPoll {
+        fn cancellation_requested(&self) -> bool {
+            self.polls.fetch_add(1, Ordering::AcqRel) > 0
         }
     }
 
@@ -7240,6 +8878,12 @@ mod tests {
                 video_profile: Some("main10"),
                 video_level: Some("5.1"),
                 video_bitrate_bps: Some(8_000_000),
+                video_width_px: None,
+                video_height_px: None,
+                video_pixel_format: None,
+                video_bit_depth: None,
+                video_average_frame_rate: None,
+                color_range: None,
                 color_primaries: Some("bt2020"),
                 color_transfer: Some("smpte2084"),
                 color_space: Some("bt2020nc"),
@@ -7322,6 +8966,12 @@ mod tests {
                 video_profile: None,
                 video_level: None,
                 video_bitrate_bps: None,
+                video_width_px: None,
+                video_height_px: None,
+                video_pixel_format: None,
+                video_bit_depth: None,
+                video_average_frame_rate: None,
+                color_range: None,
                 color_primaries: None,
                 color_transfer: None,
                 color_space: None,
@@ -7634,6 +9284,9 @@ mod tests {
                         true_peak_dbfs: Some(-1.5),
                     }),
                 }) as Arc<RuntimeAudioAnalyzer>,
+                attachment_digest: Arc::new(StaticAttachmentDigest::constant(
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                )) as Arc<RuntimeAttachmentDigest>,
                 events,
                 telemetry,
                 tick_interval: Duration::from_mins(1),
@@ -8181,6 +9834,44 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn media_job_runtime_cancels_active_audio_analysis_and_removes_candidate()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?
+        else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(AudioPolicyInspector) as Arc<RuntimeInspector>;
+        let analyzer = Arc::new(CancellationAwareAudioAnalyzer::default());
+        fixture.runtime.audio_analyzer = Arc::clone(&analyzer) as Arc<RuntimeAudioAnalyzer>;
+        let source_path = PathBuf::from(
+            fixture
+                .store
+                .get_job(fixture.job_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("media job missing"))?
+                .source_path,
+        );
+        let workspace_output = fixture
+            .runtime
+            .workspace_root
+            .join(fixture.job_id.to_string())
+            .join("output");
+        let store = fixture.store.clone();
+        let job_id = fixture.job_id;
+        let runtime = fixture.runtime;
+        let tick = tokio::spawn(async move { runtime.run_tick().await });
+
+        wait_for_flag(&analyzer.started, "audio analysis start").await?;
+        store.cancel_job(job_id).await?;
+        let tick_result = tokio::time::timeout(Duration::from_secs(5), tick).await??;
+        tick_result?;
+
+        assert!(analyzer.cancellation_observed.load(Ordering::Acquire));
+        assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
+        Ok(())
+    }
+
     #[test]
     fn ebur128_summary_parser_reads_loudness_range_and_peak() -> anyhow::Result<()> {
         let output = "
@@ -8302,12 +9993,257 @@ Integrated loudness:
         let analyzer = SystemFfmpegAudioAnalysisAdapter {
             ffmpeg_bin: format!("missing-ffmpeg-{}", Uuid::new_v4()),
         };
+        let control = CancellationSignal::default();
 
         let error = analyzer
-            .measure("/tmp/nonexistent-media-input.mkv", 1)
+            .measure("/tmp/nonexistent-media-input.mkv", 1, &control)
             .expect_err("missing analyzer binary should fail closed");
 
         assert!(error.starts_with("audio analyzer command spawn failed:"));
+    }
+
+    #[test]
+    fn system_attachment_digest_reports_spawn_and_status_failures() -> anyhow::Result<()> {
+        let missing_adapter = SystemFfmpegAttachmentDigestAdapter {
+            ffmpeg_bin: format!("missing-ffmpeg-{}", Uuid::new_v4()),
+        };
+        let control = CancellationSignal::default();
+        let workspace = tempfile::tempdir()?;
+        let deadline = Instant::now() + Duration::from_secs(5);
+
+        let spawn_error = missing_adapter
+            .digest(
+                "/tmp/nonexistent-media-input.mkv",
+                1,
+                workspace.path(),
+                1_024,
+                deadline,
+                &control,
+            )
+            .expect_err("missing attachment digest binary should fail closed");
+        assert!(spawn_error.starts_with("attachment digest command spawn failed:"));
+
+        let root = tempfile::tempdir()?;
+        let failing_ffmpeg = root.path().join("failing-ffmpeg");
+        fs::write(
+            &failing_ffmpeg,
+            "#!/bin/sh\nprintf 'attachment failure detail' >&2\nexit 7\n",
+        )?;
+        let mut permissions = fs::metadata(&failing_ffmpeg)?.permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&failing_ffmpeg, permissions)?;
+        let failing_adapter = SystemFfmpegAttachmentDigestAdapter {
+            ffmpeg_bin: failing_ffmpeg.to_string_lossy().into_owned(),
+        };
+
+        let status_error = failing_adapter
+            .digest(
+                "/tmp/nonexistent-media-input.mkv",
+                1,
+                workspace.path(),
+                1_024,
+                deadline,
+                &control,
+            )
+            .expect_err("nonzero attachment digest command should fail closed");
+
+        assert!(status_error.contains("attachment digest command failed: status"));
+        assert!(status_error.contains("attachment failure detail"));
+        Ok(())
+    }
+
+    #[test]
+    fn attachment_digest_temp_path_removes_reserved_file() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let path = {
+            let temp_path =
+                AttachmentDigestTempPath::create(root.path()).map_err(anyhow::Error::msg)?;
+            let path = temp_path.path().to_path_buf();
+            assert!(path.exists());
+            assert!(path.starts_with(root.path().canonicalize()?));
+            path
+        };
+
+        assert!(!path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn attachment_digest_temp_path_rejects_symlink_workspace() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let actual = root.path().join("actual");
+        let alias = root.path().join("alias");
+        fs::create_dir(&actual)?;
+        std::os::unix::fs::symlink(&actual, &alias)?;
+
+        let error = AttachmentDigestTempPath::create(&alias)
+            .expect_err("symlinked materialization workspace must fail closed");
+
+        assert_eq!(
+            error,
+            "attachment digest workspace is not a trusted directory".to_string()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn attachment_digest_hashes_payload_bytes() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let payload = root.path().join("payload.bin");
+        fs::write(&payload, b"attachment-payload-v1")?;
+        let payload = fs::File::open(&payload)?;
+
+        let digest = hash_attachment_payload_file(&payload).map_err(anyhow::Error::msg)?;
+
+        assert_eq!(
+            digest,
+            "b028cceb1c3ef9f1a2330fa0ba09c4f760c66ddcef2041c3a39005366f85d860"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn candidate_output_growth_rejects_oversized_and_symlink_artifacts() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidate = root.path().join("candidate.mkv");
+        fs::write(&candidate, [0_u8; 16])?;
+        validate_candidate_output_growth(&candidate, 16)?;
+
+        let oversized = validate_candidate_output_growth(&candidate, 15)
+            .expect_err("candidate larger than its admission budget must fail closed");
+        assert_eq!(
+            oversized.code(),
+            "media_job_candidate_output_growth_exceeded"
+        );
+
+        let alias = root.path().join("candidate-link.mkv");
+        std::os::unix::fs::symlink(&candidate, &alias)?;
+        let symlink = validate_candidate_output_growth(&alias, 16)
+            .expect_err("symlink candidate must fail closed");
+        assert_eq!(
+            symlink.code(),
+            "media_job_candidate_output_not_regular_file"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn attachment_digest_stderr_reader_retains_tail() -> anyhow::Result<()> {
+        let mut stderr = "x"
+            .repeat(MAX_ATTACHMENT_DIGEST_STDERR_BYTES + 32)
+            .into_bytes();
+        stderr.extend_from_slice(b"terminal-error");
+
+        let detail = read_bounded_attachment_digest_stderr(stderr.as_slice())?;
+
+        assert!(detail.starts_with(ATTACHMENT_DIGEST_TRUNCATION_MARKER));
+        assert!(detail.ends_with("terminal-error"));
+        assert!(
+            detail.len()
+                <= MAX_ATTACHMENT_DIGEST_STDERR_BYTES + ATTACHMENT_DIGEST_TRUNCATION_MARKER.len()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn attachment_digest_process_reports_status_and_pre_start_cancellation() -> anyhow::Result<()> {
+        let success = run_attachment_digest_process_with_timeout(
+            "true",
+            &[],
+            Duration::from_secs(1),
+            None,
+            &CancellationSignal::default(),
+        )
+        .map_err(anyhow::Error::msg)?;
+        assert!(success.status.success());
+
+        let failure = run_attachment_digest_process_with_timeout(
+            "false",
+            &[],
+            Duration::from_secs(1),
+            None,
+            &CancellationSignal::default(),
+        )
+        .map_err(anyhow::Error::msg)?;
+        assert!(!failure.status.success());
+
+        let cancelled = CancellationSignal::default();
+        cancelled.request();
+        let error = run_attachment_digest_process_with_timeout(
+            "true",
+            &[],
+            Duration::from_secs(1),
+            None,
+            &cancelled,
+        )
+        .expect_err("pre-start cancellation should fail closed");
+        assert_eq!(error, "attachment digest command cancelled".to_string());
+        Ok(())
+    }
+
+    #[test]
+    fn attachment_digest_process_terminates_payload_overrun() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let payload = root.path().join("payload.bin");
+        fs::write(&payload, [])?;
+        let payload_file = fs::File::open(&payload)?;
+        let script = root.path().join("attachment-overrun.sh");
+        fs::write(
+            &script,
+            "#!/bin/sh\ndd if=/dev/zero of=\"$1\" bs=1024 count=2 >/dev/null 2>&1\nsleep 30\n",
+        )?;
+        let mut permissions = fs::metadata(&script)?.permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&script, permissions)?;
+        let started = Instant::now();
+
+        let error = run_attachment_digest_process_with_timeout(
+            script
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("script path is not UTF-8"))?,
+            &[payload.to_string_lossy().into_owned()],
+            Duration::from_secs(30),
+            Some((&payload_file, 1_024)),
+            &CancellationSignal::default(),
+        )
+        .expect_err("oversized attachment materialization must terminate the child");
+
+        assert_eq!(error, "attachment payload exceeds 1024 byte limit");
+        assert!(started.elapsed() < Duration::from_secs(5));
+        Ok(())
+    }
+
+    #[test]
+    fn attachment_digest_process_terminates_on_timeout_and_cancellation() {
+        let started = Instant::now();
+        let timeout = run_attachment_digest_process_with_timeout(
+            "/bin/sleep",
+            &["30".to_string()],
+            Duration::from_millis(150),
+            None,
+            &CancellationSignal::default(),
+        )
+        .expect_err("sleeping attachment process must time out");
+        assert_eq!(
+            timeout,
+            "attachment digest command timed out after 150ms".to_string()
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+
+        let started = Instant::now();
+        let cancellation = run_attachment_digest_process_with_timeout(
+            "/bin/sleep",
+            &["30".to_string()],
+            Duration::from_secs(30),
+            None,
+            &CancelAfterFirstPoll::default(),
+        )
+        .expect_err("sleeping attachment process must observe cancellation");
+        assert_eq!(
+            cancellation,
+            "attachment digest command cancelled".to_string()
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]
@@ -8331,6 +10267,7 @@ Integrated loudness:
                 .to_str()
                 .ok_or_else(|| anyhow::anyhow!("script path is not UTF-8"))?,
             &[],
+            &CancellationSignal::default(),
         )
         .map_err(anyhow::Error::msg)?;
 
@@ -8352,6 +10289,7 @@ Integrated loudness:
             "/bin/sleep",
             &["30".to_string()],
             Duration::from_millis(150),
+            &CancellationSignal::default(),
         )
         .expect_err("sleeping analyzer should time out");
 
@@ -8359,6 +10297,23 @@ Integrated loudness:
             error,
             "audio analyzer command timed out after 150ms".to_string()
         );
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn audio_analysis_process_terminates_active_child_on_cancellation() {
+        let started = Instant::now();
+        let control = CancelAfterFirstPoll::default();
+
+        let error = run_audio_analysis_process_with_timeout(
+            "/bin/sleep",
+            &["30".to_string()],
+            Duration::from_secs(30),
+            &control,
+        )
+        .expect_err("sleeping analyzer should be cancelled");
+
+        assert_eq!(error, "audio analyzer command cancelled".to_string());
         assert!(started.elapsed() < Duration::from_secs(5));
     }
 
@@ -8789,6 +10744,106 @@ Integrated loudness:
             commands.len()
         };
         assert_eq!(command_count, 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_quarantines_partial_candidate_on_command_failure()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        fixture.runtime.command_runner =
+            Arc::new(PartialOutputFailingCommandRunner) as Arc<RuntimeCommandRunner>;
+        let source_path = PathBuf::from(
+            fixture
+                .store
+                .get_job(fixture.job_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("media job missing"))?
+                .source_path,
+        );
+        let workspace_job_root = fixture
+            .runtime
+            .workspace_root
+            .join(fixture.job_id.to_string());
+        let workspace_output = workspace_job_root.join("output");
+        let quarantine_path = workspace_job_root.join("diagnostics").join("movie.mkv");
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "failed");
+        assert_eq!(
+            job.last_error.as_deref(),
+            Some("media_job_runtime_execute_failed")
+        );
+        assert_eq!(fs::read(source_path)?, b"source");
+        assert!(!workspace_output.exists());
+        assert_eq!(fs::read(quarantine_path)?, b"partial-candidate");
+        assert!(
+            fixture
+                .store
+                .list_job_verification_checks(fixture.job_id)
+                .await?
+                .iter()
+                .any(|check| {
+                    check.check_kind == "runtime_failure"
+                        && check.check_status == "failed"
+                        && check.actual_value.as_deref() == Some("media_job_runtime_execute_failed")
+                })
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_preserves_command_failure_when_cancellation_races_after_output()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        let runner = Arc::new(CancellationRacingPartialOutputFailingCommandRunner::default());
+        fixture.runtime.command_runner = Arc::clone(&runner) as Arc<RuntimeCommandRunner>;
+        let source_path = PathBuf::from(
+            fixture
+                .store
+                .get_job(fixture.job_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("media job missing"))?
+                .source_path,
+        );
+        let workspace_job_root = fixture
+            .runtime
+            .workspace_root
+            .join(fixture.job_id.to_string());
+        let workspace_output = workspace_job_root.join("output");
+        let quarantine_path = workspace_job_root.join("diagnostics").join("movie.mkv");
+        let store = fixture.store.clone();
+        let job_id = fixture.job_id;
+        let runtime = fixture.runtime;
+        let tick = tokio::spawn(async move { runtime.run_tick().await });
+
+        wait_for_flag(&runner.started, "command start").await?;
+        store.cancel_job(job_id).await?;
+        let tick_result = tokio::time::timeout(Duration::from_secs(5), tick).await??;
+        tick_result?;
+
+        let job = store
+            .get_job(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "failed");
+        assert_eq!(
+            job.last_error.as_deref(),
+            Some("media_job_runtime_execute_failed")
+        );
+        assert_eq!(fs::read(source_path)?, b"source");
+        assert!(!workspace_output.exists());
+        assert_eq!(fs::read(quarantine_path)?, b"partial-candidate");
         Ok(())
     }
 
@@ -10285,6 +12340,271 @@ Integrated loudness:
     }
 
     #[test]
+    fn retained_attachment_data_verification_accepts_exact_inspection_state() {
+        let source = retained_attachment_data_inspection("/source/movie.mkv");
+        let mut output = source.clone();
+        output.graph.source_path = "/workspace/movie.mkv".to_string();
+        let desired = retained_attachment_data_desired(&source.graph);
+
+        let verification =
+            super::retained_attachment_data_matches_inspection(&source, &output, &desired);
+
+        assert!(verification.matched);
+        assert_eq!(verification.expected, "2 retained_attachment_data_streams");
+        assert_eq!(verification.actual, "matched");
+    }
+
+    #[test]
+    fn retained_attachment_data_verification_rejects_metadata_drift() {
+        let source = retained_attachment_data_inspection("/source/movie.mkv");
+        let mut output = source.clone();
+        output.graph.source_path = "/workspace/movie.mkv".to_string();
+        let desired = retained_attachment_data_desired(&source.graph);
+        let Some(attachment) = output
+            .streams
+            .iter_mut()
+            .find(|stream| stream.stream_id == 1)
+        else {
+            panic!("attachment inspection missing");
+        };
+        attachment.metadata = vec![MetadataEntry {
+            key: "filename".to_string(),
+            value: "other-font.ttf".to_string(),
+        }];
+
+        let verification =
+            super::retained_attachment_data_matches_inspection(&source, &output, &desired);
+
+        assert!(!verification.matched);
+        assert_eq!(
+            verification.expected,
+            "retained_stream:1:technical_state=source_exact"
+        );
+        assert_eq!(verification.actual, "mismatched");
+        assert!(
+            verification
+                .details
+                .as_deref()
+                .is_some_and(|details| details.contains("/workspace/movie.mkv"))
+        );
+    }
+
+    #[tokio::test]
+    async fn retained_attachment_payload_verification_rejects_excessive_count() -> anyhow::Result<()>
+    {
+        let source = retained_attachment_data_inspection("/source/movie.mkv");
+        let mut output = source.clone();
+        output.graph.source_path = "/workspace/movie.mkv".to_string();
+        let mut desired = retained_attachment_data_desired(&source.graph);
+        let attachment = desired
+            .streams
+            .iter()
+            .find(|stream| stream.kind == StreamKind::Attachment)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("attachment stream missing"))?;
+        desired.streams = vec![attachment; MAX_RETAINED_ATTACHMENT_STREAMS + 1];
+        let workspace = tempfile::tempdir()?;
+
+        let verification = retained_attachment_payload_digests_match_inspection(
+            &source,
+            &output,
+            &desired,
+            Arc::new(StaticAttachmentDigest::constant("unused")),
+            workspace.path(),
+            Arc::new(CancellationSignal::default()),
+        )
+        .await?;
+
+        assert!(!verification.matched);
+        assert_eq!(
+            verification.expected,
+            format!("attachment_count<={MAX_RETAINED_ATTACHMENT_STREAMS}")
+        );
+        assert_eq!(
+            verification.actual,
+            (MAX_RETAINED_ATTACHMENT_STREAMS + 1).to_string()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn attachment_payload_digest_enforces_aggregate_budget() -> anyhow::Result<()> {
+        let digester = Arc::new(SizedAttachmentDigest {
+            bytes: MAX_ATTACHMENT_PAYLOAD_BYTES,
+        }) as Arc<RuntimeAttachmentDigest>;
+        let workspace = tempfile::tempdir()?;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let control = Arc::new(CancellationSignal::default());
+        let mut session = AttachmentDigestSession {
+            digester,
+            cache: BTreeMap::new(),
+            materialization_root: workspace.path(),
+            deadline,
+            total_materialized_bytes: 0,
+            control,
+        };
+
+        for stream_id in [1_u32, 2_u32] {
+            let digest =
+                attachment_payload_digest(&mut session, "/source/movie.mkv".to_string(), stream_id)
+                    .await?;
+            assert!(digest.is_ok());
+        }
+        assert_eq!(session.total_materialized_bytes, MAX_ATTACHMENT_TOTAL_BYTES);
+
+        let overrun = attachment_payload_digest(&mut session, "/source/movie.mkv".to_string(), 3)
+            .await?
+            .expect_err("third maximum-size payload must exceed aggregate budget");
+
+        assert_eq!(
+            overrun,
+            format!("attachment payloads exceed {MAX_ATTACHMENT_TOTAL_BYTES} aggregate byte limit")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn retained_attachment_payload_verification_accepts_matching_digest() -> anyhow::Result<()>
+    {
+        let source = retained_attachment_data_inspection("/source/movie.mkv");
+        let mut output = source.clone();
+        output.graph.source_path = "/workspace/movie.mkv".to_string();
+        let desired = retained_attachment_data_desired(&source.graph);
+        let digester = Arc::new(StaticAttachmentDigest::mapped(vec![
+            (
+                ("/source/movie.mkv", 1),
+                Ok("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            ),
+            (
+                ("/workspace/movie.mkv", 1),
+                Ok("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            ),
+        ])) as Arc<RuntimeAttachmentDigest>;
+
+        let workspace = tempfile::tempdir()?;
+        let verification = retained_attachment_payload_digests_match_inspection(
+            &source,
+            &output,
+            &desired,
+            digester,
+            workspace.path(),
+            Arc::new(CancellationSignal::default()),
+        )
+        .await?;
+
+        assert!(verification.matched);
+        assert_eq!(verification.expected, "1 retained_attachment_payloads");
+        assert_eq!(verification.actual, "matched");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn retained_attachment_payload_verification_rejects_digest_drift() -> anyhow::Result<()> {
+        let source = retained_attachment_data_inspection("/source/movie.mkv");
+        let mut output = source.clone();
+        output.graph.source_path = "/workspace/movie.mkv".to_string();
+        let desired = retained_attachment_data_desired(&source.graph);
+        let digester = Arc::new(StaticAttachmentDigest::mapped(vec![
+            (
+                ("/source/movie.mkv", 1),
+                Ok("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            ),
+            (
+                ("/workspace/movie.mkv", 1),
+                Ok("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            ),
+        ])) as Arc<RuntimeAttachmentDigest>;
+
+        let workspace = tempfile::tempdir()?;
+        let verification = retained_attachment_payload_digests_match_inspection(
+            &source,
+            &output,
+            &desired,
+            digester,
+            workspace.path(),
+            Arc::new(CancellationSignal::default()),
+        )
+        .await?;
+
+        assert!(!verification.matched);
+        assert_eq!(
+            verification.expected,
+            "retained_attachment:1:payload_sha256=source_exact"
+        );
+        assert_eq!(verification.actual, "mismatched");
+        assert!(
+            verification
+                .details
+                .as_deref()
+                .is_some_and(|details| details.contains("/workspace/movie.mkv"))
+        );
+        Ok(())
+    }
+
+    fn retained_attachment_data_inspection(source_path: &str) -> MediaInspection {
+        let mut graph = video_graph(source_path, "h264");
+        graph.streams.push(verification_test_stream(
+            1,
+            StreamKind::Attachment,
+            "ttf",
+            None,
+            Some("Font"),
+            &[],
+        ));
+        graph.streams.push(verification_test_stream(
+            2,
+            StreamKind::Data,
+            "bin_data",
+            Some("eng"),
+            Some("Timecode"),
+            &[],
+        ));
+        let mut inspection = complete_test_inspection(graph);
+        if let Some(attachment) = inspection
+            .streams
+            .iter_mut()
+            .find(|stream| stream.stream_id == 1)
+        {
+            attachment.metadata = vec![
+                MetadataEntry {
+                    key: "filename".to_string(),
+                    value: "font-main.ttf".to_string(),
+                },
+                MetadataEntry {
+                    key: "mimetype".to_string(),
+                    value: "application/x-truetype-font".to_string(),
+                },
+            ];
+        }
+        if let Some(data) = inspection
+            .streams
+            .iter_mut()
+            .find(|stream| stream.stream_id == 2)
+        {
+            data.bit_rate = Some(1_000);
+            data.metadata = vec![MetadataEntry {
+                key: "handler_name".to_string(),
+                value: "Timecode".to_string(),
+            }];
+        }
+        inspection
+    }
+
+    fn retained_attachment_data_desired(source: &MediaGraph) -> DesiredGraph {
+        DesiredGraph {
+            output_path: "/workspace/movie.mkv".to_string(),
+            container_format: Some("mkv".to_string()),
+            stream_bindings: super::identity_stream_bindings(&source.streams),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams: source.streams.clone(),
+        }
+    }
+
+    #[test]
     fn sidecar_helpers_preserve_semantics_and_validate_published_artifacts() -> anyhow::Result<()> {
         let sidecars = vec![
             SidecarSubtitle {
@@ -10719,6 +13039,7 @@ Integrated loudness:
             source_changed_ns: 1,
             source_sha256: "1".repeat(64),
             compatibility_target_key: None,
+            compatibility_target_version: None,
             policy_key: "safe_dry_run".to_string(),
             target_video_codec: None,
             target_audio_codec: None,
@@ -10766,6 +13087,12 @@ Integrated loudness:
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -10925,6 +13252,12 @@ Integrated loudness:
                 video_profile: None,
                 video_level: None,
                 video_bitrate_bps: None,
+                video_width_px: None,
+                video_height_px: None,
+                video_pixel_format: None,
+                video_bit_depth: None,
+                video_average_frame_rate: None,
+                color_range: None,
                 color_primaries: None,
                 color_transfer: None,
                 color_space: None,
@@ -11123,6 +13456,12 @@ Integrated loudness:
                 video_profile: None,
                 video_level: None,
                 video_bitrate_bps: None,
+                video_width_px: None,
+                video_height_px: None,
+                video_pixel_format: None,
+                video_bit_depth: None,
+                video_average_frame_rate: None,
+                color_range: None,
                 color_primaries: None,
                 color_transfer: None,
                 color_space: None,
@@ -11349,6 +13688,12 @@ Integrated loudness:
                 video_profile: None,
                 video_level: None,
                 video_bitrate_bps: None,
+                video_width_px: None,
+                video_height_px: None,
+                video_pixel_format: None,
+                video_bit_depth: None,
+                video_average_frame_rate: None,
+                color_range: None,
                 color_primaries: None,
                 color_transfer: None,
                 color_space: None,

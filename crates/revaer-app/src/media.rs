@@ -65,7 +65,11 @@ use revaer_media_core::model::StreamKind;
 use revaer_media_core::normalize::{
     audio_channel_count_for_layout, normalize_audio_channel_layout,
 };
-use revaer_media_core::target::{Hdr10ColorVolume, MAX_DESIRED_TARGET_STREAMS};
+use revaer_media_core::target::{
+    Hdr10ColorVolume, MAX_DESIRED_TARGET_STREAMS, MAX_VIDEO_BITRATE_BPS, MAX_VIDEO_DIMENSION_PX,
+    MAX_VIDEO_FRAME_AREA_PX, video_average_frame_rate_is_valid, video_bit_depth_is_supported,
+    video_color_range_is_valid, video_pixel_format_bit_depth, video_pixel_format_is_valid,
+};
 use revaer_media_runtime::capabilities::{
     CapabilityDetectError, CapabilityDetector, CapabilitySnapshot, CodecCapability,
 };
@@ -1733,6 +1737,12 @@ async fn import_yaml_desired_streams(
                 video_profile: stream.video_profile.as_deref(),
                 video_level: stream.video_level.as_deref(),
                 video_bitrate_bps: stream.video_bitrate_bps,
+                video_width_px: stream.video_width_px,
+                video_height_px: stream.video_height_px,
+                video_pixel_format: stream.video_pixel_format.as_deref(),
+                video_bit_depth: stream.video_bit_depth,
+                video_average_frame_rate: stream.video_average_frame_rate.as_deref(),
+                color_range: stream.color_range.as_deref(),
                 color_primaries: stream.color_primaries.as_deref(),
                 color_transfer: stream.color_transfer.as_deref(),
                 color_space: stream.color_space.as_deref(),
@@ -2767,29 +2777,76 @@ fn yaml_video_constraints_invalid(
     stream: &MediaDesiredTargetStreamParams,
     stream_kind: &str,
 ) -> bool {
-    if stream_kind == "video" {
-        return stream.video_bitrate_bps.is_some_and(|bitrate| bitrate <= 0)
-            || stream
-                .hdr_format
-                .as_deref()
-                .is_some_and(|format| !format.trim().eq_ignore_ascii_case("hdr10"))
-            || stream.hdr10_color_volume.as_ref().is_some_and(|volume| {
-                !stream
-                    .hdr_format
-                    .as_deref()
-                    .is_some_and(|format| format.trim().eq_ignore_ascii_case("hdr10"))
-                    || !media_hdr10_color_volume_is_valid(volume)
-            });
+    if stream_kind != "video" {
+        return stream.video_profile.is_some()
+            || stream.video_level.is_some()
+            || stream.video_bitrate_bps.is_some()
+            || stream.video_width_px.is_some()
+            || stream.video_height_px.is_some()
+            || stream.video_pixel_format.is_some()
+            || stream.video_bit_depth.is_some()
+            || stream.video_average_frame_rate.is_some()
+            || stream.color_range.is_some()
+            || stream.color_primaries.is_some()
+            || stream.color_transfer.is_some()
+            || stream.color_space.is_some()
+            || stream.hdr_format.is_some()
+            || stream.hdr10_color_volume.is_some();
     }
 
-    stream.video_profile.is_some()
-        || stream.video_level.is_some()
-        || stream.video_bitrate_bps.is_some()
-        || stream.color_primaries.is_some()
-        || stream.color_transfer.is_some()
-        || stream.color_space.is_some()
-        || stream.hdr_format.is_some()
-        || stream.hdr10_color_volume.is_some()
+    stream.video_bitrate_bps.is_some_and(|bitrate| {
+        u32::try_from(bitrate).map_or(true, |value| value == 0 || value > MAX_VIDEO_BITRATE_BPS)
+    }) || stream.video_width_px.is_some_and(|width| {
+        u32::try_from(width).map_or(true, |value| value == 0 || value > MAX_VIDEO_DIMENSION_PX)
+    }) || stream.video_height_px.is_some_and(|height| {
+        u32::try_from(height).map_or(true, |value| value == 0 || value > MAX_VIDEO_DIMENSION_PX)
+    }) || stream.video_width_px.is_some() != stream.video_height_px.is_some()
+        || video_frame_area_exceeds_limit(stream.video_width_px, stream.video_height_px)
+        || stream
+            .video_pixel_format
+            .as_deref()
+            .is_some_and(|value| !video_pixel_format_is_valid(value))
+        || stream.video_bit_depth.is_some_and(|value| {
+            u32::try_from(value).map_or(true, |value| !video_bit_depth_is_supported(value))
+        })
+        || stream.video_bit_depth.is_some_and(|bit_depth| {
+            stream
+                .video_pixel_format
+                .as_deref()
+                .and_then(video_pixel_format_bit_depth)
+                != u32::try_from(bit_depth).ok()
+        })
+        || stream
+            .video_average_frame_rate
+            .as_deref()
+            .is_some_and(|value| !video_average_frame_rate_is_valid(value))
+        || stream
+            .color_range
+            .as_deref()
+            .is_some_and(|value| !video_color_range_is_valid(value))
+        || stream
+            .hdr_format
+            .as_deref()
+            .is_some_and(|format| !format.trim().eq_ignore_ascii_case("hdr10"))
+        || stream.hdr10_color_volume.as_ref().is_some_and(|volume| {
+            !stream
+                .hdr_format
+                .as_deref()
+                .is_some_and(|format| format.trim().eq_ignore_ascii_case("hdr10"))
+                || !media_hdr10_color_volume_is_valid(volume)
+        })
+}
+
+fn video_frame_area_exceeds_limit(width: Option<i32>, height: Option<i32>) -> bool {
+    let (Some(width), Some(height)) = (width, height) else {
+        return false;
+    };
+    let (Ok(width), Ok(height)) = (u64::try_from(width), u64::try_from(height)) else {
+        return true;
+    };
+    width
+        .checked_mul(height)
+        .is_none_or(|area| area > MAX_VIDEO_FRAME_AREA_PX)
 }
 
 fn yaml_retained_stream_constraints_invalid(
@@ -2808,6 +2865,12 @@ fn yaml_retained_stream_constraints_invalid(
         || stream.video_profile.is_some()
         || stream.video_level.is_some()
         || stream.video_bitrate_bps.is_some()
+        || stream.video_width_px.is_some()
+        || stream.video_height_px.is_some()
+        || stream.video_pixel_format.is_some()
+        || stream.video_bit_depth.is_some()
+        || stream.video_average_frame_rate.is_some()
+        || stream.color_range.is_some()
         || stream.color_primaries.is_some()
         || stream.color_transfer.is_some()
         || stream.color_space.is_some()
@@ -3033,6 +3096,12 @@ fn map_desired_target_stream(
         video_profile: row.video_profile,
         video_level: row.video_level,
         video_bitrate_bps: row.video_bitrate_bps,
+        video_width_px: row.video_width_px,
+        video_height_px: row.video_height_px,
+        video_pixel_format: row.video_pixel_format,
+        video_bit_depth: row.video_bit_depth,
+        video_average_frame_rate: row.video_average_frame_rate,
+        color_range: row.color_range,
         color_primaries: row.color_primaries,
         color_transfer: row.color_transfer,
         color_space: row.color_space,
@@ -3069,6 +3138,12 @@ fn desired_target_stream_append_input(
         video_profile: stream.video_profile.as_deref(),
         video_level: stream.video_level.as_deref(),
         video_bitrate_bps: stream.video_bitrate_bps,
+        video_width_px: stream.video_width_px,
+        video_height_px: stream.video_height_px,
+        video_pixel_format: stream.video_pixel_format.as_deref(),
+        video_bit_depth: stream.video_bit_depth,
+        video_average_frame_rate: stream.video_average_frame_rate.as_deref(),
+        color_range: stream.color_range.as_deref(),
         color_primaries: stream.color_primaries.as_deref(),
         color_transfer: stream.color_transfer.as_deref(),
         color_space: stream.color_space.as_deref(),
@@ -3618,6 +3693,12 @@ fn desired_target_video_stream_constraint(
         profile: stream.video_profile.clone(),
         level: stream.video_level.clone(),
         max_bitrate_bps: optional_max_bitrate(stream.video_bitrate_bps)?,
+        width_px: optional_positive_u32(stream.video_width_px)?,
+        height_px: optional_positive_u32(stream.video_height_px)?,
+        pixel_format: stream.video_pixel_format.clone(),
+        bit_depth: optional_positive_u32(stream.video_bit_depth)?,
+        average_frame_rate: stream.video_average_frame_rate.clone(),
+        color_range: stream.color_range.clone(),
         color_primaries: stream.color_primaries.clone(),
         color_transfer: stream.color_transfer.clone(),
         color_space: stream.color_space.clone(),
@@ -3639,6 +3720,18 @@ fn optional_max_bitrate(value: Option<i32>) -> Result<Option<MaxBitrateBps>, Med
                 MediaServiceError::new(MediaServiceErrorKind::Invalid)
                     .with_code("media_profile_desired_target_stream_invalid")
             }),
+        Some(_) => Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
+            .with_code("media_profile_desired_target_stream_invalid")),
+        None => Ok(None),
+    }
+}
+
+fn optional_positive_u32(value: Option<i32>) -> Result<Option<u32>, MediaServiceError> {
+    match value {
+        Some(value) if value > 0 => u32::try_from(value).map(Some).map_err(|_| {
+            MediaServiceError::new(MediaServiceErrorKind::Invalid)
+                .with_code("media_profile_desired_target_stream_invalid")
+        }),
         Some(_) => Err(MediaServiceError::new(MediaServiceErrorKind::Invalid)
             .with_code("media_profile_desired_target_stream_invalid")),
         None => Ok(None),
@@ -3901,7 +3994,7 @@ mod tests {
         ensure_discovery_mode_enabled, ensure_execution_capability_snapshot,
         ensure_profile_compatibility_target_readiness, ensure_profile_desired_target_readiness,
         map_data_error, map_detect_error, parse_yaml_bundle, validate_manual_job_confirmation,
-        validate_yaml_bundle, yaml_desired_target_shape_invalid,
+        validate_yaml_bundle, yaml_desired_target_shape_invalid, yaml_video_constraints_invalid,
     };
     use anyhow::Context as _;
     use revaer_api::app::media::MediaServiceErrorKind;
@@ -5331,6 +5424,32 @@ mod tests {
     }
 
     #[test]
+    fn yaml_video_constraints_enforce_resource_ceilings() {
+        for stream in [
+            MediaDesiredTargetStreamParams {
+                video_bitrate_bps: Some(1_000_000_001),
+                ..desired_video_stream()
+            },
+            MediaDesiredTargetStreamParams {
+                video_width_px: Some(16_385),
+                video_height_px: Some(1),
+                ..desired_video_stream()
+            },
+            MediaDesiredTargetStreamParams {
+                video_width_px: Some(16_384),
+                video_height_px: Some(16_384),
+                ..desired_video_stream()
+            },
+            MediaDesiredTargetStreamParams {
+                video_average_frame_rate: Some("241/1".to_string()),
+                ..desired_video_stream()
+            },
+        ] {
+            assert!(yaml_video_constraints_invalid(&stream, "video"));
+        }
+    }
+
+    #[test]
     fn validate_yaml_bundle_rejects_hdr10_volume_without_hdr_format() {
         let bundle = parse_yaml_bundle(
             "format_version: 1\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Invalid HDR10 target\ntargets:\n  - target_key: hdr-target\n    version: 1\n    display_name: HDR target\n    container_format: matroska\n    streams:\n      - stream_key: video-main\n        stream_kind: video\n        optional: false\n        sort_order: 0\n        codec: hevc\n        default_disposition: true\n        forced_disposition: false\n        hdr10_color_volume:\n          mastering_red_x: \"34000/50000\"\n          mastering_red_y: \"16000/50000\"\n          mastering_green_x: \"13250/50000\"\n          mastering_green_y: \"34500/50000\"\n          mastering_blue_x: \"7500/50000\"\n          mastering_blue_y: \"3000/50000\"\n          mastering_white_point_x: \"15635/50000\"\n          mastering_white_point_y: \"16450/50000\"\n          mastering_min_luminance: \"50/10000\"\n          mastering_max_luminance: \"10000000/10000\"\n          max_content_light_level: \"1000\"\n          max_frame_average_light_level: \"400\"\n",
@@ -5871,6 +5990,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -5913,6 +6038,12 @@ mod tests {
             video_profile: Some("main10".to_string()),
             video_level: Some("5.1".to_string()),
             video_bitrate_bps: Some(8_000_000),
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: Some("bt2020".to_string()),
             color_transfer: Some("smpte2084".to_string()),
             color_space: Some("bt2020nc".to_string()),
@@ -5961,6 +6092,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -5992,6 +6129,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,

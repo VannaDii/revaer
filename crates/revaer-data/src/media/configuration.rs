@@ -36,9 +36,9 @@ const MEDIA_DESIRED_TARGET_CHAPTER_LIST_V1: &str = "SELECT start_millis, end_mil
 const MEDIA_DESIRED_TARGET_METADATA_APPEND_V1: &str = "SELECT media_desired_target_metadata_append_v1(media_desired_target_profile_public_id_input => $1, metadata_key_input => $2, metadata_value_input => $3)";
 const MEDIA_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, metadata_value FROM media_desired_target_metadata_list_v1(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_DESIRED_TARGET_LIST_V4: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, container_metadata_policy, container_chapter_policy, container_attachment_policy FROM media_desired_target_list_v4()";
-const MEDIA_DESIRED_TARGET_GRAPH_PAGE_V2: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, container_metadata_policy, container_chapter_policy, container_attachment_policy, stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_graph_page_v2($1)";
-const MEDIA_DESIRED_TARGET_STREAM_APPEND_V7: &str = "SELECT media_desired_target_stream_append_v7(media_desired_target_profile_public_id_input => $1, stream_key_input => $2, stream_kind_input => $3, semantic_role_input => $4, language_code_input => $5, optional_input => $6, sort_order_input => $7, codec_input => $8, channel_count_input => $9, channel_layout_input => $10, audio_bitrate_bps_input => $11, audio_sample_rate_hz_input => $12, audio_loudness_profile_input => $13, audio_dynamic_range_input => $14, video_profile_input => $15, video_level_input => $16, video_bitrate_bps_input => $17, color_primaries_input => $18, color_transfer_input => $19, color_space_input => $20, hdr_format_input => $21, hdr10_mastering_red_x_input => $22, hdr10_mastering_red_y_input => $23, hdr10_mastering_green_x_input => $24, hdr10_mastering_green_y_input => $25, hdr10_mastering_blue_x_input => $26, hdr10_mastering_blue_y_input => $27, hdr10_mastering_white_point_x_input => $28, hdr10_mastering_white_point_y_input => $29, hdr10_mastering_min_luminance_input => $30, hdr10_mastering_max_luminance_input => $31, hdr10_max_content_light_level_input => $32, hdr10_max_frame_average_light_level_input => $33, title_input => $34, default_disposition_input => $35, forced_disposition_input => $36, subtitle_placement_input => $37, image_subtitle_action_input => $38)";
-const MEDIA_DESIRED_TARGET_STREAM_LIST_V7: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_stream_list_v7(media_desired_target_profile_public_id_input => $1)";
+const MEDIA_DESIRED_TARGET_GRAPH_PAGE_V3: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, container_metadata_policy, container_chapter_policy, container_attachment_policy, stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, video_width_px, video_height_px, video_pixel_format, video_bit_depth, video_average_frame_rate, color_range, color_primaries, color_transfer, color_space, hdr_format, hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_graph_page_v3($1)";
+const MEDIA_DESIRED_TARGET_STREAM_APPEND_V8: &str = "SELECT media_desired_target_stream_append_v8(media_desired_target_profile_public_id_input => $1, stream_key_input => $2, stream_kind_input => $3, semantic_role_input => $4, language_code_input => $5, optional_input => $6, sort_order_input => $7, codec_input => $8, channel_count_input => $9, channel_layout_input => $10, audio_bitrate_bps_input => $11, audio_sample_rate_hz_input => $12, audio_loudness_profile_input => $13, audio_dynamic_range_input => $14, video_profile_input => $15, video_level_input => $16, video_bitrate_bps_input => $17, video_width_px_input => $18, video_height_px_input => $19, video_pixel_format_input => $20, video_bit_depth_input => $21, video_average_frame_rate_input => $22, color_range_input => $23, color_primaries_input => $24, color_transfer_input => $25, color_space_input => $26, hdr_format_input => $27, hdr10_mastering_red_x_input => $28, hdr10_mastering_red_y_input => $29, hdr10_mastering_green_x_input => $30, hdr10_mastering_green_y_input => $31, hdr10_mastering_blue_x_input => $32, hdr10_mastering_blue_y_input => $33, hdr10_mastering_white_point_x_input => $34, hdr10_mastering_white_point_y_input => $35, hdr10_mastering_min_luminance_input => $36, hdr10_mastering_max_luminance_input => $37, hdr10_max_content_light_level_input => $38, hdr10_max_frame_average_light_level_input => $39, title_input => $40, default_disposition_input => $41, forced_disposition_input => $42, subtitle_placement_input => $43, image_subtitle_action_input => $44)";
+const MEDIA_DESIRED_TARGET_STREAM_LIST_V8: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, video_width_px, video_height_px, video_pixel_format, video_bit_depth, video_average_frame_rate, color_range, color_primaries, color_transfer, color_space, hdr_format, hdr10_mastering_red_x, hdr10_mastering_red_y, hdr10_mastering_green_x, hdr10_mastering_green_y, hdr10_mastering_blue_x, hdr10_mastering_blue_y, hdr10_mastering_white_point_x, hdr10_mastering_white_point_y, hdr10_mastering_min_luminance, hdr10_mastering_max_luminance, hdr10_max_content_light_level, hdr10_max_frame_average_light_level, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_stream_list_v8(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_PROFILE_DESIRED_TARGET_SET_V1: &str = "SELECT media_profile_desired_target_set_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, desired_target_key_input => $3, desired_target_version_input => $4)";
 
 /// Compatibility target upsert payload.
@@ -213,6 +213,18 @@ pub struct AppendMediaDesiredTargetStreamInput<'a> {
     pub video_level: Option<&'a str>,
     /// Optional desired average video bitrate in bits per second.
     pub video_bitrate_bps: Option<i32>,
+    /// Optional desired video width in pixels.
+    pub video_width_px: Option<i32>,
+    /// Optional desired video height in pixels.
+    pub video_height_px: Option<i32>,
+    /// Optional desired video pixel format.
+    pub video_pixel_format: Option<&'a str>,
+    /// Optional desired video component bit depth.
+    pub video_bit_depth: Option<i32>,
+    /// Optional desired average frame rate as an exact fraction.
+    pub video_average_frame_rate: Option<&'a str>,
+    /// Optional desired video color range.
+    pub color_range: Option<&'a str>,
     /// Optional desired video color primaries.
     pub color_primaries: Option<&'a str>,
     /// Optional desired video transfer characteristic.
@@ -335,6 +347,18 @@ pub struct MediaDesiredTargetStreamRow {
     pub video_level: Option<String>,
     /// Optional desired average video bitrate in bits per second.
     pub video_bitrate_bps: Option<i32>,
+    /// Optional desired video width in pixels.
+    pub video_width_px: Option<i32>,
+    /// Optional desired video height in pixels.
+    pub video_height_px: Option<i32>,
+    /// Optional desired video pixel format.
+    pub video_pixel_format: Option<String>,
+    /// Optional desired video component bit depth.
+    pub video_bit_depth: Option<i32>,
+    /// Optional desired average frame rate as an exact fraction.
+    pub video_average_frame_rate: Option<String>,
+    /// Optional desired video color range.
+    pub color_range: Option<String>,
     /// Optional desired video color primaries.
     pub color_primaries: Option<String>,
     /// Optional desired video transfer characteristic.
@@ -775,7 +799,7 @@ pub async fn append_media_desired_target_stream_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query(MEDIA_DESIRED_TARGET_STREAM_APPEND_V7)
+    sqlx::query(MEDIA_DESIRED_TARGET_STREAM_APPEND_V8)
         .bind(input.media_desired_target_profile_public_id)
         .bind(input.stream_key)
         .bind(input.stream_kind)
@@ -793,6 +817,12 @@ where
         .bind(input.video_profile)
         .bind(input.video_level)
         .bind(input.video_bitrate_bps)
+        .bind(input.video_width_px)
+        .bind(input.video_height_px)
+        .bind(input.video_pixel_format)
+        .bind(input.video_bit_depth)
+        .bind(input.video_average_frame_rate)
+        .bind(input.color_range)
         .bind(input.color_primaries)
         .bind(input.color_transfer)
         .bind(input.color_space)
@@ -841,7 +871,7 @@ pub async fn list_media_desired_target_graph_page(
     pool: &PgPool,
     limit: i32,
 ) -> Result<Vec<MediaDesiredTargetGraphRow>> {
-    sqlx::query_as::<_, MediaDesiredTargetGraphRow>(MEDIA_DESIRED_TARGET_GRAPH_PAGE_V2)
+    sqlx::query_as::<_, MediaDesiredTargetGraphRow>(MEDIA_DESIRED_TARGET_GRAPH_PAGE_V3)
         .bind(limit)
         .fetch_all(pool)
         .await
@@ -889,7 +919,7 @@ pub async fn list_media_desired_target_streams(
     pool: &PgPool,
     media_desired_target_profile_public_id: Uuid,
 ) -> Result<Vec<MediaDesiredTargetStreamRow>> {
-    sqlx::query_as::<_, MediaDesiredTargetStreamRow>(MEDIA_DESIRED_TARGET_STREAM_LIST_V7)
+    sqlx::query_as::<_, MediaDesiredTargetStreamRow>(MEDIA_DESIRED_TARGET_STREAM_LIST_V8)
         .bind(media_desired_target_profile_public_id)
         .fetch_all(pool)
         .await
@@ -980,10 +1010,10 @@ mod tests {
 
     #[test]
     fn migration_guards_constant_query_bounded_target_graph() {
-        let migration = include_str!("../../migrations/0189_media_desired_target_graph_hdr10.sql");
-        assert!(migration.contains("media_desired_target_graph_page_v2(limit_input INT)"));
+        let migration = include_str!("../../migrations/0190_media_video_technical_constraints.sql");
+        assert!(migration.contains("media_desired_target_graph_page_v3(limit_input INT)"));
         assert!(migration.contains("media_desired_target_list_v4()"));
-        assert!(migration.contains("media_desired_target_stream_list_v7("));
+        assert!(migration.contains("media_desired_target_stream_list_v8("));
         assert!(migration.contains("limit_input > 128"));
         assert!(migration.contains("LIMIT 1025"));
     }
@@ -1029,6 +1059,12 @@ mod tests {
                     video_profile: None,
                     video_level: None,
                     video_bitrate_bps: None,
+                    video_width_px: None,
+                    video_height_px: None,
+                    video_pixel_format: None,
+                    video_bit_depth: None,
+                    video_average_frame_rate: None,
+                    color_range: None,
                     color_primaries: None,
                     color_transfer: None,
                     color_space: None,
@@ -1107,6 +1143,12 @@ mod tests {
                 video_profile: Some("main10"),
                 video_level: None,
                 video_bitrate_bps: None,
+                video_width_px: Some(3840),
+                video_height_px: Some(2160),
+                video_pixel_format: Some("yuv420p10le"),
+                video_bit_depth: Some(10),
+                video_average_frame_rate: Some("24000/1001"),
+                color_range: Some("tv"),
                 color_primaries: Some("bt2020"),
                 color_transfer: Some("smpte2084"),
                 color_space: Some("bt2020nc"),
@@ -1135,10 +1177,26 @@ mod tests {
         let rows = list_media_desired_target_graph_page(db.pool(), 1).await?;
 
         assert_eq!(rows.len(), 1);
-        let row = &rows[0];
+        assert_hdr10_graph_row(&rows[0]);
+        Ok(())
+    }
+
+    fn assert_hdr10_graph_row(row: &super::MediaDesiredTargetGraphRow) {
         assert_eq!(row.target.container_metadata_policy, "strip");
         assert_eq!(row.target.container_chapter_policy, "replace");
         assert_eq!(row.target.container_attachment_policy, "remove");
+        assert_eq!(row.stream.video_width_px, Some(3840));
+        assert_eq!(row.stream.video_height_px, Some(2160));
+        assert_eq!(
+            row.stream.video_pixel_format.as_deref(),
+            Some("yuv420p10le")
+        );
+        assert_eq!(row.stream.video_bit_depth, Some(10));
+        assert_eq!(
+            row.stream.video_average_frame_rate.as_deref(),
+            Some("24000/1001")
+        );
+        assert_eq!(row.stream.color_range.as_deref(), Some("tv"));
         assert_eq!(
             row.stream.hdr10_mastering_red_x.as_deref(),
             Some("34000/50000")
@@ -1155,7 +1213,6 @@ mod tests {
             row.stream.hdr10_max_frame_average_light_level.as_deref(),
             Some("400")
         );
-        Ok(())
     }
 
     async fn create_ordered_desired_target(db: &MediaTestDb) -> anyhow::Result<uuid::Uuid> {
@@ -1327,6 +1384,12 @@ mod tests {
             video_profile: Some("main10"),
             video_level: Some("5.1"),
             video_bitrate_bps: Some(8_000_000),
+            video_width_px: Some(3840),
+            video_height_px: Some(2160),
+            video_pixel_format: Some("yuv420p10le"),
+            video_bit_depth: Some(10),
+            video_average_frame_rate: Some("48000/2002"),
+            color_range: Some("tv"),
             color_primaries: Some("bt2020"),
             color_transfer: Some("smpte2084"),
             color_space: Some("bt2020nc"),
@@ -1370,6 +1433,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -1415,6 +1484,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -1464,6 +1539,12 @@ mod tests {
             video_profile: None,
             video_level: None,
             video_bitrate_bps: None,
+            video_width_px: None,
+            video_height_px: None,
+            video_pixel_format: None,
+            video_bit_depth: None,
+            video_average_frame_rate: None,
+            color_range: None,
             color_primaries: None,
             color_transfer: None,
             color_space: None,
@@ -1665,6 +1746,12 @@ mod tests {
             vec![("video-main", 0), ("audio-main", 1), ("subtitle-forced", 2)]
         );
         assert_desired_stream_hdr10_color_volume(&streams[0]);
+        assert_eq!(streams[0].video_bit_depth, Some(10));
+        assert_eq!(
+            streams[0].video_average_frame_rate.as_deref(),
+            Some("24000/1001")
+        );
+        assert_eq!(streams[0].color_range.as_deref(), Some("tv"));
         assert_eq!(streams[1].channel_count, Some(2));
         assert_eq!(streams[1].channel_layout.as_deref(), Some("stereo"));
         assert_eq!(streams[1].audio_bitrate_bps, Some(160_000));
@@ -1732,6 +1819,12 @@ mod tests {
                 video_profile: None,
                 video_level: None,
                 video_bitrate_bps: None,
+                video_width_px: None,
+                video_height_px: None,
+                video_pixel_format: None,
+                video_bit_depth: None,
+                video_average_frame_rate: None,
+                color_range: None,
                 color_primaries: None,
                 color_transfer: None,
                 color_space: None,
@@ -1871,7 +1964,6 @@ mod tests {
                 ("timecode-main", "data", "bin_data")
             ]
         );
-
         let rewritten = append_media_desired_target_stream(
             db.pool(),
             AppendMediaDesiredTargetStreamInput {
@@ -2064,6 +2156,18 @@ mod tests {
         assert_eq!(job_streams[0].video_profile.as_deref(), Some("main10"));
         assert_eq!(job_streams[0].video_level.as_deref(), Some("5.1"));
         assert_eq!(job_streams[0].video_bitrate_bps, Some(8_000_000));
+        assert_eq!(job_streams[0].video_width_px, Some(3840));
+        assert_eq!(job_streams[0].video_height_px, Some(2160));
+        assert_eq!(
+            job_streams[0].video_pixel_format.as_deref(),
+            Some("yuv420p10le")
+        );
+        assert_eq!(job_streams[0].video_bit_depth, Some(10));
+        assert_eq!(
+            job_streams[0].video_average_frame_rate.as_deref(),
+            Some("24000/1001")
+        );
+        assert_eq!(job_streams[0].color_range.as_deref(), Some("tv"));
         assert_eq!(job_streams[0].color_primaries.as_deref(), Some("bt2020"));
         assert_eq!(job_streams[0].color_transfer.as_deref(), Some("smpte2084"));
         assert_eq!(job_streams[0].color_space.as_deref(), Some("bt2020nc"));
@@ -2187,6 +2291,8 @@ mod tests {
         assert_cross_kind_subtitle_fields_rejected(&db, target_id).await?;
         assert_unknown_hdr_format_rejected(&db, target_id).await?;
         assert_hdr10_color_volume_requires_hdr10_format(&db, target_id).await?;
+        assert_invalid_video_technical_shape_rejected(&db, target_id).await?;
+        assert_invalid_video_bit_depth_and_range_rejected(&db, target_id).await?;
         assert_unknown_video_color_rejected(&db, target_id).await?;
         assert_unknown_video_level_rejected(&db, target_id).await?;
         assert_invalid_audio_channel_layout_rejected(&db, target_id).await?;
@@ -2266,6 +2372,12 @@ mod tests {
                 video_profile: None,
                 video_level: None,
                 video_bitrate_bps: None,
+                video_width_px: None,
+                video_height_px: None,
+                video_pixel_format: None,
+                video_bit_depth: None,
+                video_average_frame_rate: None,
+                color_range: None,
                 color_primaries: None,
                 color_transfer: None,
                 color_space: None,
@@ -2368,6 +2480,216 @@ mod tests {
         };
         assert_eq!(
             missing_hdr_format.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+        Ok(())
+    }
+
+    async fn assert_invalid_video_technical_shape_rejected(
+        db: &MediaTestDb,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let incomplete_resolution = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-incomplete-resolution",
+                video_height_px: None,
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(incomplete_resolution) = incomplete_resolution else {
+            return Err(anyhow::anyhow!("incomplete video resolution was accepted"));
+        };
+        assert_eq!(
+            incomplete_resolution.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+
+        let invalid_pixel_format = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-invalid-pixel-format",
+                video_pixel_format: Some("YUV 420"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(invalid_pixel_format) = invalid_pixel_format else {
+            return Err(anyhow::anyhow!("invalid video pixel format was accepted"));
+        };
+        assert_eq!(
+            invalid_pixel_format.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+
+        let uppercase_pixel_format = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-uppercase-pixel-format",
+                video_pixel_format: Some("YUV420P"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(uppercase_pixel_format) = uppercase_pixel_format else {
+            return Err(anyhow::anyhow!("uppercase video pixel format was accepted"));
+        };
+        assert_eq!(
+            uppercase_pixel_format.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+
+        let invalid_frame_rate = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-invalid-frame-rate",
+                video_average_frame_rate: Some("0/1"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(invalid_frame_rate) = invalid_frame_rate else {
+            return Err(anyhow::anyhow!("invalid video frame rate was accepted"));
+        };
+        assert_eq!(
+            invalid_frame_rate.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+
+        assert_video_resource_bounds_rejected(db, target_id).await
+    }
+
+    async fn assert_video_resource_bounds_rejected(
+        db: &MediaTestDb,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        for (stream_key, stream) in [
+            (
+                "video-bitrate-over-limit",
+                AppendMediaDesiredTargetStreamInput {
+                    video_bitrate_bps: Some(1_000_000_001),
+                    ..video_target_stream(target_id)
+                },
+            ),
+            (
+                "video-dimension-over-limit",
+                AppendMediaDesiredTargetStreamInput {
+                    video_width_px: Some(16_385),
+                    video_height_px: Some(1),
+                    ..video_target_stream(target_id)
+                },
+            ),
+            (
+                "video-area-over-limit",
+                AppendMediaDesiredTargetStreamInput {
+                    video_width_px: Some(16_384),
+                    video_height_px: Some(16_384),
+                    ..video_target_stream(target_id)
+                },
+            ),
+            (
+                "video-frame-rate-over-limit",
+                AppendMediaDesiredTargetStreamInput {
+                    video_average_frame_rate: Some("241/1"),
+                    ..video_target_stream(target_id)
+                },
+            ),
+        ] {
+            let result = append_media_desired_target_stream(
+                db.pool(),
+                AppendMediaDesiredTargetStreamInput {
+                    stream_key,
+                    ..stream
+                },
+            )
+            .await;
+            let Err(error) = result else {
+                return Err(anyhow::anyhow!("{stream_key} was accepted"));
+            };
+            assert_eq!(
+                error.database_detail(),
+                Some("media_desired_target_video_shape_invalid")
+            );
+        }
+        Ok(())
+    }
+
+    async fn assert_invalid_video_bit_depth_and_range_rejected(
+        db: &MediaTestDb,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let unsupported_bit_depth = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-unsupported-bit-depth",
+                video_bit_depth: Some(9),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(unsupported_bit_depth) = unsupported_bit_depth else {
+            return Err(anyhow::anyhow!("unsupported video bit depth was accepted"));
+        };
+        assert_eq!(
+            unsupported_bit_depth.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+
+        let bit_depth_without_pixel_format = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-bit-depth-without-pixel-format",
+                video_pixel_format: None,
+                video_bit_depth: Some(10),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(bit_depth_without_pixel_format) = bit_depth_without_pixel_format else {
+            return Err(anyhow::anyhow!(
+                "video bit depth without pixel format was accepted"
+            ));
+        };
+        assert_eq!(
+            bit_depth_without_pixel_format.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+
+        let mismatched_bit_depth = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-mismatched-bit-depth",
+                video_pixel_format: Some("yuv420p"),
+                video_bit_depth: Some(10),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(mismatched_bit_depth) = mismatched_bit_depth else {
+            return Err(anyhow::anyhow!(
+                "mismatched video bit depth and pixel format was accepted"
+            ));
+        };
+        assert_eq!(
+            mismatched_bit_depth.database_detail(),
+            Some("media_desired_target_video_shape_invalid")
+        );
+
+        let invalid_color_range = append_media_desired_target_stream(
+            db.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                stream_key: "video-invalid-color-range",
+                color_range: Some("full"),
+                ..video_target_stream(target_id)
+            },
+        )
+        .await;
+        let Err(invalid_color_range) = invalid_color_range else {
+            return Err(anyhow::anyhow!("invalid video color range was accepted"));
+        };
+        assert_eq!(
+            invalid_color_range.database_detail(),
             Some("media_desired_target_video_shape_invalid")
         );
         Ok(())

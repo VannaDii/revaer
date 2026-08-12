@@ -29,6 +29,7 @@
 - Test coverage summary:
   - Added maximum and maximum-plus-one HTTP and YAML validation tests.
   - Added maximum-size linear reconstruction and malformed chapter/metadata ordering tests.
+  - Rust 1.96 workspace lint verifies that snapshot reconstruction expresses the previous-chapter end boundary directly and rejects overlap.
   - Added database-backed exact aggregate-byte and concurrent chapter-ceiling tests; local execution skips when the test database URL is unavailable.
   - Re-ran focused API, application, media-core, data, OpenAPI, formatting, and lint checks.
 - Observability updates:

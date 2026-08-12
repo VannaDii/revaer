@@ -39,6 +39,7 @@
 - Test coverage summary:
   - Watcher tests cover healthy native-only registration, fallback activation after degradation, deterministic native callback forwarding, real polling delivery, ignored access noise, bounded precise paths, coalesced callback storage, and one rescan signal for uncertain events.
   - Runtime tests cover directory-to-rescan conversion and non-starving profile-level rescan coalescing, alongside the existing durable-version and capability-readiness tests.
+  - Rust 1.96 workspace lint verifies that callback-buffer mutation releases the mutex before returning to the watcher backend.
   - Current validation status is recorded in the task handoff.
 - Observability updates:
   - Native setup failure, native degradation, fallback activation, and polling errors have distinct profile-scoped log messages.
