@@ -15,3 +15,4 @@ bash scripts/generated-api-schema-guardrail.sh
 bash scripts/test-generated-api-schema-guardrail.sh
 bash scripts/tests/script-coverage-test.sh
 bash scripts/tests/sonar-result-guardrails-test.sh
+bash scripts/tests/with-node-test.sh
