@@ -417,6 +417,7 @@
     -   [411: Untracked generated API schema](adr/411-untracked-generated-api-schema.md)
     -   [412: Core planner review repair](adr/412-core-planner-review-repair.md)
     -   [413: PR 123 chapter idempotence and supply chain remediation](adr/413-pr-123-chapter-idempotence-and-supply-chain.md)
+    -   [414: Sonar API verification retries](adr/414-sonar-api-verification-retries.md)
     -   [415: PR workflow dependency validation](adr/415-pr-workflow-dependency-validation.md)
     -   [417: Cargo lock dependency integrity](adr/417-cargo-lock-dependency-integrity.md)
     -   [418: CI Postgres credential coherence](adr/418-ci-postgres-credential-coherence.md)

@@ -30,6 +30,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
 - Revaer uses Sonar as a strict merge-control signal on pull requests. Prefer PR quality-gate status and decoration over scanner-side waiting in PR workflows.
 - Pull-request and main-branch scans must receive the same complete Rust, native, JavaScript, Bash, and Ruby coverage inputs and must retain the scanner report as uploaded evidence after post-scan verification.
+- The post-scan verifier must fail closed on every API response it cannot validate. It may retry transport failures, rate limits, and server errors only through explicit bounded attempt and delay settings; authentication, authorization, malformed evidence, missing coverage, unresolved issues, unreviewed hotspots, and failed or partially ignored quality gates are terminal failures.
 - Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked.
 - New Security Hotspots on touched code must be reviewed before merge. Backlog hotspots outside touched code are tracked separately and do not automatically block unrelated work.
 

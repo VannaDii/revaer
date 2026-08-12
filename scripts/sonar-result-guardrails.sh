@@ -52,7 +52,8 @@ sonar_get() {
       return 0
     fi
 
-    if [[ "${http_status}" =~ ^5[0-9][0-9]$ || "${http_status}" == "000" ]] && \
+    if [[ "${http_status}" == "429" || "${http_status}" =~ ^5[0-9][0-9]$ || \
+      "${http_status}" == "000" ]] && \
       ((attempt < retry_attempts)); then
       printf 'Sonar API %s returned HTTP %s; retrying attempt %s/%s\n' \
         "${endpoint}" "${http_status}" "${attempt}" "${retry_attempts}" >&2
