@@ -412,6 +412,7 @@
     -   [385: Factory reset transient contention retry](adr/385-factory-reset-transient-contention-retry.md)
     -   [387: Media attachment strip fixture evidence](adr/387-media-attachment-strip-fixture-evidence.md)
     -   [388: Media discovery desired target readiness](adr/388-media-discovery-desired-target-readiness.md)
+    -   [389: Media audio rate constraint materialization](adr/389-media-audio-rate-constraint-materialization.md)
     -   [390: Media FFprobe frame robustness](adr/390-media-ffprobe-frame-robustness.md)
     -   [391: Media job chapter replacement evidence](adr/391-media-job-chapter-replacement-evidence.md)
     -   [392: Media job attachment strip evidence](adr/392-media-job-attachment-strip-evidence.md)

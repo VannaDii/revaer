@@ -1819,7 +1819,7 @@ fn output_codec_for_desired_with_audio_policy(
 ) -> Result<String, BuildArgsError> {
     let output_codec =
         output_codec_for_desired(source, desired, sidecar_embeddings, video_encoder)?;
-    if output_codec == "copy" && audio_constraints_require_filter(audio_constraints) {
+    if output_codec == "copy" && audio_constraints_require_encoder(audio_constraints) {
         return audio_encoder_for_codec(desired.codec.trim());
     }
     Ok(output_codec)
@@ -1878,12 +1878,14 @@ fn audio_constraints_for_stream<'a>(
         .find(|constraint| constraint.stream_id == stream.stream_id)
 }
 
-fn audio_constraints_require_filter(constraints: Option<&AudioStreamConstraints>) -> bool {
+fn audio_constraints_require_encoder(constraints: Option<&AudioStreamConstraints>) -> bool {
     constraints.is_some_and(|constraint| {
-        constraint
-            .loudness_profile
-            .as_deref()
-            .is_some_and(|profile| profile.trim().eq_ignore_ascii_case("dialog-normalized"))
+        constraint.bitrate_bps.is_some()
+            || constraint.sample_rate_hz.is_some()
+            || constraint
+                .loudness_profile
+                .as_deref()
+                .is_some_and(|profile| profile.trim().eq_ignore_ascii_case("dialog-normalized"))
             || constraint
                 .dynamic_range
                 .as_deref()
@@ -5198,6 +5200,76 @@ mod tests {
             argv.windows(2)
                 .any(|pair| pair == ["-channel_layout:a:0", "stereo"])
         );
+    }
+
+    #[test]
+    fn desired_graph_audio_rate_constraints_force_audio_encoder_without_filters() {
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: Vec::new(),
+            streams: vec![MediaStream {
+                stream_id: 0,
+                kind: StreamKind::Audio,
+                codec: "aac".to_string(),
+                channels: Some(2),
+                channel_layout: Some("stereo".to_string()),
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            }],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: None,
+            stream_bindings: vec![DesiredStreamBinding {
+                output_stream_id: 0,
+                source_stream_id: Some(0),
+            }],
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams: source.streams.clone(),
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::AudioTranscode,
+            stream_id: Some(0),
+            output_stream_id: Some(0),
+        }];
+        let policy = VideoTranscodePolicy {
+            audio_stream_constraints: vec![AudioStreamConstraints {
+                stream_id: 0,
+                channel_count: Some(2),
+                channel_layout: Some("stereo".to_string()),
+                bitrate_bps: Some(160_000),
+                sample_rate_hz: Some(48_000),
+                loudness_profile: None,
+                dynamic_range: None,
+            }],
+            ..VideoTranscodePolicy::default()
+        };
+
+        let argv_result = build_desired_graph_ffmpeg_argv(
+            "/in.mkv",
+            "/out.mkv",
+            &source,
+            &desired,
+            &operations,
+            None,
+            policy,
+        );
+        assert!(argv_result.is_ok());
+        let Ok(argv) = argv_result else {
+            return;
+        };
+
+        assert!(argv.windows(2).any(|pair| pair == ["-c:0", "aac"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-b:a:0", "160000"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-ar:0", "48000"]));
+        assert!(!argv.iter().any(|argument| argument == "-filter:a:0"));
     }
 
     #[test]
