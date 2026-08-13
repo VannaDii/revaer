@@ -10,6 +10,18 @@ use tokio::runtime::Runtime;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
 
+#[tokio::test]
+async fn requested_runtime_task_cancellation_is_expected() {
+    let task = tokio::spawn(std::future::pending::<()>());
+    task.abort();
+    let error = task
+        .await
+        .expect_err("aborted runtime task should return a join error");
+
+    assert!(runtime_join_error_is_expected(&error, true));
+    assert!(!runtime_join_error_is_expected(&error, false));
+}
+
 #[derive(Clone)]
 struct StaticCapabilityDetector;
 
