@@ -30,6 +30,7 @@ spec:
         {{- end }}
       {{- end }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       serviceAccountName: {{ include "revaer.serviceAccountName" . }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -51,6 +52,8 @@ spec:
                   key: {{ .Values.database.secretKey }}
             - name: RUST_LOG
               value: info
+            - name: REVAER_MEDIA_WORKSPACE_ROOT
+              value: {{ .Values.mediaWorkspace.path | quote }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -70,7 +73,7 @@ spec:
               command:
                 - /bin/sh
                 - -ec
-                - curl -fsS http://127.0.0.1:7070/health >/dev/null
+                - curl -fsS http://127.0.0.1:7070/health/ready >/dev/null
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5
@@ -80,7 +83,7 @@ spec:
               command:
                 - /bin/sh
                 - -ec
-                - curl -fsS http://127.0.0.1:7070/health >/dev/null
+                - curl -fsS http://127.0.0.1:7070/health/live >/dev/null
             initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 5
@@ -90,7 +93,7 @@ spec:
               command:
                 - /bin/sh
                 - -ec
-                - curl -fsS http://127.0.0.1:7070/health >/dev/null
+                - curl -fsS http://127.0.0.1:7070/health/ready >/dev/null
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 18

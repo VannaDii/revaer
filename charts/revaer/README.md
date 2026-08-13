@@ -5,6 +5,10 @@ managed separately. Revaer requires a `DATABASE_URL`; provide it directly in
 values for development or reference an existing Kubernetes Secret for real
 deployments.
 
+The chart configures the managed media workspace at
+`/data/media-workspaces`. Enable `dataPersistence` for destructive media jobs;
+the default `emptyDir` is suitable only for dry runs and disposable evaluation.
+
 ## Install
 
 ```bash
@@ -87,3 +91,7 @@ completing that setup.
 - `service.type`: Kubernetes Service type for the API/UI service.
 - `configPersistence.*`: Persistent volume controls for `/config`.
 - `dataPersistence.*`: Persistent volume controls for `/data`.
+- `mediaWorkspace.path`: Absolute private workspace below `/data` used for all
+  transient media execution files.
+- `terminationGracePeriodSeconds`: Pod termination grace. This must remain
+  longer than Revaer's 30-second media-runtime shutdown limit.

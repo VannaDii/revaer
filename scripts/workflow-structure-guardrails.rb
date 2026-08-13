@@ -281,9 +281,14 @@ class WorkflowStructureGuardrails
         step.is_a?(Hash) && step["uses"] == "./.github/actions/setup-revaer"
       end
       targets = setup.is_a?(Hash) ? setup.dig("with", "targets") : nil
-      next if targets.is_a?(String) && targets.split(",").map(&:strip).include?("wasm32-unknown-unknown")
+      unless targets.is_a?(String) && targets.split(",").map(&:strip).include?("wasm32-unknown-unknown")
+        @errors << "#{path}: job #{job_name} must install wasm32-unknown-unknown before just ui-e2e"
+      end
 
-      @errors << "#{path}: job #{job_name} must install wasm32-unknown-unknown before just ui-e2e"
+      apt_profile = setup.is_a?(Hash) ? setup.dig("with", "apt-profile") : nil
+      unless ["coverage", "db-media"].include?(apt_profile)
+        @errors << "#{path}: job #{job_name} must install a media-capable apt profile before just ui-e2e"
+      end
     end
   end
 
@@ -378,6 +383,9 @@ class WorkflowStructureGuardrails
     command = apt.is_a?(Hash) ? apt["run"] : nil
     unless command.is_a?(String) && command.match?(/coverage\).*?\bffmpeg\b/m)
       @errors << "#{path}: shared coverage package profile must install ffmpeg"
+    end
+    unless command.is_a?(String) && command.match?(/db-media\).*?\bffmpeg\b/m)
+      @errors << "#{path}: shared database-media package profile must install ffmpeg"
     end
   end
 

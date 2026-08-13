@@ -24,7 +24,9 @@ use revaer_events::EventBus;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
 use tracing::{error, info, warn};
 
-use revaer_media_runtime::capabilities::{FfmpegCapabilityDetector, SystemCapabilityProbeExecutor};
+use revaer_media_runtime::capabilities::{
+    CapabilityDetector, FfmpegCapabilityDetector, SystemCapabilityProbeExecutor,
+};
 use revaer_runtime::RuntimeStore;
 use revaer_runtime::media::MediaStore;
 use uuid::Uuid;
@@ -48,6 +50,7 @@ pub(crate) struct BootstrapDependencies {
     watcher: revaer_config::ConfigWatcher,
     events: EventBus,
     telemetry: Metrics,
+    media_capability_detector: Arc<dyn CapabilityDetector>,
     media_workspace_root: Option<PathBuf>,
     #[cfg(feature = "libtorrent")]
     libtorrent: Option<LibtorrentOrchestratorDeps>,
@@ -102,6 +105,12 @@ impl BootstrapDependencies {
             watcher,
             events,
             telemetry,
+            media_capability_detector: Arc::new(FfmpegCapabilityDetector::new(
+                Arc::new(SystemCapabilityProbeExecutor),
+                "ffmpeg",
+                "ffprobe",
+                "ffplay",
+            )),
             media_workspace_root: None,
             #[cfg(feature = "libtorrent")]
             libtorrent,
@@ -293,6 +302,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         watcher,
         events,
         telemetry,
+        media_capability_detector,
         media_workspace_root,
         #[cfg(feature = "libtorrent")]
         libtorrent,
@@ -332,8 +342,12 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         None
     };
 
-    let media = Arc::new(build_media_service(&config, telemetry.clone()));
-    refresh_startup_media_capabilities(&media, &events, &telemetry).await;
+    let media = Arc::new(build_media_service(
+        &config,
+        telemetry.clone(),
+        media_capability_detector,
+    ));
+    refresh_startup_media_capabilities(&media, &events, &telemetry).await?;
     let api = build_api_server(&config, &events, torrent_handles, telemetry.clone(), media)?;
     let indexer_runtime_task =
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
@@ -348,7 +362,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         spawn_media_runtime_tasks(&config, &events, &telemetry, media_workspace_root);
     info!(addr = %addr, "Launching API listener");
 
-    let serve_result = api.serve(addr).await;
+    let serve_result = api.serve_with_shutdown(addr, shutdown_signal()).await;
 
     stop_runtime_task(indexer_runtime_task, "indexer").await;
     stop_runtime_task(import_job_runtime_task, "import_job").await;
@@ -524,15 +538,14 @@ fn build_api_server(
     .map_err(|err| AppError::api_server("api_server.new", err))
 }
 
-fn build_media_service(config: &ConfigService, telemetry: Metrics) -> MediaService {
+fn build_media_service(
+    config: &ConfigService,
+    telemetry: Metrics,
+    detector: Arc<dyn CapabilityDetector>,
+) -> MediaService {
     MediaService::new(
         MediaStore::new(config.pool().clone()),
-        Arc::new(FfmpegCapabilityDetector::new(
-            Arc::new(SystemCapabilityProbeExecutor),
-            "ffmpeg",
-            "ffprobe",
-            "ffplay",
-        )),
+        detector,
         Arc::new(StdMediaRootIdentityResolver),
         telemetry,
     )
@@ -542,7 +555,7 @@ async fn refresh_startup_media_capabilities(
     media: &MediaService,
     events: &EventBus,
     telemetry: &Metrics,
-) {
+) -> AppResult<()> {
     match media
         .media_capability_refresh(MediaCapabilityRefreshParams {
             actor_user_public_id: SYSTEM_USER_PUBLIC_ID,
@@ -560,6 +573,7 @@ async fn refresh_startup_media_capabilities(
                     media_capability_snapshot_id: snapshot_id,
                 },
             );
+            Ok(())
         }
         Err(error) => {
             let code = error
@@ -582,7 +596,46 @@ async fn refresh_startup_media_capabilities(
                     degraded: vec!["media_capability".to_string()],
                 },
             );
+            Err(AppError::media("media_capability_refresh", error))
         }
+    }
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+
+        let terminate = signal(SignalKind::terminate());
+        let interrupt = signal(SignalKind::interrupt());
+        match (terminate, interrupt) {
+            (Ok(mut terminate), Ok(mut interrupt)) => {
+                await_shutdown_signal(terminate.recv(), interrupt.recv()).await;
+            }
+            (Err(error), _) | (_, Err(error)) => {
+                error!(error = %error, "failed to install shutdown signal handlers");
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    if let Err(error) = tokio::signal::ctrl_c().await {
+        error!(error = %error, "failed to install shutdown signal handler");
+    }
+}
+
+#[cfg(unix)]
+async fn await_shutdown_signal<Terminate, Interrupt>(terminate: Terminate, interrupt: Interrupt)
+where
+    Terminate: std::future::Future<Output = Option<()>>,
+    Interrupt: std::future::Future<Output = Option<()>>,
+{
+    let signal = tokio::select! {
+        received = terminate => received.map(|()| "SIGTERM"),
+        received = interrupt => received.map(|()| "SIGINT"),
+    };
+    if let Some(signal) = signal {
+        info!(signal, "shutdown signal received");
     }
 }
 

@@ -453,6 +453,7 @@
     -   [437: Media integrity fences](adr/437-media-integrity-fences.md)
     -   [438: Fail-closed media database tests](adr/438-fail-closed-media-database-tests.md)
     -   [439: Production media runtime end-to-end verification](adr/439-production-media-runtime-e2e.md)
+    -   [440: Packaged media runtime lifecycle](adr/440-packaged-media-runtime-lifecycle.md)
     -   [458: Media data module boundary integration correction](adr/458-media-data-module-boundary.md)
     -   [459: Bootstrap media task boundary integration correction](adr/459-bootstrap-media-task-boundary.md)
     -   [462: PR 88 shell return correction](adr/462-pr88-shell-return.md)

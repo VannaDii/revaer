@@ -39,6 +39,18 @@ pub(crate) async fn health(
     }
 }
 
+/// Process liveness is independent of dependency readiness.
+pub(crate) async fn health_live() -> StatusCode {
+    StatusCode::OK
+}
+
+/// Readiness requires the database-backed configuration service to respond.
+pub(crate) async fn health_ready(
+    state: State<Arc<ApiState>>,
+) -> Result<Json<HealthResponse>, ApiError> {
+    health(state).await
+}
+
 pub(crate) async fn health_full(
     State(state): State<Arc<ApiState>>,
 ) -> Result<Json<FullHealthResponse>, ApiError> {
@@ -463,6 +475,32 @@ mod tests {
             state.current_health_degraded().is_empty(),
             "database component should be cleared on success"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn liveness_does_not_depend_on_external_services() {
+        assert_eq!(health_live().await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn readiness_requires_database_health() -> Result<()> {
+        let config: Arc<dyn ConfigFacade> = Arc::new(StubConfig::failing(AppMode::Active));
+        let telemetry = Metrics::new()?;
+        let state = Arc::new(ApiState::new(
+            config,
+            test_indexers(),
+            telemetry,
+            Arc::new(serde_json::json!({})),
+            EventBus::new(),
+            None,
+        ));
+
+        let error = health_ready(State(state))
+            .await
+            .err()
+            .ok_or_else(|| anyhow!("expected readiness failure"))?;
+        assert_eq!(error.status(), StatusCode::SERVICE_UNAVAILABLE);
         Ok(())
     }
 

@@ -3099,22 +3099,15 @@ mod tests {
         DesiredSidecarOutput, Hdr10ColorVolume, SidecarEmbedding, SidecarOutputSource,
     };
     use std::fs;
-    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::{Duration, Instant};
 
-    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    fn temp_execution_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "revaer-media-runtime-execute-{}-{counter}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root)?;
-        Ok(root)
+    fn temp_execution_root() -> Result<tempfile::TempDir, Box<dyn std::error::Error>> {
+        Ok(tempfile::Builder::new()
+            .prefix("revaer-media-runtime-execute-")
+            .tempdir()?)
     }
 
     fn basic_stream(stream_id: u32, kind: StreamKind, codec: &str) -> MediaStream {
@@ -3687,8 +3680,8 @@ mod tests {
     fn filesystem_backup_step_copies_source_to_backup_path()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let source_path = root.join("source/movie.mkv");
-        let backup_path = root.join("backup/movie.mkv");
+        let source_path = root.path().join("source/movie.mkv");
+        let backup_path = root.path().join("backup/movie.mkv");
         fs::create_dir_all(
             source_path
                 .parent()
@@ -3702,7 +3695,6 @@ mod tests {
         })?;
 
         assert_eq!(fs::read(&backup_path)?, b"source-bytes");
-        fs::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -3710,8 +3702,8 @@ mod tests {
     fn filesystem_quarantine_step_moves_failed_output_to_quarantine()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let output_path = root.join("workspace/output/movie.mkv");
-        let quarantine_path = root.join("quarantine/movie.mkv");
+        let output_path = root.path().join("workspace/output/movie.mkv");
+        let quarantine_path = root.path().join("quarantine/movie.mkv");
         fs::create_dir_all(
             output_path
                 .parent()
@@ -3726,7 +3718,6 @@ mod tests {
 
         assert!(!output_path.exists());
         assert_eq!(fs::read(&quarantine_path)?, b"bad-output");
-        fs::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -3734,8 +3725,8 @@ mod tests {
     fn filesystem_sidecar_copy_step_copies_existing_sidecar_to_output()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let source = root.join("movie.en.srt");
-        let output = root.join("workspace").join("movie.en.srt");
+        let source = root.path().join("movie.en.srt");
+        let output = root.path().join("workspace").join("movie.en.srt");
         fs::write(&source, "subtitle body")?;
 
         execute_filesystem_step(&ExecutionStep::CopySidecarSubtitle {
@@ -3893,8 +3884,8 @@ mod tests {
     fn mid_run_reserve_loss_terminates_and_quarantines_output()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let output = root.join("output.bin");
-        let quarantine = root.join("quarantine/output.bin");
+        let output = root.path().join("output.bin");
+        let quarantine = root.path().join("quarantine/output.bin");
         fs::write(&output, b"partial-output")?;
         let steps = [
             ExecutionStep::Command {
@@ -3925,7 +3916,6 @@ mod tests {
         ));
         assert!(!output.exists());
         assert_eq!(fs::read(&quarantine)?, b"partial-output");
-        fs::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -3957,10 +3947,10 @@ mod tests {
     fn execute_step_sequence_rejects_unmanaged_atomic_replacement()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let source = root.join("movie.mkv");
-        let output = root.join("workspace").join("movie.mkv");
-        let quarantine = root.join("quarantine").join("movie.mkv");
-        fs::create_dir_all(output.parent().unwrap_or(root.as_path()))?;
+        let source = root.path().join("movie.mkv");
+        let output = root.path().join("workspace").join("movie.mkv");
+        let quarantine = root.path().join("quarantine").join("movie.mkv");
+        fs::create_dir_all(output.parent().unwrap_or_else(|| root.path()))?;
         fs::write(&source, "original")?;
         fs::write(&output, "rewritten")?;
         let steps = vec![
@@ -3997,10 +3987,10 @@ mod tests {
     fn execute_step_sequence_quarantines_failed_output_on_error()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let source = root.join("movie.mkv");
-        let output = root.join("workspace").join("movie.mkv");
-        let quarantine = root.join("quarantine").join("movie.mkv");
-        fs::create_dir_all(output.parent().unwrap_or(root.as_path()))?;
+        let source = root.path().join("movie.mkv");
+        let output = root.path().join("workspace").join("movie.mkv");
+        let quarantine = root.path().join("quarantine").join("movie.mkv");
+        fs::create_dir_all(output.parent().unwrap_or_else(|| root.path()))?;
         fs::write(&source, "original")?;
         fs::write(&output, "")?;
         let steps = vec![
@@ -4037,9 +4027,12 @@ mod tests {
     fn execute_step_sequence_removes_text_artifact_after_success()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let output = root.join("workspace").join("movie.mkv");
-        let artifact = root.join("workspace").join("movie.mkv.chapters.ffmetadata");
-        fs::create_dir_all(output.parent().unwrap_or(root.as_path()))?;
+        let output = root.path().join("workspace").join("movie.mkv");
+        let artifact = root
+            .path()
+            .join("workspace")
+            .join("movie.mkv.chapters.ffmetadata");
+        fs::create_dir_all(output.parent().unwrap_or_else(|| root.path()))?;
         fs::write(&output, "verified")?;
         let steps = vec![
             ExecutionStep::WriteTextFile {
@@ -4062,7 +4055,6 @@ mod tests {
 
         assert!(output.exists());
         assert!(!artifact.exists());
-        fs::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -4070,9 +4062,12 @@ mod tests {
     fn execute_step_sequence_removes_text_artifact_when_cancelled_at_cleanup()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let output = root.join("workspace").join("movie.mkv");
-        let artifact = root.join("workspace").join("movie.mkv.chapters.ffmetadata");
-        fs::create_dir_all(output.parent().unwrap_or(root.as_path()))?;
+        let output = root.path().join("workspace").join("movie.mkv");
+        let artifact = root
+            .path()
+            .join("workspace")
+            .join("movie.mkv.chapters.ffmetadata");
+        fs::create_dir_all(output.parent().unwrap_or_else(|| root.path()))?;
         fs::write(&output, "verified")?;
         let steps = vec![
             ExecutionStep::WriteTextFile {
@@ -4103,7 +4098,6 @@ mod tests {
             })
         ));
         assert!(!artifact.exists());
-        fs::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -4111,10 +4105,13 @@ mod tests {
     fn execute_step_sequence_removes_text_artifact_after_later_failure()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let output = root.join("workspace").join("movie.mkv");
-        let artifact = root.join("workspace").join("movie.mkv.chapters.ffmetadata");
-        let quarantine = root.join("quarantine").join("movie.mkv");
-        fs::create_dir_all(output.parent().unwrap_or(root.as_path()))?;
+        let output = root.path().join("workspace").join("movie.mkv");
+        let artifact = root
+            .path()
+            .join("workspace")
+            .join("movie.mkv.chapters.ffmetadata");
+        let quarantine = root.path().join("quarantine").join("movie.mkv");
+        fs::create_dir_all(output.parent().unwrap_or_else(|| root.path()))?;
         fs::write(&output, "")?;
         let steps = vec![
             ExecutionStep::WriteTextFile {
@@ -4146,7 +4143,6 @@ mod tests {
         assert!(!output.exists());
         assert!(quarantine.exists());
         assert!(!artifact.exists());
-        fs::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -4154,12 +4150,13 @@ mod tests {
     fn execute_step_sequence_attempts_cleanup_when_recovery_fails()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let output = root.join("workspace").join("missing.mkv");
+        let output = root.path().join("workspace").join("missing.mkv");
         let artifact = root
+            .path()
             .join("workspace")
             .join("missing.mkv.chapters.ffmetadata");
-        let quarantine = root.join("quarantine").join("missing.mkv");
-        fs::create_dir_all(artifact.parent().unwrap_or(root.as_path()))?;
+        let quarantine = root.path().join("quarantine").join("missing.mkv");
+        fs::create_dir_all(artifact.parent().unwrap_or_else(|| root.path()))?;
         fs::write(&artifact, ";FFMETADATA1\n")?;
         let steps = vec![
             ExecutionStep::VerifyOutput {
@@ -4185,7 +4182,6 @@ mod tests {
             })
         ));
         assert!(!artifact.exists());
-        fs::remove_dir_all(root)?;
         Ok(())
     }
 
@@ -4193,8 +4189,8 @@ mod tests {
     fn execute_step_sequence_reports_recovery_failure_when_output_missing_after_command_failure()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = temp_execution_root()?;
-        let output = root.join("workspace").join("movie.mkv");
-        let quarantine = root.join("quarantine").join("movie.mkv");
+        let output = root.path().join("workspace").join("movie.mkv");
+        let quarantine = root.path().join("quarantine").join("movie.mkv");
         let steps = vec![
             ExecutionStep::Command {
                 bin: "ffmpeg".to_string(),

@@ -156,6 +156,9 @@ run_repository_case() {
     missing-ui-target)
       ruby -ni -e 'print unless /targets: wasm32-unknown-unknown/' "${case_root}/workflows/pr.yml"
       ;;
+    missing-ui-media-profile)
+      ruby -pi -e 'gsub("apt-profile: db-media", "apt-profile: db")' "${case_root}/workflows/pr.yml"
+      ;;
     missing-coverage-ffmpeg)
       ruby -ni -e 'print unless /^\s+ffmpeg\s*$/' "${case_root}/actions/setup-revaer/action.yml"
       ;;
@@ -246,6 +249,7 @@ run_image_case fail mutable-tag
 run_image_case fail conditional-sarif
 run_repository_case pass valid
 run_repository_case fail missing-ui-target
+run_repository_case fail missing-ui-media-profile
 run_repository_case fail missing-coverage-ffmpeg
 run_repository_case fail missing-media-postgres
 run_repository_case fail missing-media-runtime
