@@ -30,6 +30,17 @@ impl CapabilityDetector for StaticCapabilityDetector {
     }
 }
 
+#[derive(Clone)]
+struct FailingCapabilityDetector;
+
+impl CapabilityDetector for FailingCapabilityDetector {
+    fn detect(&self) -> Result<CapabilitySnapshot, CapabilityDetectError> {
+        Err(CapabilityDetectError::CommandFailed(
+            "deterministic startup probe failure".to_string(),
+        ))
+    }
+}
+
 #[cfg(unix)]
 fn non_unicode_os_string() -> std::ffi::OsString {
     use std::os::unix::ffi::OsStringExt;
@@ -303,6 +314,78 @@ async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
     ));
     let server = build_api_server(&config, &events, None, telemetry, media)?;
     drop(server);
+    Ok(())
+}
+
+#[tokio::test]
+async fn startup_media_capability_failure_degrades_without_failing_bootstrap() -> AppResult<()> {
+    let postgres = match start_postgres() {
+        Ok(database) => database,
+        Err(err) => {
+            eprintln!(
+                "skipping startup_media_capability_failure_degrades_without_failing_bootstrap: {err}"
+            );
+            return Ok(());
+        }
+    };
+
+    let config = ConfigService::new(postgres.connection_string().to_string())
+        .await
+        .map_err(|err| AppError::config("config_service.new", err))?;
+    let events = EventBus::with_capacity(4);
+    let mut stream = events.subscribe(None);
+    let telemetry = Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
+    let media = build_media_service(
+        &config,
+        telemetry.clone(),
+        Arc::new(FailingCapabilityDetector),
+    );
+
+    refresh_startup_media_capabilities(&media, &events, &telemetry).await;
+
+    let refresh_failure = timeout(Duration::from_secs(1), stream.next())
+        .await
+        .map_err(|_| AppError::MissingState {
+            field: "media_capability_refresh_failed_event",
+            value: None,
+        })?
+        .ok_or(AppError::MissingState {
+            field: "media_capability_refresh_failed_event",
+            value: None,
+        })?
+        .map_err(|_| AppError::MissingState {
+            field: "media_capability_refresh_failed_event",
+            value: None,
+        })?;
+    assert!(matches!(
+        refresh_failure.event,
+        Event::MediaCapabilitiesRefreshFailed { .. }
+    ));
+
+    let health = timeout(Duration::from_secs(1), stream.next())
+        .await
+        .map_err(|_| AppError::MissingState {
+            field: "media_capability_health_event",
+            value: None,
+        })?
+        .ok_or(AppError::MissingState {
+            field: "media_capability_health_event",
+            value: None,
+        })?
+        .map_err(|_| AppError::MissingState {
+            field: "media_capability_health_event",
+            value: None,
+        })?;
+    assert!(matches!(
+        health.event,
+        Event::HealthChanged { degraded }
+            if degraded == vec!["media_capability".to_string()]
+    ));
+
+    let rendered = telemetry
+        .render()
+        .map_err(|err| AppError::telemetry("telemetry.render", err))?;
+    assert!(rendered.contains("events_emitted_total{type=\"media_capability_refresh_failed\"} 1"));
     Ok(())
 }
 

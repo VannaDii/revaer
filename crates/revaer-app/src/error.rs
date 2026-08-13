@@ -37,14 +37,6 @@ pub enum AppError {
         /// Source API server error.
         source: revaer_api::ApiServerError,
     },
-    /// Media service startup failed.
-    #[error("media service operation failed")]
-    Media {
-        /// Operation identifier.
-        operation: &'static str,
-        /// Source media service error.
-        source: revaer_api::app::media::MediaServiceError,
-    },
     /// Telemetry operations failed.
     #[error("telemetry operation failed")]
     Telemetry {
@@ -148,13 +140,6 @@ impl AppError {
         Self::ApiServer { operation, source }
     }
 
-    pub(crate) const fn media(
-        operation: &'static str,
-        source: revaer_api::app::media::MediaServiceError,
-    ) -> Self {
-        Self::Media { operation, source }
-    }
-
     pub(crate) const fn telemetry(
         operation: &'static str,
         source: revaer_telemetry::TelemetryError,
@@ -218,14 +203,6 @@ mod tests {
             },
         );
         assert!(matches!(api, AppError::ApiServer { .. }));
-
-        let media = AppError::media(
-            "refresh",
-            revaer_api::app::media::MediaServiceError::new(
-                revaer_api::app::media::MediaServiceErrorKind::Storage,
-            ),
-        );
-        assert!(matches!(media, AppError::Media { .. }));
 
         let telemetry = AppError::telemetry(
             "init",

@@ -12,7 +12,9 @@
     schema-validated Helm value below the chart's `/data` mount, and document
     that destructive operation requires persistent data storage.
   - Add dependency-independent liveness and database-backed readiness routes.
-  - Fail startup when media capability discovery fails and use SIGTERM/SIGINT
+  - Record startup media capability discovery failures as degraded media
+    readiness while preserving application availability, as corrected by
+    [ADR 441](441-degraded-media-capability-startup.md), and use SIGTERM/SIGINT
     to gracefully stop the API before the existing cooperative worker cleanup.
   - Inject the capability detector through bootstrap dependencies; production
     wiring supplies the system FFmpeg detector and tests supply deterministic
@@ -40,8 +42,8 @@
   - Added liveness and readiness handler tests.
   - Added a Helm render/schema regression gate for workspace, probes, and
     termination grace.
-  - Covered fail-closed startup and occupied-listener behavior with injected
-    capabilities under the no-default-features matrix.
+  - Covered degraded capability startup and occupied-listener behavior with
+    injected capabilities under the no-default-features matrix.
   - Bootstrap integration tests prepend deterministic FFmpeg probe executables
     so host package inventory cannot change the lifecycle behavior under test.
   - Graceful shutdown selection and typed media error translation have direct
@@ -49,13 +51,13 @@
   - Shared torrent catalog routing and degraded-config assertions are factored
     once so the lifecycle change does not add duplicated maintenance paths.
   - API and UI E2E runners use the guarded database-media setup profile so
-    fail-closed startup validates real FFmpeg capabilities in CI.
+    degraded startup validates and reports real FFmpeg capabilities in CI.
   - Media execution tests use RAII temporary directories so repeated runs
     cannot reuse stale quarantine artifacts and cleanup survives assertions.
   - Helm lint, focused Rust tests, `just ci`, and `just ui-e2e` passed.
 - Observability updates:
   - Signal receipt is logged once and startup capability failure remains an
-    emitted event before bootstrap returns the typed failure.
+    emitted event while bootstrap continues in degraded media mode.
 - Status-doc validation:
   - Rechecked the chart README, `.env.example`, and media specification against
     the packaged runtime contract.
