@@ -93,6 +93,14 @@
 
 - Every task persists a task record alongside the change as an ADR under [`docs/adr/`](./docs/adr/).
 - Start from [`docs/adr/template.md`](./docs/adr/template.md), number sequentially, and keep the file name concise and searchable.
+- Agents are not authorized to make architectural decisions without explicit operator review and approval. When work exposes a question that requires architectural oversight, the agent must:
+  1. stop implementation of the affected decision;
+  2. write a `Proposed` ADR that states the problem, constraints, viable alternatives, recommendation, consequences, and implementation boundary;
+  3. present the ADR to the operator for review; and
+  4. wait for explicit, decision-specific operator approval before changing the ADR to `Accepted` or implementing the decision.
+- Silence, inferred intent, approval of a different ADR, implementation progress, passing checks, and an agent-authored recommendation are not architectural approval. Agents must not record approval on the operator's behalf.
+- Investigation, reproduction, and evidence gathering may continue only when they do not commit the repository to an architectural choice. If an architectural implementation was prepared before approval, it must remain local and unpushed, the ADR must remain `Proposed`, and affected work must stop until the operator directs whether to accept, revise, or discard it.
+- Every ADR must include an `Operator approval` field. `Proposed` ADRs use `Pending`. An ADR may use `Accepted` only when that field records the operator's explicit approval and date.
 - Every task record must include:
   - Motivation
   - Design notes
