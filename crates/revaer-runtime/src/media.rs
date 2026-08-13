@@ -887,23 +887,8 @@ mod tests {
             || message.contains("failed to create database")
     }
 
-    async fn test_store() -> anyhow::Result<Option<(TestDatabase, MediaStore)>> {
-        let postgres = match start_postgres() {
-            Ok(db) => db,
-            Err(err) => {
-                let message = err.to_string();
-                if message.contains("docker daemon is not available")
-                    || message.contains("docker command not found")
-                    || message.contains("could not map host port")
-                    || message.contains("test database url is required")
-                    || has_transient_postgres_startup_error_text(&format!("{err:#}"))
-                {
-                    eprintln!("skipping media store test: {err}");
-                    return Ok(None);
-                }
-                return Err(err);
-            }
-        };
+    async fn test_store() -> anyhow::Result<(TestDatabase, MediaStore)> {
+        let postgres = start_postgres()?;
 
         let mut pool = None;
         for _ in 0..30 {
@@ -922,10 +907,9 @@ mod tests {
                 Err(err) => return Err(err.into()),
             }
         }
-        let Some(pool) = pool else {
-            eprintln!("skipping media store test: transient Postgres startup recovery timeout");
-            return Ok(None);
-        };
+        let pool = pool.ok_or_else(|| {
+            anyhow::anyhow!("transient Postgres startup recovery timeout after 30 attempts")
+        })?;
 
         let mut initialized = false;
         for _ in 0..30 {
@@ -941,13 +925,10 @@ mod tests {
             }
         }
         if !initialized {
-            eprintln!(
-                "skipping media store test: transient Postgres initialization recovery timeout"
-            );
-            return Ok(None);
+            anyhow::bail!("transient Postgres initialization recovery timeout after 30 attempts");
         }
 
-        Ok(Some((postgres, MediaStore::new(pool))))
+        Ok((postgres, MediaStore::new(pool)))
     }
 
     fn sample_operation(job_id: Uuid) -> AppendJobOperation<'static> {
@@ -1131,9 +1112,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_store_round_trips_profiles_jobs_and_capabilities() -> anyhow::Result<()> {
-        let Some((postgres, store)) = test_store().await? else {
-            return Ok(());
-        };
+        let (postgres, store) = test_store().await?;
         let _keep_db_alive = postgres;
         let actor = system_actor(store.pool()).await?;
 
@@ -1263,9 +1242,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_store_cleans_up_expired_completed_jobs() -> anyhow::Result<()> {
-        let Some((postgres, store)) = test_store().await? else {
-            return Ok(());
-        };
+        let (postgres, store) = test_store().await?;
         let _keep_db_alive = postgres;
         let actor = system_actor(store.pool()).await?;
 
@@ -1322,9 +1299,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_store_cleans_up_failed_terminal_diagnostics() -> anyhow::Result<()> {
-        let Some((postgres, store)) = test_store().await? else {
-            return Ok(());
-        };
+        let (postgres, store) = test_store().await?;
         let _keep_db_alive = postgres;
         let actor = system_actor(store.pool()).await?;
         let profile_id = store

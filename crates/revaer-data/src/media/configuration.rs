@@ -1021,9 +1021,7 @@ mod tests {
     #[tokio::test]
     async fn desired_target_graph_accepts_maximum_page_and_rejects_max_plus_one()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_graph_page").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("desired_target_graph_page").await?;
         for index in 0..128 {
             let target_id = create_media_desired_target(
                 db.pool(),
@@ -1106,9 +1104,7 @@ mod tests {
 
     #[tokio::test]
     async fn desired_target_graph_decodes_policies_and_hdr10_color_volume() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_graph_hdr10").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("desired_target_graph_hdr10").await?;
         let target_id = create_media_desired_target(
             db.pool(),
             CreateMediaDesiredTargetInput {
@@ -1262,9 +1258,7 @@ mod tests {
 
     #[tokio::test]
     async fn desired_target_chapter_limit_serializes_concurrent_appends() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_chapter_limit").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("desired_target_chapter_limit").await?;
         let target_id = create_chapter_replacement_target(&db, "chapter-limit").await?;
         let mut transaction = db.pool().begin().await?;
         for chapter_index in 0_i64..1_023 {
@@ -1319,9 +1313,7 @@ mod tests {
     #[tokio::test]
     async fn desired_target_chapter_metadata_enforces_exact_aggregate_limit() -> anyhow::Result<()>
     {
-        let Some(db) = setup_media_db("desired_target_chapter_metadata_limit").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("desired_target_chapter_metadata_limit").await?;
         let target_id = create_chapter_replacement_target(&db, "chapter-metadata-limit").await?;
         append_media_desired_target_chapter(
             db.pool(),
@@ -1621,9 +1613,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_configuration_catalogs_are_stored_procedure_backed() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("media_configuration_catalogs").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("media_configuration_catalogs").await?;
 
         let targets = list_media_compatibility_targets(db.pool()).await?;
         assert!(targets.iter().any(|target| {
@@ -1721,9 +1711,7 @@ mod tests {
 
     #[tokio::test]
     async fn desired_target_versions_are_ordered_immutable_job_snapshots() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_versions_are_ordered").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("desired_target_versions_are_ordered").await?;
         let actor = db.system_user_public_id;
         let target_id = create_ordered_desired_target(&db).await?;
 
@@ -1919,9 +1907,7 @@ mod tests {
 
     #[tokio::test]
     async fn desired_target_accepts_exact_retained_stream_rows() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_retained_stream_rows").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("desired_target_retained_stream_rows").await?;
         let target_id = create_media_desired_target(
             db.pool(),
             CreateMediaDesiredTargetInput {
@@ -1986,9 +1972,7 @@ mod tests {
 
     #[tokio::test]
     async fn desired_target_metadata_enforces_count_and_aggregate_limits() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_metadata_limits").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("desired_target_metadata_limits").await?;
         let count_target = create_media_desired_target(
             db.pool(),
             CreateMediaDesiredTargetInput {
@@ -2097,9 +2081,7 @@ mod tests {
 
     #[tokio::test]
     async fn desired_target_pin_rejects_empty_stream_graph() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_empty_stream_graph").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("desired_target_empty_stream_graph").await?;
         let actor = db.system_user_public_id;
         create_media_desired_target(
             db.pool(),
@@ -2283,9 +2265,7 @@ mod tests {
     #[tokio::test]
     async fn desired_target_subtitle_shape_rejects_invalid_values_and_cross_kind_fields()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("desired_target_subtitle_shape").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("desired_target_subtitle_shape").await?;
         let target_id = create_subtitle_shape_validation_target(&db).await?;
         assert_invalid_subtitle_placement_rejected(&db, target_id).await?;
         assert_cross_kind_subtitle_fields_rejected(&db, target_id).await?;

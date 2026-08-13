@@ -859,9 +859,7 @@ mod tests {
     #[tokio::test]
     async fn watcher_only_profile_enqueues_each_durable_file_version_exactly_once()
     -> anyhow::Result<()> {
-        let Ok(postgres) = start_postgres() else {
-            return Ok(());
-        };
+        let postgres = start_postgres()?;
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
             .connect(postgres.connection_string())
@@ -917,9 +915,7 @@ mod tests {
     #[tokio::test]
     async fn watcher_non_dry_run_profile_skips_queueing_without_profile_readiness()
     -> anyhow::Result<()> {
-        let Ok(postgres) = start_postgres() else {
-            return Ok(());
-        };
+        let postgres = start_postgres()?;
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
             .connect(postgres.connection_string())
@@ -997,9 +993,7 @@ mod tests {
     #[tokio::test]
     async fn watcher_non_dry_run_profile_skips_queueing_when_desired_target_not_ready()
     -> anyhow::Result<()> {
-        let Ok(postgres) = start_postgres() else {
-            return Ok(());
-        };
+        let postgres = start_postgres()?;
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
             .connect(postgres.connection_string())

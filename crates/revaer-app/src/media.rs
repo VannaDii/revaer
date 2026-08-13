@@ -4252,10 +4252,8 @@ mod tests {
 
     async fn setup_media_service(
         detector: Arc<dyn CapabilityDetector>,
-    ) -> anyhow::Result<Option<(TestMediaService, Uuid)>> {
-        let Ok(postgres) = start_postgres() else {
-            return Ok(None);
-        };
+    ) -> anyhow::Result<(TestMediaService, Uuid)> {
+        let postgres = start_postgres()?;
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect(postgres.connection_string())
@@ -4266,7 +4264,7 @@ mod tests {
         let email = format!("media-app-{}@example.invalid", Uuid::new_v4());
         let actor_user_public_id = app_user_create(store.pool(), &email, "Media App").await?;
         app_user_verify_email(store.pool(), actor_user_public_id).await?;
-        Ok(Some((
+        Ok((
             TestMediaService {
                 service: MediaService::new(
                     store,
@@ -4277,7 +4275,7 @@ mod tests {
                 _postgres: postgres,
             },
             actor_user_public_id,
-        )))
+        ))
     }
 
     fn static_detector() -> Arc<dyn CapabilityDetector> {
@@ -4713,10 +4711,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_desired_target_create_rejects_empty_stream_contract() -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
 
         let result = service
             .media_desired_target_create(MediaDesiredTargetCreateParams {
@@ -4776,10 +4771,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_desired_target_create_enforces_stream_count_boundaries() -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
 
         for (target_key, stream_count) in [
             ("one-stream-target", 1),
@@ -4850,10 +4842,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_profile_readiness_returns_none_for_missing_profile() -> anyhow::Result<()> {
-        let Some((service, _actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, _actor_user_public_id) = setup_media_service(static_detector()).await?;
 
         let readiness = service.media_profile_readiness(Uuid::new_v4()).await?;
 
@@ -4863,10 +4852,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_profile_readiness_reports_missing_capability_snapshot() -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
         let profile_id = service
             .media_profile_upsert(MediaProfileUpsertParams {
                 actor_user_public_id,
@@ -4901,10 +4887,7 @@ mod tests {
     #[tokio::test]
     async fn media_profile_readiness_reports_unsupported_compatibility_target() -> anyhow::Result<()>
     {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
         assert_capability_refresh_uses_detected_support(&service, actor_user_public_id).await?;
         service
             .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
@@ -4953,10 +4936,7 @@ mod tests {
     #[tokio::test]
     async fn media_discovery_preview_marks_profile_paths_and_rejects_outside_sources()
     -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
         let profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
         let source_paths = vec![
             "/input/app-media/show/episode.mkv".to_string(),
@@ -4994,10 +4974,7 @@ mod tests {
     #[tokio::test]
     async fn media_discovery_run_queues_accepted_profile_paths_and_skips_rejected_sources()
     -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
         let media_source = create_test_media_source("show/episode.mkv")?;
         let profile_id = upsert_app_media_profile_with_roots(
             &service,
@@ -5081,10 +5058,7 @@ mod tests {
     #[tokio::test]
     async fn manual_job_creation_allows_explicit_replace_override_without_mutating_profile()
     -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
         let media_source = create_test_media_source("show/manual.mkv")?;
         let profile_id = upsert_app_media_profile_with_roots(
             &service,
@@ -5174,10 +5148,7 @@ mod tests {
     #[tokio::test]
     async fn media_discovery_schedule_run_requires_enabled_schedule_and_queues_paths()
     -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
         let disabled_profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
         let source_paths = vec!["/input/app-media/show/episode.mkv".to_string()];
 
@@ -5235,10 +5206,7 @@ mod tests {
     #[tokio::test]
     async fn media_discovery_watcher_run_requires_enabled_watcher_and_queues_paths()
     -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
         let disabled_profile_id = upsert_app_media_profile(&service, actor_user_public_id).await?;
         let source_paths = vec!["/input/app-media/show/episode.mkv".to_string()];
 
@@ -5773,10 +5741,7 @@ mod tests {
     #[tokio::test]
     async fn media_service_round_trips_profile_job_yaml_and_capability_paths() -> anyhow::Result<()>
     {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
 
         let media_source = create_test_media_source("video.mkv")?;
         let profile_id = upsert_app_media_profile_with_roots(
@@ -5912,14 +5877,9 @@ mod tests {
     #[tokio::test]
     async fn portable_yaml_moves_complete_configuration_between_isolated_instances()
     -> anyhow::Result<()> {
-        let Some((source, source_actor)) = setup_media_service(static_detector()).await? else {
-            return Ok(());
-        };
+        let (source, source_actor) = setup_media_service(static_detector()).await?;
         let portable_yaml = configure_portable_source(&source, source_actor).await?;
-        let Some((destination, destination_actor)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (destination, destination_actor) = setup_media_service(static_detector()).await?;
         assert_portable_import(&destination, destination_actor, &portable_yaml).await
     }
 
@@ -6340,10 +6300,7 @@ mod tests {
     #[tokio::test]
     async fn media_service_round_trips_configuration_catalogs_and_retention() -> anyhow::Result<()>
     {
-        let Some((service, actor_user_public_id)) = setup_media_service(static_detector()).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(static_detector()).await?;
 
         let target = service
             .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
@@ -6766,11 +6723,7 @@ mod tests {
     #[tokio::test]
     async fn media_capability_refresh_reports_join_failure_when_detector_panics()
     -> anyhow::Result<()> {
-        let Some((service, actor_user_public_id)) =
-            setup_media_service(Arc::new(PanicDetector)).await?
-        else {
-            return Ok(());
-        };
+        let (service, actor_user_public_id) = setup_media_service(Arc::new(PanicDetector)).await?;
 
         let result = service
             .media_capability_refresh(MediaCapabilityRefreshParams {

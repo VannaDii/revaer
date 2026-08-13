@@ -166,14 +166,8 @@ impl MediaTestDb {
     }
 }
 
-pub(super) async fn setup_media_db(label: &str) -> anyhow::Result<Option<MediaTestDb>> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping {label}: {err}");
-            return Ok(None);
-        }
-    };
+pub(super) async fn setup_media_db(_label: &str) -> anyhow::Result<MediaTestDb> {
+    let postgres = start_postgres()?;
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -189,22 +183,16 @@ pub(super) async fn setup_media_db(label: &str) -> anyhow::Result<Option<MediaTe
     .fetch_one(&pool)
     .await?;
 
-    Ok(Some(MediaTestDb {
+    Ok(MediaTestDb {
         _db: postgres,
         pool,
         system_user_public_id,
-    }))
+    })
 }
 
 #[tokio::test]
 async fn media_tables_exist() -> anyhow::Result<()> {
-    let db = match setup_media_db("media_tables_exist").await {
-        Ok(Some(db)) => db,
-        Ok(None) => {
-            return Ok(());
-        }
-        Err(err) => return Err(err),
-    };
+    let db = setup_media_db("media_tables_exist").await?;
 
     let rows = sqlx::query_scalar::<_, String>(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE 'media_%' ORDER BY table_name",
@@ -224,13 +212,7 @@ async fn media_tables_exist() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn media_procedures_exist() -> anyhow::Result<()> {
-    let db = match setup_media_db("media_procedures_exist").await {
-        Ok(Some(db)) => db,
-        Ok(None) => {
-            return Ok(());
-        }
-        Err(err) => return Err(err),
-    };
+    let db = setup_media_db("media_procedures_exist").await?;
 
     let rows = sqlx::query(
         "SELECT proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND proname LIKE 'media_%'",
@@ -255,11 +237,7 @@ async fn media_procedures_exist() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn media_text_contract_enforces_utf8_and_key_boundaries() -> anyhow::Result<()> {
-    let db = match setup_media_db("media_text_contract_enforces_utf8_and_key_boundaries").await {
-        Ok(Some(db)) => db,
-        Ok(None) => return Ok(()),
-        Err(err) => return Err(err),
-    };
+    let db = setup_media_db("media_text_contract_enforces_utf8_and_key_boundaries").await?;
 
     let exact_key = format!("a{}z", "b".repeat(126));
     let oversized_key = format!("a{}z", "b".repeat(127));

@@ -1876,14 +1876,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_media_job_rejects_paths_outside_profile_roots() -> anyhow::Result<()> {
-        let db = match setup_media_db("create_media_job_rejects_paths_outside_profile_roots").await
-        {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("create_media_job_rejects_paths_outside_profile_roots").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -2181,13 +2174,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_media_job_requires_persisted_source_fingerprint() -> anyhow::Result<()> {
-        let db = match setup_media_db("create_media_job_requires_source_fingerprint").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("create_media_job_requires_source_fingerprint").await?;
 
         let profile_id =
             upsert_retention_profile(&db, "fingerprint-required", "fingerprint-required").await?;
@@ -2214,13 +2201,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_and_list_media_job() -> anyhow::Result<()> {
-        let db = match setup_media_db("create_and_list_media_job").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("create_and_list_media_job").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -2316,9 +2297,7 @@ mod tests {
     #[tokio::test]
     async fn recent_job_page_is_keyset_bounded_and_counts_diagnostics_set_wise()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("recent_job_page").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("recent_job_page").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -2389,13 +2368,7 @@ mod tests {
 
     #[tokio::test]
     async fn running_job_cancellation_is_durable_and_worker_acknowledged() -> anyhow::Result<()> {
-        let db = match setup_media_db("running_job_cancellation_is_durable").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("running_job_cancellation_is_durable").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -2482,9 +2455,7 @@ mod tests {
 
     #[tokio::test]
     async fn replacement_terminal_commit_is_atomic_idempotent_and_outboxed() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("replacement_terminal_commit").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("replacement_terminal_commit").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -2544,9 +2515,7 @@ mod tests {
 
     #[tokio::test]
     async fn retried_job_rejects_all_writes_from_stale_worker_claim() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("stale_worker_claim_fence").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("stale_worker_claim_fence").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -2632,11 +2601,7 @@ mod tests {
     #[tokio::test]
     async fn finalized_completion_acknowledges_late_cancel_without_cancelling() -> anyhow::Result<()>
     {
-        let db = match setup_media_db("finalized_completion_acknowledges_late_cancel").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => return Err(err),
-        };
+        let db = setup_media_db("finalized_completion_acknowledges_late_cancel").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -2698,11 +2663,7 @@ mod tests {
 
     #[tokio::test]
     async fn stale_worker_recovery_marks_abandoned_jobs_terminal() -> anyhow::Result<()> {
-        let db = match setup_media_db("stale_worker_recovery_marks_abandoned_jobs_terminal").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => return Err(err),
-        };
+        let db = setup_media_db("stale_worker_recovery_marks_abandoned_jobs_terminal").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -2883,13 +2844,7 @@ mod tests {
 
     #[tokio::test]
     async fn worker_claim_uses_enqueue_time_profile_intent() -> anyhow::Result<()> {
-        let db = match setup_media_db("worker_claim_uses_enqueue_time_profile_intent").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("worker_claim_uses_enqueue_time_profile_intent").await?;
         upsert_media_compatibility_target(
             db.pool(),
             UpsertMediaCompatibilityTargetInput {
@@ -2966,9 +2921,7 @@ mod tests {
     #[tokio::test]
     async fn retention_count_mode_deletes_only_completed_jobs_beyond_limit_and_preserves_audit()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("cleanup_completed_media_jobs").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("cleanup_completed_media_jobs").await?;
 
         let profile_id = upsert_media_profile(
             db.pool(),
@@ -3049,9 +3002,7 @@ mod tests {
     #[tokio::test]
     async fn cleanup_failed_terminal_media_diagnostics_removes_only_expired_diagnostics()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("cleanup_failed_terminal_media_diagnostics").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("cleanup_failed_terminal_media_diagnostics").await?;
         let profile_id =
             upsert_retention_profile(&db, "diagnostic-retention", "diagnostics").await?;
         let cancelled_job_id = create_cancelled_diagnostic_job(&db, profile_id).await?;
@@ -3119,9 +3070,7 @@ mod tests {
 
     #[tokio::test]
     async fn workspace_retention_snapshot_includes_queued_and_claimed_jobs() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("workspace_retention_snapshot_active_jobs").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("workspace_retention_snapshot_active_jobs").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -3197,9 +3146,7 @@ mod tests {
     #[tokio::test]
     async fn retention_disabled_is_a_noop_and_failed_count_mode_prunes_only_excess_diagnostics()
     -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("retention_disabled_and_failed_count").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("retention_disabled_and_failed_count").await?;
         let profile_id =
             upsert_retention_profile(&db, "failed-count-retention", "failed-count").await?;
         let older_job_id =
@@ -3391,9 +3338,7 @@ mod tests {
     #[tokio::test]
     async fn discovery_fingerprints_are_atomic_durable_and_change_sensitive() -> anyhow::Result<()>
     {
-        let Some(db) = setup_media_db("discovery_fingerprints").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("discovery_fingerprints").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -3497,9 +3442,7 @@ mod tests {
     #[tokio::test]
     async fn manual_job_creation_refreshes_identity_and_allows_repeated_runs() -> anyhow::Result<()>
     {
-        let Some(db) = setup_media_db("manual_job_repeated_runs").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("manual_job_repeated_runs").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -3550,9 +3493,7 @@ mod tests {
 
     #[tokio::test]
     async fn claimed_job_returns_immutable_source_fingerprint_snapshot() -> anyhow::Result<()> {
-        let Some(db) = setup_media_db("claimed_source_fingerprint_snapshot").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("claimed_source_fingerprint_snapshot").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {

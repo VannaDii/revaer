@@ -33,23 +33,17 @@ impl Drop for TestRoots {
     }
 }
 
-async fn setup_db(test_name: &str) -> anyhow::Result<Option<TestDb>> {
-    let database = match start_postgres() {
-        Ok(database) => database,
-        Err(error) => {
-            eprintln!("skipping {test_name}: {error}");
-            return Ok(None);
-        }
-    };
+async fn setup_db(_test_name: &str) -> anyhow::Result<TestDb> {
+    let database = start_postgres()?;
     let pool = PgPoolOptions::new()
         .max_connections(8)
         .connect(database.connection_string())
         .await?;
     initialize_schema(&pool).await?;
-    Ok(Some(TestDb {
+    Ok(TestDb {
         _database: database,
         pool,
-    }))
+    })
 }
 
 fn actor_id() -> anyhow::Result<Uuid> {
@@ -215,9 +209,7 @@ fn media_root_identity_errors_preserve_diagnostics_and_sources() {
 #[cfg(unix)]
 #[tokio::test]
 async fn normalized_profiles_reject_filesystem_aliases() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("normalized_profiles_reject_filesystem_aliases").await? else {
-        return Ok(());
-    };
+    let test_db = setup_db("normalized_profiles_reject_filesystem_aliases").await?;
     let roots = make_test_roots()?;
     let profile_id = create_profile(&test_db.pool, "alias-profile", &roots).await?;
     let resolver = StdMediaRootIdentityResolver;
@@ -297,9 +289,7 @@ async fn normalized_profiles_reject_filesystem_aliases() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn discovery_revalidates_root_identity() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("discovery_revalidates_root_identity").await? else {
-        return Ok(());
-    };
+    let test_db = setup_db("discovery_revalidates_root_identity").await?;
     let roots = make_test_roots()?;
     let profile_id = create_profile(&test_db.pool, "discovery-identity-profile", &roots).await?;
     let resolver = StdMediaRootIdentityResolver;
@@ -380,11 +370,7 @@ async fn discovery_revalidates_root_identity() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn discovery_rejects_ambiguous_associations_and_unbounded_policy() -> anyhow::Result<()> {
-    let Some(test_db) =
-        setup_db("discovery_rejects_ambiguous_associations_and_unbounded_policy").await?
-    else {
-        return Ok(());
-    };
+    let test_db = setup_db("discovery_rejects_ambiguous_associations_and_unbounded_policy").await?;
     let roots = make_test_roots()?;
     let profile_id = create_profile(&test_db.pool, "association-profile", &roots).await?;
 
@@ -457,9 +443,7 @@ async fn append_profile_file_rules(pool: &PgPool, profile_id: Uuid) -> anyhow::R
 
 #[tokio::test]
 async fn profile_rules_are_ordered_and_bounded() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("profile_rules_are_ordered_and_bounded").await? else {
-        return Ok(());
-    };
+    let test_db = setup_db("profile_rules_are_ordered_and_bounded").await?;
     let roots = make_test_roots()?;
     let profile_id = create_profile(&test_db.pool, "profile-rule-bounds", &roots).await?;
     append_profile_file_rules(&test_db.pool, profile_id).await?;
@@ -491,9 +475,7 @@ async fn profile_rules_are_ordered_and_bounded() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn job_snapshots_and_selected_policy_are_immutable() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("job_snapshots_and_selected_policy_are_immutable").await? else {
-        return Ok(());
-    };
+    let test_db = setup_db("job_snapshots_and_selected_policy_are_immutable").await?;
     let roots = make_test_roots()?;
     let profile_id = create_profile(&test_db.pool, "snapshot-profile", &roots).await?;
     append_profile_file_rules(&test_db.pool, profile_id).await?;
@@ -562,10 +544,7 @@ async fn job_snapshots_and_selected_policy_are_immutable() -> anyhow::Result<()>
 
 #[tokio::test]
 async fn profile_create_is_insert_only_and_preserves_live_state() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("profile_create_is_insert_only_and_preserves_live_state").await?
-    else {
-        return Ok(());
-    };
+    let test_db = setup_db("profile_create_is_insert_only_and_preserves_live_state").await?;
     let roots = make_test_roots()?;
     let profile_id = create_profile(&test_db.pool, "identity-profile", &roots).await?;
 
@@ -616,10 +595,7 @@ async fn profile_create_is_insert_only_and_preserves_live_state() -> anyhow::Res
 
 #[tokio::test]
 async fn retained_job_history_is_hard_capped_and_filterable() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("retained_job_history_is_hard_capped_and_filterable").await?
-    else {
-        return Ok(());
-    };
+    let test_db = setup_db("retained_job_history_is_hard_capped_and_filterable").await?;
     let roots = make_test_roots()?;
     let profile_id = create_profile(&test_db.pool, "history-profile", &roots).await?;
     let mut job_ids = Vec::new();
@@ -678,9 +654,7 @@ async fn retained_job_history_is_hard_capped_and_filterable() -> anyhow::Result<
 
 #[tokio::test]
 async fn retained_job_history_keyset_is_stable() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("retained_job_history_keyset_is_stable").await? else {
-        return Ok(());
-    };
+    let test_db = setup_db("retained_job_history_keyset_is_stable").await?;
     let roots = make_test_roots()?;
     let profile_id = create_profile(&test_db.pool, "history-keyset-profile", &roots).await?;
     for sequence in 0..106 {
@@ -803,9 +777,7 @@ async fn prepare_recovered_attempt(
 
 #[tokio::test]
 async fn stale_workers_cannot_heartbeat_recovered_jobs() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("stale_workers_cannot_heartbeat_recovered_jobs").await? else {
-        return Ok(());
-    };
+    let test_db = setup_db("stale_workers_cannot_heartbeat_recovered_jobs").await?;
     let roots = make_test_roots()?;
     let (job_id, stale_token, active_token) =
         prepare_recovered_attempt(&test_db.pool, &roots, "stale-heartbeat-profile").await?;
@@ -842,9 +814,7 @@ async fn stale_workers_cannot_heartbeat_recovered_jobs() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn retry_preserves_attempt_evidence() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("retry_preserves_attempt_evidence").await? else {
-        return Ok(());
-    };
+    let test_db = setup_db("retry_preserves_attempt_evidence").await?;
     let roots = make_test_roots()?;
     let (job_id, stale_token, active_token) =
         prepare_recovered_attempt(&test_db.pool, &roots, "attempt-evidence-profile").await?;
@@ -915,9 +885,7 @@ async fn retry_preserves_attempt_evidence() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn diagnostic_pruning_is_one_shot_and_bounded() -> anyhow::Result<()> {
-    let Some(test_db) = setup_db("diagnostic_pruning_is_one_shot_and_bounded").await? else {
-        return Ok(());
-    };
+    let test_db = setup_db("diagnostic_pruning_is_one_shot_and_bounded").await?;
     let roots = make_test_roots()?;
     let profile_id = create_profile(&test_db.pool, "pruning-profile", &roots).await?;
     for sequence in 0..205 {
