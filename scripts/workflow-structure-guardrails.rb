@@ -165,6 +165,8 @@ class JavaProperties
 end
 
 class WorkflowStructureGuardrails
+  ALWAYS_CONDITION = "always()"
+
   EXTERNAL_ACTION = %r{\A[^./][^/]*/[^@]+@[0-9a-f]{40}\z}
   IMAGE_INVENTORY_STEP = "Inventory digest-qualified image"
   IMAGE_SCAN_STEP = "Scan digest-qualified image"
@@ -263,6 +265,7 @@ class WorkflowStructureGuardrails
       end
     end
     validate_pr_sonar_result_scope(path, jobs) if File.basename(path) == PR_WORKFLOW
+    validate_pr_media_conversion(path, jobs) if File.basename(path) == PR_WORKFLOW
     validate_sonar_scm_context(path, jobs) if [PR_WORKFLOW, "sonar.yml"].include?(File.basename(path))
     validate_ui_e2e_targets(path, jobs) if [PR_WORKFLOW, "sonar.yml"].include?(File.basename(path))
     validate_build_images(path, jobs) if File.basename(path) == "build-images.yml"
@@ -294,6 +297,43 @@ class WorkflowStructureGuardrails
     return if verifier.is_a?(Hash) && verifier.dig("env", "SONAR_PULL_REQUEST") == expected
 
     @errors << "#{path}: PR Sonar result verification must query the submitted pull request"
+  end
+
+  def validate_pr_media_conversion(path, jobs)
+    job = jobs["media-conversion"]
+    unless job.is_a?(Hash) && job.dig("services", "postgres").is_a?(Hash)
+      @errors << "#{path}: media-conversion must provision PostgreSQL"
+      return
+    end
+
+    steps = job["steps"]
+    required_steps = {
+      "Media conversion integration tests" => ["run", "just test-media-conversion"],
+      "Publish media conversion report" => ["if", ALWAYS_CONDITION],
+      "Upload media conversion report" => ["if", ALWAYS_CONDITION],
+      "Clean media fixtures" => ["run", "just clean-test-fixtures"]
+    }
+    required_steps.each do |name, (key, expected)|
+      step = steps&.find { |candidate| candidate.is_a?(Hash) && candidate["name"] == name }
+      @errors << "#{path}: media-conversion step #{name.inspect} must set #{key} to #{expected.inspect}" unless step&.dig(key) == expected
+    end
+    cleanup = steps&.find { |candidate| candidate.is_a?(Hash) && candidate["name"] == "Clean media fixtures" }
+    @errors << "#{path}: media-conversion cleanup must run under #{ALWAYS_CONDITION}" unless cleanup&.dig("if") == ALWAYS_CONDITION
+    publisher = steps&.find { |candidate| candidate.is_a?(Hash) && candidate["name"] == "Publish media conversion report" }
+    publish_command = publisher&.dig("run")
+    publish_fragments = ['report_path="target/media-conversion-report.md"', 'cat "${report_path}"']
+    unless publish_command.is_a?(String) && publish_fragments.all? { |fragment| publish_command.include?(fragment) }
+      @errors << "#{path}: media-conversion publisher must render the canonical report"
+    end
+    uploader = steps&.find { |candidate| candidate.is_a?(Hash) && candidate["name"] == "Upload media conversion report" }
+    unless uploader&.dig("uses")&.start_with?("actions/upload-artifact@") && uploader&.dig("with", "path") == "target/media-conversion-report.md" && uploader&.dig("with", "if-no-files-found") == "error"
+      @errors << "#{path}: media-conversion uploader must fail closed on the canonical report"
+    end
+
+    %w[build-pr-images build-release].each do |job_name|
+      needs = jobs.dig(job_name, "needs")
+      @errors << "#{path}: #{job_name} must depend on media-conversion" unless needs.is_a?(Array) && needs.include?("media-conversion")
+    end
   end
 
   def validate_sonar_scm_context(path, jobs)
@@ -491,9 +531,9 @@ class WorkflowStructureGuardrails
     verify = by_name.fetch("Verify HIGH and CRITICAL findings")["run"].to_s
     @errors << "#{path}: Trivy findings must be verified through just" unless verify.include?("just trivy-sarif-verify")
     category_if = by_name.fetch("Resolve code scanning category")["if"].to_s
-    @errors << "#{path}: SARIF category resolution must survive a failed vulnerability gate" unless category_if.include?("always()")
+    @errors << "#{path}: SARIF category resolution must survive a failed vulnerability gate" unless category_if.include?(ALWAYS_CONDITION)
     upload_if = by_name.fetch("Upload scan results")["if"].to_s
-    @errors << "#{path}: Trivy SARIF must be retained with always()" unless upload_if.include?("always()") && upload_if.include?("trivy-results.sarif")
+    @errors << "#{path}: Trivy SARIF must be retained with #{ALWAYS_CONDITION}" unless upload_if.include?(ALWAYS_CONDITION) && upload_if.include?("trivy-results.sarif")
   end
 
   def validate_image_evidence(path, by_name)

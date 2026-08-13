@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { cleanupE2EState } from './support/e2e-cleanup';
+import { requireCoverage } from './support/e2e-coverage-config';
 import { repoRoot } from './support/paths';
 import { REQUIRED_UI_ROUTES } from './support/ui-coverage';
 
@@ -60,21 +61,6 @@ function assertCoverage(label: string, required: Set<string>, covered: Set<strin
   }
   const details = missing.sort().join('\n');
   throw new Error(`${label} coverage missing ${missing.length} entries:\n${details}`);
-}
-
-function requireCoverage(kind: 'API' | 'UI'): boolean {
-  const envName = `E2E_COVERAGE_REQUIRE_${kind}`;
-  const value = process.env[envName];
-  if (!value) {
-    return true;
-  }
-  if (/^(1|true|TRUE|yes|YES|on|ON)$/.test(value)) {
-    return true;
-  }
-  if (/^(0|false|FALSE|no|NO|off|OFF)$/.test(value)) {
-    return false;
-  }
-  throw new Error(`${envName} must be a boolean value.`);
 }
 
 export default async function globalTeardown(): Promise<void> {
