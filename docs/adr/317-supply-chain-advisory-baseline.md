@@ -1,6 +1,6 @@
 # Supply Chain Advisory Baseline
 
-- Status: Accepted
+- Status: Superseded by [322](322-supply-chain-ci-tool-cache.md)
 - Date: 2026-07-27
 - Context:
   - PR chain validation must fail closed on RustSec and cargo-deny findings before media runtime work is layered on top.
