@@ -233,6 +233,8 @@ pub struct StreamInspection {
     pub duration_millis: Option<u64>,
     /// Stream bitrate in bits per second when known.
     pub bit_rate: Option<u64>,
+    /// Peak or maximum stream bitrate in bits per second when reported.
+    pub max_bit_rate: Option<u64>,
     /// Audio sample rate in hertz when known.
     pub sample_rate: Option<u32>,
     /// Video width in pixels when applicable.

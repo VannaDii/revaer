@@ -22,6 +22,7 @@ pub(super) struct FfprobeStream {
     pub(super) profile: Option<String>,
     pub(super) duration: Option<String>,
     pub(super) bit_rate: Option<String>,
+    pub(super) max_bit_rate: Option<String>,
     pub(super) sample_rate: Option<String>,
     pub(super) width: Option<u32>,
     pub(super) height: Option<u32>,

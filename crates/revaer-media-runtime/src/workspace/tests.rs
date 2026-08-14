@@ -2,9 +2,10 @@ use super::{
     ManagedWorkspaceError, TerminalWorkspaceCleanupPolicy, TerminalWorkspaceState, WorkspaceError,
     WorkspacePolicy, WorkspaceRejectionReason, WorkspaceRetentionPolicy, cleanup_stale_workspaces,
     cleanup_stale_workspaces_bounded, cleanup_terminal_workspace, create_managed_workspace,
-    teardown_managed_workspace,
+    project_managed_workspace, teardown_managed_workspace,
 };
 use std::fs;
+use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
@@ -17,7 +18,7 @@ fn temp_workspace_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
         "revaer-media-runtime-workspace-{}-{counter}",
         std::process::id()
     ));
-    fs::create_dir_all(&root)?;
+    fs::DirBuilder::new().mode(0o700).create(&root)?;
     Ok(root)
 }
 
@@ -171,6 +172,34 @@ fn managed_workspace_rejects_empty_root() {
 }
 
 #[test]
+fn workspace_projection_is_filesystem_read_only() -> Result<(), Box<dyn std::error::Error>> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path().join("not-created");
+    let projected = project_managed_workspace(&root, "job-1")?;
+
+    assert_eq!(projected.root_path, root);
+    assert_eq!(projected.output_path, root.join("job-1/output"));
+    assert!(!root.exists());
+    assert_eq!(fs::read_dir(parent.path())?.count(), 0);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_workspace_rejects_permissive_root() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temp_workspace_root()?;
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o755))?;
+    assert!(matches!(
+        create_managed_workspace(&root, "job-1"),
+        Err(ManagedWorkspaceError::UnsafeDirectoryPolicy(path)) if path == root
+    ));
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[test]
 fn managed_workspace_rejects_empty_and_path_like_job_keys() -> Result<(), Box<dyn std::error::Error>>
 {
     let root = temp_workspace_root()?;
@@ -214,22 +243,79 @@ fn managed_workspace_rejects_preplaced_job_symlink() -> Result<(), Box<dyn std::
 
 #[cfg(unix)]
 #[test]
-fn managed_workspace_rejects_preplaced_child_symlink() -> Result<(), Box<dyn std::error::Error>> {
+fn managed_workspace_rejects_symlinked_root() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::symlink;
+
+    let parent = tempfile::tempdir()?;
+    let outside = temp_workspace_root()?;
+    let root = parent.path().join("workspace-link");
+    symlink(&outside, &root)?;
+
+    assert!(matches!(
+        create_managed_workspace(&root, "job-link"),
+        Err(ManagedWorkspaceError::UnsafePath(path)) if path == root
+    ));
+    assert!(!outside.join("job-link").exists());
+    fs::remove_dir_all(outside)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_workspace_rejects_preplaced_tree_containing_child_symlink()
+-> Result<(), Box<dyn std::error::Error>> {
     use std::os::unix::fs::symlink;
 
     let root = temp_workspace_root()?;
     let outside = temp_workspace_root()?;
     let job_path = root.join("job-child-link");
-    fs::create_dir(&job_path)?;
+    fs::DirBuilder::new().mode(0o700).create(&job_path)?;
     let input_path = job_path.join("input");
     symlink(&outside, &input_path)?;
 
     let result = create_managed_workspace(&root, "job-child-link");
-    assert!(matches!(result, Err(ManagedWorkspaceError::UnsafePath(path)) if path == input_path));
+    assert!(matches!(result, Err(ManagedWorkspaceError::UnsafePath(path)) if path == job_path));
 
     fs::remove_file(input_path)?;
     fs::remove_dir_all(root)?;
     fs::remove_dir_all(outside)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_workspace_detects_root_identity_swap() -> Result<(), Box<dyn std::error::Error>> {
+    let root = temp_workspace_root()?;
+    let workspace = create_managed_workspace(&root, "job-root-swap")?;
+    let displaced = root.with_extension("displaced");
+    fs::rename(&root, &displaced)?;
+    fs::DirBuilder::new().mode(0o700).create(&root)?;
+
+    assert!(matches!(
+        workspace.validate(),
+        Err(ManagedWorkspaceError::IdentityChanged(path)) if path == root
+    ));
+    fs::remove_dir_all(root)?;
+    fs::remove_dir_all(displaced)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_workspace_detects_job_identity_swap() -> Result<(), Box<dyn std::error::Error>> {
+    let root = temp_workspace_root()?;
+    let workspace = create_managed_workspace(&root, "job-swap")?;
+    let displaced = root.join("job-displaced");
+    fs::rename(&workspace.job_path, &displaced)?;
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&workspace.job_path)?;
+
+    assert!(matches!(
+        workspace.validate(),
+        Err(ManagedWorkspaceError::IdentityChanged(path)) if path == workspace.job_path
+    ));
+    fs::remove_dir_all(root)?;
     Ok(())
 }
 
@@ -315,7 +401,7 @@ fn managed_workspace_and_janitors_report_inaccessible_parent_paths() {
     assert!(matches!(
         create_managed_workspace(&inaccessible, "job"),
         Err(ManagedWorkspaceError::Io {
-            operation: "workspace.create_root",
+            operation: "workspace.inspect_root",
             path,
             ..
         }) if path == inaccessible
@@ -483,11 +569,7 @@ fn legacy_and_direct_cleanup_report_unreadable_workspace() -> Result<(), Box<dyn
     ));
     assert!(matches!(
         direct,
-        Err(ManagedWorkspaceError::Io {
-            operation: "workspace.teardown_remove",
-            path,
-            ..
-        }) if path == workspace.job_path
+        Err(ManagedWorkspaceError::UnsafeDirectoryPolicy(path)) if path == workspace.job_path
     ));
     fs::remove_dir_all(root)?;
     Ok(())
@@ -584,7 +666,7 @@ fn bounded_janitor_preserves_active_then_expires_after_restart()
 
     let restarted =
         cleanup_stale_workspaces_bounded(&root, &[], created_at + Duration::from_secs(20), policy)?;
-    assert_eq!(restarted.removed, vec![active.job_path]);
+    assert_eq!(restarted.removed, vec![active.job_path.clone()]);
     assert!(restarted.failures.is_empty());
     fs::remove_dir_all(root)?;
     Ok(())
@@ -614,7 +696,7 @@ fn diagnostics_only_workspace_uses_persisted_diagnostic_expiry()
             max_entries_per_tick: 16,
         },
     )?;
-    assert_eq!(report.removed, vec![diagnostics.job_path]);
+    assert_eq!(report.removed, vec![diagnostics.job_path.clone()]);
     assert!(full.job_path.exists());
     fs::remove_dir_all(root)?;
     Ok(())

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 #[cfg(feature = "libtorrent")]
@@ -11,6 +12,7 @@ use crate::indexer_runtime::IndexerRuntime;
 use crate::indexers::IndexerService;
 use crate::media::MediaService;
 use crate::media_discovery_runtime::MediaDiscoveryRuntime;
+use crate::media_job_runtime::MediaJobRuntime;
 use crate::media_retention_runtime::MediaRetentionRuntime;
 use revaer_api::TorrentHandles;
 use revaer_api::app::media::{MediaCapabilityRefreshParams, MediaFacade};
@@ -103,6 +105,21 @@ fn database_url_from_env() -> AppResult<String> {
     std::env::var("DATABASE_URL").map_err(|_| AppError::MissingEnv {
         name: "DATABASE_URL",
     })
+}
+
+fn media_workspace_root_from_env() -> AppResult<PathBuf> {
+    media_workspace_root_from_value(std::env::var_os("REVAER_MEDIA_WORKSPACE_ROOT"))
+}
+
+fn media_workspace_root_from_value(value: Option<std::ffi::OsString>) -> AppResult<PathBuf> {
+    value
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .ok_or(AppError::InvalidConfig {
+            field: "REVAER_MEDIA_WORKSPACE_ROOT",
+            reason: "absolute_private_workspace_root_required",
+            value: None,
+        })
 }
 
 /// Load the optional database session encryption configuration from the environment.
@@ -315,6 +332,13 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     let media_discovery_runtime_task =
         MediaDiscoveryRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
             .spawn();
+    let media_job_runtime_task = MediaJobRuntime::new(
+        MediaStore::new(config.pool().clone()),
+        events.clone(),
+        telemetry.clone(),
+        media_workspace_root_from_env()?,
+    )
+    .spawn();
     let media_retention_runtime_task =
         MediaRetentionRuntime::new(MediaStore::new(config.pool().clone()), telemetry.clone())
             .spawn();
@@ -328,6 +352,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     if let Err(err) = media_discovery_runtime_task.join().await {
         warn!(error = %err, task = "media_discovery", "runtime task join failed");
     }
+    stop_runtime_task(media_job_runtime_task, "media_job").await;
     stop_runtime_task(media_retention_runtime_task, "media_retention").await;
 
     #[cfg(feature = "libtorrent")]

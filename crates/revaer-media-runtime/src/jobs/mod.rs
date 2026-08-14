@@ -4,8 +4,9 @@ use revaer_media_core::compliance::{Report as ComplianceReport, score_diff};
 use revaer_media_core::diff::diff_graphs;
 use revaer_media_core::explain::{Explanation, explain_plan};
 use revaer_media_core::model::{DesiredGraph, MediaGraph};
+use revaer_media_core::pipeline::PlanningOutcome;
 use revaer_media_core::plan::{
-    OperationKind, PlanGenerationError, PlannedOperation, generate_plan,
+    OperationKind, PlanGenerationError, PlanSelection, PlannedOperation, generate_plan,
 };
 use revaer_media_core::target::{
     CompiledDesiredTarget, DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource,
@@ -17,8 +18,9 @@ use thiserror::Error;
 
 use crate::capabilities::CapabilitySnapshot;
 use crate::execute::{
-    BuildArgsError, DesiredGraphBuildContext, ExecutionStep, SubtitleArtifactPlan,
-    VideoTranscodePolicy, build_desired_graph_execution_steps_with_sidecars,
+    BuildArgsError, DesiredGraphBuildContext, ExecutionStep, ExecutionStepAudit,
+    SubtitleArtifactPlan, VideoTranscodePolicy, build_desired_graph_execution_steps_with_sidecars,
+    compile_execution_step_audits,
 };
 use crate::inspect::{InspectAdapter, InspectError};
 use crate::workspace::{
@@ -116,6 +118,8 @@ pub struct JobPreflightReport {
     pub summary: PlannedJobSummary,
     /// Deterministic execution steps validated against capabilities.
     pub steps: Vec<ExecutionStep>,
+    /// Stable compiled-step to logical-operation audit mapping.
+    pub step_audits: Vec<ExecutionStepAudit>,
     /// Stage-by-stage deterministic preflight timeline.
     pub timeline: Vec<PreflightStageRecord>,
     /// Structured workspace capacity decision used during preflight.
@@ -930,6 +934,32 @@ pub fn plan_job_from_compiled_target(
     )
 }
 
+/// Build a deterministic plan from the production planning pipeline outcome.
+///
+/// # Errors
+///
+/// Returns an error when the outcome does not match the compiled target or its operations are
+/// inconsistent with the source and desired graphs.
+pub fn plan_job_from_planning_outcome(
+    compiled: &CompiledDesiredTarget,
+    outcome: &PlanningOutcome,
+    source_file_bytes: u64,
+    source: &MediaGraph,
+) -> Result<PlannedJob, &'static str> {
+    if outcome.desired_graph != compiled.graph {
+        return Err("planning_outcome_desired_graph_mismatch");
+    }
+    plan_job_from_selection_with_artifacts(
+        &outcome.selection,
+        source_file_bytes,
+        source,
+        &compiled.graph,
+        compiled.sidecar_embeddings.clone(),
+        compiled.sidecar_outputs.clone(),
+        compiled.sidecar_removals.clone(),
+    )
+}
+
 fn plan_job_from_source_graph_with_artifacts(
     desired: &DesiredGraph,
     source_file_bytes: u64,
@@ -944,9 +974,35 @@ fn plan_job_from_source_graph_with_artifacts(
     let diff = diff_graphs(source, desired);
     reject_unbound_desired_streams(&diff, &sidecar_embeddings)?;
     reject_unsupported_recoded_stream_kinds(&diff)?;
-    let compliance = score_diff(&diff);
     let selection = generate_plan(&diff).map_err(|error| plan_generation_error_code(&error))?;
-    let mut operations = selection.selected.operations;
+    plan_job_from_selection_with_artifacts(
+        &selection,
+        source_file_bytes,
+        source,
+        desired,
+        sidecar_embeddings,
+        sidecar_outputs,
+        sidecar_removals,
+    )
+}
+
+fn plan_job_from_selection_with_artifacts(
+    selection: &PlanSelection,
+    source_file_bytes: u64,
+    source: &MediaGraph,
+    desired: &DesiredGraph,
+    sidecar_embeddings: Vec<SidecarEmbedding>,
+    sidecar_outputs: Vec<DesiredSidecarOutput>,
+    sidecar_removals: Vec<String>,
+) -> Result<PlannedJob, &'static str> {
+    verify_unique_stream_ids(&source.streams).map_err(|_| "duplicate_source_stream_id")?;
+    verify_unique_stream_ids(&desired.streams).map_err(|_| "duplicate_desired_stream_id")?;
+    validate_sidecar_bindings(source, desired, &sidecar_embeddings)?;
+    let diff = diff_graphs(source, desired);
+    reject_unbound_desired_streams(&diff, &sidecar_embeddings)?;
+    reject_unsupported_recoded_stream_kinds(&diff)?;
+    let compliance = score_diff(&diff);
+    let mut operations = selection.selected.operations.clone();
     append_sidecar_operations(
         &mut operations,
         &sidecar_embeddings,
@@ -1359,6 +1415,41 @@ pub fn build_preflight_report_from_compiled_target(
     build_preflight_report_for_planned(planned, input)
 }
 
+/// Build preflight from the production planning pipeline outcome and complete target compilation.
+///
+/// # Errors
+///
+/// Returns [`JobPreflightError`] when the outcome, planning, workspace, capabilities, or execution
+/// steps are invalid.
+pub fn build_preflight_report_from_planning_outcome(
+    source: &MediaGraph,
+    compiled: &CompiledDesiredTarget,
+    outcome: &PlanningOutcome,
+    input: PreflightBuildInput<'_>,
+) -> Result<JobPreflightReport, JobPreflightError> {
+    if input.desired != &compiled.graph {
+        return Err(JobPreflightError::Plan("compiled_desired_graph_mismatch"));
+    }
+    let planned =
+        plan_job_from_planning_outcome(compiled, outcome, input.source_file_bytes, source)
+            .map_err(JobPreflightError::Plan)?;
+    build_preflight_report_for_planned(planned, input)
+}
+
+/// Evaluate preflight from the production planning pipeline outcome.
+#[must_use]
+pub fn evaluate_preflight_from_planning_outcome(
+    source: &MediaGraph,
+    compiled: &CompiledDesiredTarget,
+    outcome: &PlanningOutcome,
+    input: PreflightBuildInput<'_>,
+) -> JobPreflightEvaluation {
+    match build_preflight_report_from_planning_outcome(source, compiled, outcome, input) {
+        Ok(report) => JobPreflightEvaluation::Ready(Box::new(report)),
+        Err(error) => JobPreflightEvaluation::Failed(preflight_failure_report(&error)),
+    }
+}
+
 fn build_preflight_report_for_planned(
     mut planned: PlannedJob,
     input: PreflightBuildInput<'_>,
@@ -1381,11 +1472,13 @@ fn build_preflight_report_for_planned(
         input.video_policy,
     )?;
     let summary = summarize_planned_job(&planned);
+    let step_audits = compile_execution_step_audits(&planned.operations, &steps);
     let timeline = preflight_success_timeline();
     Ok(JobPreflightReport {
         planned,
         summary,
         steps,
+        step_audits,
         timeline,
         capacity_report,
     })
@@ -1562,7 +1655,7 @@ fn estimate_live_workspace_demand(
         .stream_constraints
         .iter()
         .filter_map(|constraint| constraint.max_bitrate_bps)
-        .map(u64::from)
+        .map(|bitrate| u64::from(bitrate.get()))
         .chain(
             video_policy
                 .audio_stream_constraints
@@ -1624,7 +1717,9 @@ mod tests {
         summarize_planned_job,
     };
     use crate::capabilities::{CapabilitySnapshot, CodecCapability};
-    use crate::execute::{HdrColorPolicy, VideoTranscodeIntent, VideoTranscodePolicy};
+    use crate::execute::{
+        HdrColorPolicy, MaxBitrateBps, VideoTranscodeIntent, VideoTranscodePolicy,
+    };
     use crate::inspect::{
         ContainerInspection, InspectAdapter, InspectCancellation, InspectError, MediaInspection,
     };
@@ -2268,7 +2363,7 @@ mod tests {
                     stream_id: 0,
                     profile: None,
                     level: None,
-                    max_bitrate_bps: Some(100_000),
+                    max_bitrate_bps: MaxBitrateBps::new(100_000),
                     color_primaries: None,
                     color_transfer: None,
                     color_space: None,
@@ -2278,7 +2373,7 @@ mod tests {
                     stream_id: 1,
                     profile: None,
                     level: None,
-                    max_bitrate_bps: Some(20_000_000),
+                    max_bitrate_bps: MaxBitrateBps::new(20_000_000),
                     color_primaries: None,
                     color_transfer: None,
                     color_space: None,
@@ -2936,6 +3031,7 @@ mod tests {
                 explanations: Vec::new(),
             },
             steps: Vec::new(),
+            step_audits: Vec::new(),
             timeline: Vec::new(),
             capacity_report: crate::workspace::WorkspaceCapacityReport {
                 accepted: true,
@@ -3016,6 +3112,7 @@ mod tests {
                 explanations: Vec::new(),
             },
             steps: Vec::new(),
+            step_audits: Vec::new(),
             timeline: vec![
                 PreflightStageRecord {
                     stage: "inspect_source",
@@ -3761,6 +3858,7 @@ mod tests {
                 explanations: Vec::new(),
             },
             steps: Vec::new(),
+            step_audits: Vec::new(),
             timeline: vec![
                 PreflightStageRecord {
                     stage: "inspect_plan",

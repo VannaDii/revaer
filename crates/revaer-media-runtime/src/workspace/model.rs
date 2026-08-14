@@ -1,7 +1,9 @@
 //! Workspace lifecycle and capacity models.
 
+use std::fs::File;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use thiserror::Error;
@@ -58,9 +60,9 @@ pub enum WorkspaceRejectionReason {
     InsufficientCapacity,
 }
 
-/// Managed per-job workspace directory layout.
+/// Projected per-job workspace paths. Projection performs no filesystem mutation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ManagedWorkspace {
+pub struct WorkspacePaths {
     /// Stable job key used for the workspace directory name.
     pub job_key: String,
     /// Configured workspace root.
@@ -73,6 +75,51 @@ pub struct ManagedWorkspace {
     pub output_path: PathBuf,
     /// Directory for bounded diagnostic artifacts.
     pub diagnostics_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct WorkspaceDirectoryIdentity {
+    pub(super) device: u64,
+    pub(super) inode: u64,
+    pub(super) owner: u32,
+    pub(super) mode: u32,
+}
+
+#[derive(Debug)]
+pub(super) struct WorkspaceTrust {
+    pub(super) root: Arc<File>,
+    pub(super) root_identity: WorkspaceDirectoryIdentity,
+    pub(super) job_identity: WorkspaceDirectoryIdentity,
+    pub(super) input_identity: WorkspaceDirectoryIdentity,
+    pub(super) output_identity: WorkspaceDirectoryIdentity,
+    pub(super) diagnostics_identity: WorkspaceDirectoryIdentity,
+}
+
+/// Managed per-job workspace with retained trust anchors.
+#[derive(Debug, Clone)]
+pub struct ManagedWorkspace {
+    /// Trusted path projection.
+    pub paths: WorkspacePaths,
+    pub(super) trust: Arc<WorkspaceTrust>,
+}
+
+impl ManagedWorkspace {
+    /// Validate that every managed directory still has its original identity and policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ManagedWorkspaceError`] when a path was replaced or its policy changed.
+    pub fn validate(&self) -> Result<(), ManagedWorkspaceError> {
+        super::filesystem::validate_managed_workspace(self)
+    }
+}
+
+impl std::ops::Deref for ManagedWorkspace {
+    type Target = WorkspacePaths;
+
+    fn deref(&self) -> &Self::Target {
+        &self.paths
+    }
 }
 
 /// Terminal state driving managed workspace cleanup.
@@ -146,6 +193,12 @@ pub enum ManagedWorkspaceError {
     /// A managed path was a symlink or a non-directory object.
     #[error("workspace path is not a trusted directory: {0}")]
     UnsafePath(PathBuf),
+    /// A managed directory was not owner-only or was owned by another user.
+    #[error("workspace directory policy is unsafe: {0}")]
+    UnsafeDirectoryPolicy(PathBuf),
+    /// A managed directory was replaced after its trusted handle was opened.
+    #[error("workspace directory identity changed: {0}")]
+    IdentityChanged(PathBuf),
     /// Workspace filesystem operation failed.
     #[error("workspace filesystem operation {operation} failed for {path}: {source}")]
     Io {

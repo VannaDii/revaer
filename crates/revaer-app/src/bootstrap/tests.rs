@@ -110,6 +110,24 @@ fn optional_env_var_with_rejects_non_unicode_values() {
 }
 
 #[test]
+fn media_workspace_root_is_required_and_absolute() {
+    assert!(matches!(
+        media_workspace_root_from_value(None),
+        Err(AppError::InvalidConfig {
+            field: "REVAER_MEDIA_WORKSPACE_ROOT",
+            reason: "absolute_private_workspace_root_required",
+            value: None,
+        })
+    ));
+    assert!(media_workspace_root_from_value(Some("relative/workspace".into())).is_err());
+    assert_eq!(
+        media_workspace_root_from_value(Some("/private/media-workspace".into()))
+            .expect("absolute workspace root"),
+        PathBuf::from("/private/media-workspace")
+    );
+}
+
+#[test]
 fn otel_and_guardrail_helpers_cover_expected_modes() -> AppResult<()> {
     assert!(env_flag_value(Some("true")));
     assert!(env_flag_value(Some(" On ")));

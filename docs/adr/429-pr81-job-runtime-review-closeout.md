@@ -1,0 +1,60 @@
+# PR 81 Job Runtime Review Closeout
+
+- Status: Accepted
+- Date: 2026-08-12
+- Context:
+  - PR 81's media job runtime had five unresolved review findings covering crash consistency, dry-run filesystem mutation, managed-workspace trust, bitrate ceilings, and operation audit evidence.
+  - The runtime must remain panic-free, dependency-injected, stored-procedure-only for database access, and fail closed without suppressions.
+- Decision:
+  - Commit replacement verification, terminal job state, and a terminal event outbox row in one stored-procedure transaction before replacement recovery artifacts are finalized.
+  - Recover committed replacements according to the durable terminal outbox: uncertain work rolls back, while durably completed work finalizes.
+  - Project dry-run workspace paths without touching the filesystem. Create non-dry-run workspaces only beneath an absolute operator-configured root using owner-only directories, no-follow opens, retained root handles, and device/inode/owner/mode revalidation.
+  - Represent video bitrate ceilings with `MaxBitrateBps`; emit matching FFmpeg bitrate controls and reject either average or reported peak bitrate above the inclusive maximum.
+  - Compile stable execution-step identifiers with logical operation mappings. Persist a full length-framed argv SHA-256 digest plus bounded flag-only evidence, argument count, and operation identifiers; paths and argument values are not persisted.
+  - Route embedded-output targets through the core `compile_and_plan` pipeline and execute its selected operations. Persist one normalized candidate row plus separate operation rows for the selected candidate and every rejected candidate, retaining stable candidate identifiers, costs, and rejection reasons.
+  - Prove one-source-to-two-output fan-out through a real generated audio fixture, production argument construction, FFmpeg execution, FFprobe stream verification, and explicit temporary-tree cleanup.
+  - Reserve migration `0186` for the durable replacement terminal outbox.
+  - Alternatives considered were finalizing before database completion, using the shared temporary directory, tolerating bitrate overshoot, and persisting truncated argv values. Each alternative weakens recovery, isolation, policy semantics, or audit completeness and was rejected.
+- Consequences:
+  - Replacement completion survives process termination at every boundary from commit through event publication, with at-least-once terminal event recovery.
+  - Deployments must set `REVAER_MEDIA_WORKSPACE_ROOT` to an absolute path whose existing directory, when present, is owned by the service user with mode `0700`.
+  - A pre-existing per-job workspace is rejected instead of reused. Operators must recover or remove abandoned workspace trees through the managed recovery path.
+  - Audit rows prove the complete command shape by digest while retaining bounded, redacted troubleshooting fields.
+  - Sidecar-output targets continue to use the sidecar-aware compiler because the core pipeline accepts `DesiredTarget` and cannot yet represent external sidecar artifacts. A descendant must extend the core planning contract to consume the complete sidecar compilation result before those targets can persist core candidate-selection rationale.
+- Follow-up:
+  - Run the database-backed terminal transaction test in CI where the repository test database is available.
+  - Recheck all five review threads against this implementation without resolving or mutating GitHub state in this task.
+
+## Task Record
+
+- Motivation:
+  - Close the five unresolved PR 81 review findings without weakening repository policy or leaving recovery ambiguity.
+- Design notes:
+  - The durable database commit precedes replacement finalization. Startup reads unpublished terminal events before replacement recovery and publishes each event only before marking its outbox row published.
+  - Dry-run and non-dry-run execution have separate workspace types: projected paths carry no filesystem authority, while managed workspaces retain verified trust anchors.
+  - Workspace validation compares device, inode, owner, and mode before and after command execution and before cleanup.
+  - Bitrate verification uses an inclusive upper bound for both average and optional peak values. Missing average bitrate fails a configured maximum check.
+  - Execution evidence maps fused and filesystem operations to actual compiled steps and hashes every argv field with explicit length framing.
+  - Embedded-output execution consumes the exact selected operation list returned by `compile_and_plan`; selected and rejected candidate rationale is stored as normalized candidate and operation records rather than opaque serialized state.
+- Test coverage summary:
+  - Added workspace projection, permission, symlink-tree, root-swap, and job-swap tests.
+  - Added recursive successful and failed dry-run filesystem snapshot assertions.
+  - Added uncertain-versus-durable replacement recovery tests and an atomic, idempotent terminal-outbox database integration test.
+  - Added below, equal, above, and burst bitrate tests plus FFmpeg `-maxrate` and `-bufsize` assertions.
+  - Added fused/non-command step mapping and full-argv/redaction evidence tests.
+  - Added a real FFmpeg/FFprobe fan-out test that maps one source stream to AAC stereo and E-AC-3 5.1 outputs and verifies cleanup after probing both streams.
+  - Focused Rust tests, strict lint, policy, instruction drift, `just ci`, and `just ui-e2e` results are recorded in the task handoff.
+- Observability updates:
+  - Durable terminal events remain visible through the normalized outbox until successful publication.
+  - Terminal publication errors now fail closed with a stable runtime error code instead of marking undelivered events published.
+  - Existing replacement recovery logs identify finalized and rolled-back transactions; operation rows now retain stable step and operation identifiers.
+- Status-doc validation:
+  - `README.md` and roadmap/status documents were rechecked. No public capability claim changed, so no status wording update was required.
+- Risk & rollback plan:
+  - Primary risks are deployment startup failure from an absent or unsafe workspace root and delayed terminal-event delivery after a bus failure.
+  - Roll back the runtime and migration together before production use. The additive outbox table and functions may remain without affecting the prior runtime, but removing them requires confirming no unpublished events remain.
+- Dependency rationale:
+  - No dependency was added. The implementation uses existing `rustix` and `sha2` workspace dependencies.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, and `.github/instructions/devops.instructions.md`.
+  - No policy drift or contradiction was found. No instruction, workflow, Justfile, lint, or Sonar criteria were changed.

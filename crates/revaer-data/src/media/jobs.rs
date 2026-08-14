@@ -35,6 +35,12 @@ const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_stat
 const MEDIA_JOB_WORKER_POLL_CONTROL_V1: &str = "SELECT cancel_requested, cancel_generation FROM media_job_worker_poll_control_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
 const MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1: &str = "SELECT media_job_worker_acknowledge_cancel_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
 const MEDIA_JOB_WORKER_COMPLETE_V1: &str = "SELECT media_job_worker_complete_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
+const MEDIA_JOB_WORKER_COMMIT_REPLACEMENT_TERMINAL_V1: &str =
+    "SELECT media_job_worker_commit_replacement_terminal_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_TERMINAL_OUTBOX_LIST_UNPUBLISHED_V1: &str =
+    "SELECT media_job_public_id, event_kind FROM media_job_terminal_outbox_list_unpublished_v1()";
+const MEDIA_JOB_TERMINAL_OUTBOX_MARK_PUBLISHED_V1: &str =
+    "SELECT media_job_terminal_outbox_mark_published_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
 const MEDIA_DISCOVERY_JOB_ENQUEUE_V2: &str = "SELECT media_discovery_job_enqueue_v2(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
 
@@ -204,6 +210,15 @@ pub struct MediaJobOperationRow {
     pub arg_5: Option<String>,
     /// Row creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Unpublished durable terminal event for a media job.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaJobTerminalOutboxRow {
+    /// Job public id used as the idempotency key.
+    pub media_job_public_id: Uuid,
+    /// Stable terminal event kind.
+    pub event_kind: String,
 }
 
 /// Media job compliance violation row.
@@ -934,6 +949,54 @@ pub async fn media_job_worker_complete(
         .map_err(try_op("media job worker complete"))
 }
 
+/// Atomically persist replacement verification, terminal completion, and an outbox event.
+///
+/// # Errors
+///
+/// Returns an error when the job is not worker-owned or execution fails.
+pub async fn media_job_worker_commit_replacement_terminal(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<()> {
+    sqlx::query(MEDIA_JOB_WORKER_COMMIT_REPLACEMENT_TERMINAL_V1)
+        .bind(media_job_public_id)
+        .execute(pool)
+        .await
+        .map_err(try_op("media job worker commit replacement terminal"))?;
+    Ok(())
+}
+
+/// List bounded unpublished terminal events in commit order.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_job_terminal_outbox_unpublished(
+    pool: &PgPool,
+) -> Result<Vec<MediaJobTerminalOutboxRow>> {
+    sqlx::query_as::<_, MediaJobTerminalOutboxRow>(MEDIA_JOB_TERMINAL_OUTBOX_LIST_UNPUBLISHED_V1)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job terminal outbox list unpublished"))
+}
+
+/// Mark one durable terminal event published.
+///
+/// # Errors
+///
+/// Returns an error when the row does not exist or execution fails.
+pub async fn mark_media_job_terminal_outbox_published(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<()> {
+    sqlx::query(MEDIA_JOB_TERMINAL_OUTBOX_MARK_PUBLISHED_V1)
+        .bind(media_job_public_id)
+        .execute(pool)
+        .await
+        .map_err(try_op("media job terminal outbox mark published"))?;
+    Ok(())
+}
+
 /// Update the heartbeat timestamp for a running media job.
 ///
 /// # Errors
@@ -979,10 +1042,12 @@ mod tests {
         append_media_job_violation, cancel_media_job, create_media_job,
         enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
         list_media_job_compact_audits, list_media_job_operations, list_media_job_plan_reasons,
-        list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
-        list_recent_media_jobs, mark_media_job_completed, media_job_worker_acknowledge_cancel,
-        media_job_worker_claim_next, media_job_worker_mark_status, media_job_worker_poll_control,
-        run_media_job_retention,
+        list_media_job_terminal_outbox_unpublished, list_media_job_verification_checks,
+        list_media_job_violations, list_media_jobs, list_recent_media_jobs,
+        mark_media_job_completed, mark_media_job_terminal_outbox_published,
+        media_job_worker_acknowledge_cancel, media_job_worker_claim_next,
+        media_job_worker_commit_replacement_terminal, media_job_worker_mark_status,
+        media_job_worker_poll_control, run_media_job_retention,
     };
     use crate::DataError;
     use crate::media::configuration::{
@@ -1617,6 +1682,67 @@ mod tests {
             return Err(anyhow::anyhow!("cancelled job missing"));
         };
         assert_eq!(job.status_text, "cancelled");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn replacement_terminal_commit_is_atomic_idempotent_and_outboxed() -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("replacement_terminal_commit").await? else {
+            return Ok(());
+        };
+        let profile_id = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "replacement-terminal",
+                source_root: "/input/replacement-terminal",
+                output_root: "/output/replacement-terminal",
+                dry_run_only: false,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        let job_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/replacement-terminal/movie.mkv",
+                output_path: Some("/output/replacement-terminal/movie.mkv"),
+                dry_run: false,
+            },
+        )
+        .await?;
+        let claimed = media_job_worker_claim_next(db.pool()).await?;
+        assert_eq!(claimed.map(|job| job.media_job_public_id), Some(job_id));
+
+        media_job_worker_commit_replacement_terminal(db.pool(), job_id).await?;
+        media_job_worker_commit_replacement_terminal(db.pool(), job_id).await?;
+
+        let Some(job) = get_media_job(db.pool(), job_id).await? else {
+            return Err(anyhow::anyhow!("terminal job missing"));
+        };
+        assert_eq!(job.status_text, "completed");
+        let checks = list_media_job_verification_checks(db.pool(), job_id).await?;
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].check_kind, "output_replacement");
+        assert_eq!(checks[0].check_status, "passed");
+        let unpublished = list_media_job_terminal_outbox_unpublished(db.pool()).await?;
+        assert_eq!(unpublished.len(), 1);
+        assert_eq!(unpublished[0].media_job_public_id, job_id);
+        assert_eq!(unpublished[0].event_kind, "completed");
+
+        mark_media_job_terminal_outbox_published(db.pool(), job_id).await?;
+        assert!(
+            list_media_job_terminal_outbox_unpublished(db.pool())
+                .await?
+                .is_empty()
+        );
         Ok(())
     }
 
