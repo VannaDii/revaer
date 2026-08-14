@@ -91,6 +91,8 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_job_desired_target_stream_list_v3",
     "media_job_desired_target_stream_list_v4",
     "media_job_desired_target_audio_constraints_snapshot_v1",
+    "media_key_valid_v1",
+    "media_display_valid_v1",
     "media_job_list_v1",
     "media_job_get_v1",
     "media_job_cancel_v1",
@@ -203,6 +205,53 @@ async fn media_procedures_exist() -> anyhow::Result<()> {
             "missing procedure {proc_name}"
         );
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn media_text_contract_enforces_utf8_and_key_boundaries() -> anyhow::Result<()> {
+    let db = match setup_media_db("media_text_contract_enforces_utf8_and_key_boundaries").await {
+        Ok(Some(db)) => db,
+        Ok(None) => return Ok(()),
+        Err(err) => return Err(err),
+    };
+
+    let exact_key = format!("a{}z", "b".repeat(126));
+    let oversized_key = format!("a{}z", "b".repeat(127));
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT media_key_valid_v1($1)")
+            .bind(exact_key)
+            .fetch_one(db.pool())
+            .await?
+    );
+    assert!(
+        !sqlx::query_scalar::<_, bool>("SELECT media_key_valid_v1($1)")
+            .bind(oversized_key)
+            .fetch_one(db.pool())
+            .await?
+    );
+    assert!(
+        !sqlx::query_scalar::<_, bool>("SELECT media_key_valid_v1($1)")
+            .bind("Profile Key")
+            .fetch_one(db.pool())
+            .await?
+    );
+
+    let exact_display = "é".repeat(128);
+    let oversized_display = format!("{exact_display}é");
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT media_display_valid_v1($1)")
+            .bind(exact_display)
+            .fetch_one(db.pool())
+            .await?
+    );
+    assert!(
+        !sqlx::query_scalar::<_, bool>("SELECT media_display_valid_v1($1)")
+            .bind(oversized_display)
+            .fetch_one(db.pool())
+            .await?
+    );
 
     Ok(())
 }

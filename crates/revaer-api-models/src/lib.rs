@@ -39,6 +39,95 @@ pub use revaer_torrent_core::{
     FilePriority, FilePriorityOverride, TorrentCleanupPolicy, TorrentLabelPolicy, TorrentRateLimit,
 };
 
+/// Maximum encoded size of a persisted media identifier.
+pub const MEDIA_KEY_MAX_BYTES: usize = 128;
+/// Maximum character count of a persisted media identifier.
+pub const MEDIA_KEY_MAX_CHARS: usize = 128;
+/// Maximum encoded size of an operator-facing media display value.
+pub const MEDIA_DISPLAY_MAX_BYTES: usize = 256;
+/// Maximum character count of an operator-facing media display value.
+pub const MEDIA_DISPLAY_MAX_CHARS: usize = 128;
+
+/// Reason a persisted media text value violates the shared input contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaTextValidationError {
+    /// The value is empty after trimming surrounding whitespace.
+    Empty,
+    /// The UTF-8 representation exceeds the field's byte budget.
+    TooManyBytes,
+    /// The value exceeds the field's character budget.
+    TooManyChars,
+    /// The value contains characters outside the field's canonical grammar.
+    InvalidGrammar,
+}
+
+impl std::fmt::Display for MediaTextValidationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => formatter.write_str("must not be empty"),
+            Self::TooManyBytes => formatter.write_str("exceeds the UTF-8 byte limit"),
+            Self::TooManyChars => formatter.write_str("exceeds the character limit"),
+            Self::InvalidGrammar => formatter.write_str("contains unsupported characters"),
+        }
+    }
+}
+
+/// Validate and trim a stable persisted media key.
+///
+/// Keys use lowercase ASCII letters and digits, with internal `-` or `_`
+/// separators. Separators cannot be the first or last character.
+///
+/// # Errors
+///
+/// Returns [`MediaTextValidationError`] when the trimmed key is empty, exceeds
+/// either limit, or violates the canonical key grammar.
+pub fn validate_media_key(value: &str) -> Result<&str, MediaTextValidationError> {
+    let value = validate_media_text_size(value, MEDIA_KEY_MAX_BYTES, MEDIA_KEY_MAX_CHARS)?;
+    let bytes = value.as_bytes();
+    let edge_is_alphanumeric = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    if !bytes.first().copied().is_some_and(edge_is_alphanumeric)
+        || !bytes.last().copied().is_some_and(edge_is_alphanumeric)
+        || !bytes
+            .iter()
+            .all(|byte| edge_is_alphanumeric(*byte) || matches!(byte, b'-' | b'_'))
+    {
+        return Err(MediaTextValidationError::InvalidGrammar);
+    }
+    Ok(value)
+}
+
+/// Validate and trim a persisted operator-facing media display value.
+///
+/// # Errors
+///
+/// Returns [`MediaTextValidationError`] when the trimmed display value is
+/// empty, exceeds either limit, or contains a control character.
+pub fn validate_media_display(value: &str) -> Result<&str, MediaTextValidationError> {
+    let value = validate_media_text_size(value, MEDIA_DISPLAY_MAX_BYTES, MEDIA_DISPLAY_MAX_CHARS)?;
+    if value.chars().any(char::is_control) {
+        return Err(MediaTextValidationError::InvalidGrammar);
+    }
+    Ok(value)
+}
+
+fn validate_media_text_size(
+    value: &str,
+    max_bytes: usize,
+    max_chars: usize,
+) -> Result<&str, MediaTextValidationError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(MediaTextValidationError::Empty);
+    }
+    if value.len() > max_bytes {
+        return Err(MediaTextValidationError::TooManyBytes);
+    }
+    if value.chars().count() > max_chars {
+        return Err(MediaTextValidationError::TooManyChars);
+    }
+    Ok(value)
+}
+
 /// RFC9457-compatible problem document surfaced on validation/runtime errors.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProblemDetails {
@@ -448,6 +537,7 @@ pub struct MediaCompatibilityTargetUpsertRequest {
 
 /// Ordered stream in an immutable desired-target version.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct MediaDesiredTargetStream {
     /// Stable stream key within the target version.
     pub stream_key: String,
@@ -4812,5 +4902,58 @@ impl TorrentAction {
             }),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod media_text_contract_tests {
+    use super::{
+        MEDIA_DISPLAY_MAX_BYTES, MEDIA_DISPLAY_MAX_CHARS, MEDIA_KEY_MAX_BYTES,
+        MediaTextValidationError, validate_media_display, validate_media_key,
+    };
+
+    #[test]
+    fn media_key_accepts_exact_limit_and_rejects_limit_plus_one() {
+        let exact = format!("a{}z", "b".repeat(MEDIA_KEY_MAX_BYTES - 2));
+        assert_eq!(validate_media_key(&exact), Ok(exact.as_str()));
+
+        let oversized = format!("a{}z", "b".repeat(MEDIA_KEY_MAX_BYTES - 1));
+        assert_eq!(
+            validate_media_key(&oversized),
+            Err(MediaTextValidationError::TooManyBytes)
+        );
+    }
+
+    #[test]
+    fn media_key_enforces_canonical_grammar() {
+        assert_eq!(validate_media_key(" profile-key "), Ok("profile-key"));
+        for invalid in ["Profile", "-profile", "profile_", "profile key", "profïle"] {
+            assert_eq!(
+                validate_media_key(invalid),
+                Err(MediaTextValidationError::InvalidGrammar)
+            );
+        }
+    }
+
+    #[test]
+    fn media_display_enforces_independent_utf8_byte_and_character_limits() {
+        let exact_bytes = "é".repeat(MEDIA_DISPLAY_MAX_BYTES / 2);
+        assert_eq!(exact_bytes.chars().count(), MEDIA_DISPLAY_MAX_CHARS);
+        assert_eq!(
+            validate_media_display(&exact_bytes),
+            Ok(exact_bytes.as_str())
+        );
+
+        let too_many_bytes = format!("{exact_bytes}é");
+        assert_eq!(
+            validate_media_display(&too_many_bytes),
+            Err(MediaTextValidationError::TooManyBytes)
+        );
+
+        let too_many_chars = "a".repeat(MEDIA_DISPLAY_MAX_CHARS + 1);
+        assert_eq!(
+            validate_media_display(&too_many_chars),
+            Err(MediaTextValidationError::TooManyChars)
+        );
     }
 }
