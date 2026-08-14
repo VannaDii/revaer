@@ -310,6 +310,7 @@ const fn diff_has_changes(diff: &GraphDiff) -> bool {
         || !diff.missing_desired_streams.is_empty()
         || !diff.stream_metadata_mismatched_streams.is_empty()
         || diff.container_metadata_mismatch
+        || diff.container_chapter_diff.is_mismatched()
         || !diff.disposition_mismatched_streams.is_empty()
         || !diff.recoded_streams.is_empty()
         || !diff.audio_channel_mismatched_streams.is_empty()
@@ -352,7 +353,7 @@ fn append_audio_channel_operations(operations: &mut Vec<PlannedOperation>, diff:
 }
 
 fn append_container_metadata_operation(operations: &mut Vec<PlannedOperation>, diff: &GraphDiff) {
-    if diff.container_metadata_mismatch {
+    if diff.container_metadata_mismatch || diff.container_chapter_diff.is_mismatched() {
         operations.push(container_operation(OperationKind::MetadataRewrite));
     }
 }
@@ -515,7 +516,7 @@ mod tests {
         operation_cost, prune_invalid_and_dominated, prune_invalid_and_dominated_with,
         select_candidate,
     };
-    use crate::diff::{BoundStream, GraphDiff, RecodedStream};
+    use crate::diff::{BoundStream, ContainerPolicyDiff, GraphDiff, RecodedStream};
     use crate::model::{DesiredStreamBinding, StreamKind};
 
     fn stream_operation(
@@ -671,6 +672,21 @@ mod tests {
     {
         let selection = generate_plan(&GraphDiff {
             container_metadata_mismatch: true,
+            ..GraphDiff::default()
+        })?;
+
+        assert_eq!(
+            selection.selected.operations,
+            vec![container_operation(OperationKind::MetadataRewrite)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn generate_plan_selects_metadata_rewrite_for_strip_chapters() -> Result<(), PlanGenerationError>
+    {
+        let selection = generate_plan(&GraphDiff {
+            container_chapter_diff: ContainerPolicyDiff::Mismatched,
             ..GraphDiff::default()
         })?;
 

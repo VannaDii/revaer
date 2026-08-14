@@ -46,18 +46,42 @@ function assertSetupMode(mode: string, context: string): void {
   }
 }
 
-async function ensureSetupMode(client: ApiClient): Promise<void> {
+async function postFactoryReset(client: ApiClient): Promise<number> {
+  const response = await client.POST('/admin/factory-reset', {
+    body: { confirm: 'factory reset' },
+  });
+  return response.response.status;
+}
+
+async function resetToSetupMode(baseUrl: string, client: ApiClient, mode: string): Promise<void> {
+  const resetStatus = await postFactoryReset(client);
+  if (resetStatus === 204) {
+    return;
+  }
+
+  const existingSession = readState()?.apiSession;
+  if (resetStatus === 401 && mode === 'active' && existingSession?.apiKey) {
+    const authenticatedClient = createApiClient({
+      baseUrl,
+      headers: authHeaders(existingSession),
+    });
+    const authenticatedResetStatus = await postFactoryReset(authenticatedClient);
+    if (authenticatedResetStatus === 204) {
+      return;
+    }
+    throw new Error(
+      `Factory reset failed with ${authenticatedResetStatus} using existing API session while in ${mode} mode.`,
+    );
+  }
+
+  throw new Error(`Factory reset failed with ${resetStatus} while in ${mode} mode.`);
+}
+
+async function ensureSetupMode(baseUrl: string, client: ApiClient): Promise<void> {
   const health = await fetchHealth(client, 'initial');
   const mode = parseHealthMode(health.response, health.data as HealthResponse | undefined);
 
-  const reset = await client.POST('/admin/factory-reset', {
-    body: { confirm: 'factory reset' },
-  });
-  if (reset.response.status !== 204) {
-    throw new Error(
-      `Factory reset failed with ${reset.response.status} while in ${mode} mode.`,
-    );
-  }
+  await resetToSetupMode(baseUrl, client, mode);
 
   const healthAfter = await fetchHealth(client, 'after factory reset');
   const resetMode = parseHealthMode(
@@ -70,7 +94,7 @@ async function ensureSetupMode(client: ApiClient): Promise<void> {
 export async function configureAuthMode(options: SetupOptions): Promise<ApiSession> {
   const publicClient = createApiClient({ baseUrl: options.baseUrl });
 
-  await ensureSetupMode(publicClient);
+  await ensureSetupMode(options.baseUrl, publicClient);
 
   const setupStart = await publicClient.POST('/admin/setup/start', { body: {} });
   if (!setupStart.response.ok || !setupStart.data?.token) {
@@ -107,11 +131,9 @@ export async function configureAuthMode(options: SetupOptions): Promise<ApiSessi
 export async function factoryReset(options: ResetOptions): Promise<void> {
   const headers = options.session.apiKey ? authHeaders(options.session) : undefined;
   const client = createApiClient({ baseUrl: options.baseUrl, headers });
-  const response = await client.POST('/admin/factory-reset', {
-    body: { confirm: 'factory reset' },
-  });
-  if (response.response.status !== 204) {
-    throw new Error(`Factory reset failed with ${response.response.status}.`);
+  const responseStatus = await postFactoryReset(client);
+  if (responseStatus !== 204) {
+    throw new Error(`Factory reset failed with ${responseStatus}.`);
   }
 }
 

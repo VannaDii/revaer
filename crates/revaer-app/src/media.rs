@@ -604,6 +604,7 @@ impl MediaFacade for MediaService {
                     display_name: row.target.display_name,
                     container_format: row.target.container_format,
                     container_metadata_policy: row.target.container_metadata_policy,
+                    container_chapter_policy: row.target.container_chapter_policy,
                     streams: Vec::new(),
                 });
             if response.streams.len() >= 1_024 {
@@ -642,6 +643,7 @@ impl MediaFacade for MediaService {
                 display_name: &params.display_name,
                 container_format: &params.container_format,
                 container_metadata_policy: &params.container_metadata_policy,
+                container_chapter_policy: &params.container_chapter_policy,
             },
         )
         .await
@@ -692,6 +694,7 @@ impl MediaFacade for MediaService {
             display_name: params.display_name,
             container_format: params.container_format,
             container_metadata_policy: params.container_metadata_policy,
+            container_chapter_policy: params.container_chapter_policy,
             streams: params.streams,
         })
     }
@@ -1516,6 +1519,7 @@ async fn import_yaml_desired_targets(
                 display_name: &target.display_name,
                 container_format: &target.container_format,
                 container_metadata_policy: &target.container_metadata_policy,
+                container_chapter_policy: &target.container_chapter_policy,
             },
         )
         .await
@@ -2344,12 +2348,20 @@ fn yaml_desired_target_shape_invalid(target: &MediaYamlDesiredTarget) -> bool {
         || target.display_name.trim().is_empty()
         || target.container_format.trim().is_empty()
         || !container_metadata_policy_supported(&target.container_metadata_policy)
+        || !container_chapter_policy_supported(&target.container_chapter_policy)
         || target.version <= 0
         || target.streams.is_empty()
         || target.streams.len() > MAX_DESIRED_TARGET_STREAMS
 }
 
 fn container_metadata_policy_supported(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "preserve" | "strip"
+    )
+}
+
+fn container_chapter_policy_supported(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),
         "preserve" | "strip"
@@ -2490,6 +2502,7 @@ fn media_yaml_desired_target(target: AppMediaDesiredTargetResponse) -> MediaYaml
         display_name: target.display_name,
         container_format: target.container_format,
         container_metadata_policy: target.container_metadata_policy,
+        container_chapter_policy: target.container_chapter_policy,
         streams: target.streams,
     }
 }
@@ -2520,6 +2533,9 @@ fn desired_target_matches_yaml(
         && existing
             .container_metadata_policy
             .eq_ignore_ascii_case(&imported.container_metadata_policy)
+        && existing
+            .container_chapter_policy
+            .eq_ignore_ascii_case(&imported.container_chapter_policy)
         && existing.streams == imported.streams
 }
 
@@ -3163,11 +3179,11 @@ pub(crate) fn build_discovery_previews(
 #[cfg(test)]
 mod tests {
     use super::{
-        DiscoveryRunMode, MediaService, container_metadata_policy_supported,
-        ensure_discovery_mode_enabled, ensure_execution_capability_snapshot,
-        ensure_profile_compatibility_target_readiness, ensure_profile_desired_target_readiness,
-        map_data_error, map_detect_error, parse_yaml_bundle, validate_yaml_bundle,
-        yaml_desired_target_shape_invalid,
+        DiscoveryRunMode, MediaService, container_chapter_policy_supported,
+        container_metadata_policy_supported, ensure_discovery_mode_enabled,
+        ensure_execution_capability_snapshot, ensure_profile_compatibility_target_readiness,
+        ensure_profile_desired_target_readiness, map_data_error, map_detect_error,
+        parse_yaml_bundle, validate_yaml_bundle, yaml_desired_target_shape_invalid,
     };
     use anyhow::Context as _;
     use revaer_api::app::media::MediaServiceErrorKind;
@@ -3649,6 +3665,7 @@ mod tests {
             display_name: "Living room output".to_string(),
             container_format: container_format.to_string(),
             container_metadata_policy: "preserve".to_string(),
+            container_chapter_policy: "preserve".to_string(),
             streams,
         }
     }
@@ -3683,6 +3700,7 @@ mod tests {
                 display_name: "Empty target".to_string(),
                 container_format: "matroska".to_string(),
                 container_metadata_policy: "preserve".to_string(),
+                container_chapter_policy: "preserve".to_string(),
                 streams: Vec::new(),
             })
             .await;
@@ -3709,6 +3727,7 @@ mod tests {
                 display_name: "Bounded target".to_string(),
                 container_format: "matroska".to_string(),
                 container_metadata_policy: "preserve".to_string(),
+                container_chapter_policy: "preserve".to_string(),
                 streams: desired_target_streams(stream_count),
             }
         }
@@ -3742,6 +3761,7 @@ mod tests {
                     display_name: target_key.to_string(),
                     container_format: "matroska".to_string(),
                     container_metadata_policy: "preserve".to_string(),
+                    container_chapter_policy: "preserve".to_string(),
                     streams: desired_target_streams(stream_count),
                 })
                 .await?;
@@ -3778,6 +3798,7 @@ mod tests {
                 display_name: "Over limit target".to_string(),
                 container_format: "matroska".to_string(),
                 container_metadata_policy: "preserve".to_string(),
+                container_chapter_policy: "preserve".to_string(),
                 streams: desired_target_streams(MAX_DESIRED_TARGET_STREAMS + 1),
             })
             .await
@@ -4242,6 +4263,13 @@ mod tests {
     }
 
     #[test]
+    fn yaml_container_chapter_policy_accepts_strip_only_as_implemented_rewrite() {
+        assert!(container_chapter_policy_supported("preserve"));
+        assert!(container_chapter_policy_supported(" Strip "));
+        assert!(!container_chapter_policy_supported("rewrite"));
+    }
+
+    #[test]
     fn validate_yaml_bundle_reports_version_shape_and_profile_errors() {
         let bundle = parse_yaml_bundle(
             "format_version: 2\nkind: revaer.media.profile_bundle\nmetadata:\n  name: Invalid\nprofiles:\n  - profile_key: tv\n    source_root: /data\n    output_root: /data\n    dry_run_only: false\n    retention_days: 0\n",
@@ -4550,6 +4578,7 @@ mod tests {
                 display_name: "Portable ordered target".to_string(),
                 container_format: "matroska".to_string(),
                 container_metadata_policy: "preserve".to_string(),
+                container_chapter_policy: "preserve".to_string(),
                 streams: vec![
                     desired_video_stream(),
                     desired_audio_stream(),
@@ -4630,6 +4659,7 @@ mod tests {
             .ok_or_else(|| anyhow::anyhow!("imported target missing"))?;
         assert_eq!(target.version, 4);
         assert_eq!(target.container_metadata_policy, "preserve");
+        assert_eq!(target.container_chapter_policy, "preserve");
         assert_eq!(
             target
                 .streams
@@ -4667,11 +4697,13 @@ mod tests {
                 display_name: "Living room output".to_string(),
                 container_format: "matroska".to_string(),
                 container_metadata_policy: "preserve".to_string(),
+                container_chapter_policy: "preserve".to_string(),
                 streams: vec![desired_video_stream(), desired_audio_stream()],
             })
             .await?;
         assert_eq!(desired.target_key, "living-room-output");
         assert_eq!(desired.container_metadata_policy, "preserve");
+        assert_eq!(desired.container_chapter_policy, "preserve");
         assert_eq!(desired.streams.len(), 2);
         let listed = service.media_desired_target_list().await?;
         assert!(listed.iter().any(|target| {

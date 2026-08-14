@@ -48,6 +48,27 @@ pub struct MediaStream {
     pub dispositions: Vec<String>,
 }
 
+/// Normalized container metadata entry retained for exact graph comparison.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ContainerMetadataEntry {
+    /// Lowercase metadata key.
+    pub key: String,
+    /// Trimmed metadata value.
+    pub value: String,
+}
+
+/// Normalized container chapter timeline entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContainerChapterEntry {
+    /// Inclusive chapter start in milliseconds.
+    pub start_millis: i64,
+    /// Exclusive chapter end in milliseconds.
+    pub end_millis: i64,
+    /// Exact normalized chapter metadata rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metadata: Vec<ContainerMetadataEntry>,
+}
+
 /// Input media graph discovered from source media.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaGraph {
@@ -56,6 +77,9 @@ pub struct MediaGraph {
     /// Canonical container format names reported by the demuxer.
     #[serde(default)]
     pub container_formats: Vec<String>,
+    /// Ordered normalized chapter timeline observed in the source container.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_chapters: Vec<ContainerChapterEntry>,
     /// Ordered stream list as observed in container order.
     pub streams: Vec<MediaStream>,
 }
@@ -80,6 +104,12 @@ pub struct DesiredGraph {
     /// Desired container metadata policy when a target selects one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_metadata_policy: Option<String>,
+    /// Desired container chapter policy when a target selects one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_chapter_policy: Option<String>,
+    /// Exact normalized chapter timeline required by the selected policy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_chapters: Vec<ContainerChapterEntry>,
     /// Explicit source binding for every desired output stream.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stream_bindings: Vec<DesiredStreamBinding>,
