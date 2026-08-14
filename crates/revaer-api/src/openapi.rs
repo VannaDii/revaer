@@ -660,17 +660,28 @@ fn media_job_lifecycle_paths() -> Vec<(&'static str, Value)> {
                 MediaParameterSet::PathUuid("media_job_public_id"),
             ),
         ),
-        media_single_path(
+        media_path(
             "/v1/media/jobs/{media_job_public_id}/phases",
-            media_op(
-                "post",
-                "Append a media job phase",
-                "204",
-                "Media job phase appended",
-                None,
-                Some("MediaJobPhaseAppendRequest"),
-                MediaParameterSet::PathUuid("media_job_public_id"),
-            ),
+            [
+                media_op(
+                    "get",
+                    "List media job phases",
+                    "200",
+                    "Media job phases",
+                    Some("MediaJobPhaseListResponse"),
+                    None,
+                    MediaParameterSet::PathUuid("media_job_public_id"),
+                ),
+                media_op(
+                    "post",
+                    "Append a media job phase",
+                    "204",
+                    "Media job phase appended",
+                    None,
+                    Some("MediaJobPhaseAppendRequest"),
+                    MediaParameterSet::PathUuid("media_job_public_id"),
+                ),
+            ],
         ),
     ]
 }
@@ -1508,7 +1519,7 @@ fn media_job_schemas() -> Vec<(&'static str, Value)> {
     let mut schemas = Vec::new();
     schemas.extend(media_job_core_schemas());
     schemas.extend(media_job_recent_schemas());
-    schemas.push(media_job_phase_schema());
+    schemas.extend(media_job_phase_schemas());
     schemas.extend(media_job_operation_schemas());
     schemas.extend(media_job_violation_schemas());
     schemas.extend(media_job_plan_reason_schemas());
@@ -1629,18 +1640,19 @@ fn media_job_recent_schemas() -> Vec<(&'static str, Value)> {
     ]
 }
 
-fn media_job_phase_schema() -> (&'static str, Value) {
-    (
+fn media_job_phase_schemas() -> Vec<(&'static str, Value)> {
+    media_job_append_record_schemas(
         "MediaJobPhaseAppendRequest",
-        object_schema(
-            &["phase_index", "phase_name", "phase_status"],
-            [
-                ("phase_index", integer_schema()),
-                ("phase_name", string_schema()),
-                ("phase_status", media_status_schema()),
-                ("details_text", string_schema()),
-            ],
-        ),
+        "MediaJobPhaseResponse",
+        "MediaJobPhaseListResponse",
+        "phases",
+        &["phase_index", "phase_name", "phase_status"],
+        [
+            schema_property("phase_index", SchemaKind::Integer),
+            schema_property("phase_name", SchemaKind::String),
+            schema_property("phase_status", SchemaKind::MediaStatus),
+            schema_property("details_text", SchemaKind::String),
+        ],
     )
 }
 
@@ -2040,6 +2052,7 @@ enum SchemaKind {
     Integer,
     Boolean,
     DateTime,
+    MediaStatus,
     OperationKind,
     ViolationSeverity,
     VerificationStatus,
@@ -2052,6 +2065,7 @@ impl SchemaKind {
             Self::Integer => integer_schema(),
             Self::Boolean => bool_schema(),
             Self::DateTime => date_time_schema(),
+            Self::MediaStatus => media_status_schema(),
             Self::OperationKind => operation_kind_schema(),
             Self::ViolationSeverity => violation_severity_schema(),
             Self::VerificationStatus => verification_check_status_schema(),
@@ -2246,78 +2260,6 @@ pub fn openapi_output_path() -> PathBuf {
 mod tests {
     use super::*;
 
-    const MEDIA_SCHEMA_NAMES: &[&str] = &[
-        "MediaProfileUpsertRequest",
-        "MediaProfilePatchRequest",
-        "MediaProfileListResponse",
-        "MediaProfileResponse",
-        "MediaProfileValidationResponse",
-        "MediaCompatibilityTargetResponse",
-        "MediaCompatibilityTargetListResponse",
-        "MediaCompatibilityTargetUpsertRequest",
-        "MediaDesiredTargetStream",
-        "MediaDesiredTargetCreateRequest",
-        "MediaDesiredTargetResponse",
-        "MediaDesiredTargetListResponse",
-        "MediaProfileDesiredTargetRequest",
-        "MediaPolicyResponse",
-        "MediaPolicyListResponse",
-        "MediaPolicyUpsertRequest",
-        "MediaJobRetentionResponse",
-        "MediaJobRetentionUpdateRequest",
-        "MediaPlanningPreviewRequest",
-        "MediaPlanningPreviewResponse",
-        "MediaDiscoveryPreviewRequest",
-        "MediaDiscoveryPreviewItemResponse",
-        "MediaDiscoveryPreviewResponse",
-        "MediaDiscoveryRunRequest",
-        "MediaDiscoveryQueuedJobResponse",
-        "MediaDiscoverySkippedItemResponse",
-        "MediaDiscoveryRunResponse",
-        "MediaDiscoveryScheduleResponse",
-        "MediaDiscoveryScheduleListResponse",
-        "MediaDiscoveryWatcherResponse",
-        "MediaDiscoveryWatcherListResponse",
-        "MediaJobCreateRequest",
-        "MediaJobCreateResponse",
-        "MediaJobListResponse",
-        "MediaJobResponse",
-        "MediaRecentJobPageResponse",
-        "MediaRecentJobSummaryResponse",
-        "MediaJobDiagnosticCounts",
-        "MediaJobDiagnosticsResponse",
-        "MediaJobPhaseAppendRequest",
-        "MediaJobOperationAppendRequest",
-        "MediaJobOperationListResponse",
-        "MediaJobOperationResponse",
-        "MediaJobViolationAppendRequest",
-        "MediaJobViolationListResponse",
-        "MediaJobViolationResponse",
-        "MediaJobPlanReasonAppendRequest",
-        "MediaJobPlanReasonListResponse",
-        "MediaJobPlanReasonResponse",
-        "MediaJobVerificationCheckAppendRequest",
-        "MediaJobVerificationCheckListResponse",
-        "MediaJobVerificationCheckResponse",
-        "MediaJobArtifactAppendRequest",
-        "MediaJobArtifactListResponse",
-        "MediaJobArtifactResponse",
-        "MediaJobCompactAuditAppendRequest",
-        "MediaJobCompactAuditListResponse",
-        "MediaJobCompactAuditResponse",
-        "MediaCapabilityRefreshResponse",
-        "MediaCapabilityCodecResponse",
-        "MediaCapabilityFeatureResponse",
-        "MediaCapabilityLatestResponse",
-        "MediaCapabilityReadinessResponse",
-        "MediaCapabilitySnapshotResponse",
-        "MediaComplianceResponse",
-        "MediaYamlExportResponse",
-        "MediaYamlImportRequest",
-        "MediaYamlIssueResponse",
-        "MediaYamlValidationResponse",
-        "MediaYamlApplyResponse",
-    ];
     use crate::openapi_assets::OPENAPI_FILENAME;
     use serde_json::json;
     use std::io;
@@ -2438,6 +2380,81 @@ mod tests {
 
         Ok(())
     }
+
+    const MEDIA_SCHEMA_NAMES: &[&str] = &[
+        "MediaProfileUpsertRequest",
+        "MediaProfilePatchRequest",
+        "MediaProfileListResponse",
+        "MediaProfileResponse",
+        "MediaProfileValidationResponse",
+        "MediaCompatibilityTargetResponse",
+        "MediaCompatibilityTargetListResponse",
+        "MediaCompatibilityTargetUpsertRequest",
+        "MediaDesiredTargetStream",
+        "MediaDesiredTargetCreateRequest",
+        "MediaDesiredTargetResponse",
+        "MediaDesiredTargetListResponse",
+        "MediaProfileDesiredTargetRequest",
+        "MediaPolicyResponse",
+        "MediaPolicyListResponse",
+        "MediaPolicyUpsertRequest",
+        "MediaJobRetentionResponse",
+        "MediaJobRetentionUpdateRequest",
+        "MediaPlanningPreviewRequest",
+        "MediaPlanningPreviewResponse",
+        "MediaDiscoveryPreviewRequest",
+        "MediaDiscoveryPreviewItemResponse",
+        "MediaDiscoveryPreviewResponse",
+        "MediaDiscoveryRunRequest",
+        "MediaDiscoveryQueuedJobResponse",
+        "MediaDiscoverySkippedItemResponse",
+        "MediaDiscoveryRunResponse",
+        "MediaDiscoveryScheduleResponse",
+        "MediaDiscoveryScheduleListResponse",
+        "MediaDiscoveryWatcherResponse",
+        "MediaDiscoveryWatcherListResponse",
+        "MediaJobCreateRequest",
+        "MediaJobCreateResponse",
+        "MediaJobListResponse",
+        "MediaJobResponse",
+        "MediaRecentJobPageResponse",
+        "MediaRecentJobSummaryResponse",
+        "MediaJobDiagnosticCounts",
+        "MediaJobDiagnosticsResponse",
+        "MediaJobPhaseAppendRequest",
+        "MediaJobPhaseListResponse",
+        "MediaJobPhaseResponse",
+        "MediaJobOperationAppendRequest",
+        "MediaJobOperationListResponse",
+        "MediaJobOperationResponse",
+        "MediaJobViolationAppendRequest",
+        "MediaJobViolationListResponse",
+        "MediaJobViolationResponse",
+        "MediaJobPlanReasonAppendRequest",
+        "MediaJobPlanReasonListResponse",
+        "MediaJobPlanReasonResponse",
+        "MediaJobVerificationCheckAppendRequest",
+        "MediaJobVerificationCheckListResponse",
+        "MediaJobVerificationCheckResponse",
+        "MediaJobArtifactAppendRequest",
+        "MediaJobArtifactListResponse",
+        "MediaJobArtifactResponse",
+        "MediaJobCompactAuditAppendRequest",
+        "MediaJobCompactAuditListResponse",
+        "MediaJobCompactAuditResponse",
+        "MediaCapabilityRefreshResponse",
+        "MediaCapabilityCodecResponse",
+        "MediaCapabilityFeatureResponse",
+        "MediaCapabilityLatestResponse",
+        "MediaCapabilityReadinessResponse",
+        "MediaCapabilitySnapshotResponse",
+        "MediaComplianceResponse",
+        "MediaYamlExportResponse",
+        "MediaYamlImportRequest",
+        "MediaYamlIssueResponse",
+        "MediaYamlValidationResponse",
+        "MediaYamlApplyResponse",
+    ];
 
     #[test]
     fn openapi_document_exports_media_schemas() -> Result<(), Box<dyn std::error::Error>> {

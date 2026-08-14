@@ -13,10 +13,11 @@ use revaer_api::app::media::{
     MediaDiscoverySkippedItemResponse, MediaFacade, MediaJobArtifactAppendParams,
     MediaJobArtifactResponse, MediaJobCompactAuditAppendParams, MediaJobCompactAuditResponse,
     MediaJobCreateParams, MediaJobOperationAppendParams, MediaJobOperationResponse,
-    MediaJobPhaseAppendParams, MediaJobPlanReasonAppendParams, MediaJobPlanReasonResponse,
-    MediaJobResponse, MediaJobRetentionResponse as AppMediaJobRetentionResponse,
-    MediaJobRetentionUpdateParams, MediaJobVerificationCheckAppendParams,
-    MediaJobVerificationCheckResponse, MediaJobViolationAppendParams, MediaJobViolationResponse,
+    MediaJobPhaseAppendParams, MediaJobPhaseResponse, MediaJobPlanReasonAppendParams,
+    MediaJobPlanReasonResponse, MediaJobResponse,
+    MediaJobRetentionResponse as AppMediaJobRetentionResponse, MediaJobRetentionUpdateParams,
+    MediaJobVerificationCheckAppendParams, MediaJobVerificationCheckResponse,
+    MediaJobViolationAppendParams, MediaJobViolationResponse,
     MediaPolicyResponse as AppMediaPolicyResponse, MediaPolicyUpsertParams,
     MediaProfileDesiredTargetParams, MediaProfilePatchParams, MediaProfileResponse,
     MediaProfileUpsertParams, MediaRecentJobPageResponse, MediaRecentJobSummaryResponse,
@@ -958,6 +959,27 @@ impl MediaFacade for MediaService {
                 params.details_text,
             )
             .await
+            .map_err(|err| map_data_error(&err))
+    }
+
+    async fn media_job_phase_list(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> Result<Vec<MediaJobPhaseResponse>, MediaServiceError> {
+        self.store
+            .list_job_phases(media_job_public_id)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| MediaJobPhaseResponse {
+                        phase_index: row.phase_index,
+                        phase_name: row.phase_name,
+                        phase_status: row.phase_status,
+                        details_text: row.details_text,
+                        created_at: row.created_at,
+                    })
+                    .collect()
+            })
             .map_err(|err| map_data_error(&err))
     }
 
@@ -4477,6 +4499,12 @@ mod tests {
                 .await?
                 .is_empty()
         );
+        let phases = service.media_job_phase_list(job_id).await?;
+        assert_eq!(phases.len(), 1);
+        assert_eq!(phases[0].phase_index, 0);
+        assert_eq!(phases[0].phase_name, "plan");
+        assert_eq!(phases[0].phase_status, "queued");
+        assert_eq!(phases[0].details_text.as_deref(), Some("ok"));
         assert_eq!(service.media_job_operation_list(job_id).await?.len(), 1);
         let violations = service.media_job_violation_list(job_id).await?;
         assert_eq!(violations.len(), 1);
