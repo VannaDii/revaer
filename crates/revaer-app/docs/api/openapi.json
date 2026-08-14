@@ -2234,6 +2234,46 @@
           "policy_key": {
             "type": "string"
           },
+          "unmatched_attachment_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "unmatched_audio_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "unmatched_data_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "unmatched_subtitle_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "unmatched_video_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
+            "type": "string"
+          },
           "verification_decode_all_streams": {
             "type": "boolean"
           },
@@ -2272,6 +2312,11 @@
           "version",
           "display_name",
           "video_intent",
+          "unmatched_video_action",
+          "unmatched_audio_action",
+          "unmatched_subtitle_action",
+          "unmatched_attachment_action",
+          "unmatched_data_action",
           "verification_strictness",
           "verification_duration_tolerance_millis",
           "verification_mux_validation",
@@ -2287,6 +2332,46 @@
             "type": "string"
           },
           "policy_key": {
+            "type": "string"
+          },
+          "unmatched_attachment_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "unmatched_audio_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "unmatched_data_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "unmatched_subtitle_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
+            "type": "string"
+          },
+          "unmatched_video_action": {
+            "enum": [
+              "remove",
+              "preserve",
+              "fail"
+            ],
             "type": "string"
           },
           "verification_decode_all_streams": {
