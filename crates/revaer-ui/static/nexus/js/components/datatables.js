@@ -411,6 +411,7 @@ const tableData = [
 ].map((data) => {
     return {
         ...data,
+        avatar: data.avatar.replace(".png", ".svg"),
         dateTime: new Date(Date.now() - 1000 * 60 * 60 * Math.floor(Math.random() * 24 * 100)),
     }
 })
