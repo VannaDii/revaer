@@ -559,13 +559,7 @@ mod tests {
 
     #[tokio::test]
     async fn upsert_and_list_media_profile() -> anyhow::Result<()> {
-        let db = match setup_media_db("upsert_and_list_media_profile").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("upsert_and_list_media_profile").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -596,11 +590,7 @@ mod tests {
 
     #[tokio::test]
     async fn profile_upsert_enforces_media_key_boundary() -> anyhow::Result<()> {
-        let db = match setup_media_db("profile_upsert_enforces_media_key_boundary").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => return Err(err),
-        };
+        let db = setup_media_db("profile_upsert_enforces_media_key_boundary").await?;
         let exact = format!("a{}z", "b".repeat(126));
         let exact_id = upsert_profile(&db, &exact, "/input/exact-key", "/output/exact-key").await?;
         assert_ne!(exact_id, Uuid::nil());
@@ -619,13 +609,7 @@ mod tests {
 
     #[tokio::test]
     async fn upsert_rejects_automation_without_verified_roots() -> anyhow::Result<()> {
-        let db = match setup_media_db("upsert_rejects_automation_without_verified_roots").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("upsert_rejects_automation_without_verified_roots").await?;
         let error = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -654,13 +638,7 @@ mod tests {
 
     #[tokio::test]
     async fn reject_overlapping_roots() -> anyhow::Result<()> {
-        let db = match setup_media_db("reject_overlapping_roots").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("reject_overlapping_roots").await?;
         let result = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -728,13 +706,7 @@ mod tests {
 
     #[tokio::test]
     async fn reject_discovery_roots_claimed_by_another_profile() -> anyhow::Result<()> {
-        let db = match setup_media_db("reject_discovery_roots_claimed_by_another_profile").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("reject_discovery_roots_claimed_by_another_profile").await?;
 
         let temp = TestDirectory::new()?;
         let owner_source_path = temp.0.join("library/movies");
@@ -835,11 +807,7 @@ mod tests {
 
     #[tokio::test]
     async fn reject_any_root_claimed_by_another_profile() -> anyhow::Result<()> {
-        let db = match setup_media_db("reject_any_root_claimed_by_another_profile").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => return Err(err),
-        };
+        let db = setup_media_db("reject_any_root_claimed_by_another_profile").await?;
 
         upsert_profile(
             &db,
@@ -887,11 +855,7 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_upserts_cannot_claim_overlapping_roots() -> anyhow::Result<()> {
-        let db = match setup_media_db("concurrent_upserts_cannot_claim_overlapping_roots").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => return Err(err),
-        };
+        let db = setup_media_db("concurrent_upserts_cannot_claim_overlapping_roots").await?;
 
         let first = profile_input(
             db.system_user_public_id,
@@ -953,13 +917,7 @@ mod tests {
 
     #[tokio::test]
     async fn upsert_rejects_unknown_catalog_refs() -> anyhow::Result<()> {
-        let db = match setup_media_db("upsert_rejects_unknown_catalog_refs").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("upsert_rejects_unknown_catalog_refs").await?;
 
         let missing_target = upsert_media_profile(
             db.pool(),
@@ -1012,13 +970,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_rejects_unknown_catalog_refs() -> anyhow::Result<()> {
-        let db = match setup_media_db("update_rejects_unknown_catalog_refs").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("update_rejects_unknown_catalog_refs").await?;
         let profile_id = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
@@ -1088,15 +1040,8 @@ mod tests {
 
     #[tokio::test]
     async fn upsert_profile_with_executor_accepts_transaction_executor() -> anyhow::Result<()> {
-        let db = match setup_media_db("upsert_profile_with_executor_accepts_transaction_executor")
-            .await
-        {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db =
+            setup_media_db("upsert_profile_with_executor_accepts_transaction_executor").await?;
 
         let mut transaction = db.pool().begin().await?;
         let profile_id = upsert_media_profile_with_executor(

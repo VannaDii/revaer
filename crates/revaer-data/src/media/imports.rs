@@ -142,9 +142,7 @@ mod tests {
     #[tokio::test]
     async fn unresolved_import_draft_round_trips_and_deletes_transactionally() -> anyhow::Result<()>
     {
-        let Some(db) = setup_media_db("media YAML import draft round trip").await? else {
-            return Ok(());
-        };
+        let db = setup_media_db("media YAML import draft round trip").await?;
         let mut transaction = db.pool().begin().await?;
         let draft_id = upsert_media_profile_import_draft_with_executor(
             &mut *transaction,

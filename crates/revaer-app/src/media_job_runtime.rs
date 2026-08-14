@@ -9292,7 +9292,7 @@ mod tests {
         dry_run: bool,
         record_capability: bool,
         job_target: RuntimeJobTarget,
-    ) -> anyhow::Result<Option<RuntimeFixture>> {
+    ) -> anyhow::Result<RuntimeFixture> {
         setup_runtime_with_unmatched_data_action(dry_run, record_capability, job_target, "remove")
             .await
     }
@@ -9302,10 +9302,8 @@ mod tests {
         record_capability: bool,
         job_target: RuntimeJobTarget,
         unmatched_data_action: &str,
-    ) -> anyhow::Result<Option<RuntimeFixture>> {
-        let Ok(postgres) = start_postgres() else {
-            return Ok(None);
-        };
+    ) -> anyhow::Result<RuntimeFixture> {
+        let postgres = start_postgres()?;
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect(postgres.connection_string())
@@ -9362,7 +9360,7 @@ mod tests {
             telemetry.clone(),
             workspace_root,
         );
-        Ok(Some(RuntimeFixture {
+        Ok(RuntimeFixture {
             _postgres: postgres,
             temp,
             runtime,
@@ -9371,7 +9369,7 @@ mod tests {
             events,
             telemetry,
             command_runner,
-        }))
+        })
     }
 
     async fn enqueue_runtime_test_job(
@@ -9574,9 +9572,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_completes_dry_run_without_command_execution() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await?;
         let before = recursive_tree_snapshot(fixture.temp.path())?;
 
         fixture.runtime.run_tick().await?;
@@ -9724,9 +9720,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_executes_non_dry_run_with_injected_runner() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -9806,9 +9800,7 @@ mod tests {
     #[tokio::test]
     async fn media_job_runtime_rejects_source_change_after_snapshot_before_execution()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         let source_path = fixture.temp.path().join("input/movie.mkv");
         fixture.runtime.inspector = Arc::new(SourceMutatingInspector {
             original_source: source_path.clone(),
@@ -9840,9 +9832,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_video_constraint_mismatch() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(VideoConstraintMismatchInspector) as Arc<RuntimeInspector>;
         let source_path = PathBuf::from(
@@ -9888,9 +9878,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_hdr10_missing_side_data() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(HdrSideDataMismatchInspector) as Arc<RuntimeInspector>;
         let source_path = PathBuf::from(
             fixture
@@ -9935,10 +9923,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_audio_constraint_mismatch() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?;
         fixture.runtime.inspector =
             Arc::new(AudioConstraintMismatchInspector) as Arc<RuntimeInspector>;
         let source_path = PathBuf::from(
@@ -10005,10 +9990,7 @@ mod tests {
 
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_audio_loudness_mismatch() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?;
         fixture.runtime.inspector = Arc::new(AudioPolicyInspector) as Arc<RuntimeInspector>;
         fixture.runtime.audio_analyzer = Arc::new(StaticAudioAnalyzer {
             measurement: Ok(AudioMeasurement {
@@ -10076,10 +10058,7 @@ mod tests {
     #[tokio::test]
     async fn media_job_runtime_cancels_active_audio_analysis_and_removes_candidate()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcAudio).await?;
         fixture.runtime.inspector = Arc::new(AudioPolicyInspector) as Arc<RuntimeInspector>;
         let analyzer = Arc::new(CancellationAwareAudioAnalyzer::default());
         fixture.runtime.audio_analyzer = Arc::clone(&analyzer) as Arc<RuntimeAudioAnalyzer>;
@@ -10558,9 +10537,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_spawn_exits_when_shutdown_already_requested() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
         let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
         assert!(runtime_shutdown::request(&shutdown_tx));
         let runtime_task = fixture.runtime.spawn(shutdown_rx);
@@ -10580,9 +10557,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_shutdown_after_claim_cancels_without_workspace() -> anyhow::Result<()>
     {
-        let Some(fixture) = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
             .store
             .claim_next_job()
@@ -10617,9 +10592,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_cancels_active_transcode_and_removes_candidate() -> anyhow::Result<()>
     {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let runner = Arc::new(CancellationAwareCommandRunner::default());
         fixture.runtime.command_runner = Arc::clone(&runner) as Arc<RuntimeCommandRunner>;
@@ -10654,9 +10627,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_shutdown_cancels_active_transcode_and_removes_candidate()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let runner = Arc::new(CancellationAwareCommandRunner::default());
         fixture.runtime.command_runner = Arc::clone(&runner) as Arc<RuntimeCommandRunner>;
@@ -10690,9 +10661,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_cancels_active_verification_before_replacement() -> anyhow::Result<()>
     {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let verifier = Arc::new(CancellationAwareVerificationExecutor::default());
         fixture.runtime.verification_executor =
@@ -10728,9 +10697,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_shutdown_cancels_active_verification_before_replacement()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let verifier = Arc::new(CancellationAwareVerificationExecutor::default());
         fixture.runtime.verification_executor =
@@ -10765,9 +10732,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_discards_prepared_replacement_when_cancelled_before_commit()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let committer = Arc::new(PreCommitCancellationCommitter::default());
         fixture.runtime.replacement_committer =
@@ -10805,9 +10770,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_completes_finalized_replacement_after_late_cancel()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let committer = Arc::new(PostFinalizeCancellationCommitter::default());
         fixture.runtime.replacement_committer =
@@ -10871,9 +10834,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_completes_non_dry_run_noop_without_command_execution()
     -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await?;
 
         fixture.runtime.run_tick().await?;
 
@@ -10906,9 +10867,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_publishes_non_dry_run_lifecycle_events() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         let mut stream = fixture.events.subscribe(None);
 
@@ -10956,9 +10915,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_low_workspace_capacity_before_execution()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.capacity_probe =
             Arc::new(StaticCapacityProbe { available_bytes: 0 }) as Arc<RuntimeCapacityProbe>;
 
@@ -10989,9 +10946,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_quarantines_partial_candidate_on_command_failure()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.command_runner =
             Arc::new(PartialOutputFailingCommandRunner) as Arc<RuntimeCommandRunner>;
         let source_path = PathBuf::from(
@@ -11042,9 +10997,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_preserves_command_failure_when_cancellation_races_after_output()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         let runner = Arc::new(CancellationRacingPartialOutputFailingCommandRunner::default());
         fixture.runtime.command_runner = Arc::clone(&runner) as Arc<RuntimeCommandRunner>;
         let source_path = PathBuf::from(
@@ -11089,9 +11042,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_quarantines_mismatched_candidate_before_replacement()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(CandidateMismatchInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -11123,9 +11074,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_that_drops_source_chapters() -> anyhow::Result<()>
     {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(CandidateDropsChaptersInspector) as Arc<RuntimeInspector>;
 
@@ -11155,9 +11104,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_that_adds_source_chapters() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(CandidateAddsChaptersInspector) as Arc<RuntimeInspector>;
 
@@ -11188,9 +11135,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_that_drops_source_container_metadata()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(CandidateDropsContainerMetadataInspector) as Arc<RuntimeInspector>;
 
@@ -11221,9 +11166,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_candidate_that_adds_container_metadata() -> anyhow::Result<()>
     {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(CandidateAddsContainerMetadataInspector) as Arc<RuntimeInspector>;
 
@@ -11254,10 +11197,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_strips_container_metadata_when_policy_selects_strip()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::HevcStrip).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcStrip).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -11296,11 +11236,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_strips_container_chapters_when_policy_selects_strip()
     -> anyhow::Result<()> {
-        let Some(mut fixture) =
-            setup_runtime(false, true, RuntimeJobTarget::HevcStripChapters).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcStripChapters).await?;
         fixture.runtime.inspector = Arc::new(ChapterStripInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -11369,11 +11305,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_replaces_container_chapters_when_policy_selects_replace()
     -> anyhow::Result<()> {
-        let Some(mut fixture) =
-            setup_runtime(false, true, RuntimeJobTarget::HevcReplaceChapters).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcReplaceChapters).await?;
         fixture.runtime.inspector = Arc::new(ChapterReplaceInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -11433,11 +11365,8 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_strips_container_attachments_when_policy_selects_strip()
     -> anyhow::Result<()> {
-        let Some(mut fixture) =
-            setup_runtime(false, true, RuntimeJobTarget::HevcStripAttachments).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture =
+            setup_runtime(false, true, RuntimeJobTarget::HevcStripAttachments).await?;
         fixture.runtime.inspector = Arc::new(AttachmentStripInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -11483,9 +11412,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_preserves_unmatched_attachments_when_policy_preserves()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(AttachmentPassthroughInspector) as Arc<RuntimeInspector>;
 
@@ -11537,16 +11464,13 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_preserves_unmatched_data_when_policy_preserves() -> anyhow::Result<()>
     {
-        let Some(mut fixture) = setup_runtime_with_unmatched_data_action(
+        let mut fixture = setup_runtime_with_unmatched_data_action(
             false,
             true,
             RuntimeJobTarget::Hevc,
             "preserve",
         )
-        .await?
-        else {
-            return Ok(());
-        };
+        .await?;
         fixture.runtime.inspector = Arc::new(DataPassthroughInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -11601,10 +11525,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_strip_candidate_that_retains_container_metadata()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::HevcStrip).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcStrip).await?;
         fixture.runtime.inspector =
             Arc::new(CandidateRetainsContainerMetadataInspector) as Arc<RuntimeInspector>;
 
@@ -11637,9 +11558,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_probeable_truncated_candidate_before_replacement()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
         fixture.runtime.verification_executor =
             Arc::new(FailingDecodeVerificationExecutor) as Arc<RuntimeVerificationExecutor>;
@@ -11670,9 +11589,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_rolls_back_mismatched_committed_replacement() -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector = Arc::new(PostCommitMismatchInspector) as Arc<RuntimeInspector>;
 
         fixture.runtime.run_tick().await?;
@@ -11708,9 +11625,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rolls_back_committed_replacement_that_drops_chapters()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(PostCommitDropsChaptersInspector) as Arc<RuntimeInspector>;
 
@@ -11743,9 +11658,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rolls_back_committed_replacement_that_adds_chapters()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(PostCommitAddsChaptersInspector) as Arc<RuntimeInspector>;
 
@@ -11778,9 +11691,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rolls_back_committed_replacement_that_drops_container_metadata()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(PostCommitDropsContainerMetadataInspector) as Arc<RuntimeInspector>;
 
@@ -11813,11 +11724,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rejects_strip_candidate_that_retains_chapters() -> anyhow::Result<()>
     {
-        let Some(mut fixture) =
-            setup_runtime(false, true, RuntimeJobTarget::HevcStripChapters).await?
-        else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::HevcStripChapters).await?;
         fixture.runtime.inspector =
             Arc::new(CandidateRetainsChaptersInspector) as Arc<RuntimeInspector>;
 
@@ -11850,9 +11757,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rolls_back_committed_replacement_that_adds_container_metadata()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(PostCommitAddsContainerMetadataInspector) as Arc<RuntimeInspector>;
 
@@ -11885,9 +11790,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_rolls_back_committed_replacement_that_adds_sidecar()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         fixture.runtime.inspector =
             Arc::new(PostCommitAddsSidecarInspector) as Arc<RuntimeInspector>;
 
@@ -11917,9 +11820,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_completes_finalized_replacement_before_stale_recovery()
     -> anyhow::Result<()> {
-        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
-            return Ok(());
-        };
+        let mut fixture = setup_runtime(false, true, RuntimeJobTarget::Hevc).await?;
         let claimed = fixture
             .store
             .claim_next_job()
@@ -11969,9 +11870,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_publishes_stale_worker_failure_event() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
             .store
             .claim_next_job()
@@ -12009,9 +11908,7 @@ Integrated loudness:
     #[tokio::test]
     async fn media_job_runtime_recovers_stale_cancelled_job_without_failure_event()
     -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
             .store
             .claim_next_job()
@@ -12037,9 +11934,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn media_job_runtime_marks_missing_capability_failed() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, false, RuntimeJobTarget::SourceGraph).await?;
         let before = recursive_tree_snapshot(fixture.temp.path())?;
 
         fixture.runtime.run_tick().await?;
@@ -13169,9 +13064,7 @@ Integrated loudness:
 
     #[tokio::test]
     async fn persist_ready_plan_records_filesystem_fallback_operations() -> anyhow::Result<()> {
-        let Some(fixture) = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await? else {
-            return Ok(());
-        };
+        let fixture = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await?;
         let claimed = fixture
             .store
             .claim_next_job()

@@ -420,13 +420,7 @@ mod tests {
 
     #[tokio::test]
     async fn record_capability_snapshot_row() -> anyhow::Result<()> {
-        let db = match setup_media_db("record_capability_snapshot_row").await {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => {
-                return Err(err);
-            }
-        };
+        let db = setup_media_db("record_capability_snapshot_row").await?;
         let snapshot_run_public_id = Uuid::new_v4();
         let mut transaction = db.pool().begin().await?;
         start_capability_snapshot_run_with_executor(
@@ -466,14 +460,7 @@ mod tests {
 
     #[tokio::test]
     async fn latest_capability_snapshot_returns_complete_latest_run() -> anyhow::Result<()> {
-        let db =
-            match setup_media_db("latest_capability_snapshot_returns_complete_latest_run").await {
-                Ok(Some(db)) => db,
-                Ok(None) => return Ok(()),
-                Err(err) => {
-                    return Err(err);
-                }
-            };
+        let db = setup_media_db("latest_capability_snapshot_returns_complete_latest_run").await?;
         let older_run_id = Uuid::new_v4();
         let latest_run_id = Uuid::new_v4();
         record_completed_codec_run(
@@ -592,13 +579,7 @@ mod tests {
 
     #[tokio::test]
     async fn latest_capability_snapshot_ignores_incomplete_latest_run() -> anyhow::Result<()> {
-        let db = match setup_media_db("latest_capability_snapshot_ignores_incomplete_latest_run")
-            .await
-        {
-            Ok(Some(db)) => db,
-            Ok(None) => return Ok(()),
-            Err(err) => return Err(err),
-        };
+        let db = setup_media_db("latest_capability_snapshot_ignores_incomplete_latest_run").await?;
         let completed_run_id = Uuid::new_v4();
         let incomplete_run_id = Uuid::new_v4();
 
