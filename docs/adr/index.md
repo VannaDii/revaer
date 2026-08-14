@@ -345,6 +345,7 @@
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
 -   [430](430-bounded-media-discovery-and-read-models.md) – Bounded media discovery and read models
 -   [431](431-lazy-media-job-diagnostics-ui.md) – Lazy media job diagnostics UI
+-   [432](432-docs-openapi-media-contract.md) – Docs OpenAPI media contract
 -   [433](433-media-api-source-service.md) – Media API source service
 -   [434](434-config-rng-cleanup.md) – Configuration RNG cleanup
 -   [436](436-app-openapi-media-contract.md) – App OpenAPI media contract
