@@ -33,6 +33,7 @@ const MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1: &str = "SELECT media_job_public_id,
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str =
     "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, status_input => $2::media_job_status, last_error_input => $3)";
+const MEDIA_JOB_WORKER_RECOVER_STALE_V1: &str = "SELECT media_job_public_id, status::text AS status_text, last_error FROM media_job_worker_recover_stale_v1(stale_after_seconds_input => $1)";
 const MEDIA_JOB_WORKER_POLL_CONTROL_V1: &str = "SELECT cancel_requested, cancel_generation FROM media_job_worker_poll_control_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
 const MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1: &str = "SELECT media_job_worker_acknowledge_cancel_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
 const MEDIA_JOB_WORKER_COMPLETE_V1: &str = "SELECT media_job_worker_complete_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
@@ -397,6 +398,17 @@ pub struct MediaJobControlRow {
     pub cancel_requested: bool,
     /// Current durable cancellation generation.
     pub cancel_generation: i64,
+}
+
+/// Media job recovered from an abandoned worker heartbeat.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct RecoveredMediaJobRow {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+    /// Terminal status assigned by recovery.
+    pub status_text: String,
+    /// Machine-readable failure detail for failed stale jobs.
+    pub last_error: Option<String>,
 }
 
 /// Ordered desired-target stream snapshotted for one job.
@@ -1042,6 +1054,24 @@ pub async fn media_job_worker_heartbeat(pool: &PgPool, media_job_public_id: Uuid
     Ok(())
 }
 
+/// Mark stale running/verifying media jobs terminal after their worker heartbeat expires.
+///
+/// Jobs with a pending cancellation become `cancelled`; other stale jobs become `failed`.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn media_job_worker_recover_stale(
+    pool: &PgPool,
+    stale_after_seconds: i32,
+) -> Result<Vec<RecoveredMediaJobRow>> {
+    sqlx::query_as::<_, RecoveredMediaJobRow>(MEDIA_JOB_WORKER_RECOVER_STALE_V1)
+        .bind(stale_after_seconds)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media job worker recover stale"))
+}
+
 /// Mark a claimed media job with the next worker-visible status.
 ///
 /// # Errors
@@ -1078,7 +1108,8 @@ mod tests {
         load_media_workspace_retention_snapshot, mark_media_job_completed,
         mark_media_job_terminal_outbox_published, media_job_worker_acknowledge_cancel,
         media_job_worker_claim_next, media_job_worker_commit_replacement_terminal,
-        media_job_worker_mark_status, media_job_worker_poll_control, run_media_job_retention,
+        media_job_worker_mark_status, media_job_worker_poll_control,
+        media_job_worker_recover_stale, retry_media_job, run_media_job_retention,
     };
     use crate::DataError;
     use crate::media::configuration::{
@@ -1774,6 +1805,95 @@ mod tests {
                 .await?
                 .is_empty()
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stale_worker_recovery_marks_abandoned_jobs_terminal() -> anyhow::Result<()> {
+        let db = match setup_media_db("stale_worker_recovery_marks_abandoned_jobs_terminal").await {
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
+            Err(err) => return Err(err),
+        };
+        let profile_id = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "stale-worker",
+                source_root: "/input/stale-worker",
+                output_root: "/output/stale-worker",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        let failed_job_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/stale-worker/failed.mkv",
+                output_path: Some("/output/stale-worker/failed.mkv"),
+                dry_run: true,
+            },
+        )
+        .await?;
+        let cancelled_job_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/stale-worker/cancelled.mkv",
+                output_path: Some("/output/stale-worker/cancelled.mkv"),
+                dry_run: true,
+            },
+        )
+        .await?;
+
+        let first_claim = media_job_worker_claim_next(db.pool()).await?;
+        let Some(first_claim) = first_claim else {
+            return Err(anyhow::anyhow!("first stale job was not claimed"));
+        };
+        assert_eq!(first_claim.media_job_public_id, failed_job_id);
+        let second_claim = media_job_worker_claim_next(db.pool()).await?;
+        let Some(second_claim) = second_claim else {
+            return Err(anyhow::anyhow!("second stale job was not claimed"));
+        };
+        assert_eq!(second_claim.media_job_public_id, cancelled_job_id);
+        cancel_media_job(db.pool(), cancelled_job_id).await?;
+
+        let recovered = media_job_worker_recover_stale(db.pool(), 0).await?;
+        assert_eq!(recovered.len(), 2);
+        assert!(recovered.iter().any(|job| {
+            job.media_job_public_id == failed_job_id
+                && job.status_text == "failed"
+                && job.last_error.as_deref() == Some("media_job_worker_heartbeat_stale")
+        }));
+        assert!(recovered.iter().any(|job| {
+            job.media_job_public_id == cancelled_job_id
+                && job.status_text == "cancelled"
+                && job.last_error.is_none()
+        }));
+
+        let failed_job = get_media_job(db.pool(), failed_job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("failed stale job missing"))?;
+        assert_eq!(failed_job.status_text, "failed");
+        assert_eq!(
+            failed_job.last_error.as_deref(),
+            Some("media_job_worker_heartbeat_stale")
+        );
+        retry_media_job(db.pool(), failed_job_id).await?;
+        let retried_job = get_media_job(db.pool(), failed_job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("retried stale job missing"))?;
+        assert_eq!(retried_job.status_text, "queued");
+        assert_eq!(retried_job.last_error, None);
         Ok(())
     }
 
