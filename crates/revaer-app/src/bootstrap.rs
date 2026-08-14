@@ -347,7 +347,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         telemetry.clone(),
         media_capability_detector,
     ));
-    refresh_startup_media_capabilities(&media, &events, &telemetry).await?;
+    refresh_startup_media_capabilities(&media, &events, &telemetry).await;
     let api = build_api_server(&config, &events, torrent_handles, telemetry.clone(), media)?;
     let indexer_runtime_task =
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
@@ -555,7 +555,7 @@ async fn refresh_startup_media_capabilities(
     media: &MediaService,
     events: &EventBus,
     telemetry: &Metrics,
-) -> AppResult<()> {
+) {
     match media
         .media_capability_refresh(MediaCapabilityRefreshParams {
             actor_user_public_id: SYSTEM_USER_PUBLIC_ID,
@@ -573,7 +573,6 @@ async fn refresh_startup_media_capabilities(
                     media_capability_snapshot_id: snapshot_id,
                 },
             );
-            Ok(())
         }
         Err(error) => {
             let code = error
@@ -596,7 +595,6 @@ async fn refresh_startup_media_capabilities(
                     degraded: vec!["media_capability".to_string()],
                 },
             );
-            Err(AppError::media("media_capability_refresh", error))
         }
     }
 }
