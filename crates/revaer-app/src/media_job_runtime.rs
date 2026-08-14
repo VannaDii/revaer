@@ -549,7 +549,8 @@ impl MediaJobRuntime {
         }
         let claimed = self.store.claim_next_job().await?;
         if let Some(job) = claimed {
-            self.process_job(job, Some(shutdown)).await;
+            self.process_claimed_job_with_shutdown(job, shutdown)
+                .await?;
         }
         Ok(())
     }
@@ -669,6 +670,37 @@ impl MediaJobRuntime {
                 self.telemetry.inc_media_workspace_cleanup("completed");
             }
         }
+    }
+
+    async fn process_claimed_job_with_shutdown(
+        &self,
+        job: ClaimedMediaJobRow,
+        shutdown: RuntimeShutdownReceiver,
+    ) -> Result<(), MediaJobRuntimeError> {
+        if runtime_shutdown::requested(&shutdown) {
+            self.cancel_claimed_job_for_shutdown(&job).await?;
+        } else {
+            self.process_job(job, Some(shutdown)).await;
+        }
+        Ok(())
+    }
+
+    async fn cancel_claimed_job_for_shutdown(
+        &self,
+        job: &ClaimedMediaJobRow,
+    ) -> Result<(), MediaJobRuntimeError> {
+        let started_at = Instant::now();
+        self.store.cancel_job(job.media_job_public_id).await?;
+        self.persist_cancellation(job).await?;
+        self.telemetry
+            .inc_media_job_outcome("cancelled", job.dry_run);
+        self.telemetry
+            .observe_media_job_duration("cancelled", job.dry_run, started_at.elapsed());
+        info!(
+            media_job_public_id = %job.media_job_public_id,
+            "media job runtime cancelled claimed job before shutdown"
+        );
+        Ok(())
     }
 
     async fn process_claimed_job(
@@ -6157,6 +6189,43 @@ Integrated loudness:
             .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
         assert_eq!(job.status_text, "queued");
         assert_eq!(job.last_error, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_shutdown_after_claim_cancels_without_workspace() -> anyhow::Result<()>
+    {
+        let Some(fixture) = setup_runtime(false, true, RuntimeJobTarget::SourceGraph).await? else {
+            return Ok(());
+        };
+        let claimed = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job was not claimed"))?;
+        assert_eq!(claimed.media_job_public_id, fixture.job_id);
+        let source_path = PathBuf::from(&claimed.source_path);
+        let workspace_output = fixture
+            .runtime
+            .workspace_root
+            .join(fixture.job_id.to_string())
+            .join("output");
+        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
+
+        assert!(runtime_shutdown::request(&shutdown_tx));
+        fixture
+            .runtime
+            .process_claimed_job_with_shutdown(claimed, shutdown_rx)
+            .await?;
+
+        assert_runtime_cancelled(
+            &fixture.store,
+            fixture.job_id,
+            &source_path,
+            &workspace_output,
+        )
+        .await?;
+        assert!(!workspace_output.parent().is_some_and(Path::exists));
         Ok(())
     }
 
