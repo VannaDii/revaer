@@ -1,0 +1,52 @@
+# Media desired-target readiness
+
+- Status: Accepted
+- Date: 2026-07-30
+- Context:
+  - ADR 356 exposed profile readiness and reused that decision before non-dry-run job admission, but the first evaluator slice only checked capability snapshot health and compatibility-target codec support.
+  - Profiles can also pin immutable desired targets that declare an output container and ordered stream codecs.
+  - A profile pinned to an unsupported desired target could still appear executable until runtime preflight failed after a job was queued.
+- Decision:
+  - Extend the shared profile execution-readiness decision to evaluate pinned desired targets before reporting `ready=true` or admitting a non-dry-run job.
+  - Reuse runtime capability helpers for source-independent desired-target validation so the app checks the same muxer normalization and policy-aware encoder fallback rules as command construction.
+  - Return stable readiness reason codes for missing desired targets, unsupported muxers, unsupported encoders, unsupported stream kinds, and invalid or missing policy profiles.
+  - Keep source-dependent `copy` viability, concrete stream binding, sidecar materialization, HDR/color transform validity, and final verification in runtime preflight because profile readiness has no inspected source graph.
+- Consequences:
+  - Operators get earlier, deterministic feedback when a profile's pinned desired target cannot be materialized by the latest worker capability snapshot.
+  - Direct non-dry-run jobs now fail before queueing when the pinned desired target requires an unavailable muxer or encoder.
+  - Readiness is stricter for source-independent profile evaluation: a desired codec must be encodable unless the desired stream explicitly declares `copy`.
+- Follow-up:
+  - Extend readiness with source-inspection-aware preflight when a concrete source path is available.
+  - Add CLI surface for profile readiness when the media command group is introduced.
+  - Continue moving source-dependent subtitle, HDR, color, and stream-binding diagnostics from late runtime failures into operator-visible preflight reports.
+
+## Task Record
+
+- Motivation:
+  - Move the media service closer to production readiness by preventing desired-target capability gaps from hiding behind a green profile readiness response.
+- Design notes:
+  - `validate_container_muxer_capability` and `validate_declared_stream_codec_capability` are public runtime helpers used by app readiness.
+  - App readiness converts the stored capability snapshot into the runtime capability model and applies the profile policy intent before checking desired-target stream encoders.
+  - The readiness endpoint and non-dry-run job admission now share `profile_execution_readiness_failure_code`.
+- Test coverage summary:
+  - `cargo fmt --all --check`
+  - `cargo test -p revaer-media-runtime declared_ -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features profile_desired_target_readiness -- --nocapture`
+  - `cargo check -p revaer-media-runtime --tests`
+  - A broader `cargo check -p revaer-media-runtime -p revaer-app --tests` was attempted, but the local native libtorrent headers fail before this change is checked.
+  - Remote PR API E2E coverage initially exposed stale discovery-test assumptions: manual discovery can validly return one skipped candidate instead of one queued job when fingerprint state is unchanged or unstable, and direct job creation should use its own fixture source rather than reusing a preview/discovery source. The API test now asserts the response contract and isolates the direct-job fixture.
+  - The API-key media coverage path then reached the Playwright default per-test timeout after progressing beyond the stale assertions. The comprehensive media API scenario now has an explicit 60-second timeout for coverage-instrumented CI while keeping the same assertions.
+  - Remote Sonar reported 79.94% new-code coverage against the strict 80% quality gate; additional focused app unit tests now cover missing desired-target reference, missing target, missing policy, invalid policy, unpinned profile, and unsupported stream-kind branches.
+- Observability updates:
+  - No new metrics or events. Existing readiness responses and job-admission errors now expose the new stable reason codes.
+- Status-doc validation:
+  - Rechecked `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, `.github/instructions/sonarqube_mcp.instructions.md`, ADR 356, `docs/adr/index.md`, and `docs/SUMMARY.md`.
+  - ADR 356 follow-up text was updated so desired-target muxer and encoder readiness is no longer listed as open.
+- Risk & rollback plan:
+  - Risk: profiles that previously queued a non-dry-run job and relied on source-specific stream copy may now report not ready unless the desired stream explicitly declares `copy`.
+  - Roll back by reverting this ADR and the app/runtime readiness helper changes.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No quality gate, Sonar, lint, dependency, stored-procedure, or Rust-edition criteria were relaxed.
