@@ -28,9 +28,8 @@ use crate::app::media::{
     MediaCapabilityRefreshParams, MediaDesiredTargetCreateParams,
     MediaDesiredTargetResponse as AppMediaDesiredTargetResponse, MediaDesiredTargetStreamParams,
     MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
-    MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse, MediaJobCreateParams,
-    MediaProfileDesiredTargetParams, MediaProfilePatchParams, MediaProfileUpsertParams,
-    MediaServiceError, MediaServiceErrorKind,
+    MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse, MediaProfileDesiredTargetParams,
+    MediaProfilePatchParams, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -45,26 +44,24 @@ use crate::models::{
     MediaDiscoveryRunRequest, MediaDiscoveryRunResponse, MediaDiscoveryScheduleListResponse,
     MediaDiscoveryScheduleResponse, MediaDiscoverySkippedItemResponse,
     MediaDiscoveryWatcherListResponse, MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse,
-    MediaJobCompactAuditListResponse, MediaJobCreateRequest, MediaJobCreateResponse,
-    MediaJobDiagnosticCounts, MediaJobDiagnosticsResponse, MediaJobListResponse,
-    MediaJobOperationListResponse, MediaJobPhaseListResponse, MediaJobPlanReasonListResponse,
-    MediaJobResponse, MediaJobRetentionResponse, MediaJobRetentionUpdateRequest,
-    MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
-    MediaPlanningPreviewRequest, MediaPlanningPreviewResponse, MediaPolicyListResponse,
-    MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileDesiredTargetRequest,
-    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileReadinessResponse,
-    MediaProfileResponse, MediaProfileUpsertRequest, MediaProfileValidationResponse,
-    MediaRecentJobPageResponse, MediaRecentJobSummaryResponse, MediaTextValidationError,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlIssueResponse, MediaYamlValidationResponse, validate_media_display,
-    validate_media_key,
+    MediaJobCompactAuditListResponse, MediaJobDiagnosticCounts, MediaJobDiagnosticsResponse,
+    MediaJobListResponse, MediaJobOperationListResponse, MediaJobPhaseListResponse,
+    MediaJobPlanReasonListResponse, MediaJobResponse, MediaJobRetentionResponse,
+    MediaJobRetentionUpdateRequest, MediaJobVerificationCheckListResponse,
+    MediaJobViolationListResponse, MediaPlanningPreviewRequest, MediaPlanningPreviewResponse,
+    MediaPolicyListResponse, MediaPolicyResponse, MediaPolicyUpsertRequest,
+    MediaProfileDesiredTargetRequest, MediaProfileListResponse, MediaProfilePatchRequest,
+    MediaProfileReadinessResponse, MediaProfileResponse, MediaProfileUpsertRequest,
+    MediaProfileValidationResponse, MediaRecentJobPageResponse, MediaRecentJobSummaryResponse,
+    MediaTextValidationError, MediaYamlApplyResponse, MediaYamlExportResponse,
+    MediaYamlImportRequest, MediaYamlIssueResponse, MediaYamlValidationResponse,
+    validate_media_display, validate_media_key,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
 const MEDIA_PROFILE_LIST_FAILED: &str = "failed to list media profiles";
 const MEDIA_PROFILE_READINESS_FAILED: &str = "failed to determine media profile readiness";
 const MEDIA_PROFILE_NOT_FOUND: &str = "media profile not found";
-const MEDIA_JOB_CREATE_FAILED: &str = "failed to create media job";
 const MEDIA_DISCOVERY_PREVIEW_FAILED: &str = "failed to preview media discovery";
 const MEDIA_DISCOVERY_RUN_FAILED: &str = "failed to run media discovery";
 const MEDIA_DISCOVERY_SCHEDULE_RUN_FAILED: &str = "failed to run scheduled media discovery";
@@ -714,40 +711,6 @@ pub(crate) async fn preview_media_planning(
         reason: preview.reason,
         dry_run: preview.dry_run,
     }))
-}
-
-pub(crate) async fn create_media_job(
-    State(state): State<Arc<ApiState>>,
-    Json(request): Json<MediaJobCreateRequest>,
-) -> Result<(StatusCode, Json<MediaJobCreateResponse>), ApiError> {
-    let source_path = normalize_required_str_field(&request.source_path, SOURCE_PATH_REQUIRED)?;
-    let output_path = trim_and_filter_empty(request.output_path.as_deref());
-
-    let media_job_public_id = state
-        .media
-        .media_job_create(MediaJobCreateParams {
-            actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
-            media_profile_public_id: request.media_profile_public_id,
-            source_path,
-            output_path,
-            dry_run: request.dry_run,
-            replace_confirmation: request.replace_confirmation.as_deref(),
-        })
-        .await
-        .map_err(|err| map_media_error("media_job_create", MEDIA_JOB_CREATE_FAILED, &err))?;
-
-    state.publish_event(CoreEvent::MediaJobQueued {
-        media_job_public_id,
-        media_profile_public_id: request.media_profile_public_id,
-        dry_run: request.dry_run,
-    });
-
-    Ok((
-        StatusCode::CREATED,
-        Json(MediaJobCreateResponse {
-            media_job_public_id,
-        }),
-    ))
 }
 
 pub(crate) async fn preview_media_discovery(
@@ -2805,25 +2768,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_media_job_maps_noop_storage_failure_to_internal() -> anyhow::Result<()> {
-        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let request = MediaJobCreateRequest {
-            media_profile_public_id: Uuid::new_v4(),
-            source_path: "/input/demo.mkv".to_string(),
-            output_path: Some("/output/demo.mkv".to_string()),
-            dry_run: true,
-            replace_confirmation: None,
-        };
-
-        let err = create_media_job(State(state), Json(request))
-            .await
-            .expect_err("noop media facade should fail writes");
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn preview_media_discovery_rejects_empty_source_paths() -> anyhow::Result<()> {
         let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
         let request = crate::models::MediaDiscoveryPreviewRequest {
@@ -3237,7 +3181,7 @@ mod tests {
     async fn map_media_error_preserves_capability_snapshot_missing_code() -> anyhow::Result<()> {
         let err = MediaServiceError::new(MediaServiceErrorKind::Invalid)
             .with_code("media_capability_snapshot_missing");
-        let api_error = map_media_error("media_job_create", MEDIA_JOB_CREATE_FAILED, &err);
+        let api_error = map_media_error("media_job_create", "failed to create media job", &err);
         let response = api_error.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
@@ -3255,7 +3199,7 @@ mod tests {
     async fn map_media_error_preserves_capability_snapshot_invalid_code() -> anyhow::Result<()> {
         let err = MediaServiceError::new(MediaServiceErrorKind::Invalid)
             .with_code("media_capability_snapshot_invalid");
-        let api_error = map_media_error("media_job_create", MEDIA_JOB_CREATE_FAILED, &err);
+        let api_error = map_media_error("media_job_create", "failed to create media job", &err);
         let response = api_error.into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 

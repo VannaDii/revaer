@@ -940,23 +940,6 @@ pub struct MediaDiscoveryWatcherListResponse {
     pub watchers: Vec<MediaDiscoveryWatcherResponse>,
 }
 
-/// Request payload for creating a media job.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MediaJobCreateRequest {
-    /// Profile public id.
-    pub media_profile_public_id: Uuid,
-    /// Source path.
-    pub source_path: String,
-    /// Output path.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_path: Option<String>,
-    /// Dry-run flag.
-    pub dry_run: bool,
-    /// Exact confirmation phrase required to override a dry-run profile.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub replace_confirmation: Option<String>,
-}
-
 /// Media job response row payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MediaJobResponse {
@@ -982,13 +965,6 @@ pub struct MediaJobResponse {
     /// Last error.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
-}
-
-/// Media job create response payload.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct MediaJobCreateResponse {
-    /// Job public id.
-    pub media_job_public_id: Uuid,
 }
 
 /// Media jobs list response payload.
