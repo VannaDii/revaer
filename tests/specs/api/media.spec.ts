@@ -281,6 +281,14 @@ test.describe('Media API', () => {
     expect(readiness.response.status).toBe(200);
     expect(typeof readiness.data?.ready).toBe('boolean');
 
+    const profileReadiness = await api.GET(
+      '/v1/media/profiles/{media_profile_public_id}/readiness',
+      { params: { path: { media_profile_public_id: profileId } } }
+    );
+    expect(profileReadiness.response.status).toBe(200);
+    expect(profileReadiness.data?.profile.media_profile_public_id).toBe(profileId);
+    expect(typeof profileReadiness.data?.ready).toBe('boolean');
+
     const refresh = await api.POST('/v1/media/capabilities/refresh');
     expect([201, 500, 503]).toContain(refresh.response.status);
 
