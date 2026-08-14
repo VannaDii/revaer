@@ -2,18 +2,23 @@
 
 use crate::capabilities::CapabilitySnapshot;
 use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
-use revaer_media_core::normalize::{normalize_container_format, normalize_subtitle_codec};
+use revaer_media_core::normalize::{
+    normalize_audio_channel_layout, normalize_container_format, normalize_subtitle_codec,
+};
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_core::target::{DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource};
 use revaer_media_core::verify::{verify_plan, verify_unique_stream_ids};
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, ChildStderr, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 use thiserror::Error;
+
+const MAX_EXECUTION_DETAIL_CHARS: usize = 2_048;
+const EXECUTION_TRUNCATION_MARKER: &str = "...[truncated]";
 
 /// Build error for command arguments.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -45,6 +50,12 @@ pub enum BuildArgsError {
     /// Desired graph stream identity resolves to a source stream with a different kind.
     #[error("desired graph stream kind does not match source stream: {0}")]
     DesiredStreamKindMismatch(u32),
+    /// Desired graph contains a retained inspection stream kind without a mutating contract.
+    #[error("desired graph stream kind is not supported for command materialization: {stream_id}")]
+    UnsupportedDesiredStreamKind {
+        /// Desired stream identity.
+        stream_id: u32,
+    },
     /// Source graph stream ids are ambiguous.
     #[error("source graph contains duplicate stream ids")]
     DuplicateSourceStreamIds,
@@ -81,12 +92,14 @@ pub enum ExecuteStepError {
     #[error("verified output is empty: {0}")]
     OutputEmpty(PathBuf),
     /// Command exited unsuccessfully.
-    #[error("command {bin} exited unsuccessfully with status {status_code:?}")]
+    #[error("command {bin} exited unsuccessfully with status {status_code:?}: {stderr}")]
     CommandFailed {
         /// Binary that exited unsuccessfully.
         bin: String,
         /// Process exit status code when available.
         status_code: Option<i32>,
+        /// Bounded stderr detail captured from the failed command.
+        stderr: String,
     },
     /// Filesystem operation failed.
     #[error("filesystem operation {operation} failed for {path}: {source}")]
@@ -204,22 +217,36 @@ impl CommandRunner for ProcessCommandRunner {
         if control.cancellation_requested() {
             return Err(ExecuteStepError::Cancelled);
         }
-        let mut child =
-            Command::new(bin)
-                .args(argv)
-                .spawn()
-                .map_err(|source| ExecuteStepError::Io {
-                    operation: "execution.command_spawn",
-                    path: PathBuf::from(bin),
-                    source,
-                })?;
+        let mut child = Command::new(bin)
+            .args(argv)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|source| ExecuteStepError::Io {
+                operation: "execution.command_spawn",
+                path: PathBuf::from(bin),
+                source,
+            })?;
+        let Some(stderr) = child.stderr.take() else {
+            terminate_command(&mut child, bin)?;
+            return Err(ExecuteStepError::Io {
+                operation: "execution.command_stderr_pipe",
+                path: PathBuf::from(bin),
+                source: io::Error::other("stderr pipe unavailable"),
+            });
+        };
+        let stderr_reader = thread::spawn(move || read_bounded_stderr(stderr));
+
         loop {
             if let Some(breach) = control.limit_breach() {
-                terminate_child(&mut child, bin)?;
+                terminate_command(&mut child, bin)?;
+                let _stderr = join_stderr_reader(stderr_reader, bin)?;
                 return Err(ExecuteStepError::LimitBreached(breach));
             }
             if control.cancellation_requested() {
-                terminate_child(&mut child, bin)?;
+                terminate_command(&mut child, bin)?;
+                let _stderr = join_stderr_reader(stderr_reader, bin)?;
                 return Err(ExecuteStepError::Cancelled);
             }
             if let Some(status) = child.try_wait().map_err(|source| ExecuteStepError::Io {
@@ -227,12 +254,14 @@ impl CommandRunner for ProcessCommandRunner {
                 path: PathBuf::from(bin),
                 source,
             })? {
+                let stderr = join_stderr_reader(stderr_reader, bin)?;
                 return if status.success() {
                     Ok(())
                 } else {
                     Err(ExecuteStepError::CommandFailed {
                         bin: bin.to_string(),
                         status_code: status.code(),
+                        stderr,
                     })
                 };
             }
@@ -241,7 +270,7 @@ impl CommandRunner for ProcessCommandRunner {
     }
 }
 
-fn terminate_child(child: &mut std::process::Child, bin: &str) -> Result<(), ExecuteStepError> {
+fn terminate_command(child: &mut Child, bin: &str) -> Result<(), ExecuteStepError> {
     match child.kill() {
         Ok(()) => {}
         Err(source) if source.kind() == io::ErrorKind::InvalidInput => {}
@@ -261,6 +290,54 @@ fn terminate_child(child: &mut std::process::Child, bin: &str) -> Result<(), Exe
     Ok(())
 }
 
+fn join_stderr_reader(
+    stderr_reader: thread::JoinHandle<io::Result<String>>,
+    bin: &str,
+) -> Result<String, ExecuteStepError> {
+    stderr_reader
+        .join()
+        .map_err(|_| ExecuteStepError::Io {
+            operation: "execution.command_stderr_join",
+            path: PathBuf::from(bin),
+            source: io::Error::other("stderr reader thread panicked"),
+        })?
+        .map_err(|source| ExecuteStepError::Io {
+            operation: "execution.command_stderr_read",
+            path: PathBuf::from(bin),
+            source,
+        })
+}
+
+fn read_bounded_stderr(mut stderr: ChildStderr) -> io::Result<String> {
+    let mut bytes = Vec::with_capacity(MAX_EXECUTION_DETAIL_CHARS);
+    let mut scratch = [0_u8; 1024];
+    let mut truncated = false;
+    loop {
+        let read = stderr.read(&mut scratch)?;
+        if read == 0 {
+            break;
+        }
+        let remaining = MAX_EXECUTION_DETAIL_CHARS.saturating_sub(bytes.len());
+        if remaining == 0 {
+            truncated = true;
+            continue;
+        }
+        let retained = read.min(remaining);
+        bytes.extend_from_slice(&scratch[..retained]);
+        if retained < read {
+            truncated = true;
+        }
+    }
+    let mut detail = String::from_utf8_lossy(&bytes).trim().to_string();
+    if detail.chars().count() > MAX_EXECUTION_DETAIL_CHARS {
+        detail = detail.chars().take(MAX_EXECUTION_DETAIL_CHARS).collect();
+        truncated = true;
+    }
+    if truncated {
+        detail.push_str(EXECUTION_TRUNCATION_MARKER);
+    }
+    Ok(detail)
+}
 const DEFAULT_VIDEO_ENCODER: &str = "libx265";
 const VIDEO_AVERAGE_TARGET_PERCENT: u64 = 95;
 const VIDEO_VBV_SECONDS: u64 = 2;
@@ -988,6 +1065,7 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
     if operations_are_noop(operations) {
         return Err(BuildArgsError::NoOpCommand);
     }
+    validate_materialized_stream_kinds(desired)?;
     verify_desired_graph_stream_ids(source, desired, sidecar_embeddings)?;
 
     let selected_video_encoder = capabilities.and_then(|snapshot| {
@@ -1332,6 +1410,20 @@ fn verify_desired_graph_stream_ids(
     Ok(())
 }
 
+fn validate_materialized_stream_kinds(desired: &DesiredGraph) -> Result<(), BuildArgsError> {
+    for stream in &desired.streams {
+        if matches!(
+            stream.kind,
+            StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data
+        ) {
+            return Err(BuildArgsError::UnsupportedDesiredStreamKind {
+                stream_id: stream.stream_id,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn append_sidecar_output_steps(
     steps: &mut Vec<ExecutionStep>,
     input_path: &str,
@@ -1612,10 +1704,7 @@ fn audio_filtergraph_for_constraints(
 }
 
 fn normalized_channel_layout(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|item| !item.is_empty())
-        .map(str::to_ascii_lowercase)
+    value.and_then(|item| normalize_audio_channel_layout(item).map(str::to_string))
 }
 
 fn validate_output_codec_capability(
@@ -2149,8 +2238,9 @@ const fn is_recovery_step(step: &ExecutionStep) -> bool {
 mod tests {
     use super::{
         AudioStreamConstraints, BuildArgsError, CommandRunner, DesiredGraphBuildContext,
-        ExecutionControl, ExecutionStep, HdrColorPolicy, MaxBitrateBps, ProcessCommandRunner,
-        SubtitleArtifactPlan, VideoStreamConstraints, VideoTranscodeIntent, VideoTranscodePolicy,
+        EXECUTION_TRUNCATION_MARKER, ExecutionControl, ExecutionStep, HdrColorPolicy,
+        MAX_EXECUTION_DETAIL_CHARS, MaxBitrateBps, ProcessCommandRunner, SubtitleArtifactPlan,
+        VideoStreamConstraints, VideoTranscodeIntent, VideoTranscodePolicy,
         append_video_constraint_args, append_video_quality_args,
         build_desired_graph_execution_steps, build_desired_graph_execution_steps_with_sidecars,
         build_desired_graph_ffmpeg_argv, build_desired_graph_ffmpeg_argv_with_sidecars,
@@ -2771,16 +2861,41 @@ mod tests {
     }
 
     #[test]
-    fn process_command_runner_reports_nonzero_status() {
-        let result = ProcessCommandRunner.run("/usr/bin/false", &[]);
+    fn process_command_runner_reports_nonzero_status_with_bounded_stderr() {
+        let result = ProcessCommandRunner.run(
+            "/bin/sh",
+            &[
+                "-c".to_string(),
+                "printf failure-detail >&2; exit 7".to_string(),
+            ],
+        );
 
         assert!(matches!(
             result,
             Err(super::ExecuteStepError::CommandFailed {
                 bin,
-                status_code: Some(1)
-            }) if bin == "/usr/bin/false"
+                status_code: Some(7),
+                stderr
+            }) if bin == "/bin/sh" && stderr == "failure-detail"
         ));
+    }
+
+    #[test]
+    fn process_command_runner_truncates_noisy_stderr() {
+        let result = ProcessCommandRunner.run(
+            "/bin/sh",
+            &[
+                "-c".to_string(),
+                "i=0; while [ \"$i\" -lt 3000 ]; do printf x >&2; i=$((i + 1)); done; exit 9"
+                    .to_string(),
+            ],
+        );
+
+        let Err(super::ExecuteStepError::CommandFailed { stderr, .. }) = result else {
+            panic!("expected command failure with bounded stderr");
+        };
+        assert!(stderr.ends_with(EXECUTION_TRUNCATION_MARKER));
+        assert!(stderr.len() <= MAX_EXECUTION_DETAIL_CHARS + EXECUTION_TRUNCATION_MARKER.len());
     }
 
     #[test]
@@ -3196,6 +3311,58 @@ mod tests {
             ),
             Err(BuildArgsError::UnsupportedMuxer("mp4".to_string()))
         );
+    }
+
+    #[test]
+    fn desired_graph_rejects_unsupported_stream_kinds_for_command_materialization() {
+        for kind in [
+            StreamKind::Attachment,
+            StreamKind::Chapter,
+            StreamKind::Data,
+        ] {
+            let stream = MediaStream {
+                stream_id: 2,
+                kind,
+                codec: "bin_data".to_string(),
+                channels: None,
+                channel_layout: None,
+                language: None,
+                title: None,
+                dispositions: Vec::new(),
+            };
+            let source = MediaGraph {
+                source_path: "/in.mkv".to_string(),
+                container_formats: Vec::new(),
+                streams: vec![stream.clone()],
+            };
+            let desired = DesiredGraph {
+                output_path: "/out.mkv".to_string(),
+                container_format: Some("matroska".to_string()),
+                stream_bindings: vec![DesiredStreamBinding {
+                    output_stream_id: 2,
+                    source_stream_id: Some(2),
+                }],
+                streams: vec![stream],
+            };
+            let operations = [PlannedOperation {
+                kind: OperationKind::Remux,
+                stream_id: None,
+                output_stream_id: None,
+            }];
+
+            assert_eq!(
+                build_desired_graph_ffmpeg_argv(
+                    "/in.mkv",
+                    "/out.mkv",
+                    &source,
+                    &desired,
+                    &operations,
+                    None,
+                    VideoTranscodePolicy::default(),
+                ),
+                Err(BuildArgsError::UnsupportedDesiredStreamKind { stream_id: 2 })
+            );
+        }
     }
 
     #[test]
