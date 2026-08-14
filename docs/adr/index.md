@@ -387,6 +387,7 @@
 -   [377](377-media-manual-operator-loop.md) – Media manual operator loop
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
+-   [381](381-libtorrent-native-pkg-config-contract.md) – Libtorrent native pkg-config contract
 -   [387](387-media-attachment-strip-fixture-evidence.md) – Media attachment strip fixture evidence
 -   [390](390-media-ffprobe-frame-robustness.md) – Media FFprobe frame robustness
 -   [391](391-media-job-chapter-replacement-evidence.md) – Media job chapter replacement evidence

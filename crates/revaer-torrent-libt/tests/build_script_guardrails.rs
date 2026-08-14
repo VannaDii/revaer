@@ -29,6 +29,30 @@ fn pkg_config_defines_are_ordered_and_forwarded() {
 }
 
 #[test]
+fn native_discovery_tracks_toolchain_and_pkg_config_inputs() {
+    assert!(BUILD_SCRIPT.contains("cargo:rerun-if-env-changed=PATH"));
+    for variable in [
+        "PKG_CONFIG",
+        "PKG_CONFIG_PATH",
+        "PKG_CONFIG_LIBDIR",
+        "PKG_CONFIG_SYSROOT_DIR",
+        "PKG_CONFIG_ALLOW_CROSS",
+        "PKG_CONFIG_ALLOW_SYSTEM_CFLAGS",
+        "PKG_CONFIG_ALLOW_SYSTEM_LIBS",
+    ] {
+        assert!(
+            BUILD_SCRIPT.contains(&format!("\"{variable}\"")),
+            "missing native discovery input: {variable}"
+        );
+    }
+    let rerun_template = ["cargo:rerun-if-env-changed=", "{", "variable", "}"].concat();
+    assert!(BUILD_SCRIPT.contains(&rerun_template));
+    assert!(BUILD_SCRIPT.contains("let normalized_target = target.replace('-', \"_\")"));
+    assert!(BUILD_SCRIPT.contains("{prefix}_{target}"));
+    assert!(BUILD_SCRIPT.contains("{prefix}_{normalized_target}"));
+}
+
+#[test]
 fn manual_defines_require_a_single_valid_abi() {
     let defines = build_support::parse_defines(
         "TORRENT_USE_OPENSSL;TORRENT_ABI_VERSION=2;BOOST_SYSTEM_USE_UTF8",
