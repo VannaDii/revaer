@@ -33,6 +33,7 @@ const MEDIA_DESIRED_TARGET_CREATE_V1: &str = "SELECT media_desired_target_create
 const MEDIA_DESIRED_TARGET_STREAM_APPEND_V5: &str = "SELECT media_desired_target_stream_append_v5(media_desired_target_profile_public_id_input => $1, stream_key_input => $2, stream_kind_input => $3, semantic_role_input => $4, language_code_input => $5, optional_input => $6, sort_order_input => $7, codec_input => $8, channel_count_input => $9, channel_layout_input => $10, audio_bitrate_bps_input => $11, audio_sample_rate_hz_input => $12, audio_loudness_profile_input => $13, audio_dynamic_range_input => $14, video_profile_input => $15, video_level_input => $16, video_bitrate_bps_input => $17, color_primaries_input => $18, color_transfer_input => $19, color_space_input => $20, hdr_format_input => $21, title_input => $22, default_disposition_input => $23, forced_disposition_input => $24, subtitle_placement_input => $25, image_subtitle_action_input => $26)";
 const MEDIA_DESIRED_TARGET_LIST_V1: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format FROM media_desired_target_list_v1()";
 const MEDIA_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_stream_list_v5(media_desired_target_profile_public_id_input => $1)";
+const MEDIA_DESIRED_TARGET_GRAPH_PAGE_V1: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_graph_page_v1($1)";
 const MEDIA_PROFILE_DESIRED_TARGET_SET_V1: &str = "SELECT media_profile_desired_target_set_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, desired_target_key_input => $3, desired_target_version_input => $4)";
 
 /// Compatibility target upsert payload.
@@ -244,6 +245,17 @@ pub struct MediaDesiredTargetStreamRow {
     pub subtitle_placement: Option<String>,
     /// Image-subtitle behavior for subtitle streams.
     pub image_subtitle_action: Option<String>,
+}
+
+/// One flattened row from a bounded desired-target graph page.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaDesiredTargetGraphRow {
+    /// Repeated target summary.
+    #[sqlx(flatten)]
+    pub target: MediaDesiredTargetRow,
+    /// One ordered child stream.
+    #[sqlx(flatten)]
+    pub stream: MediaDesiredTargetStreamRow,
 }
 
 /// Versioned compatibility target row.
@@ -555,6 +567,22 @@ pub async fn list_media_desired_targets(pool: &PgPool) -> Result<Vec<MediaDesire
         .map_err(try_op("media desired target list"))
 }
 
+/// Read one bounded desired-target page and all bounded child streams in one query.
+///
+/// # Errors
+///
+/// Returns an error when the limit is invalid or stored-procedure execution fails.
+pub async fn list_media_desired_target_graph_page(
+    pool: &PgPool,
+    limit: i32,
+) -> Result<Vec<MediaDesiredTargetGraphRow>> {
+    sqlx::query_as::<_, MediaDesiredTargetGraphRow>(MEDIA_DESIRED_TARGET_GRAPH_PAGE_V1)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media desired target graph page"))
+}
+
 /// List the ordered stream graph for one desired-target version.
 ///
 /// # Errors
@@ -626,9 +654,10 @@ mod tests {
         UpsertMediaCompatibilityTargetInput, UpsertMediaPolicyProfileInput,
         append_media_desired_target_stream, create_media_desired_target,
         get_media_job_retention_policy, list_media_compatibility_targets,
-        list_media_desired_target_streams, list_media_desired_targets, list_media_policy_profiles,
-        set_media_profile_desired_target, update_media_job_retention_policy,
-        upsert_media_compatibility_target, upsert_media_policy_profile,
+        list_media_desired_target_graph_page, list_media_desired_target_streams,
+        list_media_desired_targets, list_media_policy_profiles, set_media_profile_desired_target,
+        update_media_job_retention_policy, upsert_media_compatibility_target,
+        upsert_media_policy_profile,
     };
     use crate::config::factory_reset;
     use crate::media::jobs::{
@@ -645,6 +674,79 @@ mod tests {
         assert!(retention.failed_diagnostic_enabled);
         assert_eq!(retention.failed_diagnostic_mode, "age");
         assert_eq!(retention.failed_diagnostic_limit, 30);
+    }
+
+    #[test]
+    fn migration_guards_constant_query_bounded_target_graph() {
+        let migration = include_str!("../../migrations/0187_media_bounded_read_models.sql");
+        assert!(migration.contains("media_desired_target_graph_page_v1(limit_input INT)"));
+        assert!(migration.contains("limit_input > 128"));
+        assert!(migration.contains("LIMIT 1025"));
+    }
+
+    #[tokio::test]
+    async fn desired_target_graph_accepts_maximum_page_and_rejects_max_plus_one()
+    -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("desired_target_graph_page").await? else {
+            return Ok(());
+        };
+        for index in 0..128 {
+            let target_id = create_media_desired_target(
+                db.pool(),
+                CreateMediaDesiredTargetInput {
+                    actor_public_id: db.system_user_public_id,
+                    target_key: &format!("bounded-target-{index:03}"),
+                    version: 1,
+                    display_name: &format!("Bounded target {index}"),
+                    container_format: "matroska",
+                },
+            )
+            .await?;
+            append_media_desired_target_stream(
+                db.pool(),
+                AppendMediaDesiredTargetStreamInput {
+                    media_desired_target_profile_public_id: target_id,
+                    stream_key: "video-main",
+                    stream_kind: "video",
+                    semantic_role: Some("main"),
+                    language_code: None,
+                    optional: false,
+                    sort_order: 0,
+                    codec: "hevc",
+                    channel_count: None,
+                    channel_layout: None,
+                    audio_bitrate_bps: None,
+                    audio_sample_rate_hz: None,
+                    audio_loudness_profile: None,
+                    audio_dynamic_range: None,
+                    video_profile: None,
+                    video_level: None,
+                    video_bitrate_bps: None,
+                    color_primaries: None,
+                    color_transfer: None,
+                    color_space: None,
+                    hdr_format: None,
+                    title: None,
+                    default_disposition: true,
+                    forced_disposition: false,
+                    subtitle_placement: None,
+                    image_subtitle_action: None,
+                },
+            )
+            .await?;
+        }
+        assert_eq!(
+            list_media_desired_target_graph_page(db.pool(), 128)
+                .await?
+                .len(),
+            128
+        );
+        assert!(
+            list_media_desired_target_graph_page(db.pool(), 129)
+                .await
+                .is_err()
+        );
+        Ok(())
     }
 
     async fn create_ordered_desired_target(db: &MediaTestDb) -> anyhow::Result<uuid::Uuid> {

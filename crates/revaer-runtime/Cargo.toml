@@ -13,6 +13,7 @@ keywords = ["revaer", "runtime", "persistence"]
 categories = ["database"]
 
 [dependencies]
+chrono.workspace = true
 revaer-data = { path = "../revaer-data" }
 revaer-torrent-core = { path = "../revaer-torrent-core" }
 sqlx.workspace = true
@@ -20,7 +21,6 @@ uuid.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
-chrono.workspace = true
 revaer-events = { path = "../revaer-events" }
 revaer-test-support = { path = "../revaer-test-support" }
 tokio.workspace = true
