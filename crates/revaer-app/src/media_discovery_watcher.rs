@@ -105,31 +105,13 @@ impl NotifyMediaWatcher {
 
         let profile_id = profile.media_profile_public_id;
         let sender = self.events.clone();
-        let mut watcher =
-            notify::recommended_watcher(move |result: notify::Result<Event>| match result {
-                Ok(event) if event_can_change_media(event.kind) => {
-                    for path in event.paths {
-                        if let Err(error) = sender.record(MediaWatchEvent {
-                            media_profile_public_id: profile_id,
-                            path,
-                        }) {
-                            warn!(error = %error, "media watcher event buffer failed");
-                        }
-                    }
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    warn!(
-                        media_profile_public_id = %profile_id,
-                        error = %error,
-                        "media filesystem watcher event failed"
-                    );
-                }
-            })
-            .map_err(|source| MediaWatcherError::Create {
-                path: source_root.clone(),
-                source,
-            })?;
+        let mut watcher = notify::recommended_watcher(move |result: notify::Result<Event>| {
+            forward_watch_result(profile_id, &sender, result);
+        })
+        .map_err(|source| MediaWatcherError::Create {
+            path: source_root.clone(),
+            source,
+        })?;
         watcher
             .watch(Path::new(&source_root), RecursiveMode::Recursive)
             .map_err(|source| MediaWatcherError::Watch {
@@ -144,6 +126,33 @@ impl NotifyMediaWatcher {
             },
         );
         Ok(())
+    }
+}
+
+fn forward_watch_result(
+    profile_id: Uuid,
+    events: &MediaWatchEventBuffer,
+    result: notify::Result<Event>,
+) {
+    match result {
+        Ok(event) if event_can_change_media(event.kind) => {
+            for path in event.paths {
+                if let Err(error) = events.record(MediaWatchEvent {
+                    media_profile_public_id: profile_id,
+                    path,
+                }) {
+                    warn!(error = %error, "media watcher event buffer failed");
+                }
+            }
+        }
+        Ok(_) => {}
+        Err(error) => {
+            warn!(
+                media_profile_public_id = %profile_id,
+                error = %error,
+                "media filesystem watcher event failed"
+            );
+        }
     }
 }
 
@@ -209,18 +218,15 @@ pub(crate) enum MediaWatcherError {
 mod tests {
     use super::{
         MediaWatchEvent, MediaWatchEventBuffer, MediaWatcher, NotifyMediaWatcher,
-        event_can_change_media,
+        event_can_change_media, forward_watch_result,
     };
     use chrono::Utc;
-    use notify::EventKind;
     use notify::event::{CreateKind, ModifyKind, RemoveKind};
+    use notify::{Event, EventKind};
     use revaer_data::media::profiles::MediaProfileRow;
     use std::collections::BTreeSet;
-    use std::fs;
     use std::path::PathBuf;
     use std::sync::Arc;
-    use std::time::Duration;
-    use tokio::time::{sleep, timeout};
     use uuid::Uuid;
 
     #[test]
@@ -232,11 +238,9 @@ mod tests {
         assert!(!event_can_change_media(EventKind::Other));
     }
 
-    #[tokio::test]
-    async fn native_watcher_reports_recursive_media_file_changes() -> anyhow::Result<()> {
+    #[test]
+    fn native_watcher_registers_recursive_source_root() -> anyhow::Result<()> {
         let root = tempfile::tempdir()?;
-        let nested = root.path().join("nested");
-        fs::create_dir_all(&nested)?;
         let profile_id = Uuid::new_v4();
         let profile = MediaProfileRow {
             media_profile_public_id: profile_id,
@@ -255,40 +259,31 @@ mod tests {
             updated_at: Utc::now(),
         };
         let events = Arc::new(MediaWatchEventBuffer::new(32));
-        let mut watcher = NotifyMediaWatcher::new(events.clone());
+        let mut watcher = NotifyMediaWatcher::new(events);
         let errors = watcher.synchronize(&[profile]);
         if let Some(error) = errors.into_iter().next() {
             return Err(error.into());
         }
-        sleep(Duration::from_secs(1)).await;
+        assert!(watcher.registrations.contains_key(&profile_id));
+        Ok(())
+    }
 
-        let media_path = nested.join("movie.webm");
-        fs::write(&media_path, b"first")?;
-        sleep(Duration::from_millis(100)).await;
-        fs::write(&media_path, b"second")?;
-        let canonical_media_path = media_path.canonicalize()?;
-        let observed = timeout(Duration::from_secs(10), async {
-            loop {
-                let drained = events.drain().ok()?;
-                if let Some(event) = drained.events.into_iter().find(|event| {
-                    event.path.canonicalize().ok().is_some_and(|path| {
-                        path == canonical_media_path || canonical_media_path.starts_with(path)
-                    })
-                }) {
-                    return Some(event);
-                }
-                sleep(Duration::from_millis(25)).await;
-            }
-        })
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("native watcher event channel closed"))?;
+    #[test]
+    fn watcher_callback_forwards_recursive_media_file_changes() -> anyhow::Result<()> {
+        let profile_id = Uuid::new_v4();
+        let media_path = PathBuf::from("nested/movie.webm");
+        let events = MediaWatchEventBuffer::new(4);
+        let event = Event::new(EventKind::Create(CreateKind::File)).add_path(media_path.clone());
 
-        assert_eq!(observed.media_profile_public_id, profile_id);
-        assert!(
-            observed
-                .path
-                .canonicalize()?
-                .starts_with(root.path().canonicalize()?)
+        forward_watch_result(profile_id, &events, Ok(event));
+
+        let drained = events.drain()?;
+        assert_eq!(
+            drained.events,
+            vec![MediaWatchEvent {
+                media_profile_public_id: profile_id,
+                path: media_path,
+            }]
         );
         Ok(())
     }

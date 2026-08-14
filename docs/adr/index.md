@@ -350,6 +350,7 @@
 -   [339](339-media-audio-analysis-process-boundary.md) – Media audio analysis process boundary
 -   [340](340-api-no-compat-router-lint.md) – API no-compat router lint
 -   [341](341-media-verifier-process-boundary.md) – Media verifier process boundary
+-   [342](342-media-desired-target-stream-count-contract.md) – Media desired target stream count contract
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [406](406-pr-71-deterministic-cargo-tools.md) – PR 71 deterministic Cargo tools
@@ -362,6 +363,7 @@
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation
 -   [420](420-media-text-input-contract.md) – Media text input contract
+-   [424](424-media-target-stream-limit-atomic-snapshot.md) – Media target stream limit and atomic snapshot
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
 -   [428](428-sonar-pr-result-scope.md) – Sonar pull-request result scope
 -   [429](429-pr81-job-runtime-review-closeout.md) – PR 81 job runtime review closeout
@@ -379,3 +381,5 @@
 -   [464](464-pr171-media-identity-error-coverage.md) – PR 171 media identity error coverage
 -   [474](474-pr82-cancellation-clone-boundary.md) – PR 82 cancellation clone boundary correction
 -   [470](470-pr85-media-runtime-fixtures.md) – PR 85 media runtime fixture correction
+-   [467](467-pr99-openapi-lint-boundary.md) – PR 99 OpenAPI lint boundary correction
+-   [468](468-pr99-native-watcher-test-stability.md) – PR 99 native watcher test stability

@@ -267,6 +267,9 @@ pub enum TargetCompileError {
     /// A desired target exceeds the accepted stream cardinality.
     #[error("desired target stream count exceeds the accepted limit")]
     TooManyTargetStreams,
+    /// A desired target contains no stream contract.
+    #[error("desired target must contain at least one stream")]
+    EmptyTargetStreams,
     /// Reused source binding does not satisfy all grouped target selectors.
     #[error("desired target source binding is incompatible: {0}")]
     IncompatibleSourceBinding(String),
@@ -401,8 +404,8 @@ pub fn parse_desired_target_yaml(yaml_payload: &str) -> Result<DesiredTarget, Ta
     }
     let target: DesiredTarget =
         serde_yaml::from_str(yaml_payload).map_err(|_| TargetCompileError::InvalidYaml)?;
-    if target.streams.len() > MAX_DESIRED_TARGET_STREAMS {
-        return Err(TargetCompileError::TooManyTargetStreams);
+    if target.streams.is_empty() {
+        return Err(TargetCompileError::EmptyTargetStreams);
     }
     validate_target(&target)?;
     Ok(target)
@@ -1055,6 +1058,9 @@ fn validate_target(target: &DesiredTarget) -> Result<(), TargetCompileError> {
     if target.container.trim().is_empty() {
         return Err(TargetCompileError::EmptyContainer);
     }
+    if target.streams.len() > MAX_DESIRED_TARGET_STREAMS {
+        return Err(TargetCompileError::TooManyTargetStreams);
+    }
 
     let mut keys = BTreeSet::new();
     for stream in &target.streams {
@@ -1542,14 +1548,15 @@ fn normalized_dispositions(dispositions: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        DesiredTarget, ImageSubtitleAction, LanguageToken, SidecarOutputSource,
-        SidecarSubtitleInput, SubtitlePlacement, TargetCompileError, TargetStream,
-        UnmatchedStreamPolicy, compile_desired_target, compile_desired_target_with_sidecars,
-        compile_desired_target_with_sidecars_at, is_single_path_component,
-        parse_desired_target_yaml,
+        DesiredTarget, ImageSubtitleAction, LanguageToken, MAX_DESIRED_TARGET_STREAMS,
+        SidecarOutputSource, SidecarSubtitleInput, SubtitlePlacement, TargetCompileError,
+        TargetStream, UnmatchedStreamPolicy, compile_desired_target,
+        compile_desired_target_with_sidecars, compile_desired_target_with_sidecars_at,
+        is_single_path_component, parse_desired_target_yaml,
     };
     use crate::classify::SemanticRole;
     use crate::model::{MediaGraph, MediaStream, StreamKind};
+    use std::fmt::Write;
     use std::path::Path;
 
     fn stream(
@@ -2728,6 +2735,41 @@ mod tests {
                 .as_ref()
                 .map(LanguageToken::as_str),
             Some("eng")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn desired_target_yaml_enforces_stream_count_maximum() -> Result<(), TargetCompileError> {
+        fn target_yaml(stream_count: usize) -> String {
+            let mut yaml =
+                String::from("target_key: bounded\nversion: 1\ncontainer: matroska\nstreams:\n");
+            for index in 0..stream_count {
+                assert!(
+                    write!(
+                        &mut yaml,
+                        "  - stream_key: audio-{index}\n    kind: audio\n    optional: true\n    codec: aac\n"
+                    )
+                    .is_ok()
+                );
+            }
+            yaml
+        }
+
+        assert_eq!(
+            parse_desired_target_yaml(&target_yaml(0)),
+            Err(TargetCompileError::EmptyTargetStreams)
+        );
+        assert_eq!(parse_desired_target_yaml(&target_yaml(1))?.streams.len(), 1);
+        assert_eq!(
+            parse_desired_target_yaml(&target_yaml(MAX_DESIRED_TARGET_STREAMS))?
+                .streams
+                .len(),
+            MAX_DESIRED_TARGET_STREAMS
+        );
+        assert_eq!(
+            parse_desired_target_yaml(&target_yaml(MAX_DESIRED_TARGET_STREAMS + 1)),
+            Err(TargetCompileError::TooManyTargetStreams)
         );
         Ok(())
     }
