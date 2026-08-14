@@ -43,6 +43,8 @@ const MEDIA_JOB_TERMINAL_OUTBOX_LIST_UNPUBLISHED_V1: &str =
     "SELECT media_job_public_id, event_kind FROM media_job_terminal_outbox_list_unpublished_v1()";
 const MEDIA_JOB_TERMINAL_OUTBOX_MARK_PUBLISHED_V1: &str =
     "SELECT media_job_terminal_outbox_mark_published_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_WORKER_COMPLETE_FINALIZED_V1: &str =
+    "SELECT media_job_worker_complete_finalized_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
 const MEDIA_DISCOVERY_JOB_ENQUEUE_V2: &str = "SELECT media_discovery_job_enqueue_v2(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
 
@@ -1040,6 +1042,24 @@ pub async fn mark_media_job_terminal_outbox_published(
     Ok(())
 }
 
+/// Complete a finalized destructive replacement and acknowledge any late cancellation.
+///
+/// Returns `true` when a cancellation arrived after the irreversible replacement boundary.
+///
+/// # Errors
+///
+/// Returns an error when the job is no longer worker-owned or execution fails.
+pub async fn media_job_worker_complete_finalized(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+) -> Result<bool> {
+    sqlx::query_scalar::<_, bool>(MEDIA_JOB_WORKER_COMPLETE_FINALIZED_V1)
+        .bind(media_job_public_id)
+        .fetch_one(pool)
+        .await
+        .map_err(try_op("media job worker complete finalized"))
+}
+
 /// Update the heartbeat timestamp for a running media job.
 ///
 /// # Errors
@@ -1108,8 +1128,9 @@ mod tests {
         load_media_workspace_retention_snapshot, mark_media_job_completed,
         mark_media_job_terminal_outbox_published, media_job_worker_acknowledge_cancel,
         media_job_worker_claim_next, media_job_worker_commit_replacement_terminal,
-        media_job_worker_mark_status, media_job_worker_poll_control,
-        media_job_worker_recover_stale, retry_media_job, run_media_job_retention,
+        media_job_worker_complete_finalized, media_job_worker_mark_status,
+        media_job_worker_poll_control, media_job_worker_recover_stale, retry_media_job,
+        run_media_job_retention,
     };
     use crate::DataError;
     use crate::media::configuration::{
@@ -1735,6 +1756,12 @@ mod tests {
                 .is_err(),
             "a pending cancellation must fence successful completion"
         );
+        assert!(
+            media_job_worker_complete_finalized(db.pool(), job_id)
+                .await
+                .is_err(),
+            "a merely running job must not bypass the cancellation fence through finalized completion"
+        );
         let acknowledged_generation =
             media_job_worker_acknowledge_cancel(db.pool(), job_id, claimed.cancel_generation)
                 .await?;
@@ -1805,6 +1832,70 @@ mod tests {
                 .await?
                 .is_empty()
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn finalized_completion_acknowledges_late_cancel_without_cancelling() -> anyhow::Result<()>
+    {
+        let db = match setup_media_db("finalized_completion_acknowledges_late_cancel").await {
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
+            Err(err) => return Err(err),
+        };
+        let profile_id = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "late-cancel-finalized",
+                source_root: "/input/late-cancel-finalized",
+                output_root: "/output/late-cancel-finalized",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        let job_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/late-cancel-finalized/movie.mkv",
+                output_path: Some("/output/late-cancel-finalized/movie.mkv"),
+                dry_run: true,
+            },
+        )
+        .await?;
+
+        let claimed = media_job_worker_claim_next(db.pool()).await?;
+        let Some(claimed) = claimed else {
+            return Err(anyhow::anyhow!("worker did not claim queued job"));
+        };
+        assert_eq!(
+            claimed.media_job_public_id, job_id,
+            "worker should claim the queued job before cancellation"
+        );
+        media_job_worker_mark_status(db.pool(), job_id, "verifying", None).await?;
+        let requested_generation = cancel_media_job(db.pool(), job_id).await?;
+        assert!(requested_generation > claimed.cancel_generation);
+
+        let late_cancel_acknowledged =
+            media_job_worker_complete_finalized(db.pool(), job_id).await?;
+        assert!(late_cancel_acknowledged);
+        let repeated_late_cancel_acknowledged =
+            media_job_worker_complete_finalized(db.pool(), job_id).await?;
+        assert!(!repeated_late_cancel_acknowledged);
+        let job = get_media_job(db.pool(), job_id).await?;
+        let Some(job) = job else {
+            return Err(anyhow::anyhow!("completed job missing"));
+        };
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
         Ok(())
     }
 

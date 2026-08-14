@@ -36,9 +36,9 @@ use revaer_data::media::jobs::{
     load_media_workspace_retention_snapshot, mark_media_job_completed,
     mark_media_job_terminal_outbox_published, media_job_worker_acknowledge_cancel,
     media_job_worker_claim_next, media_job_worker_commit_replacement_terminal,
-    media_job_worker_complete, media_job_worker_heartbeat, media_job_worker_mark_status,
-    media_job_worker_poll_control, media_job_worker_recover_stale, retry_media_job,
-    run_media_job_retention,
+    media_job_worker_complete, media_job_worker_complete_finalized, media_job_worker_heartbeat,
+    media_job_worker_mark_status, media_job_worker_poll_control, media_job_worker_recover_stale,
+    retry_media_job, run_media_job_retention,
 };
 use revaer_data::media::profiles::{
     MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput, get_media_profile,
@@ -577,6 +577,17 @@ impl MediaStore {
     /// Returns an error when the event does not exist or execution fails.
     pub async fn mark_terminal_event_published(&self, media_job_public_id: Uuid) -> DataResult<()> {
         mark_media_job_terminal_outbox_published(&self.pool, media_job_public_id).await
+    }
+
+    /// Complete a finalized destructive replacement and acknowledge any late cancellation.
+    ///
+    /// Returns `true` when a cancellation arrived after the irreversible replacement boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the job is no longer worker-owned or execution fails.
+    pub async fn complete_finalized_job(&self, media_job_public_id: Uuid) -> DataResult<bool> {
+        media_job_worker_complete_finalized(&self.pool, media_job_public_id).await
     }
 
     /// Mark a claimed media job with a worker status.
