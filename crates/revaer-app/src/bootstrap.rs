@@ -19,6 +19,7 @@ use crate::runtime_shutdown;
 use revaer_api::TorrentHandles;
 use revaer_api::app::media::{MediaCapabilityRefreshParams, MediaFacade};
 use revaer_config::{AppMode, ConfigService, ConfigSnapshot, DbSessionConfig};
+use revaer_data::media::StdMediaRootIdentityResolver;
 use revaer_events::EventBus;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
 use tracing::{error, info, warn};
@@ -47,6 +48,7 @@ pub(crate) struct BootstrapDependencies {
     watcher: revaer_config::ConfigWatcher,
     events: EventBus,
     telemetry: Metrics,
+    media_workspace_root: Option<PathBuf>,
     #[cfg(feature = "libtorrent")]
     libtorrent: Option<LibtorrentOrchestratorDeps>,
 }
@@ -55,7 +57,9 @@ impl BootstrapDependencies {
     /// Construct production dependencies from the environment for the binary entrypoint.
     pub(crate) async fn from_env() -> AppResult<Self> {
         let database_url = database_url_from_env()?;
-        Self::from_database_url(database_url).await
+        let mut dependencies = Self::from_database_url(database_url).await?;
+        dependencies.media_workspace_root = Some(media_workspace_root_from_env()?);
+        Ok(dependencies)
     }
 
     pub(crate) async fn from_database_url(database_url: String) -> AppResult<Self> {
@@ -98,6 +102,7 @@ impl BootstrapDependencies {
             watcher,
             events,
             telemetry,
+            media_workspace_root: None,
             #[cfg(feature = "libtorrent")]
             libtorrent,
         })
@@ -255,7 +260,8 @@ pub async fn run_app() -> AppResult<()> {
 ///
 /// Returns an error if dependency construction or application startup fails.
 pub async fn run_app_with_database_url(database_url: String) -> AppResult<()> {
-    let dependencies = BootstrapDependencies::from_database_url(database_url).await?;
+    let mut dependencies = BootstrapDependencies::from_database_url(database_url).await?;
+    dependencies.media_workspace_root = Some(media_workspace_root_from_env()?);
     Box::pin(run_app_with(dependencies)).await
 }
 
@@ -287,6 +293,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         watcher,
         events,
         telemetry,
+        media_workspace_root,
         #[cfg(feature = "libtorrent")]
         libtorrent,
     } = dependencies;
@@ -332,7 +339,13 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
     let import_job_runtime_task =
         ImportJobRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
-    let media_runtime_tasks = spawn_media_runtime_tasks(&config, &events, &telemetry)?;
+    let media_workspace_root = media_workspace_root.ok_or_else(|| AppError::InvalidConfig {
+        field: "REVAER_MEDIA_WORKSPACE_ROOT",
+        reason: "absolute_private_workspace_root_required",
+        value: None,
+    })?;
+    let media_runtime_tasks =
+        spawn_media_runtime_tasks(&config, &events, &telemetry, media_workspace_root);
     info!(addr = %addr, "Launching API listener");
 
     let serve_result = api.serve(addr).await;
@@ -376,9 +389,9 @@ fn spawn_media_runtime_tasks(
     config: &ConfigService,
     events: &EventBus,
     telemetry: &Metrics,
-) -> AppResult<MediaRuntimeTasks> {
+    media_workspace_root: PathBuf,
+) -> MediaRuntimeTasks {
     let (shutdown, receiver) = runtime_shutdown::channel();
-    let media_workspace_root = media_workspace_root_from_env()?;
     let media_store = MediaStore::new(config.pool().clone());
     let discovery =
         MediaDiscoveryRuntime::new(media_store.clone(), telemetry.clone()).spawn(receiver.clone());
@@ -397,12 +410,12 @@ fn spawn_media_runtime_tasks(
     let retention =
         MediaRetentionRuntime::new(media_store, media_workspace_retention, telemetry.clone())
             .spawn(receiver);
-    Ok(MediaRuntimeTasks {
+    MediaRuntimeTasks {
         shutdown,
         discovery,
         job,
         retention,
-    })
+    }
 }
 
 async fn stop_media_runtime_tasks(tasks: MediaRuntimeTasks) {
@@ -520,6 +533,7 @@ fn build_media_service(config: &ConfigService, telemetry: Metrics) -> MediaServi
             "ffprobe",
             "ffplay",
         )),
+        Arc::new(StdMediaRootIdentityResolver),
         telemetry,
     )
 }

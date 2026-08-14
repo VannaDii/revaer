@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { test, expect } from '../../fixtures/api';
 
 const mediaRootsToRemove = new Set<string>();
@@ -19,14 +19,16 @@ test.describe('Media API', () => {
     mediaRootsToRemove.add(mediaRoot);
     const sourceRoot = `${mediaRoot}/source`;
     const outputRoot = `${mediaRoot}/output`;
-    const sourcePath = `${sourceRoot}/movie.mkv`;
-    const watcherPath = `${sourceRoot}/watcher-${suffix}.mkv`;
-    const manualPath = `${sourceRoot}/manual-${suffix}.mkv`;
-    const operatorPath = `${sourceRoot}/operator-${suffix}.mkv`;
-    const schedulePath = `${sourceRoot}/schedule-${suffix}.mkv`;
 
     await mkdir(sourceRoot, { recursive: true });
     await mkdir(outputRoot, { recursive: true });
+    const canonicalSourceRoot = await realpath(sourceRoot);
+    const canonicalOutputRoot = await realpath(outputRoot);
+    const sourcePath = `${canonicalSourceRoot}/movie.mkv`;
+    const watcherPath = `${canonicalSourceRoot}/watcher-${suffix}.mkv`;
+    const manualPath = `${canonicalSourceRoot}/manual-${suffix}.mkv`;
+    const operatorPath = `${canonicalSourceRoot}/operator-${suffix}.mkv`;
+    const schedulePath = `${canonicalSourceRoot}/schedule-${suffix}.mkv`;
     await Promise.all([
       writeFile(sourcePath, Buffer.from(`source-${suffix}`)),
       writeFile(watcherPath, Buffer.from(`watcher-${suffix}`)),
@@ -63,13 +65,12 @@ test.describe('Media API', () => {
       params: { path: { media_profile_public_id: profileId } },
     });
     expect(profile.response.status).toBe(200);
-    expect(profile.data?.source_root).toBe(sourceRoot);
+    expect(profile.data?.source_root).toBe(canonicalSourceRoot);
 
     const patchedProfile = await api.PATCH('/v1/media/profiles/{media_profile_public_id}', {
       params: { path: { media_profile_public_id: profileId } },
       body: {
         retention_days: 31,
-        schedule_interval_minutes: 120,
       },
     });
     expect(patchedProfile.response.status).toBe(200);
@@ -400,8 +401,8 @@ test.describe('Media API', () => {
       },
     });
     expect(restoredProfile.response.status).toBe(200);
-    expect(restoredProfile.data?.source_root).toBe(sourceRoot);
-    expect(restoredProfile.data?.output_root).toBe(outputRoot);
+    expect(restoredProfile.data?.source_root).toBe(canonicalSourceRoot);
+    expect(restoredProfile.data?.output_root).toBe(canonicalOutputRoot);
 
     const schedules = await api.GET('/v1/media/discovery/schedules');
     expect(schedules.response.status).toBe(200);
@@ -556,6 +557,12 @@ test.describe('Media API', () => {
     });
     expect(jobs.response.status).toBe(200);
 
+    const recentJobs = await api.GET('/v1/media/jobs/recent', {
+      params: { query: { limit: 10, media_profile_public_id: profileId } },
+    });
+    expect(recentJobs.response.status).toBe(200);
+    expect(Array.isArray(recentJobs.data?.jobs)).toBe(true);
+
     const discoveryJobSources = new Set([manualPath, schedulePath, watcherPath]);
     const queuedJobId = [discoveryRun, scheduleRun, watcherRun].flatMap(
       (run) => run.data?.queued_jobs ?? []
@@ -628,6 +635,13 @@ test.describe('Media API', () => {
     });
     expect(audits.response.status).toBe(200);
     expect(Array.isArray(audits.data?.audits)).toBe(true);
+
+    const diagnostics = await api.GET('/v1/media/jobs/{media_job_public_id}/diagnostics', {
+      params: { path: { media_job_public_id: jobId } },
+    });
+    expect(diagnostics.response.status).toBe(200);
+    expect(Array.isArray(diagnostics.data?.operations)).toBe(true);
+    expect(Array.isArray(diagnostics.data?.compact_audits)).toBe(true);
 
     const cancel = await api.POST('/v1/media/jobs/{media_job_public_id}/cancel', {
       params: { path: { media_job_public_id: jobId } },

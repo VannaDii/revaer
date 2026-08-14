@@ -21,8 +21,10 @@ fn run_bootstrap_child(
     envs: &[(&str, &str)],
     removed_envs: &[&str],
 ) -> Result<()> {
+    let workspace = tempfile::tempdir()?;
     let mut command = Command::new(std::env::current_exe()?);
     command.arg("--exact").arg(test_name).arg("--nocapture");
+    command.env("REVAER_MEDIA_WORKSPACE_ROOT", workspace.path());
     for (key, value) in envs {
         command.env(key, value);
     }
@@ -480,19 +482,15 @@ async fn run_app_with_database_url_surfaces_bind_failures_for_valid_persisted_co
         }
     };
 
-    assert!(
-        Command::new(std::env::current_exe()?)
-            .env("DATABASE_URL", postgres.connection_string())
-            .env("REVAER_TEST_DATABASE_URL", postgres.connection_string())
-            .env("REVAER_BOOTSTRAP_CHILD_BIND_CONFLICT", "1")
-            .arg("--exact")
-            .arg("run_app_with_database_url_surfaces_bind_failures_for_valid_persisted_config")
-            .arg("--nocapture")
-            .status()?
-            .success(),
-        "child bind-conflict bootstrap test failed"
-    );
-    Ok(())
+    run_bootstrap_child(
+        "run_app_with_database_url_surfaces_bind_failures_for_valid_persisted_config",
+        &[
+            ("REVAER_BOOTSTRAP_CHILD_BIND_CONFLICT", "1"),
+            ("DATABASE_URL", postgres.connection_string()),
+            ("REVAER_TEST_DATABASE_URL", postgres.connection_string()),
+        ],
+        &[],
+    )
 }
 
 #[tokio::test]

@@ -1,6 +1,9 @@
 import { execFileSync, spawnSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 
 import { clearState, readState } from './e2e-state';
+import { repoRoot } from './paths';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', 'host.docker.internal']);
 
@@ -19,7 +22,21 @@ export async function cleanupE2EState(): Promise<void> {
       console.warn('Failed to drop temp database:', error);
     }
   }
+  if (state.mediaWorkspaceRoot) {
+    removeMediaWorkspace(state.mediaWorkspaceRoot);
+  }
   clearState();
+}
+
+function removeMediaWorkspace(workspaceRoot: string): void {
+  const runtimeRoot = path.resolve(repoRoot(), 'tests', '.runtime');
+  const resolvedWorkspaceRoot = path.resolve(workspaceRoot);
+  const relative = path.relative(runtimeRoot, resolvedWorkspaceRoot);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    console.warn(`Refusing to remove media workspace outside the test runtime (${workspaceRoot}).`);
+    return;
+  }
+  fs.rmSync(resolvedWorkspaceRoot, { recursive: true, force: true });
 }
 
 async function terminateProcess(pid?: number): Promise<void> {

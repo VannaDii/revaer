@@ -5,7 +5,9 @@ use sqlx::{Executor, PgPool, Postgres};
 use uuid::Uuid;
 
 const MEDIA_PROFILE_UPSERT_V2: &str = "SELECT media_profile_upsert_v2(actor_public_id_input => $1, profile_key_input => $2, source_root_input => $3, output_root_input => $4, dry_run_only_input => $5, retention_days_input => $6, compatibility_target_key_input => $7, policy_key_input => $8, watcher_enabled_input => $9, schedule_enabled_input => $10, schedule_interval_minutes_input => $11)";
+const MEDIA_PROFILE_CREATE_V3: &str = "SELECT media_profile_create_v3(actor_public_id_input => $1, profile_key_input => $2, source_requested_path_input => $3, source_canonical_path_input => $4, source_filesystem_device_input => $5, source_filesystem_inode_input => $6, output_requested_path_input => $7, output_canonical_path_input => $8, output_filesystem_device_input => $9, output_filesystem_inode_input => $10, retention_days_input => $11, compatibility_target_key_input => $12, policy_key_input => $13, watcher_enabled_input => $14, schedule_enabled_input => $15, schedule_interval_minutes_input => $16)";
 const MEDIA_PROFILE_UPDATE_V1: &str = "SELECT media_profile_update_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_root_input => $3, output_root_input => $4, dry_run_only_input => $5, retention_days_input => $6, compatibility_target_key_input => $7, policy_key_input => $8, watcher_enabled_input => $9, schedule_enabled_input => $10, schedule_interval_minutes_input => $11)";
+const MEDIA_PROFILE_UPDATE_VERIFIED_V1: &str = "SELECT media_profile_update_verified_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_requested_path_input => $3, source_canonical_path_input => $4, source_filesystem_device_input => $5, source_filesystem_inode_input => $6, output_requested_path_input => $7, output_canonical_path_input => $8, output_filesystem_device_input => $9, output_filesystem_inode_input => $10, dry_run_only_input => $11, retention_days_input => $12, compatibility_target_key_input => $13, policy_key_input => $14, watcher_enabled_input => $15, schedule_enabled_input => $16, schedule_interval_minutes_input => $17)";
 const MEDIA_PROFILE_LIST_V3: &str = "SELECT media_profile_public_id, profile_key, source_root, output_root, dry_run_only, retention_days, compatibility_target_key, policy_key, watcher_enabled, schedule_enabled, schedule_interval_minutes, desired_target_key, desired_target_version, updated_at FROM media_profile_list_v3()";
 const MEDIA_PROFILE_GET_V3: &str = "SELECT media_profile_public_id, profile_key, source_root, output_root, dry_run_only, retention_days, compatibility_target_key, policy_key, watcher_enabled, schedule_enabled, schedule_interval_minutes, desired_target_key, desired_target_version, updated_at FROM media_profile_get_v3(media_profile_public_id_input => $1)";
 
@@ -36,6 +38,89 @@ pub struct UpsertMediaProfileInput<'a> {
     pub schedule_interval_minutes: Option<i32>,
 }
 
+/// Verified filesystem identity payload for creating a media profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateVerifiedMediaProfileInput<'a> {
+    /// Actor public id.
+    pub actor_public_id: Uuid,
+    /// Unique profile key.
+    pub profile_key: &'a str,
+    /// Operator-supplied source root.
+    pub source_requested_path: &'a str,
+    /// Canonical source root.
+    pub source_canonical_path: &'a str,
+    /// Source filesystem device identity.
+    pub source_filesystem_device: i64,
+    /// Source filesystem inode identity.
+    pub source_filesystem_inode: i64,
+    /// Operator-supplied output root.
+    pub output_requested_path: &'a str,
+    /// Canonical output root.
+    pub output_canonical_path: &'a str,
+    /// Output filesystem device identity.
+    pub output_filesystem_device: i64,
+    /// Output filesystem inode identity.
+    pub output_filesystem_inode: i64,
+    /// Retention duration in days.
+    pub retention_days: i32,
+    /// Optional compatibility target key.
+    pub compatibility_target_key: Option<&'a str>,
+    /// Operational policy key.
+    pub policy_key: &'a str,
+    /// Whether filesystem watching is enabled.
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    pub schedule_interval_minutes: Option<i32>,
+}
+
+/// Create a media profile with verified source and output root identities.
+///
+/// # Errors
+///
+/// Returns an error when identity validation or stored-procedure execution fails.
+pub async fn create_verified_media_profile(
+    pool: &PgPool,
+    input: &CreateVerifiedMediaProfileInput<'_>,
+) -> Result<Uuid> {
+    create_verified_media_profile_with_executor(pool, input).await
+}
+
+/// Create a verified media profile using a caller-provided SQL executor.
+///
+/// # Errors
+///
+/// Returns an error when identity validation or stored-procedure execution fails.
+pub async fn create_verified_media_profile_with_executor<'e, E>(
+    executor: E,
+    input: &CreateVerifiedMediaProfileInput<'_>,
+) -> Result<Uuid>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_CREATE_V3)
+        .bind(input.actor_public_id)
+        .bind(input.profile_key)
+        .bind(input.source_requested_path)
+        .bind(input.source_canonical_path)
+        .bind(input.source_filesystem_device)
+        .bind(input.source_filesystem_inode)
+        .bind(input.output_requested_path)
+        .bind(input.output_canonical_path)
+        .bind(input.output_filesystem_device)
+        .bind(input.output_filesystem_inode)
+        .bind(input.retention_days)
+        .bind(input.compatibility_target_key)
+        .bind(input.policy_key)
+        .bind(input.watcher_enabled)
+        .bind(input.schedule_enabled)
+        .bind(input.schedule_interval_minutes)
+        .fetch_one(executor)
+        .await
+        .map_err(try_op("verified media profile create"))
+}
+
 /// Input payload for media profile patching.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateMediaProfileInput<'a> {
@@ -47,6 +132,45 @@ pub struct UpdateMediaProfileInput<'a> {
     pub source_root: Option<&'a str>,
     /// Output root path override.
     pub output_root: Option<&'a str>,
+    /// Dry-run-only policy override.
+    pub dry_run_only: Option<bool>,
+    /// Retention days override.
+    pub retention_days: Option<i32>,
+    /// Compatibility target key override.
+    pub compatibility_target_key: Option<&'a str>,
+    /// Operational policy key override.
+    pub policy_key: Option<&'a str>,
+    /// Filesystem watcher override.
+    pub watcher_enabled: Option<bool>,
+    /// Scheduled discovery enablement override.
+    pub schedule_enabled: Option<bool>,
+    /// Scheduled discovery interval override.
+    pub schedule_interval_minutes: Option<i32>,
+}
+
+/// Verified filesystem identity payload for patching a media profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateVerifiedMediaProfileInput<'a> {
+    /// Actor public id.
+    pub actor_public_id: Uuid,
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Operator-supplied source root.
+    pub source_requested_path: &'a str,
+    /// Canonical source root.
+    pub source_canonical_path: &'a str,
+    /// Source filesystem device identity.
+    pub source_filesystem_device: i64,
+    /// Source filesystem inode identity.
+    pub source_filesystem_inode: i64,
+    /// Operator-supplied output root.
+    pub output_requested_path: &'a str,
+    /// Canonical output root.
+    pub output_canonical_path: &'a str,
+    /// Output filesystem device identity.
+    pub output_filesystem_device: i64,
+    /// Output filesystem inode identity.
+    pub output_filesystem_inode: i64,
     /// Dry-run-only policy override.
     pub dry_run_only: Option<bool>,
     /// Retention days override.
@@ -146,6 +270,21 @@ pub async fn update_media_profile(
     pool: &PgPool,
     input: &UpdateMediaProfileInput<'_>,
 ) -> Result<Uuid> {
+    update_media_profile_with_executor(pool, input).await
+}
+
+/// Patch a media profile using a caller-provided SQL executor.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn update_media_profile_with_executor<'e, E>(
+    executor: E,
+    input: &UpdateMediaProfileInput<'_>,
+) -> Result<Uuid>
+where
+    E: Executor<'e, Database = Postgres>,
+{
     sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPDATE_V1)
         .bind(input.actor_public_id)
         .bind(input.media_profile_public_id)
@@ -158,9 +297,41 @@ pub async fn update_media_profile(
         .bind(input.watcher_enabled)
         .bind(input.schedule_enabled)
         .bind(input.schedule_interval_minutes)
-        .fetch_one(pool)
+        .fetch_one(executor)
         .await
         .map_err(try_op("media profile update"))
+}
+
+/// Patch a media profile while atomically replacing verified root identities.
+///
+/// # Errors
+///
+/// Returns an error when identity validation or stored-procedure execution fails.
+pub async fn update_verified_media_profile(
+    pool: &PgPool,
+    input: &UpdateVerifiedMediaProfileInput<'_>,
+) -> Result<Uuid> {
+    sqlx::query_scalar::<_, Uuid>(MEDIA_PROFILE_UPDATE_VERIFIED_V1)
+        .bind(input.actor_public_id)
+        .bind(input.media_profile_public_id)
+        .bind(input.source_requested_path)
+        .bind(input.source_canonical_path)
+        .bind(input.source_filesystem_device)
+        .bind(input.source_filesystem_inode)
+        .bind(input.output_requested_path)
+        .bind(input.output_canonical_path)
+        .bind(input.output_filesystem_device)
+        .bind(input.output_filesystem_inode)
+        .bind(input.dry_run_only)
+        .bind(input.retention_days)
+        .bind(input.compatibility_target_key)
+        .bind(input.policy_key)
+        .bind(input.watcher_enabled)
+        .bind(input.schedule_enabled)
+        .bind(input.schedule_interval_minutes)
+        .fetch_one(pool)
+        .await
+        .map_err(try_op("verified media profile update"))
 }
 
 /// List active media profiles.
@@ -194,13 +365,37 @@ pub async fn get_media_profile(
 #[cfg(test)]
 mod tests {
     use super::{
-        UpdateMediaProfileInput, UpsertMediaProfileInput, get_media_profile, list_media_profiles,
+        CreateVerifiedMediaProfileInput, UpdateMediaProfileInput, UpsertMediaProfileInput,
+        create_verified_media_profile, get_media_profile, list_media_profiles,
         update_media_profile, upsert_media_profile, upsert_media_profile_with_executor,
     };
     use crate::DataError;
     use crate::media::schema_tests::{MediaTestDb, setup_media_db};
+    use crate::media::{
+        MediaRootIdentity, MediaRootIdentityResolver, StdMediaRootIdentityResolver,
+    };
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+    use std::path::Path;
     use uuid::Uuid;
+
+    struct TestDirectory(std::path::PathBuf);
+
+    impl TestDirectory {
+        fn new() -> anyhow::Result<Self> {
+            let path =
+                std::env::temp_dir().join(format!("revaer-media-profile-roots-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(&path)?;
+            Ok(Self(path))
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            if let Err(error) = std::fs::remove_dir_all(&self.0) {
+                eprintln!("failed to remove media profile root fixture: {error}");
+            }
+        }
+    }
 
     fn closed_pool_options() -> PgConnectOptions {
         PgConnectOptions::new()
@@ -262,6 +457,80 @@ mod tests {
         .await?)
     }
 
+    fn path_text(path: &Path) -> anyhow::Result<&str> {
+        path.to_str()
+            .ok_or_else(|| anyhow::anyhow!("test path is not valid UTF-8: {}", path.display()))
+    }
+
+    fn identity_number(value: u64) -> anyhow::Result<i64> {
+        Ok(i64::try_from(value)?)
+    }
+
+    fn verified_profile_input<'a>(
+        db: &MediaTestDb,
+        profile_key: &'a str,
+        source: &'a MediaRootIdentity,
+        output: &'a MediaRootIdentity,
+    ) -> anyhow::Result<CreateVerifiedMediaProfileInput<'a>> {
+        Ok(CreateVerifiedMediaProfileInput {
+            actor_public_id: db.system_user_public_id,
+            profile_key,
+            source_requested_path: path_text(source.requested_path())?,
+            source_canonical_path: path_text(source.canonical_path())?,
+            source_filesystem_device: identity_number(source.filesystem_device())?,
+            source_filesystem_inode: identity_number(source.filesystem_inode())?,
+            output_requested_path: path_text(output.requested_path())?,
+            output_canonical_path: path_text(output.canonical_path())?,
+            output_filesystem_device: identity_number(output.filesystem_device())?,
+            output_filesystem_inode: identity_number(output.filesystem_inode())?,
+            retention_days: 30,
+            compatibility_target_key: None,
+            policy_key: "safe_dry_run",
+            watcher_enabled: false,
+            schedule_enabled: false,
+            schedule_interval_minutes: None,
+        })
+    }
+
+    async fn create_verified_profile(
+        db: &MediaTestDb,
+        profile_key: &str,
+        source: &MediaRootIdentity,
+        output: &MediaRootIdentity,
+    ) -> anyhow::Result<Uuid> {
+        Ok(create_verified_media_profile(
+            db.pool(),
+            &verified_profile_input(db, profile_key, source, output)?,
+        )
+        .await?)
+    }
+
+    async fn add_verified_source_root(
+        db: &MediaTestDb,
+        profile_public_id: Uuid,
+        root: &MediaRootIdentity,
+        media_type: &str,
+    ) -> anyhow::Result<crate::DataResult<Uuid>> {
+        let result =
+            sqlx::query_scalar("SELECT media_profile_root_add_v1($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+                .bind(profile_public_id)
+                .bind("source")
+                .bind(path_text(root.requested_path())?)
+                .bind(path_text(root.canonical_path())?)
+                .bind(identity_number(root.filesystem_device())?)
+                .bind(identity_number(root.filesystem_inode())?)
+                .bind(media_type)
+                .bind(1_i32)
+                .bind(true)
+                .fetch_one(db.pool())
+                .await
+                .map_err(|source| DataError::QueryFailed {
+                    operation: "test media profile root add",
+                    source,
+                });
+        Ok(result)
+    }
+
     fn assert_discovery_root_overlap(result: crate::DataResult<Uuid>) -> anyhow::Result<()> {
         let Err(err) = result else {
             return Err(anyhow::anyhow!(
@@ -271,6 +540,19 @@ mod tests {
         assert_eq!(
             err.database_detail(),
             Some("media_profile_discovery_root_overlap")
+        );
+        Ok(())
+    }
+
+    fn assert_root_identity_overlap(result: crate::DataResult<Uuid>) -> anyhow::Result<()> {
+        let Err(err) = result else {
+            return Err(anyhow::anyhow!(
+                "expected filesystem root identity overlap validation error"
+            ));
+        };
+        assert_eq!(
+            err.database_detail(),
+            Some("media_profile_root_identity_overlap")
         );
         Ok(())
     }
@@ -336,15 +618,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upsert_forces_new_profiles_to_dry_run_only() -> anyhow::Result<()> {
-        let db = match setup_media_db("upsert_forces_new_profiles_to_dry_run_only").await {
+    async fn upsert_rejects_automation_without_verified_roots() -> anyhow::Result<()> {
+        let db = match setup_media_db("upsert_rejects_automation_without_verified_roots").await {
             Ok(Some(db)) => db,
             Ok(None) => return Ok(()),
             Err(err) => {
                 return Err(err);
             }
         };
-        let profile_id = upsert_media_profile(
+        let error = upsert_media_profile(
             db.pool(),
             &UpsertMediaProfileInput {
                 actor_public_id: db.system_user_public_id,
@@ -360,15 +642,13 @@ mod tests {
                 schedule_interval_minutes: Some(60),
             },
         )
-        .await?;
+        .await
+        .expect_err("unverified automation must fail closed");
 
-        let profile = get_media_profile(db.pool(), profile_id).await?;
-        let Some(profile) = profile else {
-            return Err(anyhow::anyhow!("profile should exist after upsert"));
-        };
-        assert!(profile.dry_run_only);
-        assert!(profile.watcher_enabled);
-        assert!(profile.schedule_enabled);
+        assert_eq!(
+            error.database_detail(),
+            Some("media_profile_filesystem_identity_required")
+        );
         Ok(())
     }
 
@@ -456,72 +736,87 @@ mod tests {
             }
         };
 
-        let existing_profile_id = upsert_profile(
+        let temp = TestDirectory::new()?;
+        let owner_source_path = temp.0.join("library/movies");
+        let owner_output_path = temp.0.join("work/movies");
+        let duplicate_output_path = temp.0.join("work/movies-duplicate");
+        let nested_source_path = owner_source_path.join("hd");
+        let nested_output_path = temp.0.join("work/movies-hd");
+        let sibling_source_path = temp.0.join("library/movies-archive");
+        let sibling_output_path = temp.0.join("work/movies-archive");
+        let bonus_source_path = owner_source_path.join("bonus");
+        for path in [
+            &owner_source_path,
+            &owner_output_path,
+            &duplicate_output_path,
+            &nested_source_path,
+            &nested_output_path,
+            &sibling_source_path,
+            &sibling_output_path,
+            &bonus_source_path,
+        ] {
+            std::fs::create_dir_all(path)?;
+        }
+        let resolver = StdMediaRootIdentityResolver;
+        let owner_source = resolver.resolve(&owner_source_path)?;
+        let owner_output = resolver.resolve(&owner_output_path)?;
+        let existing_profile_id = create_verified_profile(
             &db,
             "movies-existing-discovery-root",
-            "/library/movies",
-            "/work/movies",
+            &owner_source,
+            &owner_output,
         )
         .await?;
 
-        let duplicate_source_root = upsert_media_profile(
+        let duplicate_output = resolver.resolve(&duplicate_output_path)?;
+        let duplicate_source_root = create_verified_media_profile(
             db.pool(),
-            &profile_input(
-                db.system_user_public_id,
+            &verified_profile_input(
+                &db,
                 "movies-duplicate-discovery-root",
-                "/library/movies/",
-                "/work/movies-duplicate",
-            ),
+                &owner_source,
+                &duplicate_output,
+            )?,
         )
         .await;
-        assert_discovery_root_overlap(duplicate_source_root)?;
+        assert_root_identity_overlap(duplicate_source_root)?;
 
-        let nested_source_root = upsert_media_profile(
+        let nested_source = resolver.resolve(&nested_source_path)?;
+        let nested_output = resolver.resolve(&nested_output_path)?;
+        let nested_source_root = create_verified_media_profile(
             db.pool(),
-            &profile_input(
-                db.system_user_public_id,
+            &verified_profile_input(
+                &db,
                 "movies-nested-discovery-root",
-                "/library/movies/hd",
-                "/work/movies-hd",
-            ),
+                &nested_source,
+                &nested_output,
+            )?,
         )
         .await;
-        assert_discovery_root_overlap(nested_source_root)?;
+        assert_root_identity_overlap(nested_source_root)?;
 
-        let sibling_source_root = upsert_profile(
+        let sibling_source = resolver.resolve(&sibling_source_path)?;
+        let sibling_output = resolver.resolve(&sibling_output_path)?;
+        let sibling_source_root = create_verified_profile(
             &db,
             "movies-sibling-discovery-root",
-            "/library/movies-archive",
-            "/work/movies-archive",
+            &sibling_source,
+            &sibling_output,
         )
         .await?;
         assert_ne!(sibling_source_root, uuid::Uuid::nil());
 
-        let update_to_conflicting_source_root = update_media_profile(
-            db.pool(),
-            &UpdateMediaProfileInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: sibling_source_root,
-                source_root: Some("/library/movies/bonus"),
-                output_root: None,
-                dry_run_only: None,
-                retention_days: None,
-                compatibility_target_key: None,
-                policy_key: None,
-                watcher_enabled: None,
-                schedule_enabled: None,
-                schedule_interval_minutes: None,
-            },
-        )
-        .await;
-        assert_discovery_root_overlap(update_to_conflicting_source_root)?;
+        let bonus_source = resolver.resolve(&bonus_source_path)?;
+        let update_to_conflicting_source_root =
+            add_verified_source_root(&db, sibling_source_root, &bonus_source, "bonus").await?;
+        assert_root_identity_overlap(update_to_conflicting_source_root)?;
 
         let self_update = update_media_profile(
             db.pool(),
             &UpdateMediaProfileInput {
                 actor_public_id: db.system_user_public_id,
                 media_profile_public_id: existing_profile_id,
-                source_root: Some("/library/movies/"),
+                source_root: None,
                 output_root: None,
                 dry_run_only: None,
                 retention_days: Some(31),
@@ -630,27 +925,26 @@ mod tests {
 
     #[test]
     fn migration_guards_cross_profile_discovery_root_overlap() -> anyhow::Result<()> {
-        let migrations_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-        let mut migration_body = String::new();
-        for entry in std::fs::read_dir(migrations_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().and_then(std::ffi::OsStr::to_str) == Some("sql") {
-                migration_body.push_str(&std::fs::read_to_string(path)?);
-            }
-        }
+        let init_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("init")
+            .join("0001_init.sql");
+        let migration_body = std::fs::read_to_string(init_path)?;
 
         assert!(
             migration_body.contains("media_profile_discovery_root_overlap"),
             "media profile migrations must reject discovery roots claimed by another active profile"
         );
         assert!(
-            migration_body.contains("LOCK TABLE media_profile IN SHARE ROW EXCLUSIVE MODE"),
-            "media profile overlap validation must serialize profile writes"
+            migration_body.contains(
+                "pg_advisory_xact_lock(hashtextextended('media_profile_all_root_overlap_v1', 0))"
+            ),
+            "media profile overlap validation must serialize all profile writes"
         );
         assert!(
-            migration_body.contains("pg_advisory_xact_lock"),
-            "media profile root validation must serialize all write paths"
+            migration_body.contains(
+                "pg_advisory_xact_lock(hashtextextended('media_profile_root_identity_v1', 0))"
+            ),
+            "media profile identity validation must serialize all root write paths"
         );
         assert!(
             migration_body.contains("media_profile_all_root_overlap_trigger"),

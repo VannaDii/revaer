@@ -26,6 +26,7 @@ use revaer_api::app::media::{
     media_hdr10_color_volume_is_valid,
 };
 use revaer_data::DataError;
+use revaer_data::media::MediaRootIdentityResolver;
 use revaer_data::media::capabilities::{
     CapabilityFeatureRow, CapabilitySnapshotRow, RecordCapabilityEncoderInput,
     RecordCapabilityFeatureInput, RecordCapabilitySnapshotInput,
@@ -57,7 +58,8 @@ use revaer_data::media::jobs::{
     CreateManualMediaJobInput, EnqueueDiscoveredMediaJobInput, MediaJobRow,
 };
 use revaer_data::media::profiles::{
-    MediaProfileRow, UpdateMediaProfileInput, UpsertMediaProfileInput,
+    CreateVerifiedMediaProfileInput, MediaProfileRow, UpdateMediaProfileInput,
+    UpdateVerifiedMediaProfileInput, UpsertMediaProfileInput, update_media_profile_with_executor,
     upsert_media_profile_with_executor,
 };
 use revaer_media_core::compile::{MediaProfile, validate_profiles};
@@ -109,6 +111,7 @@ impl DiscoveryRunMode {
 pub(crate) struct MediaService {
     store: MediaStore,
     detector: Arc<dyn CapabilityDetector>,
+    root_identity_resolver: Arc<dyn MediaRootIdentityResolver>,
     telemetry: Metrics,
 }
 
@@ -118,13 +121,66 @@ impl MediaService {
     pub(crate) fn new(
         store: MediaStore,
         detector: Arc<dyn CapabilityDetector>,
+        root_identity_resolver: Arc<dyn MediaRootIdentityResolver>,
         telemetry: Metrics,
     ) -> Self {
         Self {
             store,
             detector,
+            root_identity_resolver,
             telemetry,
         }
+    }
+
+    async fn create_automated_profile(
+        &self,
+        params: &MediaProfileUpsertParams<'_>,
+    ) -> Result<Uuid, MediaServiceError> {
+        let source_identity = self
+            .root_identity_resolver
+            .resolve(Path::new(params.source_root))
+            .map_err(|_| invalid_media_root("media_profile_source_root_identity_invalid"))?;
+        let output_identity = self
+            .root_identity_resolver
+            .resolve(Path::new(params.output_root))
+            .map_err(|_| invalid_media_root("media_profile_output_root_identity_invalid"))?;
+        let source_canonical_path = media_root_path_text(
+            source_identity.canonical_path(),
+            "media_profile_source_root_path_invalid",
+        )?;
+        let output_canonical_path = media_root_path_text(
+            output_identity.canonical_path(),
+            "media_profile_output_root_path_invalid",
+        )?;
+        self.store
+            .create_verified_profile(&CreateVerifiedMediaProfileInput {
+                actor_public_id: params.actor_user_public_id,
+                profile_key: params.profile_key,
+                source_requested_path: params.source_root,
+                source_canonical_path,
+                source_filesystem_device: media_root_identity_number(
+                    source_identity.filesystem_device(),
+                )?,
+                source_filesystem_inode: media_root_identity_number(
+                    source_identity.filesystem_inode(),
+                )?,
+                output_requested_path: params.output_root,
+                output_canonical_path,
+                output_filesystem_device: media_root_identity_number(
+                    output_identity.filesystem_device(),
+                )?,
+                output_filesystem_inode: media_root_identity_number(
+                    output_identity.filesystem_inode(),
+                )?,
+                retention_days: params.retention_days,
+                compatibility_target_key: params.compatibility_target_key,
+                policy_key: params.policy_key,
+                watcher_enabled: params.watcher_enabled,
+                schedule_enabled: params.schedule_enabled,
+                schedule_interval_minutes: params.schedule_interval_minutes,
+            })
+            .await
+            .map_err(|err| map_data_error(&err))
     }
 
     async fn run_discovery_for_profile(
@@ -613,6 +669,9 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaProfileUpsertParams<'_>,
     ) -> Result<Uuid, MediaServiceError> {
+        if params.watcher_enabled || params.schedule_enabled {
+            return self.create_automated_profile(&params).await;
+        }
         self.store
             .upsert_profile(&UpsertMediaProfileInput {
                 actor_public_id: params.actor_user_public_id,
@@ -635,6 +694,71 @@ impl MediaFacade for MediaService {
         &self,
         params: MediaProfilePatchParams<'_>,
     ) -> Result<Uuid, MediaServiceError> {
+        let requires_root_verification = params.source_root.is_some()
+            || params.output_root.is_some()
+            || params.watcher_enabled.is_some()
+            || params.schedule_enabled.is_some()
+            || params.schedule_interval_minutes.is_some();
+        if requires_root_verification {
+            let current = self
+                .store
+                .get_profile(params.media_profile_public_id)
+                .await
+                .map_err(|err| map_data_error(&err))?
+                .ok_or_else(|| {
+                    MediaServiceError::new(MediaServiceErrorKind::NotFound)
+                        .with_code("media_profile_not_found")
+                })?;
+            let source_requested_path = params.source_root.unwrap_or(&current.source_root);
+            let output_requested_path = params.output_root.unwrap_or(&current.output_root);
+            let source_identity = self
+                .root_identity_resolver
+                .resolve(Path::new(source_requested_path))
+                .map_err(|_| invalid_media_root("media_profile_source_root_identity_invalid"))?;
+            let output_identity = self
+                .root_identity_resolver
+                .resolve(Path::new(output_requested_path))
+                .map_err(|_| invalid_media_root("media_profile_output_root_identity_invalid"))?;
+            let source_canonical_path = media_root_path_text(
+                source_identity.canonical_path(),
+                "media_profile_source_root_path_invalid",
+            )?;
+            let output_canonical_path = media_root_path_text(
+                output_identity.canonical_path(),
+                "media_profile_output_root_path_invalid",
+            )?;
+            return self
+                .store
+                .update_verified_profile(&UpdateVerifiedMediaProfileInput {
+                    actor_public_id: params.actor_user_public_id,
+                    media_profile_public_id: params.media_profile_public_id,
+                    source_requested_path,
+                    source_canonical_path,
+                    source_filesystem_device: media_root_identity_number(
+                        source_identity.filesystem_device(),
+                    )?,
+                    source_filesystem_inode: media_root_identity_number(
+                        source_identity.filesystem_inode(),
+                    )?,
+                    output_requested_path,
+                    output_canonical_path,
+                    output_filesystem_device: media_root_identity_number(
+                        output_identity.filesystem_device(),
+                    )?,
+                    output_filesystem_inode: media_root_identity_number(
+                        output_identity.filesystem_inode(),
+                    )?,
+                    dry_run_only: params.dry_run_only,
+                    retention_days: params.retention_days,
+                    compatibility_target_key: params.compatibility_target_key,
+                    policy_key: params.policy_key,
+                    watcher_enabled: params.watcher_enabled,
+                    schedule_enabled: params.schedule_enabled,
+                    schedule_interval_minutes: params.schedule_interval_minutes,
+                })
+                .await
+                .map_err(|err| map_data_error(&err));
+        }
         self.store
             .update_profile(&UpdateMediaProfileInput {
                 actor_public_id: params.actor_user_public_id,
@@ -1789,6 +1913,7 @@ struct ResolvedYamlProfile {
     profile: MediaYamlProfile,
     source_root: Option<String>,
     output_root: Option<String>,
+    existing_profile_id: Option<Uuid>,
 }
 
 async fn import_yaml_profiles(
@@ -1832,6 +1957,7 @@ fn resolve_yaml_profile(
         profile,
         source_root,
         output_root,
+        existing_profile_id: existing.map(|item| item.media_profile_public_id),
     }
 }
 
@@ -1875,6 +2001,37 @@ async fn persist_yaml_profile(
     resolved: &ResolvedYamlProfile,
 ) -> Result<Uuid, MediaServiceError> {
     let profile = &resolved.profile;
+    if let Some(profile_id) = resolved.existing_profile_id {
+        update_media_profile_with_executor(
+            &mut **transaction,
+            &UpdateMediaProfileInput {
+                actor_public_id: actor_user_public_id,
+                media_profile_public_id: profile_id,
+                source_root: Some(required_resolved_root(
+                    resolved.source_root.as_deref(),
+                    "source",
+                )?),
+                output_root: Some(required_resolved_root(
+                    resolved.output_root.as_deref(),
+                    "output",
+                )?),
+                dry_run_only: Some(true),
+                retention_days: Some(profile.retention_days),
+                compatibility_target_key: profile.compatibility_target_key.as_deref(),
+                policy_key: Some(&profile.policy_key),
+                watcher_enabled: None,
+                schedule_enabled: None,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await
+        .map_err(|err| map_data_error(&err))?;
+        pin_imported_profile_target(transaction, actor_user_public_id, profile_id, profile).await?;
+        delete_media_profile_import_draft_with_executor(&mut **transaction, &profile.profile_key)
+            .await
+            .map_err(|err| map_data_error(&err))?;
+        return Ok(profile_id);
+    }
     let profile_id = upsert_media_profile_with_executor(
         &mut **transaction,
         &UpsertMediaProfileInput {
@@ -3329,11 +3486,27 @@ async fn fingerprint_source_candidate(
 fn map_fingerprint_error(error: &FingerprintError) -> MediaServiceError {
     MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code(match error {
         FingerprintError::Io { .. } => "media_discovery_fingerprint_io",
-        FingerprintError::TimeBeforeEpoch | FingerprintError::ValueTooLarge(_) => {
-            "media_discovery_fingerprint_overflow"
+        FingerprintError::ValueTooLarge(_) => "media_discovery_fingerprint_overflow",
+        FingerprintError::InvalidPath(_) => "media_discovery_fingerprint_path_invalid",
+        FingerprintError::DirectoryEntryLimitExceeded(_) => {
+            "media_discovery_fingerprint_directory_limit"
         }
-        FingerprintError::Source(_) => "media_discovery_fingerprint_path_invalid",
     })
+}
+
+fn media_root_path_text<'a>(
+    path: &'a Path,
+    code: &'static str,
+) -> Result<&'a str, MediaServiceError> {
+    path.to_str().ok_or_else(|| invalid_media_root(code))
+}
+
+fn media_root_identity_number(value: u64) -> Result<i64, MediaServiceError> {
+    i64::try_from(value).map_err(|_| invalid_media_root("media_profile_root_identity_out_of_range"))
+}
+
+fn invalid_media_root(code: &'static str) -> MediaServiceError {
+    MediaServiceError::new(MediaServiceErrorKind::Invalid).with_code(code)
 }
 
 fn validate_manual_job_confirmation(
@@ -4009,6 +4182,7 @@ mod tests {
     };
     use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
+    use revaer_data::media::StdMediaRootIdentityResolver;
     use revaer_data::media::capabilities::{
         CapabilityCodecRow, CapabilityFeatureRow, CapabilitySnapshotRow,
     };
@@ -4026,7 +4200,7 @@ mod tests {
     use revaer_media_runtime::capabilities::CapabilityDetectError;
     use revaer_media_runtime::capabilities::CapabilityDetector;
     use revaer_media_runtime::capabilities::{CapabilitySnapshot, CodecCapability};
-    use revaer_runtime::media::MediaStore;
+    use revaer_runtime::media::{AppendJobOperation, AppendJobPlanReason, MediaStore};
     use revaer_telemetry::Metrics;
     use revaer_test_support::postgres::{TestDatabase, start_postgres};
     use sqlx::postgres::PgPoolOptions;
@@ -4086,8 +4260,7 @@ mod tests {
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
+        let migrator = sqlx::migrate!("../revaer-data/init");
         migrator.run(&pool).await?;
 
         let store = MediaStore::new(pool);
@@ -4096,7 +4269,12 @@ mod tests {
         app_user_verify_email(store.pool(), actor_user_public_id).await?;
         Ok(Some((
             TestMediaService {
-                service: MediaService::new(store, detector, Metrics::new()?),
+                service: MediaService::new(
+                    store,
+                    detector,
+                    Arc::new(StdMediaRootIdentityResolver),
+                    Metrics::new()?,
+                ),
                 _postgres: postgres,
             },
             actor_user_public_id,
@@ -5040,7 +5218,7 @@ mod tests {
                 })
                 .await?;
 
-            assert_eq!(response.queued_jobs.len(), 1);
+            assert_eq!(response.queued_jobs.len(), 1, "{response:?}");
             assert!(response.skipped.is_empty());
             assert_eq!(
                 response.queued_jobs[0].output_path,
@@ -5101,7 +5279,7 @@ mod tests {
                 })
                 .await?;
 
-            assert_eq!(response.queued_jobs.len(), 1);
+            assert_eq!(response.queued_jobs.len(), 1, "{response:?}");
             assert!(response.skipped.is_empty());
             assert_eq!(
                 response.queued_jobs[0].output_path,
@@ -5616,8 +5794,9 @@ mod tests {
 
         let job_id =
             create_app_media_job(&service, actor_user_public_id, profile_id, &media_source).await?;
-        assert_job_records_round_trip(&service, profile_id, job_id).await?;
-        assert_job_cancel_retry(&service, job_id).await?;
+        let (claim_generation, cancel_generation) =
+            assert_job_records_round_trip(&service, profile_id, job_id).await?;
+        assert_job_cancel_retry(&service, job_id, claim_generation, cancel_generation).await?;
 
         assert_yaml_round_trip(&service, actor_user_public_id).await?;
 
@@ -5749,6 +5928,17 @@ mod tests {
         source: &MediaService,
         source_actor: Uuid,
     ) -> anyhow::Result<String> {
+        let roots = tempfile::tempdir()?;
+        let source_root = roots.path().join("source");
+        let output_root = roots.path().join("output");
+        fs::create_dir_all(&source_root)?;
+        fs::create_dir_all(&output_root)?;
+        let source_root = source_root
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("portable source root is not Unicode"))?;
+        let output_root = output_root
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("portable output root is not Unicode"))?;
         source
             .media_compatibility_target_upsert(MediaCompatibilityTargetUpsertParams {
                 actor_user_public_id: source_actor,
@@ -5805,8 +5995,8 @@ mod tests {
             .media_profile_upsert(MediaProfileUpsertParams {
                 actor_user_public_id: source_actor,
                 profile_key: "portable-library",
-                source_root: "/source/portable-library",
-                output_root: "/output/portable-library",
+                source_root,
+                output_root,
                 dry_run_only: false,
                 retention_days: 45,
                 compatibility_target_key: Some("portable-client"),
@@ -6266,13 +6456,19 @@ mod tests {
         service: &MediaService,
         profile_id: Uuid,
         job_id: Uuid,
-    ) -> anyhow::Result<()> {
-        append_plan_phase_and_operation(service, job_id).await?;
-        append_job_violation(service, job_id).await?;
+    ) -> anyhow::Result<(i64, i64)> {
+        let claimed = service
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media service test job was not claimable"))?;
+        assert_eq!(claimed.media_job_public_id, job_id);
+        append_plan_phase_and_operation(service, job_id, claimed.claim_generation).await?;
+        append_job_violation(service, job_id, claimed.claim_generation).await?;
         assert!(service.media_job_get(job_id).await?.is_some());
         assert!(
             !service
-                .media_job_list(Some(profile_id), Some("queued"))
+                .media_job_list(Some(profile_id), Some("running"))
                 .await?
                 .is_empty()
         );
@@ -6280,29 +6476,34 @@ mod tests {
         assert_eq!(phases.len(), 1);
         assert_eq!(phases[0].phase_index, 0);
         assert_eq!(phases[0].phase_name, "plan");
-        assert_eq!(phases[0].phase_status, "queued");
+        assert_eq!(phases[0].phase_status, "running");
         assert_eq!(phases[0].details_text.as_deref(), Some("ok"));
         assert_eq!(service.media_job_operation_list(job_id).await?.len(), 1);
         let violations = service.media_job_violation_list(job_id).await?;
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].violation_kind, "video_codec_mismatch");
-        append_job_planning_records(service, job_id).await?;
-        append_job_artifact_and_audit(service, job_id).await
+        append_job_planning_records(service, job_id, claimed.claim_generation).await?;
+        append_job_artifact_and_audit(service, job_id, claimed.claim_generation).await?;
+        Ok((claimed.claim_generation, claimed.cancel_generation))
     }
 
     async fn append_job_planning_records(
         service: &MediaService,
         job_id: Uuid,
+        claim_generation: i64,
     ) -> anyhow::Result<()> {
         service
             .store
             .append_job_plan_reason(
-                job_id,
-                0,
-                Some(0),
-                true,
-                "least_cost_selected",
-                "Selected the least-cost compliant candidate.",
+                claim_generation,
+                &AppendJobPlanReason {
+                    media_job_public_id: job_id,
+                    reason_index: 0,
+                    candidate_index: Some(0),
+                    selected: true,
+                    reason_code: "least_cost_selected",
+                    reason_text: "Selected the least-cost compliant candidate.",
+                },
             )
             .await?;
         let plan_reasons = service.media_job_plan_reason_list(job_id).await?;
@@ -6310,15 +6511,18 @@ mod tests {
         assert_eq!(plan_reasons[0].reason_code, "least_cost_selected");
         service
             .store
-            .append_job_verification_check(&AppendMediaJobVerificationCheckInput {
-                media_job_public_id: job_id,
-                check_index: 0,
-                check_kind: "duration",
-                check_status: "passed",
-                expected_value: Some("3600.0"),
-                actual_value: Some("3599.9"),
-                details_text: Some("within tolerance"),
-            })
+            .append_job_verification_check(
+                claim_generation,
+                &AppendMediaJobVerificationCheckInput {
+                    media_job_public_id: job_id,
+                    check_index: 0,
+                    check_kind: "duration",
+                    check_status: "passed",
+                    expected_value: Some("3600.0"),
+                    actual_value: Some("3599.9"),
+                    details_text: Some("within tolerance"),
+                },
+            )
             .await?;
         let verification_checks = service.media_job_verification_check_list(job_id).await?;
         assert_eq!(verification_checks.len(), 1);
@@ -6330,17 +6534,21 @@ mod tests {
     async fn append_job_artifact_and_audit(
         service: &MediaService,
         job_id: Uuid,
+        claim_generation: i64,
     ) -> anyhow::Result<()> {
         service
             .store
-            .append_job_artifact(&AppendMediaJobArtifactInput {
-                media_job_public_id: job_id,
-                artifact_index: 0,
-                artifact_kind: "ffprobe_json",
-                artifact_path: "jobs/abc/ffprobe.json",
-                size_bytes: Some(2048),
-                content_type: Some("application/json"),
-            })
+            .append_job_artifact(
+                claim_generation,
+                &AppendMediaJobArtifactInput {
+                    media_job_public_id: job_id,
+                    artifact_index: 0,
+                    artifact_kind: "ffprobe_json",
+                    artifact_path: "jobs/abc/ffprobe.json",
+                    size_bytes: Some(2048),
+                    content_type: Some("application/json"),
+                },
+            )
             .await?;
         let artifacts = service.media_job_artifact_list(job_id).await?;
         assert_eq!(artifacts.len(), 1);
@@ -6348,12 +6556,15 @@ mod tests {
         assert_eq!(artifacts[0].artifact_path, "jobs/abc/ffprobe.json");
         service
             .store
-            .append_job_compact_audit(&AppendMediaJobCompactAuditInput {
-                media_job_public_id: job_id,
-                audit_index: 0,
-                fact_kind: "replacement",
-                fact_text: "source preserved before replace",
-            })
+            .append_job_compact_audit(
+                claim_generation,
+                &AppendMediaJobCompactAuditInput {
+                    media_job_public_id: job_id,
+                    audit_index: 0,
+                    fact_kind: "replacement",
+                    fact_text: "source preserved before replace",
+                },
+            )
             .await?;
         let audits = service.media_job_compact_audit_list(job_id).await?;
         assert_eq!(audits.len(), 1);
@@ -6422,14 +6633,17 @@ mod tests {
 
     fn create_test_media_source(relative_path: &str) -> anyhow::Result<TestMediaSource> {
         let temp_dir = tempfile::tempdir()?;
-        let source_root_path = temp_dir.path().join("source");
-        let output_root_path = temp_dir.path().join("output");
+        let requested_source_root = temp_dir.path().join("source");
+        let requested_output_root = temp_dir.path().join("output");
+        fs::create_dir_all(&requested_source_root)?;
+        fs::create_dir_all(&requested_output_root)?;
+        let source_root_path = fs::canonicalize(requested_source_root)?;
+        let output_root_path = fs::canonicalize(requested_output_root)?;
         let source_path = source_root_path.join(relative_path);
         let output_path = output_root_path.join(relative_path);
         if let Some(parent) = source_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::create_dir_all(&output_root_path)?;
         fs::write(&source_path, b"stable media test bytes")?;
         Ok(TestMediaSource {
             _temp_dir: temp_dir,
@@ -6456,35 +6670,59 @@ mod tests {
     async fn append_plan_phase_and_operation(
         service: &MediaService,
         job_id: Uuid,
+        claim_generation: i64,
     ) -> anyhow::Result<()> {
         service
             .store
-            .append_job_phase(job_id, 0, "plan", "queued", Some("ok"))
+            .append_job_phase(job_id, claim_generation, 0, "plan", "running", Some("ok"))
             .await?;
         service
             .store
             .append_job_operation(
-                job_id,
-                0,
-                "remux",
-                None,
-                "ffmpeg",
-                [Some("-i"), Some("in.mkv"), Some("-c"), Some("copy"), None],
+                claim_generation,
+                &AppendJobOperation {
+                    media_job_public_id: job_id,
+                    operation_index: 0,
+                    operation_kind: "remux",
+                    stream_id: None,
+                    command_bin: "ffmpeg",
+                    args: [Some("-i"), Some("in.mkv"), Some("-c"), Some("copy"), None],
+                },
             )
             .await?;
         Ok(())
     }
 
-    async fn append_job_violation(service: &MediaService, job_id: Uuid) -> anyhow::Result<()> {
+    async fn append_job_violation(
+        service: &MediaService,
+        job_id: Uuid,
+        claim_generation: i64,
+    ) -> anyhow::Result<()> {
         service
             .store
-            .append_job_violation(job_id, 0, "video_codec_mismatch", "high", Some(0))
+            .append_job_violation(
+                job_id,
+                claim_generation,
+                0,
+                "video_codec_mismatch",
+                "high",
+                Some(0),
+            )
             .await?;
         Ok(())
     }
 
-    async fn assert_job_cancel_retry(service: &MediaService, job_id: Uuid) -> anyhow::Result<()> {
+    async fn assert_job_cancel_retry(
+        service: &MediaService,
+        job_id: Uuid,
+        claim_generation: i64,
+        cancel_generation: i64,
+    ) -> anyhow::Result<()> {
         service.media_job_cancel(job_id).await?;
+        service
+            .store
+            .acknowledge_job_cancel(job_id, claim_generation, cancel_generation)
+            .await?;
         let cancelled_job = service
             .media_job_get(job_id)
             .await?

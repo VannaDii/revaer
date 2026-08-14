@@ -432,6 +432,7 @@
 -   [434](434-config-rng-cleanup.md) – Configuration RNG cleanup
 -   [435](435-media-workspace-retention.md) – Media workspace retention runtime
 -   [436](436-app-openapi-media-contract.md) – App OpenAPI media contract
+-   [437](437-media-integrity-fences.md) – Media integrity fences
 -   [458](458-media-data-module-boundary.md) – Media data module boundary integration correction
 -   [459](459-bootstrap-media-task-boundary.md) – Bootstrap media task boundary integration correction
 -   [462](462-pr88-shell-return.md) – PR 88 shell return correction

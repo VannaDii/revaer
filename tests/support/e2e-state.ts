@@ -9,6 +9,7 @@ export type E2EState = {
   apiPid?: number;
   uiPid?: number;
   dbUrl?: string;
+  mediaWorkspaceRoot?: string;
   apiSession?: ApiSession;
 };
 

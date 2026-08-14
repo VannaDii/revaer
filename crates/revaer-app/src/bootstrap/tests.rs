@@ -374,6 +374,8 @@ async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> A
     dependencies.snapshot.app_profile.mode = AppMode::Setup;
     dependencies.snapshot.app_profile.bind_addr = IpAddr::from([127, 0, 0, 1]);
     dependencies.snapshot.app_profile.http_port = reserved_port;
+    dependencies.media_workspace_root =
+        Some(std::env::temp_dir().join(format!("revaer-bootstrap-media-{}", Uuid::new_v4())));
 
     let err = Box::pin(run_bootstrap_services(dependencies))
         .await

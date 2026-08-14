@@ -1,4 +1,4 @@
-//! Configuration schema migrations and helpers shared across crates.
+//! Configuration schema initialization and helpers shared across crates.
 
 use crate::error::{DataError, Result};
 use chrono::{DateTime, Utc};
@@ -13,16 +13,13 @@ fn map_query_err(operation: &'static str) -> impl FnOnce(sqlx::Error) -> DataErr
     move |source| DataError::QueryFailed { operation, source }
 }
 
-/// Apply all configuration-related migrations (shared with runtime).
+/// Initialize the database schema shared with runtime.
 ///
 /// # Errors
 ///
-/// Returns an error when migration execution fails.
+/// Returns an error when schema initialization fails.
 pub async fn run_migrations(pool: &PgPool) -> Result<()> {
-    // Migrations cover configuration, tracker normalization, and peer class state.
-    let mut migrator = sqlx::migrate!("./migrations");
-    migrator.set_ignore_missing(true);
-    migrator
+    sqlx::migrate!("./init")
         .run(pool)
         .await
         .map_err(|source| DataError::MigrationFailed { source })?;

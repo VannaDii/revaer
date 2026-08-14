@@ -79,9 +79,8 @@ use revaer_media_runtime::verification::{
 use revaer_media_runtime::workspace::{
     ManagedWorkspaceError, TerminalWorkspaceCleanupPolicy, TerminalWorkspaceState, WorkspacePaths,
     WorkspacePolicy, cleanup_terminal_workspace, create_managed_workspace,
-    project_managed_workspace,
 };
-use revaer_runtime::media::MediaStore;
+use revaer_runtime::media::{AppendJobOperation, AppendJobPlanReason, MediaStore};
 use revaer_telemetry::Metrics;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -91,7 +90,10 @@ use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::media_discovery_fingerprint::{FingerprintError, fingerprint_media_aggregate};
+use crate::media_discovery_fingerprint::{
+    FingerprintError, MediaAggregateFingerprint, capture_media_aggregate,
+    fingerprint_media_aggregate,
+};
 use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 
 const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(1);
@@ -156,6 +158,7 @@ struct RuntimePreflightEvaluation {
 }
 
 struct PreflightReadyContext<'a> {
+    stable_source_path: &'a str,
     source_graph: &'a MediaGraph,
     desired: &'a DesiredGraph,
     desired_target: Option<&'a DesiredTargetSnapshot>,
@@ -194,6 +197,7 @@ struct DesiredVerificationContext<'a> {
 
 struct RuntimeGraphVerificationControl<'a> {
     media_job_public_id: Uuid,
+    claim_generation: i64,
     cancel_generation: i64,
     shutdown: Option<&'a RuntimeShutdownReceiver>,
 }
@@ -205,6 +209,7 @@ impl<'a> RuntimeGraphVerificationControl<'a> {
     ) -> Self {
         Self {
             media_job_public_id: job.media_job_public_id,
+            claim_generation: job.claim_generation,
             cancel_generation: job.cancel_generation,
             shutdown,
         }
@@ -912,7 +917,7 @@ impl MediaJobRuntime {
                     MediaJobRuntimeError::InvalidRecoveryJobKey(transaction.job_key.clone())
                 })?;
                 if transaction.action == ReplacementRecoveryAction::Finalized {
-                    self.complete_finalized_media_job(media_job_public_id)
+                    self.complete_recovered_finalized_media_job(media_job_public_id)
                         .await?;
                     self.publish_event(Event::MediaJobCompleted {
                         media_job_public_id,
@@ -926,7 +931,7 @@ impl MediaJobRuntime {
                 }
                 let detail = "media_job_recovered_interrupted_replacement";
                 self.store
-                    .mark_job_status(media_job_public_id, "failed", Some(detail))
+                    .fail_recovered_replacement_job(media_job_public_id, detail)
                     .await?;
                 self.publish_event(Event::MediaJobFailed {
                     media_job_public_id,
@@ -1020,13 +1025,9 @@ impl MediaJobRuntime {
         shutdown: Option<RuntimeShutdownReceiver>,
     ) {
         let started_at = Instant::now();
-        let workspace = if job.dry_run {
-            project_managed_workspace(&self.workspace_root, &job.media_job_public_id.to_string())
-                .map(|paths| (paths, None))
-        } else {
+        let workspace =
             create_managed_workspace(&self.workspace_root, &job.media_job_public_id.to_string())
-                .map(|workspace| (workspace.paths.clone(), Some(workspace)))
-        };
+                .map(|workspace| (workspace.paths.clone(), Some(workspace)));
         let (workspace_paths, managed_workspace) = match workspace {
             Ok(value) => value,
             Err(error) => {
@@ -1136,8 +1137,14 @@ impl MediaJobRuntime {
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
-        self.revalidate_claimed_source(job).await?;
-        self.append_phase(job.media_job_public_id, 0, "inspect_plan", "running", None)
+        let managed_workspace = managed_workspace.ok_or(MediaJobRuntimeError::Verification(
+            "media_job_managed_workspace_missing",
+        ))?;
+        managed_workspace.validate()?;
+        let stable_source_path = self
+            .capture_claimed_source(job, &workspace.input_path)
+            .await?;
+        self.append_phase(job, 0, "inspect_plan", "running", None)
             .await?;
 
         let final_output_path = resolve_output_path(job)?;
@@ -1149,13 +1156,20 @@ impl MediaJobRuntime {
 
         let capabilities = self.load_capability_snapshot().await?;
         let preflight = self
-            .build_preflight_evaluation(job, output_path.clone(), workspace, capabilities, shutdown)
+            .build_preflight_evaluation(
+                job,
+                stable_source_path.clone(),
+                output_path.clone(),
+                workspace,
+                capabilities,
+                shutdown,
+            )
             .await?;
         self.ensure_not_cancelled(job).await?;
         self.publish_event(Event::MediaJobInspected {
             media_job_public_id: job.media_job_public_id,
         });
-        self.persist_preflight_audits(job.media_job_public_id, &preflight.evaluation)
+        self.persist_preflight_audits(job, &preflight.evaluation)
             .await?;
         let RuntimePreflightEvaluation {
             evaluation,
@@ -1178,6 +1192,7 @@ impl MediaJobRuntime {
                     job,
                     *report,
                     PreflightReadyContext {
+                        stable_source_path: &stable_source_path,
                         source_graph: &source_graph,
                         desired: &desired,
                         desired_target: desired_target.as_ref(),
@@ -1187,7 +1202,7 @@ impl MediaJobRuntime {
                         source_inspection: &source_inspection,
                         attachment_materialization_root: &workspace.input_path,
                         planning_outcome: planning_outcome.as_ref(),
-                        managed_workspace,
+                        managed_workspace: Some(managed_workspace),
                         shutdown,
                     },
                 )
@@ -1202,22 +1217,25 @@ impl MediaJobRuntime {
         report: revaer_media_runtime::jobs::JobPreflightFailureReport,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         self.append_phase(
-            job.media_job_public_id,
+            job,
             0,
             report.failed_stage,
             "failed",
             Some(report.error_code),
         )
         .await?;
-        self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-            media_job_public_id: job.media_job_public_id,
-            check_index: 0,
-            check_kind: "preflight",
-            check_status: "failed",
-            expected_value: Some("ready"),
-            actual_value: Some(report.error_code),
-            details_text: Some(report.error_detail),
-        })
+        self.append_verification_check(
+            job.claim_generation,
+            &AppendMediaJobVerificationCheckInput {
+                media_job_public_id: job.media_job_public_id,
+                check_index: 0,
+                check_kind: "preflight",
+                check_status: "failed",
+                expected_value: Some("ready"),
+                actual_value: Some(report.error_code),
+                details_text: Some(report.error_detail),
+            },
+        )
         .await?;
         self.telemetry.inc_media_job_failure("preflight");
         self.mark_failed(job, report.error_code).await?;
@@ -1239,15 +1257,9 @@ impl MediaJobRuntime {
             expected_chapters: context.expected_chapters,
             attachment_materialization_root: context.attachment_materialization_root,
         };
-        self.append_phase(
-            job.media_job_public_id,
-            0,
-            "inspect_plan",
-            "completed",
-            None,
-        )
-        .await?;
-        self.persist_ready_plan(job.media_job_public_id, &report, context.planning_outcome)
+        self.append_phase(job, 0, "inspect_plan", "completed", None)
+            .await?;
+        self.persist_ready_plan(job, &report, context.planning_outcome)
             .await?;
         self.publish_event(Event::MediaJobPlanned {
             media_job_public_id: job.media_job_public_id,
@@ -1266,18 +1278,28 @@ impl MediaJobRuntime {
                 ))?;
         managed_workspace.validate()?;
         if planned_job_is_noop(&report) {
-            self.complete_noop_job(job, &verification_context, context.shutdown)
-                .await?;
+            self.complete_noop_job(
+                job,
+                context.stable_source_path,
+                &verification_context,
+                context.shutdown,
+            )
+            .await?;
             return Ok(TerminalWorkspaceState::Completed);
         }
 
         self.store
-            .mark_job_status(job.media_job_public_id, "verifying", None)
+            .mark_job_status(
+                job.media_job_public_id,
+                job.claim_generation,
+                "verifying",
+                None,
+            )
             .await?;
         self.publish_event(Event::MediaJobExecutionStarted {
             media_job_public_id: job.media_job_public_id,
         });
-        self.append_phase(job.media_job_public_id, 1, "execute", "running", None)
+        self.append_phase(job, 1, "execute", "running", None)
             .await?;
         let sidecar_outputs = report.planned.sidecar_outputs.clone();
         let sidecar_removals = report.planned.sidecar_removals.clone();
@@ -1301,7 +1323,7 @@ impl MediaJobRuntime {
             .await?;
         managed_workspace.validate()?;
         self.store
-            .commit_replacement_terminal(job.media_job_public_id)
+            .commit_replacement_terminal(job.media_job_public_id, job.claim_generation)
             .await?;
         let replacement_backend = Arc::clone(&self.replacement_committer);
         tokio::task::spawn_blocking(move || replacement_backend.finalize(committed))
@@ -1313,15 +1335,18 @@ impl MediaJobRuntime {
     }
 
     async fn complete_dry_run(&self, job: &ClaimedMediaJobRow) -> Result<(), MediaJobRuntimeError> {
-        self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-            media_job_public_id: job.media_job_public_id,
-            check_index: 0,
-            check_kind: "dry_run_preflight",
-            check_status: "passed",
-            expected_value: Some("execution_skipped"),
-            actual_value: Some("dry_run"),
-            details_text: Some("dry-run job completed without destructive execution"),
-        })
+        self.append_verification_check(
+            job.claim_generation,
+            &AppendMediaJobVerificationCheckInput {
+                media_job_public_id: job.media_job_public_id,
+                check_index: 0,
+                check_kind: "dry_run_preflight",
+                check_status: "passed",
+                expected_value: Some("execution_skipped"),
+                actual_value: Some("dry_run"),
+                details_text: Some("dry-run job completed without destructive execution"),
+            },
+        )
         .await?;
         self.complete_or_cancel(job).await?;
         self.publish_event(Event::MediaJobCompleted {
@@ -1348,25 +1373,31 @@ impl MediaJobRuntime {
     async fn complete_noop_job(
         &self,
         job: &ClaimedMediaJobRow,
+        stable_source_path: &str,
         verification_context: &DesiredVerificationContext<'_>,
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<(), MediaJobRuntimeError> {
         self.revalidate_claimed_source(job).await?;
         self.store
-            .mark_job_status(job.media_job_public_id, "verifying", None)
+            .mark_job_status(
+                job.media_job_public_id,
+                job.claim_generation,
+                "verifying",
+                None,
+            )
             .await?;
-        self.append_phase(job.media_job_public_id, 1, "verify_noop", "running", None)
+        self.append_phase(job, 1, "verify_noop", "running", None)
             .await?;
         self.verify_graph_check(
             job,
             1,
             "source_graph",
-            &job.source_path,
+            stable_source_path,
             verification_context,
             shutdown,
         )
         .await?;
-        self.append_phase(job.media_job_public_id, 1, "verify_noop", "completed", None)
+        self.append_phase(job, 1, "verify_noop", "completed", None)
             .await?;
         self.complete_or_cancel(job).await?;
         self.publish_event(Event::MediaJobCompleted {
@@ -1378,6 +1409,7 @@ impl MediaJobRuntime {
     async fn build_preflight_evaluation(
         &self,
         job: &ClaimedMediaJobRow,
+        stable_source_path: String,
         output_path: String,
         workspace: &WorkspacePaths,
         capabilities: CapabilitySnapshot,
@@ -1385,7 +1417,7 @@ impl MediaJobRuntime {
     ) -> Result<RuntimePreflightEvaluation, MediaJobRuntimeError> {
         let workspace_policy = self.workspace_policy.clone();
         let capacity_probe = Arc::clone(&self.capacity_probe);
-        let source_path = job.source_path.clone();
+        let source_path = stable_source_path;
         let desired_target = self.load_desired_target_snapshot(job).await?;
         let base_video_policy =
             video_policy_from_policy_intent(job.policy_video_intent.as_deref())?;
@@ -1394,7 +1426,7 @@ impl MediaJobRuntime {
         let inspection = self
             .inspect_media(job, source_path.clone(), shutdown)
             .await?;
-        tokio::task::spawn_blocking(move || {
+        let mut preflight = tokio::task::spawn_blocking(move || {
             compile_runtime_preflight(RuntimePreflightBuildInput {
                 source_path,
                 output_path,
@@ -1409,7 +1441,9 @@ impl MediaJobRuntime {
             })
         })
         .await
-        .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?
+        .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+        retarget_primary_replacement(&mut preflight.evaluation, &job.source_path);
+        Ok(preflight)
     }
 
     async fn load_desired_target_snapshot(
@@ -1451,11 +1485,13 @@ impl MediaJobRuntime {
         let execution_signal = Arc::clone(&signal);
         let monitor_store = self.store.clone();
         let media_job_public_id = job.media_job_public_id;
+        let claim_generation = job.claim_generation;
         let observed_cancel_generation = job.cancel_generation;
         let (stop_tx, stop_rx) = watch::channel(false);
         let monitor = tokio::spawn(monitor_job_control(
             monitor_store,
             media_job_public_id,
+            claim_generation,
             observed_cancel_generation,
             Arc::clone(&signal),
             stop_rx,
@@ -1579,7 +1615,11 @@ impl MediaJobRuntime {
         let candidate_output_path = replacement_output_path(steps)?;
         self.revalidate_claimed_source(job).await?;
         let source_inspection = self
-            .inspect_media(job, job.source_path.clone(), shutdown)
+            .inspect_media(
+                job,
+                verification_context.source_graph.source_path.clone(),
+                shutdown,
+            )
             .await?;
         self.ensure_not_cancelled(job).await?;
         let pre_replace_steps = steps
@@ -1631,10 +1671,7 @@ impl MediaJobRuntime {
                 shutdown,
             )
             .await?;
-        if let Err(error) = self
-            .persist_safety_verification(job.media_job_public_id, &safety_report)
-            .await
-        {
+        if let Err(error) = self.persist_safety_verification(job, &safety_report).await {
             self.quarantine_candidate(steps).await?;
             return Err(error);
         }
@@ -1657,11 +1694,13 @@ impl MediaJobRuntime {
         let verification_signal = Arc::clone(&signal);
         let monitor_store = self.store.clone();
         let media_job_public_id = job.media_job_public_id;
+        let claim_generation = job.claim_generation;
         let observed_cancel_generation = job.cancel_generation;
         let (stop_tx, stop_rx) = watch::channel(false);
         let monitor = tokio::spawn(monitor_job_control(
             monitor_store,
             media_job_public_id,
+            claim_generation,
             observed_cancel_generation,
             Arc::clone(&signal),
             stop_rx,
@@ -1765,20 +1804,11 @@ impl MediaJobRuntime {
     ) -> Result<(), MediaJobRuntimeError> {
         let source_path = PathBuf::from(&job.source_path);
         let source_root = PathBuf::from(&job.source_root);
-        let expected_identity = job.source_identity.clone();
-        let expected_size_bytes = job.source_size_bytes;
-        let expected_modified_ns = job.source_modified_ns;
-        let expected_changed_ns = job.source_changed_ns;
-        let expected_sha256 = job.source_sha256.clone();
+        let expected = claimed_source_fingerprint(job);
         let matched = tokio::task::spawn_blocking(move || {
             Ok::<bool, FingerprintError>(
-                fingerprint_media_aggregate(&source_path, &source_root)?.is_some_and(|actual| {
-                    actual.identity == expected_identity
-                        && actual.size_bytes == expected_size_bytes
-                        && actual.modified_ns == expected_modified_ns
-                        && actual.changed_ns == expected_changed_ns
-                        && actual.sha256 == expected_sha256
-                }),
+                fingerprint_media_aggregate(&source_path, &source_root)?.as_ref()
+                    == Some(&expected),
             )
         })
         .await
@@ -1790,6 +1820,31 @@ impl MediaJobRuntime {
                 "media_job_source_fingerprint_mismatch",
             ))
         }
+    }
+
+    async fn capture_claimed_source(
+        &self,
+        job: &ClaimedMediaJobRow,
+        destination: &Path,
+    ) -> Result<String, MediaJobRuntimeError> {
+        let source_path = PathBuf::from(&job.source_path);
+        let source_root = PathBuf::from(&job.source_root);
+        let destination = destination.to_path_buf();
+        let expected = claimed_source_fingerprint(job);
+        let captured = tokio::task::spawn_blocking(move || {
+            capture_media_aggregate(&source_path, &source_root, &destination)
+        })
+        .await
+        .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+        let captured = captured.ok_or(MediaJobRuntimeError::Verification(
+            "media_job_source_fingerprint_mismatch",
+        ))?;
+        if captured.fingerprint != expected {
+            return Err(MediaJobRuntimeError::Verification(
+                "media_job_source_fingerprint_mismatch",
+            ));
+        }
+        path_to_string(&captured.source_path, "media_job_stable_source_path")
     }
 
     async fn recover_replacement_root(
@@ -1872,15 +1927,18 @@ impl MediaJobRuntime {
             sidecar_publication.outputs,
             sidecar_publication.removals,
         );
-        self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-            media_job_public_id: job.media_job_public_id,
-            check_index: 21,
-            check_kind: "final_sidecar_state",
-            check_status: if matched { "passed" } else { "failed" },
-            expected_value: Some("desired_sidecar_state"),
-            actual_value: Some(if matched { "matched" } else { "mismatched" }),
-            details_text: Some(&inspection.graph.source_path),
-        })
+        self.append_verification_check(
+            job.claim_generation,
+            &AppendMediaJobVerificationCheckInput {
+                media_job_public_id: job.media_job_public_id,
+                check_index: 21,
+                check_kind: "final_sidecar_state",
+                check_status: if matched { "passed" } else { "failed" },
+                expected_value: Some("desired_sidecar_state"),
+                actual_value: Some(if matched { "matched" } else { "mismatched" }),
+                details_text: Some(&inspection.graph.source_path),
+            },
+        )
         .await?;
         if matched {
             Ok(())
@@ -1908,19 +1966,22 @@ impl MediaJobRuntime {
         let matched = media_graph_matches_desired(&inspection.graph, verification_context.desired);
         let check_status = if matched { "passed" } else { "failed" };
         let actual_value = if matched { "matched" } else { "mismatched" };
-        self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-            media_job_public_id: control.media_job_public_id,
-            check_index,
-            check_kind,
-            check_status,
-            expected_value: Some("desired_graph"),
-            actual_value: Some(actual_value),
-            details_text: Some(&inspection.graph.source_path),
-        })
+        self.append_verification_check(
+            control.claim_generation,
+            &AppendMediaJobVerificationCheckInput {
+                media_job_public_id: control.media_job_public_id,
+                check_index,
+                check_kind,
+                check_status,
+                expected_value: Some("desired_graph"),
+                actual_value: Some(actual_value),
+                details_text: Some(&inspection.graph.source_path),
+            },
+        )
         .await?;
         if matched {
             self.verify_video_constraints_inspection(
-                control.media_job_public_id,
+                control,
                 video_constraint_check_index(check_kind, check_index),
                 video_constraint_check_kind(check_kind),
                 inspection,
@@ -1936,7 +1997,7 @@ impl MediaJobRuntime {
             )
             .await?;
             self.verify_container_metadata_inspection(
-                control.media_job_public_id,
+                control,
                 container_metadata_check_index(check_kind, check_index),
                 container_metadata_check_kind(check_kind),
                 inspection,
@@ -1944,7 +2005,7 @@ impl MediaJobRuntime {
             )
             .await?;
             self.verify_chapter_timeline_inspection(
-                control.media_job_public_id,
+                control,
                 chapter_timeline_check_index(check_kind, check_index),
                 chapter_timeline_check_kind(check_kind),
                 inspection,
@@ -1952,7 +2013,7 @@ impl MediaJobRuntime {
             )
             .await?;
             self.verify_retained_attachment_data_inspection(
-                control.media_job_public_id,
+                control,
                 retained_stream_check_index(check_kind, check_index),
                 retained_stream_check_kind(check_kind),
                 inspection,
@@ -1982,7 +2043,7 @@ impl MediaJobRuntime {
 
     async fn verify_container_metadata_inspection(
         &self,
-        media_job_public_id: Uuid,
+        control: &RuntimeGraphVerificationControl<'_>,
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
@@ -1990,7 +2051,7 @@ impl MediaJobRuntime {
     ) -> Result<(), MediaJobRuntimeError> {
         let verification = container_metadata_matches_inspection(inspection, expected_metadata);
         self.complete_verification_check(
-            media_job_public_id,
+            control,
             check_index,
             check_kind,
             VerificationCheckOutcome {
@@ -2006,7 +2067,7 @@ impl MediaJobRuntime {
 
     async fn verify_video_constraints_inspection(
         &self,
-        media_job_public_id: Uuid,
+        control: &RuntimeGraphVerificationControl<'_>,
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
@@ -2019,7 +2080,7 @@ impl MediaJobRuntime {
             verification_context.desired_target,
         );
         self.complete_verification_check(
-            media_job_public_id,
+            control,
             check_index,
             check_kind,
             VerificationCheckOutcome {
@@ -2045,7 +2106,7 @@ impl MediaJobRuntime {
             .audio_constraints_match_inspection(control, inspection, verification_context)
             .await?;
         self.complete_verification_check(
-            control.media_job_public_id,
+            control,
             check_index,
             check_kind,
             VerificationCheckOutcome {
@@ -2061,7 +2122,7 @@ impl MediaJobRuntime {
 
     async fn verify_chapter_timeline_inspection(
         &self,
-        media_job_public_id: Uuid,
+        control: &RuntimeGraphVerificationControl<'_>,
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
@@ -2069,7 +2130,7 @@ impl MediaJobRuntime {
     ) -> Result<(), MediaJobRuntimeError> {
         let verification = chapter_timeline_matches_inspection(inspection, expected_chapters);
         self.complete_verification_check(
-            media_job_public_id,
+            control,
             check_index,
             check_kind,
             VerificationCheckOutcome {
@@ -2085,7 +2146,7 @@ impl MediaJobRuntime {
 
     async fn verify_retained_attachment_data_inspection(
         &self,
-        media_job_public_id: Uuid,
+        control: &RuntimeGraphVerificationControl<'_>,
         check_index: i32,
         check_kind: &'static str,
         inspection: &MediaInspection,
@@ -2097,7 +2158,7 @@ impl MediaJobRuntime {
             verification_context.desired,
         );
         self.complete_verification_check(
-            media_job_public_id,
+            control,
             check_index,
             check_kind,
             VerificationCheckOutcome {
@@ -2125,6 +2186,7 @@ impl MediaJobRuntime {
         let monitor = tokio::spawn(monitor_job_control(
             monitor_store,
             control.media_job_public_id,
+            control.claim_generation,
             control.cancel_generation,
             Arc::clone(&signal),
             stop_rx,
@@ -2148,7 +2210,7 @@ impl MediaJobRuntime {
         }
         let verification = verification?;
         self.complete_verification_check(
-            control.media_job_public_id,
+            control,
             check_index,
             check_kind,
             VerificationCheckOutcome {
@@ -2164,27 +2226,30 @@ impl MediaJobRuntime {
 
     async fn complete_verification_check(
         &self,
-        media_job_public_id: Uuid,
+        control: &RuntimeGraphVerificationControl<'_>,
         check_index: i32,
         check_kind: &'static str,
         outcome: VerificationCheckOutcome<'_>,
     ) -> Result<(), MediaJobRuntimeError> {
-        self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-            media_job_public_id,
-            check_index,
-            check_kind,
-            check_status: if outcome.matched { "passed" } else { "failed" },
-            expected_value: Some(outcome.expected),
-            actual_value: Some(outcome.actual),
-            details_text: outcome.details,
-        })
+        self.append_verification_check(
+            control.claim_generation,
+            &AppendMediaJobVerificationCheckInput {
+                media_job_public_id: control.media_job_public_id,
+                check_index,
+                check_kind,
+                check_status: if outcome.matched { "passed" } else { "failed" },
+                expected_value: Some(outcome.expected),
+                actual_value: Some(outcome.actual),
+                details_text: outcome.details,
+            },
+        )
         .await?;
         if outcome.matched {
             Ok(())
         } else {
             self.telemetry.inc_media_job_failure("verification");
             self.publish_event(Event::MediaJobVerificationFailed {
-                media_job_public_id,
+                media_job_public_id: control.media_job_public_id,
                 check_kind: check_kind.to_string(),
                 error_code: outcome.error_code.to_string(),
             });
@@ -2204,6 +2269,7 @@ impl MediaJobRuntime {
         let monitor = tokio::spawn(monitor_job_control(
             monitor_store,
             control.media_job_public_id,
+            control.claim_generation,
             control.cancel_generation,
             Arc::clone(&signal),
             stop_rx,
@@ -2230,7 +2296,7 @@ impl MediaJobRuntime {
 
     async fn persist_safety_verification(
         &self,
-        media_job_public_id: Uuid,
+        job: &ClaimedMediaJobRow,
         report: &VerificationReport,
     ) -> Result<(), MediaJobRuntimeError> {
         for (offset, check) in report.checks.iter().enumerate() {
@@ -2240,15 +2306,18 @@ impl MediaJobRuntime {
                 .ok_or(MediaJobRuntimeError::Verification(
                     "media_job_verification_check_index_overflow",
                 ))?;
-            self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-                media_job_public_id,
-                check_index,
-                check_kind: check.kind,
-                check_status: if check.passed { "passed" } else { "failed" },
-                expected_value: Some(&check.expected),
-                actual_value: Some(&check.actual),
-                details_text: check.details.as_deref(),
-            })
+            self.append_verification_check(
+                job.claim_generation,
+                &AppendMediaJobVerificationCheckInput {
+                    media_job_public_id: job.media_job_public_id,
+                    check_index,
+                    check_kind: check.kind,
+                    check_status: if check.passed { "passed" } else { "failed" },
+                    expected_value: Some(&check.expected),
+                    actual_value: Some(&check.actual),
+                    details_text: check.details.as_deref(),
+                },
+            )
             .await?;
         }
         if report.passed() {
@@ -2256,7 +2325,7 @@ impl MediaJobRuntime {
         }
         self.telemetry.inc_media_job_failure("verification");
         self.publish_event(Event::MediaJobVerificationFailed {
-            media_job_public_id,
+            media_job_public_id: job.media_job_public_id,
             check_kind: "candidate_safety".to_string(),
             error_code: "media_job_candidate_safety_verification_failed".to_string(),
         });
@@ -2277,11 +2346,13 @@ impl MediaJobRuntime {
         let inspection_signal = Arc::clone(&signal);
         let monitor_store = self.store.clone();
         let media_job_public_id = job.media_job_public_id;
+        let claim_generation = job.claim_generation;
         let observed_cancel_generation = job.cancel_generation;
         let (stop_tx, stop_rx) = watch::channel(false);
         let monitor = tokio::spawn(monitor_job_control(
             monitor_store,
             media_job_public_id,
+            claim_generation,
             observed_cancel_generation,
             Arc::clone(&signal),
             stop_rx,
@@ -2400,7 +2471,7 @@ impl MediaJobRuntime {
 
     async fn persist_ready_plan(
         &self,
-        media_job_public_id: Uuid,
+        job: &ClaimedMediaJobRow,
         report: &JobPreflightReport,
         planning_outcome: Option<&PlanningOutcome>,
     ) -> Result<(), MediaJobRuntimeError> {
@@ -2416,12 +2487,15 @@ impl MediaJobRuntime {
             let operation_kind = operation_kind_code(operation.kind);
             self.store
                 .append_job_operation(
-                    media_job_public_id,
-                    usize_to_i32(index, "operation_index")?,
-                    operation_kind,
-                    stream_id_to_i32(operation)?,
-                    &evidence.command_bin,
-                    args,
+                    job.claim_generation,
+                    &AppendJobOperation {
+                        media_job_public_id: job.media_job_public_id,
+                        operation_index: usize_to_i32(index, "operation_index")?,
+                        operation_kind,
+                        stream_id: stream_id_to_i32(operation)?,
+                        command_bin: &evidence.command_bin,
+                        args,
+                    },
                 )
                 .await?;
             self.telemetry
@@ -2429,18 +2503,20 @@ impl MediaJobRuntime {
         }
 
         if let Some(outcome) = planning_outcome {
-            self.persist_planning_outcome(media_job_public_id, outcome)
-                .await?;
+            self.persist_planning_outcome(job, outcome).await?;
         } else {
             for (index, explanation) in report.summary.explanations.iter().enumerate() {
                 self.store
                     .append_job_plan_reason(
-                        media_job_public_id,
-                        usize_to_i32(index, "reason_index")?,
-                        Some(0),
-                        true,
-                        "selected_operation",
-                        &explanation.message,
+                        job.claim_generation,
+                        &AppendJobPlanReason {
+                            media_job_public_id: job.media_job_public_id,
+                            reason_index: usize_to_i32(index, "reason_index")?,
+                            candidate_index: Some(0),
+                            selected: true,
+                            reason_code: "selected_operation",
+                            reason_text: &explanation.message,
+                        },
                     )
                     .await?;
             }
@@ -2450,36 +2526,42 @@ impl MediaJobRuntime {
 
     async fn persist_planning_outcome(
         &self,
-        media_job_public_id: Uuid,
+        job: &ClaimedMediaJobRow,
         outcome: &PlanningOutcome,
     ) -> Result<(), MediaJobRuntimeError> {
         let selected = &outcome.explanation.selected_plan;
         self.store
             .append_job_plan_reason(
-                media_job_public_id,
-                0,
-                Some(0),
-                true,
-                "selected_least_cost_candidate",
-                &format!("id={};total_cost={}", selected.id, selected.total_cost),
+                job.claim_generation,
+                &AppendJobPlanReason {
+                    media_job_public_id: job.media_job_public_id,
+                    reason_index: 0,
+                    candidate_index: Some(0),
+                    selected: true,
+                    reason_code: "selected_least_cost_candidate",
+                    reason_text: &format!("id={};total_cost={}", selected.id, selected.total_cost),
+                },
             )
             .await?;
         let mut reason_index = 1_usize;
         for operation in &selected.operations {
             self.store
                 .append_job_plan_reason(
-                    media_job_public_id,
-                    usize_to_i32(reason_index, "reason_index")?,
-                    Some(0),
-                    true,
-                    "selected_operation",
-                    &format!(
-                        "kind={};source_stream_id={};output_stream_id={};reason={}",
-                        operation_kind_code(operation.kind),
-                        optional_stream_id_code(operation.source_stream_id),
-                        optional_stream_id_code(operation.output_stream_id),
-                        operation.reason
-                    ),
+                    job.claim_generation,
+                    &AppendJobPlanReason {
+                        media_job_public_id: job.media_job_public_id,
+                        reason_index: usize_to_i32(reason_index, "reason_index")?,
+                        candidate_index: Some(0),
+                        selected: true,
+                        reason_code: "selected_operation",
+                        reason_text: &format!(
+                            "kind={};source_stream_id={};output_stream_id={};reason={}",
+                            operation_kind_code(operation.kind),
+                            optional_stream_id_code(operation.source_stream_id),
+                            optional_stream_id_code(operation.output_stream_id),
+                            operation.reason
+                        ),
+                    },
                 )
                 .await?;
             reason_index = reason_index.saturating_add(1);
@@ -2488,27 +2570,36 @@ impl MediaJobRuntime {
             let candidate_index = candidate_index.saturating_add(1);
             self.store
                 .append_job_plan_reason(
-                    media_job_public_id,
-                    usize_to_i32(reason_index, "reason_index")?,
-                    Some(usize_to_i32(candidate_index, "candidate_index")?),
-                    false,
-                    candidate_rejection_reason_code(rejected.reason),
-                    &format!(
-                        "id={};total_cost={}",
-                        rejected.candidate.id, rejected.total_cost
-                    ),
+                    job.claim_generation,
+                    &AppendJobPlanReason {
+                        media_job_public_id: job.media_job_public_id,
+                        reason_index: usize_to_i32(reason_index, "reason_index")?,
+                        candidate_index: Some(usize_to_i32(candidate_index, "candidate_index")?),
+                        selected: false,
+                        reason_code: candidate_rejection_reason_code(rejected.reason),
+                        reason_text: &format!(
+                            "id={};total_cost={}",
+                            rejected.candidate.id, rejected.total_cost
+                        ),
+                    },
                 )
                 .await?;
             reason_index = reason_index.saturating_add(1);
             for operation in &rejected.candidate.operations {
                 self.store
                     .append_job_plan_reason(
-                        media_job_public_id,
-                        usize_to_i32(reason_index, "reason_index")?,
-                        Some(usize_to_i32(candidate_index, "candidate_index")?),
-                        false,
-                        "rejected_operation",
-                        &operation_rationale_code(operation),
+                        job.claim_generation,
+                        &AppendJobPlanReason {
+                            media_job_public_id: job.media_job_public_id,
+                            reason_index: usize_to_i32(reason_index, "reason_index")?,
+                            candidate_index: Some(usize_to_i32(
+                                candidate_index,
+                                "candidate_index",
+                            )?),
+                            selected: false,
+                            reason_code: "rejected_operation",
+                            reason_text: &operation_rationale_code(operation),
+                        },
                     )
                     .await?;
                 reason_index = reason_index.saturating_add(1);
@@ -2519,17 +2610,20 @@ impl MediaJobRuntime {
 
     async fn persist_preflight_audits(
         &self,
-        media_job_public_id: Uuid,
+        job: &ClaimedMediaJobRow,
         evaluation: &JobPreflightEvaluation,
     ) -> Result<(), DataError> {
         for fact in preflight_compact_audit_facts(evaluation) {
             self.store
-                .append_job_compact_audit(&AppendMediaJobCompactAuditInput {
-                    media_job_public_id,
-                    audit_index: fact.audit_index,
-                    fact_kind: fact.fact_kind,
-                    fact_text: &fact.fact_text,
-                })
+                .append_job_compact_audit(
+                    job.claim_generation,
+                    &AppendMediaJobCompactAuditInput {
+                        media_job_public_id: job.media_job_public_id,
+                        audit_index: fact.audit_index,
+                        fact_kind: fact.fact_kind,
+                        fact_text: &fact.fact_text,
+                    },
+                )
                 .await?;
         }
         Ok(())
@@ -2537,7 +2631,7 @@ impl MediaJobRuntime {
 
     async fn append_phase(
         &self,
-        media_job_public_id: Uuid,
+        job: &ClaimedMediaJobRow,
         phase_index: i32,
         phase_name: &str,
         phase_status: &str,
@@ -2546,7 +2640,8 @@ impl MediaJobRuntime {
         let result = self
             .store
             .append_job_phase(
-                media_job_public_id,
+                job.media_job_public_id,
+                job.claim_generation,
                 phase_index,
                 phase_name,
                 phase_status,
@@ -2561,9 +2656,13 @@ impl MediaJobRuntime {
 
     async fn append_verification_check(
         &self,
+        claim_generation: i64,
         input: &AppendMediaJobVerificationCheckInput<'_>,
     ) -> Result<(), DataError> {
-        let result = self.store.append_job_verification_check(input).await;
+        let result = self
+            .store
+            .append_job_verification_check(claim_generation, input)
+            .await;
         if result.is_ok() {
             self.telemetry
                 .inc_media_job_verification_check(input.check_kind, input.check_status);
@@ -2577,7 +2676,11 @@ impl MediaJobRuntime {
     ) -> Result<(), MediaJobRuntimeError> {
         let control = self
             .store
-            .poll_job_control(job.media_job_public_id, job.cancel_generation)
+            .poll_job_control(
+                job.media_job_public_id,
+                job.claim_generation,
+                job.cancel_generation,
+            )
             .await?;
         if control.cancel_requested {
             Err(MediaJobRuntimeError::Cancelled)
@@ -2592,7 +2695,11 @@ impl MediaJobRuntime {
     ) -> Result<(), MediaJobRuntimeError> {
         let cancelled = self
             .store
-            .complete_job(job.media_job_public_id, job.cancel_generation)
+            .complete_job(
+                job.media_job_public_id,
+                job.claim_generation,
+                job.cancel_generation,
+            )
             .await?;
         if cancelled {
             Err(MediaJobRuntimeError::Cancelled)
@@ -2605,32 +2712,19 @@ impl MediaJobRuntime {
         &self,
         job: &ClaimedMediaJobRow,
     ) -> Result<(), MediaJobRuntimeError> {
-        self.complete_finalized_media_job(job.media_job_public_id)
-            .await
+        self.store
+            .complete_finalized_job(job.media_job_public_id, job.claim_generation)
+            .await?;
+        Ok(())
     }
 
-    async fn complete_finalized_media_job(
+    async fn complete_recovered_finalized_media_job(
         &self,
         media_job_public_id: Uuid,
     ) -> Result<(), MediaJobRuntimeError> {
-        let late_cancel_acknowledged = self
-            .store
-            .complete_finalized_job(media_job_public_id)
+        self.store
+            .complete_recovered_finalized_job(media_job_public_id)
             .await?;
-        if late_cancel_acknowledged {
-            self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-                media_job_public_id,
-                check_index: 25,
-                check_kind: "late_cancel_after_finalized_replace",
-                check_status: "passed",
-                expected_value: Some("finalized_replacement_remains_completed"),
-                actual_value: Some("late_cancel_acknowledged"),
-                details_text: Some(
-                    "operator cancellation arrived after finalized replacement boundary",
-                ),
-            })
-            .await?;
-        }
         Ok(())
     }
 
@@ -2639,26 +2733,33 @@ impl MediaJobRuntime {
         job: &ClaimedMediaJobRow,
     ) -> Result<(), MediaJobRuntimeError> {
         self.append_phase(
-            job.media_job_public_id,
+            job,
             CANCELLATION_PHASE_INDEX,
             "runtime_cancellation",
             "cancelled",
             Some("media_job_cancelled_by_operator"),
         )
         .await?;
-        self.append_verification_check(&AppendMediaJobVerificationCheckInput {
-            media_job_public_id: job.media_job_public_id,
-            check_index: CANCELLATION_CHECK_INDEX,
-            check_kind: "cancellation",
-            check_status: "skipped",
-            expected_value: Some("continue"),
-            actual_value: Some("operator_cancelled"),
-            details_text: Some("worker acknowledged durable cancellation generation"),
-        })
+        self.append_verification_check(
+            job.claim_generation,
+            &AppendMediaJobVerificationCheckInput {
+                media_job_public_id: job.media_job_public_id,
+                check_index: CANCELLATION_CHECK_INDEX,
+                check_kind: "cancellation",
+                check_status: "skipped",
+                expected_value: Some("continue"),
+                actual_value: Some("operator_cancelled"),
+                details_text: Some("worker acknowledged durable cancellation generation"),
+            },
+        )
         .await?;
         let acknowledged_generation = self
             .store
-            .acknowledge_job_cancel(job.media_job_public_id, job.cancel_generation)
+            .acknowledge_job_cancel(
+                job.media_job_public_id,
+                job.claim_generation,
+                job.cancel_generation,
+            )
             .await?;
         info!(
             media_job_public_id = %job.media_job_public_id,
@@ -2673,7 +2774,7 @@ impl MediaJobRuntime {
         let code = error.code();
         if let Err(phase_error) = self
             .append_phase(
-                job.media_job_public_id,
+                job,
                 FAILURE_PHASE_INDEX,
                 "runtime_failure",
                 "failed",
@@ -2684,15 +2785,18 @@ impl MediaJobRuntime {
             warn!(media_job_public_id = %job.media_job_public_id, error = %phase_error, "media job runtime failed to persist failure phase");
         }
         if let Err(check_error) = self
-            .append_verification_check(&AppendMediaJobVerificationCheckInput {
-                media_job_public_id: job.media_job_public_id,
-                check_index: FAILURE_CHECK_INDEX,
-                check_kind: "runtime_failure",
-                check_status: "failed",
-                expected_value: Some("success"),
-                actual_value: Some(code),
-                details_text: Some(code),
-            })
+            .append_verification_check(
+                job.claim_generation,
+                &AppendMediaJobVerificationCheckInput {
+                    media_job_public_id: job.media_job_public_id,
+                    check_index: FAILURE_CHECK_INDEX,
+                    check_kind: "runtime_failure",
+                    check_status: "failed",
+                    expected_value: Some("success"),
+                    actual_value: Some(code),
+                    details_text: Some(code),
+                },
+            )
             .await
         {
             warn!(media_job_public_id = %job.media_job_public_id, error = %check_error, "media job runtime failed to persist failure check");
@@ -2704,7 +2808,12 @@ impl MediaJobRuntime {
 
     async fn mark_failed(&self, job: &ClaimedMediaJobRow, detail: &str) -> Result<(), DataError> {
         self.store
-            .mark_job_status(job.media_job_public_id, "failed", Some(detail))
+            .mark_job_status(
+                job.media_job_public_id,
+                job.claim_generation,
+                "failed",
+                Some(detail),
+            )
             .await?;
         self.publish_event(Event::MediaJobFailed {
             media_job_public_id: job.media_job_public_id,
@@ -2778,6 +2887,7 @@ fn verification_policy_from_job(
 async fn monitor_job_control(
     store: MediaStore,
     media_job_public_id: Uuid,
+    claim_generation: i64,
     observed_cancel_generation: i64,
     signal: Arc<CancellationSignal>,
     mut stop: watch::Receiver<bool>,
@@ -2790,7 +2900,11 @@ async fn monitor_job_control(
         tokio::select! {
             _ = ticker.tick() => {
                 let control = store
-                    .poll_job_control(media_job_public_id, observed_cancel_generation)
+                    .poll_job_control(
+                        media_job_public_id,
+                        claim_generation,
+                        observed_cancel_generation,
+                    )
                     .await;
                 match control {
                     Ok(control) if control.cancel_requested => {
@@ -4619,15 +4733,11 @@ fn compile_runtime_preflight(
         input.desired_target.as_ref(),
         &source_inspection.sidecars,
     )?;
-    let expected_container_metadata = expected_container_metadata_for_policy(
+    let (expected_container_metadata, expected_chapters) = expected_container_contracts(
         &source_container_metadata,
-        compiled.graph.container_metadata_policy.as_deref(),
-        &compiled.graph.container_metadata,
-    )?;
-    let expected_chapters = expected_chapters_for_policy(
         &source_chapters,
-        compiled.graph.container_chapter_policy.as_deref(),
-        &compiled.graph.container_chapters,
+        &compiled.graph,
+        input.desired_target.as_ref(),
     )?;
     let video_policy = video_policy_from_target_snapshot(
         input.base_video_policy,
@@ -4684,6 +4794,32 @@ fn compile_runtime_preflight(
         expected_sidecars,
         planning_outcome,
     })
+}
+
+fn expected_container_contracts(
+    source_metadata: &[MetadataEntry],
+    source_chapters: &[ChapterInspection],
+    compiled: &DesiredGraph,
+    target: Option<&DesiredTargetSnapshot>,
+) -> Result<(Vec<MetadataEntry>, Vec<ChapterInspection>), MediaJobRuntimeError> {
+    let authored_metadata = target.map_or(&[][..], |snapshot| {
+        snapshot.target.container_metadata.as_slice()
+    });
+    let authored_chapters = target.map_or(&[][..], |snapshot| {
+        snapshot.target.container_chapters.as_slice()
+    });
+    Ok((
+        expected_container_metadata_for_policy(
+            source_metadata,
+            compiled.container_metadata_policy.as_deref(),
+            authored_metadata,
+        )?,
+        expected_chapters_for_policy(
+            source_chapters,
+            compiled.container_chapter_policy.as_deref(),
+            authored_chapters,
+        )?,
+    ))
 }
 
 fn compile_runtime_desired_target(
@@ -6025,6 +6161,31 @@ fn resolve_output_path(job: &ClaimedMediaJobRow) -> Result<String, MediaJobRunti
         ))
 }
 
+fn claimed_source_fingerprint(job: &ClaimedMediaJobRow) -> MediaAggregateFingerprint {
+    MediaAggregateFingerprint {
+        identity: job.source_identity.clone(),
+        size_bytes: job.source_size_bytes,
+        modified_ns: job.source_modified_ns,
+        changed_ns: job.source_changed_ns,
+        sha256: job.source_sha256.clone(),
+    }
+}
+
+fn retarget_primary_replacement(evaluation: &mut JobPreflightEvaluation, source_path: &str) {
+    let JobPreflightEvaluation::Ready(report) = evaluation else {
+        return;
+    };
+    for step in &mut report.steps {
+        if let ExecutionStep::AtomicReplace {
+            source_path: planned_source,
+            ..
+        } = step
+        {
+            source_path.clone_into(planned_source);
+        }
+    }
+}
+
 fn resolve_workspace_output_path(
     final_output_path: &str,
     workspace: &WorkspacePaths,
@@ -6369,13 +6530,26 @@ fn operation_audit_evidence(
     report: &JobPreflightReport,
     operation_index: usize,
 ) -> Result<OperationAuditEvidence, MediaJobRuntimeError> {
-    let audit = report
+    let Some(audit) = report
         .step_audits
         .iter()
         .find(|audit| audit.operation_indices.contains(&operation_index))
-        .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
+    else {
+        let operation = report.planned.operations.get(operation_index).ok_or(
+            MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_execution_operation_mapping_missing",
+            ),
+        )?;
+        if report.steps.is_empty() || matches!(operation.kind, OperationKind::NoOp) {
+            return Ok(planning_only_operation_audit_evidence(
+                operation,
+                operation_index,
+            ));
+        }
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
             "media_job_execution_operation_mapping_missing",
-        ))?;
+        ));
+    };
     let step =
         report
             .steps
@@ -6415,6 +6589,30 @@ fn operation_audit_evidence(
             Some(format!("argv_count={argument_count}")),
         ],
     })
+}
+
+fn planning_only_operation_audit_evidence(
+    operation: &PlannedOperation,
+    operation_index: usize,
+) -> OperationAuditEvidence {
+    let operation_kind = operation_kind_code(operation.kind);
+    let source_stream_id = optional_stream_id_code(operation.stream_id);
+    let output_stream_id = optional_stream_id_code(operation.output_stream_id);
+    let description = format!(
+        "kind={operation_kind};source_stream_id={source_stream_id};output_stream_id={output_stream_id}"
+    );
+    let mut digest = Sha256::new();
+    append_digest_field(&mut digest, description.as_bytes());
+    OperationAuditEvidence {
+        command_bin: "planner".to_string(),
+        fields: [
+            Some(format!("operation_id={operation_index}")),
+            Some(description),
+            Some(format!("sha256={:x}", digest.finalize())),
+            Some("execution=not_required".to_string()),
+            None,
+        ],
+    }
 }
 
 fn redacted_command_bin(bin: &str) -> String {
@@ -6644,7 +6842,7 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path = checked_test_source_path(source_path, cancellation)?;
-            let graph = if source_path.contains("/workspace/") {
+            let graph = if test_media_is_output(Path::new(source_path)) {
                 video_graph(source_path, "vp9")
             } else {
                 video_graph(source_path, "h264")
@@ -6681,6 +6879,31 @@ mod tests {
     }
 
     #[derive(Clone)]
+    struct SourceMutatingInspector {
+        original_source: PathBuf,
+        mutated: Arc<AtomicBool>,
+    }
+
+    impl InspectAdapter for SourceMutatingInspector {
+        fn inspect_with_cancellation(
+            &self,
+            source_path: &Path,
+            cancellation: &dyn InspectCancellation,
+        ) -> Result<MediaInspection, InspectError> {
+            let source_path_text = checked_test_source_path(source_path, cancellation)?;
+            if !self.mutated.swap(true, Ordering::AcqRel) {
+                fs::write(&self.original_source, b"attacker-replacement").map_err(|error| {
+                    InspectError::ProbeFailed(format!("test source mutation failed: {error}"))
+                })?;
+            }
+            Ok(complete_test_inspection(video_graph(
+                source_path_text,
+                "h264",
+            )))
+        }
+    }
+
+    #[derive(Clone)]
     struct CandidateDropsChaptersInspector;
 
     impl InspectAdapter for CandidateDropsChaptersInspector {
@@ -6695,7 +6918,7 @@ mod tests {
                 Ok(_) | Err(_) => "h264",
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
-            if source_path_text.contains("/workspace/") {
+            if test_media_is_output(source_path) {
                 Ok(inspection)
             } else {
                 Ok(with_test_chapters(inspection))
@@ -6718,7 +6941,7 @@ mod tests {
                 Ok(_) | Err(_) => "h264",
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
-            if source_path_text.contains("/workspace/") {
+            if test_media_is_output(source_path) {
                 Ok(with_test_chapters(inspection))
             } else {
                 Ok(inspection)
@@ -6743,7 +6966,6 @@ mod tests {
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
             match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => Ok(inspection),
-                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => Ok(inspection),
                 Ok(_) | Err(_) => Ok(with_test_chapters(inspection)),
             }
         }
@@ -6768,9 +6990,6 @@ mod tests {
                 Ok(bytes) if bytes.as_slice() == b"output" => {
                     Ok(with_replacement_test_chapters(inspection))
                 }
-                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => {
-                    Ok(with_replacement_test_chapters(inspection))
-                }
                 Ok(_) | Err(_) => Ok(with_test_chapters(inspection)),
             }
         }
@@ -6788,7 +7007,6 @@ mod tests {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
             let codec = match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
-                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => "hevc",
                 Ok(_) | Err(_) => "h264",
             };
             let mut graph = video_graph(source_path_text, codec);
@@ -6811,7 +7029,6 @@ mod tests {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
             let codec = match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
-                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => "hevc",
                 Ok(_) | Err(_) => "h264",
             };
             let mut graph = video_graph(source_path_text, codec);
@@ -6832,7 +7049,6 @@ mod tests {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
             let codec = match fs::read(source_path) {
                 Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
-                Ok(_) | Err(_) if source_path_text.contains("/workspace/") => "hevc",
                 Ok(_) | Err(_) => "h264",
             };
             let mut graph = video_graph(source_path_text, codec);
@@ -6877,7 +7093,7 @@ mod tests {
                 Ok(_) | Err(_) => "h264",
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
-            if source_path_text.contains("/workspace/") {
+            if test_media_is_output(source_path) {
                 Ok(inspection)
             } else {
                 Ok(with_test_container_metadata(inspection))
@@ -6900,7 +7116,7 @@ mod tests {
                 Ok(_) | Err(_) => "h264",
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
-            if source_path_text.contains("/workspace/") {
+            if test_media_is_output(source_path) {
                 Ok(with_added_test_container_metadata(inspection))
             } else {
                 Ok(inspection)
@@ -6938,13 +7154,10 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
-            let codec = if source_path_text.contains("/workspace/") {
+            let codec = if test_media_is_output(source_path) {
                 "hevc"
             } else {
-                match fs::read(source_path) {
-                    Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
-                    Ok(_) | Err(_) => "h264",
-                }
+                "h264"
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
             if source_path_text.contains("/workspace/")
@@ -6967,13 +7180,10 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
-            let codec = if source_path_text.contains("/workspace/") {
+            let codec = if test_media_is_output(source_path) {
                 "hevc"
             } else {
-                match fs::read(source_path) {
-                    Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
-                    Ok(_) | Err(_) => "h264",
-                }
+                "h264"
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
             if source_path_text.contains("/workspace/")
@@ -6996,13 +7206,10 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
-            let codec = if source_path_text.contains("/workspace/") {
+            let codec = if test_media_is_output(source_path) {
                 "hevc"
             } else {
-                match fs::read(source_path) {
-                    Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
-                    Ok(_) | Err(_) => "h264",
-                }
+                "h264"
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
             if source_path_text.contains("/workspace/")
@@ -7025,13 +7232,10 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
-            let codec = if source_path_text.contains("/workspace/") {
+            let codec = if test_media_is_output(source_path) {
                 "hevc"
             } else {
-                match fs::read(source_path) {
-                    Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
-                    Ok(_) | Err(_) => "h264",
-                }
+                "h264"
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
             if source_path_text.contains("/workspace/")
@@ -7054,13 +7258,10 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
-            let codec = if source_path_text.contains("/workspace/") {
+            let codec = if test_media_is_output(source_path) {
                 "hevc"
             } else {
-                match fs::read(source_path) {
-                    Ok(bytes) if bytes.as_slice() == b"output" => "hevc",
-                    Ok(_) | Err(_) => "h264",
-                }
+                "h264"
             };
             let inspection = complete_test_inspection(video_graph(source_path_text, codec));
             if source_path_text.contains("/workspace/")
@@ -7302,13 +7503,13 @@ mod tests {
             cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             let source_path_text = checked_test_source_path(source_path, cancellation)?;
-            let codec = if source_path_text.contains("/workspace/") {
-                "hevc"
-            } else {
-                match fs::read(source_path) {
-                    Ok(bytes) if bytes.as_slice() == b"output" => "vp9",
-                    Ok(_) | Err(_) => "h264",
-                }
+            let codec = match (
+                test_media_is_output(source_path),
+                source_path_text.contains("/workspace/"),
+            ) {
+                (true, true) => "hevc",
+                (true, false) => "vp9",
+                (false, _) => "h264",
             };
             Ok(complete_test_inspection(video_graph(
                 source_path_text,
@@ -7327,6 +7528,10 @@ mod tests {
         source_path.to_str().ok_or_else(|| {
             InspectError::OutputMalformed("test inspection path is not valid UTF-8".to_string())
         })
+    }
+
+    fn test_media_is_output(path: &Path) -> bool {
+        fs::read(path).is_ok_and(|bytes| bytes.as_slice() == b"output")
     }
 
     fn complete_test_inspection(mut graph: MediaGraph) -> MediaInspection {
@@ -9105,8 +9310,7 @@ mod tests {
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
+        let migrator = sqlx::migrate!("../revaer-data/init");
         migrator.run(&pool).await?;
         let store = MediaStore::new(pool);
 
@@ -9179,11 +9383,11 @@ mod tests {
         source_root: &Path,
         output_path: &str,
     ) -> anyhow::Result<Uuid> {
-        let fingerprint =
-            crate::media_source_fingerprint::fingerprint_media_file(source_path, source_root)?
-                .ok_or_else(|| {
-                    anyhow::anyhow!("media runtime test source fingerprint was unstable")
-                })?;
+        let fingerprint = crate::media_discovery_fingerprint::fingerprint_media_aggregate(
+            source_path,
+            source_root,
+        )?
+        .ok_or_else(|| anyhow::anyhow!("media runtime test source fingerprint was unstable"))?;
         store
             .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: actor,
@@ -9377,7 +9581,19 @@ mod tests {
         let before = recursive_tree_snapshot(fixture.temp.path())?;
 
         fixture.runtime.run_tick().await?;
-        assert_eq!(recursive_tree_snapshot(fixture.temp.path())?, before);
+        let after = recursive_tree_snapshot(fixture.temp.path())?;
+        let non_workspace_entries = after
+            .iter()
+            .filter(|entry| !entry.starts_with("workspace"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(non_workspace_entries, before);
+        assert!(
+            fs::read_dir(&fixture.runtime.workspace_root)?
+                .next()
+                .transpose()?
+                .is_none()
+        );
 
         let job = fixture
             .store
@@ -9493,6 +9709,20 @@ mod tests {
         Ok(())
     }
 
+    fn assert_hevc_command_contract(command: &[String]) {
+        let has_arg = |flag: &str, value: &str| {
+            command
+                .windows(2)
+                .any(|pair| pair[0] == flag && pair[1] == value)
+        };
+        assert!(has_arg("-profile:0", "main10"));
+        assert!(has_arg("-level:0", "5.1"));
+        assert!(has_arg("-maxrate:0", "8000000"));
+        assert!(has_arg("-color_primaries:0", "bt2020"));
+        assert!(has_arg("-color_trc:0", "smpte2084"));
+        assert!(has_arg("-colorspace:0", "bt2020nc"));
+    }
+
     #[tokio::test]
     async fn media_job_runtime_executes_non_dry_run_with_injected_runner() -> anyhow::Result<()> {
         let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
@@ -9542,14 +9772,18 @@ mod tests {
                 && reason.candidate_index == Some(0)
                 && reason.reason_code == "selected_least_cost_candidate"
         }));
-        assert!(reasons.iter().any(|reason| {
-            !reason.selected
-                && reason.candidate_index.is_some_and(|index| index > 0)
-                && matches!(
-                    reason.reason_code.as_str(),
-                    "dominated_by_lower_cost" | "deterministic_tie_break"
-                )
-        }));
+        assert!(
+            reasons
+                .iter()
+                .filter(|reason| !reason.selected)
+                .all(|reason| {
+                    reason.candidate_index.is_some_and(|index| index > 0)
+                        && matches!(
+                            reason.reason_code.as_str(),
+                            "dominated_by_lower_cost" | "deterministic_tie_break"
+                        )
+                })
+        );
         let command_count = {
             let commands = fixture
                 .command_runner
@@ -9563,39 +9797,45 @@ mod tests {
                 .last()
                 .ok_or_else(|| anyhow::anyhow!("command output missing"))?;
             assert!(Path::new(candidate_path).starts_with(&fixture.runtime.workspace_root));
-            assert!(
-                first_command
-                    .windows(2)
-                    .any(|pair| pair == ["-profile:0", "main10"])
-            );
-            assert!(
-                first_command
-                    .windows(2)
-                    .any(|pair| pair == ["-level:0", "5.1"])
-            );
-            assert!(
-                first_command
-                    .windows(2)
-                    .any(|pair| pair == ["-b:0", "8000000"])
-            );
-            assert!(
-                first_command
-                    .windows(2)
-                    .any(|pair| pair == ["-color_primaries:0", "bt2020"])
-            );
-            assert!(
-                first_command
-                    .windows(2)
-                    .any(|pair| pair == ["-color_trc:0", "smpte2084"])
-            );
-            assert!(
-                first_command
-                    .windows(2)
-                    .any(|pair| pair == ["-colorspace:0", "bt2020nc"])
-            );
+            assert_hevc_command_contract(first_command);
             commands.len()
         };
         assert_eq!(command_count, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_rejects_source_change_after_snapshot_before_execution()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        let source_path = fixture.temp.path().join("input/movie.mkv");
+        fixture.runtime.inspector = Arc::new(SourceMutatingInspector {
+            original_source: source_path.clone(),
+            mutated: Arc::new(AtomicBool::new(false)),
+        }) as Arc<RuntimeInspector>;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
+        assert_eq!(job.status_text, "failed");
+        assert_eq!(
+            job.last_error.as_deref(),
+            Some("media_job_source_fingerprint_mismatch")
+        );
+        assert_eq!(fs::read(source_path)?, b"attacker-replacement");
+        let commands = fixture
+            .command_runner
+            .commands
+            .lock()
+            .map_err(|error| anyhow::anyhow!("command lock poisoned: {error}"))?;
+        assert!(commands.is_empty());
+        drop(commands);
         Ok(())
     }
 
@@ -11689,7 +11929,7 @@ Integrated loudness:
         assert_eq!(claimed.media_job_public_id, fixture.job_id);
         fixture
             .store
-            .mark_job_status(fixture.job_id, "verifying", None)
+            .commit_replacement_terminal(fixture.job_id, claimed.claim_generation)
             .await?;
         fixture.store.cancel_job(fixture.job_id).await?;
         fixture.runtime.replacement_committer = Arc::new(FinalizedRecoveryCommitter {
@@ -11804,7 +12044,15 @@ Integrated loudness:
         let before = recursive_tree_snapshot(fixture.temp.path())?;
 
         fixture.runtime.run_tick().await?;
-        assert_eq!(recursive_tree_snapshot(fixture.temp.path())?, before);
+        let after = recursive_tree_snapshot(fixture.temp.path())?;
+        let diagnostics_prefix = format!("workspace/{}/diagnostics|directory|", fixture.job_id);
+        assert!(after.starts_with(&before));
+        assert!(
+            after[before.len()..]
+                .iter()
+                .any(|entry| entry.starts_with(&diagnostics_prefix))
+        );
+        assert_eq!(after.len(), before.len() + 3);
 
         let job = fixture
             .store
@@ -12925,6 +13173,12 @@ Integrated loudness:
         let Some(fixture) = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await? else {
             return Ok(());
         };
+        let claimed = fixture
+            .store
+            .claim_next_job()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media job was not claimed"))?;
+        assert_eq!(claimed.media_job_public_id, fixture.job_id);
         let source = MediaGraph {
             source_path: "/media/in.mkv".to_string(),
             container_metadata: Vec::new(),
@@ -13006,7 +13260,7 @@ Integrated loudness:
 
         fixture
             .runtime
-            .persist_ready_plan(fixture.job_id, &report, None)
+            .persist_ready_plan(&claimed, &report, None)
             .await?;
         let operations = fixture.store.list_job_operations(fixture.job_id).await?;
         assert!(
@@ -13065,6 +13319,8 @@ Integrated loudness:
             verification_decode_all_streams: true.into(),
             verification_keyframe_seek: true.into(),
             verification_playback_probe: true.into(),
+            attempt_number: 1,
+            claim_generation: 1,
             cancel_generation: 0,
         }
     }

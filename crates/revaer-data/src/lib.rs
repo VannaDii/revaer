@@ -13,7 +13,7 @@
     missing_docs
 )]
 
-//! Shared data access layer for Revaer: migrations, stored procedures, and repositories.
+//! Shared data access layer for Revaer: schema initialization, stored procedures, and repositories.
 
 pub mod config;
 pub mod error;
