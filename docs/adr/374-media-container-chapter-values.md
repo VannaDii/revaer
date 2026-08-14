@@ -1,0 +1,82 @@
+# Media Container Chapter Values
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - ADR 372 implemented container chapter preservation and stripping, but authored chapter timelines still failed closed because there was no relational target schema, immutable job snapshot, execution artifact, or exact verification contract for replacement chapter rows.
+  - Chapter replacement is not a metadata merge. The target must describe a complete ordered timeline, because partial chapter rows cannot distinguish preserve, delete, and rewrite semantics.
+  - FFmpeg accepts chapter replacement through an ffmetadata input. Revaer needs to generate that input deterministically inside the managed workspace and then verify the final inspected chapter timeline against the desired target.
+- Decision:
+  - Add `replace` as an implemented `container_chapter_policy` value for desired targets.
+  - Persist desired target chapter rows and per-chapter metadata in normalized relational tables keyed by desired-target version, and snapshot those rows into immutable media jobs.
+  - Require `replace` targets to provide at least one chapter row, and reject chapter rows for `preserve` and `strip`.
+  - Normalize chapters by timeline order, reject negative starts, non-positive ranges, overlapping ranges, blank metadata keys or values, and duplicate metadata keys within a chapter.
+  - Bound each target at 1,024 chapters, each chapter at 64 metadata rows, metadata keys at 128 UTF-8 bytes, metadata values at 4,096 UTF-8 bytes, and aggregate chapter metadata at 65,536 UTF-8 bytes. Enforce the same limits transactionally in stored procedures while holding the desired-target row lock.
+  - Generate an ffmetadata side input for chapter replacement and map output chapters from that generated input while keeping preserve and strip behavior explicit.
+  - Alternatives considered:
+    - Store authored chapters as JSON: rejected by the repository rule against conglomerate application state and because relational rows give direct timeline and metadata guardrails.
+    - Merge authored rows with source chapters: rejected because final verification would not prove a complete target timeline.
+    - Allow empty `replace`: rejected because `strip` is already the explicit empty chapter policy.
+- Consequences:
+  - Positive outcomes:
+    - Desired targets can now publish exact authored chapter timelines through API, YAML, database snapshots, runtime execution, and verification.
+    - Jobs no longer depend on mutable desired-target state once queued; chapter rows are copied into the job snapshot with the rest of the target contract.
+  - Risks or trade-offs:
+    - `replace` deliberately discards all source chapters not present in the target row set.
+    - Muxers may normalize chapter metadata representation; verifier mismatches must fail closed instead of accepting silent drift.
+- Follow-up:
+  - Add authored attachment replacement and authored data stream management with the same schema, execution, and verification discipline.
+  - Complete advanced audio/video target controls and the UI surface before declaring the transcoding service fully usable against the whole specification.
+
+## Task Record
+
+- Motivation:
+  - Move chapter timelines from preserve/strip-only behavior to exact authored replacement without weakening unsupported chapter operations.
+- Design notes:
+  - `DesiredGraph` now carries `container_chapters` alongside `container_chapter_policy`.
+  - Core desired-target validation enforces policy/row consistency, timeline ordering, non-overlap, metadata normalization, and deterministic sorting.
+  - Immutable job snapshots sort database rows once and reconstruct chapters in one linear pass, avoiding chapter-count-dependent repeated scans.
+  - Migration 0174 adds desired-target and job-snapshot chapter tables plus append/list procedures, and replaces target assignment and job creation procedures so invalid `replace` targets cannot be pinned or enqueued.
+  - Runtime execution writes a bounded ffmetadata chapter artifact before the ffmpeg command and maps output chapters from that generated input.
+  - API and YAML import/export expose `container_chapters` as ordered rows with per-chapter metadata.
+- Test coverage summary:
+  - `just api-export`
+  - `just fmt`
+  - `cargo check -p revaer-media-core -p revaer-media-runtime --all-features`
+  - `cargo check -p revaer-data -p revaer-runtime -p revaer-api --lib`
+  - `cargo check -p revaer-app --no-default-features --lib`
+  - `cargo test -p revaer-media-core --all-features container_chapter -- --nocapture`
+  - `cargo test -p revaer-media-runtime --all-features desired_graph_replace_container_chapters_writes_ffmetadata_input -- --nocapture`
+  - `cargo test -p revaer-api --lib container_chapter -- --nocapture`
+  - `cargo test -p revaer-api --lib openapi_document_exports_media_schemas -- --nocapture`
+  - `cargo test -p revaer-data --lib migration_guards_container_chapter_values_policy -- --nocapture`
+  - `just lint`
+  - `cargo test -p revaer-data --lib migration_guards_container -- --nocapture`
+  - `cargo test -p revaer-data --lib media::schema_tests -- --nocapture` ran locally, but the database-backed assertions were skipped because no test database URL was configured.
+  - `cargo test -p revaer-app --no-default-features --lib yaml_container_chapter -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib desired_target_snapshot_accepts_replace_container_chapter_policy -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib final_graph_verification_matches_ordered_stream_content_after_index_compaction -- --nocapture`
+  - `cargo clippy -p revaer-media-core -p revaer-media-runtime --all-features --all-targets -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-api -p revaer-data --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `just policy`
+  - `just instruction-drift`
+  - `git diff --check`
+  - `just clean-test-fixtures`
+  - `just ci` was attempted and stopped before validation because this machine cannot connect to the local Docker daemon and no `localhost:5432` Postgres endpoint became reachable.
+  - `just ui-e2e` regenerated the Playwright API client from the updated OpenAPI artifact and confirmed `tests` npm install had zero vulnerabilities, then stopped at the same Docker/Postgres reachability boundary before API coverage files could be produced.
+- Observability updates:
+  - No new service metrics, logs, or events were added. Existing `MetadataRewrite` operation counts and chapter mismatch verification diagnostics cover this replacement path.
+- Status-doc validation:
+  - Refreshed both committed OpenAPI artifacts to include chapter replacement rows.
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+  - No README or operator-guide changes were required for this internal stack slice.
+- Risk & rollback plan:
+  - Roll back this ADR, migration 0174, and the Rust/API/YAML wiring if exact chapter replacement proves unsafe.
+  - Do not remove `replace` validation without also migrating or rejecting persisted desired targets and immutable job snapshots that already carry chapter rows.
+- Dependency rationale:
+  - No dependencies were added.
+  - The lockfile now matches the existing `rustix = 1.1.4` workspace requirement; this is a lock correction, not a new dependency.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found for this slice.

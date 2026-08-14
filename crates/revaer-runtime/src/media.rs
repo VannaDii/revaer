@@ -22,14 +22,15 @@ use revaer_data::media::jobs::{
     AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
     AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow, CreateMediaJobInput,
     EnqueueDiscoveredMediaJobInput, MediaJobArtifactRow, MediaJobCompactAuditRow,
-    MediaJobControlRow, MediaJobDesiredTargetMetadataRow, MediaJobDesiredTargetStreamRow,
-    MediaJobOperationRow, MediaJobPhaseRow, MediaJobPlanReasonRow, MediaJobRetentionRunRow,
-    MediaJobRow, MediaJobTerminalOutboxRow, MediaJobVerificationCheckRow, MediaJobViolationRow,
-    MediaRecentJobRow, MediaWorkspaceRetentionSnapshotRow, RecoveredMediaJobRow,
-    append_media_job_artifact, append_media_job_compact_audit, append_media_job_operation,
-    append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
-    append_media_job_violation, cancel_media_job, create_media_job, enqueue_discovered_media_job,
-    get_media_job, list_media_job_artifacts, list_media_job_compact_audits,
+    MediaJobControlRow, MediaJobDesiredTargetChapterRow, MediaJobDesiredTargetMetadataRow,
+    MediaJobDesiredTargetStreamRow, MediaJobOperationRow, MediaJobPhaseRow, MediaJobPlanReasonRow,
+    MediaJobRetentionRunRow, MediaJobRow, MediaJobTerminalOutboxRow, MediaJobVerificationCheckRow,
+    MediaJobViolationRow, MediaRecentJobRow, MediaWorkspaceRetentionSnapshotRow,
+    RecoveredMediaJobRow, append_media_job_artifact, append_media_job_compact_audit,
+    append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
+    append_media_job_verification_check, append_media_job_violation, cancel_media_job,
+    create_media_job, enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
+    list_media_job_compact_audits, list_media_job_desired_target_chapters,
     list_media_job_desired_target_metadata, list_media_job_desired_target_streams,
     list_media_job_operations, list_media_job_phases, list_media_job_plan_reasons,
     list_media_job_terminal_outbox_unpublished, list_media_job_verification_checks,
@@ -517,6 +518,18 @@ impl MediaStore {
         media_job_public_id: Uuid,
     ) -> DataResult<Vec<MediaJobDesiredTargetMetadataRow>> {
         list_media_job_desired_target_metadata(&self.pool, media_job_public_id).await
+    }
+
+    /// List immutable desired container chapters snapshotted for one claimed job.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying stored-procedure call fails.
+    pub async fn list_job_desired_target_chapters(
+        &self,
+        media_job_public_id: Uuid,
+    ) -> DataResult<Vec<MediaJobDesiredTargetChapterRow>> {
+        list_media_job_desired_target_chapters(&self.pool, media_job_public_id).await
     }
 
     /// Refresh worker heartbeat for a claimed media job.

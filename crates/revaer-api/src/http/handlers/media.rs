@@ -17,7 +17,8 @@ use revaer_media_core::{
         normalize_audio_channel_layout as normalize_supported_audio_channel_layout,
     },
     target::{
-        MAX_CONTAINER_METADATA_ENTRIES, MAX_CONTAINER_METADATA_KEY_BYTES,
+        MAX_CONTAINER_CHAPTER_METADATA_ENTRIES, MAX_CONTAINER_CHAPTER_METADATA_TOTAL_BYTES,
+        MAX_CONTAINER_CHAPTERS, MAX_CONTAINER_METADATA_ENTRIES, MAX_CONTAINER_METADATA_KEY_BYTES,
         MAX_CONTAINER_METADATA_TOTAL_BYTES, MAX_CONTAINER_METADATA_VALUE_BYTES,
         MAX_DESIRED_TARGET_STREAMS, is_known_color_primaries, is_known_color_space,
         is_known_color_transfer, is_known_video_level,
@@ -27,11 +28,12 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::media::{
-    MediaCapabilityRefreshParams, MediaDesiredTargetCreateParams, MediaDesiredTargetMetadataParams,
-    MediaDesiredTargetResponse as AppMediaDesiredTargetResponse, MediaDesiredTargetStreamParams,
-    MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
-    MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse, MediaProfileDesiredTargetParams,
-    MediaProfilePatchParams, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
+    MediaCapabilityRefreshParams, MediaDesiredTargetChapterParams, MediaDesiredTargetCreateParams,
+    MediaDesiredTargetMetadataParams, MediaDesiredTargetResponse as AppMediaDesiredTargetResponse,
+    MediaDesiredTargetStreamParams, MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams,
+    MediaDiscoveryRunParams, MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse,
+    MediaProfileDesiredTargetParams, MediaProfilePatchParams, MediaProfileUpsertParams,
+    MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -40,11 +42,11 @@ use crate::models::{
     MediaCapabilityLatestResponse, MediaCapabilityReadinessResponse,
     MediaCapabilityRefreshResponse, MediaCompatibilityTargetListResponse,
     MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
-    MediaComplianceResponse, MediaDesiredTargetCreateRequest, MediaDesiredTargetListResponse,
-    MediaDesiredTargetMetadataEntry, MediaDesiredTargetResponse, MediaDesiredTargetStream,
-    MediaDiscoveryPreviewItemResponse, MediaDiscoveryPreviewRequest, MediaDiscoveryPreviewResponse,
-    MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunRequest, MediaDiscoveryRunResponse,
-    MediaDiscoveryScheduleListResponse, MediaDiscoveryScheduleResponse,
+    MediaComplianceResponse, MediaDesiredTargetChapterEntry, MediaDesiredTargetCreateRequest,
+    MediaDesiredTargetListResponse, MediaDesiredTargetMetadataEntry, MediaDesiredTargetResponse,
+    MediaDesiredTargetStream, MediaDiscoveryPreviewItemResponse, MediaDiscoveryPreviewRequest,
+    MediaDiscoveryPreviewResponse, MediaDiscoveryQueuedJobResponse, MediaDiscoveryRunRequest,
+    MediaDiscoveryRunResponse, MediaDiscoveryScheduleListResponse, MediaDiscoveryScheduleResponse,
     MediaDiscoverySkippedItemResponse, MediaDiscoveryWatcherListResponse,
     MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse, MediaJobCompactAuditListResponse,
     MediaJobDiagnosticCounts, MediaJobDiagnosticsResponse, MediaJobListResponse,
@@ -100,7 +102,10 @@ const CONTAINER_METADATA_POLICY_INVALID: &str =
     "container_metadata_policy must be preserve, strip, or replace";
 const CONTAINER_METADATA_INVALID: &str =
     "container_metadata must be non-empty only when container_metadata_policy is replace";
-const CONTAINER_CHAPTER_POLICY_INVALID: &str = "container_chapter_policy must be preserve or strip";
+const CONTAINER_CHAPTER_POLICY_INVALID: &str =
+    "container_chapter_policy must be preserve, strip, or replace";
+const CONTAINER_CHAPTERS_INVALID: &str =
+    "container_chapters must be non-empty only when container_chapter_policy is replace";
 const DESIRED_TARGET_STREAMS_REQUIRED: &str = "streams must contain at least one stream";
 const VIDEO_CODEC_REQUIRED: &str = "video_codec is required";
 const AUDIO_CODEC_REQUIRED: &str = "audio_codec is required";
@@ -474,6 +479,8 @@ pub(crate) async fn create_media_desired_target(
         normalize_container_metadata(&container_metadata_policy, &request.container_metadata)?;
     let container_chapter_policy =
         normalize_container_chapter_policy(request.container_chapter_policy.as_deref())?;
+    let container_chapters =
+        normalize_container_chapters(&container_chapter_policy, &request.container_chapters)?;
     validate_desired_target_streams(&request.streams)?;
     let params = MediaDesiredTargetCreateParams {
         actor_user_public_id: SYSTEM_ACTOR_PUBLIC_ID,
@@ -484,6 +491,7 @@ pub(crate) async fn create_media_desired_target(
         container_metadata_policy,
         container_metadata,
         container_chapter_policy,
+        container_chapters,
         streams: request
             .streams
             .iter()
@@ -1547,6 +1555,7 @@ fn map_desired_target_response(
         container_metadata_policy: target.container_metadata_policy,
         container_metadata: target.container_metadata,
         container_chapter_policy: target.container_chapter_policy,
+        container_chapters: target.container_chapters,
         streams: target.streams,
     }
 }
@@ -1651,7 +1660,7 @@ fn normalize_container_metadata_policy(value: Option<&str>) -> Result<String, Ap
 }
 
 fn normalize_container_chapter_policy(value: Option<&str>) -> Result<String, ApiError> {
-    normalize_container_policy(value, CONTAINER_CHAPTER_POLICY_INVALID, false)
+    normalize_container_policy(value, CONTAINER_CHAPTER_POLICY_INVALID, true)
 }
 
 fn normalize_container_policy(
@@ -1701,6 +1710,75 @@ fn normalize_container_metadata(
         if total_bytes > MAX_CONTAINER_METADATA_TOTAL_BYTES {
             return Err(ApiError::bad_request(CONTAINER_METADATA_INVALID));
         }
+        normalized.push(MediaDesiredTargetMetadataParams { key, value });
+    }
+    normalized.sort_by(|left, right| left.key.cmp(&right.key));
+    Ok(normalized)
+}
+
+fn normalize_container_chapters(
+    policy: &str,
+    chapters: &[MediaDesiredTargetChapterEntry],
+) -> Result<Vec<MediaDesiredTargetChapterParams>, ApiError> {
+    let replace = policy.eq_ignore_ascii_case("replace");
+    if replace == chapters.is_empty() || chapters.len() > MAX_CONTAINER_CHAPTERS {
+        return Err(ApiError::bad_request(CONTAINER_CHAPTERS_INVALID));
+    }
+    let mut normalized = Vec::with_capacity(chapters.len());
+    let mut total_metadata_bytes = 0_usize;
+    for chapter in chapters {
+        if chapter.start_millis < 0 || chapter.end_millis <= chapter.start_millis {
+            return Err(ApiError::bad_request(CONTAINER_CHAPTERS_INVALID));
+        }
+        normalized.push(MediaDesiredTargetChapterParams {
+            start_millis: chapter.start_millis,
+            end_millis: chapter.end_millis,
+            metadata: normalize_container_chapter_metadata(
+                &chapter.metadata,
+                &mut total_metadata_bytes,
+            )?,
+        });
+    }
+    normalized.sort_by(|left, right| {
+        left.start_millis
+            .cmp(&right.start_millis)
+            .then(left.end_millis.cmp(&right.end_millis))
+    });
+    let mut previous_end = None;
+    for chapter in &normalized {
+        if previous_end.is_some_and(|end| chapter.start_millis < end) {
+            return Err(ApiError::bad_request(CONTAINER_CHAPTERS_INVALID));
+        }
+        previous_end = Some(chapter.end_millis);
+    }
+    Ok(normalized)
+}
+
+fn normalize_container_chapter_metadata(
+    metadata: &[MediaDesiredTargetMetadataEntry],
+    total_bytes: &mut usize,
+) -> Result<Vec<MediaDesiredTargetMetadataParams>, ApiError> {
+    if metadata.len() > MAX_CONTAINER_CHAPTER_METADATA_ENTRIES {
+        return Err(ApiError::bad_request(CONTAINER_CHAPTERS_INVALID));
+    }
+    let mut keys = BTreeSet::new();
+    let mut normalized = Vec::with_capacity(metadata.len());
+    for entry in metadata {
+        let key = entry.key.trim().to_ascii_lowercase();
+        let value = entry.value.trim().to_string();
+        if key.is_empty()
+            || value.is_empty()
+            || key.len() > MAX_CONTAINER_METADATA_KEY_BYTES
+            || value.len() > MAX_CONTAINER_METADATA_VALUE_BYTES
+            || !keys.insert(key.clone())
+        {
+            return Err(ApiError::bad_request(CONTAINER_CHAPTERS_INVALID));
+        }
+        *total_bytes = total_bytes
+            .checked_add(key.len())
+            .and_then(|bytes| bytes.checked_add(value.len()))
+            .filter(|bytes| *bytes <= MAX_CONTAINER_CHAPTER_METADATA_TOTAL_BYTES)
+            .ok_or_else(|| ApiError::bad_request(CONTAINER_CHAPTERS_INVALID))?;
         normalized.push(MediaDesiredTargetMetadataParams { key, value });
     }
     normalized.sort_by(|left, right| left.key.cmp(&right.key));
@@ -2330,7 +2408,95 @@ mod tests {
             normalize_container_chapter_policy(Some(" Strip "))?,
             "strip"
         );
+        assert_eq!(
+            normalize_container_chapter_policy(Some(" Replace "))?,
+            "replace"
+        );
         assert!(normalize_container_chapter_policy(Some("rewrite")).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn container_chapter_values_normalize_only_for_replace_policy() -> anyhow::Result<()> {
+        let chapters = vec![
+            MediaDesiredTargetChapterEntry {
+                start_millis: 60_000,
+                end_millis: 120_000,
+                metadata: vec![MediaDesiredTargetMetadataEntry {
+                    key: "TITLE".to_string(),
+                    value: "Act Two".to_string(),
+                }],
+            },
+            MediaDesiredTargetChapterEntry {
+                start_millis: 0,
+                end_millis: 60_000,
+                metadata: vec![MediaDesiredTargetMetadataEntry {
+                    key: " Title ".to_string(),
+                    value: " Act One ".to_string(),
+                }],
+            },
+        ];
+
+        let normalized = normalize_container_chapters("replace", &chapters)?;
+        assert_eq!(normalized[0].start_millis, 0);
+        assert_eq!(normalized[0].end_millis, 60_000);
+        assert_eq!(normalized[0].metadata[0].key, "title");
+        assert_eq!(normalized[0].metadata[0].value, "Act One");
+        assert_eq!(normalized[1].start_millis, 60_000);
+
+        assert!(normalize_container_chapters("preserve", &chapters).is_err());
+        assert!(normalize_container_chapters("strip", &chapters).is_err());
+        assert!(normalize_container_chapters("replace", &[]).is_err());
+        assert!(
+            normalize_container_chapters(
+                "replace",
+                &[MediaDesiredTargetChapterEntry {
+                    start_millis: 1000,
+                    end_millis: 1000,
+                    metadata: Vec::new(),
+                }],
+            )
+            .is_err()
+        );
+        assert!(
+            normalize_container_chapters(
+                "replace",
+                &[
+                    MediaDesiredTargetChapterEntry {
+                        start_millis: 0,
+                        end_millis: 2000,
+                        metadata: Vec::new(),
+                    },
+                    MediaDesiredTargetChapterEntry {
+                        start_millis: 1000,
+                        end_millis: 3000,
+                        metadata: Vec::new(),
+                    },
+                ],
+            )
+            .is_err()
+        );
+        assert!(
+            normalize_container_chapters(
+                "replace",
+                &[MediaDesiredTargetChapterEntry {
+                    start_millis: 0,
+                    end_millis: 1000,
+                    metadata: vec![
+                        MediaDesiredTargetMetadataEntry {
+                            key: "title".to_string(),
+                            value: "one".to_string(),
+                        },
+                        MediaDesiredTargetMetadataEntry {
+                            key: " Title ".to_string(),
+                            value: "two".to_string(),
+                        },
+                    ],
+                }],
+            )
+            .is_err()
+        );
+
         Ok(())
     }
 
@@ -2510,6 +2676,7 @@ mod tests {
                 container_metadata_policy: None,
                 container_metadata: Vec::new(),
                 container_chapter_policy: None,
+                container_chapters: Vec::new(),
                 streams: Vec::new(),
             }),
         )
@@ -2526,6 +2693,7 @@ mod tests {
                 container_metadata_policy: Some("rewrite".to_string()),
                 container_metadata: Vec::new(),
                 container_chapter_policy: None,
+                container_chapters: Vec::new(),
                 streams: vec![valid_stream.clone()],
             }),
         )
@@ -2542,6 +2710,7 @@ mod tests {
                 container_metadata_policy: Some(" Preserve ".to_string()),
                 container_metadata: Vec::new(),
                 container_chapter_policy: Some(" Preserve ".to_string()),
+                container_chapters: Vec::new(),
                 streams: vec![valid_stream.clone()],
             }),
         )
@@ -2821,6 +2990,7 @@ mod tests {
             container_metadata_policy: "preserve".to_string(),
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
+            container_chapters: Vec::new(),
             streams: vec![params],
         });
         assert_eq!(response.container_metadata_policy, "preserve");

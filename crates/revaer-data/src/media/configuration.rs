@@ -30,6 +30,9 @@ const MEDIA_POLICY_PROFILE_UPSERT_V1: &str = "SELECT policy_key, version, displa
 const MEDIA_JOB_RETENTION_POLICY_GET_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_get_v2()";
 const MEDIA_JOB_RETENTION_POLICY_UPDATE_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_update_v2(actor_public_id_input => $1, completed_enabled_input => $2, completed_mode_input => $3, completed_limit_input => $4, failed_diagnostic_enabled_input => $5, failed_diagnostic_mode_input => $6, failed_diagnostic_limit_input => $7)";
 const MEDIA_DESIRED_TARGET_CREATE_V3: &str = "SELECT media_desired_target_create_v3(actor_public_id_input => $1, target_key_input => $2, version_input => $3, display_name_input => $4, container_format_input => $5, container_metadata_policy_input => $6, container_chapter_policy_input => $7)";
+const MEDIA_DESIRED_TARGET_CHAPTER_APPEND_V1: &str = "SELECT media_desired_target_chapter_append_v1(media_desired_target_profile_public_id_input => $1, start_millis_input => $2, end_millis_input => $3)";
+const MEDIA_DESIRED_TARGET_CHAPTER_METADATA_APPEND_V1: &str = "SELECT media_desired_target_chapter_metadata_append_v1(media_desired_target_profile_public_id_input => $1, start_millis_input => $2, metadata_key_input => $3, metadata_value_input => $4)";
+const MEDIA_DESIRED_TARGET_CHAPTER_LIST_V1: &str = "SELECT start_millis, end_millis, metadata_key, metadata_value FROM media_desired_target_chapter_list_v1(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_DESIRED_TARGET_METADATA_APPEND_V1: &str = "SELECT media_desired_target_metadata_append_v1(media_desired_target_profile_public_id_input => $1, metadata_key_input => $2, metadata_value_input => $3)";
 const MEDIA_DESIRED_TARGET_METADATA_LIST_V1: &str = "SELECT metadata_key, metadata_value FROM media_desired_target_metadata_list_v1(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_DESIRED_TARGET_STREAM_APPEND_V5: &str = "SELECT media_desired_target_stream_append_v5(media_desired_target_profile_public_id_input => $1, stream_key_input => $2, stream_kind_input => $3, semantic_role_input => $4, language_code_input => $5, optional_input => $6, sort_order_input => $7, codec_input => $8, channel_count_input => $9, channel_layout_input => $10, audio_bitrate_bps_input => $11, audio_sample_rate_hz_input => $12, audio_loudness_profile_input => $13, audio_dynamic_range_input => $14, video_profile_input => $15, video_level_input => $16, video_bitrate_bps_input => $17, color_primaries_input => $18, color_transfer_input => $19, color_space_input => $20, hdr_format_input => $21, title_input => $22, default_disposition_input => $23, forced_disposition_input => $24, subtitle_placement_input => $25, image_subtitle_action_input => $26)";
@@ -137,6 +140,30 @@ pub struct AppendMediaDesiredTargetMetadataInput<'a> {
     pub metadata_value: &'a str,
 }
 
+/// Desired target container chapter append payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppendMediaDesiredTargetChapterInput {
+    /// Desired-target version public id.
+    pub media_desired_target_profile_public_id: Uuid,
+    /// Inclusive chapter start in milliseconds.
+    pub start_millis: i64,
+    /// Exclusive chapter end in milliseconds.
+    pub end_millis: i64,
+}
+
+/// Desired target container chapter metadata append payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppendMediaDesiredTargetChapterMetadataInput<'a> {
+    /// Desired-target version public id.
+    pub media_desired_target_profile_public_id: Uuid,
+    /// Inclusive chapter start in milliseconds.
+    pub start_millis: i64,
+    /// Lowercase metadata key.
+    pub metadata_key: &'a str,
+    /// Trimmed metadata value.
+    pub metadata_value: &'a str,
+}
+
 /// Ordered desired-target stream creation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppendMediaDesiredTargetStreamInput<'a> {
@@ -220,6 +247,19 @@ pub struct MediaDesiredTargetMetadataRow {
     pub metadata_key: String,
     /// Trimmed metadata value.
     pub metadata_value: String,
+}
+
+/// Desired target container chapter row.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaDesiredTargetChapterRow {
+    /// Inclusive chapter start in milliseconds.
+    pub start_millis: i64,
+    /// Exclusive chapter end in milliseconds.
+    pub end_millis: i64,
+    /// Optional lowercase metadata key.
+    pub metadata_key: Option<String>,
+    /// Optional trimmed metadata value.
+    pub metadata_value: Option<String>,
 }
 
 /// Ordered desired-target stream row.
@@ -564,6 +604,75 @@ where
     Ok(())
 }
 
+/// Append one desired chapter row before a target version is assigned.
+///
+/// # Errors
+///
+/// Returns an error when validation or stored-procedure execution fails.
+pub async fn append_media_desired_target_chapter(
+    pool: &PgPool,
+    input: AppendMediaDesiredTargetChapterInput,
+) -> Result<()> {
+    append_media_desired_target_chapter_with_executor(pool, input).await
+}
+
+/// Append one desired chapter row with a caller-provided executor.
+///
+/// # Errors
+///
+/// Returns an error when validation or stored-procedure execution fails.
+pub async fn append_media_desired_target_chapter_with_executor<'e, E>(
+    executor: E,
+    input: AppendMediaDesiredTargetChapterInput,
+) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query(MEDIA_DESIRED_TARGET_CHAPTER_APPEND_V1)
+        .bind(input.media_desired_target_profile_public_id)
+        .bind(input.start_millis)
+        .bind(input.end_millis)
+        .execute(executor)
+        .await
+        .map_err(try_op("media desired target chapter append"))?;
+    Ok(())
+}
+
+/// Append one desired chapter metadata row before a target version is assigned.
+///
+/// # Errors
+///
+/// Returns an error when validation or stored-procedure execution fails.
+pub async fn append_media_desired_target_chapter_metadata(
+    pool: &PgPool,
+    input: AppendMediaDesiredTargetChapterMetadataInput<'_>,
+) -> Result<()> {
+    append_media_desired_target_chapter_metadata_with_executor(pool, input).await
+}
+
+/// Append one desired chapter metadata row with a caller-provided executor.
+///
+/// # Errors
+///
+/// Returns an error when validation or stored-procedure execution fails.
+pub async fn append_media_desired_target_chapter_metadata_with_executor<'e, E>(
+    executor: E,
+    input: AppendMediaDesiredTargetChapterMetadataInput<'_>,
+) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query(MEDIA_DESIRED_TARGET_CHAPTER_METADATA_APPEND_V1)
+        .bind(input.media_desired_target_profile_public_id)
+        .bind(input.start_millis)
+        .bind(input.metadata_key)
+        .bind(input.metadata_value)
+        .execute(executor)
+        .await
+        .map_err(try_op("media desired target chapter metadata append"))?;
+    Ok(())
+}
+
 /// Append one ordered stream before a desired-target version is assigned.
 ///
 /// # Errors
@@ -665,6 +774,22 @@ pub async fn list_media_desired_target_metadata(
         .map_err(try_op("media desired target metadata list"))
 }
 
+/// List desired container chapter rows for one desired-target version.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn list_media_desired_target_chapters(
+    pool: &PgPool,
+    media_desired_target_profile_public_id: Uuid,
+) -> Result<Vec<MediaDesiredTargetChapterRow>> {
+    sqlx::query_as::<_, MediaDesiredTargetChapterRow>(MEDIA_DESIRED_TARGET_CHAPTER_LIST_V1)
+        .bind(media_desired_target_profile_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media desired target chapter list"))
+}
+
 /// List the ordered stream graph for one desired-target version.
 ///
 /// # Errors
@@ -731,16 +856,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
+        AppendMediaDesiredTargetChapterInput, AppendMediaDesiredTargetChapterMetadataInput,
         AppendMediaDesiredTargetMetadataInput, AppendMediaDesiredTargetStreamInput,
         CreateMediaDesiredTargetInput, MediaJobRetentionPolicyRow,
         UpdateMediaJobRetentionPolicyInput, UpsertMediaCompatibilityTargetInput,
-        UpsertMediaPolicyProfileInput, append_media_desired_target_metadata,
+        UpsertMediaPolicyProfileInput, append_media_desired_target_chapter,
+        append_media_desired_target_chapter_metadata,
+        append_media_desired_target_chapter_with_executor, append_media_desired_target_metadata,
         append_media_desired_target_stream, create_media_desired_target,
         get_media_job_retention_policy, list_media_compatibility_targets,
-        list_media_desired_target_graph_page, list_media_desired_target_streams,
-        list_media_desired_targets, list_media_policy_profiles, set_media_profile_desired_target,
-        update_media_job_retention_policy, upsert_media_compatibility_target,
-        upsert_media_policy_profile,
+        list_media_desired_target_chapters, list_media_desired_target_graph_page,
+        list_media_desired_target_streams, list_media_desired_targets, list_media_policy_profiles,
+        set_media_profile_desired_target, update_media_job_retention_policy,
+        upsert_media_compatibility_target, upsert_media_policy_profile,
     };
     use crate::config::factory_reset;
     use crate::media::jobs::{
@@ -857,6 +985,130 @@ mod tests {
             append_media_desired_target_stream(db.pool(), input).await?;
         }
         Ok(target_id)
+    }
+
+    async fn create_chapter_replacement_target(
+        db: &MediaTestDb,
+        target_key: &str,
+    ) -> anyhow::Result<Uuid> {
+        Ok(create_media_desired_target(
+            db.pool(),
+            CreateMediaDesiredTargetInput {
+                actor_public_id: db.system_user_public_id,
+                target_key,
+                version: 1,
+                display_name: "Chapter replacement boundary",
+                container_format: "matroska",
+                container_metadata_policy: "preserve",
+                container_chapter_policy: "replace",
+            },
+        )
+        .await?)
+    }
+
+    #[tokio::test]
+    async fn desired_target_chapter_limit_serializes_concurrent_appends() -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("desired_target_chapter_limit").await? else {
+            return Ok(());
+        };
+        let target_id = create_chapter_replacement_target(&db, "chapter-limit").await?;
+        let mut transaction = db.pool().begin().await?;
+        for chapter_index in 0_i64..1_023 {
+            append_media_desired_target_chapter_with_executor(
+                &mut *transaction,
+                AppendMediaDesiredTargetChapterInput {
+                    media_desired_target_profile_public_id: target_id,
+                    start_millis: chapter_index * 2,
+                    end_millis: chapter_index * 2 + 1,
+                },
+            )
+            .await?;
+        }
+        transaction.commit().await?;
+
+        let first = append_media_desired_target_chapter(
+            db.pool(),
+            AppendMediaDesiredTargetChapterInput {
+                media_desired_target_profile_public_id: target_id,
+                start_millis: 2_046,
+                end_millis: 2_047,
+            },
+        );
+        let second = append_media_desired_target_chapter(
+            db.pool(),
+            AppendMediaDesiredTargetChapterInput {
+                media_desired_target_profile_public_id: target_id,
+                start_millis: 2_048,
+                end_millis: 2_049,
+            },
+        );
+        let (first_result, second_result) = tokio::join!(first, second);
+        let results: [_; 2] = (first_result, second_result).into();
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        let rejection = results
+            .iter()
+            .find_map(|result| result.as_ref().err())
+            .ok_or_else(|| anyhow::anyhow!("one concurrent append should be rejected"))?;
+        assert_eq!(
+            rejection.database_detail(),
+            Some("media_desired_target_chapter_count_exceeded")
+        );
+        assert_eq!(
+            list_media_desired_target_chapters(db.pool(), target_id)
+                .await?
+                .len(),
+            1_024
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn desired_target_chapter_metadata_enforces_exact_aggregate_limit() -> anyhow::Result<()>
+    {
+        let Some(db) = setup_media_db("desired_target_chapter_metadata_limit").await? else {
+            return Ok(());
+        };
+        let target_id = create_chapter_replacement_target(&db, "chapter-metadata-limit").await?;
+        append_media_desired_target_chapter(
+            db.pool(),
+            AppendMediaDesiredTargetChapterInput {
+                media_desired_target_profile_public_id: target_id,
+                start_millis: 0,
+                end_millis: 1,
+            },
+        )
+        .await?;
+        let value = "v".repeat(4_093);
+        for metadata_index in 0..16 {
+            let key = format!("k{metadata_index:02}");
+            append_media_desired_target_chapter_metadata(
+                db.pool(),
+                AppendMediaDesiredTargetChapterMetadataInput {
+                    media_desired_target_profile_public_id: target_id,
+                    start_millis: 0,
+                    metadata_key: &key,
+                    metadata_value: &value,
+                },
+            )
+            .await?;
+        }
+
+        let rejection = append_media_desired_target_chapter_metadata(
+            db.pool(),
+            AppendMediaDesiredTargetChapterMetadataInput {
+                media_desired_target_profile_public_id: target_id,
+                start_millis: 0,
+                metadata_key: "overflow",
+                metadata_value: "v",
+            },
+        )
+        .await
+        .expect_err("metadata beyond the aggregate byte limit should be rejected");
+        assert_eq!(
+            rejection.database_detail(),
+            Some("media_desired_target_chapter_metadata_bytes_exceeded")
+        );
+        Ok(())
     }
 
     fn video_target_stream(target_id: uuid::Uuid) -> AppendMediaDesiredTargetStreamInput<'static> {
