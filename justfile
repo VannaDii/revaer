@@ -605,34 +605,34 @@ dev: sync-assets trunk-install
     wait $api_pid $ui_pid
 
 docs-install:
+    cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"; \
+    export PATH="$cargo_bin:$PATH"; \
+    required_mdbook_version="0.5.0"; \
     required_mdbook_mermaid_version="0.17.0"; \
-    if ! command -v mdbook >/dev/null 2>&1; then \
-        cargo install --locked mdbook; \
-    fi; \
-    if ! command -v mdbook-mermaid >/dev/null 2>&1; then \
-        cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version"; \
-    else \
-        current_mdbook_mermaid_version="$(mdbook-mermaid --version | awk '{print $2}')"; \
-        if [ "$current_mdbook_mermaid_version" != "$required_mdbook_mermaid_version" ]; then \
-            cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version" --force; \
-        fi; \
-    fi; \
+    bash scripts/ensure-exact-cargo-tool.sh \
+        mdbook mdbook "$required_mdbook_version"; \
+    bash scripts/ensure-exact-cargo-tool.sh \
+        mdbook-mermaid mdbook-mermaid "$required_mdbook_mermaid_version"; \
     mdbook-mermaid install ./docs
 
-docs-build:
+docs-build: docs-install
+    export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"; \
     cd docs && mdbook build
 
-docs-serve:
+docs-serve: docs-install
+    export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"; \
     cd docs && mdbook serve --open
 
 docs-index:
     cargo run -p revaer-doc-indexer --release
 
 docs-link-check:
-    if ! command -v lychee >/dev/null 2>&1; then \
-        cargo install --locked lychee; \
-    fi
-    lychee --verbose --no-progress docs || true
+    cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"; \
+    export PATH="$cargo_bin:$PATH"; \
+    required_lychee_version="0.24.2"; \
+    bash scripts/ensure-exact-cargo-tool.sh \
+        lychee lychee "$required_lychee_version"; \
+    lychee --verbose --no-progress docs
 
 docs:
     just docs-install

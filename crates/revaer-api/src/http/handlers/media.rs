@@ -29,8 +29,8 @@ use crate::app::media::{
     MediaDesiredTargetResponse as AppMediaDesiredTargetResponse, MediaDesiredTargetStreamParams,
     MediaDiscoveryAutomationRunParams, MediaDiscoveryPreviewParams, MediaDiscoveryRunParams,
     MediaDiscoveryRunResponse as AppMediaDiscoveryRunResponse, MediaJobCreateParams,
-    MediaJobPhaseAppendParams, MediaProfileDesiredTargetParams, MediaProfilePatchParams,
-    MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
+    MediaProfileDesiredTargetParams, MediaProfilePatchParams, MediaProfileUpsertParams,
+    MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
 use crate::http::errors::ApiError;
@@ -47,17 +47,17 @@ use crate::models::{
     MediaDiscoveryWatcherListResponse, MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse,
     MediaJobCompactAuditListResponse, MediaJobCreateRequest, MediaJobCreateResponse,
     MediaJobDiagnosticCounts, MediaJobDiagnosticsResponse, MediaJobListResponse,
-    MediaJobOperationListResponse, MediaJobPhaseAppendRequest, MediaJobPhaseListResponse,
-    MediaJobPlanReasonListResponse, MediaJobResponse, MediaJobRetentionResponse,
-    MediaJobRetentionUpdateRequest, MediaJobVerificationCheckListResponse,
-    MediaJobViolationListResponse, MediaPlanningPreviewRequest, MediaPlanningPreviewResponse,
-    MediaPolicyListResponse, MediaPolicyResponse, MediaPolicyUpsertRequest,
-    MediaProfileDesiredTargetRequest, MediaProfileListResponse, MediaProfilePatchRequest,
-    MediaProfileReadinessResponse, MediaProfileResponse, MediaProfileUpsertRequest,
-    MediaProfileValidationResponse, MediaRecentJobPageResponse, MediaRecentJobSummaryResponse,
-    MediaTextValidationError, MediaYamlApplyResponse, MediaYamlExportResponse,
-    MediaYamlImportRequest, MediaYamlIssueResponse, MediaYamlValidationResponse,
-    validate_media_display, validate_media_key,
+    MediaJobOperationListResponse, MediaJobPhaseListResponse, MediaJobPlanReasonListResponse,
+    MediaJobResponse, MediaJobRetentionResponse, MediaJobRetentionUpdateRequest,
+    MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
+    MediaPlanningPreviewRequest, MediaPlanningPreviewResponse, MediaPolicyListResponse,
+    MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileDesiredTargetRequest,
+    MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileReadinessResponse,
+    MediaProfileResponse, MediaProfileUpsertRequest, MediaProfileValidationResponse,
+    MediaRecentJobPageResponse, MediaRecentJobSummaryResponse, MediaTextValidationError,
+    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
+    MediaYamlIssueResponse, MediaYamlValidationResponse, validate_media_display,
+    validate_media_key,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -78,7 +78,6 @@ const MEDIA_JOB_DIAGNOSTICS_FAILED: &str = "failed to load media job diagnostics
 const MEDIA_JOB_DIAGNOSTIC_LIMIT: usize = 1_024;
 const MEDIA_JOB_CANCEL_FAILED: &str = "failed to cancel media job";
 const MEDIA_JOB_RETRY_FAILED: &str = "failed to retry media job";
-const MEDIA_JOB_PHASE_APPEND_FAILED: &str = "failed to append media job phase";
 const MEDIA_JOB_PHASE_LIST_FAILED: &str = "failed to list media job phases";
 const MEDIA_JOB_OPERATION_LIST_FAILED: &str = "failed to list media job operations";
 const MEDIA_JOB_VIOLATION_LIST_FAILED: &str = "failed to list media job violations";
@@ -104,7 +103,6 @@ const VIDEO_INTENT_REQUIRED: &str = "video_intent is required";
 const DISCOVERY_SOURCE_PATHS_REQUIRED: &str = "source_paths must contain at least one path";
 const DISCOVERY_SOURCE_PATHS_TOO_LARGE: &str = "source_paths exceeds maximum size";
 const DISCOVERY_SOURCE_PATH_TOO_LARGE: &str = "source_path exceeds maximum size";
-const PHASE_STATUS_REQUIRED: &str = "phase_status is required";
 const YAML_PAYLOAD_REQUIRED: &str = "yaml_payload is required";
 const RETENTION_DAYS_INVALID: &str = "retention_days must be between 1 and 3650";
 const RETENTION_LIMIT_INVALID: &str = "retention limit must be between 1 and 3650";
@@ -124,8 +122,6 @@ const SCHEDULE_INTERVAL_REQUIRED: &str =
     "schedule_interval_minutes is required when schedule is enabled";
 const MEDIA_STATUS_INVALID: &str =
     "status must be one of: queued, running, verifying, completed, failed, cancelled";
-const PHASE_STATUS_INVALID: &str =
-    "phase_status must be one of: queued, running, verifying, completed, failed, cancelled";
 const MEDIA_LICENSE_MODE: &str = "redistributable-gplv3-runtime";
 const MEDIA_SOURCE_OFFER_PATH: &str = "/app/compliance/SOURCE-OFFER.txt";
 const MEDIA_SOURCE_OFFER_URL: &str = "/app/compliance/SOURCE-OFFER.txt";
@@ -1163,36 +1159,6 @@ pub(crate) async fn retry_media_job(
         .media_job_retry(media_job_public_id)
         .await
         .map_err(|err| map_media_error("media_job_retry", MEDIA_JOB_RETRY_FAILED, &err))?;
-
-    Ok(StatusCode::NO_CONTENT)
-}
-
-pub(crate) async fn append_media_job_phase(
-    State(state): State<Arc<ApiState>>,
-    Path(media_job_public_id): Path<Uuid>,
-    Json(request): Json<MediaJobPhaseAppendRequest>,
-) -> Result<StatusCode, ApiError> {
-    let phase_name = normalize_media_key(&request.phase_name, "phase_name")?;
-    let phase_status = normalize_required_str_field(&request.phase_status, PHASE_STATUS_REQUIRED)?;
-    let phase_status = parse_media_status_required(phase_status, PHASE_STATUS_INVALID)?;
-
-    state
-        .media
-        .media_job_phase_append(MediaJobPhaseAppendParams {
-            media_job_public_id,
-            phase_index: request.phase_index,
-            phase_name,
-            phase_status: phase_status.as_str(),
-            details_text: trim_and_filter_empty(request.details_text.as_deref()),
-        })
-        .await
-        .map_err(|err| {
-            map_media_error(
-                "media_job_phase_append",
-                MEDIA_JOB_PHASE_APPEND_FAILED,
-                &err,
-            )
-        })?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -3152,24 +3118,6 @@ mod tests {
             .expect_err("noop media facade should fail retry");
         let response = err.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn append_media_job_phase_rejects_invalid_phase_status() -> anyhow::Result<()> {
-        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
-        let request = MediaJobPhaseAppendRequest {
-            phase_index: 0,
-            phase_name: "planning".to_string(),
-            phase_status: "INVALID".to_string(),
-            details_text: None,
-        };
-
-        let err = append_media_job_phase(State(state), Path(Uuid::new_v4()), Json(request))
-            .await
-            .expect_err("invalid phase status should fail validation");
-        let response = err.into_response();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         Ok(())
     }
 
