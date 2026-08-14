@@ -29,6 +29,7 @@ const MEDIA_JOB_MARK_COMPLETED_V1: &str =
     "SELECT media_job_mark_completed_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_jobs_pruned, failed_detail_rows_deleted FROM media_job_retention_run_v1(as_of_input => $1)";
 const MEDIA_JOB_WORKER_CLAIM_NEXT_V3: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, discovery_source_size_bytes, discovery_source_modified_ns, discovery_source_sha256, cancel_generation FROM media_job_worker_claim_next_v3()";
+const MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1: &str = "SELECT media_job_public_id, workspace_retention_seconds, diagnostic_workspace_retention_seconds, max_entries_per_tick FROM media_workspace_retention_snapshot_v1()";
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str =
     "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, status_input => $2::media_job_status, last_error_input => $3)";
@@ -185,6 +186,19 @@ pub struct MediaRecentJobRow {
     pub artifact_count: i64,
     /// Compact-audit count.
     pub compact_audit_count: i64,
+}
+
+/// One row in the coherent workspace-retention policy and active-job snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaWorkspaceRetentionSnapshotRow {
+    /// Active job public id, absent only when the active set is empty.
+    pub media_job_public_id: Option<Uuid>,
+    /// Full-workspace retention duration in seconds.
+    pub workspace_retention_seconds: i64,
+    /// Diagnostics-only workspace retention duration in seconds.
+    pub diagnostic_workspace_retention_seconds: i64,
+    /// Maximum root entries inspected during one janitor tick.
+    pub max_entries_per_tick: i32,
 }
 
 /// Media job operation row.
@@ -881,6 +895,23 @@ pub async fn run_media_job_retention(
         .map_err(try_op("media job retention run"))
 }
 
+/// Read persisted workspace-retention bounds and active job keys in one database snapshot.
+///
+/// The procedure always returns one policy row when no jobs are active and repeats the same policy
+/// values for each active job otherwise.
+///
+/// # Errors
+///
+/// Returns an error when stored-procedure execution fails.
+pub async fn load_media_workspace_retention_snapshot(
+    pool: &PgPool,
+) -> Result<Vec<MediaWorkspaceRetentionSnapshotRow>> {
+    sqlx::query_as::<_, MediaWorkspaceRetentionSnapshotRow>(MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media workspace retention snapshot"))
+}
+
 /// Claim the next queued media job for worker processing.
 ///
 /// # Errors
@@ -1044,10 +1075,10 @@ mod tests {
         list_media_job_compact_audits, list_media_job_operations, list_media_job_plan_reasons,
         list_media_job_terminal_outbox_unpublished, list_media_job_verification_checks,
         list_media_job_violations, list_media_jobs, list_recent_media_jobs,
-        mark_media_job_completed, mark_media_job_terminal_outbox_published,
-        media_job_worker_acknowledge_cancel, media_job_worker_claim_next,
-        media_job_worker_commit_replacement_terminal, media_job_worker_mark_status,
-        media_job_worker_poll_control, run_media_job_retention,
+        load_media_workspace_retention_snapshot, mark_media_job_completed,
+        mark_media_job_terminal_outbox_published, media_job_worker_acknowledge_cancel,
+        media_job_worker_claim_next, media_job_worker_commit_replacement_terminal,
+        media_job_worker_mark_status, media_job_worker_poll_control, run_media_job_retention,
     };
     use crate::DataError;
     use crate::media::configuration::{
@@ -2106,6 +2137,83 @@ mod tests {
                 .len(),
             1
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn workspace_retention_snapshot_includes_queued_and_claimed_jobs() -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("workspace_retention_snapshot_active_jobs").await? else {
+            return Ok(());
+        };
+        let profile_id = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "workspace-retention-snapshot",
+                source_root: "/input/workspace-retention",
+                output_root: "/output/workspace-retention",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        let running_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/workspace-retention/running.mkv",
+                output_path: Some("/output/workspace-retention/running.mkv"),
+                dry_run: true,
+            },
+        )
+        .await?;
+        let queued_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/workspace-retention/queued.mkv",
+                output_path: Some("/output/workspace-retention/queued.mkv"),
+                dry_run: true,
+            },
+        )
+        .await?;
+        let completed_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/workspace-retention/completed.mkv",
+                output_path: Some("/output/workspace-retention/completed.mkv"),
+                dry_run: true,
+            },
+        )
+        .await?;
+        let claimed = media_job_worker_claim_next(db.pool())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("expected a claimed media job"))?;
+        assert_eq!(claimed.media_job_public_id, running_id);
+        mark_media_job_completed(db.pool(), completed_id).await?;
+
+        let snapshot = load_media_workspace_retention_snapshot(db.pool()).await?;
+        let active_ids = snapshot
+            .iter()
+            .filter_map(|row| row.media_job_public_id)
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(active_ids, [running_id, queued_id].into_iter().collect());
+        assert!(!active_ids.contains(&completed_id));
+        assert!(snapshot.iter().all(|row| {
+            row.workspace_retention_seconds == 86_400
+                && row.diagnostic_workspace_retention_seconds == 2_592_000
+                && row.max_entries_per_tick == 128
+        }));
         Ok(())
     }
 
