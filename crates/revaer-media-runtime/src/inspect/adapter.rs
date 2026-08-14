@@ -217,7 +217,10 @@ fn source_probe_args(path: &Path) -> Vec<OsString> {
     [
         "-v",
         "error",
+        "-read_intervals",
+        "%+#1",
         "-show_streams",
+        "-show_frames",
         "-show_format",
         "-show_chapters",
         "-of",
