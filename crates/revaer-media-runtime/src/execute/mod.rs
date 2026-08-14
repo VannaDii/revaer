@@ -43,6 +43,9 @@ pub enum BuildArgsError {
     /// Desired output muxer is not supported by runtime capabilities.
     #[error("required muxer is not supported: {0}")]
     UnsupportedMuxer(String),
+    /// Desired output muxer cannot author replacement chapters.
+    #[error("required chapter muxer is not supported: {0}")]
+    UnsupportedChapterMuxer(String),
     /// Desired container metadata policy is not supported by runtime command construction.
     #[error("required container metadata policy is not supported: {0}")]
     UnsupportedContainerMetadataPolicy(String),
@@ -550,6 +553,11 @@ pub enum ExecutionStep {
         /// UTF-8 file contents.
         contents: String,
     },
+    /// Remove a deterministic text artifact after all consumers have finished.
+    DeleteTextFileIfExists {
+        /// Managed text artifact path.
+        path: String,
+    },
     /// Command invocation and argv.
     Command {
         /// Binary to invoke.
@@ -668,6 +676,7 @@ const fn execution_step_kind(step: &ExecutionStep) -> &'static str {
         ExecutionStep::CopySidecarSubtitle { .. } => "copy-sidecar",
         ExecutionStep::BackupSource { .. } => "backup",
         ExecutionStep::WriteTextFile { .. } => "write-text-file",
+        ExecutionStep::DeleteTextFileIfExists { .. } => "delete-text-file",
         ExecutionStep::VerifyOutput { .. } => "verify",
         ExecutionStep::QuarantineFailedOutput { .. } => "quarantine",
         ExecutionStep::AtomicReplace { .. } => "replace",
@@ -918,6 +927,7 @@ fn chapter_metadata_path_for_desired(
     };
     match normalized {
         "replace" if !desired.container_chapters.is_empty() => {
+            validate_chapter_authoring_container(desired)?;
             let output_path = output_path.trim();
             if output_path.is_empty() {
                 return Err(BuildArgsError::InvalidContainerChapterValues(
@@ -937,6 +947,24 @@ fn chapter_metadata_path_for_desired(
         _ => Err(BuildArgsError::UnsupportedContainerChapterPolicy(
             desired.container_chapter_policy.clone().unwrap_or_default(),
         )),
+    }
+}
+
+fn validate_chapter_authoring_container(desired: &DesiredGraph) -> Result<(), BuildArgsError> {
+    let Some(container_format) = desired
+        .container_format
+        .as_deref()
+        .map(normalize_container_format)
+        .filter(|format| !format.is_empty())
+    else {
+        return Err(BuildArgsError::UnsupportedChapterMuxer(
+            "unspecified".to_string(),
+        ));
+    };
+    if container_format == "matroska" {
+        Ok(())
+    } else {
+        Err(BuildArgsError::UnsupportedChapterMuxer(container_format))
     }
 }
 
@@ -1680,8 +1708,10 @@ pub fn build_desired_graph_execution_steps_with_sidecars(
         },
         sidecar_embeddings,
     )?;
-    let mut steps = Vec::with_capacity(2 + usize::from(chapter_metadata_artifact.is_some()));
+    let mut steps = Vec::with_capacity(2 + usize::from(chapter_metadata_artifact.is_some()) * 2);
+    let mut chapter_metadata_cleanup = None;
     if let Some(artifact) = chapter_metadata_artifact {
+        chapter_metadata_cleanup = Some(artifact.path.clone());
         steps.push(ExecutionStep::WriteTextFile {
             output_path: artifact.path,
             contents: artifact.contents,
@@ -1694,6 +1724,9 @@ pub fn build_desired_graph_execution_steps_with_sidecars(
     steps.push(ExecutionStep::VerifyOutput {
         output_path: output_path.to_string(),
     });
+    if let Some(path) = chapter_metadata_cleanup {
+        steps.push(ExecutionStep::DeleteTextFileIfExists { path });
+    }
     append_sidecar_output_steps(
         &mut steps,
         input_path,
@@ -2280,6 +2313,7 @@ pub fn execute_filesystem_step(step: &ExecutionStep) -> Result<(), ExecuteStepEr
             output_path,
             contents,
         } => write_text_file(output_path, contents),
+        ExecutionStep::DeleteTextFileIfExists { path } => delete_file_if_exists(path),
         ExecutionStep::VerifyOutput { output_path } => verify_output_file(output_path),
         ExecutionStep::QuarantineFailedOutput {
             output_path,
@@ -2291,6 +2325,19 @@ pub fn execute_filesystem_step(step: &ExecutionStep) -> Result<(), ExecuteStepEr
         ),
         ExecutionStep::AtomicReplace { .. } => Err(ExecuteStepError::ManagedReplacementRequired),
         ExecutionStep::Command { .. } => Err(ExecuteStepError::CommandStepUnsupported),
+    }
+}
+
+fn delete_file_if_exists(path: &str) -> Result<(), ExecuteStepError> {
+    let artifact_path = Path::new(path);
+    match fs::remove_file(artifact_path) {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(ExecuteStepError::Io {
+            operation: "execution.delete_text_file",
+            path: artifact_path.to_path_buf(),
+            source,
+        }),
     }
 }
 
@@ -2377,10 +2424,7 @@ pub fn execute_step_sequence_controlled(
             continue;
         }
         if let Err(failed) = execute_step_controlled(step, command_runner, control) {
-            let recovery = steps
-                .iter()
-                .find(|candidate| is_recovery_step(candidate))
-                .and_then(|candidate| execute_filesystem_step(candidate).err());
+            let recovery = execute_failure_handler_steps(steps, index);
             return Err(ExecuteSequenceError {
                 failed_step_index: index,
                 failed,
@@ -2389,6 +2433,26 @@ pub fn execute_step_sequence_controlled(
         }
     }
     Ok(())
+}
+
+fn execute_failure_handler_steps(
+    steps: &[ExecutionStep],
+    failed_step_index: usize,
+) -> Option<ExecuteStepError> {
+    let mut first_failure = None;
+    for (index, step) in steps.iter().enumerate() {
+        if (index == failed_step_index && !is_cleanup_step(step))
+            || (!is_recovery_step(step) && !is_cleanup_step(step))
+        {
+            continue;
+        }
+        if let Err(error) = execute_filesystem_step(step)
+            && first_failure.is_none()
+        {
+            first_failure = Some(error);
+        }
+    }
+    first_failure
 }
 
 fn validate_operation_capabilities(
@@ -2698,6 +2762,10 @@ const fn is_recovery_step(step: &ExecutionStep) -> bool {
     matches!(step, ExecutionStep::QuarantineFailedOutput { .. })
 }
 
+const fn is_cleanup_step(step: &ExecutionStep) -> bool {
+    matches!(step, ExecutionStep::DeleteTextFileIfExists { .. })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -2713,8 +2781,8 @@ mod tests {
         build_execution_steps_with_replacement, build_execution_steps_with_replacement_policy,
         build_execution_steps_with_video_policy, build_extract_subtitle_argv, build_ffmpeg_argv,
         build_sidecar_embed_argv, execute_filesystem_step, execute_step, execute_step_sequence,
-        validate_container_metadata_arg_budget, validate_container_muxer_capability,
-        validate_declared_stream_codec_capability,
+        execute_step_sequence_controlled, validate_container_metadata_arg_budget,
+        validate_container_muxer_capability, validate_declared_stream_codec_capability,
     };
     use crate::capabilities::CapabilitySnapshot;
     use revaer_media_core::model::{
@@ -2792,6 +2860,17 @@ mod tests {
         fn limit_breach(&self) -> Option<super::ExecutionLimitBreach> {
             (self.polls.fetch_add(1, Ordering::AcqRel) >= 1)
                 .then_some(super::ExecutionLimitBreach::WorkspaceReserveLost)
+        }
+    }
+
+    struct PollCancellationControl {
+        polls: AtomicU64,
+        cancel_at: u64,
+    }
+
+    impl ExecutionControl for PollCancellationControl {
+        fn cancellation_requested(&self) -> bool {
+            self.polls.fetch_add(1, Ordering::AcqRel) >= self.cancel_at
         }
     }
 
@@ -3619,6 +3698,162 @@ mod tests {
     }
 
     #[test]
+    fn execute_step_sequence_removes_text_artifact_after_success()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = temp_execution_root()?;
+        let output = root.join("workspace").join("movie.mkv");
+        let artifact = root.join("workspace").join("movie.mkv.chapters.ffmetadata");
+        fs::create_dir_all(output.parent().unwrap_or(root.as_path()))?;
+        fs::write(&output, "verified")?;
+        let steps = vec![
+            ExecutionStep::WriteTextFile {
+                output_path: artifact.to_string_lossy().into_owned(),
+                contents: ";FFMETADATA1\n".to_string(),
+            },
+            ExecutionStep::Command {
+                bin: "ffmpeg".to_string(),
+                argv: Vec::new(),
+            },
+            ExecutionStep::VerifyOutput {
+                output_path: output.to_string_lossy().into_owned(),
+            },
+            ExecutionStep::DeleteTextFileIfExists {
+                path: artifact.to_string_lossy().into_owned(),
+            },
+        ];
+
+        execute_step_sequence(&steps, &RecordingRunner::default())?;
+
+        assert!(output.exists());
+        assert!(!artifact.exists());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn execute_step_sequence_removes_text_artifact_when_cancelled_at_cleanup()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = temp_execution_root()?;
+        let output = root.join("workspace").join("movie.mkv");
+        let artifact = root.join("workspace").join("movie.mkv.chapters.ffmetadata");
+        fs::create_dir_all(output.parent().unwrap_or(root.as_path()))?;
+        fs::write(&output, "verified")?;
+        let steps = vec![
+            ExecutionStep::WriteTextFile {
+                output_path: artifact.to_string_lossy().into_owned(),
+                contents: ";FFMETADATA1\n".to_string(),
+            },
+            ExecutionStep::VerifyOutput {
+                output_path: output.to_string_lossy().into_owned(),
+            },
+            ExecutionStep::DeleteTextFileIfExists {
+                path: artifact.to_string_lossy().into_owned(),
+            },
+        ];
+        let control = PollCancellationControl {
+            polls: AtomicU64::new(0),
+            cancel_at: 2,
+        };
+
+        let result =
+            execute_step_sequence_controlled(&steps, &RecordingRunner::default(), &control);
+
+        assert!(matches!(
+            result,
+            Err(super::ExecuteSequenceError {
+                failed_step_index: 2,
+                failed: super::ExecuteStepError::Cancelled,
+                recovery: None
+            })
+        ));
+        assert!(!artifact.exists());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn execute_step_sequence_removes_text_artifact_after_later_failure()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = temp_execution_root()?;
+        let output = root.join("workspace").join("movie.mkv");
+        let artifact = root.join("workspace").join("movie.mkv.chapters.ffmetadata");
+        let quarantine = root.join("quarantine").join("movie.mkv");
+        fs::create_dir_all(output.parent().unwrap_or(root.as_path()))?;
+        fs::write(&output, "")?;
+        let steps = vec![
+            ExecutionStep::WriteTextFile {
+                output_path: artifact.to_string_lossy().into_owned(),
+                contents: ";FFMETADATA1\n".to_string(),
+            },
+            ExecutionStep::VerifyOutput {
+                output_path: output.to_string_lossy().into_owned(),
+            },
+            ExecutionStep::QuarantineFailedOutput {
+                output_path: output.to_string_lossy().into_owned(),
+                quarantine_path: quarantine.to_string_lossy().into_owned(),
+            },
+            ExecutionStep::DeleteTextFileIfExists {
+                path: artifact.to_string_lossy().into_owned(),
+            },
+        ];
+
+        let result = execute_step_sequence(&steps, &RecordingRunner::default());
+
+        assert!(matches!(
+            result,
+            Err(super::ExecuteSequenceError {
+                failed_step_index: 1,
+                failed: super::ExecuteStepError::OutputEmpty(_),
+                recovery: None
+            })
+        ));
+        assert!(!output.exists());
+        assert!(quarantine.exists());
+        assert!(!artifact.exists());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn execute_step_sequence_attempts_cleanup_when_recovery_fails()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let root = temp_execution_root()?;
+        let output = root.join("workspace").join("missing.mkv");
+        let artifact = root
+            .join("workspace")
+            .join("missing.mkv.chapters.ffmetadata");
+        let quarantine = root.join("quarantine").join("missing.mkv");
+        fs::create_dir_all(artifact.parent().unwrap_or(root.as_path()))?;
+        fs::write(&artifact, ";FFMETADATA1\n")?;
+        let steps = vec![
+            ExecutionStep::VerifyOutput {
+                output_path: output.to_string_lossy().into_owned(),
+            },
+            ExecutionStep::QuarantineFailedOutput {
+                output_path: output.to_string_lossy().into_owned(),
+                quarantine_path: quarantine.to_string_lossy().into_owned(),
+            },
+            ExecutionStep::DeleteTextFileIfExists {
+                path: artifact.to_string_lossy().into_owned(),
+            },
+        ];
+
+        let result = execute_step_sequence(&steps, &RecordingRunner::default());
+
+        assert!(matches!(
+            result,
+            Err(super::ExecuteSequenceError {
+                failed_step_index: 0,
+                failed: super::ExecuteStepError::OutputMissing(_),
+                recovery: Some(super::ExecuteStepError::Io { .. })
+            })
+        ));
+        assert!(!artifact.exists());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
     fn empty_operation_list_is_rejected() {
         let result = build_execution_steps("/in.mkv", "/out.mkv", &[]);
         assert_eq!(result, Err(BuildArgsError::EmptyOperations));
@@ -4134,7 +4369,79 @@ mod tests {
                 .any(|pair| { pair == ["-i", "/workspace/out.mkv.chapters.ffmetadata"] })
         );
         assert!(argv.windows(2).any(|pair| pair == ["-map_chapters", "1"]));
+        assert!(matches!(
+            steps.get(2),
+            Some(ExecutionStep::VerifyOutput { output_path })
+                if output_path == "/workspace/out.mkv"
+        ));
+        assert!(matches!(
+            steps.get(3),
+            Some(ExecutionStep::DeleteTextFileIfExists { path })
+                if path == "/workspace/out.mkv.chapters.ffmetadata"
+        ));
         Ok(())
+    }
+
+    #[test]
+    fn desired_graph_replace_container_chapters_rejects_non_chapter_muxer() {
+        let source_stream = MediaStream {
+            stream_id: 0,
+            kind: StreamKind::Video,
+            codec: "h264".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_metadata: Vec::new(),
+            container_chapters: Vec::new(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![source_stream.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/workspace/out.mp4".to_string(),
+            container_format: Some("mp4".to_string()),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: Some("replace".to_string()),
+            container_chapters: vec![ContainerChapterEntry {
+                start_millis: 0,
+                end_millis: 42_000,
+                metadata: vec![ContainerMetadataEntry {
+                    key: "title".to_string(),
+                    value: "Intro".to_string(),
+                }],
+            }],
+            container_attachment_policy: None,
+            stream_bindings: vec![DesiredStreamBinding {
+                output_stream_id: 0,
+                source_stream_id: Some(0),
+            }],
+            streams: vec![source_stream],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+            output_stream_id: None,
+        }];
+
+        let result = build_desired_graph_execution_steps(
+            "/in.mkv",
+            "/workspace/out.mp4",
+            &source,
+            &desired,
+            &operations,
+            None,
+            VideoTranscodePolicy::default(),
+        );
+
+        assert_eq!(
+            result,
+            Err(BuildArgsError::UnsupportedChapterMuxer("mp4".to_string()))
+        );
     }
 
     #[test]

@@ -4409,6 +4409,7 @@ fn replacement_output_path(steps: &[ExecutionStep]) -> Result<String, MediaJobRu
             ExecutionStep::CopySidecarSubtitle { .. }
             | ExecutionStep::BackupSource { .. }
             | ExecutionStep::WriteTextFile { .. }
+            | ExecutionStep::DeleteTextFileIfExists { .. }
             | ExecutionStep::Command { .. }
             | ExecutionStep::VerifyOutput { .. }
             | ExecutionStep::QuarantineFailedOutput { .. } => None,
@@ -4839,6 +4840,7 @@ const fn filesystem_step_kind(step: &ExecutionStep) -> &'static str {
         ExecutionStep::CopySidecarSubtitle { .. } => "copy_sidecar",
         ExecutionStep::BackupSource { .. } => "backup_source",
         ExecutionStep::WriteTextFile { .. } => "write_text_file",
+        ExecutionStep::DeleteTextFileIfExists { .. } => "delete_text_file",
         ExecutionStep::VerifyOutput { .. } => "verify_output",
         ExecutionStep::QuarantineFailedOutput { .. } => "quarantine_output",
         ExecutionStep::AtomicReplace { .. } => "atomic_replace",

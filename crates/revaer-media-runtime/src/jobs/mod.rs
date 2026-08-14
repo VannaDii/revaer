@@ -633,6 +633,10 @@ const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata 
             code: "preflight_build_unsupported_muxer",
             detail: "required output muxer is unavailable",
         },
+        BuildArgsError::UnsupportedChapterMuxer(_) => PreflightErrorMetadata {
+            code: "preflight_build_unsupported_chapter_muxer",
+            detail: "required output muxer cannot author replacement chapters",
+        },
         BuildArgsError::UnsupportedContainerMetadataPolicy(_) => PreflightErrorMetadata {
             code: "preflight_build_unsupported_container_metadata_policy",
             detail: "required container metadata policy is unavailable",
@@ -3130,6 +3134,21 @@ mod tests {
         assert_eq!(
             preflight_error_detail(&err),
             "required output muxer is unavailable"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+    }
+
+    #[test]
+    fn unsupported_chapter_muxer_preflight_classification_is_stable() {
+        let err =
+            JobPreflightError::Build(BuildArgsError::UnsupportedChapterMuxer("mp4".to_string()));
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_unsupported_chapter_muxer"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "required output muxer cannot author replacement chapters"
         );
         assert_eq!(preflight_failed_stage(&err), "build_steps");
     }
