@@ -325,7 +325,10 @@ api-export:
 helm-annotation-test:
     bash release/tests/helm-annotation-rendering.sh
 
-helm-lint: helm-annotation-test
+helm-runtime-lifecycle-test:
+    bash release/tests/helm-runtime-lifecycle.sh
+
+helm-lint: helm-annotation-test helm-runtime-lifecycle-test
     if ! command -v helm >/dev/null 2>&1; then \
         echo "helm is required to lint the chart"; \
         exit 1; \

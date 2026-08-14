@@ -1,5 +1,6 @@
 //! Router construction and server host for the API.
 
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,7 +39,7 @@ use crate::http::constants::{
     HEADER_SETUP_TOKEN,
 };
 use crate::http::filesystem::browse_filesystem;
-use crate::http::health::{dashboard, health, health_full, metrics};
+use crate::http::health::{dashboard, health, health_full, health_live, health_ready, metrics};
 use crate::http::indexers as indexer_handlers;
 use crate::http::logs::stream_logs;
 use crate::http::media as media_handlers;
@@ -59,6 +60,15 @@ use crate::openapi::OpenApiDependencies;
 /// Axum router wrapper that hosts the Revaer API services.
 pub struct ApiServer {
     router: Router,
+}
+
+#[derive(Clone, Copy)]
+struct TorrentCatalogPaths {
+    root: &'static str,
+    categories: &'static str,
+    category: &'static str,
+    tags: &'static str,
+    tag: &'static str,
 }
 
 impl ApiServer {
@@ -290,6 +300,8 @@ impl ApiServer {
     fn public_routes() -> Router<Arc<ApiState>> {
         Router::new()
             .route("/health", get(health))
+            .route("/health/live", get(health_live))
+            .route("/health/ready", get(health_ready))
             .route("/health/full", get(health_full))
             .route("/.well-known/revaer.json", get(well_known))
             .route("/metrics", get(metrics))
@@ -331,28 +343,16 @@ impl ApiServer {
                 "/admin/factory-reset",
                 post(factory_reset).route_layer(require_factory_reset),
             )
-            .route(
-                "/admin/torrents",
-                get(list_torrents)
-                    .post(create_torrent)
-                    .route_layer(require_api.clone()),
-            )
-            .route(
-                "/admin/torrents/categories",
-                get(list_torrent_categories).route_layer(require_api.clone()),
-            )
-            .route(
-                "/admin/torrents/categories/{name}",
-                put(upsert_torrent_category).route_layer(require_api.clone()),
-            )
-            .route(
-                "/admin/torrents/tags",
-                get(list_torrent_tags).route_layer(require_api.clone()),
-            )
-            .route(
-                "/admin/torrents/tags/{name}",
-                put(upsert_torrent_tag).route_layer(require_api.clone()),
-            )
+            .merge(Self::torrent_catalog_routes(
+                state,
+                TorrentCatalogPaths {
+                    root: "/admin/torrents",
+                    categories: "/admin/torrents/categories",
+                    category: "/admin/torrents/categories/{name}",
+                    tags: "/admin/torrents/tags",
+                    tag: "/admin/torrents/tags/{name}",
+                },
+            ))
             .route(
                 "/admin/torrents/create",
                 post(create_torrent_authoring).route_layer(require_api.clone()),
@@ -1008,28 +1008,16 @@ impl ApiServer {
         let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
 
         Router::new()
-            .route(
-                "/v1/torrents",
-                get(list_torrents)
-                    .post(create_torrent)
-                    .route_layer(require_api.clone()),
-            )
-            .route(
-                "/v1/torrents/categories",
-                get(list_torrent_categories).route_layer(require_api.clone()),
-            )
-            .route(
-                "/v1/torrents/categories/{name}",
-                put(upsert_torrent_category).route_layer(require_api.clone()),
-            )
-            .route(
-                "/v1/torrents/tags",
-                get(list_torrent_tags).route_layer(require_api.clone()),
-            )
-            .route(
-                "/v1/torrents/tags/{name}",
-                put(upsert_torrent_tag).route_layer(require_api.clone()),
-            )
+            .merge(Self::torrent_catalog_routes(
+                state,
+                TorrentCatalogPaths {
+                    root: "/v1/torrents",
+                    categories: "/v1/torrents/categories",
+                    category: "/v1/torrents/categories/{name}",
+                    tags: "/v1/torrents/tags",
+                    tag: "/v1/torrents/tags/{name}",
+                },
+            ))
             .route(
                 "/v1/torrents/create",
                 post(create_torrent_authoring).route_layer(require_api.clone()),
@@ -1079,6 +1067,34 @@ impl ApiServer {
             )
     }
 
+    fn torrent_catalog_routes(
+        state: &Arc<ApiState>,
+        paths: TorrentCatalogPaths,
+    ) -> Router<Arc<ApiState>> {
+        let require_api = middleware::from_fn_with_state(state.clone(), require_api_key);
+
+        Router::new()
+            .route(
+                paths.root,
+                get(list_torrents)
+                    .post(create_torrent)
+                    .route_layer(require_api.clone()),
+            )
+            .route(
+                paths.categories,
+                get(list_torrent_categories).route_layer(require_api.clone()),
+            )
+            .route(
+                paths.category,
+                put(upsert_torrent_category).route_layer(require_api.clone()),
+            )
+            .route(
+                paths.tags,
+                get(list_torrent_tags).route_layer(require_api.clone()),
+            )
+            .route(paths.tag, put(upsert_torrent_tag).route_layer(require_api))
+    }
+
     #[cfg(feature = "compat-qb")]
     fn mount_optional_compat(router: Router<Arc<ApiState>>) -> Router<Arc<ApiState>> {
         compat_qb::mount(router)
@@ -1095,6 +1111,18 @@ impl ApiServer {
     ///
     /// Returns an error if the listener fails to bind or the server terminates unexpectedly.
     pub async fn serve(self, addr: SocketAddr) -> ApiServerResult<()> {
+        self.serve_with_shutdown(addr, std::future::pending()).await
+    }
+
+    /// Serve the API until the supplied shutdown future resolves.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the listener fails to bind or the server terminates unexpectedly.
+    pub async fn serve_with_shutdown<F>(self, addr: SocketAddr, shutdown: F) -> ApiServerResult<()>
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
         tracing::info!(addr = %addr, "Starting API listener");
         let listener = TcpListener::bind(addr)
             .await
@@ -1104,6 +1132,7 @@ impl ApiServer {
             self.router
                 .into_make_service_with_connect_info::<SocketAddr>(),
         )
+        .with_graceful_shutdown(shutdown)
         .await
         .map_err(|source| ApiServerError::Serve { source })?;
         Ok(())
@@ -1112,5 +1141,39 @@ impl ApiServer {
     #[cfg(test)]
     pub(crate) const fn router(&self) -> &Router {
         &self.router
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error::Error;
+
+    #[tokio::test]
+    async fn serve_with_shutdown_stops_after_shutdown_resolves() -> Result<(), Box<dyn Error>> {
+        let reserved = std::net::TcpListener::bind("127.0.0.1:0")?;
+        let addr = reserved.local_addr()?;
+        drop(reserved);
+
+        ApiServer {
+            router: Router::new(),
+        }
+        .serve_with_shutdown(addr, std::future::ready(()))
+        .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn serve_with_shutdown_reports_bind_failure() -> Result<(), Box<dyn Error>> {
+        let reserved = TcpListener::bind("127.0.0.1:0").await?;
+        let addr = reserved.local_addr()?;
+        let result = ApiServer {
+            router: Router::new(),
+        }
+        .serve_with_shutdown(addr, std::future::ready(()))
+        .await;
+
+        assert!(matches!(result, Err(ApiServerError::Bind { .. })));
+        Ok(())
     }
 }

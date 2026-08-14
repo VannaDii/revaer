@@ -1,6 +1,11 @@
+use std::fs;
 use std::net::{IpAddr, TcpListener};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use anyhow::Result;
 use revaer_app::{AppError, run_app, run_app_with_database_url};
@@ -11,9 +16,61 @@ use tokio::time::{Duration, timeout};
 
 static BOOTSTRAP_TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 const BOOTSTRAP_BIND_FAILURE_TIMEOUT: Duration = Duration::from_secs(30);
+const CAPABILITY_PROBE_SCRIPT: &str = r#"#!/bin/sh
+probe=${0##*/}
+case "$probe" in
+  ffprobe)
+    printf '%s\n' 'ffprobe version 7.0.2 Copyright'
+    exit 0
+    ;;
+  ffplay)
+    printf '%s\n' 'ffplay version 7.0.2 Copyright'
+    exit 0
+    ;;
+esac
+
+case "${1-}" in
+  -version)
+    printf '%s\n' 'ffmpeg version 7.0.2 Copyright --enable-gpl --enable-version3'
+    ;;
+  -codecs)
+    printf '%s\n' 'Codecs:' ' DEVILS h264 H.264' ' DEVILS hevc H.265'
+    ;;
+  -encoders)
+    printf '%s\n' 'Encoders:' ' V..... libx265 H.265' ' S..... subrip SubRip subtitle'
+    ;;
+  -decoders)
+    printf '%s\n' 'Decoders:' ' V..... h264 H.264' ' S..... subrip SubRip subtitle'
+    ;;
+  -muxers)
+    printf '%s\n' 'Muxers:' ' E matroska Matroska' ' E mp4 MP4'
+    ;;
+  -demuxers)
+    printf '%s\n' 'Demuxers:' ' D matroska Matroska' ' D mov,mp4,m4a,3gp,3g2,mj2 QuickTime'
+    ;;
+  -hwaccels)
+    printf '%s\n' 'Hardware acceleration methods:'
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+"#;
 
 async fn bootstrap_test_guard() -> MutexGuard<'static, ()> {
     BOOTSTRAP_TEST_MUTEX.lock().await
+}
+
+fn install_capability_probe_fixtures(root: &Path) -> Result<PathBuf> {
+    let bin_dir = root.join("capability-probes");
+    fs::create_dir(&bin_dir)?;
+    for program in ["ffmpeg", "ffprobe", "ffplay"] {
+        let path = bin_dir.join(program);
+        fs::write(&path, CAPABILITY_PROBE_SCRIPT)?;
+        #[cfg(unix)]
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(bin_dir)
 }
 
 fn run_bootstrap_child(
@@ -22,9 +79,14 @@ fn run_bootstrap_child(
     removed_envs: &[&str],
 ) -> Result<()> {
     let workspace = tempfile::tempdir()?;
+    let probe_bin = install_capability_probe_fixtures(workspace.path())?;
+    let path = std::env::join_paths(std::iter::once(probe_bin).chain(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    )))?;
     let mut command = Command::new(std::env::current_exe()?);
     command.arg("--exact").arg(test_name).arg("--nocapture");
     command.env("REVAER_MEDIA_WORKSPACE_ROOT", workspace.path());
+    command.env("PATH", path);
     for (key, value) in envs {
         command.env(key, value);
     }

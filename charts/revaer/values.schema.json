@@ -7,6 +7,22 @@
       "type": "integer",
       "minimum": 1
     },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 31,
+      "maximum": 3600
+    },
+    "mediaWorkspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/data(?:/[^/]+)+$"
+        }
+      },
+      "required": ["path"]
+    },
     "image": {
       "type": "object",
       "additionalProperties": false,
@@ -252,6 +268,8 @@
   },
   "required": [
     "replicaCount",
+    "terminationGracePeriodSeconds",
+    "mediaWorkspace",
     "image",
     "imagePullSecrets",
     "nameOverride",

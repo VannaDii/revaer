@@ -1,11 +1,34 @@
 use super::*;
 use revaer_config::{SettingsChangeset, SettingsFacade};
 use revaer_events::Event;
+use revaer_media_runtime::capabilities::{
+    CapabilityDetectError, CapabilityDetector, CapabilitySnapshot, CodecCapability,
+};
 use revaer_test_support::postgres::start_postgres;
 use std::net::TcpListener;
 use tokio::runtime::Runtime;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
+
+#[derive(Clone)]
+struct StaticCapabilityDetector;
+
+impl CapabilityDetector for StaticCapabilityDetector {
+    fn detect(&self) -> Result<CapabilitySnapshot, CapabilityDetectError> {
+        Ok(CapabilitySnapshot {
+            ffmpeg_version: "test-ffmpeg".to_string(),
+            ffprobe_version: "test-ffprobe".to_string(),
+            codecs: vec!["h264".to_string()],
+            codec_support: vec![CodecCapability {
+                name: "h264".to_string(),
+                encode_supported: true,
+                decode_supported: true,
+            }],
+            encoders: vec!["libx264".to_string()],
+            ..CapabilitySnapshot::default()
+        })
+    }
+}
 
 #[cfg(unix)]
 fn non_unicode_os_string() -> std::ffi::OsString {
@@ -273,7 +296,11 @@ async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
     let events = EventBus::with_capacity(4);
     let telemetry = Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
 
-    let media = Arc::new(build_media_service(&config, telemetry.clone()));
+    let media = Arc::new(build_media_service(
+        &config,
+        telemetry.clone(),
+        Arc::new(StaticCapabilityDetector),
+    ));
     let server = build_api_server(&config, &events, None, telemetry, media)?;
     drop(server);
     Ok(())
@@ -374,6 +401,7 @@ async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> A
     dependencies.snapshot.app_profile.mode = AppMode::Setup;
     dependencies.snapshot.app_profile.bind_addr = IpAddr::from([127, 0, 0, 1]);
     dependencies.snapshot.app_profile.http_port = reserved_port;
+    dependencies.media_capability_detector = Arc::new(StaticCapabilityDetector);
     dependencies.media_workspace_root =
         Some(std::env::temp_dir().join(format!("revaer-bootstrap-media-{}", Uuid::new_v4())));
 
@@ -555,19 +583,16 @@ mod libtorrent_tests {
         }
     }
 
-    #[tokio::test]
-    async fn apply_config_snapshot_marks_degraded_on_slow_apply() -> AppResult<()> {
+    async fn assert_config_apply_degrades(
+        engine: TestEngine,
+        timeout_duration: Duration,
+    ) -> AppResult<()> {
         let events = EventBus::with_capacity(8);
         let metrics =
             Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
         let fsops = FsOpsService::new(events.clone(), metrics.clone());
-        let engine = Arc::new(TestEngine {
-            fail_apply: false,
-            fail_update: false,
-            delay: Some(Duration::from_millis(5)),
-        });
         let orchestrator = Arc::new(crate::orchestrator::TorrentOrchestrator::new(
-            engine,
+            Arc::new(engine),
             fsops,
             events.clone(),
             sample_fs_policy(),
@@ -584,7 +609,7 @@ mod libtorrent_tests {
             &events,
             &metrics,
             &mut degraded,
-            Duration::from_millis(1),
+            timeout_duration,
         )
         .await;
 
@@ -617,65 +642,37 @@ mod libtorrent_tests {
     }
 
     #[tokio::test]
-    async fn apply_config_snapshot_marks_degraded_on_failure() -> AppResult<()> {
-        let events = EventBus::with_capacity(8);
-        let metrics =
-            Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
-        let fsops = FsOpsService::new(events.clone(), metrics.clone());
-        let engine = Arc::new(TestEngine {
-            fail_apply: true,
-            fail_update: false,
-            delay: None,
-        });
-        let orchestrator = Arc::new(crate::orchestrator::TorrentOrchestrator::new(
-            engine,
-            fsops,
-            events.clone(),
-            sample_fs_policy(),
-            sample_engine_profile(),
-            None,
-            None,
-        ));
-        let mut stream = events.subscribe(None);
-        let mut degraded = false;
+    async fn apply_config_snapshot_marks_degraded_on_slow_apply() -> AppResult<()> {
+        assert_config_apply_degrades(
+            TestEngine {
+                fail_apply: false,
+                fail_update: false,
+                delay: Some(Duration::from_millis(5)),
+            },
+            Duration::from_millis(1),
+        )
+        .await
+    }
 
-        apply_config_snapshot(
-            sample_snapshot(),
-            &orchestrator,
-            &events,
-            &metrics,
-            &mut degraded,
+    #[tokio::test]
+    async fn apply_config_snapshot_marks_degraded_on_failure() -> AppResult<()> {
+        assert_config_apply_degrades(
+            TestEngine {
+                fail_apply: true,
+                fail_update: false,
+                delay: None,
+            },
             Duration::from_secs(2),
         )
-        .await;
-
-        assert!(degraded, "expected degraded mode after failure");
-
-        let mut saw_settings = false;
-        let mut saw_health = false;
-        timeout(Duration::from_secs(2), async {
-            for _ in 0..2 {
-                if let Some(Ok(envelope)) = stream.next().await {
-                    match envelope.event {
-                        revaer_events::Event::SettingsChanged { .. } => saw_settings = true,
-                        revaer_events::Event::HealthChanged { degraded } => {
-                            saw_health = !degraded.is_empty();
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        })
         .await
-        .map_err(|_| AppError::MissingState {
-            field: "config_events",
-            value: None,
-        })?;
-
-        assert!(saw_settings, "expected settings change event");
-        assert!(saw_health, "expected health degraded event");
-        Ok(())
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn shutdown_signal_selection_accepts_termination_and_interrupt() {
+    await_shutdown_signal(std::future::ready(Some(())), std::future::pending()).await;
+    await_shutdown_signal(std::future::pending(), std::future::ready(Some(()))).await;
 }
 
 #[test]

@@ -99,10 +99,11 @@ RUN install -d -o revaer -g revaer -m 0755 /app/docs/api
 
 VOLUME ["/data", "/config"]
 ENV RUST_LOG=info
+ENV REVAER_MEDIA_WORKSPACE_ROOT=/data/media-workspaces
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:7070/health/full || exit 1
+    CMD curl -fsS http://127.0.0.1:7070/health/live || exit 1
 
 # Apply metadata labels to final image
 LABEL org.opencontainers.image.title="Revaer"

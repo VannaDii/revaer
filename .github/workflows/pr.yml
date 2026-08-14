@@ -413,7 +413,7 @@ jobs:
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
-          apt-profile: db
+          apt-profile: db-media
           targets: wasm32-unknown-unknown
 
       - name: UI E2E
@@ -473,7 +473,7 @@ jobs:
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           node-version: ${{ env.NODE_VERSION }}
-          apt-profile: db
+          apt-profile: db-media
           targets: wasm32-unknown-unknown
 
       - name: Configure API E2E database URL
