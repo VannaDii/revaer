@@ -69,6 +69,36 @@ test-media-conversion:
         verify_prepared_fixture_suite \
         --all-features \
         -- --ignored --nocapture
+    test_database_url="${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh revaer)}"; \
+    database_url="${DATABASE_URL:-${test_database_url}}"; \
+    runtime_status=0; \
+    report_status=0; \
+    REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" \
+        cargo --config 'build.rustflags=["-Dwarnings"]' test \
+            -p revaer-app \
+            production_media_job_runtime_executes_and_persists_verified_replacement \
+            --all-features \
+            -- --ignored --nocapture --test-threads=1 || runtime_status=$?; \
+    report_path="target/media-conversion-report.md"; \
+    if [ ! -f "${report_path}" ]; then \
+        printf 'Media conversion report missing: %s\n' "${report_path}" >&2; \
+        report_status=1; \
+    else \
+        if [ "${runtime_status}" -ne 0 ]; then \
+            ruby -pi -e 'sub("- Outcome: passed", "- Outcome: failed")' "${report_path}" || report_status=$?; \
+        fi; \
+        { \
+            printf '\n## Production Runtime\n'; \
+            if [ "${runtime_status}" -eq 0 ]; then \
+                printf -- '- Outcome: passed\n'; \
+            else \
+                printf -- '- Outcome: failed\n'; \
+            fi; \
+            printf -- '- Boundary: PostgreSQL, FFmpeg, ffprobe, verification, replacement, persistence, cleanup\n'; \
+        } >> "${report_path}" || report_status=$?; \
+    fi; \
+    if [ "${report_status}" -ne 0 ]; then exit "${report_status}"; fi; \
+    exit "${runtime_status}"
 
 build: sync-assets
     cargo build --workspace --all-targets --all-features
@@ -166,7 +196,17 @@ cov:
     CC="${CC:-clang}" CXX="${CXX:-clang++}" \
     LLVM_COV="${LLVM_COV:-${llvm_tools_bin}/llvm-cov}" \
     LLVM_PROFDATA="${LLVM_PROFDATA:-${llvm_tools_bin}/llvm-profdata}" \
-        cargo llvm-cov --workspace --all-features --include-ffi --no-report
+        cargo llvm-cov --workspace --all-features --include-ffi --no-report && \
+    REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" \
+    RUST_TEST_THREADS=1 \
+    CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}" \
+    CC="${CC:-clang}" CXX="${CXX:-clang++}" \
+    LLVM_COV="${LLVM_COV:-${llvm_tools_bin}/llvm-cov}" \
+    LLVM_PROFDATA="${LLVM_PROFDATA:-${llvm_tools_bin}/llvm-profdata}" \
+        cargo llvm-cov --no-clean --all-features --include-ffi \
+            -p revaer-app \
+            -- production_media_job_runtime_executes_and_persists_verified_replacement \
+            --ignored --nocapture --test-threads=1
     fail_list=""; \
         while IFS= read -r member; do \
             manifest="${member}/Cargo.toml"; \

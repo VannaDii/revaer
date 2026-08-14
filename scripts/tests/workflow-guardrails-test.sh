@@ -159,6 +159,27 @@ run_repository_case() {
     missing-coverage-ffmpeg)
       ruby -ni -e 'print unless /^\s+ffmpeg\s*$/' "${case_root}/actions/setup-revaer/action.yml"
       ;;
+    missing-media-postgres)
+      ruby -ryaml -e 'path = ARGV.fetch(0); doc = YAML.load_file(path); doc.fetch("jobs").fetch("media-conversion").delete("services"); File.write(path, YAML.dump(doc))' "${case_root}/workflows/pr.yml"
+      ;;
+    missing-media-runtime)
+      ruby -pi -e 'sub("just test-media-conversion", "just verify-test-fixtures")' "${case_root}/workflows/pr.yml"
+      ;;
+    missing-media-cleanup)
+      ruby -pi -e 'sub("just clean-test-fixtures", "just verify-test-fixtures")' "${case_root}/workflows/pr.yml"
+      ;;
+    conditional-media-cleanup)
+      ruby -0pi -e 'sub(/(name: Clean media fixtures\n\s+if:) always\(\)/, "\\1 success()")' "${case_root}/workflows/pr.yml"
+      ;;
+    decoy-media-report-publisher)
+      ruby -pi -e 'sub(%q{cat "${report_path}"}, %q{printf "report unavailable"})' "${case_root}/workflows/pr.yml"
+      ;;
+    wrong-media-report-upload)
+      ruby -pi -e 'sub("path: target/media-conversion-report.md", "path: target/other-report.md")' "${case_root}/workflows/pr.yml"
+      ;;
+    missing-media-dependency)
+      ruby -pi -e 'sub("native-it, media-conversion, coverage", "native-it, coverage")' "${case_root}/workflows/pr.yml"
+      ;;
     *)
       printf 'Unknown repository workflow mutation: %s\n' "${mutation}" >&2
       exit 1
@@ -226,6 +247,13 @@ run_image_case fail conditional-sarif
 run_repository_case pass valid
 run_repository_case fail missing-ui-target
 run_repository_case fail missing-coverage-ffmpeg
+run_repository_case fail missing-media-postgres
+run_repository_case fail missing-media-runtime
+run_repository_case fail missing-media-cleanup
+run_repository_case fail conditional-media-cleanup
+run_repository_case fail decoy-media-report-publisher
+run_repository_case fail wrong-media-report-upload
+run_repository_case fail missing-media-dependency
 run_image_case fail missing-build-steps
 run_image_case fail reordered-steps
 run_image_case fail missing-build-digest

@@ -39,4 +39,5 @@ applyTo:
 - Treat generated API clients and synchronized assets as generated artifacts; regenerate them intentionally and keep authored wrappers separate.
 - Keep legacy vendor-reference canonicalization in `asset_sync`, validate the UTF-8 served image set there, and make `just check-assets` compare the complete repository-root `crates/revaer-ui/static/nexus/**` output.
 - CI E2E should use an explicit browser channel such as `E2E_BROWSER_CHANNEL=chrome` when the runner already provides that browser, so shards install Playwright dependencies without downloading redundant browser bundles. Keep CI video capture off for that path unless the Playwright ffmpeg bundle is installed.
+- API-only E2E coverage must set `E2E_COVERAGE_REQUIRE_UI=0`; global setup must then skip UI port reservation, asset synchronization, compilation, startup, and readiness checks while retaining the production API and disposable-database boundary.
 - When UI structure, selectors, or synced assets change, update the relevant docs, tests, and instructions in the same change.

@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { cleanupE2EState } from './support/e2e-cleanup';
+import { requireCoverage } from './support/e2e-coverage-config';
 import { writeState } from './support/e2e-state';
 import { repoRoot } from './support/paths';
 
@@ -104,7 +105,8 @@ export default async function globalSetup(): Promise<void> {
   try {
     const apiBaseUrl = process.env.E2E_API_BASE_URL ?? 'http://localhost:7070';
     const baseUrl = process.env.E2E_BASE_URL ?? 'http://localhost:8080';
-    const uiPort = httpPortFromUrl(baseUrl);
+    const requireUi = requireCoverage('UI');
+    const uiPort = requireUi ? httpPortFromUrl(baseUrl) : undefined;
     const dbAdminUrl =
       process.env.E2E_DB_ADMIN_URL ??
       process.env.REVAER_TEST_DATABASE_URL ??
@@ -126,7 +128,9 @@ export default async function globalSetup(): Promise<void> {
 
     stopDevServers();
     await requirePortFree(7070);
-    await requirePortFree(uiPort);
+    if (uiPort !== undefined) {
+      await requirePortFree(uiPort);
+    }
     fs.mkdirSync(resolvedFsRoot, { recursive: true });
     fs.mkdirSync(mediaWorkspaceRoot, { recursive: true });
 
@@ -173,6 +177,10 @@ export default async function globalSetup(): Promise<void> {
     const httpWait = httpWaitConfig();
     await waitForHttp(`${apiBaseUrl}/health`, httpWait, apiProcess, 'API');
     assertApiListener(apiProcess.pid, 7070);
+
+    if (!requireUi || uiPort === undefined) {
+      return;
+    }
 
     runCommand('just', ['sync-assets'], { cwd: root });
     runCommand('rustup', ['target', 'add', 'wasm32-unknown-unknown'], { cwd: root });

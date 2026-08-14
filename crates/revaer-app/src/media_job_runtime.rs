@@ -3,7 +3,7 @@
 //! # Design
 //! - Claims queued media jobs through stored procedures.
 //! - Persists phase, operation, verification, and compact-audit rows before terminal status.
-//! - Keeps runtime adapters injected so tests avoid real `ffmpeg` execution.
+//! - Keeps runtime adapters injected for focused tests and verifies production adapters together.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -6804,6 +6804,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::thread;
@@ -8992,15 +8993,64 @@ mod tests {
         command_runner: Arc<RecordingCommandRunner>,
     }
 
+    struct ProductionRuntimeFixture {
+        _postgres: TestDatabase,
+        _temp: TempDir,
+        runtime: MediaJobRuntime,
+        store: MediaStore,
+        job_id: Uuid,
+        source_path: PathBuf,
+        original_source: Vec<u8>,
+    }
+
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum RuntimeJobTarget {
         SourceGraph,
+        H264MetadataRewrite,
         Hevc,
         HevcAudio,
         HevcStrip,
         HevcStripChapters,
         HevcReplaceChapters,
         HevcStripAttachments,
+    }
+
+    fn runtime_target_policies(
+        job_target: RuntimeJobTarget,
+    ) -> (&'static str, &'static str, &'static str) {
+        let metadata = match job_target {
+            RuntimeJobTarget::HevcStrip => "strip",
+            _ => "preserve",
+        };
+        let chapters = match job_target {
+            RuntimeJobTarget::HevcStripChapters => "strip",
+            RuntimeJobTarget::HevcReplaceChapters => "replace",
+            _ => "preserve",
+        };
+        let attachments = match job_target {
+            RuntimeJobTarget::HevcStripAttachments => "strip",
+            _ => "preserve",
+        };
+        (metadata, chapters, attachments)
+    }
+
+    async fn append_runtime_target_streams(
+        store: &MediaStore,
+        target_id: Uuid,
+        job_target: RuntimeJobTarget,
+    ) -> anyhow::Result<()> {
+        if job_target == RuntimeJobTarget::H264MetadataRewrite {
+            append_runtime_target_h264_stream(store, target_id).await?;
+        } else {
+            append_runtime_target_video_stream(store, target_id).await?;
+        }
+        if job_target == RuntimeJobTarget::HevcReplaceChapters {
+            append_runtime_target_replacement_chapters(store, target_id).await?;
+        }
+        if job_target == RuntimeJobTarget::HevcAudio {
+            append_runtime_target_audio_stream(store, target_id).await?;
+        }
+        Ok(())
     }
 
     async fn create_runtime_target(
@@ -9011,28 +9061,18 @@ mod tests {
     ) -> anyhow::Result<Option<(String, i32)>> {
         match job_target {
             RuntimeJobTarget::SourceGraph => Ok(None),
-            RuntimeJobTarget::Hevc
+            RuntimeJobTarget::H264MetadataRewrite
+            | RuntimeJobTarget::Hevc
             | RuntimeJobTarget::HevcAudio
             | RuntimeJobTarget::HevcStrip
             | RuntimeJobTarget::HevcStripChapters
             | RuntimeJobTarget::HevcReplaceChapters
             | RuntimeJobTarget::HevcStripAttachments => {
-                let container_metadata_policy = if job_target == RuntimeJobTarget::HevcStrip {
-                    "strip"
-                } else {
-                    "preserve"
-                };
-                let container_chapter_policy = match job_target {
-                    RuntimeJobTarget::HevcStripChapters => "strip",
-                    RuntimeJobTarget::HevcReplaceChapters => "replace",
-                    _ => "preserve",
-                };
-                let container_attachment_policy =
-                    if job_target == RuntimeJobTarget::HevcStripAttachments {
-                        "strip"
-                    } else {
-                        "preserve"
-                    };
+                let (
+                    container_metadata_policy,
+                    container_chapter_policy,
+                    container_attachment_policy,
+                ) = runtime_target_policies(job_target);
                 let target_id = create_media_desired_target(
                     store.pool(),
                     CreateMediaDesiredTargetInput {
@@ -9047,13 +9087,7 @@ mod tests {
                     },
                 )
                 .await?;
-                append_runtime_target_video_stream(store, target_id).await?;
-                if job_target == RuntimeJobTarget::HevcReplaceChapters {
-                    append_runtime_target_replacement_chapters(store, target_id).await?;
-                }
-                if job_target == RuntimeJobTarget::HevcAudio {
-                    append_runtime_target_audio_stream(store, target_id).await?;
-                }
+                append_runtime_target_streams(store, target_id, job_target).await?;
                 Ok(Some((target_key.to_string(), 1)))
             }
         }
@@ -9106,6 +9140,63 @@ mod tests {
                 hdr10_max_content_light_level: Some("1000"),
                 hdr10_max_frame_average_light_level: Some("400"),
                 title: None,
+                default_disposition: false,
+                forced_disposition: false,
+                subtitle_placement: None,
+                image_subtitle_action: None,
+            },
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn append_runtime_target_h264_stream(
+        store: &MediaStore,
+        target_id: Uuid,
+    ) -> anyhow::Result<()> {
+        append_media_desired_target_stream(
+            store.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                media_desired_target_profile_public_id: target_id,
+                stream_key: "video-main",
+                stream_kind: "video",
+                semantic_role: None,
+                language_code: None,
+                optional: false,
+                sort_order: 0,
+                codec: "h264",
+                channel_count: None,
+                channel_layout: None,
+                audio_bitrate_bps: None,
+                audio_sample_rate_hz: None,
+                audio_loudness_profile: None,
+                audio_dynamic_range: None,
+                video_profile: None,
+                video_level: None,
+                video_bitrate_bps: None,
+                video_width_px: None,
+                video_height_px: None,
+                video_pixel_format: None,
+                video_bit_depth: None,
+                video_average_frame_rate: None,
+                color_range: None,
+                color_primaries: None,
+                color_transfer: None,
+                color_space: None,
+                hdr_format: None,
+                hdr10_mastering_red_x: None,
+                hdr10_mastering_red_y: None,
+                hdr10_mastering_green_x: None,
+                hdr10_mastering_green_y: None,
+                hdr10_mastering_blue_x: None,
+                hdr10_mastering_blue_y: None,
+                hdr10_mastering_white_point_x: None,
+                hdr10_mastering_white_point_y: None,
+                hdr10_mastering_min_luminance: None,
+                hdr10_mastering_max_luminance: None,
+                hdr10_max_content_light_level: None,
+                hdr10_max_frame_average_light_level: None,
+                title: Some("Verified Main"),
                 default_disposition: false,
                 forced_disposition: false,
                 subtitle_placement: None,
@@ -9209,6 +9300,7 @@ mod tests {
         actor: Uuid,
         policy_key: &str,
         unmatched_data_action: &str,
+        playback_probe: bool,
     ) -> anyhow::Result<()> {
         upsert_media_policy_profile(
             store.pool(),
@@ -9223,12 +9315,12 @@ mod tests {
                 unmatched_subtitle_action: "preserve",
                 unmatched_attachment_action: "preserve",
                 unmatched_data_action,
-                verification_strictness: "strict",
+                verification_strictness: if playback_probe { "strict" } else { "balanced" },
                 verification_duration_tolerance_millis: 100,
                 verification_mux_validation: MediaVerificationToggle::from(true),
                 verification_decode_all_streams: MediaVerificationToggle::from(true),
                 verification_keyframe_seek: MediaVerificationToggle::from(true),
-                verification_playback_probe: MediaVerificationToggle::from(true),
+                verification_playback_probe: MediaVerificationToggle::from(playback_probe),
             },
         )
         .await?;
@@ -9372,6 +9464,96 @@ mod tests {
         })
     }
 
+    async fn setup_production_runtime() -> anyhow::Result<ProductionRuntimeFixture> {
+        let postgres = start_postgres()?;
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(postgres.connection_string())
+            .await?;
+        revaer_data::config::initialize_schema(&pool).await?;
+        let store = MediaStore::new(pool);
+
+        let temp = tempfile::tempdir()?;
+        let input_root = temp.path().join("input");
+        let output_root = temp.path().join("output");
+        let workspace_root = temp.path().join("workspace");
+        fs::create_dir_all(&input_root)?;
+        fs::create_dir_all(&output_root)?;
+        let source_path = input_root.join("movie.mkv");
+        generate_runtime_h264_fixture(&source_path)?;
+        let original_source = fs::read(&source_path)?;
+
+        let actor = app_user_create(
+            store.pool(),
+            &format!("media-production-{}@example.invalid", Uuid::new_v4()),
+            "Media Production Test",
+        )
+        .await?;
+        app_user_verify_email(store.pool(), actor).await?;
+        let profile_id = create_runtime_profile(
+            &store,
+            actor,
+            RuntimeJobTarget::H264MetadataRewrite,
+            false,
+            "remove",
+            &input_root.to_string_lossy(),
+            &output_root.to_string_lossy(),
+        )
+        .await?;
+        let job_id = enqueue_runtime_test_job(
+            &store,
+            actor,
+            profile_id,
+            &source_path,
+            &input_root,
+            &output_root.join("movie.mkv").to_string_lossy(),
+        )
+        .await?;
+        record_runtime_capability(&store, actor).await?;
+        let runtime = MediaJobRuntime::new(
+            store.clone(),
+            EventBus::with_capacity(16),
+            Metrics::new()?,
+            workspace_root,
+        );
+        Ok(ProductionRuntimeFixture {
+            _postgres: postgres,
+            _temp: temp,
+            runtime,
+            store,
+            job_id,
+            source_path,
+            original_source,
+        })
+    }
+
+    fn generate_runtime_h264_fixture(source_path: &Path) -> anyhow::Result<()> {
+        let status = Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x64:rate=10",
+                "-t",
+                "1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
+            ])
+            .arg(source_path)
+            .status()?;
+        anyhow::ensure!(
+            status.success(),
+            "ffmpeg failed to generate runtime fixture"
+        );
+        Ok(())
+    }
+
     async fn enqueue_runtime_test_job(
         store: &MediaStore,
         actor: Uuid,
@@ -9414,7 +9596,15 @@ mod tests {
         let policy_key = format!("runtime-policy-{}", Uuid::new_v4());
         let profile_key = format!("worker-{}", Uuid::new_v4());
         let desired_target = create_runtime_target(store, actor, job_target, &target_key).await?;
-        upsert_runtime_policy(store, actor, &policy_key, unmatched_data_action).await?;
+        let playback_probe = job_target != RuntimeJobTarget::H264MetadataRewrite;
+        upsert_runtime_policy(
+            store,
+            actor,
+            &policy_key,
+            unmatched_data_action,
+            playback_probe,
+        )
+        .await?;
         let profile_id = store
             .upsert_profile(&UpsertMediaProfileInput {
                 actor_public_id: actor,
@@ -9794,6 +9984,61 @@ mod tests {
             commands.len()
         };
         assert_eq!(command_count, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL plus ffmpeg and ffprobe"]
+    async fn production_media_job_runtime_executes_and_persists_verified_replacement()
+    -> anyhow::Result<()> {
+        let fixture = setup_production_runtime().await?;
+
+        fixture.runtime.run_tick().await?;
+
+        let job = fixture
+            .store
+            .get_job(fixture.job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("production media job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+
+        let replaced_source = fs::read(&fixture.source_path)?;
+        assert!(!replaced_source.is_empty());
+        assert_ne!(replaced_source, fixture.original_source);
+
+        let phases = fixture.store.list_job_phases(fixture.job_id).await?;
+        assert!(
+            phases.iter().any(|phase| {
+                phase.phase_name == "execute" && phase.phase_status == "completed"
+            })
+        );
+        assert!(phases.iter().any(|phase| {
+            phase.phase_name == "verify_replace" && phase.phase_status == "completed"
+        }));
+
+        let checks = fixture
+            .store
+            .list_job_verification_checks(fixture.job_id)
+            .await?;
+        for required_check in ["candidate_graph", "output_replacement", "final_graph"] {
+            assert!(checks.iter().any(|check| {
+                check.check_kind == required_check && check.check_status == "passed"
+            }));
+        }
+        assert!(
+            !fixture
+                .store
+                .list_job_compact_audits(fixture.job_id)
+                .await?
+                .is_empty()
+        );
+        assert!(
+            fs::read_dir(&fixture.runtime.workspace_root)?
+                .next()
+                .transpose()?
+                .is_none()
+        );
         Ok(())
     }
 
