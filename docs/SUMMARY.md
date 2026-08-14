@@ -348,6 +348,7 @@
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
     -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
     -   [318: Media transcoding foundation](adr/318-media-transcoding-foundation.md)
+    -   [458: Media data module boundary integration correction](adr/458-media-data-module-boundary.md)
     -   [322: Supply chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)
     -   [323: Core planner review repair](adr/323-core-planner-review-repair.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
