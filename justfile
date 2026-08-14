@@ -1,17 +1,6 @@
 set shell := ["bash", "-c"]
 
-fmt:
-    cargo fmt --all --check
-
-fmt-fix:
-    cargo fmt --all
-
-policy:
-    bash scripts/policy-guardrails.sh
-    bash scripts/workflow-guardrails.sh
-    bash scripts/test-exact-cargo-tool.sh
-    bash scripts/generated-api-schema-guardrail.sh
-    bash scripts/test-generated-api-schema-guardrail.sh
+import 'just/quality.just'
 
 instruction-drift:
     bash scripts/instruction-drift-check.sh
@@ -175,6 +164,31 @@ cov:
     cargo llvm-cov report --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --lcov --output-path coverage/lcov.info
     cargo llvm-cov report --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --html --output-dir coverage
     cargo llvm-cov report --text --output-path coverage/llvm-cov.txt
+    just script-coverage
+
+script-coverage:
+    command -v kcov >/dev/null 2>&1 || { echo "kcov is required for authored shell coverage" >&2; exit 1; }
+    rm -rf coverage/scripts
+    mkdir -p coverage/scripts/ruby
+    REVAER_RUBY_COVERAGE_DIR="${PWD}/coverage/scripts/ruby" \
+    RUBYOPT="-r${PWD}/scripts/ruby-coverage-bootstrap.rb" \
+        kcov --include-path="${PWD}/scripts" coverage/scripts/kcov scripts/tests/policy-suite.sh
+    REVAER_RUBY_COVERAGE_DIR="${PWD}/coverage/scripts/ruby" \
+    RUBYOPT="-r${PWD}/scripts/ruby-coverage-bootstrap.rb" \
+        ruby scripts/generate-generic-coverage.rb \
+            coverage/scripts/kcov \
+            coverage/scripts/ruby \
+            coverage/scripts/preliminary.xml
+    ruby scripts/generate-generic-coverage.rb \
+        coverage/scripts/kcov \
+        coverage/scripts/ruby \
+        coverage/script-coverage.xml
+    rm coverage/scripts/preliminary.xml
+    test -s coverage/script-coverage.xml
+    grep -Eq "<file path=['\"]scripts/.*\\.sh['\"]" coverage/script-coverage.xml
+    grep -Eq "<file path=['\"]scripts/.*\\.rb['\"]" coverage/script-coverage.xml
+    grep -Eq "covered=['\"]true['\"]" coverage/script-coverage.xml
+    grep -Eq "covered=['\"]false['\"]" coverage/script-coverage.xml
 
 sonar-compile-db:
     mkdir -p coverage
@@ -185,6 +199,41 @@ sonar-compile-db:
     REVAER_NATIVE_COMPILE_COMMANDS_PATH="${PWD}/coverage/compile_commands.json" \
         cargo --config 'build.rustflags=["-Dwarnings"]' build -p revaer-torrent-libt --all-features
     test -s coverage/compile_commands.json
+
+sonar-verify-inputs:
+    test -s coverage/lcov.info
+    test -s coverage/js-lcov.info
+    test -s coverage/script-coverage.xml
+    test -s coverage/compile_commands.json
+    test -s coverage/cxxbridge/include/rust/cxx.h
+    test -s coverage/cxxbridge/include/revaer-torrent-libt/src/ffi/bridge.rs.h
+    grep -q '^SF:' coverage/lcov.info
+    grep -q '^DA:' coverage/lcov.info
+    grep -q '^SF:' coverage/js-lcov.info
+    grep -q '^DA:' coverage/js-lcov.info
+    test "$(grep -c '^DA:' coverage/js-lcov.info)" -ge 1000
+    grep -Eq '^DA:[0-9]+,[1-9][0-9]*(,|$)' coverage/js-lcov.info
+    grep -Eq '^DA:[0-9]+,0(,|$)' coverage/js-lcov.info
+    grep -q '<lineToCover ' coverage/script-coverage.xml
+    grep -Eq "covered=['\"]true['\"]" coverage/script-coverage.xml
+    grep -Eq "covered=['\"]false['\"]" coverage/script-coverage.xml
+    grep -q '"file":' coverage/compile_commands.json
+    grep -q 'coverage/cxxbridge/include' coverage/compile_commands.json
+
+sonar-prepare-sources:
+    test -z "$(git ls-files -- tests/node_modules release/node_modules tests/support/api/schema.ts)"
+    rm -rf tests/node_modules release/node_modules tests/support/api/schema.ts \
+        crates/revaer-ui/dist-serve tests/test-results tests/playwright-report
+
+sonar-package-report:
+    test -s .scannerwork/report-task.txt
+    test -d .scannerwork/scanner-report
+    tar -cJf .scannerwork/scanner-report.tar.xz -C .scannerwork scanner-report
+    test -s .scannerwork/scanner-report.tar.xz
+    tar -tf .scannerwork/scanner-report.tar.xz | grep -q '^scanner-report/'
+
+sonar-verify-result: sonar-package-report
+    bash scripts/sonar-result-guardrails.sh
 
 sbom:
     mkdir -p artifacts
@@ -232,6 +281,7 @@ ci: validate
     just build-release
 
 docker-build:
+    set -a; source .github/build-inputs.env; set +a; \
     platforms="${PLATFORMS:-linux/amd64,linux/arm64}"; \
     version="${VERSION:-dev.$(date -u +%y%m%d).$(git rev-parse --short HEAD)}"; \
     tags="--tag revaer:latest --tag revaer:${version}"; \
@@ -244,10 +294,18 @@ docker-build:
     if printf "%s" "$platforms" | grep -q ','; then \
         mkdir -p artifacts; \
         docker buildx build --builder "$builder" --platform "$platforms" $tags \
+            --build-arg RUST_BUILDER_IMAGE="${RUST_BUILDER_IMAGE}" \
+            --build-arg ALPINE_RUNTIME_IMAGE="${ALPINE_RUNTIME_IMAGE}" \
+            --build-arg RUST_VERSION="${RUST_VERSION}" \
+            --build-arg ALPINE_VERSION="${ALPINE_VERSION}" \
             --output=type=oci,dest=artifacts/revaer-${version}.oci \
             .; \
     else \
         docker buildx build --builder "$builder" --platform "$platforms" $tags \
+            --build-arg RUST_BUILDER_IMAGE="${RUST_BUILDER_IMAGE}" \
+            --build-arg ALPINE_RUNTIME_IMAGE="${ALPINE_RUNTIME_IMAGE}" \
+            --build-arg RUST_VERSION="${RUST_VERSION}" \
+            --build-arg ALPINE_VERSION="${ALPINE_VERSION}" \
             --load \
             .; \
     fi
@@ -292,14 +350,58 @@ ui-e2e: trunk-install
     else \
         cd tests && npx playwright install; \
     fi
+    tests/node_modules/.bin/tsc --project tests/tsconfig.coverage.json
     shard_arg=""; \
+    coverage_suffix=""; \
     if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \
         shard_arg="--shard=${PLAYWRIGHT_SHARD_INDEX}/${PLAYWRIGHT_SHARD_TOTAL}"; \
+        coverage_suffix="-shard-${PLAYWRIGHT_SHARD_INDEX}"; \
     fi; \
-    cd tests && npx playwright test ${shard_arg}
+    coverage_dir="coverage/js/playwright${coverage_suffix}"; \
+    state_key="$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('hex'))")"; \
+    rm -rf "${coverage_dir}"; \
+    REVAER_E2E_STATE_KEY="${state_key}" \
+    E2E_ENV_DIR="${PWD}/tests" \
+    NODE_PATH="${PWD}/tests/node_modules" tests/node_modules/.bin/c8 \
+        --reporter=lcovonly \
+        --reports-dir "${coverage_dir}" \
+        --include 'target/js-coverage-tests/**/*.js' \
+        --exclude-after-remap=false \
+        tests/node_modules/.bin/playwright test \
+        --config target/js-coverage-tests/playwright.config.js \
+        ${shard_arg}; \
+    test -s "${coverage_dir}/lcov.info"; \
+    grep -q '^SF:tests/' "${coverage_dir}/lcov.info"; \
+    test "$(grep -c '^DA:' "${coverage_dir}/lcov.info")" -ge 1000; \
+    grep -Eq '^DA:[0-9]+,[1-9][0-9]*(,|$)' "${coverage_dir}/lcov.info"; \
+    grep -Eq '^DA:[0-9]+,0(,|$)' "${coverage_dir}/lcov.info"
 
 ui-e2e-coverage:
     node tests/scripts/check-e2e-coverage.js
+
+js-release-coverage:
+    npm --prefix tests install
+    rm -rf coverage/js/release
+    mkdir -p coverage/js/release
+    tests/node_modules/.bin/c8 \
+        --reporter=lcovonly \
+        --reports-dir coverage/js/release \
+        node scripts/js-coverage/semantic-release-npm-stub.mjs
+    test -s coverage/js/release/lcov.info
+    grep -q '^SF:vendor/semantic-release-npm-stub/index.js' coverage/js/release/lcov.info
+    grep -q '^DA:' coverage/js/release/lcov.info
+
+js-coverage-merge:
+    mkdir -p coverage
+    lcov_files="$(find coverage/js -name lcov.info -type f | sort)"; \
+    if [ -z "${lcov_files}" ]; then \
+        echo "No JavaScript/TypeScript LCOV files were produced." >&2; \
+        exit 1; \
+    fi; \
+    cat ${lcov_files} > coverage/js-lcov.info
+    test -s coverage/js-lcov.info
+    grep -q '^SF:' coverage/js-lcov.info
+    grep -q '^DA:' coverage/js-lcov.info
 
 runbook:
     status=0; \

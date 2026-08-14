@@ -347,6 +347,7 @@
     -   [315: Indexer import job runtime worker](adr/315-indexer-import-job-runtime-worker.md)
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
     -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
+    -   [322: Supply chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
     -   [379: UI runtime image canonicalization](adr/379-ui-runtime-image-canonicalization.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
@@ -354,3 +355,4 @@
     -   [409: Portable Helm annotation rendering](adr/409-portable-helm-annotation-rendering.md)
     -   [410: Libtorrent 2.1 compatibility foundation](adr/410-libtorrent-21-compatibility.md)
     -   [411: Untracked generated API schema](adr/411-untracked-generated-api-schema.md)
+    -   [418: CI Postgres credential coherence](adr/418-ci-postgres-credential-coherence.md)

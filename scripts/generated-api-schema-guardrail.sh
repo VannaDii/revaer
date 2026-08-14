@@ -18,6 +18,6 @@ if ! git check-ignore --quiet -- "${schema_path}"; then
   failures=1
 fi
 
-if [ "${failures}" -ne 0 ]; then
+if [[ "${failures}" -ne 0 ]]; then
   exit 1
 fi

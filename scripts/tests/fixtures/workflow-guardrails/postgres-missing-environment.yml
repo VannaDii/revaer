@@ -1,0 +1,17 @@
+name: Postgres missing environment
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: revaer
+          POSTGRES_PASSWORD: ephemeral
+          POSTGRES_DB: revaer
+    steps:
+      - run: just check

@@ -23,18 +23,20 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 
 # Revaer Sonar Workflow
 
-- Revaer versions Sonar analysis scope in `sonar-project.properties`. Treat that file as the source of truth for authored-vs-generated scope and duplication exclusions. Coverage exclusions must remain explicitly empty; Sonar must import the Rust LCOV and native LLVM report produced by `just cov` and publish positive coverage and lines-to-cover metrics for both languages.
-- Revaer maps PostgreSQL procedure suffixes such as `.sql`, `.pgsql`, and `.plpgsql` into Sonar's PL/SQL analyzer because SonarCloud does not offer a PostgreSQL-specific dialect switch in this repo path. Keep that suffix mapping explicit in `sonar-project.properties` when PostgreSQL file naming changes.
-- Rust unit and integration tests may live under `src/**/tests*` as well as crate-level `tests/`; keep those test paths out of Sonar duplication gates so the PR quality signal stays focused on first-party production code.
+- Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope, use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`, and keep source, test, coverage, duplication, JavaScript, SCA, and issue-scope filters explicitly empty.
+- PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
+- Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.
+- `sonar.coverageReportPaths` must consume the generic report emitted by `just script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action and Ruby line/branch execution data, retain uncovered executable lines, include both covered and uncovered records, and fail closed when either language is absent.
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
 - Revaer uses Sonar as a strict merge-control signal on pull requests. Prefer PR quality-gate status and decoration over scanner-side waiting in PR workflows.
+- Pull-request and main-branch scans must receive the same complete Rust, native, JavaScript, Bash, and Ruby coverage inputs and must retain the scanner report as uploaded evidence after post-scan verification.
 - Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked.
 - New Security Hotspots on touched code must be reviewed before merge. Backlog hotspots outside touched code are tracked separately and do not automatically block unrelated work.
 
 # Noise And Scope
 
-- Generated or vendored paths excluded by `sonar-project.properties` are not first-party maintainability targets unless the user explicitly asks about them.
 - If Sonar noise comes from committed generated, vendored, or binary files, delete, regenerate, or replace the input with reviewable UTF-8 source. Do not hide the input through scanner exclusions without explicit operator consent.
+- Generated, vendored, fixture, documentation, and test paths remain in authored main-code scope when they are tracked. Fix findings or obtain explicit operator consent; do not classify or exclude files to manufacture a cleaner result.
 
 # Expectations After Fixes
 
