@@ -88,6 +88,16 @@ pub fn normalize_container_chapter_policy(value: &str) -> Option<&'static str> {
     }
 }
 
+/// Normalize a desired-target container attachment policy.
+#[must_use]
+pub fn normalize_container_attachment_policy(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "preserve" => Some("preserve"),
+        "strip" => Some("strip"),
+        _ => None,
+    }
+}
+
 /// Normalize subtitle codec aliases used by probes, targets, and sidecar formats.
 #[must_use]
 pub fn normalize_subtitle_codec(value: &str) -> String {

@@ -614,6 +614,7 @@ impl MediaFacade for MediaService {
                     container_metadata: Vec::new(),
                     container_chapter_policy: row.target.container_chapter_policy,
                     container_chapters: Vec::new(),
+                    container_attachment_policy: row.target.container_attachment_policy,
                     streams: Vec::new(),
                 });
             if response.streams.len() >= 1_024 {
@@ -673,6 +674,7 @@ impl MediaFacade for MediaService {
                 container_format: &params.container_format,
                 container_metadata_policy: &params.container_metadata_policy,
                 container_chapter_policy: &params.container_chapter_policy,
+                container_attachment_policy: &params.container_attachment_policy,
             },
         )
         .await
@@ -740,6 +742,7 @@ impl MediaFacade for MediaService {
             container_metadata: params.container_metadata,
             container_chapter_policy: params.container_chapter_policy,
             container_chapters: params.container_chapters,
+            container_attachment_policy: params.container_attachment_policy,
             streams: params.streams,
         })
     }
@@ -1565,6 +1568,7 @@ async fn import_yaml_desired_targets(
                 container_format: &target.container_format,
                 container_metadata_policy: &target.container_metadata_policy,
                 container_chapter_policy: &target.container_chapter_policy,
+                container_attachment_policy: &target.container_attachment_policy,
             },
         )
         .await
@@ -2457,6 +2461,7 @@ fn yaml_desired_target_shape_invalid(target: &MediaYamlDesiredTarget) -> bool {
             &target.container_chapter_policy,
             &target.container_chapters,
         )
+        || !container_attachment_policy_supported(&target.container_attachment_policy)
         || target.version <= 0
         || target.streams.is_empty()
         || target.streams.len() > MAX_DESIRED_TARGET_STREAMS
@@ -2503,6 +2508,13 @@ fn container_chapter_policy_supported(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),
         "preserve" | "strip" | "replace"
+    )
+}
+
+fn container_attachment_policy_supported(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "preserve" | "strip"
     )
 }
 
@@ -2701,6 +2713,7 @@ fn media_yaml_desired_target(target: AppMediaDesiredTargetResponse) -> MediaYaml
         container_metadata: target.container_metadata,
         container_chapter_policy: target.container_chapter_policy,
         container_chapters: target.container_chapters,
+        container_attachment_policy: target.container_attachment_policy,
         streams: target.streams,
     }
 }
@@ -2736,6 +2749,9 @@ fn desired_target_matches_yaml(
             .container_chapter_policy
             .eq_ignore_ascii_case(&imported.container_chapter_policy)
         && chapter_entries_match(&existing.container_chapters, &imported.container_chapters)
+        && existing
+            .container_attachment_policy
+            .eq_ignore_ascii_case(&imported.container_attachment_policy)
         && existing.streams == imported.streams
 }
 
@@ -3477,12 +3493,13 @@ pub(crate) fn build_discovery_previews(
 #[cfg(test)]
 mod tests {
     use super::{
-        DiscoveryRunMode, MediaService, container_chapter_policy_supported,
-        container_metadata_policy_supported, desired_target_chapters_shape_invalid,
-        desired_target_metadata_shape_invalid, ensure_discovery_mode_enabled,
-        ensure_execution_capability_snapshot, ensure_profile_compatibility_target_readiness,
-        ensure_profile_desired_target_readiness, map_data_error, map_detect_error,
-        parse_yaml_bundle, validate_yaml_bundle, yaml_desired_target_shape_invalid,
+        DiscoveryRunMode, MediaService, container_attachment_policy_supported,
+        container_chapter_policy_supported, container_metadata_policy_supported,
+        desired_target_chapters_shape_invalid, desired_target_metadata_shape_invalid,
+        ensure_discovery_mode_enabled, ensure_execution_capability_snapshot,
+        ensure_profile_compatibility_target_readiness, ensure_profile_desired_target_readiness,
+        map_data_error, map_detect_error, parse_yaml_bundle, validate_yaml_bundle,
+        yaml_desired_target_shape_invalid,
     };
     use anyhow::Context as _;
     use revaer_api::app::media::MediaServiceErrorKind;
@@ -3968,6 +3985,7 @@ mod tests {
             container_metadata: Vec::new(),
             container_chapter_policy: "preserve".to_string(),
             container_chapters: Vec::new(),
+            container_attachment_policy: "preserve".to_string(),
             streams,
         }
     }
@@ -4005,6 +4023,7 @@ mod tests {
                 container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
                 container_chapters: Vec::new(),
+                container_attachment_policy: "preserve".to_string(),
                 streams: Vec::new(),
             })
             .await;
@@ -4034,6 +4053,7 @@ mod tests {
                 container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
                 container_chapters: Vec::new(),
+                container_attachment_policy: "preserve".to_string(),
                 streams: desired_target_streams(stream_count),
             }
         }
@@ -4070,6 +4090,7 @@ mod tests {
                     container_metadata: Vec::new(),
                     container_chapter_policy: "preserve".to_string(),
                     container_chapters: Vec::new(),
+                    container_attachment_policy: "preserve".to_string(),
                     streams: desired_target_streams(stream_count),
                 })
                 .await?;
@@ -4109,6 +4130,7 @@ mod tests {
                 container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
                 container_chapters: Vec::new(),
+                container_attachment_policy: "preserve".to_string(),
                 streams: desired_target_streams(MAX_DESIRED_TARGET_STREAMS + 1),
             })
             .await
@@ -4652,6 +4674,14 @@ mod tests {
     }
 
     #[test]
+    fn yaml_container_attachment_policy_accepts_implemented_values() {
+        assert!(container_attachment_policy_supported("preserve"));
+        assert!(container_attachment_policy_supported(" Strip "));
+        assert!(!container_attachment_policy_supported("replace"));
+        assert!(!container_attachment_policy_supported("rewrite"));
+    }
+
+    #[test]
     fn yaml_container_chapter_values_are_valid_only_for_replace_policy() {
         let chapters = vec![
             MediaDesiredTargetChapterParams {
@@ -5050,6 +5080,7 @@ mod tests {
                 container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
                 container_chapters: Vec::new(),
+                container_attachment_policy: "preserve".to_string(),
                 streams: vec![
                     desired_video_stream(),
                     desired_audio_stream(),
@@ -5131,6 +5162,7 @@ mod tests {
         assert_eq!(target.version, 4);
         assert_eq!(target.container_metadata_policy, "preserve");
         assert_eq!(target.container_chapter_policy, "preserve");
+        assert_eq!(target.container_attachment_policy, "preserve");
         assert_eq!(
             target
                 .streams
@@ -5171,17 +5203,20 @@ mod tests {
                 container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
                 container_chapters: Vec::new(),
+                container_attachment_policy: "preserve".to_string(),
                 streams: vec![desired_video_stream(), desired_audio_stream()],
             })
             .await?;
         assert_eq!(desired.target_key, "living-room-output");
         assert_eq!(desired.container_metadata_policy, "preserve");
         assert_eq!(desired.container_chapter_policy, "preserve");
+        assert_eq!(desired.container_attachment_policy, "preserve");
         assert_eq!(desired.streams.len(), 2);
         let listed = service.media_desired_target_list().await?;
         assert!(listed.iter().any(|target| {
             target.media_desired_target_profile_public_id
                 == desired.media_desired_target_profile_public_id
+                && target.container_attachment_policy == "preserve"
                 && target.streams[1].channel_count == Some(2)
         }));
         let profile_id = upsert_app_media_profile(service, actor_user_public_id).await?;

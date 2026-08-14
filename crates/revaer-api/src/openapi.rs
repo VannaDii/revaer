@@ -1160,84 +1160,11 @@ fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
     vec![
         (
             "MediaDesiredTargetCreateRequest",
-            object_schema(
-                &[
-                    "target_key",
-                    "version",
-                    "display_name",
-                    "container_format",
-                    "streams",
-                ],
-                [
-                    ("target_key", string_schema()),
-                    ("version", integer_schema()),
-                    ("display_name", string_schema()),
-                    ("container_format", string_schema()),
-                    ("container_metadata_policy", string_schema()),
-                    (
-                        "container_metadata",
-                        array_ref_max_items_schema(
-                            "MediaDesiredTargetMetadataEntry",
-                            MAX_CONTAINER_METADATA_ENTRIES,
-                        ),
-                    ),
-                    ("container_chapter_policy", string_schema()),
-                    (
-                        "container_chapters",
-                        array_ref_max_items_schema(
-                            "MediaDesiredTargetChapterEntry",
-                            MAX_CONTAINER_CHAPTERS,
-                        ),
-                    ),
-                    (
-                        "streams",
-                        array_ref_items_schema(
-                            "MediaDesiredTargetStream",
-                            1,
-                            MAX_DESIRED_TARGET_STREAMS,
-                        ),
-                    ),
-                ],
-            ),
+            media_desired_target_create_schema(),
         ),
         (
             "MediaDesiredTargetResponse",
-            object_schema(
-                &[
-                    "media_desired_target_profile_public_id",
-                    "target_key",
-                    "version",
-                    "display_name",
-                    "container_format",
-                    "container_metadata_policy",
-                    "container_chapter_policy",
-                    "streams",
-                ],
-                [
-                    ("media_desired_target_profile_public_id", uuid_schema()),
-                    ("target_key", string_schema()),
-                    ("version", integer_schema()),
-                    ("display_name", string_schema()),
-                    ("container_format", string_schema()),
-                    ("container_metadata_policy", string_schema()),
-                    (
-                        "container_metadata",
-                        array_ref_max_items_schema(
-                            "MediaDesiredTargetMetadataEntry",
-                            MAX_CONTAINER_METADATA_ENTRIES,
-                        ),
-                    ),
-                    ("container_chapter_policy", string_schema()),
-                    (
-                        "container_chapters",
-                        array_ref_max_items_schema(
-                            "MediaDesiredTargetChapterEntry",
-                            MAX_CONTAINER_CHAPTERS,
-                        ),
-                    ),
-                    ("streams", array_ref_schema("MediaDesiredTargetStream")),
-                ],
-            ),
+            media_desired_target_response_schema(),
         ),
         (
             "MediaDesiredTargetListResponse",
@@ -1257,6 +1184,86 @@ fn media_desired_target_profile_schemas() -> Vec<(&'static str, Value)> {
             ),
         ),
     ]
+}
+
+fn media_desired_target_create_schema() -> Value {
+    object_schema(
+        &[
+            "target_key",
+            "version",
+            "display_name",
+            "container_format",
+            "streams",
+        ],
+        [
+            ("target_key", string_schema()),
+            ("version", integer_schema()),
+            ("display_name", string_schema()),
+            ("container_format", string_schema()),
+            ("container_metadata_policy", string_schema()),
+            (
+                "container_metadata",
+                array_ref_max_items_schema(
+                    "MediaDesiredTargetMetadataEntry",
+                    MAX_CONTAINER_METADATA_ENTRIES,
+                ),
+            ),
+            ("container_chapter_policy", string_schema()),
+            (
+                "container_chapters",
+                array_ref_max_items_schema(
+                    "MediaDesiredTargetChapterEntry",
+                    MAX_CONTAINER_CHAPTERS,
+                ),
+            ),
+            ("container_attachment_policy", string_schema()),
+            (
+                "streams",
+                array_ref_items_schema("MediaDesiredTargetStream", 1, MAX_DESIRED_TARGET_STREAMS),
+            ),
+        ],
+    )
+}
+
+fn media_desired_target_response_schema() -> Value {
+    object_schema(
+        &[
+            "media_desired_target_profile_public_id",
+            "target_key",
+            "version",
+            "display_name",
+            "container_format",
+            "container_metadata_policy",
+            "container_chapter_policy",
+            "container_attachment_policy",
+            "streams",
+        ],
+        [
+            ("media_desired_target_profile_public_id", uuid_schema()),
+            ("target_key", string_schema()),
+            ("version", integer_schema()),
+            ("display_name", string_schema()),
+            ("container_format", string_schema()),
+            ("container_metadata_policy", string_schema()),
+            (
+                "container_metadata",
+                array_ref_max_items_schema(
+                    "MediaDesiredTargetMetadataEntry",
+                    MAX_CONTAINER_METADATA_ENTRIES,
+                ),
+            ),
+            ("container_chapter_policy", string_schema()),
+            (
+                "container_chapters",
+                array_ref_max_items_schema(
+                    "MediaDesiredTargetChapterEntry",
+                    MAX_CONTAINER_CHAPTERS,
+                ),
+            ),
+            ("container_attachment_policy", string_schema()),
+            ("streams", array_ref_schema("MediaDesiredTargetStream")),
+        ],
+    )
 }
 
 fn media_desired_target_stream_schema() -> Value {
@@ -2604,7 +2611,27 @@ mod tests {
                     .and_then(Value::as_u64),
                 Some(MAX_CONTAINER_CHAPTERS as u64)
             );
+            let attachment_policy_present = schemas
+                .get(schema_name)
+                .and_then(|schema| schema.get("properties"))
+                .and_then(Value::as_object)
+                .is_some_and(|properties| properties.contains_key("container_attachment_policy"));
+            assert!(
+                attachment_policy_present,
+                "{schema_name} must expose container_attachment_policy"
+            );
         }
+
+        let response_requires_attachment_policy = schemas
+            .get("MediaDesiredTargetResponse")
+            .and_then(|schema| schema.get("required"))
+            .and_then(Value::as_array)
+            .is_some_and(|required| {
+                required
+                    .iter()
+                    .any(|field| field.as_str() == Some("container_attachment_policy"))
+            });
+        assert!(response_requires_attachment_policy);
 
         let chapter_metadata_max_items = schemas
             .get("MediaDesiredTargetChapterEntry")

@@ -119,6 +119,9 @@ pub struct DesiredGraph {
     /// Explicit source binding for every desired output stream.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stream_bindings: Vec<DesiredStreamBinding>,
+    /// Desired attachment policy when a target selects one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_attachment_policy: Option<String>,
     /// Required streams in deterministic output order.
     pub streams: Vec<MediaStream>,
 }
