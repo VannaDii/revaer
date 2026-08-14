@@ -17,6 +17,7 @@ use revaer_api_models::{
     MediaCapabilityFeatureResponse as SharedMediaCapabilityFeatureResponse,
     MediaCapabilityReadinessResponse as SharedMediaCapabilityReadinessResponse,
     MediaCapabilitySnapshotResponse as SharedMediaCapabilitySnapshotResponse,
+    MediaDesiredTargetMetadataEntry as SharedMediaDesiredTargetMetadataEntry,
     MediaDesiredTargetStream as SharedMediaDesiredTargetStream,
     MediaJobArtifactResponse as SharedMediaJobArtifactResponse,
     MediaJobCompactAuditResponse as SharedMediaJobCompactAuditResponse,
@@ -146,6 +147,9 @@ pub struct MediaCompatibilityTargetUpsertParams<'a> {
 /// Ordered desired-target stream parameters.
 pub type MediaDesiredTargetStreamParams = SharedMediaDesiredTargetStream;
 
+/// Desired-target container metadata parameters.
+pub type MediaDesiredTargetMetadataParams = SharedMediaDesiredTargetMetadataEntry;
+
 /// Immutable desired-target version creation parameters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaDesiredTargetCreateParams {
@@ -161,6 +165,8 @@ pub struct MediaDesiredTargetCreateParams {
     pub container_format: String,
     /// Desired container metadata policy.
     pub container_metadata_policy: String,
+    /// Exact desired container metadata rows for the `replace` metadata policy.
+    pub container_metadata: Vec<MediaDesiredTargetMetadataParams>,
     /// Desired container chapter policy.
     pub container_chapter_policy: String,
     /// Complete ordered stream graph.
@@ -313,6 +319,9 @@ pub struct MediaYamlDesiredTarget {
     /// Desired container metadata policy.
     #[serde(default = "default_container_metadata_policy")]
     pub container_metadata_policy: String,
+    /// Exact desired container metadata rows for the `replace` metadata policy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_metadata: Vec<MediaDesiredTargetMetadataParams>,
     /// Desired container chapter policy.
     #[serde(default = "default_container_chapter_policy")]
     pub container_chapter_policy: String,
@@ -486,6 +495,8 @@ pub struct MediaDesiredTargetResponse {
     pub container_format: String,
     /// Desired container metadata policy.
     pub container_metadata_policy: String,
+    /// Exact desired container metadata rows for the `replace` metadata policy.
+    pub container_metadata: Vec<MediaDesiredTargetMetadataParams>,
     /// Desired container chapter policy.
     pub container_chapter_policy: String,
     /// Complete ordered stream graph.

@@ -19,12 +19,12 @@ use std::time::{Duration, Instant};
 use revaer_data::DataError;
 use revaer_data::media::jobs::{
     AppendMediaJobCompactAuditInput, AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow,
-    MediaJobDesiredTargetStreamRow,
+    MediaJobDesiredTargetMetadataRow, MediaJobDesiredTargetStreamRow,
 };
 use revaer_events::{Event, EventBus};
 use revaer_media_core::classify::SemanticRole;
 use revaer_media_core::model::{
-    DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind,
+    ContainerMetadataEntry, DesiredGraph, DesiredStreamBinding, MediaGraph, MediaStream, StreamKind,
 };
 use revaer_media_core::normalize::{
     normalize_audio_channel_layout, normalize_container_chapter_policy, normalize_container_format,
@@ -34,7 +34,9 @@ use revaer_media_core::pipeline::{PlanningConstraints, PlanningOutcome, compile_
 use revaer_media_core::plan::{CandidateRejectionReason, OperationKind, PlannedOperation};
 use revaer_media_core::target::{
     CompiledDesiredTarget, DesiredSidecarOutput, DesiredTarget, ImageSubtitleAction, LanguageToken,
-    SidecarSubtitleInput, SubtitlePlacement, TargetStream, UnmatchedStreamPolicy,
+    MAX_CONTAINER_METADATA_ENTRIES, MAX_CONTAINER_METADATA_KEY_BYTES,
+    MAX_CONTAINER_METADATA_TOTAL_BYTES, MAX_CONTAINER_METADATA_VALUE_BYTES, SidecarSubtitleInput,
+    SubtitlePlacement, TargetStream, UnmatchedStreamPolicy,
     compile_desired_target_with_sidecars_at,
 };
 use revaer_media_runtime::capabilities::{CapabilitySnapshot, CodecCapability};
@@ -967,11 +969,7 @@ impl MediaJobRuntime {
         let workspace_policy = self.workspace_policy.clone();
         let capacity_probe = Arc::clone(&self.capacity_probe);
         let source_path = job.source_path.clone();
-        let desired_target_streams = self
-            .store
-            .list_job_desired_target_streams(job.media_job_public_id)
-            .await?;
-        let desired_target = desired_target_from_job(job, desired_target_streams)?;
+        let desired_target = self.load_desired_target_snapshot(job).await?;
         let base_video_policy =
             video_policy_from_policy_intent(job.policy_video_intent.as_deref())?;
         let workspace_output_path = workspace.output_path.clone();
@@ -995,6 +993,21 @@ impl MediaJobRuntime {
         })
         .await
         .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?
+    }
+
+    async fn load_desired_target_snapshot(
+        &self,
+        job: &ClaimedMediaJobRow,
+    ) -> Result<Option<DesiredTargetSnapshot>, MediaJobRuntimeError> {
+        let desired_target_streams = self
+            .store
+            .list_job_desired_target_streams(job.media_job_public_id)
+            .await?;
+        let desired_target_metadata = self
+            .store
+            .list_job_desired_target_metadata(job.media_job_public_id)
+            .await?;
+        desired_target_from_job(job, desired_target_streams, desired_target_metadata)
     }
 
     async fn execute_steps(
@@ -2371,6 +2384,7 @@ struct DesiredTargetSnapshot {
 fn desired_target_from_job(
     job: &ClaimedMediaJobRow,
     rows: Vec<MediaJobDesiredTargetStreamRow>,
+    metadata_rows: Vec<MediaJobDesiredTargetMetadataRow>,
 ) -> Result<Option<DesiredTargetSnapshot>, MediaJobRuntimeError> {
     let Some(target_key) = job
         .desired_target_key
@@ -2379,6 +2393,7 @@ fn desired_target_from_job(
         .filter(|value| !value.is_empty())
     else {
         if !rows.is_empty()
+            || !metadata_rows.is_empty()
             || job.desired_target_version.is_some()
             || job.desired_container_format.is_some()
             || job.desired_container_metadata_policy.is_some()
@@ -2431,6 +2446,7 @@ fn desired_target_from_job(
         .into_iter()
         .map(target_stream_from_snapshot)
         .collect::<Result<Vec<_>, _>>()?;
+    let container_metadata = container_metadata_from_snapshot(metadata_rows)?;
     if streams.is_empty() {
         return Err(MediaJobRuntimeError::InvalidDesiredGraph(
             "media_job_desired_target_snapshot_empty",
@@ -2442,11 +2458,58 @@ fn desired_target_from_job(
             version,
             container,
             container_metadata_policy,
+            container_metadata,
             container_chapter_policy,
             streams,
         },
         unmatched_stream_policy,
     }))
+}
+
+fn container_metadata_from_snapshot(
+    rows: Vec<MediaJobDesiredTargetMetadataRow>,
+) -> Result<Vec<ContainerMetadataEntry>, MediaJobRuntimeError> {
+    if rows.len() > MAX_CONTAINER_METADATA_ENTRIES {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_desired_container_metadata_count_exceeded",
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    let mut entries = Vec::with_capacity(rows.len());
+    let mut total_bytes = 0_usize;
+    for row in rows {
+        let key = row.metadata_key.trim().to_ascii_lowercase();
+        if key.is_empty() || key.len() > MAX_CONTAINER_METADATA_KEY_BYTES {
+            return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_container_metadata_key_invalid",
+            ));
+        }
+        if !seen.insert(key.clone()) {
+            return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_container_metadata_key_duplicate",
+            ));
+        }
+        let value = row.metadata_value.trim().to_string();
+        if value.is_empty() || value.len() > MAX_CONTAINER_METADATA_VALUE_BYTES {
+            return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_container_metadata_value_invalid",
+            ));
+        }
+        total_bytes = total_bytes
+            .checked_add(key.len())
+            .and_then(|bytes| bytes.checked_add(value.len()))
+            .ok_or(MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_container_metadata_bytes_exceeded",
+            ))?;
+        if total_bytes > MAX_CONTAINER_METADATA_TOTAL_BYTES {
+            return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_container_metadata_bytes_exceeded",
+            ));
+        }
+        entries.push(ContainerMetadataEntry { key, value });
+    }
+    entries.sort();
+    Ok(entries)
 }
 
 fn normalized_snapshot_field(
@@ -2678,6 +2741,7 @@ fn compile_desired_graph(
             container_format: None,
             stream_bindings: identity_stream_bindings(&source.streams),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: source.streams.clone(),
         };
@@ -2751,6 +2815,7 @@ fn compile_desired_graph(
         container_format: None,
         stream_bindings: identity_stream_bindings(&streams),
         container_metadata_policy: None,
+        container_metadata: Vec::new(),
         container_chapter_policy: None,
         streams,
     }
@@ -3291,6 +3356,7 @@ fn compile_runtime_preflight(
     let expected_container_metadata = expected_container_metadata_for_policy(
         &source_container_metadata,
         compiled.graph.container_metadata_policy.as_deref(),
+        &compiled.graph.container_metadata,
     )?;
     let expected_chapters = expected_chapters_for_policy(
         &source_chapters,
@@ -3364,6 +3430,7 @@ fn compile_runtime_desired_target(
                     container_format: None,
                     stream_bindings: identity_stream_bindings(&source_graph.streams),
                     container_metadata_policy: None,
+                    container_metadata: Vec::new(),
                     container_chapter_policy: None,
                     container_chapters: source_graph.container_chapters.clone(),
                     streams: source_graph.streams.clone(),
@@ -3722,6 +3789,7 @@ fn container_metadata_check_index(graph_check_kind: &'static str, fallback: i32)
 fn expected_container_metadata_for_policy(
     source_metadata: &[MetadataEntry],
     policy: Option<&str>,
+    desired_metadata: &[ContainerMetadataEntry],
 ) -> Result<Vec<MetadataEntry>, MediaJobRuntimeError> {
     let normalized = match policy {
         Some(value) => normalize_container_metadata_policy(value).ok_or(
@@ -3731,9 +3799,26 @@ fn expected_container_metadata_for_policy(
         )?,
         None => "preserve",
     };
+    if normalized != "replace" && !desired_metadata.is_empty() {
+        return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+            "media_job_desired_container_metadata_policy_mismatch",
+        ));
+    }
     Ok(match normalized {
         "preserve" => source_metadata.to_vec(),
         "strip" => Vec::new(),
+        "replace" if !desired_metadata.is_empty() => desired_metadata
+            .iter()
+            .map(|entry| MetadataEntry {
+                key: entry.key.clone(),
+                value: entry.value.clone(),
+            })
+            .collect(),
+        "replace" => {
+            return Err(MediaJobRuntimeError::InvalidDesiredGraph(
+                "media_job_desired_container_metadata_replace_empty",
+            ));
+        }
         _ => {
             return Err(MediaJobRuntimeError::InvalidDesiredGraph(
                 "media_job_desired_container_metadata_policy_unsupported",
@@ -4508,11 +4593,12 @@ mod tests {
         MAX_AUDIO_ANALYSIS_STDERR_BYTES, MediaJobRuntime, MediaJobRuntimeComponents,
         RuntimeAudioAnalyzer, RuntimeCapacityProbe, RuntimeCommandRunner, RuntimeInspector,
         RuntimeReplacementCommitter, RuntimeVerificationExecutor, SystemFfmpegAudioAnalysisAdapter,
-        VideoStreamConstraints, audio_measurement_mismatch, desired_target_from_job,
-        expected_audio_constraints, parse_ebur128_summary, read_bounded_audio_analysis_stderr,
-        run_audio_analysis_process, run_audio_analysis_process_with_timeout,
-        verification_policy_from_job, video_constraint_stream_mismatch,
-        video_policy_from_policy_intent, video_policy_from_target_snapshot,
+        VideoStreamConstraints, audio_measurement_mismatch, container_metadata_from_snapshot,
+        desired_target_from_job, expected_audio_constraints, parse_ebur128_summary,
+        read_bounded_audio_analysis_stderr, run_audio_analysis_process,
+        run_audio_analysis_process_with_timeout, verification_policy_from_job,
+        video_constraint_stream_mismatch, video_policy_from_policy_intent,
+        video_policy_from_target_snapshot,
     };
     use crate::runtime_shutdown;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -4528,7 +4614,8 @@ mod tests {
         set_media_profile_desired_target,
     };
     use revaer_data::media::jobs::{
-        ClaimedMediaJobRow, EnqueueDiscoveredMediaJobInput, MediaJobDesiredTargetStreamRow,
+        ClaimedMediaJobRow, EnqueueDiscoveredMediaJobInput, MediaJobDesiredTargetMetadataRow,
+        MediaJobDesiredTargetStreamRow,
     };
     use revaer_data::media::profiles::{UpdateMediaProfileInput, UpsertMediaProfileInput};
     use revaer_events::{Event as CoreEvent, EventBus};
@@ -4540,7 +4627,8 @@ mod tests {
     };
     use revaer_media_core::plan::{OperationKind, PlannedOperation};
     use revaer_media_core::target::{
-        DesiredSidecarOutput, DesiredTarget, SidecarOutputSource, TargetStream,
+        DesiredSidecarOutput, DesiredTarget, MAX_CONTAINER_METADATA_ENTRIES,
+        MAX_CONTAINER_METADATA_VALUE_BYTES, SidecarOutputSource, TargetStream,
         UnmatchedStreamPolicy,
     };
     use revaer_media_runtime::execute::{
@@ -5255,6 +5343,7 @@ mod tests {
                 version: 1,
                 container: "matroska".to_string(),
                 container_metadata_policy: "preserve".to_string(),
+                container_metadata: Vec::new(),
                 container_chapter_policy: "preserve".to_string(),
                 streams: vec![stream],
             },
@@ -5376,6 +5465,7 @@ mod tests {
             container_format: Some("matroska".to_string()),
             stream_bindings: super::identity_stream_bindings(&streams),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams,
         };
@@ -5400,6 +5490,7 @@ mod tests {
             container_format: Some("matroska".to_string()),
             stream_bindings: super::identity_stream_bindings(&streams),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams,
         };
@@ -5884,6 +5975,7 @@ mod tests {
     fn video_graph(source_path: &str, codec: &str) -> MediaGraph {
         MediaGraph {
             source_path: source_path.to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -7484,6 +7576,7 @@ Integrated loudness:
             container_chapters: Vec::new(),
             container_format: None,
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: Some("strip".to_string()),
             stream_bindings: Vec::new(),
             streams: reinspected.graph.streams.clone(),
@@ -8018,6 +8111,7 @@ Integrated loudness:
     {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -8113,6 +8207,7 @@ Integrated loudness:
     fn selected_subtitle_policy_prefers_full_subtitles_over_commentary_default() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -8181,6 +8276,7 @@ Integrated loudness:
     fn desired_graph_clears_commentary_subtitle_default_when_retaining_all_subtitles() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -8252,6 +8348,7 @@ Integrated loudness:
     fn desired_graph_keeps_only_first_subtitle_default_when_retaining_all_subtitles() {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -8323,6 +8420,7 @@ Integrated loudness:
     fn desired_graph_applies_snapshotted_audio_channel_policy() -> anyhow::Result<()> {
         let source = MediaGraph {
             source_path: "/input/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![
@@ -8405,6 +8503,7 @@ Integrated loudness:
                 },
             ],
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: vec![
                 MediaStream {
@@ -8473,11 +8572,13 @@ Integrated loudness:
             container_format: Some("mkv".to_string()),
             stream_bindings: Vec::new(),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: Vec::new(),
         };
         let inspected = MediaGraph {
             source_path: "/output/movie.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: vec!["mp4".to_string()],
             streams: Vec::new(),
@@ -8809,6 +8910,7 @@ Integrated loudness:
         };
         let source = MediaGraph {
             source_path: "/media/in.mkv".to_string(),
+            container_metadata: Vec::new(),
             container_chapters: Vec::new(),
             container_formats: Vec::new(),
             streams: vec![MediaStream {
@@ -8828,6 +8930,7 @@ Integrated loudness:
             container_format: None,
             stream_bindings: super::identity_stream_bindings(&source.streams),
             container_metadata_policy: None,
+            container_metadata: Vec::new(),
             container_chapter_policy: None,
             streams: source.streams.clone(),
         };
@@ -8973,7 +9076,7 @@ Integrated loudness:
         job.desired_container_metadata_policy = Some("preserve".to_string());
         job.desired_container_chapter_policy = Some("preserve".to_string());
 
-        let result = desired_target_from_job(&job, Vec::new());
+        let result = desired_target_from_job(&job, Vec::new(), Vec::new());
 
         let Err(error) = result else {
             panic!("empty desired-target stream snapshot should fail");
@@ -8996,7 +9099,7 @@ Integrated loudness:
         job.desired_container_metadata_policy = Some("rewrite".to_string());
         job.desired_container_chapter_policy = Some("preserve".to_string());
 
-        let result = desired_target_from_job(&job, Vec::new());
+        let result = desired_target_from_job(&job, Vec::new(), Vec::new());
 
         let Err(error) = result else {
             panic!("unsupported desired-target container metadata policy should fail");
@@ -9051,6 +9154,7 @@ Integrated loudness:
                 subtitle_placement: None,
                 image_subtitle_action: None,
             }],
+            Vec::new(),
         )
         .unwrap_or(None);
 
@@ -9060,6 +9164,104 @@ Integrated loudness:
                 .map(|snapshot| snapshot.target.container_metadata_policy.as_str()),
             Some("strip")
         );
+    }
+
+    #[test]
+    fn desired_target_snapshot_accepts_replace_container_metadata_policy() {
+        let mut job = claimed_job_with_paths(
+            "/input/movie.mkv",
+            Some("/output/movie.mkv".to_string()),
+            false,
+            "/input",
+            "/output",
+        );
+        job.desired_target_key = Some("living-room-output".to_string());
+        job.desired_target_version = Some(1);
+        job.desired_container_format = Some("matroska".to_string());
+        job.desired_container_metadata_policy = Some(" Replace ".to_string());
+        job.desired_container_chapter_policy = Some("preserve".to_string());
+
+        let target = desired_target_from_job(
+            &job,
+            vec![MediaJobDesiredTargetStreamRow {
+                stream_key: "video-main".to_string(),
+                stream_kind: "video".to_string(),
+                semantic_role: None,
+                language_code: None,
+                optional: false,
+                sort_order: 0,
+                codec: "hevc".to_string(),
+                channel_count: None,
+                channel_layout: None,
+                audio_bitrate_bps: None,
+                audio_sample_rate_hz: None,
+                audio_loudness_profile: None,
+                audio_dynamic_range: None,
+                video_profile: None,
+                video_level: None,
+                video_bitrate_bps: None,
+                color_primaries: None,
+                color_transfer: None,
+                color_space: None,
+                hdr_format: None,
+                title: None,
+                default_disposition: false,
+                forced_disposition: false,
+                subtitle_placement: None,
+                image_subtitle_action: None,
+            }],
+            vec![
+                MediaJobDesiredTargetMetadataRow {
+                    metadata_key: "Title".to_string(),
+                    metadata_value: "Canonical Cut".to_string(),
+                },
+                MediaJobDesiredTargetMetadataRow {
+                    metadata_key: " comment ".to_string(),
+                    metadata_value: " Verified ".to_string(),
+                },
+            ],
+        )
+        .unwrap_or(None);
+
+        assert_eq!(
+            target
+                .as_ref()
+                .map(|snapshot| snapshot.target.container_metadata_policy.as_str()),
+            Some("replace")
+        );
+        assert_eq!(
+            target
+                .as_ref()
+                .map(|snapshot| {
+                    snapshot
+                        .target
+                        .container_metadata
+                        .iter()
+                        .map(|entry| (entry.key.as_str(), entry.value.as_str()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+            vec![("comment", "Verified"), ("title", "Canonical Cut")]
+        );
+    }
+
+    #[test]
+    fn desired_target_snapshot_rejects_metadata_resource_overflow() {
+        let too_many = (0..=MAX_CONTAINER_METADATA_ENTRIES)
+            .map(|index| MediaJobDesiredTargetMetadataRow {
+                metadata_key: format!("key-{index}"),
+                metadata_value: "value".to_string(),
+            })
+            .collect::<Vec<_>>();
+        assert!(container_metadata_from_snapshot(too_many).is_err());
+
+        let aggregate_overflow = (0..17)
+            .map(|index| MediaJobDesiredTargetMetadataRow {
+                metadata_key: format!("key-{index}"),
+                metadata_value: "x".repeat(MAX_CONTAINER_METADATA_VALUE_BYTES),
+            })
+            .collect::<Vec<_>>();
+        assert!(container_metadata_from_snapshot(aggregate_overflow).is_err());
     }
 
     #[test]
@@ -9077,7 +9279,7 @@ Integrated loudness:
         job.desired_container_metadata_policy = Some("preserve".to_string());
         job.desired_container_chapter_policy = Some("rewrite".to_string());
 
-        let result = desired_target_from_job(&job, Vec::new());
+        let result = desired_target_from_job(&job, Vec::new(), Vec::new());
 
         let Err(error) = result else {
             panic!("unsupported desired-target container chapter policy should fail");
@@ -9132,6 +9334,7 @@ Integrated loudness:
                 subtitle_placement: None,
                 image_subtitle_action: None,
             }],
+            Vec::new(),
         )
         .unwrap_or(None);
 
@@ -9188,6 +9391,7 @@ Integrated loudness:
                 subtitle_placement: None,
                 image_subtitle_action: None,
             }],
+            Vec::new(),
         )?
         else {
             anyhow::bail!("desired target snapshot was not reconstructed");
