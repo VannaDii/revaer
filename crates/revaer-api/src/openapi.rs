@@ -11,10 +11,16 @@ use crate::openapi_assets::OPENAPI_EMBEDDED_JSON;
 
 const MEDIA_DISCOVERY_SOURCE_PATHS_MAX_LEN: usize = 1024;
 const MEDIA_DISCOVERY_SOURCE_PATH_MAX_BYTES: usize = 4096;
-const STALE_MEDIA_SCHEMAS: [&str; 3] = [
+const STALE_MEDIA_SCHEMAS: [&str; 9] = [
     "MediaCapabilityRecordRequest",
     "MediaCapabilityRecordResponse",
+    "MediaJobArtifactAppendRequest",
+    "MediaJobCompactAuditAppendRequest",
+    "MediaJobOperationAppendRequest",
     "MediaJobPhaseAppendRequest",
+    "MediaJobPlanReasonAppendRequest",
+    "MediaJobVerificationCheckAppendRequest",
+    "MediaJobViolationAppendRequest",
 ];
 const STALE_MEDIA_PATHS: [&str; 1] = ["/v1/media/desired-targets"];
 
@@ -1677,8 +1683,7 @@ fn media_job_phase_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_job_operation_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobOperationAppendRequest",
+    media_job_record_schemas(
         "MediaJobOperationResponse",
         "MediaJobOperationListResponse",
         "operations",
@@ -1698,8 +1703,7 @@ fn media_job_operation_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_job_violation_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobViolationAppendRequest",
+    media_job_record_schemas(
         "MediaJobViolationResponse",
         "MediaJobViolationListResponse",
         "violations",
@@ -1714,8 +1718,7 @@ fn media_job_violation_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_job_plan_reason_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobPlanReasonAppendRequest",
+    media_job_record_schemas(
         "MediaJobPlanReasonResponse",
         "MediaJobPlanReasonListResponse",
         "reasons",
@@ -1731,8 +1734,7 @@ fn media_job_plan_reason_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_job_verification_check_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobVerificationCheckAppendRequest",
+    media_job_record_schemas(
         "MediaJobVerificationCheckResponse",
         "MediaJobVerificationCheckListResponse",
         "checks",
@@ -1749,8 +1751,7 @@ fn media_job_verification_check_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_job_artifact_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobArtifactAppendRequest",
+    media_job_record_schemas(
         "MediaJobArtifactResponse",
         "MediaJobArtifactListResponse",
         "artifacts",
@@ -1766,8 +1767,7 @@ fn media_job_artifact_schemas() -> Vec<(&'static str, Value)> {
 }
 
 fn media_job_compact_audit_schemas() -> Vec<(&'static str, Value)> {
-    media_job_append_record_schemas(
-        "MediaJobCompactAuditAppendRequest",
+    media_job_record_schemas(
         "MediaJobCompactAuditResponse",
         "MediaJobCompactAuditListResponse",
         "audits",
@@ -2103,8 +2103,7 @@ const fn schema_property(name: &'static str, kind: SchemaKind) -> SchemaProperty
     SchemaProperty { name, kind }
 }
 
-fn media_job_append_record_schemas<const N: usize>(
-    append_schema: &'static str,
+fn media_job_record_schemas<const N: usize>(
     response_schema: &'static str,
     list_schema: &'static str,
     list_field: &'static str,
@@ -2117,10 +2116,6 @@ fn media_job_append_record_schemas<const N: usize>(
         .chain(["created_at"])
         .collect::<Vec<_>>();
     vec![
-        (
-            append_schema,
-            typed_object_schema_from_fields(append_required, properties),
-        ),
         (
             response_schema,
             typed_object_schema_from_fields(
