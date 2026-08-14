@@ -1,0 +1,54 @@
+# Core Planner Review Repair
+
+- Status: Accepted
+- Date: 2026-08-04
+- Context:
+  - PR 72 review identified unsafe target-language interpolation, missing source-to-output fanout, incorrect subtitle operation costs, a test-only candidate selector, and unbounded quadratic profile validation.
+  - The repair must remain in the core-planning layer and keep the complete PR below 10,000 changed lines.
+- Decision:
+  - Represent desired language selectors with `LanguageToken`, a normalized three-letter lowercase ASCII domain type. Parse complete desired-target YAML through a bounded production entry point, and prove sidecar filenames remain one relative component under the workspace and destination parents.
+  - Give desired outputs sequential independent identities and persist explicit output-to-source bindings. Target rows sharing `source_binding_key` intentionally reuse one selected source; unmatched policy still operates on each source only once.
+  - Make the production `compile_and_plan` boundary return a serializable desired graph, `PlanSelection`, and structured explanation from candidate generation, capability and graph-safety validation, pruning, and selection. Retain source/output identities plus every invalid, unsupported, unsafe, dominated, or tie-broken candidate rationale, including terminal all-invalid failures.
+  - Use the specification's operation costs, including subtitle extraction cost 3 and subtitle conversion without OCR cost 80.
+  - Bound media-profile YAML at 1 MiB and 1,024 profiles before semantic validation. Stop materializing `MediaProfile` values after the cardinality limit and consume excess YAML entries only as ignored syntax before returning `TooManyProfiles`. Bound profile keys and roots; require lexical absolute roots without traversal, dot, repeated-separator, backslash, or control components; treat `/` as the ancestor of every absolute path; then sort normalized roots by path components and compare adjacent pairs for overlap.
+- Consequences:
+  - Runtime layers rebasing onto this contract must map source inputs by `DesiredStreamBinding` and output streams by independent output id.
+  - The planner can emit two operations with one source id and different output ids without deduplicating valid fanout.
+  - Runtime operation capabilities are injected into planning, and unsupported or graph-unverifiable candidates are rejected before cost ranking.
+  - `serde_yaml` becomes a direct core dependency so the byte and collection bounds cannot be bypassed by a caller parsing first and validating later.
+  - The lockfile advances `event-listener` from 5.4.1 to 5.4.2, the first release patched for RUSTSEC-2026-0221, because the required audit gate discovered the advisory during validation.
+  - Existing JavaScript transitive overrides advance to `brace-expansion` 5.0.9 and `undici` 8.10.0 because the same gate discovered GHSA-rgw5-rvv9-x895 and GHSA-8xcm-r25x-g524; both npm lockfiles remain exception-free.
+- Follow-up:
+  - Downstream runtime and persistence layers must store the complete `PlanningOutcome`, consume explicit stream bindings, and inject capabilities when their stack layers are rebased.
+  - The runtime-owned descendant PR must execute a real 5.1 fixture through command construction, FFmpeg, FFprobe inspection, and final graph verification, then delete generated media through the fixture cleanup owner. The core crate intentionally performs no process or filesystem I/O.
+
+## Task Record
+
+- Motivation:
+  - Resolve all five unresolved PR 72 review threads with executable contracts rather than comments or suppressions.
+- Design notes:
+  - Binding keys are stable target configuration, while numeric source ids remain inspection-time correlation values.
+  - The compiled graph owns one binding per output. Legacy manually constructed desired graphs with no bindings retain same-id behavior for compatibility.
+  - Candidate alternatives generated for one diff are equivalent-output plans, so a higher-cost candidate is dominated and retained as rejected evidence.
+  - The root-overlap proof relies on canonical lexical absolute paths and component-sequence sorting: `/` owns every absolute descendant, and an ancestor sorts immediately before its descendant subtree even when a bytewise sibling such as `/a-0` would otherwise intervene between `/a` and `/a/b`.
+- Test coverage summary:
+  - Core unit coverage exercises direct and full desired-target YAML language attacks, sidecar parent/component containment, root ancestry including the `/a`, `/a-0`, `/a/b` ordering regression, dot/dotdot and repeated-separator aliases, exact maximum and maximum-plus-one YAML/profile/root bounds, bounded excess-entry decoding, linear adjacent root comparisons after component-aware sorting, corrected cost ranking, capability fallback, production remux-versus-transcode selection, and retained rejection rationale.
+  - `fanout_pipeline` routes one DTS-like graph through the production core pipeline to compile AAC stereo and E-AC-3 surround outputs, validate source/output bindings, and verify the selected operation graph. Actual media execution belongs to the runtime descendant and is not simulated here.
+  - Focused and repository handoff gate results are recorded in the commit handoff; no generated media files are retained.
+- Observability updates:
+  - `PlanningOutcome` is serializable and carries the desired graph, stable selected cost, rejected candidate reason codes, and source/output-aware explanations for downstream audit persistence.
+  - No new unbounded labels, log fields, or filesystem paths are introduced.
+- Status-doc validation:
+  - Rechecked `MEDIA_TRANSCODING.md`; its fanout, cost, candidate-pruning, YAML, and path-containment requirements remain authoritative and already match this repair.
+  - Corrected ADR 318's stale consume-once statement to distinguish unique source selection from intentional fanout.
+- Risk & rollback plan:
+  - The primary integration risk is downstream code assuming desired stream ids equal source stream ids. Rebase failures must be repaired by consuming explicit bindings, not by restoring overloaded identities.
+  - Rollback is the single conventional repair commit; no migration or persisted production data is changed in this layer.
+- Dependency rationale:
+  - `serde_yaml` 0.9 is already locked and used elsewhere in the workspace. Core owns the bounded parse entry point so callers cannot accidentally perform semantic validation only after unbounded YAML decoding.
+  - Hand-rolled YAML parsing was rejected because it would duplicate a complex format and create a larger security surface.
+  - The precise `event-listener` patch update introduces no new direct dependency and removes the obsolete `concurrent-queue` lockfile entry; retaining 5.4.1 would violate the fail-closed advisory policy.
+  - The JavaScript overrides are manifest-scoped transitive remediations. `brace-expansion` 5.0.9 is the first clean patch after the prior 5.0.8 override, while undici has no patched 7.x release and the release tooling therefore pins the reviewed current 8.10.0 implementation.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and `.github/instructions/devops.instructions.md`; no policy contradiction was found.
+  - No lint, coverage, Sonar, dependency-advisory, or test criterion was relaxed. No source-level suppression, production panic, raw runtime SQL, or concrete runtime dependency construction was added.
