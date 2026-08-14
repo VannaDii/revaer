@@ -417,6 +417,7 @@
     -   [392: Media job attachment strip evidence](adr/392-media-job-attachment-strip-evidence.md)
     -   [393: Media job attachment passthrough evidence](adr/393-media-job-attachment-passthrough-evidence.md)
     -   [394: Media job data passthrough evidence](adr/394-media-job-data-passthrough-evidence.md)
+    -   [401: Media HDR10 color-volume contract](adr/401-media-hdr10-color-volume-contract.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
     -   [407: Database-backed coverage execution](adr/407-database-backed-coverage-execution.md)
     -   [409: Portable Helm annotation rendering](adr/409-portable-helm-annotation-rendering.md)

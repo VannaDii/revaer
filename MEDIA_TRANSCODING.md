@@ -1504,6 +1504,21 @@ actual media graph
 -> verification expectations
 ```
 
+HDR10 target constraints:
+
+- Desired video streams may declare `hdr10_color_volume` only when
+  `hdr_format` is `hdr10`.
+- The contract names exact mastering-display xy/luminance values and
+  content-light peak/average values. Persistence stores those values as scalar
+  columns in the desired-target row and immutable job snapshot, not as JSON.
+- API, YAML, core compilation, and database procedures reject partial,
+  nonphysical, non-HDR10, or internally inconsistent HDR10 color-volume
+  targets before a job can carry them.
+- Candidate and final verification compare the declared values against
+  FFprobe mastering-display and content-light side-data fields, after the
+  existing HDR10 color-signaling, 10-bit pixel-format, payload-presence,
+  numeric-boundary, and mastering-geometry checks pass.
+
 Resolution outcomes:
 
 ```rust

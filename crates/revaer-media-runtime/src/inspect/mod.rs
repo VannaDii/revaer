@@ -10,7 +10,8 @@ pub use adapter::{FfprobeInspectAdapter, InspectAdapter};
 pub use model::{
     ChapterInspection, ContainerInspection, InspectCancellation, InspectCancellationToken,
     InspectError, InspectProbeExecutor, InspectProbeOutput, InspectProbeRequest, InspectionLimits,
-    MediaInspection, MetadataEntry, NeverCancelled, ProbeGraph, ProbeStream, StreamInspection,
+    MediaInspection, MetadataEntry, NeverCancelled, ProbeGraph, ProbeStream, SideDataInspection,
+    StreamInspection,
 };
 pub use parse::normalize_probe_graph;
 pub use system::SystemInspectProbeExecutor;

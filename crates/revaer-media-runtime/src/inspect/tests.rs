@@ -177,7 +177,10 @@ fn normalizes_full_technical_metadata_and_dispositions() -> Result<(), Box<dyn s
         "chroma_location":"LEFT","field_order":"PROGRESSIVE",
         "disposition":{"default":1,"forced":1,"hearing_impaired":1,"visual_impaired":1},
         "tags":{"title":" Main Video ","provider":" studio "},
-        "side_data_list":[{"side_data_type":"HDR10+"},{"side_data_type":"hdr10+"}]
+        "side_data_list":[
+          {"side_data_type":"HDR10+","red_x":"34000/50000"},
+          {"side_data_type":"hdr10+","max_content":1000}
+        ]
       }],
       "chapters":[{"id":1,"start_time":"-0.500","end_time":"0.250",
                    "tags":{"title":" Intro "}}],
@@ -194,6 +197,20 @@ fn normalizes_full_technical_metadata_and_dispositions() -> Result<(), Box<dyn s
     assert_eq!(inspection.streams[0].sample_rate, None);
     assert_eq!(inspection.streams[0].average_frame_rate, None);
     assert_eq!(inspection.streams[0].side_data_types, ["hdr10+"]);
+    assert_eq!(inspection.streams[0].side_data.len(), 1);
+    assert_eq!(
+        inspection.streams[0].side_data[0].metadata,
+        [
+            MetadataEntry {
+                key: "max_content".to_string(),
+                value: "1000".to_string(),
+            },
+            MetadataEntry {
+                key: "red_x".to_string(),
+                value: "34000/50000".to_string(),
+            },
+        ]
+    );
     assert_eq!(inspection.streams[0].metadata.len(), 2);
 
     remove_temp_directory(&directory)
