@@ -293,9 +293,11 @@ impl MediaDiscoveryRuntime {
                     actor_public_id: SYSTEM_USER_PUBLIC_ID,
                     media_profile_public_id: profile.media_profile_public_id,
                     source_path: &preview.source_path,
-                    output_path: &output_path,
+                    output_path: Some(output_path.as_str()),
+                    source_identity: &fingerprint.identity,
                     source_size_bytes: fingerprint.size_bytes,
                     source_modified_ns: fingerprint.modified_ns,
+                    source_changed_ns: fingerprint.changed_ns,
                     source_sha256: &fingerprint.sha256,
                 })
                 .await;

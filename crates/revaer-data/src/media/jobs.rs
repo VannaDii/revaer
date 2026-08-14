@@ -29,8 +29,8 @@ const MEDIA_JOB_RETRY_V1: &str = "SELECT media_job_retry_v1(media_job_public_id_
 const MEDIA_JOB_MARK_COMPLETED_V1: &str =
     "SELECT media_job_mark_completed_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_jobs_pruned, failed_detail_rows_deleted FROM media_job_retention_run_v1(as_of_input => $1)";
-const MEDIA_JOB_WORKER_CLAIM_NEXT_V3: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, discovery_source_size_bytes, discovery_source_modified_ns, discovery_source_sha256, cancel_generation FROM media_job_worker_claim_next_v3()";
 const MEDIA_WORKSPACE_RETENTION_SNAPSHOT_V1: &str = "SELECT media_job_public_id, workspace_retention_seconds, diagnostic_workspace_retention_seconds, max_entries_per_tick FROM media_workspace_retention_snapshot_v1()";
+const MEDIA_JOB_WORKER_CLAIM_NEXT_V3: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, source_identity, source_size_bytes, source_modified_ns, source_changed_ns, source_sha256, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v3()";
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str =
     "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, status_input => $2::media_job_status, last_error_input => $3)";
@@ -47,7 +47,7 @@ const MEDIA_JOB_TERMINAL_OUTBOX_MARK_PUBLISHED_V1: &str =
 const MEDIA_JOB_WORKER_COMPLETE_FINALIZED_V1: &str =
     "SELECT media_job_worker_complete_finalized_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
-const MEDIA_DISCOVERY_JOB_ENQUEUE_V2: &str = "SELECT media_discovery_job_enqueue_v2(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
+const MEDIA_DISCOVERY_JOB_ENQUEUE_V2: &str = "SELECT media_discovery_job_enqueue_v2(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_identity_input => $5, source_size_bytes_input => $6, source_modified_ns_input => $7, source_changed_ns_input => $8, source_sha256_input => $9)";
 
 /// Create media job payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,11 +74,15 @@ pub struct EnqueueDiscoveredMediaJobInput<'a> {
     /// Canonical source path.
     pub source_path: &'a str,
     /// Derived output path.
-    pub output_path: &'a str,
+    pub output_path: Option<&'a str>,
+    /// Stable device and inode identity observed from the opened source handle.
+    pub source_identity: &'a str,
     /// Stable file size observed while hashing.
     pub source_size_bytes: i64,
     /// Stable nanosecond modification timestamp observed while hashing.
     pub source_modified_ns: i64,
+    /// Stable nanosecond change timestamp observed while hashing.
+    pub source_changed_ns: i64,
     /// Lowercase SHA-256 content fingerprint.
     pub source_sha256: &'a str,
 }
@@ -363,6 +367,16 @@ pub struct ClaimedMediaJobRow {
     pub source_root: String,
     /// Profile output root.
     pub output_root: String,
+    /// Stable device and inode identity snapshotted when queued.
+    pub source_identity: String,
+    /// Source byte count snapshotted when queued.
+    pub source_size_bytes: i64,
+    /// Source modification timestamp snapshotted when queued.
+    pub source_modified_ns: i64,
+    /// Source change timestamp snapshotted when queued.
+    pub source_changed_ns: i64,
+    /// Source content hash snapshotted when queued.
+    pub source_sha256: String,
     /// Optional compatibility target key used by the worker planner.
     pub compatibility_target_key: Option<String>,
     /// Operational policy key used by the worker planner.
@@ -399,12 +413,6 @@ pub struct ClaimedMediaJobRow {
     pub verification_keyframe_seek: MediaVerificationToggle,
     /// Whether noninteractive playback smoke verification was selected.
     pub verification_playback_probe: MediaVerificationToggle,
-    /// Immutable aggregate source size captured by discovery.
-    pub discovery_source_size_bytes: Option<i64>,
-    /// Immutable aggregate modification timestamp captured by discovery.
-    pub discovery_source_modified_ns: Option<i64>,
-    /// Immutable aggregate SHA-256 captured by discovery.
-    pub discovery_source_sha256: Option<String>,
     /// Durable cancellation generation observed when the worker claimed the job.
     pub cancel_generation: i64,
 }
@@ -517,9 +525,11 @@ pub async fn enqueue_discovered_media_job(
         .bind(input.actor_public_id)
         .bind(input.media_profile_public_id)
         .bind(input.source_path)
-        .bind(input.output_path)
+        .bind(input.output_path.unwrap_or_default())
+        .bind(input.source_identity)
         .bind(input.source_size_bytes)
         .bind(input.source_modified_ns)
+        .bind(input.source_changed_ns)
         .bind(input.source_sha256)
         .fetch_one(pool)
         .await
@@ -1152,12 +1162,13 @@ mod tests {
         AppendMediaJobVerificationCheckInput, CreateMediaJobInput, EnqueueDiscoveredMediaJobInput,
         append_media_job_artifact, append_media_job_compact_audit, append_media_job_operation,
         append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
-        append_media_job_violation, cancel_media_job, create_media_job,
-        enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
-        list_media_job_compact_audits, list_media_job_operations, list_media_job_phases,
-        list_media_job_plan_reasons, list_media_job_terminal_outbox_unpublished,
-        list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
-        list_recent_media_jobs, load_media_workspace_retention_snapshot, mark_media_job_completed,
+        append_media_job_violation, cancel_media_job,
+        create_media_job as create_unfingerprinted_media_job, enqueue_discovered_media_job,
+        get_media_job, list_media_job_artifacts, list_media_job_compact_audits,
+        list_media_job_operations, list_media_job_phases, list_media_job_plan_reasons,
+        list_media_job_terminal_outbox_unpublished, list_media_job_verification_checks,
+        list_media_job_violations, list_media_jobs, list_recent_media_jobs,
+        load_media_workspace_retention_snapshot, mark_media_job_completed,
         mark_media_job_terminal_outbox_published, media_job_worker_acknowledge_cancel,
         media_job_worker_claim_next, media_job_worker_commit_replacement_terminal,
         media_job_worker_complete_finalized, media_job_worker_mark_status,
@@ -1180,8 +1191,39 @@ mod tests {
         PgPool,
         postgres::{PgConnectOptions, PgPoolOptions},
     };
-    use std::{fs, path::Path};
+    use std::{
+        fs,
+        path::Path,
+        sync::atomic::{AtomicI64, Ordering},
+    };
     use uuid::Uuid;
+
+    static TEST_FINGERPRINT_VERSION: AtomicI64 = AtomicI64::new(1);
+
+    async fn create_media_job(
+        pool: &PgPool,
+        input: &CreateMediaJobInput<'_>,
+    ) -> anyhow::Result<Uuid> {
+        let version = TEST_FINGERPRINT_VERSION.fetch_add(1, Ordering::Relaxed);
+        let source_identity = format!("{version:016x}:{version:016x}");
+        let source_sha256 = format!("{version:064x}");
+        enqueue_discovered_media_job(
+            pool,
+            &EnqueueDiscoveredMediaJobInput {
+                actor_public_id: input.actor_public_id,
+                media_profile_public_id: input.media_profile_public_id,
+                source_path: input.source_path,
+                output_path: input.output_path,
+                source_identity: &source_identity,
+                source_size_bytes: version,
+                source_modified_ns: version,
+                source_changed_ns: version,
+                source_sha256: &source_sha256,
+            },
+        )
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("test media job fingerprint was unchanged"))
+    }
 
     fn closed_pool_options() -> PgConnectOptions {
         PgConnectOptions::new()
@@ -1401,7 +1443,7 @@ mod tests {
         output_path: Option<&str>,
         expected_detail: &str,
     ) -> anyhow::Result<()> {
-        let err = create_media_job(
+        let err = create_unfingerprinted_media_job(
             pool,
             &CreateMediaJobInput {
                 actor_public_id,
@@ -1550,6 +1592,59 @@ mod tests {
         assert!(migration.contains("compact_audit_count"));
         assert!(migration.contains("media_desired_target_graph_page_v1"));
         assert!(migration.contains("LIMIT 1025"));
+    }
+
+    #[test]
+    fn migration_guards_media_job_fingerprint_requirement() {
+        let migration_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let migration_text = fs::read_dir(migration_root)
+            .into_iter()
+            .flat_map(|entries| entries.filter_map(Result::ok))
+            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            migration_text.contains("media_discovery_source_fingerprint"),
+            "source fingerprint table must be present in migrations"
+        );
+        assert!(
+            migration_text.contains("media_job_source_fingerprint_required"),
+            "direct job creation must require persisted source fingerprints"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_media_job_requires_persisted_source_fingerprint() -> anyhow::Result<()> {
+        let db = match setup_media_db("create_media_job_requires_source_fingerprint").await {
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
+            Err(err) => {
+                return Err(err);
+            }
+        };
+
+        let profile_id =
+            upsert_retention_profile(&db, "fingerprint-required", "fingerprint-required").await?;
+        let err = create_unfingerprinted_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/fingerprint-required/video.mkv",
+                output_path: Some("/output/fingerprint-required/video.mkv"),
+                dry_run: true,
+            },
+        )
+        .await
+        .expect_err("direct job creation without fingerprint should fail");
+
+        assert!(matches!(err, DataError::QueryFailed { .. }));
+        assert_eq!(
+            err.database_detail(),
+            Some("media_job_source_fingerprint_required")
+        );
+        Ok(())
     }
 
     #[tokio::test]
@@ -2683,9 +2778,11 @@ mod tests {
             actor_public_id: db.system_user_public_id,
             media_profile_public_id: profile_id,
             source_path,
-            output_path,
+            output_path: Some(output_path),
+            source_identity: "000000000000000a:000000000000000a",
             source_size_bytes: 10,
             source_modified_ns: 100,
+            source_changed_ns: 100,
             source_sha256: &"a".repeat(64),
         };
 
@@ -2696,16 +2793,14 @@ mod tests {
             .await?
             .ok_or_else(|| anyhow::anyhow!("discovered job was not claimable"))?;
         assert_eq!(claimed.media_job_public_id, first_job_id);
-        assert_eq!(claimed.discovery_source_size_bytes, Some(10));
-        assert_eq!(claimed.discovery_source_modified_ns, Some(100));
-        assert_eq!(
-            claimed.discovery_source_sha256.as_deref(),
-            Some(first.source_sha256)
-        );
+        assert_eq!(claimed.source_size_bytes, 10);
+        assert_eq!(claimed.source_modified_ns, 100);
+        assert_eq!(claimed.source_sha256, first.source_sha256);
         assert_eq!(enqueue_discovered_media_job(db.pool(), &first).await?, None);
 
         let modified_time = EnqueueDiscoveredMediaJobInput {
             source_modified_ns: 101,
+            source_changed_ns: 101,
             ..first.clone()
         };
         assert!(
@@ -2725,7 +2820,8 @@ mod tests {
 
         let failed_claim = EnqueueDiscoveredMediaJobInput {
             source_modified_ns: 102,
-            output_path: "/outside/movie.webm",
+            source_changed_ns: 102,
+            output_path: Some("/outside/movie.webm"),
             ..modified_content.clone()
         };
         assert!(
@@ -2734,7 +2830,7 @@ mod tests {
                 .is_err()
         );
         let retry = EnqueueDiscoveredMediaJobInput {
-            output_path,
+            output_path: Some(output_path),
             ..failed_claim
         };
         assert!(
@@ -2746,6 +2842,57 @@ mod tests {
         let jobs = list_media_jobs(db.pool(), profile_id, None).await?;
         assert_eq!(jobs.len(), 4);
         assert!(jobs.iter().all(|job| job.dry_run));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn claimed_job_returns_immutable_source_fingerprint_snapshot() -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("claimed_source_fingerprint_snapshot").await? else {
+            return Ok(());
+        };
+        let profile_id = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "claim-fingerprint-profile",
+                source_root: "/input/claim-fingerprint",
+                output_root: "/output/claim-fingerprint",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        let source_sha256 = "c".repeat(64);
+        let input = EnqueueDiscoveredMediaJobInput {
+            actor_public_id: db.system_user_public_id,
+            media_profile_public_id: profile_id,
+            source_path: "/input/claim-fingerprint/movie.webm",
+            output_path: Some("/output/claim-fingerprint/movie.webm"),
+            source_identity: "000000000000000c:000000000000001c",
+            source_size_bytes: 4_096,
+            source_modified_ns: 5_000,
+            source_changed_ns: 6_000,
+            source_sha256: &source_sha256,
+        };
+        let queued = enqueue_discovered_media_job(db.pool(), &input)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("fingerprinted job should be queued"))?;
+
+        let claimed = media_job_worker_claim_next(db.pool())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("fingerprinted job should be claimable"))?;
+
+        assert_eq!(claimed.media_job_public_id, queued);
+        assert_eq!(claimed.source_identity, input.source_identity);
+        assert_eq!(claimed.source_size_bytes, input.source_size_bytes);
+        assert_eq!(claimed.source_modified_ns, input.source_modified_ns);
+        assert_eq!(claimed.source_changed_ns, input.source_changed_ns);
+        assert_eq!(claimed.source_sha256, input.source_sha256);
         Ok(())
     }
 }

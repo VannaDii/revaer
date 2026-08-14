@@ -697,7 +697,7 @@ mod tests {
     use revaer_data::media::configuration::UpdateMediaJobRetentionPolicyInput;
     use revaer_data::media::jobs::{
         AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
-        AppendMediaJobVerificationCheckInput, CreateMediaJobInput,
+        AppendMediaJobVerificationCheckInput, CreateMediaJobInput, EnqueueDiscoveredMediaJobInput,
     };
     use revaer_data::media::profiles::UpsertMediaProfileInput;
     use revaer_test_support::postgres::TestDatabase;
@@ -944,14 +944,19 @@ mod tests {
         );
 
         let job_id = store
-            .create_job(&CreateMediaJobInput {
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: actor,
                 media_profile_public_id: profile_id,
                 source_path: "/input/tv/show.mkv",
                 output_path: Some("/output/tv/show.mkv"),
-                dry_run: true,
+                source_identity: "0000000000000001:0000000000000001",
+                source_size_bytes: 1,
+                source_modified_ns: 1,
+                source_changed_ns: 1,
+                source_sha256: &"1".repeat(64),
             })
-            .await?;
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("runtime test job should be queued"))?;
 
         store
             .append_job_phase(job_id, 0, "planning", "queued", Some("scheduled"))
@@ -1060,14 +1065,19 @@ mod tests {
             })
             .await?;
         let job_id = store
-            .create_job(&CreateMediaJobInput {
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: actor,
                 media_profile_public_id: profile_id,
                 source_path: "/input/runtime/finished.mkv",
                 output_path: Some("/output/runtime/finished.mkv"),
-                dry_run: true,
+                source_identity: "0000000000000002:0000000000000002",
+                source_size_bytes: 2,
+                source_modified_ns: 2,
+                source_changed_ns: 2,
+                source_sha256: &"2".repeat(64),
             })
-            .await?;
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("completed runtime test job should be queued"))?;
 
         store.mark_job_completed(job_id).await?;
         store
@@ -1113,14 +1123,19 @@ mod tests {
             })
             .await?;
         let job_id = store
-            .create_job(&CreateMediaJobInput {
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
                 actor_public_id: actor,
                 media_profile_public_id: profile_id,
                 source_path: "/input/diagnostic-runtime/cancelled.mkv",
                 output_path: Some("/output/diagnostic-runtime/cancelled.mkv"),
-                dry_run: true,
+                source_identity: "0000000000000003:0000000000000003",
+                source_size_bytes: 3,
+                source_modified_ns: 3,
+                source_changed_ns: 3,
+                source_sha256: &"3".repeat(64),
             })
-            .await?;
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("diagnostic runtime test job should be queued"))?;
 
         store
             .append_job_violation(job_id, 0, "video_codec_mismatch", "high", Some(0))

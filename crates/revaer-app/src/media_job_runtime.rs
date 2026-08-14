@@ -74,6 +74,7 @@ use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::media_discovery_fingerprint::{FingerprintError, fingerprint_media_aggregate};
 use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 
 const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(1);
@@ -711,6 +712,7 @@ impl MediaJobRuntime {
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<TerminalWorkspaceState, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
+        self.revalidate_claimed_source(job).await?;
         self.append_phase(job.media_job_public_id, 0, "inspect_plan", "running", None)
             .await?;
 
@@ -907,6 +909,7 @@ impl MediaJobRuntime {
         verification_context: &DesiredVerificationContext<'_>,
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<(), MediaJobRuntimeError> {
+        self.revalidate_claimed_source(job).await?;
         self.store
             .mark_job_status(job.media_job_public_id, "verifying", None)
             .await?;
@@ -980,6 +983,7 @@ impl MediaJobRuntime {
     ) -> Result<(), MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
         workspace.validate()?;
+        self.revalidate_claimed_source(job).await?;
         let runner = Arc::clone(&self.command_runner);
         let signal = Arc::new(CancellationSignal::default());
         let execution_signal = Arc::clone(&signal);
@@ -1103,6 +1107,7 @@ impl MediaJobRuntime {
         shutdown: Option<&RuntimeShutdownReceiver>,
     ) -> Result<String, MediaJobRuntimeError> {
         let candidate_output_path = replacement_output_path(steps)?;
+        self.revalidate_claimed_source(job).await?;
         let source_inspection = self
             .inspect_media(job, job.source_path.clone(), shutdown)
             .await?;
@@ -1223,6 +1228,7 @@ impl MediaJobRuntime {
         sidecar_removals: &[String],
     ) -> Result<CommittedReplacement, MediaJobRuntimeError> {
         self.ensure_not_cancelled(job).await?;
+        self.revalidate_claimed_source(job).await?;
         let replacement_backend = Arc::clone(&self.replacement_committer);
         let job_key = job.media_job_public_id.to_string();
         let source_root = PathBuf::from(&job.source_root);
@@ -1248,6 +1254,13 @@ impl MediaJobRuntime {
         .await
         .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
         let prepared = preparation?;
+        if let Err(error) = self.revalidate_claimed_source(job).await {
+            let replacement_backend = Arc::clone(&self.replacement_committer);
+            tokio::task::spawn_blocking(move || replacement_backend.discard_prepared(prepared))
+                .await
+                .map_err(|join_error| MediaJobRuntimeError::Join(join_error.to_string()))??;
+            return Err(error);
+        }
         if let Err(error) = self.ensure_not_cancelled(job).await {
             let replacement_backend = Arc::clone(&self.replacement_committer);
             tokio::task::spawn_blocking(move || replacement_backend.discard_prepared(prepared))
@@ -1266,6 +1279,39 @@ impl MediaJobRuntime {
                     .await?;
                 Err(MediaJobRuntimeError::Replacement(error))
             }
+        }
+    }
+
+    async fn revalidate_claimed_source(
+        &self,
+        job: &ClaimedMediaJobRow,
+    ) -> Result<(), MediaJobRuntimeError> {
+        let source_path = PathBuf::from(&job.source_path);
+        let source_root = PathBuf::from(&job.source_root);
+        let expected_identity = job.source_identity.clone();
+        let expected_size_bytes = job.source_size_bytes;
+        let expected_modified_ns = job.source_modified_ns;
+        let expected_changed_ns = job.source_changed_ns;
+        let expected_sha256 = job.source_sha256.clone();
+        let matched = tokio::task::spawn_blocking(move || {
+            Ok::<bool, FingerprintError>(
+                fingerprint_media_aggregate(&source_path, &source_root)?.is_some_and(|actual| {
+                    actual.identity == expected_identity
+                        && actual.size_bytes == expected_size_bytes
+                        && actual.modified_ns == expected_modified_ns
+                        && actual.changed_ns == expected_changed_ns
+                        && actual.sha256 == expected_sha256
+                }),
+            )
+        })
+        .await
+        .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+        if matched {
+            Ok(())
+        } else {
+            Err(MediaJobRuntimeError::Verification(
+                "media_job_source_fingerprint_mismatch",
+            ))
         }
     }
 
@@ -2182,6 +2228,8 @@ enum MediaJobRuntimeError {
     },
     #[error("media job runtime source artifact byte count overflowed")]
     SourceSizeOverflow,
+    #[error("media job runtime source fingerprint failed: {0}")]
+    SourceFingerprint(#[from] FingerprintError),
     #[error("media job runtime execute error: {0}")]
     Execute(ExecuteSequenceError),
     #[error("media job runtime execute step error: {0}")]
@@ -2221,6 +2269,7 @@ impl MediaJobRuntimeError {
             Self::Inspect(_) => "media_job_runtime_inspect_failed",
             Self::SourceMetadata { .. } => "media_job_runtime_source_metadata_failed",
             Self::SourceSizeOverflow => "media_job_runtime_source_size_overflow",
+            Self::SourceFingerprint(_) => "media_job_runtime_source_fingerprint_failed",
             Self::Execute(_) | Self::ExecuteStep(_) => "media_job_runtime_execute_failed",
             Self::Replacement(_) => "media_job_runtime_replacement_failed",
             Self::ReplacementRollback(_) => "media_job_runtime_replacement_rollback_failed",
@@ -2242,9 +2291,10 @@ impl MediaJobRuntimeError {
             Self::Data(_) => "storage",
             Self::Cancelled => "cancellation",
             Self::Join(_) => "join",
-            Self::Inspect(_) | Self::SourceMetadata { .. } | Self::SourceSizeOverflow => {
-                "inspection"
-            }
+            Self::Inspect(_)
+            | Self::SourceMetadata { .. }
+            | Self::SourceSizeOverflow
+            | Self::SourceFingerprint(_) => "inspection",
             Self::Execute(_) | Self::ExecuteStep(_) => "execution",
             Self::Replacement(_)
             | Self::ReplacementRollback(_)
@@ -4276,7 +4326,7 @@ mod tests {
         append_media_desired_target_stream, create_media_desired_target,
         set_media_profile_desired_target,
     };
-    use revaer_data::media::jobs::{ClaimedMediaJobRow, CreateMediaJobInput};
+    use revaer_data::media::jobs::{ClaimedMediaJobRow, EnqueueDiscoveredMediaJobInput};
     use revaer_data::media::profiles::{UpdateMediaProfileInput, UpsertMediaProfileInput};
     use revaer_events::{Event as CoreEvent, EventBus};
     use revaer_media_core::classify::SemanticRole;
@@ -5343,7 +5393,6 @@ mod tests {
         let output_path = output_root.join("movie.mkv");
         let input_root_text = input_root.to_string_lossy().to_string();
         let output_root_text = output_root.to_string_lossy().to_string();
-        let source_path_text = source_path.to_string_lossy().to_string();
         let output_path_text = output_path.to_string_lossy().to_string();
         fs::write(&source_path, b"source")?;
 
@@ -5384,15 +5433,15 @@ mod tests {
                 })
                 .await?;
         }
-        let job_id = store
-            .create_job(&CreateMediaJobInput {
-                actor_public_id: actor,
-                media_profile_public_id: profile_id,
-                source_path: &source_path_text,
-                output_path: Some(&output_path_text),
-                dry_run,
-            })
-            .await?;
+        let job_id = enqueue_runtime_test_job(
+            &store,
+            actor,
+            profile_id,
+            &source_path,
+            &input_root,
+            &output_path_text,
+        )
+        .await?;
         if record_capability {
             record_runtime_capability(&store, actor).await?;
         }
@@ -5417,6 +5466,35 @@ mod tests {
             telemetry,
             command_runner,
         }))
+    }
+
+    async fn enqueue_runtime_test_job(
+        store: &MediaStore,
+        actor: Uuid,
+        profile_id: Uuid,
+        source_path: &Path,
+        source_root: &Path,
+        output_path: &str,
+    ) -> anyhow::Result<Uuid> {
+        let fingerprint =
+            crate::media_source_fingerprint::fingerprint_media_file(source_path, source_root)?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("media runtime test source fingerprint was unstable")
+                })?;
+        store
+            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
+                actor_public_id: actor,
+                media_profile_public_id: profile_id,
+                source_path: &source_path.to_string_lossy(),
+                output_path: Some(output_path),
+                source_identity: &fingerprint.identity,
+                source_size_bytes: fingerprint.size_bytes,
+                source_modified_ns: fingerprint.modified_ns,
+                source_changed_ns: fingerprint.changed_ns,
+                source_sha256: &fingerprint.sha256,
+            })
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("media runtime test job should be queued"))
     }
 
     fn test_runtime(
@@ -7831,9 +7909,11 @@ Integrated loudness:
             dry_run,
             source_root: source_root.to_string(),
             output_root: output_root.to_string(),
-            discovery_source_size_bytes: None,
-            discovery_source_modified_ns: None,
-            discovery_source_sha256: None,
+            source_identity: "0000000000000001:0000000000000001".to_string(),
+            source_size_bytes: 1,
+            source_modified_ns: 1,
+            source_changed_ns: 1,
+            source_sha256: "1".repeat(64),
             compatibility_target_key: None,
             policy_key: "safe_dry_run".to_string(),
             target_video_codec: None,

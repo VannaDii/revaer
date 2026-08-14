@@ -661,7 +661,8 @@ mod tests {
     };
     use crate::config::factory_reset;
     use crate::media::jobs::{
-        CreateMediaJobInput, create_media_job, list_media_job_desired_target_streams,
+        EnqueueDiscoveredMediaJobInput, enqueue_discovered_media_job,
+        list_media_job_desired_target_streams,
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::{MediaTestDb, setup_media_db};
@@ -1061,17 +1062,7 @@ mod tests {
             Some(2),
         )
         .await?;
-        let job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: actor,
-                media_profile_public_id: profile_id,
-                source_path: "/input/target-snapshot/movie.mkv",
-                output_path: Some("/output/target-snapshot/movie.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
+        let job_id = create_target_snapshot_job(&db, actor, profile_id).await?;
         let job_streams = list_media_job_desired_target_streams(db.pool(), job_id).await?;
         assert_job_desired_target_stream_snapshot(&job_streams);
 
@@ -1109,6 +1100,29 @@ mod tests {
         .await;
         assert!(immutable_write.is_err());
         Ok(())
+    }
+
+    async fn create_target_snapshot_job(
+        db: &MediaTestDb,
+        actor: Uuid,
+        profile_id: Uuid,
+    ) -> anyhow::Result<Uuid> {
+        enqueue_discovered_media_job(
+            db.pool(),
+            &EnqueueDiscoveredMediaJobInput {
+                actor_public_id: actor,
+                media_profile_public_id: profile_id,
+                source_path: "/input/target-snapshot/movie.mkv",
+                output_path: Some("/output/target-snapshot/movie.mkv"),
+                source_identity: "0000000000000001:0000000000000001",
+                source_size_bytes: 100,
+                source_modified_ns: 100,
+                source_changed_ns: 100,
+                source_sha256: &"1".repeat(64),
+            },
+        )
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("target snapshot job should be queued"))
     }
 
     #[tokio::test]
