@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 import dotenv from 'dotenv';
-import path from 'path';
+import path from 'node:path';
 
 const envDir = path.resolve(process.env.E2E_ENV_DIR ?? __dirname);
 const testResultsDir = path.join(envDir, 'test-results');
@@ -34,6 +34,7 @@ const screenshot =
   (process.env.E2E_SCREENSHOT as ScreenshotMode | undefined) ?? 'only-on-failure';
 
 const browsers = parseBrowserList(process.env.E2E_BROWSERS);
+const chromiumChannel = trimmedValue(process.env.E2E_BROWSER_CHANNEL);
 
 export default defineConfig({
   testDir: './specs',
@@ -96,7 +97,7 @@ export default defineConfig({
       name: `ui-${name}`,
       dependencies: ['api-api-key'],
       testMatch: /ui\/.*\.spec\.(ts|js)/,
-      use: { browserName: name },
+      use: browserUseOptions(name, chromiumChannel),
       workers: uiWorkers,
       metadata: {
         authMode: 'api_key',
@@ -122,6 +123,21 @@ function parseBrowserList(value: string | undefined): BrowserName[] {
     valid.has(name as BrowserName),
   );
   return results.length > 0 ? results : ['chromium'];
+}
+
+function browserUseOptions(
+  name: BrowserName,
+  chromiumChannel: string | undefined,
+): { browserName: BrowserName; channel?: string } {
+  if (name === 'chromium' && chromiumChannel) {
+    return { browserName: name, channel: chromiumChannel };
+  }
+  return { browserName: name };
+}
+
+function trimmedValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
 }
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {

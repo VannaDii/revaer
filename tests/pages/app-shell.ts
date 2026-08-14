@@ -21,6 +21,7 @@ export class AppShell {
     await this.page.locator('#layout-sidebar').getByRole('link', { name: label }).click();
     const routeMap: Record<string, string> = {
       Dashboard: '/',
+      Media: '/media',
       Torrents: '/torrents',
       Settings: '/settings',
       Logs: '/logs',
