@@ -14,7 +14,7 @@ pub(super) struct FfprobeOutput {
 pub(super) struct FfprobeStream {
     pub(super) index: u32,
     pub(super) codec_type: String,
-    pub(super) codec_name: String,
+    pub(super) codec_name: Option<String>,
     pub(super) channels: Option<u32>,
     pub(super) channel_layout: Option<String>,
     pub(super) disposition: Option<FfprobeDisposition>,
