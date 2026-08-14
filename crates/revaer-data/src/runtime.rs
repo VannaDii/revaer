@@ -57,10 +57,7 @@ impl RuntimeStore {
     ///
     /// Returns an error if schema initialization fails or the database is unreachable.
     pub async fn new(pool: PgPool) -> Result<Self> {
-        sqlx::migrate!("./init")
-            .run(&pool)
-            .await
-            .map_err(|source| DataError::MigrationFailed { source })?;
+        crate::config::initialize_schema(&pool).await?;
         Ok(Self { pool })
     }
 

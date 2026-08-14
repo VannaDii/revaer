@@ -5,7 +5,7 @@ use super::{
     StdMediaRootIdentityResolver, jobs::EnqueueDiscoveredMediaJobInput,
     jobs::enqueue_discovered_media_job,
 };
-use crate::config::run_migrations;
+use crate::config::initialize_schema;
 use chrono::{DateTime, Duration, Utc};
 use revaer_test_support::postgres::{TestDatabase, start_postgres};
 use sqlx::postgres::PgPoolOptions;
@@ -45,7 +45,7 @@ async fn setup_db(test_name: &str) -> anyhow::Result<Option<TestDb>> {
         .max_connections(8)
         .connect(database.connection_string())
         .await?;
-    run_migrations(&pool).await?;
+    initialize_schema(&pool).await?;
     Ok(Some(TestDb {
         _database: database,
         pool,

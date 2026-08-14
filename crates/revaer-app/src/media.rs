@@ -4260,8 +4260,7 @@ mod tests {
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let migrator = sqlx::migrate!("../revaer-data/init");
-        migrator.run(&pool).await?;
+        revaer_data::config::initialize_schema(&pool).await?;
 
         let store = MediaStore::new(pool);
         let email = format!("media-app-{}@example.invalid", Uuid::new_v4());

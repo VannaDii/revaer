@@ -142,23 +142,23 @@ pub struct ConfigService {
 }
 
 impl ConfigService {
-    /// Establish a connection pool and ensure migrations are applied.
+    /// Establish a connection pool and ensure the v0 schema is initialized.
     ///
     /// # Errors
     ///
     /// Returns an error if the `PostgreSQL` connection cannot be established or
-    /// migrations fail to run.
+    /// schema initialization fails.
     #[instrument(name = "config_service.new", skip(database_url))]
     pub async fn new(database_url: impl Into<String>) -> ConfigResult<Self> {
         Self::new_with_session(database_url, None).await
     }
 
-    /// Establish a connection pool and ensure migrations are applied with session settings.
+    /// Establish a connection pool and initialize the v0 schema with session settings.
     ///
     /// # Errors
     ///
     /// Returns an error if the `PostgreSQL` connection cannot be established or
-    /// migrations fail to run.
+    /// schema initialization fails.
     #[instrument(
         name = "config_service.new_with_session",
         skip(database_url, session_config)
@@ -175,14 +175,14 @@ impl ConfigService {
             }
             None => None,
         };
-        let migrator_pool = PgPoolOptions::new()
+        let initializer_pool = PgPoolOptions::new()
             .max_connections(1)
             .acquire_timeout(Duration::from_secs(10))
             .connect(&database_url)
             .await
-            .map_err(map_sqlx_err("config.connect.migrations"))?;
+            .map_err(map_sqlx_err("config.connect.initializer"))?;
 
-        apply_migrations(&migrator_pool).await?;
+        apply_schema_initializer(&initializer_pool).await?;
 
         let pool = PgPoolOptions::new()
             .max_connections(8)
@@ -841,11 +841,11 @@ fn factory_reset_retry_delay(attempt: u8, sqlstate: Option<&str>) -> Option<Dura
     Some(FACTORY_RESET_RETRY_BASE_DELAY.saturating_mul(u32::from(attempt)))
 }
 
-async fn apply_migrations(pool: &sqlx::PgPool) -> Result<()> {
-    data_config::run_migrations(pool)
+async fn apply_schema_initializer(pool: &sqlx::PgPool) -> Result<()> {
+    data_config::initialize_schema(pool)
         .await
         .map_err(|source| ConfigError::DataAccess {
-            operation: "config.migrations",
+            operation: "config.initialize_schema",
             source,
         })?;
     Ok(())

@@ -1,16 +1,16 @@
 
 
 
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', 'public', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
+SET LOCAL statement_timeout = 0;
+SET LOCAL lock_timeout = 0;
+SET LOCAL idle_in_transaction_session_timeout = 0;
+SET LOCAL client_encoding = 'UTF8';
+SET LOCAL standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', 'public', true);
+SET LOCAL check_function_bodies = false;
+SET LOCAL xmloption = content;
+SET LOCAL client_min_messages = warning;
+SET LOCAL row_security = off;
 
 
 CREATE SCHEMA revaer_config;
@@ -33557,22 +33557,34 @@ CREATE FUNCTION revaer_config.factory_reset_without_media_defaults_v1() RETURNS 
 DECLARE
     base_rate_limit_message CONSTANT text := 'Failed to seed rate limit policies';
     errcode CONSTANT text := 'P0001';
-    rec RECORD;
+    actual_registry_digest text;
+    expected_registry_digest text;
+    reset_targets text;
 BEGIN
     PERFORM set_config('lock_timeout', '5s', true);
 
-    FOR rec IN
-        SELECT schemaname, tablename
-        FROM pg_tables
-        WHERE schemaname IN ('public', 'revaer_runtime')
-          AND tablename <> '_sqlx_migrations'
-    LOOP
-        EXECUTE format(
-            'TRUNCATE TABLE %I.%I RESTART IDENTITY CASCADE',
-            rec.schemaname,
-            rec.tablename
-        );
-    END LOOP;
+    SELECT encode(public.digest(COALESCE(string_agg(schema_name || '.' || table_name, E'\n' ORDER BY schema_name, table_name), ''), 'sha256'), 'hex')
+    INTO actual_registry_digest
+    FROM public.revaer_schema_table;
+
+    SELECT registry_digest
+    INTO expected_registry_digest
+    FROM public.revaer_schema_state
+    WHERE baseline = 'v0-2026-08-12.2';
+
+    IF actual_registry_digest IS DISTINCT FROM expected_registry_digest THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = 'Schema table registry integrity check failed';
+    END IF;
+
+    SELECT string_agg(format('%I.%I', schema_name, table_name), ', ' ORDER BY schema_name, table_name)
+    INTO reset_targets
+    FROM public.revaer_schema_table;
+
+    IF reset_targets IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = errcode, MESSAGE = 'Schema table registry is empty';
+    END IF;
+
+    EXECUTE 'TRUNCATE TABLE ' || reset_targets || ' RESTART IDENTITY';
 
     INSERT INTO public.settings_revision (id, revision)
     VALUES (1, 0)
@@ -35519,9 +35531,9 @@ END;
 $$;
 
 
-SET default_tablespace = '';
+SET LOCAL default_tablespace = '';
 
-SET default_table_access_method = heap;
+SET LOCAL default_table_access_method = heap;
 
 
 CREATE TABLE public.acquisition_attempt (
@@ -39943,16 +39955,16 @@ ALTER TABLE ONLY revaer_runtime.fs_jobs ALTER COLUMN id SET DEFAULT nextval('rev
 
 
 
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', 'public', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
+SET LOCAL statement_timeout = 0;
+SET LOCAL lock_timeout = 0;
+SET LOCAL idle_in_transaction_session_timeout = 0;
+SET LOCAL client_encoding = 'UTF8';
+SET LOCAL standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', 'public', true);
+SET LOCAL check_function_bodies = false;
+SET LOCAL xmloption = content;
+SET LOCAL client_min_messages = warning;
+SET LOCAL row_security = off;
 
 
 INSERT INTO public.app_profile (id, version, mode, auth_mode, instance_name, http_port, bind_addr, telemetry_level, telemetry_format, telemetry_otel_enabled, telemetry_otel_service_name, telemetry_otel_endpoint, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000001', 0, 'setup', 'api_key', 'revaer', 7070, '127.0.0.1', NULL, NULL, NULL, NULL, NULL, '2026-08-12 17:23:32.744686+00', '2026-08-12 17:23:32.744686+00');
@@ -40253,18 +40265,18 @@ SELECT pg_catalog.setval('public.trust_tier_trust_tier_id_seq', 4, true);
 
 
 
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', 'public', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
+SET LOCAL statement_timeout = 0;
+SET LOCAL lock_timeout = 0;
+SET LOCAL idle_in_transaction_session_timeout = 0;
+SET LOCAL client_encoding = 'UTF8';
+SET LOCAL standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', 'public', true);
+SET LOCAL check_function_bodies = false;
+SET LOCAL xmloption = content;
+SET LOCAL client_min_messages = warning;
+SET LOCAL row_security = off;
 
-SET default_tablespace = '';
+SET LOCAL default_tablespace = '';
 
 
 ALTER TABLE ONLY public.acquisition_attempt
@@ -43692,3 +43704,49 @@ ALTER TABLE ONLY revaer_runtime.fs_jobs
 ALTER TABLE ONLY revaer_runtime.torrent_files
     ADD CONSTRAINT torrent_files_torrent_id_fkey FOREIGN KEY (torrent_id) REFERENCES revaer_runtime.torrents(torrent_id) ON DELETE CASCADE;
 
+
+CREATE TABLE public.revaer_schema_state (
+    baseline text PRIMARY KEY,
+    source_digest text NOT NULL,
+    catalog_digest text NOT NULL,
+    registry_digest text NOT NULL,
+    initialized_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revaer_schema_state_baseline_check CHECK (baseline = 'v0-2026-08-12.2')
+);
+
+
+CREATE TABLE public.revaer_schema_table (
+    schema_name name NOT NULL,
+    table_name name NOT NULL,
+    PRIMARY KEY (schema_name, table_name)
+);
+
+
+CREATE FUNCTION public.revaer_schema_mark_initialized(
+    _baseline text,
+    _source_digest text,
+    _catalog_digest text,
+    _registry_digest text
+) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    INSERT INTO public.revaer_schema_state (baseline, source_digest, catalog_digest, registry_digest)
+    VALUES (_baseline, _source_digest, _catalog_digest, _registry_digest);
+$$;
+
+
+INSERT INTO public.revaer_schema_table (schema_name, table_name)
+SELECT namespace.nspname, relation.relname
+FROM pg_catalog.pg_class AS relation
+JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+WHERE namespace.nspname IN ('public', 'revaer_runtime')
+  AND relation.relkind IN ('r', 'p')
+  AND relation.relname NOT IN ('revaer_schema_state', 'revaer_schema_table')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM pg_catalog.pg_depend AS dependency
+      WHERE dependency.classid = 'pg_catalog.pg_class'::regclass
+        AND dependency.objid = relation.oid
+        AND dependency.deptype = 'e'
+  );

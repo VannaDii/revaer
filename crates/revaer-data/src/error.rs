@@ -17,11 +17,24 @@ pub(crate) fn try_op(operation: &'static str) -> impl FnOnce(sqlx::Error) -> Dat
 /// Errors raised by the data access layer.
 #[derive(Debug)]
 pub enum DataError {
-    /// Migration execution failed.
-    MigrationFailed {
-        /// Underlying migration error.
-        source: sqlx::migrate::MigrateError,
+    /// Schema initialization failed.
+    InitializationFailed {
+        /// Underlying database error.
+        source: sqlx::Error,
     },
+    /// Authored schema objects exist without the required baseline marker.
+    SchemaBaselineMissing,
+    /// The schema marker does not identify the supported baseline.
+    SchemaBaselineMismatch {
+        /// Baseline value read from the marker table, if one exists.
+        baseline: Option<String>,
+    },
+    /// The baseline marker exists but required v0 schema objects do not.
+    SchemaBaselineIncomplete,
+    /// The initializer source does not match the installed v0 baseline.
+    SchemaSourceMismatch,
+    /// The installed catalog no longer matches the initialized v0 baseline.
+    SchemaCatalogMismatch,
     /// A database operation failed.
     QueryFailed {
         /// Operation identifier.
@@ -82,7 +95,19 @@ impl DataError {
 impl Display for DataError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MigrationFailed { .. } => formatter.write_str("migration failed"),
+            Self::InitializationFailed { .. } => {
+                formatter.write_str("schema initialization failed")
+            }
+            Self::SchemaBaselineMissing => formatter.write_str("schema baseline marker is missing"),
+            Self::SchemaBaselineMismatch { .. } => {
+                formatter.write_str("schema baseline is unsupported")
+            }
+            Self::SchemaBaselineIncomplete => formatter.write_str("schema baseline is incomplete"),
+            Self::SchemaSourceMismatch => formatter
+                .write_str("schema initializer source does not match the installed baseline"),
+            Self::SchemaCatalogMismatch => {
+                formatter.write_str("database catalog does not match the installed baseline")
+            }
             Self::QueryFailed { .. } => formatter.write_str("database operation failed"),
             Self::JobFailed { .. } => formatter.write_str("job run failed"),
             Self::PathNotUtf8 { .. } => formatter.write_str("path contained invalid utf-8"),
@@ -93,9 +118,16 @@ impl Display for DataError {
 impl Error for DataError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::MigrationFailed { source } => Some(source),
-            Self::QueryFailed { source, .. } => Some(source),
-            Self::JobFailed { .. } | Self::PathNotUtf8 { .. } => None,
+            Self::InitializationFailed { source } | Self::QueryFailed { source, .. } => {
+                Some(source)
+            }
+            Self::SchemaBaselineMissing
+            | Self::SchemaBaselineMismatch { .. }
+            | Self::SchemaBaselineIncomplete
+            | Self::SchemaSourceMismatch
+            | Self::SchemaCatalogMismatch
+            | Self::JobFailed { .. }
+            | Self::PathNotUtf8 { .. } => None,
         }
     }
 }
@@ -115,11 +147,39 @@ mod tests {
 
     #[test]
     fn data_error_display_and_source() {
-        let migration = DataError::MigrationFailed {
-            source: sqlx::migrate::MigrateError::VersionMissing(1),
+        let initialization = DataError::InitializationFailed {
+            source: sqlx::Error::RowNotFound,
         };
-        assert_eq!(migration.to_string(), "migration failed");
-        assert!(migration.source().is_some());
+        assert_eq!(initialization.to_string(), "schema initialization failed");
+        assert!(initialization.source().is_some());
+
+        let missing = DataError::SchemaBaselineMissing;
+        assert_eq!(missing.to_string(), "schema baseline marker is missing");
+        assert!(missing.source().is_none());
+
+        let mismatch = DataError::SchemaBaselineMismatch {
+            baseline: Some("future".to_string()),
+        };
+        assert_eq!(mismatch.to_string(), "schema baseline is unsupported");
+        assert!(mismatch.source().is_none());
+
+        let incomplete = DataError::SchemaBaselineIncomplete;
+        assert_eq!(incomplete.to_string(), "schema baseline is incomplete");
+        assert!(incomplete.source().is_none());
+
+        let source_mismatch = DataError::SchemaSourceMismatch;
+        assert_eq!(
+            source_mismatch.to_string(),
+            "schema initializer source does not match the installed baseline"
+        );
+        assert!(source_mismatch.source().is_none());
+
+        let catalog_mismatch = DataError::SchemaCatalogMismatch;
+        assert_eq!(
+            catalog_mismatch.to_string(),
+            "database catalog does not match the installed baseline"
+        );
+        assert!(catalog_mismatch.source().is_none());
 
         let query = DataError::QueryFailed {
             operation: "fetch",

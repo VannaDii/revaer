@@ -8,6 +8,10 @@ inputs:
     description: Rust components to install (comma-separated).
     required: false
     default: ""
+  targets:
+    description: Rust compilation targets to install (comma-separated).
+    required: false
+    default: ""
   apt-packages:
     description: Apt packages to install (whitespace-separated; spaces, tabs, and newlines allowed).
     required: false
@@ -85,6 +89,7 @@ runs:
       with:
         toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
+        targets: ${{ inputs.targets }}
 
     - name: Install just
       uses: taiki-e/install-action@cf39a74df4a72510be4e5b63348d61067f11e64a # v2.75.0
@@ -154,6 +159,7 @@ runs:
                 zlib1g-dev
                 libdw-dev
                 libiberty-dev
+                ffmpeg
               )
               ;;
             "")

@@ -139,6 +139,51 @@ run_image_case() {
   fi
 }
 
+run_repository_case() {
+  local expectation="$1"
+  local mutation="$2"
+  local case_root="${test_root}/repository-${mutation}"
+  mkdir -p "${case_root}/workflows" "${case_root}/actions" "${case_root}/just"
+  cp "${repo_root}/.github/workflows/pr.yml" "${case_root}/workflows/pr.yml"
+  cp "${repo_root}/.github/workflows/sonar.yml" "${case_root}/workflows/sonar.yml"
+  cp -R "${repo_root}/.github/actions/." "${case_root}/actions/"
+  cp "${repo_root}/sonar-project.properties" "${case_root}/sonar-project.properties"
+  cp "${repo_root}/justfile" "${case_root}/justfile"
+  cp "${repo_root}/just/quality.just" "${case_root}/just/quality.just"
+
+  case "${mutation}" in
+    valid) ;;
+    missing-ui-target)
+      ruby -ni -e 'print unless /targets: wasm32-unknown-unknown/' "${case_root}/workflows/pr.yml"
+      ;;
+    missing-coverage-ffmpeg)
+      ruby -ni -e 'print unless /^\s+ffmpeg\s*$/' "${case_root}/actions/setup-revaer/action.yml"
+      ;;
+    *)
+      printf 'Unknown repository workflow mutation: %s\n' "${mutation}" >&2
+      exit 1
+      ;;
+  esac
+
+  command=(
+    ruby "${repo_root}/scripts/workflow-structure-guardrails.rb"
+    --workflows "${case_root}/workflows"
+    --actions "${case_root}/actions"
+    --sonar "${case_root}/sonar-project.properties"
+    --justfile "${case_root}/justfile"
+  )
+  if "${command[@]}" >"${case_root}/stdout" 2>"${case_root}/stderr"; then
+    if [[ "${expectation}" != pass ]]; then
+      printf 'Expected repository workflow guardrail failure for %s\n' "${mutation}" >&2
+      exit 1
+    fi
+  elif [[ "${expectation}" = pass ]]; then
+    printf 'Expected repository workflow guardrail success for %s\n' "${mutation}" >&2
+    cat "${case_root}/stderr" >&2
+    exit 1
+  fi
+}
+
 run_case pass valid.yml
 run_case pass decoys.yml
 run_case pass postgres-credentials.yml
@@ -178,6 +223,9 @@ run_case fail valid.yml invalid-unicode-value
 run_image_case pass valid
 run_image_case fail mutable-tag
 run_image_case fail conditional-sarif
+run_repository_case pass valid
+run_repository_case fail missing-ui-target
+run_repository_case fail missing-coverage-ffmpeg
 run_image_case fail missing-build-steps
 run_image_case fail reordered-steps
 run_image_case fail missing-build-digest

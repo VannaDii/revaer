@@ -44,11 +44,12 @@ jobs:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           node-version: 24.14.1
           apt-profile: coverage
+          targets: wasm32-unknown-unknown
 
-      - name: Run migrations
+      - name: Initialize schema
         env:
           DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}
-        run: just db-migrate
+        run: just db-init
 
       - name: Build combined LCOV report
         run: just cov

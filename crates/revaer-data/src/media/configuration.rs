@@ -1009,13 +1009,13 @@ mod tests {
     }
 
     #[test]
-    fn migration_guards_constant_query_bounded_target_graph() {
-        let migration = include_str!("../../init/0001_init.sql");
-        assert!(migration.contains("media_desired_target_graph_page_v3(limit_input integer)"));
-        assert!(migration.contains("media_desired_target_list_v4()"));
-        assert!(migration.contains("media_desired_target_stream_list_v8("));
-        assert!(migration.contains("limit_input > 128"));
-        assert!(migration.contains("LIMIT 1025"));
+    fn schema_guards_constant_query_bounded_target_graph() {
+        let schema = include_str!("../../init.sql");
+        assert!(schema.contains("media_desired_target_graph_page_v3(limit_input integer)"));
+        assert!(schema.contains("media_desired_target_list_v4()"));
+        assert!(schema.contains("media_desired_target_stream_list_v8("));
+        assert!(schema.contains("limit_input > 128"));
+        assert!(schema.contains("LIMIT 1025"));
     }
 
     #[tokio::test]

@@ -8,10 +8,10 @@ use revaer_data::config::{
     delete_api_key, delete_secret, factory_reset, fetch_active_setup_token, fetch_api_key_auth,
     fetch_api_key_hash, fetch_api_keys, fetch_app_label_policies, fetch_app_profile_row,
     fetch_engine_profile_row, fetch_fs_policy_row, fetch_revision, fetch_secret_by_name,
-    insert_api_key, insert_setup_token, invalidate_active_setup_tokens, mark_setup_token_consumed,
-    replace_app_label_policies, run_migrations, set_engine_alt_speed, set_engine_ip_filter,
-    set_engine_list_values, set_peer_classes, set_tracker_config, update_api_key_enabled,
-    update_api_key_expires_at, update_api_key_hash, update_api_key_label,
+    initialize_schema, insert_api_key, insert_setup_token, invalidate_active_setup_tokens,
+    mark_setup_token_consumed, replace_app_label_policies, set_engine_alt_speed,
+    set_engine_ip_filter, set_engine_list_values, set_peer_classes, set_tracker_config,
+    update_api_key_enabled, update_api_key_expires_at, update_api_key_hash, update_api_key_label,
     update_api_key_rate_limit, update_app_auth_mode, update_app_bind_addr, update_app_http_port,
     update_app_immutable_keys, update_app_instance_name, update_app_local_networks,
     update_app_mode, update_app_telemetry, update_engine_profile, update_fs_array_field,
@@ -68,20 +68,27 @@ fn engine_update_from_row(row: &EngineProfileRow) -> EngineProfileUpdate<'_> {
 }
 
 #[tokio::test]
+async fn schema_initializer_is_idempotent_for_the_exact_v0_revision() -> anyhow::Result<()> {
+    let postgres = start_postgres()?;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(postgres.connection_string())
+        .await?;
+
+    initialize_schema(&pool).await?;
+    initialize_schema(&pool).await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn config_wrappers_round_trip() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_wrappers_round_trip: {err}");
-            return Ok(());
-        }
-    };
+    let postgres = start_postgres()?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
         .await?;
 
-    run_migrations(&pool).await?;
+    initialize_schema(&pool).await?;
 
     let app_id = Uuid::parse_str(APP_PROFILE_ID)?;
     let engine_id = Uuid::parse_str(ENGINE_PROFILE_ID)?;
@@ -308,21 +315,13 @@ async fn config_wrappers_round_trip() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn config_factory_reset_clears_auth_material_and_restores_defaults() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!(
-                "skipping config_factory_reset_clears_auth_material_and_restores_defaults: {err}"
-            );
-            return Ok(());
-        }
-    };
+    let postgres = start_postgres()?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
         .await?;
 
-    run_migrations(&pool).await?;
+    initialize_schema(&pool).await?;
 
     let app_id = Uuid::parse_str(APP_PROFILE_ID)?;
     let baseline_app = fetch_app_profile_row(&pool, app_id).await?;
@@ -355,27 +354,18 @@ async fn config_factory_reset_clears_auth_material_and_restores_defaults() -> an
     assert_eq!(fs_row.library_root, baseline_fs.library_root);
     assert!(fetch_secret_by_name(&pool, "reset-secret").await?.is_none());
     assert!(fetch_api_keys(&pool).await?.is_empty());
-
     Ok(())
 }
 
 #[tokio::test]
 async fn config_setup_token_and_api_key_helpers_track_state_transitions() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!(
-                "skipping config_setup_token_and_api_key_helpers_track_state_transitions: {err}"
-            );
-            return Ok(());
-        }
-    };
+    let postgres = start_postgres()?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
         .await?;
 
-    run_migrations(&pool).await?;
+    initialize_schema(&pool).await?;
 
     insert_setup_token(
         &pool,
@@ -468,19 +458,13 @@ async fn config_setup_token_and_api_key_helpers_track_state_transitions() -> any
 
 #[tokio::test]
 async fn config_fs_and_tracker_helpers_round_trip_full_state() -> anyhow::Result<()> {
-    let postgres = match start_postgres() {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping config_fs_and_tracker_helpers_round_trip_full_state: {err}");
-            return Ok(());
-        }
-    };
+    let postgres = start_postgres()?;
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(postgres.connection_string())
         .await?;
 
-    run_migrations(&pool).await?;
+    initialize_schema(&pool).await?;
 
     let engine_id = Uuid::parse_str(ENGINE_PROFILE_ID)?;
     let fs_id = Uuid::parse_str(FS_POLICY_ID)?;

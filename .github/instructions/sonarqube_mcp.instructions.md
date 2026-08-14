@@ -24,7 +24,7 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 # Revaer Sonar Workflow
 
 - Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope, use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`, and keep source, test, coverage, duplication, JavaScript, SCA, and issue-scope filters explicitly empty.
-- PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
+- PostgreSQL schema scripts and post-v1 migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
 - Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.
 - `sonar.coverageReportPaths` must consume the generic report emitted by `just script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action and Ruby line/branch execution data, retain uncovered executable lines, include both covered and uncovered records, and fail closed when either language is absent.
 - Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.

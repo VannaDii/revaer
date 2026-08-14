@@ -3,6 +3,7 @@ applyTo:
   - "crates/revaer-data/**"
   - "crates/**/init/**"
   - "crates/**/migrations/**"
+  - "crates/revaer-data/init.sql"
   - "scripts/dev-seed.sql"
 ---
 
@@ -19,7 +20,7 @@ applyTo:
 
 # Schema Lifecycle Rules
 
-- Before the first stable v1 release, `crates/revaer-data/init/0001_init.sql` is the only active schema file. Every persisted-state change updates that deterministic clean-install script directly; incremental migration files are prohibited.
+- Before the first stable v1 release, `crates/revaer-data/init.sql` is the only active schema file. Every persisted-state change updates that deterministic clean-install script directly; versioned migration files and migration-runner bookkeeping are prohibited.
 - The v1 release establishes the durable baseline. Only changes after that baseline may add sequential, deterministic migrations that are safe to replay from the released v1 schema.
 - The initialization script and post-v1 migrations must pin authored routine search paths, remain deterministic, and fail closed in clean environments.
 - If the runtime behavior changes, update the stored procedure layer and the Rust caller in the same change.
