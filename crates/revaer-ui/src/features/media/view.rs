@@ -1,9 +1,9 @@
 use crate::app::api::ApiCtx;
 use crate::features::media::api::{
-    apply_yaml, create_profile, export_yaml, fetch_compatibility_targets, fetch_compliance,
-    fetch_job_diagnostics, fetch_latest_capability, fetch_policies, fetch_profiles,
-    fetch_readiness, fetch_recent_jobs, patch_profile, preview_discovery, refresh_capability,
-    upsert_compatibility_target, upsert_policy, validate_yaml,
+    apply_yaml, create_media_job, create_profile, export_yaml, fetch_compatibility_targets,
+    fetch_compliance, fetch_job_diagnostics, fetch_latest_capability, fetch_policies,
+    fetch_profiles, fetch_readiness, fetch_recent_jobs, patch_profile, preview_discovery,
+    refresh_capability, upsert_compatibility_target, upsert_policy, validate_yaml,
 };
 use crate::features::media::logic::{
     parse_retention_days_input, parse_schedule_interval_input, summarize_media_job_diagnostics,
@@ -15,11 +15,12 @@ use crate::features::media::state::{
 use crate::models::{
     MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
     MediaDiscoveryPreviewItemResponse, MediaDiscoveryPreviewRequest, MediaJobArtifactResponse,
-    MediaJobCompactAuditResponse, MediaJobOperationResponse, MediaJobPlanReasonResponse,
-    MediaJobVerificationCheckResponse, MediaJobViolationResponse, MediaPolicyResponse,
-    MediaPolicyUpsertRequest, MediaProfilePatchRequest, MediaProfileResponse,
-    MediaProfileUpsertRequest,
+    MediaJobCompactAuditResponse, MediaJobCreateRequest, MediaJobOperationResponse,
+    MediaJobPlanReasonResponse, MediaJobResponse, MediaJobVerificationCheckResponse,
+    MediaJobViolationResponse, MediaPolicyResponse, MediaPolicyUpsertRequest,
+    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
 };
+use crate::services::api::ApiClient;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -142,6 +143,7 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
     let schedule_enabled = use_state(|| false);
     let schedule_interval_minutes = use_state(String::new);
     let discovery_source_path = use_state(String::new);
+    let manual_replace_confirmation = use_state(String::new);
 
     let toasts = ToastCallbacks {
         success: props.on_success_toast.clone(),
@@ -555,6 +557,16 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
             );
         })
     };
+    let on_manual_replace_confirmation_input = {
+        let manual_replace_confirmation = manual_replace_confirmation.clone();
+        Callback::from(move |event: InputEvent| {
+            manual_replace_confirmation.set(
+                event
+                    .target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .value(),
+            );
+        })
+    };
 
     let on_save_target = build_save_target_callback(
         api.clone(),
@@ -601,6 +613,12 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
         state.clone(),
         profile_form.discovery_source_path.clone(),
         toasts.clone(),
+    );
+    let on_create_media_job = build_create_media_job_callback(
+        api.clone(),
+        manual_replace_confirmation.clone(),
+        toasts.clone(),
+        on_refresh.clone(),
     );
 
     let readiness = display_readiness(&state);
@@ -779,6 +797,7 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                             </select>
                             <input class="input input-bordered input-sm" placeholder="schedule_interval_minutes" value={(*schedule_interval_minutes).clone()} oninput={on_schedule_interval_input} />
                             <input class="input input-bordered input-sm" placeholder="discovery_source_path" value={(*discovery_source_path).clone()} oninput={on_discovery_source_path_input} />
+                            <input class="input input-bordered input-sm" placeholder="replace" value={(*manual_replace_confirmation).clone()} oninput={on_manual_replace_confirmation_input} />
                             <label class="label cursor-pointer gap-2 justify-start">
                                 <input type="checkbox" class="checkbox checkbox-sm" checked={*dry_run_only} onchange={on_dry_run_change} />
                                 <span class="label-text">{"Dry run only"}</span>
@@ -850,7 +869,19 @@ pub(crate) fn media_page(props: &MediaPageProps) -> Html {
                         } else {
                             html! {
                                 <ul class="text-sm space-y-1" data-testid="media-discovery-preview">
-                                    {for state.discovery_preview.iter().map(render_discovery_preview)}
+                                    {if let Some(media_profile_public_id) = state.discovery_preview_profile_id {
+                                        html! {
+                                            {for state.discovery_preview.iter().map(|preview| {
+                                                render_discovery_preview(
+                                                    preview,
+                                                    media_profile_public_id,
+                                                    &on_create_media_job,
+                                                )
+                                            })}
+                                        }
+                                    } else {
+                                        html! {}
+                                    }}
                                 </ul>
                             }
                         }}
@@ -1105,6 +1136,7 @@ fn build_refresh_callback(
                         compatibility_targets: compatibility_targets.targets,
                         policies: policies.policies,
                         yaml_export: current.yaml_export,
+                        discovery_preview_profile_id: current.discovery_preview_profile_id,
                         discovery_preview: current.discovery_preview,
                     });
                 }
@@ -1578,6 +1610,7 @@ fn build_preview_discovery_callback(
                             .count();
                         let total = response.previews.len();
                         let mut next = (*state).clone();
+                        next.discovery_preview_profile_id = Some(media_profile_public_id);
                         next.discovery_preview = response.previews;
                         state.set(next);
                         toasts
@@ -1589,6 +1622,114 @@ fn build_preview_discovery_callback(
             });
         },
     )
+}
+
+fn build_create_media_job_callback(
+    api: Option<ApiCtx>,
+    manual_replace_confirmation: UseStateHandle<String>,
+    toasts: ToastCallbacks,
+    on_refresh: Callback<()>,
+) -> Callback<(uuid::Uuid, String, bool)> {
+    Callback::from(
+        move |(media_profile_public_id, source_path, dry_run): (uuid::Uuid, String, bool)| {
+            let Some(api) = api_context(api.clone(), &toasts.error) else {
+                return;
+            };
+            let replace_confirmation_input =
+                (!dry_run).then(|| (*manual_replace_confirmation).clone());
+            let Some(request) = emit_parse_error(
+                manual_media_job_request(
+                    media_profile_public_id,
+                    source_path,
+                    dry_run,
+                    replace_confirmation_input,
+                ),
+                &toasts.error,
+            ) else {
+                return;
+            };
+            queue_manual_media_job(
+                api.client,
+                request,
+                manual_replace_confirmation.clone(),
+                on_refresh.clone(),
+                toasts.clone(),
+            );
+        },
+    )
+}
+
+fn manual_media_job_request(
+    media_profile_public_id: uuid::Uuid,
+    source_path: String,
+    dry_run: bool,
+    replace_confirmation_input: Option<String>,
+) -> Result<MediaJobCreateRequest, String> {
+    if source_path.trim().is_empty() {
+        return Err("Manual job source path is required".to_string());
+    }
+    let replace_confirmation =
+        manual_job_replace_confirmation(dry_run, replace_confirmation_input)?;
+    Ok(MediaJobCreateRequest {
+        media_profile_public_id,
+        source_path,
+        dry_run: Some(dry_run),
+        replace_confirmation,
+    })
+}
+
+fn manual_job_replace_confirmation(
+    dry_run: bool,
+    confirmation: Option<String>,
+) -> Result<Option<String>, String> {
+    if dry_run {
+        return Ok(None);
+    }
+    match confirmation {
+        Some(value) if value == "replace" => Ok(Some(value)),
+        _ => Err("Type replace exactly before queueing replacement".to_string()),
+    }
+}
+
+fn queue_manual_media_job(
+    client: Rc<ApiClient>,
+    request: MediaJobCreateRequest,
+    manual_replace_confirmation: UseStateHandle<String>,
+    on_refresh: Callback<()>,
+    toasts: ToastCallbacks,
+) {
+    spawn_local(async move {
+        handle_manual_media_job_result(
+            create_media_job(&client, &request).await,
+            &manual_replace_confirmation,
+            &on_refresh,
+            &toasts,
+        );
+    });
+}
+
+fn handle_manual_media_job_result(
+    result: Result<MediaJobResponse, String>,
+    manual_replace_confirmation: &UseStateHandle<String>,
+    on_refresh: &Callback<()>,
+    toasts: &ToastCallbacks,
+) {
+    match result {
+        Ok(job) => {
+            if !job.dry_run {
+                manual_replace_confirmation.set(String::new());
+            }
+            toasts
+                .success
+                .emit(format!("Queued {} media job", manual_job_mode(job.dry_run)));
+            on_refresh.emit(());
+        }
+        Err(error) => toasts.error.emit(error),
+    }
+}
+
+fn manual_job_mode(dry_run: bool) -> &'static str {
+    if dry_run { "dry-run" } else { "replace" }
 }
 
 fn build_job_diagnostics_toggle_callback(
@@ -1735,7 +1876,11 @@ fn render_job_diagnostics_content(load_state: Option<&MediaJobDiagnosticsState>)
     }
 }
 
-fn render_discovery_preview(row: &MediaDiscoveryPreviewItemResponse) -> Html {
+fn render_discovery_preview(
+    row: &MediaDiscoveryPreviewItemResponse,
+    media_profile_public_id: uuid::Uuid,
+    on_create_media_job: &Callback<(uuid::Uuid, String, bool)>,
+) -> Html {
     let outcome = if row.accepted {
         row.output_path
             .as_ref()
@@ -1744,9 +1889,46 @@ fn render_discovery_preview(row: &MediaDiscoveryPreviewItemResponse) -> Html {
     } else {
         row.reason.clone().unwrap_or_else(|| "rejected".to_string())
     };
+    let actions = if row.accepted {
+        let dry_run_source_path = row.source_path.clone();
+        let replace_source_path = row.source_path.clone();
+        let on_create_dry_run_job = on_create_media_job.clone();
+        let on_create_replace_job = on_create_media_job.clone();
+        html! {
+            <>
+                <button
+                    class="btn btn-xs"
+                    onclick={Callback::from(move |_| {
+                        on_create_dry_run_job.emit((
+                            media_profile_public_id,
+                            dry_run_source_path.clone(),
+                            true,
+                        ));
+                    })}
+                >
+                    {"Queue dry-run"}
+                </button>
+                <button
+                    class="btn btn-xs btn-error"
+                    onclick={Callback::from(move |_| {
+                        on_create_replace_job.emit((
+                            media_profile_public_id,
+                            replace_source_path.clone(),
+                            false,
+                        ));
+                    })}
+                >
+                    {"Queue replace"}
+                </button>
+            </>
+        }
+    } else {
+        html! {}
+    };
     html! {
-        <li class="break-all">
-            {format!("{} dry_run={} {}", row.source_path, row.dry_run, outcome)}
+        <li class="flex flex-wrap items-center gap-2">
+            <span class="break-all">{format!("{} dry_run={} {}", row.source_path, row.dry_run, outcome)}</span>
+            {actions}
         </li>
     }
 }
@@ -1844,5 +2026,44 @@ fn render_job_compact_audit(row: &MediaJobCompactAuditResponse) -> Html {
         <li class="break-all">
             {format!("#{} {} - {}", row.audit_index, row.fact_kind, row.fact_text)}
         </li>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{manual_job_replace_confirmation, manual_media_job_request};
+    use uuid::Uuid;
+
+    #[test]
+    fn manual_job_request_requires_source_and_exact_replace_confirmation() {
+        let profile_id = Uuid::new_v4();
+        assert!(manual_media_job_request(profile_id, "  ".to_string(), true, None).is_err());
+        assert!(
+            manual_media_job_request(
+                profile_id,
+                "/library/movie.mkv".to_string(),
+                false,
+                Some(" replace ".to_string()),
+            )
+            .is_err()
+        );
+        let request = manual_media_job_request(
+            profile_id,
+            "/library/movie.mkv".to_string(),
+            false,
+            Some("replace".to_string()),
+        )
+        .expect("exact replacement confirmation should be accepted");
+        assert_eq!(request.media_profile_public_id, profile_id);
+        assert_eq!(request.dry_run, Some(false));
+        assert_eq!(request.replace_confirmation.as_deref(), Some("replace"));
+    }
+
+    #[test]
+    fn dry_run_ignores_replacement_confirmation() {
+        assert_eq!(
+            manual_job_replace_confirmation(true, Some("unexpected".to_string())),
+            Ok(None)
+        );
     }
 }

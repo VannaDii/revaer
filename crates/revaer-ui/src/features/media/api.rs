@@ -6,11 +6,11 @@ use crate::models::{
     MediaCapabilityRefreshResponse, MediaCompatibilityTargetListResponse,
     MediaCompatibilityTargetResponse, MediaCompatibilityTargetUpsertRequest,
     MediaComplianceResponse, MediaDiscoveryPreviewRequest, MediaDiscoveryPreviewResponse,
-    MediaJobDiagnosticsResponse, MediaPolicyListResponse, MediaPolicyResponse,
-    MediaPolicyUpsertRequest, MediaProfileListResponse, MediaProfilePatchRequest,
-    MediaProfileResponse, MediaProfileUpsertRequest, MediaRecentJobPageResponse,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlValidationResponse,
+    MediaJobCreateRequest, MediaJobDiagnosticsResponse, MediaJobResponse, MediaPolicyListResponse,
+    MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileListResponse,
+    MediaProfilePatchRequest, MediaProfileResponse, MediaProfileUpsertRequest,
+    MediaRecentJobPageResponse, MediaYamlApplyResponse, MediaYamlExportResponse,
+    MediaYamlImportRequest, MediaYamlValidationResponse,
 };
 use crate::services::api::ApiClient;
 use uuid::Uuid;
@@ -78,6 +78,16 @@ pub(crate) async fn preview_discovery(
 ) -> Result<MediaDiscoveryPreviewResponse, String> {
     client
         .post_api(media_discovery_preview_path(), request)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+pub(crate) async fn create_media_job(
+    client: &ApiClient,
+    request: &MediaJobCreateRequest,
+) -> Result<MediaJobResponse, String> {
+    client
+        .post_api("/v1/media/jobs", request)
         .await
         .map_err(|err| err.to_string())
 }
