@@ -3066,6 +3066,8 @@ fn video_policy_from_target_snapshot(
             .audio_stream_constraints
             .push(AudioStreamConstraints {
                 stream_id: stream.stream_id,
+                channel_count: target_stream.channels,
+                channel_layout: target_stream.channel_layout.clone(),
                 bitrate_bps: target_stream.audio_bitrate_bps,
                 sample_rate_hz: target_stream.audio_sample_rate_hz,
                 loudness_profile: target_stream.audio_loudness_profile.clone(),
@@ -3676,7 +3678,12 @@ async fn audio_constraints_match_inspection(
                 "missing",
             ));
         };
-        if let Some(mismatch) = audio_constraint_stream_mismatch(constraint, stream) {
+        let graph_stream = inspection
+            .graph
+            .streams
+            .iter()
+            .find(|stream| stream.stream_id == constraint.stream_id);
+        if let Some(mismatch) = audio_constraint_stream_mismatch(constraint, stream, graph_stream) {
             return Ok(mismatch);
         }
         if audio_constraint_requires_measurement(constraint) {
@@ -3736,6 +3743,8 @@ fn expected_audio_constraints(
         consumed_stream_ids.insert(stream.stream_id);
         constraints.push(AudioStreamConstraints {
             stream_id: stream.stream_id,
+            channel_count: target_stream.channels,
+            channel_layout: target_stream.channel_layout.clone(),
             bitrate_bps: target_stream.audio_bitrate_bps,
             sample_rate_hz: target_stream.audio_sample_rate_hz,
             loudness_profile: target_stream.audio_loudness_profile.clone(),
@@ -3763,7 +3772,49 @@ fn audio_target_constraint_unmatched(target_stream: &TargetStream) -> AudioConst
 fn audio_constraint_stream_mismatch(
     constraint: &AudioStreamConstraints,
     stream: &StreamInspection,
+    graph_stream: Option<&MediaStream>,
 ) -> Option<AudioConstraintVerification> {
+    if let Some(expected) = constraint.channel_count {
+        let actual = graph_stream.and_then(|stream| stream.channels);
+        if actual != Some(expected) {
+            let expected_text = expected.to_string();
+            let actual_text =
+                actual.map_or_else(|| "missing".to_string(), |value| value.to_string());
+            return Some(audio_constraint_mismatch(
+                constraint.stream_id,
+                "channel_count",
+                &expected_text,
+                &actual_text,
+            ));
+        }
+    }
+    if let Some(expected) = constraint.channel_layout.as_deref() {
+        let Some(expected_layout) = normalize_audio_channel_layout(expected) else {
+            return Some(audio_constraint_mismatch(
+                constraint.stream_id,
+                "channel_layout",
+                "supported",
+                expected.trim(),
+            ));
+        };
+        let actual = graph_stream.and_then(|stream| stream.channel_layout.as_deref());
+        if normalized_channel_layout(actual).as_deref() != Some(expected_layout) {
+            let actual_text = normalized_channel_layout(actual)
+                .or_else(|| {
+                    actual
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| "missing".to_string());
+            return Some(audio_constraint_mismatch(
+                constraint.stream_id,
+                "channel_layout",
+                expected_layout,
+                &actual_text,
+            ));
+        }
+    }
     if let Some(expected) = constraint.bitrate_bps
         && !stream
             .bit_rate
@@ -4057,7 +4108,9 @@ fn expected_chapters_for_policy(
 }
 
 const fn target_stream_has_audio_constraints(stream: &TargetStream) -> bool {
-    stream.audio_bitrate_bps.is_some()
+    stream.channels.is_some()
+        || stream.channel_layout.is_some()
+        || stream.audio_bitrate_bps.is_some()
         || stream.audio_sample_rate_hz.is_some()
         || stream.audio_loudness_profile.is_some()
         || stream.audio_dynamic_range.is_some()
@@ -4801,7 +4854,7 @@ mod tests {
         MAX_AUDIO_ANALYSIS_STDERR_BYTES, MediaJobRuntime, MediaJobRuntimeComponents,
         RuntimeAudioAnalyzer, RuntimeCapacityProbe, RuntimeCommandRunner, RuntimeInspector,
         RuntimeReplacementCommitter, RuntimeVerificationExecutor, SystemFfmpegAudioAnalysisAdapter,
-        VideoStreamConstraints, audio_measurement_mismatch,
+        VideoStreamConstraints, audio_constraint_stream_mismatch, audio_measurement_mismatch,
         container_chapters_from_ordered_snapshot, container_chapters_from_snapshot,
         container_metadata_from_snapshot, desired_target_from_job, expected_audio_constraints,
         parse_ebur128_summary, read_bounded_audio_analysis_stderr, run_audio_analysis_process,
@@ -5802,6 +5855,44 @@ mod tests {
         }
     }
 
+    fn audio_stream_inspection() -> StreamInspection {
+        StreamInspection {
+            stream_id: 1,
+            profile: None,
+            duration_millis: None,
+            bit_rate: Some(160_000),
+            max_bit_rate: None,
+            sample_rate: Some(48_000),
+            width: None,
+            height: None,
+            pixel_format: None,
+            sample_aspect_ratio: None,
+            display_aspect_ratio: None,
+            average_frame_rate: None,
+            color_range: None,
+            color_space: None,
+            color_transfer: None,
+            color_primaries: None,
+            chroma_location: None,
+            field_order: None,
+            metadata: Vec::new(),
+            side_data_types: Vec::new(),
+        }
+    }
+
+    fn audio_graph_stream(channels: Option<u32>, channel_layout: Option<&str>) -> MediaStream {
+        MediaStream {
+            stream_id: 1,
+            kind: StreamKind::Audio,
+            codec: "aac".to_string(),
+            channels,
+            channel_layout: channel_layout.map(str::to_string),
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        }
+    }
+
     #[test]
     fn video_level_constraint_accepts_ffprobe_integer_equivalent() {
         let constraint = video_level_constraint("5.1");
@@ -5835,6 +5926,87 @@ mod tests {
 
         assert_eq!(mismatch.expected, "stream:0:level=5.2");
         assert_eq!(mismatch.actual, "51");
+    }
+
+    #[test]
+    fn audio_constraint_stream_mismatch_rejects_channel_count_drift() {
+        let constraint = AudioStreamConstraints {
+            stream_id: 1,
+            channel_count: Some(2),
+            channel_layout: None,
+            bitrate_bps: None,
+            sample_rate_hz: None,
+            loudness_profile: None,
+            dynamic_range: None,
+        };
+        let graph_stream = audio_graph_stream(Some(6), Some("5.1(side)"));
+
+        let mismatch = audio_constraint_stream_mismatch(
+            &constraint,
+            &audio_stream_inspection(),
+            Some(&graph_stream),
+        );
+
+        assert_eq!(
+            mismatch.as_ref().map(|value| value.expected.as_str()),
+            Some("stream:1:channel_count=2")
+        );
+        assert_eq!(
+            mismatch.as_ref().map(|value| value.actual.as_str()),
+            Some("6")
+        );
+    }
+
+    #[test]
+    fn audio_constraint_stream_mismatch_rejects_channel_layout_drift() {
+        let constraint = AudioStreamConstraints {
+            stream_id: 1,
+            channel_count: None,
+            channel_layout: Some("stereo".to_string()),
+            bitrate_bps: None,
+            sample_rate_hz: None,
+            loudness_profile: None,
+            dynamic_range: None,
+        };
+        let graph_stream = audio_graph_stream(Some(6), Some("5.1(side)"));
+
+        let mismatch = audio_constraint_stream_mismatch(
+            &constraint,
+            &audio_stream_inspection(),
+            Some(&graph_stream),
+        );
+
+        assert_eq!(
+            mismatch.as_ref().map(|value| value.expected.as_str()),
+            Some("stream:1:channel_layout=stereo")
+        );
+        assert_eq!(
+            mismatch.as_ref().map(|value| value.actual.as_str()),
+            Some("5.1(side)")
+        );
+    }
+
+    #[test]
+    fn audio_constraint_stream_mismatch_accepts_channel_layout_alias() {
+        let constraint = AudioStreamConstraints {
+            stream_id: 1,
+            channel_count: Some(2),
+            channel_layout: Some("stereo".to_string()),
+            bitrate_bps: Some(160_000),
+            sample_rate_hz: Some(48_000),
+            loudness_profile: None,
+            dynamic_range: None,
+        };
+        let graph_stream = audio_graph_stream(Some(2), Some("STEREO"));
+
+        assert!(
+            audio_constraint_stream_mismatch(
+                &constraint,
+                &audio_stream_inspection(),
+                Some(&graph_stream),
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -5890,6 +6062,49 @@ mod tests {
             "target_stream:dialog-audio:audio_constraint=mapped"
         );
         assert_eq!(mismatch.actual, "unmatched:Audio:aac");
+    }
+
+    #[test]
+    fn audio_constraint_mapping_carries_channel_shape_constraints() -> anyhow::Result<()> {
+        let streams = vec![audio_graph_stream(Some(2), Some("stereo"))];
+        let desired = DesiredGraph {
+            output_path: "/tmp/output.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: super::identity_stream_bindings(&streams),
+            container_metadata_policy: None,
+            container_metadata: Vec::new(),
+            container_chapter_policy: None,
+            container_chapters: Vec::new(),
+            container_attachment_policy: None,
+            streams,
+        };
+        let mut stream = target_stream("dialog-audio", StreamKind::Audio, "aac");
+        stream.channels = Some(2);
+        stream.channel_layout = Some("stereo".to_string());
+        let snapshot = constrained_target_snapshot(stream);
+
+        let constraints =
+            expected_audio_constraints(Some(&snapshot), &desired).map_err(|mismatch| {
+                anyhow::anyhow!(
+                    "unexpected audio constraint mapping failure: {} {}",
+                    mismatch.expected,
+                    mismatch.actual
+                )
+            })?;
+
+        assert_eq!(
+            constraints,
+            vec![AudioStreamConstraints {
+                stream_id: 1,
+                channel_count: Some(2),
+                channel_layout: Some("stereo".to_string()),
+                bitrate_bps: None,
+                sample_rate_hz: None,
+                loudness_profile: None,
+                dynamic_range: None,
+            }]
+        );
+        Ok(())
     }
 
     #[derive(Default)]
@@ -7286,6 +7501,8 @@ Integrated loudness:
     fn audio_measurement_policy_checks_fail_missing_peak_and_excess_lra() {
         let constraint = AudioStreamConstraints {
             stream_id: 1,
+            channel_count: None,
+            channel_layout: None,
             bitrate_bps: None,
             sample_rate_hz: None,
             loudness_profile: Some("dialog-normalized".to_string()),
