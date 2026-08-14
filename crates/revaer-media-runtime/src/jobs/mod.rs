@@ -68,6 +68,8 @@ pub struct PlannedJob {
     pub operations: Vec<PlannedOperation>,
     /// Diff-based compliance report.
     pub compliance: ComplianceReport,
+    /// Inspected source duration used for bitrate-derived workspace planning.
+    pub source_duration_millis: Option<u64>,
     /// Estimated temporary workspace usage in bytes.
     pub estimated_workspace_bytes: u64,
 }
@@ -882,8 +884,10 @@ pub fn plan_job_from_inspect(
     source_file_bytes: u64,
 ) -> Result<PlannedJob, JobPreflightError> {
     let inspection = inspector.inspect(Path::new(source_path))?;
-    plan_job_from_source_graph(desired, source_file_bytes, &inspection.graph)
-        .map_err(JobPreflightError::Plan)
+    let mut planned = plan_job_from_source_graph(desired, source_file_bytes, &inspection.graph)
+        .map_err(JobPreflightError::Plan)?;
+    planned.source_duration_millis = inspection.container.duration_millis;
+    Ok(planned)
 }
 
 /// Build a deterministic plan from already-inspected source graph.
@@ -958,6 +962,7 @@ fn plan_job_from_source_graph_with_artifacts(
         sidecar_outputs,
         sidecar_removals,
         compliance,
+        source_duration_millis: None,
         estimated_workspace_bytes: estimate_workspace_bytes(source_file_bytes, &operations),
         operations,
     })
@@ -1340,24 +1345,28 @@ pub fn build_preflight_report(
 /// Returns [`JobPreflightError`] when planning, capability, workspace, or execution-step
 /// validation fails.
 pub fn build_preflight_report_from_compiled_target(
-    source: &MediaGraph,
+    source: &crate::inspect::MediaInspection,
     compiled: &CompiledDesiredTarget,
     input: PreflightBuildInput<'_>,
 ) -> Result<JobPreflightReport, JobPreflightError> {
     if input.desired != &compiled.graph {
         return Err(JobPreflightError::Plan("compiled_desired_graph_mismatch"));
     }
-    let planned = plan_job_from_compiled_target(compiled, input.source_file_bytes, source)
-        .map_err(JobPreflightError::Plan)?;
+    let mut planned =
+        plan_job_from_compiled_target(compiled, input.source_file_bytes, &source.graph)
+            .map_err(JobPreflightError::Plan)?;
+    planned.source_duration_millis = source.container.duration_millis;
     build_preflight_report_for_planned(planned, input)
 }
 
 fn build_preflight_report_for_planned(
-    planned: PlannedJob,
+    mut planned: PlannedJob,
     input: PreflightBuildInput<'_>,
 ) -> Result<JobPreflightReport, JobPreflightError> {
     require_valid_capability_snapshot(Some(input.capabilities))
         .map_err(JobPreflightError::Capability)?;
+    planned.estimated_workspace_bytes =
+        estimate_live_workspace_demand(&planned, input.source_file_bytes, &input.video_policy);
     let capacity_report = input
         .workspace_policy
         .evaluate_capacity(input.free_bytes, planned.estimated_workspace_bytes);
@@ -1385,7 +1394,7 @@ fn build_preflight_report_for_planned(
 /// Evaluate preflight from a complete target compilation and source inspection.
 #[must_use]
 pub fn evaluate_preflight_from_compiled_target(
-    source: &MediaGraph,
+    source: &crate::inspect::MediaInspection,
     compiled: &CompiledDesiredTarget,
     input: PreflightBuildInput<'_>,
 ) -> JobPreflightEvaluation {
@@ -1543,6 +1552,48 @@ fn estimate_workspace_bytes(source_file_bytes: u64, operations: &[PlannedOperati
     source_file_bytes.saturating_mul(max_multiplier_num) / max_multiplier_den
 }
 
+fn estimate_live_workspace_demand(
+    planned: &PlannedJob,
+    source_file_bytes: u64,
+    video_policy: &VideoTranscodePolicy,
+) -> u64 {
+    let fallback = estimate_workspace_bytes(source_file_bytes, &planned.operations);
+    let constrained_bitrate_bps = video_policy
+        .stream_constraints
+        .iter()
+        .filter_map(|constraint| constraint.max_bitrate_bps)
+        .map(u64::from)
+        .chain(
+            video_policy
+                .audio_stream_constraints
+                .iter()
+                .filter_map(|constraint| constraint.bitrate_bps)
+                .map(u64::from),
+        )
+        .fold(0_u64, u64::saturating_add);
+    let bitrate_output_bytes = planned.source_duration_millis.map_or(0, |duration_millis| {
+        constrained_bitrate_bps
+            .saturating_mul(duration_millis)
+            .div_ceil(8_000)
+    });
+    let primary_output = fallback.max(bitrate_output_bytes);
+    let sidecar_and_attachment_count = planned.sidecar_outputs.len().saturating_add(
+        planned
+            .desired
+            .streams
+            .iter()
+            .filter(|stream| stream.kind == revaer_media_core::model::StreamKind::Attachment)
+            .count(),
+    );
+    let auxiliary_bytes = source_file_bytes.saturating_mul(
+        u64::try_from(sidecar_and_attachment_count).map_or(u64::MAX, |value| value),
+    ) / 10;
+    let container_temporary_and_log_overhead = primary_output / 4;
+    primary_output
+        .saturating_add(auxiliary_bytes)
+        .saturating_add(container_temporary_and_log_overhead)
+}
+
 fn operations_are_noop(operations: &[PlannedOperation]) -> bool {
     matches!(
         operations,
@@ -1557,18 +1608,20 @@ fn operations_are_noop(operations: &[PlannedOperation]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        BackupPathError, BuildArgsError, CompactAuditFact, ExecutionStep, JobPreflightError,
-        JobPreflightEvaluation, JobPreflightFailureReport, JobPreflightReport, JobPreflightRequest,
-        OwnedPreflightBuildInput, PlannedJob, PreflightBuildInput, PreflightBuildTemplate,
-        PreflightPolicyInput, PreflightStageRecord, build_job_execution_steps,
-        build_job_execution_steps_with_capabilities, build_job_execution_steps_with_replacement,
+        BackupPathError, BuildArgsError, CompactAuditFact, DesiredSidecarOutput, ExecutionStep,
+        JobPreflightError, JobPreflightEvaluation, JobPreflightFailureReport, JobPreflightReport,
+        JobPreflightRequest, OwnedPreflightBuildInput, PlannedJob, PreflightBuildInput,
+        PreflightBuildTemplate, PreflightPolicyInput, PreflightStageRecord, SidecarOutputSource,
+        build_job_execution_steps, build_job_execution_steps_with_capabilities,
+        build_job_execution_steps_with_replacement,
         build_job_execution_steps_with_replacement_policy, build_preflight_input,
         build_preflight_report, build_preflight_report_from_template, ensure_execution_capacity,
-        evaluate_preflight, evaluate_preflight_from_template, plan_job, plan_job_from_inspect,
-        preflight_compact_audit_facts, preflight_error_code, preflight_error_detail,
-        preflight_failed_stage, preflight_failure_report, preflight_success_timeline,
-        preflight_timeline_for_error, require_valid_capability_snapshot, resolve_backup_path,
-        resolve_quarantine_path, summarize_planned_job,
+        estimate_live_workspace_demand, evaluate_preflight, evaluate_preflight_from_template,
+        plan_job, plan_job_from_inspect, preflight_compact_audit_facts, preflight_error_code,
+        preflight_error_detail, preflight_failed_stage, preflight_failure_report,
+        preflight_success_timeline, preflight_timeline_for_error,
+        require_valid_capability_snapshot, resolve_backup_path, resolve_quarantine_path,
+        summarize_planned_job,
     };
     use crate::capabilities::{CapabilitySnapshot, CodecCapability};
     use crate::execute::{HdrColorPolicy, VideoTranscodeIntent, VideoTranscodePolicy};
@@ -2193,8 +2246,95 @@ mod tests {
             sidecar_removals: Vec::new(),
             operations,
             compliance: report_for_status(Status::Compliant),
+            source_duration_millis: None,
             estimated_workspace_bytes,
         }
+    }
+
+    #[test]
+    fn duration_and_aggregate_output_rates_drive_workspace_demand() {
+        let mut planned = planned_job_for_tests(
+            vec![PlannedOperation {
+                kind: OperationKind::VideoTranscode,
+                stream_id: Some(0),
+                output_stream_id: Some(0),
+            }],
+            2_500_000,
+        );
+        planned.source_duration_millis = Some(8 * 60 * 60 * 1_000);
+        let policy = VideoTranscodePolicy {
+            stream_constraints: vec![
+                crate::execute::VideoStreamConstraints {
+                    stream_id: 0,
+                    profile: None,
+                    level: None,
+                    max_bitrate_bps: Some(100_000),
+                    color_primaries: None,
+                    color_transfer: None,
+                    color_space: None,
+                    hdr_format: None,
+                },
+                crate::execute::VideoStreamConstraints {
+                    stream_id: 1,
+                    profile: None,
+                    level: None,
+                    max_bitrate_bps: Some(20_000_000),
+                    color_primaries: None,
+                    color_transfer: None,
+                    color_space: None,
+                    hdr_format: None,
+                },
+            ],
+            audio_stream_constraints: vec![crate::execute::AudioStreamConstraints {
+                stream_id: 2,
+                bitrate_bps: Some(320_000),
+                sample_rate_hz: None,
+                loudness_profile: None,
+                dynamic_range: None,
+            }],
+            ..VideoTranscodePolicy::default()
+        };
+
+        let demand = estimate_live_workspace_demand(&planned, 1_000_000, &policy);
+
+        assert!(demand > 70_000_000_000);
+    }
+
+    #[test]
+    fn sidecars_and_attachments_increase_workspace_demand() {
+        let mut planned = planned_job_for_tests(
+            vec![PlannedOperation {
+                kind: OperationKind::Remux,
+                stream_id: None,
+                output_stream_id: None,
+            }],
+            1_200_000,
+        );
+        let baseline =
+            estimate_live_workspace_demand(&planned, 1_000_000, &VideoTranscodePolicy::default());
+        planned.desired.streams.push(MediaStream {
+            stream_id: 9,
+            kind: StreamKind::Attachment,
+            codec: "ttf".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        });
+        planned.sidecar_outputs.push(DesiredSidecarOutput {
+            path: "/workspace/movie.srt".to_string(),
+            companion_path: None,
+            destination_path: "/library/movie.srt".to_string(),
+            destination_companion_path: None,
+            source: SidecarOutputSource::EmbeddedStream { stream_id: 1 },
+            codec: "subrip".to_string(),
+        });
+
+        let expanded =
+            estimate_live_workspace_demand(&planned, 1_000_000, &VideoTranscodePolicy::default());
+
+        assert_eq!(expanded, baseline + 200_000);
     }
 
     #[test]

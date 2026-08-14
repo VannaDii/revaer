@@ -1,0 +1,52 @@
+# Runtime Execution Review Hardening
+
+- Status: Accepted
+- Date: 2026-08-12
+- Context:
+  - PR #78 retained canonical destination paths across replacement phase boundaries, so an ancestor-directory swap could redirect commit or rollback outside the configured source root.
+  - Recovery stopped at the first malformed transaction, video bitrate policy emitted only an average-rate target, and workspace limits were evaluated only before starting a child process.
+  - Review threads `PRRT_kwDOQJiaF86WPH3M`, `PRRT_kwDOQJiaF86WPH3S`, `PRRT_kwDOQJiaF86WPH3X`, `PRRT_kwDOQJiaF86WQlXo`, and `PRRT_kwDOQJiaF86WQlbx` require fail-closed production behavior and deterministic regressions.
+- Decision:
+  - Open the configured source root once and resolve destination parents component-by-component with no-follow directory opens. Retain those descriptors and use descriptor-relative rename, unlink, file sync, and directory sync operations for commit, rollback, and manifest recovery.
+  - Keep the managed replacement namespace mode `0700`. Move malformed recovery entries into a private sibling quarantine, return one bounded failure record, and continue valid recovery work.
+  - Treat video bitrate as a maximum. Encode at a 95 percent average target with an explicit maximum rate and a two-second VBV buffer, and expose packet-window peak verification with tolerance applied only above the ceiling.
+  - Estimate workspace demand from inspected duration and the aggregate constrained video and audio rates, then account for sidecars, attachments, container work, temporary files, diagnostics, and logs. Supervise logical workspace bytes and live filesystem reserve through an injected probe on every process poll; terminate and use the existing quarantine recovery step on breach or probe failure.
+  - Continue using `rustix`, already present in the workspace, for descriptor-relative and filesystem-capacity operations. No new dependency is introduced.
+- Consequences:
+  - Ancestor symlink swaps cannot redirect replacement mutations after preparation, including recovery driven by planted manifest paths.
+  - One corrupt transaction no longer blocks valid recovery or subsequent queued replacement work.
+  - Bitrate ceilings and workspace limits are enforceable during execution instead of being advisory preflight estimates.
+  - Logical sparse-file length is deliberately charged against the workspace budget. Recursive sampling is fail-closed and bounded at 100,000 entries per observation.
+- Follow-up:
+  - Stack descendants that construct `VideoStreamConstraints` must populate `max_bitrate_bps` and pass packet-window evidence to `verify_max_bitrate` when constrained output verification is assembled.
+  - Worker wiring must construct `WorkspaceBudgetControl` with the managed job workspace, policy, cancellation control, and `SystemWorkspaceBudgetProbe`.
+
+## Task Record
+
+- Motivation:
+  - Close every unresolved actionable review thread on PR #78 before the runtime execution layer is restacked.
+- Design notes:
+  - Directory descriptors are retained with `Arc<OwnedFd>` so ownership can cross prepare, commit, verification, rollback, and recovery boundaries without reopening mutable pathnames.
+  - Existing originals are opened with `O_NOFOLLOW` relative to their pinned parent before recovery copies are made.
+  - Invalid recovery entries are isolated independently; valid transactions continue in the same bounded pass.
+  - The bitrate verifier consumes normalized packet-window evidence, rejects missing or zero-duration evidence, accepts outputs below or equal to the ceiling, and rejects peaks above the one-percent timestamp-quantization allowance.
+  - Live workspace probes are injected through `ExecutionControl`; probe failure is a limit breach rather than silent degradation.
+- Test coverage summary:
+  - Deterministic parent-swap tests cover commit and rollback, and recovery rejects a symlinked manifest destination without changing an external sentinel.
+  - Restart coverage combines one malformed entry, one valid committed transaction, and subsequent queued replacement work.
+  - Video coverage checks software and supported hardware encoder arguments plus below, equal, above, and short-burst packet-window evidence.
+  - Workspace coverage checks long-duration aggregate rates, sidecar and attachment overhead, sparse logical bytes, each live control breach, and mid-run reserve-loss quarantine behavior.
+  - The complete `revaer-media-runtime` all-feature test suite passes.
+- Observability updates:
+  - Quarantined recovery results carry bounded failure text and a `Quarantined` action.
+  - Live failures distinguish workspace-byte excess, reserve loss, and probe failure through `ExecutionLimitBreach`.
+- Status-doc validation:
+  - `MEDIA_TRANSCODING.md` and ADR 318 were reviewed for maximum-bitrate, workspace, replacement, recovery, sidecar, and attachment requirements. Their stated direction remains accurate; this ADR records the implementation refinement.
+- Risk & rollback plan:
+  - Descriptor-relative behavior depends on POSIX directory-descriptor semantics already required by the supported runtime environment. If a platform regression appears, revert this commit as one unit; do not restore pathname mutation as a partial workaround.
+  - More conservative workspace estimates can reject jobs previously admitted. Operators should adjust configured capacity only from measured workload evidence, not weaken live supervision.
+- Dependency rationale:
+  - No dependency was added. Existing `rustix` APIs provide `openat`, `renameat`, `unlinkat`, `fsync`, and `statvfs` without authored unsafe code.
+- Stale-policy check:
+  - Reviewed `AGENTS.md` and `.github/instructions/rust.instructions.md`.
+  - No policy drift or contradiction was found. No lint, Sonar, test, stored-procedure, dependency, or panic-safety criterion was relaxed.

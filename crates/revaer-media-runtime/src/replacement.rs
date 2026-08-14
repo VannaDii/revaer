@@ -1,9 +1,13 @@
 //! Durable source-filesystem replacement transactions.
 
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Write};
+use std::os::fd::OwnedFd;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use thiserror::Error;
 
 const MANAGED_ROOT_NAME: &str = ".revaer-media-runtime";
@@ -12,6 +16,21 @@ const MANIFEST_FILE_NAME: &str = "replacement.json";
 const MANIFEST_TEMP_FILE_NAME: &str = "replacement.json.tmp";
 const STAGED_FILE_NAME: &str = "candidate.stage";
 const RECOVERY_FILE_NAME: &str = "original.recovery";
+const QUARANTINE_DIR_NAME: &str = "replacement-quarantine";
+const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
+
+#[derive(Debug, Clone)]
+struct PinnedDestination {
+    path: PathBuf,
+    parent: Arc<OwnedFd>,
+    file_name: OsString,
+}
+
+#[derive(Debug, Clone)]
+struct PinnedSourceRoot {
+    path: PathBuf,
+    handle: Arc<OwnedFd>,
+}
 
 /// Input needed to prepare one durable replacement transaction.
 #[derive(Debug, Clone, Copy)]
@@ -50,18 +69,20 @@ pub struct ReplacementBundleRequest<'a> {
     pub artifacts: &'a [ReplacementArtifactRequest<'a>],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct PreparedEntry {
     destination: PathBuf,
+    pinned_destination: PinnedDestination,
     staged: Option<PathBuf>,
     recovery: Option<PathBuf>,
     existed: bool,
 }
 
 /// Prepared replacement whose stage and recovery copy are durable on the source filesystem.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct PreparedReplacement {
     transaction_dir: PathBuf,
+    transaction_handle: Arc<OwnedFd>,
     source: PathBuf,
     staged: PathBuf,
     recovery: PathBuf,
@@ -83,7 +104,7 @@ impl PreparedReplacement {
 }
 
 /// Committed replacement retained until post-rename verification succeeds.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct CommittedReplacement {
     prepared: PreparedReplacement,
 }
@@ -97,6 +118,8 @@ pub enum ReplacementRecoveryAction {
     DiscardedPrepared,
     /// A verified transaction had already removed its recovery copy and only needed cleanup.
     Finalized,
+    /// An invalid or untrusted transaction was isolated from the active recovery namespace.
+    Quarantined,
 }
 
 /// Result of recovering one deterministic replacement transaction.
@@ -108,6 +131,8 @@ pub struct RecoveredReplacement {
     pub source_path: PathBuf,
     /// Conservative action taken during recovery.
     pub action: ReplacementRecoveryAction,
+    /// Bounded recovery failure detail for quarantined entries.
+    pub error: Option<String>,
 }
 
 /// Durable replacement failure.
@@ -275,7 +300,7 @@ impl ReplacementCommitter for SystemReplacementCommitter {
 
     fn rollback(&self, committed: CommittedReplacement) -> Result<(), ReplacementError> {
         let prepared = committed.prepared;
-        rollback_entries(&prepared.entries)?;
+        rollback_entries(&prepared.transaction_handle, &prepared.entries)?;
         remove_transaction(&prepared.transaction_dir)
     }
 
@@ -300,11 +325,13 @@ impl ReplacementCommitter for SystemReplacementCommitter {
     }
 
     fn recover(&self, source_root: &Path) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
-        let source_root = canonical_source_root(source_root)?;
-        let root = replacement_root(&source_root);
+        let source_root = open_source_root(source_root)?;
+        let root = replacement_root(&source_root.path);
         if !root.exists() {
             return Ok(Vec::new());
         }
+        make_private_directory(&root, "replacement.recovery_root_permissions")?;
+        ensure_service_owned_directory(&root, "replacement.recovery_root_owner")?;
         let entries = read_dir(&root, "replacement.recovery_list")?;
         let mut recovered = Vec::new();
         for entry in entries {
@@ -313,7 +340,15 @@ impl ReplacementCommitter for SystemReplacementCommitter {
                 path: root.clone(),
                 source,
             })?;
-            recovered.push(recover_transaction(&source_root, &entry.path())?);
+            let transaction_path = entry.path();
+            match recover_transaction(&source_root, &transaction_path) {
+                Ok(result) => recovered.push(result),
+                Err(error) => recovered.push(quarantine_invalid_transaction(
+                    &source_root.path,
+                    &transaction_path,
+                    &error,
+                )?),
+            }
         }
         sync_directory(&root, "replacement.recovery_root_sync")?;
         Ok(recovered)
@@ -324,17 +359,25 @@ fn prepare_bundle_transaction(
     request: ReplacementBundleRequest<'_>,
 ) -> Result<PreparedReplacement, ReplacementError> {
     validate_job_key(request.job_key)?;
-    let source_root = canonical_source_root(request.source_root)?;
+    let source_root = open_source_root(request.source_root)?;
     let source = resolve_existing_destination(
-        &source_root,
+        &source_root.path,
         request.source_path,
         "replacement.source_canonicalize",
     )?;
     let candidate = canonical_file(request.candidate_path, "replacement.candidate_canonicalize")?;
-    let replacement_root = replacement_root(&source_root);
+    let replacement_root = replacement_root(&source_root.path);
     create_dir_all(&replacement_root, "replacement.root_create")?;
+    make_private_directory(&replacement_root, "replacement.root_permissions")?;
+    ensure_service_owned_directory(&replacement_root, "replacement.root_owner")?;
     let transaction_dir = replacement_root.join(request.job_key);
     create_transaction_dir(&transaction_dir)?;
+    make_private_directory(&transaction_dir, "replacement.transaction_permissions")?;
+    ensure_service_owned_directory(&transaction_dir, "replacement.transaction_owner")?;
+    let transaction_handle = Arc::new(open_directory(
+        &transaction_dir,
+        "replacement.transaction_open",
+    )?);
 
     let preparation = (|| {
         write_manifest(
@@ -352,11 +395,12 @@ fn prepare_bundle_transaction(
         let mut entries = vec![prepare_entry(
             &transaction_dir,
             0,
-            source.clone(),
+            pin_destination(&source_root, &source)?,
             Some(&candidate),
         )?];
         for (offset, artifact) in request.artifacts.iter().enumerate() {
-            let destination = resolve_bundle_destination(&source_root, artifact.destination_path)?;
+            let destination =
+                resolve_bundle_destination(&source_root.path, artifact.destination_path)?;
             if !destinations.insert(destination.clone()) {
                 return Err(ReplacementError::DuplicateDestination(destination));
             }
@@ -370,7 +414,7 @@ fn prepare_bundle_transaction(
             entries.push(prepare_entry(
                 &transaction_dir,
                 offset + 1,
-                destination,
+                pin_destination(&source_root, &destination)?,
                 candidate.as_ref(),
             )?);
         }
@@ -378,6 +422,7 @@ fn prepare_bundle_transaction(
             staged: transaction_dir.join(STAGED_FILE_NAME),
             recovery: transaction_dir.join(RECOVERY_FILE_NAME),
             transaction_dir: transaction_dir.clone(),
+            transaction_handle: Arc::clone(&transaction_handle),
             source,
             entries,
         };
@@ -406,15 +451,22 @@ fn prepare_bundle_transaction(
 fn prepare_entry(
     transaction_dir: &Path,
     index: usize,
-    destination: PathBuf,
+    pinned_destination: PinnedDestination,
     candidate: Option<&PathBuf>,
 ) -> Result<PreparedEntry, ReplacementError> {
-    let existed = destination.is_file();
-    let permissions = if existed {
-        Some(metadata(&destination, "replacement.destination_metadata")?.permissions())
-    } else {
-        None
-    };
+    let destination = pinned_destination.path.clone();
+    let mut original = open_existing_destination(&pinned_destination)?;
+    let existed = original.is_some();
+    let permissions = original
+        .as_ref()
+        .map(File::metadata)
+        .transpose()
+        .map_err(|source| ReplacementError::Io {
+            operation: "replacement.destination_metadata",
+            path: destination.clone(),
+            source,
+        })?
+        .map(|value| value.permissions());
     let staged = candidate
         .map(|candidate_path| {
             let path = transaction_entry_path(transaction_dir, index, "candidate.stage");
@@ -428,7 +480,10 @@ fn prepare_entry(
         .transpose()?;
     let recovery = if existed {
         let path = transaction_entry_path(transaction_dir, index, "original.recovery");
-        copy_new_file(&destination, &path, "replacement.copy_recovery")?;
+        let input = original
+            .as_mut()
+            .ok_or_else(|| ReplacementError::RecoveryMissing(destination.clone()))?;
+        copy_reader_to_new_file(input, &path, "replacement.copy_recovery")?;
         if let Some(value) = permissions {
             set_permissions(&path, value, "replacement.recovery_permissions")?;
         }
@@ -439,6 +494,7 @@ fn prepare_entry(
     };
     Ok(PreparedEntry {
         destination,
+        pinned_destination,
         staged,
         recovery,
         existed,
@@ -501,13 +557,22 @@ fn resolve_bundle_destination(
 fn commit_entries(prepared: &PreparedReplacement) -> Result<(), ReplacementError> {
     for (index, entry) in prepared.entries.iter().enumerate() {
         match &entry.staged {
-            Some(staged) => rename(staged, &entry.destination, "replacement.commit_rename")?,
-            None => remove_file(&entry.destination, "replacement.commit_remove")?,
+            Some(staged) => rename_from_transaction(
+                &prepared.transaction_handle,
+                staged,
+                &entry.pinned_destination,
+                "replacement.commit_rename",
+            )?,
+            None => unlink_destination(&entry.pinned_destination, "replacement.commit_remove")?,
         }
-        if entry.destination.is_file() {
-            sync_file(&entry.destination, "replacement.committed_file_sync")?;
+        if entry.staged.is_some() {
+            sync_destination_file(&entry.pinned_destination, "replacement.committed_file_sync")?;
         }
-        sync_parent(&entry.destination, "replacement.destination_parent_sync")?;
+        sync_pinned_directory(
+            &entry.pinned_destination.parent,
+            &entry.destination,
+            "replacement.destination_parent_sync",
+        )?;
         write_manifest(
             &prepared.transaction_dir,
             &ReplacementManifest {
@@ -522,21 +587,40 @@ fn commit_entries(prepared: &PreparedReplacement) -> Result<(), ReplacementError
     Ok(())
 }
 
-fn rollback_entries(entries: &[PreparedEntry]) -> Result<(), ReplacementError> {
+fn rollback_entries(
+    transaction_handle: &Arc<OwnedFd>,
+    entries: &[PreparedEntry],
+) -> Result<(), ReplacementError> {
     for entry in entries.iter().rev() {
         if let Some(recovery) = &entry.recovery {
-            if !recovery.is_file() {
+            if !transaction_entry_exists(transaction_handle, recovery)? {
                 return Err(ReplacementError::RecoveryMissing(recovery.clone()));
             }
-            rename(recovery, &entry.destination, "replacement.rollback_rename")?;
-            sync_file(&entry.destination, "replacement.rollback_file_sync")?;
-            sync_parent(&entry.destination, "replacement.rollback_parent_sync")?;
+            rename_from_transaction(
+                transaction_handle,
+                recovery,
+                &entry.pinned_destination,
+                "replacement.rollback_rename",
+            )?;
+            sync_destination_file(&entry.pinned_destination, "replacement.rollback_file_sync")?;
+            sync_pinned_directory(
+                &entry.pinned_destination.parent,
+                &entry.destination,
+                "replacement.rollback_parent_sync",
+            )?;
         } else if !entry.existed
             && entry.staged.as_ref().is_some_and(|path| !path.exists())
-            && entry.destination.exists()
+            && destination_exists(&entry.pinned_destination)?
         {
-            remove_file(&entry.destination, "replacement.rollback_remove_created")?;
-            sync_parent(&entry.destination, "replacement.rollback_parent_sync")?;
+            unlink_destination(
+                &entry.pinned_destination,
+                "replacement.rollback_remove_created",
+            )?;
+            sync_pinned_directory(
+                &entry.pinned_destination.parent,
+                &entry.destination,
+                "replacement.rollback_parent_sync",
+            )?;
         }
     }
     Ok(())
@@ -552,14 +636,29 @@ fn remove_recovery_files(entries: &[PreparedEntry]) -> Result<(), ReplacementErr
 }
 
 fn recover_transaction(
-    source_root: &Path,
+    source_root: &PinnedSourceRoot,
     transaction_path: &Path,
 ) -> Result<RecoveredReplacement, ReplacementError> {
-    if !transaction_path.is_dir() {
+    let transaction_metadata =
+        fs::symlink_metadata(transaction_path).map_err(|source| ReplacementError::Io {
+            operation: "replacement.recovery_transaction_metadata",
+            path: transaction_path.to_path_buf(),
+            source,
+        })?;
+    if !transaction_metadata.file_type().is_dir() || transaction_metadata.file_type().is_symlink() {
         return Err(ReplacementError::InvalidManifest(
             transaction_path.to_path_buf(),
         ));
     }
+    if transaction_metadata.uid() != rustix::process::getuid().as_raw() {
+        return Err(ReplacementError::InvalidManifest(
+            transaction_path.to_path_buf(),
+        ));
+    }
+    let transaction_handle = Arc::new(open_directory(
+        transaction_path,
+        "replacement.recovery_transaction_open",
+    )?);
     let manifest = read_manifest(transaction_path)?;
     if manifest.job_key != transaction_job_key(transaction_path)? {
         return Err(ReplacementError::InvalidManifest(
@@ -567,20 +666,28 @@ fn recover_transaction(
         ));
     }
     let source_path = PathBuf::from(&manifest.source_path);
-    if !source_path.starts_with(source_root) {
+    if !source_path.starts_with(&source_root.path) {
         return Err(ReplacementError::SourceOutsideRoot(source_path));
     }
-    let action = recover_transaction_state(source_root, transaction_path, &source_path, &manifest)?;
+    let action = recover_transaction_state(
+        source_root,
+        &transaction_handle,
+        transaction_path,
+        &source_path,
+        &manifest,
+    )?;
     remove_transaction(transaction_path)?;
     Ok(RecoveredReplacement {
         job_key: manifest.job_key,
         source_path,
         action,
+        error: None,
     })
 }
 
 fn recover_transaction_state(
-    source_root: &Path,
+    source_root: &PinnedSourceRoot,
+    transaction_handle: &Arc<OwnedFd>,
     transaction_path: &Path,
     source_path: &Path,
     manifest: &ReplacementManifest,
@@ -596,7 +703,7 @@ fn recover_transaction_state(
             )?;
             return Ok(ReplacementRecoveryAction::Finalized);
         }
-        rollback_entries(&entries)?;
+        rollback_entries(transaction_handle, &entries)?;
         return Ok(if manifest.committed_entries == 0 {
             ReplacementRecoveryAction::DiscardedPrepared
         } else {
@@ -618,9 +725,19 @@ fn recover_transaction_state(
         return Ok(ReplacementRecoveryAction::Finalized);
     }
     if recovery_path.is_file() {
-        rename(&recovery_path, source_path, "replacement.recovery_rollback")?;
-        sync_file(source_path, "replacement.recovery_file_sync")?;
-        sync_parent(source_path, "replacement.recovery_parent_sync")?;
+        let destination = pin_destination(source_root, source_path)?;
+        rename_from_transaction(
+            transaction_handle,
+            &recovery_path,
+            &destination,
+            "replacement.recovery_rollback",
+        )?;
+        sync_destination_file(&destination, "replacement.recovery_file_sync")?;
+        sync_pinned_directory(
+            &destination.parent,
+            source_path,
+            "replacement.recovery_parent_sync",
+        )?;
         return Ok(ReplacementRecoveryAction::RolledBack);
     }
     if manifest.phase == ReplacementPhase::Committed {
@@ -675,7 +792,7 @@ fn file_name_string(path: &Path) -> Option<String> {
 }
 
 fn prepared_entries_from_manifest(
-    source_root: &Path,
+    source_root: &PinnedSourceRoot,
     transaction_path: &Path,
     entries: &[ReplacementManifestEntry],
 ) -> Result<Vec<PreparedEntry>, ReplacementError> {
@@ -683,14 +800,16 @@ fn prepared_entries_from_manifest(
         .iter()
         .map(|entry| {
             let destination = PathBuf::from(&entry.destination_path);
-            if !destination.starts_with(source_root) {
+            if !destination.starts_with(&source_root.path) {
                 return Err(ReplacementError::SourceOutsideRoot(destination));
             }
+            let pinned_destination = pin_destination(source_root, &destination)?;
             let staged = manifest_entry_path(transaction_path, entry.staged_file_name.as_deref())?;
             let recovery =
                 manifest_entry_path(transaction_path, entry.recovery_file_name.as_deref())?;
             Ok(PreparedEntry {
                 destination,
+                pinned_destination,
                 staged,
                 recovery,
                 existed: entry.existed,
@@ -739,6 +858,55 @@ fn canonical_source_root(path: &Path) -> Result<PathBuf, ReplacementError> {
     Ok(canonical)
 }
 
+fn open_source_root(path: &Path) -> Result<PinnedSourceRoot, ReplacementError> {
+    let path = canonical_source_root(path)?;
+    let handle = Arc::new(open_directory(&path, "replacement.source_root_open")?);
+    Ok(PinnedSourceRoot { path, handle })
+}
+
+fn pin_destination(
+    source_root: &PinnedSourceRoot,
+    destination: &Path,
+) -> Result<PinnedDestination, ReplacementError> {
+    let relative = destination
+        .strip_prefix(&source_root.path)
+        .map_err(|_| ReplacementError::SourceOutsideRoot(destination.to_path_buf()))?;
+    let file_name = relative
+        .file_name()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ReplacementError::InvalidManifest(destination.to_path_buf()))?
+        .to_os_string();
+    let parent = relative
+        .parent()
+        .ok_or_else(|| ReplacementError::InvalidManifest(destination.to_path_buf()))?;
+    let mut handle = Arc::clone(&source_root.handle);
+    for component in parent.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(ReplacementError::InvalidManifest(destination.to_path_buf()));
+        };
+        let opened = rustix::fs::openat(
+            handle.as_ref(),
+            name,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::DIRECTORY
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        )
+        .map_err(|source| ReplacementError::Io {
+            operation: "replacement.destination_parent_open",
+            path: destination.to_path_buf(),
+            source: rustix_error(source),
+        })?;
+        handle = Arc::new(opened);
+    }
+    Ok(PinnedDestination {
+        path: destination.to_path_buf(),
+        parent: handle,
+        file_name,
+    })
+}
+
 fn canonical_file(path: &Path, operation: &'static str) -> Result<PathBuf, ReplacementError> {
     let canonical = canonicalize(path, operation)?;
     if !canonical.is_file() {
@@ -769,6 +937,212 @@ fn create_transaction_dir(path: &Path) -> Result<(), ReplacementError> {
             source,
         }),
     }
+}
+
+fn make_private_directory(path: &Path, operation: &'static str) -> Result<(), ReplacementError> {
+    fs::set_permissions(path, fs::Permissions::from_mode(PRIVATE_DIRECTORY_MODE)).map_err(
+        |source| ReplacementError::Io {
+            operation,
+            path: path.to_path_buf(),
+            source,
+        },
+    )
+}
+
+fn ensure_service_owned_directory(
+    path: &Path,
+    operation: &'static str,
+) -> Result<(), ReplacementError> {
+    let metadata = fs::symlink_metadata(path).map_err(|source| ReplacementError::Io {
+        operation,
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_dir()
+        || metadata.uid() != rustix::process::getuid().as_raw()
+    {
+        return Err(ReplacementError::InvalidManifest(path.to_path_buf()));
+    }
+    Ok(())
+}
+
+fn open_directory(path: &Path, operation: &'static str) -> Result<OwnedFd, ReplacementError> {
+    rustix::fs::open(
+        path,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|source| ReplacementError::Io {
+        operation,
+        path: path.to_path_buf(),
+        source: rustix_error(source),
+    })
+}
+
+fn rename_from_transaction(
+    transaction_handle: &Arc<OwnedFd>,
+    source: &Path,
+    destination: &PinnedDestination,
+    operation: &'static str,
+) -> Result<(), ReplacementError> {
+    let source_name = source
+        .file_name()
+        .ok_or_else(|| ReplacementError::InvalidManifest(source.to_path_buf()))?;
+    rustix::fs::renameat(
+        transaction_handle.as_ref(),
+        source_name,
+        destination.parent.as_ref(),
+        destination.file_name.as_os_str(),
+    )
+    .map_err(|source| ReplacementError::Io {
+        operation,
+        path: destination.path.clone(),
+        source: rustix_error(source),
+    })
+}
+
+fn unlink_destination(
+    destination: &PinnedDestination,
+    operation: &'static str,
+) -> Result<(), ReplacementError> {
+    rustix::fs::unlinkat(
+        destination.parent.as_ref(),
+        destination.file_name.as_os_str(),
+        rustix::fs::AtFlags::empty(),
+    )
+    .map_err(|source| ReplacementError::Io {
+        operation,
+        path: destination.path.clone(),
+        source: rustix_error(source),
+    })
+}
+
+fn destination_exists(destination: &PinnedDestination) -> Result<bool, ReplacementError> {
+    match rustix::fs::statat(
+        destination.parent.as_ref(),
+        destination.file_name.as_os_str(),
+        rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+    ) {
+        Ok(_) => Ok(true),
+        Err(rustix::io::Errno::NOENT) => Ok(false),
+        Err(source) => Err(ReplacementError::Io {
+            operation: "replacement.destination_metadata",
+            path: destination.path.clone(),
+            source: rustix_error(source),
+        }),
+    }
+}
+
+fn transaction_entry_exists(
+    transaction_handle: &Arc<OwnedFd>,
+    path: &Path,
+) -> Result<bool, ReplacementError> {
+    let name = path
+        .file_name()
+        .ok_or_else(|| ReplacementError::InvalidManifest(path.to_path_buf()))?;
+    match rustix::fs::statat(
+        transaction_handle.as_ref(),
+        name,
+        rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+    ) {
+        Ok(_) => Ok(true),
+        Err(rustix::io::Errno::NOENT) => Ok(false),
+        Err(source) => Err(ReplacementError::Io {
+            operation: "replacement.transaction_entry_metadata",
+            path: path.to_path_buf(),
+            source: rustix_error(source),
+        }),
+    }
+}
+
+fn sync_destination_file(
+    destination: &PinnedDestination,
+    operation: &'static str,
+) -> Result<(), ReplacementError> {
+    let file = rustix::fs::openat(
+        destination.parent.as_ref(),
+        destination.file_name.as_os_str(),
+        rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|source| ReplacementError::Io {
+        operation,
+        path: destination.path.clone(),
+        source: rustix_error(source),
+    })?;
+    rustix::fs::fsync(&file).map_err(|source| ReplacementError::Io {
+        operation,
+        path: destination.path.clone(),
+        source: rustix_error(source),
+    })
+}
+
+fn sync_pinned_directory(
+    directory: &Arc<OwnedFd>,
+    display_path: &Path,
+    operation: &'static str,
+) -> Result<(), ReplacementError> {
+    rustix::fs::fsync(directory.as_ref()).map_err(|source| ReplacementError::Io {
+        operation,
+        path: display_path.to_path_buf(),
+        source: rustix_error(source),
+    })
+}
+
+fn rustix_error(error: rustix::io::Errno) -> io::Error {
+    io::Error::from_raw_os_error(error.raw_os_error())
+}
+
+fn quarantine_invalid_transaction(
+    source_root: &Path,
+    transaction_path: &Path,
+    error: &ReplacementError,
+) -> Result<RecoveredReplacement, ReplacementError> {
+    let job_key = transaction_job_key(transaction_path)?;
+    let quarantine_root = source_root
+        .join(MANAGED_ROOT_NAME)
+        .join(QUARANTINE_DIR_NAME);
+    create_dir_all(&quarantine_root, "replacement.quarantine_root_create")?;
+    make_private_directory(&quarantine_root, "replacement.quarantine_root_permissions")?;
+    ensure_service_owned_directory(&quarantine_root, "replacement.quarantine_root_owner")?;
+    let destination = quarantine_destination(&quarantine_root, &job_key)?;
+    rename(
+        transaction_path,
+        &destination,
+        "replacement.quarantine_invalid_transaction",
+    )?;
+    sync_directory(
+        &quarantine_root,
+        "replacement.quarantine_invalid_transaction_sync",
+    )?;
+    let detail = error.to_string().chars().take(512).collect();
+    Ok(RecoveredReplacement {
+        job_key,
+        source_path: transaction_path.to_path_buf(),
+        action: ReplacementRecoveryAction::Quarantined,
+        error: Some(detail),
+    })
+}
+
+fn quarantine_destination(root: &Path, job_key: &str) -> Result<PathBuf, ReplacementError> {
+    for suffix in 0..32_u8 {
+        let name = if suffix == 0 {
+            format!("{job_key}.invalid")
+        } else {
+            format!("{job_key}.invalid-{suffix}")
+        };
+        let candidate = root.join(name);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(ReplacementError::TransactionExists(
+        root.join(format!("{job_key}.invalid")),
+    ))
 }
 
 fn write_manifest(path: &Path, manifest: &ReplacementManifest) -> Result<(), ReplacementError> {
@@ -830,6 +1204,14 @@ fn copy_new_file(
         path: source.to_path_buf(),
         source: source_error,
     })?;
+    copy_reader_to_new_file(&mut input, destination, operation)
+}
+
+fn copy_reader_to_new_file(
+    input: &mut File,
+    destination: &Path,
+    operation: &'static str,
+) -> Result<(), ReplacementError> {
     let output = OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -840,7 +1222,7 @@ fn copy_new_file(
             source: source_error,
         })?;
     let mut writer = BufWriter::new(output);
-    io::copy(&mut input, &mut writer).map_err(|source_error| ReplacementError::Io {
+    io::copy(input, &mut writer).map_err(|source_error| ReplacementError::Io {
         operation,
         path: destination.to_path_buf(),
         source: source_error,
@@ -850,6 +1232,43 @@ fn copy_new_file(
         path: destination.to_path_buf(),
         source: source_error,
     })
+}
+
+fn open_existing_destination(
+    destination: &PinnedDestination,
+) -> Result<Option<File>, ReplacementError> {
+    match rustix::fs::openat(
+        destination.parent.as_ref(),
+        destination.file_name.as_os_str(),
+        rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    ) {
+        Ok(file) => {
+            let file = File::from(file);
+            let metadata = file.metadata().map_err(|source| ReplacementError::Io {
+                operation: "replacement.destination_metadata",
+                path: destination.path.clone(),
+                source,
+            })?;
+            if !metadata.is_file() {
+                return Err(ReplacementError::Io {
+                    operation: "replacement.destination_open",
+                    path: destination.path.clone(),
+                    source: io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "destination is not a regular file",
+                    ),
+                });
+            }
+            Ok(Some(file))
+        }
+        Err(rustix::io::Errno::NOENT) => Ok(None),
+        Err(source) => Err(ReplacementError::Io {
+            operation: "replacement.destination_open",
+            path: destination.path.clone(),
+            source: rustix_error(source),
+        }),
+    }
 }
 
 fn remove_transaction(path: &Path) -> Result<(), ReplacementError> {
@@ -882,14 +1301,6 @@ fn create_dir_all(path: &Path, operation: &'static str) -> Result<(), Replacemen
 
 fn read_dir(path: &Path, operation: &'static str) -> Result<fs::ReadDir, ReplacementError> {
     fs::read_dir(path).map_err(|source| ReplacementError::Io {
-        operation,
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
-fn metadata(path: &Path, operation: &'static str) -> Result<fs::Metadata, ReplacementError> {
-    fs::metadata(path).map_err(|source| ReplacementError::Io {
         operation,
         path: path.to_path_buf(),
         source,
@@ -938,15 +1349,6 @@ fn sync_file(path: &Path, operation: &'static str) -> Result<(), ReplacementErro
         })
 }
 
-fn sync_parent(path: &Path, operation: &'static str) -> Result<(), ReplacementError> {
-    let parent = path.parent().ok_or_else(|| ReplacementError::Io {
-        operation,
-        path: path.to_path_buf(),
-        source: io::Error::new(io::ErrorKind::InvalidInput, "path has no parent directory"),
-    })?;
-    sync_directory(parent, operation)
-}
-
 fn sync_directory(path: &Path, operation: &'static str) -> Result<(), ReplacementError> {
     File::open(path)
         .and_then(|directory| directory.sync_all())
@@ -960,11 +1362,13 @@ fn sync_directory(path: &Path, operation: &'static str) -> Result<(), Replacemen
 #[cfg(test)]
 mod tests {
     use super::{
-        ReplacementArtifactRequest, ReplacementBundleRequest, ReplacementCommitter,
-        ReplacementManifest, ReplacementPhase, ReplacementRecoveryAction, ReplacementRequest,
-        SystemReplacementCommitter, manifest_entries, transaction_job_key, write_manifest,
+        MANAGED_ROOT_NAME, MANIFEST_FILE_NAME, REPLACEMENTS_DIR_NAME, ReplacementArtifactRequest,
+        ReplacementBundleRequest, ReplacementCommitter, ReplacementManifest, ReplacementPhase,
+        ReplacementRecoveryAction, ReplacementRequest, SystemReplacementCommitter,
+        manifest_entries, transaction_job_key, write_manifest,
     };
     use std::fs;
+    use std::os::unix::fs::symlink;
 
     #[test]
     fn replacement_stages_on_source_root_and_finalizes_after_commit() -> anyhow::Result<()> {
@@ -1193,6 +1597,156 @@ mod tests {
         assert_eq!(recovered.len(), 1);
         assert_eq!(recovered[0].action, ReplacementRecoveryAction::Finalized);
         assert_eq!(fs::read(&source)?, b"verified");
+        Ok(())
+    }
+
+    #[test]
+    fn commit_uses_pinned_destination_after_parent_swap() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidates = tempfile::tempdir()?;
+        let external = tempfile::tempdir()?;
+        let library = root.path().join("library");
+        let retained_library = root.path().join("library-retained");
+        let source = library.join("movie.mkv");
+        let external_sentinel = external.path().join("movie.mkv");
+        let candidate = candidates.path().join("movie.mkv");
+        fs::create_dir(&library)?;
+        fs::write(&source, b"original")?;
+        fs::write(&external_sentinel, b"external")?;
+        fs::write(&candidate, b"verified")?;
+        let committer = SystemReplacementCommitter;
+        let prepared = committer.prepare(ReplacementRequest {
+            job_key: "swap-before-commit",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+
+        fs::rename(&library, &retained_library)?;
+        symlink(external.path(), &library)?;
+        let active = committer.commit(prepared)?;
+
+        assert_eq!(fs::read(retained_library.join("movie.mkv"))?, b"verified");
+        assert_eq!(fs::read(&external_sentinel)?, b"external");
+        committer.finalize(active)?;
+        Ok(())
+    }
+
+    #[test]
+    fn rollback_uses_pinned_destination_after_parent_swap() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidates = tempfile::tempdir()?;
+        let external = tempfile::tempdir()?;
+        let library = root.path().join("library");
+        let retained_library = root.path().join("library-retained");
+        let source = library.join("movie.mkv");
+        let external_sentinel = external.path().join("movie.mkv");
+        let candidate = candidates.path().join("movie.mkv");
+        fs::create_dir(&library)?;
+        fs::write(&source, b"original")?;
+        fs::write(&external_sentinel, b"external")?;
+        fs::write(&candidate, b"candidate")?;
+        let committer = SystemReplacementCommitter;
+        let prepared = committer.prepare(ReplacementRequest {
+            job_key: "swap-before-rollback",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+        let active = committer.commit(prepared)?;
+
+        fs::rename(&library, &retained_library)?;
+        symlink(external.path(), &library)?;
+        committer.rollback(active)?;
+
+        assert_eq!(fs::read(retained_library.join("movie.mkv"))?, b"original");
+        assert_eq!(fs::read(&external_sentinel)?, b"external");
+        Ok(())
+    }
+
+    #[test]
+    fn recovery_quarantines_bad_entry_and_continues_valid_work() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidates = tempfile::tempdir()?;
+        let source = root.path().join("movie.mkv");
+        let candidate = candidates.path().join("movie.mkv");
+        fs::write(&source, b"original")?;
+        fs::write(&candidate, b"candidate")?;
+        let committer = SystemReplacementCommitter;
+        let prepared = committer.prepare(ReplacementRequest {
+            job_key: "valid-recovery",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+        let _committed = committer.commit(prepared)?;
+        let malformed = root
+            .path()
+            .join(MANAGED_ROOT_NAME)
+            .join(REPLACEMENTS_DIR_NAME)
+            .join("malformed");
+        fs::create_dir(&malformed)?;
+        fs::write(malformed.join(MANIFEST_FILE_NAME), b"not-json")?;
+
+        let recovered = committer.recover(root.path())?;
+
+        assert_eq!(recovered.len(), 2);
+        assert!(recovered.iter().any(|entry| {
+            entry.job_key == "valid-recovery"
+                && entry.action == ReplacementRecoveryAction::RolledBack
+        }));
+        assert!(recovered.iter().any(|entry| {
+            entry.job_key == "malformed"
+                && entry.action == ReplacementRecoveryAction::Quarantined
+                && entry.error.is_some()
+        }));
+        assert_eq!(fs::read(&source)?, b"original");
+
+        let queued = committer.prepare(ReplacementRequest {
+            job_key: "queued-job",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+        let queued = committer.commit(queued)?;
+        committer.finalize(queued)?;
+        assert_eq!(fs::read(&source)?, b"candidate");
+        assert!(committer.recover(root.path())?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn recovery_rejects_symlinked_manifest_destination_without_external_write() -> anyhow::Result<()>
+    {
+        let root = tempfile::tempdir()?;
+        let candidates = tempfile::tempdir()?;
+        let external = tempfile::tempdir()?;
+        let library = root.path().join("library");
+        let retained_library = root.path().join("library-retained");
+        let source = library.join("movie.mkv");
+        let external_sentinel = external.path().join("movie.mkv");
+        let candidate = candidates.path().join("movie.mkv");
+        fs::create_dir(&library)?;
+        fs::write(&source, b"original")?;
+        fs::write(&external_sentinel, b"external")?;
+        fs::write(&candidate, b"candidate")?;
+        let committer = SystemReplacementCommitter;
+        let prepared = committer.prepare(ReplacementRequest {
+            job_key: "symlinked-recovery",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+        let _committed = committer.commit(prepared)?;
+        fs::rename(&library, &retained_library)?;
+        symlink(external.path(), &library)?;
+
+        let recovered = committer.recover(root.path())?;
+
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].action, ReplacementRecoveryAction::Quarantined);
+        assert_eq!(fs::read(&external_sentinel)?, b"external");
+        assert_eq!(fs::read(retained_library.join("movie.mkv"))?, b"candidate");
         Ok(())
     }
 }
