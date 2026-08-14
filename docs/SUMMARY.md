@@ -455,6 +455,7 @@
     -   [439: Production media runtime end-to-end verification](adr/439-production-media-runtime-e2e.md)
     -   [440: Packaged media runtime lifecycle](adr/440-packaged-media-runtime-lifecycle.md)
     -   [441: Degraded media capability startup](adr/441-degraded-media-capability-startup.md)
+    -   [445: Operator-approved architecture](adr/445-operator-approved-architecture.md)
     -   [458: Media data module boundary integration correction](adr/458-media-data-module-boundary.md)
     -   [459: Bootstrap media task boundary integration correction](adr/459-bootstrap-media-task-boundary.md)
     -   [462: PR 88 shell return correction](adr/462-pr88-shell-return.md)

@@ -2,6 +2,7 @@
 
 - Status: {Proposed|Accepted|Superseded}
 - Date: {YYYY-MM-DD}
+- Operator approval: {Pending|approval evidence and date}
 - Context:
   - What problem are we solving?
   - What constraints or forces shape the decision?
