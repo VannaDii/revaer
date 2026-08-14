@@ -1160,6 +1160,9 @@
           "color_primaries": {
             "type": "string"
           },
+          "color_range": {
+            "type": "string"
+          },
           "color_space": {
             "type": "string"
           },
@@ -1205,14 +1208,29 @@
           "title": {
             "type": "string"
           },
+          "video_average_frame_rate": {
+            "type": "string"
+          },
+          "video_bit_depth": {
+            "type": "integer"
+          },
           "video_bitrate_bps": {
+            "type": "integer"
+          },
+          "video_height_px": {
             "type": "integer"
           },
           "video_level": {
             "type": "string"
           },
+          "video_pixel_format": {
+            "type": "string"
+          },
           "video_profile": {
             "type": "string"
+          },
+          "video_width_px": {
+            "type": "integer"
           }
         },
         "required": [

@@ -160,6 +160,8 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION media_job_worker_claim_next_v3();
+
 CREATE FUNCTION media_job_worker_claim_next_v3()
 RETURNS TABLE (
     media_job_public_id UUID,

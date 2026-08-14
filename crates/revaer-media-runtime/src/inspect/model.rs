@@ -252,6 +252,8 @@ pub struct StreamInspection {
     pub height: Option<u32>,
     /// Pixel format when applicable.
     pub pixel_format: Option<String>,
+    /// Video component bit depth when applicable.
+    pub bit_depth: Option<u32>,
     /// Sample aspect ratio when applicable.
     pub sample_aspect_ratio: Option<String>,
     /// Display aspect ratio when applicable.

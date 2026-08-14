@@ -2629,6 +2629,43 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION media_job_phase_append_v1(
+    media_job_public_id_input UUID,
+    phase_index_input INT,
+    phase_name_input TEXT,
+    phase_status_input TEXT,
+    details_text_input TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    current_claim_generation BIGINT;
+BEGIN
+    SELECT attempt.claim_generation
+      INTO current_claim_generation
+      FROM media_job job
+      JOIN media_job_attempt attempt ON attempt.media_job_attempt_id = job.current_attempt_id
+     WHERE job.media_job_public_id = media_job_public_id_input
+       AND job.status = attempt.status
+       AND attempt.status IN (media_job_status_running_v1(), media_job_status_verifying_v1());
+    IF current_claim_generation IS NULL THEN
+        RAISE EXCEPTION 'stale worker claim'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    PERFORM media_job_phase_append_v1(
+        media_job_public_id_input,
+        current_claim_generation,
+        phase_index_input,
+        phase_name_input,
+        phase_status_input,
+        details_text_input
+    );
+END;
+$$;
+
 DROP FUNCTION media_job_operation_append_v1(UUID, INT, TEXT, INT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT);
 CREATE FUNCTION media_job_operation_append_v1(
     media_job_public_id_input UUID,
@@ -2668,6 +2705,53 @@ BEGIN
         NULLIF(btrim(arg_1_input), ''), NULLIF(btrim(arg_2_input), ''),
         NULLIF(btrim(arg_3_input), ''), NULLIF(btrim(arg_4_input), ''),
         NULLIF(btrim(arg_5_input), '')
+    );
+END;
+$$;
+
+CREATE FUNCTION media_job_operation_append_v1(
+    media_job_public_id_input UUID,
+    operation_index_input INT,
+    operation_kind_input TEXT,
+    stream_id_input INT,
+    command_bin_input TEXT,
+    arg_1_input TEXT,
+    arg_2_input TEXT,
+    arg_3_input TEXT,
+    arg_4_input TEXT,
+    arg_5_input TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    current_claim_generation BIGINT;
+BEGIN
+    SELECT attempt.claim_generation
+      INTO current_claim_generation
+      FROM media_job job
+      JOIN media_job_attempt attempt ON attempt.media_job_attempt_id = job.current_attempt_id
+     WHERE job.media_job_public_id = media_job_public_id_input
+       AND job.status = attempt.status
+       AND attempt.status IN (media_job_status_running_v1(), media_job_status_verifying_v1());
+    IF current_claim_generation IS NULL THEN
+        RAISE EXCEPTION 'stale worker claim'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_job_worker_claim_stale';
+    END IF;
+    PERFORM media_job_operation_append_v1(
+        media_job_public_id_input,
+        current_claim_generation,
+        operation_index_input,
+        operation_kind_input,
+        stream_id_input,
+        command_bin_input,
+        arg_1_input,
+        arg_2_input,
+        arg_3_input,
+        arg_4_input,
+        arg_5_input
     );
 END;
 $$;
@@ -3673,6 +3757,8 @@ BEGIN
         min_free_space_bytes = EXCLUDED.min_free_space_bytes;
 END;
 $$;
+
+DROP FUNCTION media_job_phase_list_v1(UUID);
 
 CREATE OR REPLACE FUNCTION media_job_phase_list_v1(media_job_public_id_input UUID)
 RETURNS TABLE (

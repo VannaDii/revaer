@@ -1,0 +1,50 @@
+# Media video technical constraints
+
+- Status: Accepted
+- Date: 2026-08-12
+- Context:
+  - Desired video targets could express codec, profile, level, bitrate, color, and HDR intent but could not persist or verify exact dimensions, pixel format, bit depth, frame rate, or color range as one immutable contract.
+  - Applying every authored technical constraint as an encoder operation would schedule lossy work even when inspection already proves the source satisfies the target.
+  - Retained-attachment verification needs bounded materialization inside the admitted job workspace rather than process-global temporary storage.
+- Decision:
+  - Persist exact video dimensions, pixel format, bit depth, reduced average frame rate, and color range in desired targets and immutable job snapshots.
+  - Schedule video encoding only when the desired codec differs or normalized inspection proves at least one authored technical constraint differs.
+  - Parse frame rates as checked positive rationals, cap each term at 1,000,000 and the value at 240 FPS, reduce them by greatest common divisor, and compare the reduced values exactly.
+  - Bound video inputs to 16,384 pixels per axis, 134,217,728 pixels per frame, and 1,000,000,000 bits per second. Reject upscales above four times either source axis or sixteen times source area.
+  - Reject candidate outputs larger than the workspace bytes admitted by preflight. Preserve the existing 12-hour process deadline established by ADR 348.
+  - Materialize retained attachments only in the managed job input directory. Reject symlinked roots, reserve payload files with create-new semantics, and remove each payload on every return path.
+  - Verify at most 64 retained attachments sequentially, with a five-minute aggregate deadline, two-minute child-process ceiling, 256 MiB per payload, 512 MiB aggregate materialization, cooperative cancellation, child kill/reap, and bounded stderr.
+- Consequences:
+  - Matching source video remains lossless while true technical mismatches produce explicit encoder work and exact post-execution verification.
+  - Malformed or excessive targets fail consistently at HTTP, YAML, core, and stored-procedure boundaries.
+  - Large or adversarial attachment sets fail closed without escaping the managed workspace or creating unbounded disk, process, time, or diagnostic pressure.
+
+## Task Record
+
+- Motivation:
+  - Reconstruct the focused video-constraint layer while resolving the five active review requirements for mismatch-based scheduling, complete resource bounds, exact FPS comparison, managed attachment materialization, and bounded attachment verification.
+- Design notes:
+  - PostgreSQL migration `0190` adds versioned append/list procedures and snapshots the new scalar fields without changing migration `0181` or parent ADR behavior.
+  - The frame-rate parser uses integer arithmetic only; decimal and floating-point comparisons are intentionally unsupported.
+  - A video policy constraint reaches execution only after inspection reports a mismatch, so encoder selection cannot turn a matching technical declaration into unnecessary lossy work.
+  - Attachment verification uses one awaited blocking operation at a time, making process fanout exactly one.
+- Test coverage summary:
+  - Clean-chain feature-matrix coverage retains the pre-activation phase and operation overloads and renames the prior target-stream v7 routine to the v6 delegate required by the new v7 contract; the canonical v0 initializer removes these transitional compatibility surfaces.
+  - Clean-chain migration validation proves each revised v7 routine replaces its predecessor through an explicit drop-and-recreate boundary without leaving ambiguous overloads.
+  - Added boundary tests for dimensions, frame area, bitrate, FPS terms/value, rational reduction, mismatch-only scheduling, upscale rejection, and candidate-output size and file type.
+  - Added database tests for canonical FPS persistence and direct-procedure rejection of every resource ceiling.
+  - Added attachment tests for workspace symlink rejection, payload overrun termination, count and aggregate-byte limits, digest comparison, cleanup, bounded stderr, deadline, and cancellation behavior.
+  - Extended real FFmpeg fixture coverage to assert output dimensions, pixel format, bit depth, frame rate, and color range.
+- Observability updates:
+  - Existing job phase, verification check, violation, quarantine, and failure records retain the stable mismatch or bound code. Attachment command stderr remains bounded to 64 KiB.
+- Status-doc validation:
+  - Updated `MEDIA_TRANSCODING.md` to describe the implemented technical-contract and attachment-verification limits. No unrelated capability status changed.
+- Risk & rollback plan:
+  - Risk: existing authored targets outside the admitted ceilings will be rejected during migration or subsequent writes.
+  - Risk: unusual but legitimate attachments or transcodes can hit fixed resource ceilings and require an explicit product decision before limits change.
+  - Rollback: revert this layer and migration `0190` before deployment. After deployment, restore from backup or apply a forward migration; do not edit an applied migration.
+- Dependency rationale:
+  - `revaer-app` now declares the workspace-pinned `rustix` dependency already used by `revaer-media-runtime`, so attachment cancellation can signal the complete Unix process group without unsafe code or a shell. No package was added to the resolved dependency graph.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, and `.github/instructions/devops.instructions.md`.
+  - No policy drift, contradictions, or stale references were found.

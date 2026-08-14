@@ -131,6 +131,8 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION media_job_worker_claim_next_v3();
+
 CREATE OR REPLACE FUNCTION media_job_worker_claim_next_v3()
 RETURNS TABLE (
     media_job_public_id UUID, media_profile_public_id UUID, source_path TEXT, output_path TEXT,

@@ -598,6 +598,24 @@ pub struct MediaDesiredTargetStream {
     /// Optional desired average video bitrate in bits per second.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub video_bitrate_bps: Option<i32>,
+    /// Optional desired video width in pixels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_width_px: Option<i32>,
+    /// Optional desired video height in pixels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_height_px: Option<i32>,
+    /// Optional desired video pixel format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_pixel_format: Option<String>,
+    /// Optional desired video component bit depth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_bit_depth: Option<i32>,
+    /// Optional desired average frame rate as an exact fraction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_average_frame_rate: Option<String>,
+    /// Optional desired video color range.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_range: Option<String>,
     /// Optional desired video color primaries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color_primaries: Option<String>,

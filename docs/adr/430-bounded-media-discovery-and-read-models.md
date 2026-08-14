@@ -28,6 +28,7 @@
   - Route DTOs are `MediaRecentJobPageResponse`, `MediaRecentJobSummaryResponse`, `MediaJobDiagnosticCounts`, and `MediaJobDiagnosticsResponse`.
 - Test coverage summary:
   - Covers watcher pressure/coalescing, sidecar identity and ambiguous ownership, canonical alias deduplication, every scan budget and resume, page limits, child limits, and cursor behavior.
+  - Clean-chain migration validation proves the bounded v3 claim row type is installed through an explicit drop-and-recreate boundary.
 - Observability updates:
   - Watcher overflow and each scan-budget stop use `media_discovery_candidates_total` outcomes.
 - Status-doc validation:

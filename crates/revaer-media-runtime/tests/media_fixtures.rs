@@ -182,11 +182,14 @@ use revaer_media_core::model::{
     MediaStream, StreamKind,
 };
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
-use revaer_media_runtime::execute::{ProcessCommandRunner, execute_step_sequence};
-use revaer_media_runtime::inspect::{
-    FfprobeInspectAdapter, InspectAdapter, SystemInspectProbeExecutor,
+use revaer_media_runtime::execute::{
+    DesiredGraphBuildContext, ProcessCommandRunner, SubtitleArtifactPlan, VideoStreamConstraints,
+    VideoTranscodePolicy, build_desired_graph_execution_steps_with_sidecars, execute_step_sequence,
 };
-use revaer_media_runtime::jobs::{build_job_execution_steps, plan_job_from_source_graph};
+use revaer_media_runtime::inspect::{
+    FfprobeInspectAdapter, InspectAdapter, MediaInspection, SystemInspectProbeExecutor,
+};
+use revaer_media_runtime::jobs::plan_job_from_source_graph;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1384,10 +1387,11 @@ fn assert_transcoding_cases(
             AAC_CODEC,
             VP9_CODEC,
         ),
-        audio_video_transcode_case(
+        audio_video_transcode_case_with_video_technical(
             "WebM VP8/Vorbis to MP4 H.264/AAC",
             "chromium-bear-320x240-webm",
             "webm-vp8-vorbis-to-h264-aac.mp4",
+            WEBM_TO_H264_EXACT_VIDEO,
         ),
         audio_video_transcode_case(
             "AVI MPEG-4/MP3 to MP4 H.264/AAC",
@@ -1417,6 +1421,16 @@ struct TranscodeCase<'a> {
     expected_video_codecs: &'a [&'a str],
     expected_audio_codecs: &'a [&'a str],
     expected_operations: &'a [&'a str],
+    video_technical: Option<VideoTechnicalExpectation>,
+}
+
+#[derive(Clone, Copy)]
+struct VideoTechnicalExpectation {
+    width_px: u32,
+    height_px: u32,
+    pixel_format: &'static str,
+    bit_depth: u32,
+    average_frame_rate: &'static str,
 }
 
 const NO_CODECS: &[&str] = &[];
@@ -1429,6 +1443,13 @@ const VP9_CODEC: &[&str] = &["vp9"];
 const AUDIO_TRANSCODE_OPERATION: &[&str] = &["audio_transcode"];
 const VIDEO_TRANSCODE_OPERATION: &[&str] = &["video_transcode"];
 const AUDIO_VIDEO_TRANSCODE_OPERATIONS: &[&str] = &["video_transcode", "audio_transcode"];
+const WEBM_TO_H264_EXACT_VIDEO: VideoTechnicalExpectation = VideoTechnicalExpectation {
+    width_px: 160,
+    height_px: 120,
+    pixel_format: "yuv420p",
+    bit_depth: 8,
+    average_frame_rate: "24/1",
+};
 
 const fn video_transcode_case(
     case_name: &'static str,
@@ -1446,6 +1467,7 @@ const fn video_transcode_case(
         expected_video_codecs,
         expected_audio_codecs: NO_CODECS,
         expected_operations: VIDEO_TRANSCODE_OPERATION,
+        video_technical: None,
     }
 }
 
@@ -1465,6 +1487,7 @@ const fn audio_transcode_case(
         expected_video_codecs,
         expected_audio_codecs: audio_codecs,
         expected_operations: AUDIO_TRANSCODE_OPERATION,
+        video_technical: None,
     }
 }
 
@@ -1482,6 +1505,26 @@ const fn audio_video_transcode_case(
         expected_video_codecs: H264_CODEC,
         expected_audio_codecs: AAC_CODEC,
         expected_operations: AUDIO_VIDEO_TRANSCODE_OPERATIONS,
+        video_technical: None,
+    }
+}
+
+const fn audio_video_transcode_case_with_video_technical(
+    case_name: &'static str,
+    fixture_id: &'static str,
+    output_name: &'static str,
+    video_technical: VideoTechnicalExpectation,
+) -> TranscodeCase<'static> {
+    TranscodeCase {
+        case_name,
+        fixture_id,
+        output_name,
+        video_codec: Some("h264"),
+        audio_codecs: AAC_CODEC,
+        expected_video_codecs: H264_CODEC,
+        expected_audio_codecs: AAC_CODEC,
+        expected_operations: AUDIO_VIDEO_TRANSCODE_OPERATIONS,
+        video_technical: Some(video_technical),
     }
 }
 
@@ -1503,8 +1546,10 @@ fn assert_transcode_case(
         item.audio_codecs,
     )?;
     let desired = desired_graph(path_text(&output_path)?, desired_streams)?;
+    let video_policy = video_policy_for_transcode_case(&desired.streams, item.video_technical)?;
 
-    let materialized = materialize_desired_graph(&source_path, &source, &desired)?;
+    let materialized =
+        materialize_desired_graph_with_policy(&source_path, &source, &desired, video_policy)?;
     assert_operations(
         item.case_name,
         &materialized.operations,
@@ -1518,6 +1563,10 @@ fn assert_transcode_case(
         StreamKind::Video,
         item.expected_video_codecs,
     )?;
+    if let Some(expected) = item.video_technical {
+        let inspection = inspect_full(&materialized.verified_output_path)?;
+        assert_video_technical_expectation(item.case_name, &inspection, expected)?;
+    }
     assert_stream_codecs(
         item.case_name,
         &output,
@@ -1533,11 +1582,101 @@ fn assert_transcode_case(
         operations: materialized.operations,
         outcome: "passed".to_string(),
         details: format!(
-            "output codecs video=[{}] audio=[{}]",
+            "output codecs video=[{}] audio=[{}]{}",
             item.expected_video_codecs.join(","),
-            item.expected_audio_codecs.join(",")
+            item.expected_audio_codecs.join(","),
+            item.video_technical.map_or_else(String::new, |expected| {
+                format!(
+                    " exact_video={}x{}:{}:{}",
+                    expected.width_px,
+                    expected.height_px,
+                    expected.pixel_format,
+                    expected.average_frame_rate
+                )
+            })
         ),
     });
+    Ok(())
+}
+
+fn video_policy_for_transcode_case(
+    streams: &[MediaStream],
+    expected: Option<VideoTechnicalExpectation>,
+) -> TestResult<VideoTranscodePolicy> {
+    let Some(expected) = expected else {
+        return Ok(VideoTranscodePolicy::default());
+    };
+    let Some(stream) = streams
+        .iter()
+        .find(|stream| stream.kind == StreamKind::Video)
+    else {
+        return fail("exact video constraint case requires a video stream");
+    };
+    Ok(VideoTranscodePolicy {
+        stream_constraints: vec![VideoStreamConstraints {
+            stream_id: stream.stream_id,
+            profile: None,
+            level: None,
+            max_bitrate_bps: None,
+            width_px: Some(expected.width_px),
+            height_px: Some(expected.height_px),
+            pixel_format: Some(expected.pixel_format.to_string()),
+            bit_depth: Some(expected.bit_depth),
+            average_frame_rate: Some(expected.average_frame_rate.to_string()),
+            color_range: None,
+            color_primaries: None,
+            color_transfer: None,
+            color_space: None,
+            hdr_format: None,
+            hdr10_color_volume: None,
+        }],
+        ..VideoTranscodePolicy::default()
+    })
+}
+
+fn assert_video_technical_expectation(
+    label: &str,
+    inspection: &MediaInspection,
+    expected: VideoTechnicalExpectation,
+) -> TestResult {
+    let Some(video_stream_id) = inspection
+        .graph
+        .streams
+        .iter()
+        .find(|stream| stream.kind == StreamKind::Video)
+        .map(|stream| stream.stream_id)
+    else {
+        return fail(format!("{label} output missing video stream"));
+    };
+    let Some(stream) = inspection
+        .streams
+        .iter()
+        .find(|stream| stream.stream_id == video_stream_id)
+    else {
+        return fail(format!(
+            "{label} output missing technical inspection for stream {video_stream_id}"
+        ));
+    };
+    if stream.width != Some(expected.width_px)
+        || stream.height != Some(expected.height_px)
+        || stream.pixel_format.as_deref() != Some(expected.pixel_format)
+        || stream.bit_depth != Some(expected.bit_depth)
+        || stream.average_frame_rate.as_deref() != Some(expected.average_frame_rate)
+    {
+        return fail(format!(
+            "{label} exact video technical mismatch: expected {}x{} {} {} {}, got width={:?} height={:?} pixel_format={:?} bit_depth={:?} average_frame_rate={:?}",
+            expected.width_px,
+            expected.height_px,
+            expected.pixel_format,
+            expected.bit_depth,
+            expected.average_frame_rate,
+            stream.width,
+            stream.height,
+            stream.pixel_format,
+            stream.bit_depth,
+            stream.average_frame_rate
+        ));
+    }
     Ok(())
 }
 
@@ -1845,6 +1984,11 @@ fn inspect_graph(path: &Path) -> TestResult<MediaGraph> {
     Ok(inspector.inspect(path)?.graph)
 }
 
+fn inspect_full(path: &Path) -> TestResult<MediaInspection> {
+    let inspector = FfprobeInspectAdapter::new(Arc::new(SystemInspectProbeExecutor), "ffprobe");
+    Ok(inspector.inspect(path)?)
+}
+
 fn desired_graph(output_path: String, streams: Vec<MediaStream>) -> TestResult<DesiredGraph> {
     let mut desired_streams = Vec::with_capacity(streams.len());
     let mut stream_bindings = Vec::with_capacity(streams.len());
@@ -1875,6 +2019,20 @@ fn materialize_desired_graph(
     source: &MediaGraph,
     desired: &DesiredGraph,
 ) -> TestResult<MaterializedGraph> {
+    materialize_desired_graph_with_policy(
+        source_path,
+        source,
+        desired,
+        VideoTranscodePolicy::default(),
+    )
+}
+
+fn materialize_desired_graph_with_policy(
+    source_path: &Path,
+    source: &MediaGraph,
+    desired: &DesiredGraph,
+    policy: VideoTranscodePolicy,
+) -> TestResult<MaterializedGraph> {
     let planned = plan_job_from_source_graph(desired, fs::metadata(source_path)?.len(), source)?;
     let verified_output_path =
         verified_output_path_for_plan(source_path, desired, &planned.operations);
@@ -1883,8 +2041,23 @@ fn materialize_desired_graph(
         .iter()
         .map(|operation| operation_kind_name(operation.kind).to_string())
         .collect::<Vec<_>>();
-    let steps =
-        build_job_execution_steps(&path_text(source_path)?, &desired.output_path, &planned)?;
+    let input_path = path_text(source_path)?;
+    let steps = build_desired_graph_execution_steps_with_sidecars(
+        DesiredGraphBuildContext {
+            input_path: &input_path,
+            output_path: &desired.output_path,
+            source: planned.source.as_ref(),
+            desired: planned.desired.as_ref(),
+            operations: &planned.operations,
+            capabilities: None,
+            policy,
+        },
+        SubtitleArtifactPlan {
+            embeddings: &planned.sidecar_embeddings,
+            outputs: &planned.sidecar_outputs,
+            removals: &planned.sidecar_removals,
+        },
+    )?;
     execute_step_sequence(&steps, &ProcessCommandRunner)?;
     Ok(MaterializedGraph {
         operations: operation_names,

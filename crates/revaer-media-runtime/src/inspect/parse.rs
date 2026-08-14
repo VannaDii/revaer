@@ -5,6 +5,7 @@ use revaer_media_core::model::{
     ContainerChapterEntry, ContainerMetadataEntry, MediaGraph, MediaStream, StreamKind,
 };
 use revaer_media_core::normalize::{normalize_graph, normalize_subtitle_codec};
+use revaer_media_core::target::video_pixel_format_bit_depth;
 
 use super::ffprobe::{
     FfprobeChapter, FfprobeDisposition, FfprobeFormat, FfprobeFrame, FfprobeOutput,
@@ -251,6 +252,7 @@ fn normalize_stream_inspection(
         width: stream.width.filter(|value| *value > 0),
         height: stream.height.filter(|value| *value > 0),
         pixel_format: normalize_lowercase_text(stream.pix_fmt.as_deref()),
+        bit_depth: video_bit_depth_for_stream(stream)?,
         sample_aspect_ratio: normalize_optional_text(stream.sample_aspect_ratio.as_deref()),
         display_aspect_ratio: normalize_optional_text(stream.display_aspect_ratio.as_deref()),
         average_frame_rate: normalize_optional_fraction(stream.avg_frame_rate.as_deref()),
@@ -267,6 +269,28 @@ fn normalize_stream_inspection(
         side_data_types: normalize_side_data(&stream.side_data_list, frame_values),
         side_data: normalize_side_data_records(&stream.side_data_list, frame_values),
     })
+}
+
+fn video_bit_depth_for_stream(stream: &FfprobeStream) -> Result<Option<u32>, InspectError> {
+    if !stream.codec_type.eq_ignore_ascii_case("video") {
+        return Ok(None);
+    }
+    let raw_bit_depth =
+        parse_optional_u64(stream.bits_per_raw_sample.as_deref(), "video bit depth")?;
+    let sample_bit_depth =
+        parse_optional_u64(stream.bits_per_sample.as_deref(), "video bit depth")?;
+    if let Some(bit_depth) = raw_bit_depth
+        .filter(|value| *value > 0)
+        .or_else(|| sample_bit_depth.filter(|value| *value > 0))
+    {
+        return u32::try_from(bit_depth).ok().map(Some).ok_or_else(|| {
+            InspectError::OutputMalformed("video bit depth is out of range".to_string())
+        });
+    }
+    Ok(stream
+        .pix_fmt
+        .as_deref()
+        .and_then(video_pixel_format_bit_depth))
 }
 
 fn frame_side_data_by_stream(frames: &[FfprobeFrame]) -> BTreeMap<u32, Vec<&FfprobeSideData>> {

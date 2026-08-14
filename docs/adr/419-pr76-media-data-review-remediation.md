@@ -34,6 +34,7 @@
   - Attempts own lifecycle timestamps, errors, claim generation, and every evidence row. Terminal attempts and identity fields are immutable.
   - Retention candidates use fixed-size ordered locked batches with `SKIP LOCKED`; `diagnostics_pruned_at` removes processed shells from later ticks.
 - Test coverage summary:
+  - Apply the complete migration chain to a clean PostgreSQL database so return-shape changes prove their required drop-and-recreate boundary before dependent checks run.
   - Clean migration replay through `just db-migrate` on PostgreSQL 16.
   - Focused source-owned `revaer-data` coverage for multiple roots and associations, case-sensitive siblings, symlink and bind aliases, start-time identity drift, policy bounds, immutable snapshots, insert-only create safety, cross-profile/status keyset traversal, stale-worker fencing, retry evidence history, and multi-batch one-shot pruning.
   - Migrated-schema catalog inspection verifies all worker/evidence procedures require claim generations and all evidence tables require attempt IDs.

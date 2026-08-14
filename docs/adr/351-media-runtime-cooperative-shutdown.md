@@ -26,6 +26,7 @@
   - Bootstrap awaits each media runtime for `30s` before aborting and logging the fallback.
 - Test coverage summary:
   - Updated discovery and retention spawn tests to request shutdown and await normal task completion instead of aborting.
+  - Rust 1.96 workspace lint verifies that the shutdown-aware discovery task retains only the cancellation handle required by its drop guard.
   - Added a media job runtime test proving a pre-requested shutdown exits without claiming queued work.
   - Added media job runtime tests proving shutdown during active transcode and active verification cancels controlled work, persists `cancelled`, and cleans workspace output.
   - Bounded source, candidate, no-op, and final-state inspections share the same shutdown-aware control monitor, so an active FFprobe process cannot outlive graceful media runtime shutdown.

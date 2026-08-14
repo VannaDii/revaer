@@ -38,6 +38,7 @@
   - The ffprobe adapter test proves normalized chapters are carried into `MediaGraph`.
   - The existing chapter-strip runtime test now proves execute, reinspect, and no-op replanning behavior.
   - Focused Cargo checks/tests and strict Clippy passed for `revaer-media-core`, `revaer-media-runtime`, and `revaer-app` without default features.
+  - Rust 1.96 workspace lint verifies that expected FFmpeg argument pairs are represented directly as fixed arrays without tuple conversion.
   - `just audit`, `just deny`, `just fmt`, `just policy`, `just instruction-drift`, both npm clean installs/audits, TypeScript coverage compilation, and semantic-release config/version loading passed.
   - Workspace-wide `just lint` was attempted and reached Clippy, but the host Homebrew libtorrent build failed because RTC was enabled without the OpenSSL/GnuTLS compile definition. The failure is outside this change; the main task retains ownership of shared full gates.
 - Observability updates:

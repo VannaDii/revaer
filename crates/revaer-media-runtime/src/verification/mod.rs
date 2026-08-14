@@ -816,6 +816,7 @@ mod tests {
                 width: Some(1920),
                 height: Some(1080),
                 pixel_format: Some("yuv420p".to_string()),
+                bit_depth: Some(8),
                 sample_aspect_ratio: Some("1:1".to_string()),
                 display_aspect_ratio: Some("16:9".to_string()),
                 average_frame_rate: Some("24/1".to_string()),
