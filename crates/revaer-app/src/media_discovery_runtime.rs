@@ -32,6 +32,7 @@ use crate::media_discovery_scan::{ScanBudget, ScanCursor, ScanError, scan_media_
 use crate::media_discovery_watcher::{
     MediaWatchEvent, MediaWatchEventBuffer, MediaWatcher, MediaWatcherError, NotifyMediaWatcher,
 };
+use crate::runtime_shutdown::{self, RuntimeShutdownReceiver};
 
 const DEFAULT_DISCOVERY_TICK_INTERVAL: Duration = Duration::from_mins(1);
 const WATCH_DEBOUNCE_INTERVAL: Duration = Duration::from_secs(1);
@@ -59,22 +60,6 @@ pub(crate) struct MediaDiscoveryRuntime {
     cancelled: Arc<AtomicBool>,
 }
 
-pub(crate) struct MediaDiscoveryTask {
-    handle: JoinHandle<()>,
-    cancelled: Arc<AtomicBool>,
-}
-
-impl MediaDiscoveryTask {
-    pub(crate) fn abort(&self) {
-        self.cancelled.store(true, Ordering::Relaxed);
-        self.handle.abort();
-    }
-
-    pub(crate) async fn join(self) -> Result<(), tokio::task::JoinError> {
-        self.handle.await
-    }
-}
-
 impl MediaDiscoveryRuntime {
     /// Construct a production media discovery runtime.
     #[must_use]
@@ -100,17 +85,18 @@ impl MediaDiscoveryRuntime {
     }
 
     /// Spawn the discovery loop.
-    pub(crate) fn spawn(self) -> MediaDiscoveryTask {
-        let cancelled = self.cancelled.clone();
+    pub(crate) fn spawn(self, shutdown: RuntimeShutdownReceiver) -> JoinHandle<()> {
         let task_cancelled = self.cancelled.clone();
-        let handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             let _guard = CancelOnDrop(task_cancelled);
-            self.run_loop().await;
-        });
-        MediaDiscoveryTask { handle, cancelled }
+            self.run_loop(shutdown).await;
+        })
     }
 
-    async fn run_loop(mut self) {
+    async fn run_loop(mut self, mut shutdown: RuntimeShutdownReceiver) {
+        if runtime_shutdown::requested(&shutdown) {
+            return;
+        }
         let mut ticker = interval(self.tick_interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut debounce_ticker = interval(WATCH_DEBOUNCE_TICK_INTERVAL);
@@ -127,6 +113,9 @@ impl MediaDiscoveryRuntime {
                     if let Err(error) = self.flush_watch_events().await {
                         warn!(error = %error, "media watcher debounce flush failed");
                     }
+                }
+                () = runtime_shutdown::changed(&mut shutdown) => {
+                    return;
                 }
             }
         }
@@ -478,6 +467,7 @@ pub(crate) fn is_media_file(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{MediaDiscoveryRuntime, canonicalize_candidates, is_media_file};
+    use crate::runtime_shutdown;
     use chrono::Utc;
     use revaer_api::app::media::MediaDiscoveryPreviewResponse;
     use revaer_data::DataError;
@@ -679,7 +669,8 @@ mod tests {
             Metrics::new()?,
             Duration::from_millis(100),
         );
-        let runtime_task = runtime.spawn();
+        let (shutdown_tx, shutdown_rx) = runtime_shutdown::channel();
+        let runtime_task = runtime.spawn(shutdown_rx);
         sleep(Duration::from_millis(500)).await;
 
         let source_path = source_root.join("movie.webm");
@@ -698,8 +689,8 @@ mod tests {
         assert_eq!(jobs.len(), 2);
         assert!(jobs.iter().all(|job| job.dry_run));
 
-        runtime_task.abort();
-        assert!(runtime_task.join().await.is_err());
+        assert!(runtime_shutdown::request(&shutdown_tx));
+        timeout(Duration::from_secs(5), runtime_task).await??;
         Ok(())
     }
 
