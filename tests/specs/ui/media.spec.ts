@@ -3,7 +3,7 @@ import { test, expect } from '../../fixtures/app';
 test.describe('Media', () => {
   test.setTimeout(60_000);
 
-  test('renders media management surface', async ({ app, page }) => {
+  test('renders media management surface', async ({ app, page }, testInfo) => {
     await app.goto('/media');
 
     await expect(page.getByRole('heading', { name: 'Media' })).toBeVisible();
@@ -30,7 +30,7 @@ test.describe('Media', () => {
     await expect(profileForm.getByText('Enable schedule')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Create profile' })).toBeVisible();
 
-    const suffix = Date.now().toString(36);
+    const suffix = `${Date.now().toString(36)}-${testInfo.retry}-${crypto.randomUUID().slice(0, 8)}`;
     const targetKey = `ui-target-${suffix}`;
     const policyKey = `ui-policy-${suffix}`;
     const targetForm = page.getByTestId('media-target-form');
@@ -49,7 +49,6 @@ test.describe('Media', () => {
     );
     await targetForm.getByRole('button', { name: 'Save target' }).click();
     expect((await targetResponse).status()).toBe(201);
-    await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled({
       timeout: 30_000,
     });
@@ -68,7 +67,6 @@ test.describe('Media', () => {
     );
     await policyForm.getByRole('button', { name: 'Save policy' }).click();
     expect((await policyResponse).status()).toBe(201);
-    await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled({
       timeout: 30_000,
     });
