@@ -235,6 +235,87 @@ jobs:
       - name: Native integration tests
         run: just test-native
 
+  media-conversion:
+    name: Media Conversion Fixtures
+    runs-on: ubuntu-latest
+    needs: [fmt, lint, check, helm-lint, udeps, deny, audit, load-matrix, instruction-drift]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/setup-revaer
+        with:
+          toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
+          cargo-cache: "false"
+          apt-packages: >-
+            coreutils
+            curl
+            ffmpeg
+            git
+            pkg-config
+            sccache
+
+      - id: media-tools
+        name: Media tool cache key
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            ffmpeg -version | head -n 1
+            ffprobe -version | head -n 1
+          } | sha256sum | awk '{ print "key=" $1 }' >> "${GITHUB_OUTPUT}"
+
+      - name: Restore media fixture cache
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            test-fixtures/source
+            test-fixtures/matroska
+            test-fixtures/chromium
+            test-fixtures/derived
+          key: ${{ runner.os }}-media-fixtures-${{ steps.media-tools.outputs.key }}-${{ hashFiles('test-fixtures/manifest.json', 'scripts/test-fixtures/*.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-media-fixtures-${{ steps.media-tools.outputs.key }}-
+
+      - name: Prepare media fixtures
+        run: |
+          just download-test-fixtures
+          just generate-test-fixtures
+
+      - name: Verify media fixtures
+        run: just verify-test-fixtures
+
+      - name: Media conversion integration tests
+        run: just test-media-conversion
+
+      - name: Publish media conversion report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          report_path="target/media-conversion-report.md"
+          if [ ! -f "${report_path}" ]; then
+            {
+              echo "# Media Conversion Fixture Report"
+              echo
+              echo "## Summary"
+              echo "- Outcome: failed"
+              echo "- Report file missing: ${report_path}"
+            } | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+          cat "${report_path}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload media conversion report
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: media-conversion-report
+          path: target/media-conversion-report.md
+          if-no-files-found: error
+
+      - name: Clean media fixtures
+        if: always()
+        run: just clean-test-fixtures
+
   feature-matrix:
     name: Feature Matrix
     runs-on: ubuntu-latest
@@ -453,7 +534,7 @@ jobs:
 
   build-pr-images:
     name: Images
-    needs: [ui-e2e, feature-matrix, native-it, coverage, load-matrix]
+    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage, load-matrix]
     if: github.event.pull_request.head.repo.fork == false
     uses: ./.github/workflows/build-images.yml
     permissions:
@@ -531,7 +612,7 @@ jobs:
   build-release:
     name: Build Release
     runs-on: ubuntu-latest
-    needs: [ui-e2e, feature-matrix, native-it, coverage]
+    needs: [ui-e2e, feature-matrix, native-it, media-conversion, coverage]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer

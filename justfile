@@ -58,6 +58,15 @@ update-test-fixture-probes:
 clean-test-fixtures:
     bash scripts/test-fixtures/clean-test-fixtures.sh
 
+test-media-conversion:
+    just verify-test-fixtures
+    cargo --config 'build.rustflags=["-Dwarnings"]' test \
+        -p revaer-media-runtime \
+        --test media_fixtures \
+        verify_prepared_fixture_suite \
+        --all-features \
+        -- --ignored --nocapture
+
 build: sync-assets
     cargo build --workspace --all-targets --all-features
 
