@@ -1015,6 +1015,9 @@
           "container_format": {
             "type": "string"
           },
+          "container_metadata_policy": {
+            "type": "string"
+          },
           "display_name": {
             "type": "string"
           },
@@ -1061,6 +1064,9 @@
           "container_format": {
             "type": "string"
           },
+          "container_metadata_policy": {
+            "type": "string"
+          },
           "display_name": {
             "type": "string"
           },
@@ -1087,6 +1093,7 @@
           "version",
           "display_name",
           "container_format",
+          "container_metadata_policy",
           "streams"
         ],
         "type": "object"

@@ -1,0 +1,65 @@
+# Media Container Metadata Policy
+
+- Status: Accepted
+- Date: 2026-07-30
+- Context:
+  - Desired media targets already declare the output container format and preserve source container metadata during replacement.
+  - At the time of this ADR, container metadata rewrite modes were not implemented. Treating metadata policy as an implicit default would let API, YAML, and job snapshots diverge from the worker's actual behavior.
+  - ADR 371 later adds target-level `strip` as a supported policy. This ADR remains the record for introducing the explicit policy field and the original preserve-only boundary.
+  - The media stack requires fail-closed desired-target contracts so review and execution can distinguish implemented behavior from future work.
+- Decision:
+  - Add `container_metadata_policy` to desired-target container persistence, API models, service contracts, YAML import/export, OpenAPI, and worker job snapshots.
+  - Initially accept only `preserve`. Missing request and YAML values default to `preserve` for compatibility with existing configuration, but explicit unsupported policy names are rejected until a later ADR adds a real implementation.
+  - Worker execution rejects job snapshots with missing or unsupported desired-target container metadata policy instead of silently ignoring the field.
+  - Alternatives considered:
+    - Leave the policy implicit: rejected because API/YAML output would not fully describe the desired target.
+    - Add placeholder rewrite modes: rejected as dead, unimplemented contract surface.
+- Consequences:
+  - Positive outcomes:
+    - Desired-target container behavior is explicit across storage, API, YAML, OpenAPI, and job-claim boundaries.
+    - Future metadata rewrite work must add a real implementation, migration, validation, and tests before accepting new policy values.
+  - Risks or trade-offs:
+    - At this ADR boundary, existing YAML that explicitly set any value other than `preserve` failed validation. That was intentional because no other behavior existed yet.
+- Follow-up:
+  - ADR 371 adds target-level metadata stripping. Add another separate ADR and implementation if title rewriting or per-container metadata normalization becomes a supported media feature.
+
+## Task Record
+
+- Motivation:
+  - Close the remaining desired-target container contract gap by making metadata behavior explicit and fail-closed instead of relying on an undocumented default.
+- Design notes:
+  - Stored procedures remain the runtime database boundary.
+  - `media_desired_target_create_v2` normalizes an omitted or blank policy to `preserve` and rejects unsupported values.
+  - The latest `media_job_create_v1` replacement preserves the persisted source-fingerprint requirement from ADR 363 while adding metadata-policy snapshots.
+  - `media_job_worker_claim_next_v3` returns the snapshotted policy so workers can validate job intent before compiling the desired graph.
+  - YAML validation treats missing policy as the default via serde, while explicit non-`preserve` values were blocking issues until ADR 371 added `strip`.
+- Test coverage summary:
+  - `just fmt`
+  - `cargo test -p revaer-api --lib desired_target_writes_validate_complete_graph_and_profile_pin -- --nocapture`
+  - `cargo test -p revaer-data --lib desired_target_versions_are_ordered_immutable_job_snapshots -- --nocapture` compiled and passed with database-dependent body skipped because no local test database URL was available.
+  - `cargo test -p revaer-app --no-default-features --lib desired_target_snapshot_rejects_ -- --nocapture`
+  - `cargo check -p revaer-api --lib`
+  - `cargo check -p revaer-data --lib`
+  - `cargo check -p revaer-app --no-default-features --lib`
+  - `just api-export`
+  - `cd tests && npm run gen:api-client`
+  - `cargo test -p revaer-api --lib openapi_document_exports_media_schemas -- --nocapture`
+  - `cargo test -p revaer-api --lib openapi_document_exports_media_routes -- --nocapture`
+  - `cargo test -p revaer-data --lib migration_guards_media_job_fingerprint_requirement -- --nocapture`
+  - `cargo test -p revaer-data --lib create_media_job_requires_persisted_source_fingerprint -- --nocapture` compiled and passed with database-dependent body skipped because no local test database URL was available.
+  - `cargo clippy -p revaer-data --lib --tests --all-features -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - A default-feature `revaer-app` test attempt failed before reaching this change because local Homebrew `libtorrent-rasterbar` headers require `TORRENT_USE_OPENSSL` or `TORRENT_USE_GNUTLS`.
+- Observability updates:
+  - No new logs, metrics, or events were added. Existing structured error codes now identify unsupported desired-target container metadata policy snapshots.
+- Status-doc validation:
+  - `docs/adr/index.md` and `docs/SUMMARY.md` were updated for the new ADR.
+  - `docs/api/openapi.json` and `crates/revaer-app/docs/api/openapi.json` were regenerated for the API schema change.
+  - No README or operator guide changes were required because this is an internal contract hardening slice.
+- Risk & rollback plan:
+  - Roll back the migration and Rust/API/YAML wiring in this branch if the policy contract blocks legitimate existing configuration.
+  - Do not relax the accepted policy list without implementing and validating the corresponding media rewrite behavior.
+- Dependency rationale:
+  - No new dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, and `.github/instructions/devops.instructions.md`.
+  - No instruction drift or contradictions were found for this slice.

@@ -296,6 +296,7 @@ fn generate_minimal_operations(diff: &GraphDiff) -> Vec<PlannedOperation> {
     let mut operations = Vec::new();
     append_recode_operations(&mut operations, diff);
     append_audio_channel_operations(&mut operations, diff);
+    append_container_metadata_operation(&mut operations, diff);
     append_stream_rewrite_operations(&mut operations, diff);
     append_remux_operations(&mut operations, diff);
     if diff.stream_order_changed {
@@ -308,6 +309,7 @@ const fn diff_has_changes(diff: &GraphDiff) -> bool {
     !diff.removed_streams.is_empty()
         || !diff.missing_desired_streams.is_empty()
         || !diff.stream_metadata_mismatched_streams.is_empty()
+        || diff.container_metadata_mismatch
         || !diff.disposition_mismatched_streams.is_empty()
         || !diff.recoded_streams.is_empty()
         || !diff.audio_channel_mismatched_streams.is_empty()
@@ -346,6 +348,12 @@ fn append_audio_channel_operations(operations: &mut Vec<PlannedOperation>, diff:
                 ),
             );
         }
+    }
+}
+
+fn append_container_metadata_operation(operations: &mut Vec<PlannedOperation>, diff: &GraphDiff) {
+    if diff.container_metadata_mismatch {
+        operations.push(container_operation(OperationKind::MetadataRewrite));
     }
 }
 
@@ -656,6 +664,21 @@ mod tests {
             ],
         };
         assert_eq!(candidate_plan_cost(&candidate), 25);
+    }
+
+    #[test]
+    fn generate_plan_selects_metadata_rewrite_for_strip_policy() -> Result<(), PlanGenerationError>
+    {
+        let selection = generate_plan(&GraphDiff {
+            container_metadata_mismatch: true,
+            ..GraphDiff::default()
+        })?;
+
+        assert_eq!(
+            selection.selected.operations,
+            vec![container_operation(OperationKind::MetadataRewrite)]
+        );
+        Ok(())
     }
 
     #[test]

@@ -3,7 +3,8 @@
 use crate::capabilities::CapabilitySnapshot;
 use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
 use revaer_media_core::normalize::{
-    normalize_audio_channel_layout, normalize_container_format, normalize_subtitle_codec,
+    normalize_audio_channel_layout, normalize_container_format,
+    normalize_container_metadata_policy, normalize_subtitle_codec,
 };
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_core::target::{DesiredSidecarOutput, SidecarEmbedding, SidecarOutputSource};
@@ -33,6 +34,9 @@ pub enum BuildArgsError {
     /// Desired output muxer is not supported by runtime capabilities.
     #[error("required muxer is not supported: {0}")]
     UnsupportedMuxer(String),
+    /// Desired container metadata policy is not supported by runtime command construction.
+    #[error("required container metadata policy is not supported: {0}")]
+    UnsupportedContainerMetadataPolicy(String),
     /// Arbitrary metadata rewrite is not implemented as a verified desired-state contract.
     #[error("metadata rewrite is not supported until desired metadata verification is implemented")]
     UnsupportedMetadataRewrite,
@@ -693,19 +697,46 @@ pub fn build_sidecar_embed_argv(
         "-c:s".to_string(),
         "copy".to_string(),
     ];
-    append_input_preservation_args(&mut args);
+    append_default_input_preservation_args(&mut args);
     args.push(output_path.to_string());
     args
 }
 
-fn append_input_preservation_args(args: &mut Vec<String>) {
-    append_container_metadata_preservation_args(args);
+fn append_default_input_preservation_args(args: &mut Vec<String>) {
+    args.push("-map_metadata".to_string());
+    args.push("0".to_string());
     append_chapter_preservation_args(args);
 }
 
-fn append_container_metadata_preservation_args(args: &mut Vec<String>) {
+fn append_input_preservation_args(
+    args: &mut Vec<String>,
+    container_metadata_policy: Option<&str>,
+) -> Result<(), BuildArgsError> {
+    append_container_metadata_args(args, container_metadata_policy)?;
+    append_chapter_preservation_args(args);
+    Ok(())
+}
+
+fn append_container_metadata_args(
+    args: &mut Vec<String>,
+    policy: Option<&str>,
+) -> Result<(), BuildArgsError> {
+    let normalized = match policy {
+        Some(value) => normalize_container_metadata_policy(value)
+            .ok_or_else(|| BuildArgsError::UnsupportedContainerMetadataPolicy(value.to_string()))?,
+        None => "preserve",
+    };
     args.push("-map_metadata".to_string());
-    args.push("0".to_string());
+    args.push(match normalized {
+        "preserve" => "0".to_string(),
+        "strip" => "-1".to_string(),
+        _ => {
+            return Err(BuildArgsError::UnsupportedContainerMetadataPolicy(
+                policy.unwrap_or_default().to_string(),
+            ));
+        }
+    });
+    Ok(())
 }
 
 fn append_chapter_preservation_args(args: &mut Vec<String>) {
@@ -785,7 +816,7 @@ fn build_ffmpeg_argv_with_video_policy(
         }
     }
 
-    append_input_preservation_args(&mut args);
+    append_input_preservation_args(&mut args, None)?;
     args.push(output_path.to_string());
     Ok(args)
 }
@@ -1087,8 +1118,8 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
     if operations_are_noop(operations) {
         return Err(BuildArgsError::NoOpCommand);
     }
-    validate_materialized_stream_kinds(desired)?;
     verify_desired_graph_stream_ids(source, desired, sidecar_embeddings)?;
+    validate_materialized_stream_kinds(source, desired)?;
 
     let selected_video_encoder = capabilities.and_then(|snapshot| {
         validate_operation_capabilities(
@@ -1146,7 +1177,7 @@ pub fn build_desired_graph_ffmpeg_argv_with_sidecars(
         args.push(normalize_container_format(container_format));
     }
 
-    append_input_preservation_args(&mut args);
+    append_input_preservation_args(&mut args, desired.container_metadata_policy.as_deref())?;
     args.push(output_path.to_string());
     Ok(args)
 }
@@ -1481,18 +1512,39 @@ fn verify_desired_graph_stream_ids(
     Ok(())
 }
 
-fn validate_materialized_stream_kinds(desired: &DesiredGraph) -> Result<(), BuildArgsError> {
+fn validate_materialized_stream_kinds(
+    source: &MediaGraph,
+    desired: &DesiredGraph,
+) -> Result<(), BuildArgsError> {
     for stream in &desired.streams {
-        if matches!(
-            stream.kind,
-            StreamKind::Attachment | StreamKind::Chapter | StreamKind::Data
-        ) {
-            return Err(BuildArgsError::UnsupportedDesiredStreamKind {
-                stream_id: stream.stream_id,
-            });
+        match stream.kind {
+            StreamKind::Attachment | StreamKind::Data => {
+                validate_exact_passthrough(source, desired, stream)?;
+            }
+            StreamKind::Chapter => {
+                return Err(BuildArgsError::UnsupportedDesiredStreamKind {
+                    stream_id: stream.stream_id,
+                });
+            }
+            StreamKind::Audio | StreamKind::Video | StreamKind::Subtitle => {}
         }
     }
     Ok(())
+}
+
+fn validate_exact_passthrough(
+    source: &MediaGraph,
+    desired_graph: &DesiredGraph,
+    desired: &MediaStream,
+) -> Result<(), BuildArgsError> {
+    let source_stream = source_stream_for_desired(source, desired_graph, desired)?;
+    if source_stream == desired {
+        Ok(())
+    } else {
+        Err(BuildArgsError::UnsupportedDesiredStreamKind {
+            stream_id: desired.stream_id,
+        })
+    }
 }
 
 fn append_sidecar_output_steps(
@@ -1861,6 +1913,10 @@ fn subtitle_codecs_equivalent(left: &str, right: &str) -> bool {
 }
 
 fn append_stream_metadata_args(args: &mut Vec<String>, output_index: usize, stream: &MediaStream) {
+    if matches!(stream.kind, StreamKind::Attachment | StreamKind::Data) {
+        return;
+    }
+
     if let Some(language) = stream
         .language
         .as_deref()
@@ -2026,11 +2082,11 @@ fn validate_operation_capability(
             || Err(BuildArgsError::UnsupportedCodec(DEFAULT_VIDEO_ENCODER)),
             |_| Ok(()),
         ),
-        OperationKind::MetadataRewrite => Err(BuildArgsError::UnsupportedMetadataRewrite),
         OperationKind::NoOp
         | OperationKind::Remux
         | OperationKind::DispositionRewrite
         | OperationKind::LabelRewrite
+        | OperationKind::MetadataRewrite
         | OperationKind::StreamReorder
         | OperationKind::EmbedSubtitle
         | OperationKind::ExtractSubtitle
@@ -3259,6 +3315,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -3322,6 +3379,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![source_stream],
         };
         let capabilities = CapabilitySnapshot {
@@ -3334,7 +3392,7 @@ mod tests {
             output_stream_id: None,
         }];
 
-        let argv = build_desired_graph_ffmpeg_argv(
+        let argv_result = build_desired_graph_ffmpeg_argv(
             "/in.mp4",
             "/workspace/in.mp4",
             &source,
@@ -3344,8 +3402,8 @@ mod tests {
             VideoTranscodePolicy::default(),
         );
 
-        assert!(argv.is_ok());
-        let Ok(argv) = argv else {
+        assert!(argv_result.is_ok());
+        let Ok(argv) = argv_result else {
             return;
         };
         assert!(argv.windows(2).any(|pair| pair == ["-map_metadata", "0"]));
@@ -3365,6 +3423,103 @@ mod tests {
                 .map(String::from)
                 .as_slice()
             )
+        );
+    }
+
+    #[test]
+    fn desired_graph_strip_container_metadata_emits_metadata_removal_args() {
+        let source_stream = MediaStream {
+            stream_id: 0,
+            kind: StreamKind::Video,
+            codec: "h264".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![source_stream.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: vec![DesiredStreamBinding {
+                output_stream_id: 0,
+                source_stream_id: Some(0),
+            }],
+            container_metadata_policy: Some("strip".to_string()),
+            streams: vec![source_stream],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::MetadataRewrite,
+            stream_id: None,
+            output_stream_id: None,
+        }];
+
+        let argv = build_desired_graph_ffmpeg_argv(
+            "/in.mkv",
+            "/out.mkv",
+            &source,
+            &desired,
+            &operations,
+            None,
+            VideoTranscodePolicy::default(),
+        )
+        .unwrap_or_default();
+
+        assert!(argv.windows(2).any(|pair| pair == ["-map_metadata", "-1"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-map_chapters", "0"]));
+    }
+
+    #[test]
+    fn desired_graph_rejects_unknown_container_metadata_policy() {
+        let source_stream = MediaStream {
+            stream_id: 0,
+            kind: StreamKind::Video,
+            codec: "h264".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: vec!["matroska".to_string()],
+            streams: vec![source_stream.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: vec![DesiredStreamBinding {
+                output_stream_id: 0,
+                source_stream_id: Some(0),
+            }],
+            container_metadata_policy: Some("rewrite".to_string()),
+            streams: vec![source_stream],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::MetadataRewrite,
+            stream_id: None,
+            output_stream_id: None,
+        }];
+
+        assert_eq!(
+            build_desired_graph_ffmpeg_argv(
+                "/in.mkv",
+                "/out.mkv",
+                &source,
+                &desired,
+                &operations,
+                None,
+                VideoTranscodePolicy::default(),
+            ),
+            Err(BuildArgsError::UnsupportedContainerMetadataPolicy(
+                "rewrite".to_string()
+            ))
         );
     }
 
@@ -3391,6 +3546,7 @@ mod tests {
                 output_stream_id: 1,
                 source_stream_id: Some(1),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 1,
                 kind: StreamKind::Audio,
@@ -3415,7 +3571,7 @@ mod tests {
             },
         ];
 
-        let argv = build_desired_graph_ffmpeg_argv(
+        let argv_result = build_desired_graph_ffmpeg_argv(
             "/in.mkv",
             "/out.mkv",
             &source,
@@ -3425,8 +3581,8 @@ mod tests {
             VideoTranscodePolicy::default(),
         );
 
-        assert!(argv.is_ok());
-        let Ok(argv) = argv else {
+        assert!(argv_result.is_ok());
+        let Ok(argv) = argv_result else {
             return;
         };
         assert!(
@@ -3467,6 +3623,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![stream],
         };
         let capabilities = CapabilitySnapshot {
@@ -3494,55 +3651,296 @@ mod tests {
     }
 
     #[test]
-    fn desired_graph_rejects_unsupported_stream_kinds_for_command_materialization() {
-        for kind in [
-            StreamKind::Attachment,
-            StreamKind::Chapter,
-            StreamKind::Data,
-        ] {
-            let stream = MediaStream {
-                stream_id: 2,
-                kind,
-                codec: "bin_data".to_string(),
-                channels: None,
-                channel_layout: None,
-                language: None,
-                title: None,
-                dispositions: Vec::new(),
-            };
-            let source = MediaGraph {
-                source_path: "/in.mkv".to_string(),
-                container_formats: Vec::new(),
-                streams: vec![stream.clone()],
-            };
-            let desired = DesiredGraph {
-                output_path: "/out.mkv".to_string(),
-                container_format: Some("matroska".to_string()),
-                stream_bindings: vec![DesiredStreamBinding {
+    fn desired_graph_allows_exact_attachment_passthrough() {
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![
+                MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                MediaStream {
+                    stream_id: 2,
+                    kind: StreamKind::Attachment,
+                    codec: "ttf".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: Some("font".to_string()),
+                    dispositions: Vec::new(),
+                },
+            ],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: vec![
+                DesiredStreamBinding {
+                    output_stream_id: 0,
+                    source_stream_id: Some(0),
+                },
+                DesiredStreamBinding {
                     output_stream_id: 2,
                     source_stream_id: Some(2),
-                }],
-                streams: vec![stream],
-            };
-            let operations = [PlannedOperation {
-                kind: OperationKind::Remux,
-                stream_id: None,
-                output_stream_id: None,
-            }];
+                },
+            ],
+            container_metadata_policy: None,
+            streams: source.streams.clone(),
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+            output_stream_id: None,
+        }];
 
-            assert_eq!(
-                build_desired_graph_ffmpeg_argv(
-                    "/in.mkv",
-                    "/out.mkv",
-                    &source,
-                    &desired,
-                    &operations,
-                    None,
-                    VideoTranscodePolicy::default(),
-                ),
-                Err(BuildArgsError::UnsupportedDesiredStreamKind { stream_id: 2 })
-            );
-        }
+        let argv_result = build_desired_graph_ffmpeg_argv(
+            "/in.mkv",
+            "/out.mkv",
+            &source,
+            &desired,
+            &operations,
+            None,
+            VideoTranscodePolicy::default(),
+        );
+        assert!(
+            argv_result.is_ok(),
+            "exact attachment passthrough should build: {argv_result:?}"
+        );
+        let Ok(argv) = argv_result else {
+            return;
+        };
+
+        assert!(argv.windows(2).any(|pair| pair == ["-map", "0:2"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-c:1", "copy"]));
+        assert!(!argv.iter().any(|value| value == "-metadata:s:1"));
+        assert!(!argv.iter().any(|value| value == "-disposition:1"));
+    }
+
+    #[test]
+    fn desired_graph_allows_exact_data_passthrough() {
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![
+                MediaStream {
+                    stream_id: 0,
+                    kind: StreamKind::Video,
+                    codec: "h264".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: None,
+                    title: None,
+                    dispositions: Vec::new(),
+                },
+                MediaStream {
+                    stream_id: 3,
+                    kind: StreamKind::Data,
+                    codec: "bin_data".to_string(),
+                    channels: None,
+                    channel_layout: None,
+                    language: Some("eng".to_string()),
+                    title: Some("timecode".to_string()),
+                    dispositions: vec!["default".to_string()],
+                },
+            ],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: vec![
+                DesiredStreamBinding {
+                    output_stream_id: 0,
+                    source_stream_id: Some(0),
+                },
+                DesiredStreamBinding {
+                    output_stream_id: 3,
+                    source_stream_id: Some(3),
+                },
+            ],
+            container_metadata_policy: None,
+            streams: source.streams.clone(),
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+            output_stream_id: None,
+        }];
+
+        let argv_result = build_desired_graph_ffmpeg_argv(
+            "/in.mkv",
+            "/out.mkv",
+            &source,
+            &desired,
+            &operations,
+            None,
+            VideoTranscodePolicy::default(),
+        );
+        assert!(
+            argv_result.is_ok(),
+            "exact data passthrough should build: {argv_result:?}"
+        );
+        let Ok(argv) = argv_result else {
+            return;
+        };
+
+        assert!(argv.windows(2).any(|pair| pair == ["-map", "0:3"]));
+        assert!(argv.windows(2).any(|pair| pair == ["-c:1", "copy"]));
+        assert!(!argv.iter().any(|value| value == "-metadata:s:1"));
+        assert!(!argv.iter().any(|value| value == "-disposition:1"));
+    }
+
+    #[test]
+    fn desired_graph_rejects_attachment_mutation_for_command_materialization() {
+        let attachment = MediaStream {
+            stream_id: 2,
+            kind: StreamKind::Attachment,
+            codec: "ttf".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: Some("font".to_string()),
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![attachment.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: vec![DesiredStreamBinding {
+                output_stream_id: 2,
+                source_stream_id: Some(2),
+            }],
+            container_metadata_policy: None,
+            streams: vec![MediaStream {
+                title: Some("renamed".to_string()),
+                ..attachment
+            }],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+            output_stream_id: None,
+        }];
+
+        assert_eq!(
+            build_desired_graph_ffmpeg_argv(
+                "/in.mkv",
+                "/out.mkv",
+                &source,
+                &desired,
+                &operations,
+                None,
+                VideoTranscodePolicy::default(),
+            ),
+            Err(BuildArgsError::UnsupportedDesiredStreamKind { stream_id: 2 })
+        );
+    }
+
+    #[test]
+    fn desired_graph_rejects_data_mutation_for_command_materialization() {
+        let data_stream = MediaStream {
+            stream_id: 3,
+            kind: StreamKind::Data,
+            codec: "bin_data".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: Some("eng".to_string()),
+            title: Some("timecode".to_string()),
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![data_stream.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: vec![DesiredStreamBinding {
+                output_stream_id: 3,
+                source_stream_id: Some(3),
+            }],
+            container_metadata_policy: None,
+            streams: vec![MediaStream {
+                title: Some("renamed".to_string()),
+                ..data_stream
+            }],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+            output_stream_id: None,
+        }];
+
+        assert_eq!(
+            build_desired_graph_ffmpeg_argv(
+                "/in.mkv",
+                "/out.mkv",
+                &source,
+                &desired,
+                &operations,
+                None,
+                VideoTranscodePolicy::default(),
+            ),
+            Err(BuildArgsError::UnsupportedDesiredStreamKind { stream_id: 3 })
+        );
+    }
+
+    #[test]
+    fn desired_graph_rejects_chapter_streams_for_command_materialization() {
+        let stream = MediaStream {
+            stream_id: 2,
+            kind: StreamKind::Chapter,
+            codec: "bin_data".to_string(),
+            channels: None,
+            channel_layout: None,
+            language: None,
+            title: None,
+            dispositions: Vec::new(),
+        };
+        let source = MediaGraph {
+            source_path: "/in.mkv".to_string(),
+            container_formats: Vec::new(),
+            streams: vec![stream.clone()],
+        };
+        let desired = DesiredGraph {
+            output_path: "/out.mkv".to_string(),
+            container_format: Some("matroska".to_string()),
+            stream_bindings: vec![DesiredStreamBinding {
+                output_stream_id: 2,
+                source_stream_id: Some(2),
+            }],
+            container_metadata_policy: None,
+            streams: vec![stream],
+        };
+        let operations = [PlannedOperation {
+            kind: OperationKind::Remux,
+            stream_id: None,
+            output_stream_id: None,
+        }];
+
+        assert_eq!(
+            build_desired_graph_ffmpeg_argv(
+                "/in.mkv",
+                "/out.mkv",
+                &source,
+                &desired,
+                &operations,
+                None,
+                VideoTranscodePolicy::default(),
+            ),
+            Err(BuildArgsError::UnsupportedDesiredStreamKind { stream_id: 2 })
+        );
     }
 
     #[test]
@@ -3574,6 +3972,7 @@ mod tests {
                     source_stream_id: Some(0),
                 },
             ],
+            container_metadata_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -3654,6 +4053,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -3710,6 +4110,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -3763,6 +4164,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -3816,6 +4218,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -3887,6 +4290,7 @@ mod tests {
                     source_stream_id: Some(0),
                 },
             ],
+            container_metadata_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -3967,6 +4371,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4023,6 +4428,7 @@ mod tests {
                 output_stream_id: 9,
                 source_stream_id: Some(9),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 9,
                 kind: StreamKind::Audio,
@@ -4076,6 +4482,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -4129,6 +4536,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4187,6 +4595,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4249,6 +4658,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Audio,
@@ -4324,6 +4734,7 @@ mod tests {
                 output_stream_id: 0,
                 source_stream_id: Some(0),
             }],
+            container_metadata_policy: None,
             streams: vec![MediaStream {
                 stream_id: 0,
                 kind: StreamKind::Video,
@@ -4404,6 +4815,7 @@ mod tests {
                     source_stream_id: Some(1),
                 },
             ],
+            container_metadata_policy: None,
             streams: vec![
                 MediaStream {
                     stream_id: 0,
@@ -4788,6 +5200,7 @@ mod tests {
                     source_stream_id: None,
                 },
             ],
+            container_metadata_policy: None,
             streams: vec![video, subtitle.clone()],
         };
         let embeddings = [SidecarEmbedding {
@@ -4873,6 +5286,7 @@ mod tests {
                         output_stream_id: 0,
                         source_stream_id: Some(0),
                     }],
+                    container_metadata_policy: None,
                     streams: source.streams.clone(),
                 },
                 operations: &output_operations,

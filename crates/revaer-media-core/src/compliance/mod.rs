@@ -38,6 +38,8 @@ pub enum Severity {
 pub enum ViolationKind {
     /// Source container differs from the desired output container.
     ContainerMismatch,
+    /// Source container metadata differs from the desired output policy.
+    ContainerMetadataMismatch,
     /// Source stream is absent from the desired output graph.
     RemovedStream,
     /// Desired stream is absent from the source graph.
@@ -89,6 +91,15 @@ pub fn score_diff(diff: &GraphDiff) -> Report {
     if diff.container_mismatch {
         violations.push(Violation {
             kind: ViolationKind::ContainerMismatch,
+            severity: Severity::Medium,
+            stream_id: None,
+        });
+        penalty += 10;
+    }
+
+    if diff.container_metadata_mismatch {
+        violations.push(Violation {
+            kind: ViolationKind::ContainerMetadataMismatch,
             severity: Severity::Medium,
             stream_id: None,
         });

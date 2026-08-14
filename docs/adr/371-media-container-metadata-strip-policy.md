@@ -1,0 +1,72 @@
+# Media Container Metadata Strip Policy
+
+- Status: Accepted
+- Date: 2026-07-31
+- Context:
+  - ADR 365 made desired-target container metadata behavior explicit and accepted only `preserve` until another policy had a real execution and verification contract.
+  - ADR 366 tightened `preserve` into exact normalized metadata equality, so a separate policy is required when operators intentionally want metadata removed.
+  - The media specification calls out container metadata handling as part of the target graph. Accepting `strip` without command construction, persisted snapshots, and output verification would make the service claim behavior it cannot prove.
+- Decision:
+  - Accept `strip` as the second implemented `container_metadata_policy` value across API validation, YAML validation, desired-target compilation, job snapshots, and database constraints.
+  - Compile `strip` into a desired-graph metadata mismatch, a `MetadataRewrite` plan operation, and FFmpeg `-map_metadata -1` arguments on the desired-graph execution path.
+  - Verify `strip` by expecting candidate and final container metadata to be empty. A candidate or committed output that retains container metadata fails the existing container-metadata mismatch boundary.
+  - Keep arbitrary key/value metadata rewrite unsupported. The contextless metadata rewrite operation still fails closed until a target schema and verification contract exist for authored metadata values.
+  - Alternatives considered:
+    - Treat `strip` as a special case outside the desired graph: rejected because planning, compliance, execution, and verification would disagree about whether a change is required.
+    - Reuse the arbitrary metadata rewrite failure path for stripping: rejected because stripping has a complete FFmpeg and verification contract now, while authored rewrites do not.
+- Consequences:
+  - Positive outcomes:
+    - Desired targets can now intentionally remove container metadata without weakening exact preservation semantics for `preserve`.
+    - Candidate and final verification prove the requested metadata state instead of trusting command construction.
+  - Risks or trade-offs:
+    - Existing configurations that set `strip` will now execute instead of failing validation, so incorrect use can remove source container tags by design.
+    - The `MetadataRewrite` operation now has two meanings: implemented target-level strip when driven by a desired graph, and unsupported arbitrary rewrite when built without desired metadata context.
+- Follow-up:
+  - Add separate authored metadata schema, execution, and verification coverage before accepting any per-key rewrite policy.
+
+## Task Record
+
+- Motivation:
+  - Close the implemented container-metadata policy gap by supporting intentional target-level stripping while keeping arbitrary metadata rewrites fail-closed.
+- Design notes:
+  - Container metadata policy normalization is shared in `revaer-media-core`.
+  - Desired-target compilation writes the normalized policy into `DesiredGraph`, and diffing marks `strip` as a container metadata mismatch even when all other graph fields match.
+  - Desired-graph command construction maps absent and `preserve` policies to `-map_metadata 0` and maps `strip` to `-map_metadata -1`.
+  - Worker preflight derives the expected container metadata from the compiled desired graph: source metadata for `preserve`, empty metadata for `strip`.
+  - The migration updates the desired-target and immutable job-snapshot constraints plus the `media_desired_target_create_v2` stored procedure boundary.
+- Test coverage summary:
+  - `cargo check -p revaer-media-core -p revaer-media-runtime --all-features`
+  - `cargo check -p revaer-app --no-default-features --lib`
+  - `cargo test -p revaer-media-core --all-features -- --nocapture`
+  - `cargo test -p revaer-media-runtime --all-features desired_graph -- --nocapture`
+  - `cargo test -p revaer-api --lib container_metadata_policy_normalizes_supported_values -- --nocapture`
+  - `cargo test -p revaer-data --lib migration_guards_container_metadata_strip_policy -- --nocapture`
+  - `cargo test -p revaer-app --no-default-features --lib container_metadata -- --nocapture`
+  - `cargo clippy -p revaer-media-core -p revaer-media-runtime --all-features --all-targets -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `cargo clippy -p revaer-api -p revaer-data --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `just fmt`
+  - `just policy`
+  - `just instruction-drift`
+  - `sonar analyze secrets` over every changed tracked and untracked file in this slice.
+  - `sonar verify --file ... --project VannaDii_Revaer` was attempted and blocked by SonarCloud with `403 Forbidden` because Agentic Analysis is not enabled for the organization. This is not treated as a clean file-scoped analysis result.
+  - PR-specific Sonar API check for the last pushed PR #122 head returned quality gate `OK`, `ignoredConditions=false`, `new_coverage=98.5`, `new_lines_to_cover=614`, zero open/confirmed PR issues, and zero unreviewed PR hotspots. The remote PR scan must be rechecked after this slice is pushed.
+  - `git diff --check`
+  - `just clean-test-fixtures`
+  - Media-file cleanup scan over `/tmp`, `/private/tmp`, and `test-fixtures` found no leftover generated media.
+  - `just ci` was attempted and blocked before running the full gate because Docker was not reachable and no local Postgres endpoint was available.
+  - `just ui-e2e` was attempted separately and reached the same local Postgres/Docker blocker after regenerating the API test client and confirming the test package install had no vulnerabilities.
+- Observability updates:
+  - No new metrics, logs, or events were added. Existing `MetadataRewrite` operation counts and `media_job_output_container_metadata_mismatch` diagnostics now cover the implemented strip path.
+- Status-doc validation:
+  - Updated ADR 318 to move container metadata strip from an open rewrite gap into verified scope while leaving arbitrary metadata rewrites open.
+  - Updated ADRs 365 and 366 so their preserve-only wording remains historical and points to this ADR for the later strip policy.
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+- Risk & rollback plan:
+  - Roll back this ADR, the migration, and the Rust/API/YAML wiring if strip behavior proves too broad for production use.
+  - Do not remove `strip` from validation without also reverting persisted desired targets or adding a compatibility migration for existing rows.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/revaer-data.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found for this slice.

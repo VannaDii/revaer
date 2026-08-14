@@ -29,9 +29,9 @@ const MEDIA_POLICY_PROFILE_LIST_V1: &str = "SELECT policy_key, version, display_
 const MEDIA_POLICY_PROFILE_UPSERT_V1: &str = "SELECT policy_key, version, display_name, video_intent, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe FROM media_policy_profile_upsert_v1(actor_public_id_input => $1, policy_key_input => $2, version_input => $3, display_name_input => $4, video_intent_input => $5, verification_strictness_input => $6, verification_duration_tolerance_millis_input => $7, verification_mux_validation_input => $8, verification_decode_all_streams_input => $9, verification_keyframe_seek_input => $10, verification_playback_probe_input => $11)";
 const MEDIA_JOB_RETENTION_POLICY_GET_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_get_v2()";
 const MEDIA_JOB_RETENTION_POLICY_UPDATE_V2: &str = "SELECT completed_enabled, completed_mode, completed_limit, failed_diagnostic_enabled, failed_diagnostic_mode, failed_diagnostic_limit FROM media_job_retention_policy_update_v2(actor_public_id_input => $1, completed_enabled_input => $2, completed_mode_input => $3, completed_limit_input => $4, failed_diagnostic_enabled_input => $5, failed_diagnostic_mode_input => $6, failed_diagnostic_limit_input => $7)";
-const MEDIA_DESIRED_TARGET_CREATE_V1: &str = "SELECT media_desired_target_create_v1(actor_public_id_input => $1, target_key_input => $2, version_input => $3, display_name_input => $4, container_format_input => $5)";
+const MEDIA_DESIRED_TARGET_CREATE_V2: &str = "SELECT media_desired_target_create_v2(actor_public_id_input => $1, target_key_input => $2, version_input => $3, display_name_input => $4, container_format_input => $5, container_metadata_policy_input => $6)";
 const MEDIA_DESIRED_TARGET_STREAM_APPEND_V5: &str = "SELECT media_desired_target_stream_append_v5(media_desired_target_profile_public_id_input => $1, stream_key_input => $2, stream_kind_input => $3, semantic_role_input => $4, language_code_input => $5, optional_input => $6, sort_order_input => $7, codec_input => $8, channel_count_input => $9, channel_layout_input => $10, audio_bitrate_bps_input => $11, audio_sample_rate_hz_input => $12, audio_loudness_profile_input => $13, audio_dynamic_range_input => $14, video_profile_input => $15, video_level_input => $16, video_bitrate_bps_input => $17, color_primaries_input => $18, color_transfer_input => $19, color_space_input => $20, hdr_format_input => $21, title_input => $22, default_disposition_input => $23, forced_disposition_input => $24, subtitle_placement_input => $25, image_subtitle_action_input => $26)";
-const MEDIA_DESIRED_TARGET_LIST_V1: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format FROM media_desired_target_list_v1()";
+const MEDIA_DESIRED_TARGET_LIST_V2: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, container_metadata_policy FROM media_desired_target_list_v2()";
 const MEDIA_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_stream_list_v5(media_desired_target_profile_public_id_input => $1)";
 const MEDIA_DESIRED_TARGET_GRAPH_PAGE_V1: &str = "SELECT media_desired_target_profile_public_id, target_key, version, display_name, container_format, stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_desired_target_graph_page_v1($1)";
 const MEDIA_PROFILE_DESIRED_TARGET_SET_V1: &str = "SELECT media_profile_desired_target_set_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, desired_target_key_input => $3, desired_target_version_input => $4)";
@@ -118,6 +118,8 @@ pub struct CreateMediaDesiredTargetInput<'a> {
     pub display_name: &'a str,
     /// Desired output container format.
     pub container_format: &'a str,
+    /// Desired container metadata policy.
+    pub container_metadata_policy: &'a str,
 }
 
 /// Ordered desired-target stream creation payload.
@@ -190,6 +192,8 @@ pub struct MediaDesiredTargetRow {
     pub display_name: String,
     /// Desired output container format.
     pub container_format: String,
+    /// Desired container metadata policy.
+    pub container_metadata_policy: String,
 }
 
 /// Ordered desired-target stream row.
@@ -487,12 +491,13 @@ pub async fn create_media_desired_target_with_executor<'e, E>(
 where
     E: Executor<'e, Database = Postgres>,
 {
-    sqlx::query_scalar::<_, Uuid>(MEDIA_DESIRED_TARGET_CREATE_V1)
+    sqlx::query_scalar::<_, Uuid>(MEDIA_DESIRED_TARGET_CREATE_V2)
         .bind(input.actor_public_id)
         .bind(input.target_key)
         .bind(input.version)
         .bind(input.display_name)
         .bind(input.container_format)
+        .bind(input.container_metadata_policy)
         .fetch_one(executor)
         .await
         .map_err(try_op("media desired target create"))
@@ -561,7 +566,7 @@ where
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn list_media_desired_targets(pool: &PgPool) -> Result<Vec<MediaDesiredTargetRow>> {
-    sqlx::query_as::<_, MediaDesiredTargetRow>(MEDIA_DESIRED_TARGET_LIST_V1)
+    sqlx::query_as::<_, MediaDesiredTargetRow>(MEDIA_DESIRED_TARGET_LIST_V2)
         .fetch_all(pool)
         .await
         .map_err(try_op("media desired target list"))
@@ -662,7 +667,7 @@ mod tests {
     use crate::config::factory_reset;
     use crate::media::jobs::{
         EnqueueDiscoveredMediaJobInput, enqueue_discovered_media_job,
-        list_media_job_desired_target_streams,
+        list_media_job_desired_target_streams, media_job_worker_claim_next,
     };
     use crate::media::profiles::{UpsertMediaProfileInput, upsert_media_profile};
     use crate::media::schema_tests::{MediaTestDb, setup_media_db};
@@ -700,6 +705,7 @@ mod tests {
                     version: 1,
                     display_name: &format!("Bounded target {index}"),
                     container_format: "matroska",
+                    container_metadata_policy: "preserve",
                 },
             )
             .await?;
@@ -759,6 +765,7 @@ mod tests {
                 version: 2,
                 display_name: "Theater master",
                 container_format: "matroska",
+                container_metadata_policy: "preserve",
             },
         )
         .await?;
@@ -1021,6 +1028,7 @@ mod tests {
                 && target.target_key == "theater-master"
                 && target.version == 2
                 && target.container_format == "matroska"
+                && target.container_metadata_policy == "preserve"
         }));
         let streams = list_media_desired_target_streams(db.pool(), target_id).await?;
         assert_eq!(
@@ -1065,6 +1073,13 @@ mod tests {
         let job_id = create_target_snapshot_job(&db, actor, profile_id).await?;
         let job_streams = list_media_job_desired_target_streams(db.pool(), job_id).await?;
         assert_job_desired_target_stream_snapshot(&job_streams);
+        let claimed = media_job_worker_claim_next(db.pool())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("target snapshot job should be claimable"))?;
+        assert_eq!(
+            claimed.desired_container_metadata_policy.as_deref(),
+            Some("preserve")
+        );
 
         let immutable_write = append_media_desired_target_stream(
             db.pool(),
@@ -1139,6 +1154,7 @@ mod tests {
                 version: 1,
                 display_name: "Empty stream target",
                 container_format: "matroska",
+                container_metadata_policy: "preserve",
             },
         )
         .await?;
@@ -1263,6 +1279,7 @@ mod tests {
                 version: 1,
                 display_name: "Subtitle shape validation",
                 container_format: "matroska",
+                container_metadata_policy: "preserve",
             },
         )
         .await?)
@@ -1415,6 +1432,7 @@ mod tests {
                 version: 1,
                 display_name: "AV1 level validation",
                 container_format: "matroska",
+                container_metadata_policy: "preserve",
             },
         )
         .await?;

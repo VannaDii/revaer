@@ -1,0 +1,54 @@
+# Media Container Metadata Exact Preservation
+
+- Status: Accepted
+- Date: 2026-07-30
+- Context:
+  - The desired-target container metadata policy accepted only `preserve` when this ADR was written. ADR 371 later adds a separate `strip` policy without weakening exact `preserve` semantics.
+  - Runtime verification already rejected outputs that dropped source container metadata, but it treated source metadata as a required subset instead of the complete expected set.
+  - A transcoder or muxer that adds container metadata after conversion changes the preserved container facts even when all source entries remain present.
+- Decision:
+  - Treat `preserve` as exact normalized container metadata equality for candidate and final verification.
+  - Reject candidates that add or remove normalized container metadata entries before replacement.
+  - Roll back committed replacements if the final post-commit inspection contains added or removed normalized container metadata entries.
+  - Alternatives considered:
+    - Keep subset matching: rejected because additive container metadata is still an unrequested metadata mutation.
+    - Add a tolerated-metadata allowlist: rejected because it would weaken the explicit preserve policy without operator-approved rewrite semantics.
+- Consequences:
+  - Positive outcomes:
+    - The media worker now proves exact container metadata preservation instead of only proving source entries survived.
+    - Unexpected muxer-authored container tags fail the same verification boundary as dropped source metadata.
+  - Risks or trade-offs:
+    - Existing transcodes that rely on muxer-added container tags will fail until a real rewrite or tolerance policy is implemented.
+- Follow-up:
+  - If operators need tolerated generated tags, add an explicit policy value with schema, API, YAML, command construction, and verification coverage.
+
+## Task Record
+
+- Motivation:
+  - Move the media service closer to production correctness by making the implemented `preserve` policy exact and fail-closed.
+- Design notes:
+  - The existing metadata normalizer still trims keys and values, lowercases keys, and sorts entries before comparison.
+  - Candidate and final graph verification both reuse the same exact metadata comparison.
+  - No storage or API contract changes were required because this tightens the `preserve` policy value.
+- Test coverage summary:
+  - Added runtime tests for candidates that add container metadata before replacement.
+  - Added runtime tests for committed replacements that add container metadata after replacement and must be rolled back.
+  - `just fmt`
+  - `cargo test -p revaer-app --no-default-features --lib container_metadata -- --nocapture`
+  - `cargo clippy -p revaer-app --no-default-features --lib --tests -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate`
+  - `just policy`
+  - `just instruction-drift`
+  - `sonar analyze secrets crates/revaer-app/src/media_job_runtime.rs docs/adr/366-media-container-metadata-exact-preservation.md docs/adr/index.md docs/SUMMARY.md`
+  - `git diff --check`
+- Observability updates:
+  - No new metrics or events were added. Existing `media_job_output_container_metadata_mismatch` verification failures now also cover additive metadata.
+- Status-doc validation:
+  - Updated `docs/adr/index.md` and `docs/SUMMARY.md`.
+  - Re-checked ADR 365 and kept it aligned with the stricter interpretation of `preserve`.
+- Risk & rollback plan:
+  - Risk is stricter rejection of outputs that add container metadata. Roll back this change if exact preservation blocks a legitimate production workflow, then replace it with an explicit operator-approved metadata policy instead of silent tolerance.
+- Dependency rationale:
+  - No dependencies were added.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - No instruction drift or contradictions were found.
