@@ -2517,7 +2517,7 @@ mod tests {
 
     #[test]
     fn desired_target_stream_validation_rejects_unsupported_kinds() {
-        let unsupported = ["attachment", "chapter"].map(|kind| MediaDesiredTargetStream {
+        let unsupported = ["attachment", "chapter", "data"].map(|kind| MediaDesiredTargetStream {
             stream_key: format!("{kind}-main"),
             stream_kind: kind.to_string(),
             semantic_role: None,
