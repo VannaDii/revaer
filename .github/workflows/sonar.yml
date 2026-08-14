@@ -112,7 +112,12 @@ jobs:
             git fetch --no-tags --prune --unshallow origin
           fi
           git fetch --no-tags --prune origin "+refs/heads/main:refs/remotes/origin/main"
+          shallow_file="$(git rev-parse --git-path shallow)"
+          if [ -e "${shallow_file}" ] && [ ! -s "${shallow_file}" ]; then
+            rm -f -- "${shallow_file}"
+          fi
           test "$(git rev-parse --is-shallow-repository)" = "false"
+          test ! -e "${shallow_file}"
           git show-ref --verify --quiet refs/remotes/origin/main
 
       - name: Download Sonar coverage inputs
@@ -137,19 +142,6 @@ jobs:
           SONAR_AUTH_TOKEN: ${{ secrets.SONAR_TOKEN || secrets.SONARQUBE_TOKEN }}
           SONAR_PROJECT_KEY: VannaDii_Revaer
         run: just sonar-verify-result
-
-      - name: Package Sonar analysis evidence
-        if: always()
-        run: |
-          set -euo pipefail
-          if [ ! -f .scannerwork/report-task.txt ]; then
-            exit 0
-          fi
-          test -d .scannerwork/scanner-report
-          tar -cJf .scannerwork/scanner-report.tar.xz -C .scannerwork scanner-report
-          test -s .scannerwork/scanner-report.tar.xz
-          tar -tf .scannerwork/scanner-report.tar.xz > .scannerwork/scanner-report.entries
-          grep -q '^scanner-report/' .scannerwork/scanner-report.entries
 
       - name: Upload Sonar analysis evidence
         if: always()

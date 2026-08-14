@@ -1,4 +1,5 @@
 use proc_macro2::{Span, TokenStream};
+use proc_macro_error3::emit_error;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
@@ -24,44 +25,26 @@ impl Parse for HookFn {
         let func: ItemFn = input.parse()?;
 
         let sig = func.sig.clone();
-        let mut errors = Vec::new();
 
         if sig.asyncness.is_some() {
-            errors.push(syn::Error::new_spanned(
-                sig.asyncness,
-                "async functions can't be hooks",
-            ));
+            emit_error!(sig.asyncness, "async functions can't be hooks");
         }
 
         if sig.constness.is_some() {
-            errors.push(syn::Error::new_spanned(
-                sig.constness,
-                "const functions can't be hooks",
-            ));
+            emit_error!(sig.constness, "const functions can't be hooks");
         }
 
         if sig.abi.is_some() {
-            errors.push(syn::Error::new_spanned(
-                sig.abi,
-                "extern functions can't be hooks",
-            ));
+            emit_error!(sig.abi, "extern functions can't be hooks");
         }
 
         if sig.unsafety.is_some() {
-            errors.push(syn::Error::new_spanned(
-                sig.unsafety,
-                "unsafe functions can't be hooks",
-            ));
+            emit_error!(sig.unsafety, "unsafe functions can't be hooks");
         }
 
         if !sig.ident.to_string().starts_with("use_") {
-            errors.push(syn::Error::new_spanned(
-                sig.ident,
-                "hooks must have a name starting with `use_`",
-            ));
+            emit_error!(sig.ident, "hooks must have a name starting with `use_`");
         }
-
-        crate::join_errors(errors.into_iter())?;
 
         Ok(Self { inner: func })
     }
@@ -138,7 +121,7 @@ pub fn hook_impl(hook: HookFn) -> syn::Result<TokenStream> {
     } = original_fn;
     let mut block = *block.clone();
 
-    let hook_sig = HookSignature::rewrite(sig)?;
+    let hook_sig = HookSignature::rewrite(sig);
 
     let Signature {
         ref fn_token,
@@ -159,7 +142,6 @@ pub fn hook_impl(hook: HookFn) -> syn::Result<TokenStream> {
 
     let mut body_rewriter = BodyRewriter::new(ctx_ident.clone());
     visit_mut::visit_block_mut(&mut body_rewriter, &mut block);
-    body_rewriter.into_result()?;
 
     let inner_fn_ident = Ident::new("inner_fn", Span::mixed_site());
     let input_args = hook_sig.input_args();

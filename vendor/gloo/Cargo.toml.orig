@@ -1,0 +1,84 @@
+[package]
+authors = ["Rust and WebAssembly Working Group"]
+description = "A modular toolkit for Rust and WebAssembly"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+name = "gloo"
+readme = "README.md"
+version = "0.11.0"
+repository = "https://github.com/rustwasm/gloo"
+homepage = "https://gloo-rs.web.app/"
+documentation = "https://docs.rs/gloo/"
+categories = ["api-bindings", "wasm"]
+rust-version = "1.64"
+
+[dependencies]
+gloo-timers = { version = "0.3", path = "crates/timers", optional = true }
+gloo-events = { version = "0.2", path = "crates/events", optional = true }
+gloo-file = { version = "0.3", path = "crates/file", optional = true }
+gloo-dialogs = { version = "0.2", path = "crates/dialogs", optional = true }
+gloo-storage = { version = "0.3", path = "crates/storage", optional = true }
+gloo-render = { version = "0.2", path = "crates/render", optional = true }
+gloo-console = { version = "0.3", path = "crates/console", optional = true }
+gloo-utils = { version = "0.2", path = "crates/utils", optional = true }
+gloo-history = { version = "0.2", path = "crates/history", optional = true }
+gloo-net = { version = "0.5", path = "crates/net", optional = true }
+
+[features]
+default = [
+    "timers",
+    "events",
+    "file",
+    "dialogs",
+    "storage",
+    "render",
+    "console",
+    "utils",
+    "history",
+    "net",
+]
+futures = [
+    "timers",
+    "file",
+    "gloo-timers/futures",
+    "gloo-file/futures",
+]
+timers = ["gloo-timers"]
+events = ["gloo-events"]
+file = ["gloo-file"]
+dialogs = ["gloo-dialogs"]
+storage = ["gloo-storage"]
+render = ["gloo-render"]
+console = ["gloo-console"]
+utils = ["gloo-utils"]
+history = ["gloo-history"]
+net = ["gloo-net"]
+
+[workspace]
+members = [
+    "crates/timers",
+    "crates/events",
+    "crates/net",
+    "crates/file",
+    "crates/dialogs",
+    "crates/storage",
+    "crates/console",
+    "crates/utils",
+    "crates/history",
+    "crates/worker",
+    "crates/worker-macros",
+    "crates/net",
+
+    "examples/markdown",
+    "examples/clock",
+    "examples/file-hash",
+    "examples/history-wasi",
+    "examples/prime",
+]
+
+# Passing arguments to the docsrs builder in order to properly document cfg's.
+# More information: https://docs.rs/about/builds#cross-compiling
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+rustc-args = ["--cfg", "docsrs"]
