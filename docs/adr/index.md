@@ -389,6 +389,7 @@
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [381](381-libtorrent-native-pkg-config-contract.md) – Libtorrent native pkg-config contract
 -   [382](382-justfile-nvm-node-wrapper.md) – Justfile NVM Node wrapper
+-   [385](385-factory-reset-transient-contention-retry.md) – Factory reset transient contention retry
 -   [387](387-media-attachment-strip-fixture-evidence.md) – Media attachment strip fixture evidence
 -   [390](390-media-ffprobe-frame-robustness.md) – Media FFprobe frame robustness
 -   [391](391-media-job-chapter-replacement-evidence.md) – Media job chapter replacement evidence
