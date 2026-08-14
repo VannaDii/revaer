@@ -274,6 +274,1157 @@ pub struct TagListResponse {
     pub tags: Vec<TagListItemResponse>,
 }
 
+/// Request payload for creating or updating a media profile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileUpsertRequest {
+    /// Stable profile key.
+    pub profile_key: String,
+    /// Source root path.
+    pub source_root: String,
+    /// Output root path.
+    pub output_root: String,
+    /// Dry-run policy.
+    pub dry_run_only: bool,
+    /// Retention in days.
+    pub retention_days: i32,
+    /// Optional compatibility target key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compatibility_target_key: Option<String>,
+    /// Operational policy key.
+    #[serde(default = "default_media_policy_key")]
+    pub policy_key: String,
+    /// Whether filesystem watching is enabled.
+    #[serde(default)]
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    #[serde(default)]
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_interval_minutes: Option<i32>,
+}
+
+/// Request payload for patching an existing media profile.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfilePatchRequest {
+    /// Source root path override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_root: Option<String>,
+    /// Output root path override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_root: Option<String>,
+    /// Dry-run policy override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dry_run_only: Option<bool>,
+    /// Retention in days override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<i32>,
+    /// Compatibility target key override. Empty string clears the target.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compatibility_target_key: Option<String>,
+    /// Operational policy key override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_key: Option<String>,
+    /// Filesystem watcher override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub watcher_enabled: Option<bool>,
+    /// Scheduled discovery enablement override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_enabled: Option<bool>,
+    /// Scheduled discovery interval override in minutes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_interval_minutes: Option<i32>,
+}
+
+/// Media profile row response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileResponse {
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Stable profile key.
+    pub profile_key: String,
+    /// Source root path.
+    pub source_root: String,
+    /// Output root path.
+    pub output_root: String,
+    /// Dry-run policy.
+    pub dry_run_only: bool,
+    /// Retention in days.
+    pub retention_days: i32,
+    /// Optional compatibility target key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compatibility_target_key: Option<String>,
+    /// Optional pinned desired-target key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desired_target_key: Option<String>,
+    /// Optional pinned desired-target version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desired_target_version: Option<i32>,
+    /// Operational policy key.
+    pub policy_key: String,
+    /// Whether filesystem watching is enabled.
+    pub watcher_enabled: bool,
+    /// Whether scheduled discovery is enabled.
+    pub schedule_enabled: bool,
+    /// Scheduled discovery interval in minutes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_interval_minutes: Option<i32>,
+    /// Updated timestamp.
+    pub updated_at: DateTime<Utc>,
+}
+
+fn default_media_policy_key() -> String {
+    "safe_dry_run".to_string()
+}
+
+/// Media profile list response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileListResponse {
+    /// Active profiles.
+    pub profiles: Vec<MediaProfileResponse>,
+}
+
+/// Media profile validation response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileValidationResponse {
+    /// Whether the profile payload is valid.
+    pub valid: bool,
+    /// Validation issue codes.
+    pub issues: Vec<String>,
+}
+
+/// Compatibility target summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCompatibilityTargetResponse {
+    /// Stable compatibility target key.
+    pub compatibility_target_key: String,
+    /// Version selected from the target catalog.
+    pub version: i32,
+    /// Operator-facing display name.
+    pub display_name: String,
+    /// Desired video codec.
+    pub video_codec: String,
+    /// Desired audio codec.
+    pub audio_codec: String,
+    /// Optional desired audio channel count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channels: Option<i32>,
+    /// Optional desired audio channel layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channel_layout: Option<String>,
+    /// Subtitle retention policy.
+    pub subtitle_policy: String,
+}
+
+/// Compatibility target list response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCompatibilityTargetListResponse {
+    /// Seed compatibility targets.
+    pub targets: Vec<MediaCompatibilityTargetResponse>,
+}
+
+/// Request payload for creating or replacing a compatibility target version.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCompatibilityTargetUpsertRequest {
+    /// Stable compatibility target key.
+    pub compatibility_target_key: String,
+    /// Version to create or replace.
+    pub version: i32,
+    /// Operator-facing display name.
+    pub display_name: String,
+    /// Desired video codec.
+    pub video_codec: String,
+    /// Desired audio codec.
+    pub audio_codec: String,
+    /// Optional desired audio channel count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channels: Option<i32>,
+    /// Optional desired audio channel layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_channel_layout: Option<String>,
+    /// Subtitle retention policy.
+    pub subtitle_policy: String,
+}
+
+/// Ordered stream in an immutable desired-target version.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetStream {
+    /// Stable stream key within the target version.
+    pub stream_key: String,
+    /// Stream kind: video, audio, or subtitle.
+    pub stream_kind: String,
+    /// Optional semantic role selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_role: Option<String>,
+    /// Optional language selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language_code: Option<String>,
+    /// Whether absence of a matching source stream is acceptable.
+    #[serde(default)]
+    pub optional: bool,
+    /// Final mux ordering position.
+    pub sort_order: i32,
+    /// Desired output codec.
+    pub codec: String,
+    /// Optional desired audio channel count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_count: Option<i32>,
+    /// Optional desired audio channel layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_layout: Option<String>,
+    /// Optional desired average audio bitrate in bits per second.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_bitrate_bps: Option<i32>,
+    /// Optional desired audio sample rate in hertz.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_sample_rate_hz: Option<i32>,
+    /// Optional desired audio loudness processing profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_loudness_profile: Option<String>,
+    /// Optional desired audio dynamic-range behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_dynamic_range: Option<String>,
+    /// Optional desired video profile, such as `main` or `main10`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_profile: Option<String>,
+    /// Optional desired video level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_level: Option<String>,
+    /// Optional desired average video bitrate in bits per second.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_bitrate_bps: Option<i32>,
+    /// Optional desired video color primaries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_primaries: Option<String>,
+    /// Optional desired video transfer characteristic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_transfer: Option<String>,
+    /// Optional desired video color space.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_space: Option<String>,
+    /// Optional desired HDR format label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hdr_format: Option<String>,
+    /// Optional desired stream title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Desired default disposition.
+    #[serde(default)]
+    pub default_disposition: bool,
+    /// Desired forced disposition.
+    #[serde(default)]
+    pub forced_disposition: bool,
+    /// Desired subtitle placement: embedded, sidecar, both, or none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitle_placement: Option<String>,
+    /// Image-subtitle action: preserve, remove, or fail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_subtitle_action: Option<String>,
+}
+
+/// Request payload for creating an immutable desired-target version.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetCreateRequest {
+    /// Stable desired-target key.
+    pub target_key: String,
+    /// Positive immutable version.
+    pub version: i32,
+    /// Operator-facing display name.
+    pub display_name: String,
+    /// Desired output container format.
+    pub container_format: String,
+    /// Complete desired stream graph in final mux order.
+    pub streams: Vec<MediaDesiredTargetStream>,
+}
+
+/// Complete immutable desired-target version.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetResponse {
+    /// Desired-target version public id.
+    pub media_desired_target_profile_public_id: Uuid,
+    /// Stable desired-target key.
+    pub target_key: String,
+    /// Immutable version.
+    pub version: i32,
+    /// Operator-facing display name.
+    pub display_name: String,
+    /// Desired output container format.
+    pub container_format: String,
+    /// Complete desired stream graph in final mux order.
+    pub streams: Vec<MediaDesiredTargetStream>,
+}
+
+/// Desired-target catalog response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDesiredTargetListResponse {
+    /// Enabled immutable desired-target versions.
+    pub targets: Vec<MediaDesiredTargetResponse>,
+}
+
+/// Request payload for pinning or clearing a profile desired target.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaProfileDesiredTargetRequest {
+    /// Desired-target key. Omit to clear the profile target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_key: Option<String>,
+    /// Exact immutable version. Required when `target_key` is supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<i32>,
+}
+
+/// Boolean selection for one media verification check.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct MediaVerificationToggle(bool);
+
+impl MediaVerificationToggle {
+    /// Return whether the verification check is enabled.
+    #[must_use]
+    pub const fn enabled(self) -> bool {
+        self.0
+    }
+}
+
+impl From<bool> for MediaVerificationToggle {
+    fn from(value: bool) -> Self {
+        Self(value)
+    }
+}
+
+impl std::fmt::Display for MediaVerificationToggle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+/// Media policy summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaPolicyResponse {
+    /// Stable policy key.
+    pub policy_key: String,
+    /// Version selected from the policy catalog.
+    pub version: i32,
+    /// Operator-facing display name.
+    pub display_name: String,
+    /// Video transcode intent used by the worker.
+    pub video_intent: String,
+    /// Verification strictness (`strict`, `balanced`, or `fast`).
+    pub verification_strictness: String,
+    /// Maximum source/candidate duration delta in milliseconds.
+    pub verification_duration_tolerance_millis: i64,
+    /// Whether normalized mux-structure validation is selected.
+    pub verification_mux_validation: MediaVerificationToggle,
+    /// Whether every candidate stream must decode without errors.
+    pub verification_decode_all_streams: MediaVerificationToggle,
+    /// Whether midpoint video keyframe seeking must succeed.
+    pub verification_keyframe_seek: MediaVerificationToggle,
+    /// Whether noninteractive playback smoke verification is selected.
+    pub verification_playback_probe: MediaVerificationToggle,
+}
+
+/// Media policy list response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaPolicyListResponse {
+    /// Supported policies.
+    pub policies: Vec<MediaPolicyResponse>,
+}
+
+/// Request payload for creating or replacing a media policy version.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaPolicyUpsertRequest {
+    /// Stable policy key.
+    pub policy_key: String,
+    /// Version to create or replace.
+    pub version: i32,
+    /// Operator-facing display name.
+    pub display_name: String,
+    /// Worker video transcode intent.
+    pub video_intent: String,
+    /// Verification strictness (`strict`, `balanced`, or `fast`).
+    pub verification_strictness: String,
+    /// Maximum source/candidate duration delta in milliseconds.
+    pub verification_duration_tolerance_millis: i64,
+    /// Whether normalized mux-structure validation is selected.
+    pub verification_mux_validation: MediaVerificationToggle,
+    /// Whether every candidate stream must decode without errors.
+    pub verification_decode_all_streams: MediaVerificationToggle,
+    /// Whether midpoint video keyframe seeking must succeed.
+    pub verification_keyframe_seek: MediaVerificationToggle,
+    /// Whether noninteractive playback smoke verification is selected.
+    pub verification_playback_probe: MediaVerificationToggle,
+}
+
+/// Media job retention settings response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobRetentionResponse {
+    /// Whether completed-job deletion is enabled.
+    pub completed_enabled: bool,
+    /// Completed-job retention mode (`age` or `count`).
+    pub completed_mode: String,
+    /// Completed-job age in days or retained-job count.
+    pub completed_limit: i32,
+    /// Whether failed-terminal diagnostic pruning is enabled.
+    pub failed_diagnostic_enabled: bool,
+    /// Failed-terminal diagnostic retention mode (`age` or `count`).
+    pub failed_diagnostic_mode: String,
+    /// Failed-terminal diagnostic age in days or retained-job count.
+    pub failed_diagnostic_limit: i32,
+}
+
+/// Request payload for updating media job retention settings.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobRetentionUpdateRequest {
+    /// Whether completed-job deletion is enabled.
+    pub completed_enabled: bool,
+    /// Completed-job retention mode (`age` or `count`).
+    pub completed_mode: String,
+    /// Completed-job age in days or retained-job count.
+    pub completed_limit: i32,
+    /// Whether failed-terminal diagnostic pruning is enabled.
+    pub failed_diagnostic_enabled: bool,
+    /// Failed-terminal diagnostic retention mode (`age` or `count`).
+    pub failed_diagnostic_mode: String,
+    /// Failed-terminal diagnostic age in days or retained-job count.
+    pub failed_diagnostic_limit: i32,
+}
+
+/// Request payload for previewing media planning admission.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaPlanningPreviewRequest {
+    /// Profile association used for planning.
+    pub media_profile_public_id: Uuid,
+    /// Candidate source path.
+    pub source_path: String,
+}
+
+/// Media planning preview response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaPlanningPreviewResponse {
+    /// Whether the candidate can enter planning.
+    pub accepted: bool,
+    /// Candidate source path.
+    pub source_path: String,
+    /// Derived output path when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    /// Stable rejection reason when unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Whether the resulting job would be dry-run.
+    pub dry_run: bool,
+}
+
+/// Request payload for previewing manual media discovery.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryPreviewRequest {
+    /// Profile association used for discovery.
+    pub media_profile_public_id: Uuid,
+    /// Candidate source paths to inspect.
+    pub source_paths: Vec<String>,
+}
+
+/// Discovery preview result for one candidate source path.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryPreviewItemResponse {
+    /// Candidate source path.
+    pub source_path: String,
+    /// Derived output path when accepted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    /// Whether a discovered job would run in dry-run mode.
+    pub dry_run: bool,
+    /// Whether the path is accepted for the selected profile association.
+    pub accepted: bool,
+    /// Stable rejection reason when not accepted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Discovery preview response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryPreviewResponse {
+    /// Candidate preview rows.
+    pub previews: Vec<MediaDiscoveryPreviewItemResponse>,
+}
+
+/// Request payload for running manual media discovery.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryRunRequest {
+    /// Profile association used for discovery.
+    pub media_profile_public_id: Uuid,
+    /// Candidate source paths.
+    pub source_paths: Vec<String>,
+}
+
+/// Discovery run job queued for one accepted source path.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryQueuedJobResponse {
+    /// Queued media job id.
+    pub media_job_public_id: Uuid,
+    /// Source path selected by discovery.
+    pub source_path: String,
+    /// Derived output path under the profile output root.
+    pub output_path: String,
+    /// Whether the queued job will run in dry-run mode.
+    pub dry_run: bool,
+}
+
+/// Discovery run skipped candidate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoverySkippedItemResponse {
+    /// Candidate source path.
+    pub source_path: String,
+    /// Stable rejection reason when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Discovery run response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryRunResponse {
+    /// Jobs queued for accepted candidates.
+    pub queued_jobs: Vec<MediaDiscoveryQueuedJobResponse>,
+    /// Candidates skipped before queueing.
+    pub skipped: Vec<MediaDiscoverySkippedItemResponse>,
+}
+
+/// Discovery schedule summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryScheduleResponse {
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Stable profile key.
+    pub profile_key: String,
+    /// Source root used by the path association.
+    pub source_root: String,
+    /// Whether scheduled discovery is enabled.
+    pub enabled: bool,
+    /// Schedule interval in minutes when configured.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval_minutes: Option<i32>,
+    /// Whether jobs from this schedule inherit dry-run mode.
+    pub dry_run: bool,
+}
+
+/// Discovery schedule list response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryScheduleListResponse {
+    /// Schedule summaries.
+    pub schedules: Vec<MediaDiscoveryScheduleResponse>,
+}
+
+/// Discovery watcher summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryWatcherResponse {
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Stable profile key.
+    pub profile_key: String,
+    /// Source root used by the path association.
+    pub source_root: String,
+    /// Whether watcher discovery is enabled.
+    pub enabled: bool,
+    /// Whether jobs from this watcher inherit dry-run mode.
+    pub dry_run: bool,
+}
+
+/// Discovery watcher list response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaDiscoveryWatcherListResponse {
+    /// Watcher summaries.
+    pub watchers: Vec<MediaDiscoveryWatcherResponse>,
+}
+
+/// Request payload for creating a media job.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCreateRequest {
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Source path.
+    pub source_path: String,
+    /// Output path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    /// Dry-run flag.
+    pub dry_run: bool,
+    /// Exact confirmation phrase required to override a dry-run profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replace_confirmation: Option<String>,
+}
+
+/// Request payload for appending a media job phase.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPhaseAppendRequest {
+    /// Phase order index.
+    pub phase_index: i32,
+    /// Phase name.
+    pub phase_name: String,
+    /// Phase status text.
+    pub phase_status: String,
+    /// Optional details.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details_text: Option<String>,
+}
+
+/// Request payload for appending a media job operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobOperationAppendRequest {
+    /// Operation order index.
+    pub operation_index: i32,
+    /// Operation kind.
+    pub operation_kind: String,
+    /// Optional stream id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<i32>,
+    /// Command binary.
+    pub command_bin: String,
+    /// Optional argument 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_1: Option<String>,
+    /// Optional argument 2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_2: Option<String>,
+    /// Optional argument 3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_3: Option<String>,
+    /// Optional argument 4.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_4: Option<String>,
+    /// Optional argument 5.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_5: Option<String>,
+}
+
+/// Request payload for appending a media job compliance violation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobViolationAppendRequest {
+    /// Violation order index.
+    pub violation_index: i32,
+    /// Violation kind.
+    pub violation_kind: String,
+    /// Violation severity.
+    pub severity: String,
+    /// Optional stream id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<i32>,
+}
+
+/// Request payload for appending a media job plan-reason row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPlanReasonAppendRequest {
+    /// Reason order index.
+    pub reason_index: i32,
+    /// Optional candidate index.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_index: Option<i32>,
+    /// Whether this reason describes the selected plan.
+    pub selected: bool,
+    /// Stable reason code.
+    pub reason_code: String,
+    /// Human-readable reason text.
+    pub reason_text: String,
+}
+
+/// Request payload for appending a media job verification-check row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobVerificationCheckAppendRequest {
+    /// Verification check order index.
+    pub check_index: i32,
+    /// Verification check kind.
+    pub check_kind: String,
+    /// Verification check status.
+    pub check_status: String,
+    /// Expected value text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_value: Option<String>,
+    /// Actual value text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_value: Option<String>,
+    /// Optional detail text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details_text: Option<String>,
+}
+
+/// Request payload for appending a media job artifact reference.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobArtifactAppendRequest {
+    /// Artifact order index.
+    pub artifact_index: i32,
+    /// Artifact kind.
+    pub artifact_kind: String,
+    /// Managed artifact path.
+    pub artifact_path: String,
+    /// Artifact size in bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<i64>,
+    /// Optional content type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+}
+
+/// Request payload for appending a media job compact-audit fact.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCompactAuditAppendRequest {
+    /// Audit fact order index.
+    pub audit_index: i32,
+    /// Audit fact kind.
+    pub fact_kind: String,
+    /// Audit fact text.
+    pub fact_text: String,
+}
+
+/// Media job response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobResponse {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+    /// Source path.
+    pub source_path: String,
+    /// Output path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    /// Status text.
+    pub status: String,
+    /// Dry-run flag.
+    pub dry_run: bool,
+    /// Queued timestamp.
+    pub queued_at: DateTime<Utc>,
+    /// Started timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<DateTime<Utc>>,
+    /// Completed timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime<Utc>>,
+    /// Last error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
+/// Media job create response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCreateResponse {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+}
+
+/// Media jobs list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobListResponse {
+    /// Media jobs.
+    pub jobs: Vec<MediaJobResponse>,
+}
+
+/// Set-wise diagnostic counts attached to a recent-job summary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobDiagnosticCounts {
+    /// Operation rows.
+    pub operations: i64,
+    /// Violation rows.
+    pub violations: i64,
+    /// Plan-reason rows.
+    pub plan_reasons: i64,
+    /// Verification-check rows.
+    pub verification_checks: i64,
+    /// Artifact rows.
+    pub artifacts: i64,
+    /// Compact-audit rows.
+    pub compact_audits: i64,
+}
+
+/// One recent-job summary row.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaRecentJobSummaryResponse {
+    /// Existing job summary fields.
+    #[serde(flatten)]
+    pub job: MediaJobResponse,
+    /// Owning profile.
+    pub media_profile_public_id: Uuid,
+    /// Diagnostic collection counts.
+    pub diagnostic_counts: MediaJobDiagnosticCounts,
+}
+
+/// Keyset-paged recent jobs response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaRecentJobPageResponse {
+    /// Most-recent-first jobs.
+    pub jobs: Vec<MediaRecentJobSummaryResponse>,
+    /// Opaque cursor for the next page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// Media job operation response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobOperationResponse {
+    /// Operation order index.
+    pub operation_index: i32,
+    /// Operation kind.
+    pub operation_kind: String,
+    /// Optional stream id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<i32>,
+    /// Command binary.
+    pub command_bin: String,
+    /// Optional argument 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_1: Option<String>,
+    /// Optional argument 2.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_2: Option<String>,
+    /// Optional argument 3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_3: Option<String>,
+    /// Optional argument 4.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_4: Option<String>,
+    /// Optional argument 5.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arg_5: Option<String>,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job operation list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobOperationListResponse {
+    /// Ordered operations.
+    pub operations: Vec<MediaJobOperationResponse>,
+}
+
+/// Media job compliance violation response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobViolationResponse {
+    /// Violation order index.
+    pub violation_index: i32,
+    /// Violation kind.
+    pub violation_kind: String,
+    /// Violation severity.
+    pub severity: String,
+    /// Optional stream id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<i32>,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job compliance violation list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobViolationListResponse {
+    /// Ordered violations.
+    pub violations: Vec<MediaJobViolationResponse>,
+}
+
+/// Media job plan-reason response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPlanReasonResponse {
+    /// Reason order index.
+    pub reason_index: i32,
+    /// Optional candidate index.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_index: Option<i32>,
+    /// Whether this reason describes the selected plan.
+    pub selected: bool,
+    /// Stable reason code.
+    pub reason_code: String,
+    /// Human-readable reason text.
+    pub reason_text: String,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job plan-reason list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobPlanReasonListResponse {
+    /// Ordered plan reasons.
+    pub reasons: Vec<MediaJobPlanReasonResponse>,
+}
+
+/// Media job verification-check response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobVerificationCheckResponse {
+    /// Verification check order index.
+    pub check_index: i32,
+    /// Verification check kind.
+    pub check_kind: String,
+    /// Verification check status.
+    pub check_status: String,
+    /// Expected value text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_value: Option<String>,
+    /// Actual value text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_value: Option<String>,
+    /// Optional detail text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details_text: Option<String>,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job verification-check list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobVerificationCheckListResponse {
+    /// Ordered verification checks.
+    pub checks: Vec<MediaJobVerificationCheckResponse>,
+}
+
+/// Media job artifact response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobArtifactResponse {
+    /// Artifact order index.
+    pub artifact_index: i32,
+    /// Artifact kind.
+    pub artifact_kind: String,
+    /// Managed artifact path.
+    pub artifact_path: String,
+    /// Artifact size in bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<i64>,
+    /// Optional content type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job artifact list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobArtifactListResponse {
+    /// Ordered artifact references.
+    pub artifacts: Vec<MediaJobArtifactResponse>,
+}
+
+/// Media job compact-audit response row payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCompactAuditResponse {
+    /// Audit fact order index.
+    pub audit_index: i32,
+    /// Audit fact kind.
+    pub fact_kind: String,
+    /// Audit fact text.
+    pub fact_text: String,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Media job compact-audit list response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobCompactAuditListResponse {
+    /// Ordered compact audit facts.
+    pub audits: Vec<MediaJobCompactAuditResponse>,
+}
+
+/// Aggregate diagnostics payload for one media job.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaJobDiagnosticsResponse {
+    /// Ordered execution operations.
+    pub operations: Vec<MediaJobOperationResponse>,
+    /// Ordered compliance violations.
+    pub violations: Vec<MediaJobViolationResponse>,
+    /// Ordered plan-selection reasons.
+    pub plan_reasons: Vec<MediaJobPlanReasonResponse>,
+    /// Ordered verification checks.
+    pub verification_checks: Vec<MediaJobVerificationCheckResponse>,
+    /// Ordered artifact references.
+    pub artifacts: Vec<MediaJobArtifactResponse>,
+    /// Ordered compact audit facts.
+    pub compact_audits: Vec<MediaJobCompactAuditResponse>,
+}
+
+/// Response payload for a capability refresh operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityRefreshResponse {
+    /// Snapshot numeric identifier.
+    pub media_capability_snapshot_id: i64,
+}
+
+/// Codec row within a media capability snapshot run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityCodecResponse {
+    /// Codec name.
+    pub codec_name: String,
+    /// Encode support.
+    pub encode_supported: bool,
+    /// Decode support.
+    pub decode_supported: bool,
+}
+
+/// Additional feature row within a media capability snapshot run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityFeatureResponse {
+    /// Feature family.
+    pub feature_family: String,
+    /// Feature name.
+    pub feature_name: String,
+    /// Whether the feature is available.
+    pub supported: bool,
+    /// Optional detail text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail_text: Option<String>,
+}
+
+/// Latest media capability snapshot payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilitySnapshotResponse {
+    /// Snapshot numeric identifier.
+    pub media_capability_snapshot_id: i64,
+    /// Snapshot run public identifier.
+    pub snapshot_run_public_id: Uuid,
+    /// ffmpeg version.
+    pub ffmpeg_version: String,
+    /// ffprobe version.
+    pub ffprobe_version: String,
+    /// Codec rows captured by this snapshot run.
+    pub codecs: Vec<MediaCapabilityCodecResponse>,
+    /// Concrete ffmpeg encoder names captured by this snapshot run.
+    pub encoders: Vec<String>,
+    /// Concrete ffmpeg decoder names captured by this snapshot run.
+    pub decoders: Vec<String>,
+    /// ffmpeg muxers captured by this snapshot run.
+    pub muxers: Vec<String>,
+    /// ffmpeg demuxers captured by this snapshot run.
+    pub demuxers: Vec<String>,
+    /// Subtitle codecs supported by this snapshot run.
+    pub subtitle_support: Vec<String>,
+    /// Hardware acceleration backends captured by this snapshot run.
+    pub hardware_accelerators: Vec<String>,
+    /// Filesystem primitives required by managed replacement.
+    pub filesystem_utilities: Vec<String>,
+    /// Runtime utility capabilities.
+    pub utility_capabilities: Vec<String>,
+    /// Runtime license mode.
+    pub license_mode: String,
+    /// License mode inferred specifically from the ffmpeg build flags.
+    pub ffmpeg_license_mode: String,
+    /// Whether ffmpeg was built with `--enable-gpl`.
+    pub ffmpeg_enable_gpl: bool,
+    /// Whether ffmpeg was built with `--enable-version3`.
+    pub ffmpeg_enable_version3: bool,
+    /// Whether ffmpeg was built with `--enable-nonfree`.
+    pub ffmpeg_enable_nonfree: bool,
+    /// Runtime compliance artifact links.
+    pub compliance_links: Vec<String>,
+    /// Capabilities intentionally absent from the runtime.
+    pub absent_capabilities: Vec<String>,
+    /// Additional normalized feature rows.
+    pub features: Vec<MediaCapabilityFeatureResponse>,
+    /// Observation timestamp.
+    pub observed_at: DateTime<Utc>,
+}
+
+/// Latest media capability read response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityLatestResponse {
+    /// Latest snapshot when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<MediaCapabilitySnapshotResponse>,
+}
+
+/// Media capability readiness response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaCapabilityReadinessResponse {
+    /// Whether media execution is currently ready.
+    pub ready: bool,
+    /// Readiness reason code when not ready.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Latest snapshot when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<MediaCapabilitySnapshotResponse>,
+}
+
+/// Media runtime license-compliance artifact response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaComplianceResponse {
+    /// Runtime license mode for the default media image.
+    pub license_mode: String,
+    /// License mode for the complete media runtime image.
+    pub image_license_mode: String,
+    /// License mode inferred from the active ffmpeg build.
+    pub ffmpeg_license_mode: String,
+    /// Whether the active ffmpeg build reports `--enable-gpl`.
+    pub ffmpeg_enable_gpl: bool,
+    /// Whether the active ffmpeg build reports `--enable-version3`.
+    pub ffmpeg_enable_version3: bool,
+    /// Whether the active ffmpeg build reports `--enable-nonfree`.
+    pub ffmpeg_enable_nonfree: bool,
+    /// In-image source offer artifact path.
+    pub source_offer_path: String,
+    /// Source offer artifact URL.
+    pub source_offer_url: String,
+    /// In-image third-party notices artifact path.
+    pub third_party_notices_path: String,
+    /// Third-party notices artifact URL.
+    pub third_party_notices_url: String,
+    /// In-image SBOM artifact path.
+    pub sbom_path: String,
+    /// SBOM artifact URL.
+    pub sbom_url: String,
+    /// In-image media runtime inventory artifact path.
+    pub inventory_path: String,
+    /// In-image `ExifTool` exception record path.
+    pub exiftool_exception_path: String,
+    /// Validated source-compliance bundle digest for the final image.
+    pub source_compliance_bundle_digest: String,
+    /// In-image source-compliance bundle manifest path.
+    pub source_compliance_bundle_path: String,
+    /// Capabilities excluded from the default redistributable image.
+    pub license_excluded_capabilities: Vec<String>,
+    /// License-excluded capabilities absent from the active runtime snapshot.
+    pub absent_license_excluded_capabilities: Vec<String>,
+}
+
+/// YAML export response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlExportResponse {
+    /// Version marker.
+    pub version: String,
+    /// Serialized YAML payload.
+    pub yaml_payload: String,
+}
+
+/// YAML validate/apply request payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlImportRequest {
+    /// Serialized YAML payload.
+    pub yaml_payload: String,
+}
+
+/// Pointer-addressable media YAML validation issue.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlIssueResponse {
+    /// Stable machine-readable issue code.
+    pub code: String,
+    /// JSON Pointer location in the parsed bundle.
+    pub pointer: String,
+    /// Whether the issue prevents import.
+    pub blocking: bool,
+}
+
+/// YAML validation response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlValidationResponse {
+    /// Schema version from the payload.
+    pub version: String,
+    /// Whether validation passed.
+    pub valid: bool,
+    /// Pointer-addressable validation issues.
+    pub issues: Vec<MediaYamlIssueResponse>,
+    /// Parsed profile count.
+    pub profile_count: usize,
+}
+
+/// YAML apply response payload.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaYamlApplyResponse {
+    /// Whether dry-run was forced for imported profiles.
+    pub forced_dry_run: bool,
+    /// Imported profile ids.
+    pub media_profile_public_ids: Vec<Uuid>,
+    /// Disabled draft ids awaiting local path mapping.
+    pub media_profile_import_draft_public_ids: Vec<Uuid>,
+}
+
 /// Health notification hook creation request payload.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IndexerHealthNotificationHookCreateRequest {
