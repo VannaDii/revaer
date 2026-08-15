@@ -1,8 +1,10 @@
 # Single authoritative Sonar scanner execution
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-15
-- Operator approval: Pending
+- Operator approval:
+  - Recommendation approved wholesale by the operator on 2026-08-15: "I approve
+    the ADRs as they are now and I'm resuming your goal."
 - Context:
   - ADR 100 selected the official Sonar scan action before the repository required
     every CI operation to run through a canonical `just` recipe and before scanner
@@ -69,8 +71,8 @@
   - The repository setup action remains the installer boundary; `just sonar-scan`
     becomes the sole operational boundary.
 - Test coverage summary:
-  - Proposal only. Implementation requires scanner-wrapper unit fixtures,
-    structured workflow guardrails, and a live remote analysis with one task ID.
+  - Implementation requires scanner-wrapper unit fixtures, structured workflow
+    guardrails, and a live remote analysis with one task ID.
 - Observability updates:
   - Retain one complete scanner log, one SCM evidence file, one report task, and
     one submitted-report archive per run.
