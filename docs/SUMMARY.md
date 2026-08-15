@@ -350,6 +350,7 @@
     -   [404: Doc indexer fixture isolation](adr/404-doc-indexer-fixture-isolation.md)
     -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
     -   [407: Database-backed coverage execution](adr/407-database-backed-coverage-execution.md)
+    -   [409: Portable Helm annotation rendering](adr/409-portable-helm-annotation-rendering.md)
     -   [461: ADR and task-record status semantics](adr/461-adr-task-record-status-semantics.md)
     -   [462: PR 88 shell return correction](adr/462-pr88-shell-return.md)
     -   [477: Uniform stacked-PR check emission](adr/477-stacked-pr-check-emission.md)
