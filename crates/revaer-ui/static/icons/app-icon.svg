@@ -1,6 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Revaer" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="42" fill="#101828"/>
-  <path d="M54 132V60h80c24 0 39 13 39 34 0 17-10 29-27 33l32 5v18h-45l-35-42H88v42H54Zm34-52v23h38c8 0 13-4 13-12 0-7-5-11-13-11H88Z" fill="#ffffff"/>
-  <circle cx="146" cy="48" r="15" fill="#38bdf8"/>
-  <circle cx="146" cy="144" r="15" fill="#22c55e"/>
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="revaer-icon-title" viewBox="0 0 1024 1024">
+  <title id="revaer-icon-title">Revaer</title>
+  <defs>
+    <linearGradient id="revaer-purple-gradient" x1="176" y1="512" x2="852" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d11ac4"/>
+      <stop offset="0.52" stop-color="#b51fc7"/>
+      <stop offset="1" stop-color="#8438c7"/>
+    </linearGradient>
+    <linearGradient id="revaer-purple-fill" x1="205" y1="470" x2="825" y2="580" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#700575"/>
+      <stop offset="0.55" stop-color="#570d7f"/>
+      <stop offset="1" stop-color="#422477"/>
+    </linearGradient>
+    <radialGradient id="revaer-background-glow" cx="54%" cy="48%" r="62%">
+      <stop offset="0" stop-color="#2c0750" stop-opacity="0.48"/>
+      <stop offset="0.7" stop-color="#1d013b" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#16002f" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="revaer-brand-glow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="17"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="#16002f"/>
+  <rect width="1024" height="1024" fill="url(#revaer-background-glow)"/>
+  <path d="M185 272C191 198 253 151 333 151H516C674 151 785 250 785 385C785 490 727 568 620 598C656 708 734 790 843 799C847 799 849 802 848 806C838 850 796 876 749 876C615 876 554 753 494 644C463 589 433 580 396 582C340 585 305 626 305 684V777C305 821 283 844 249 844C213 844 192 819 193 777L195 619C196 548 247 497 317 497H526C595 497 640 452 640 385C640 317 594 272 516 272Z" fill="none" stroke="url(#revaer-purple-gradient)" stroke-width="48" stroke-linecap="round" stroke-linejoin="round" opacity="0.5" filter="url(#revaer-brand-glow)"/>
+  <path id="revaer-r-silhouette" data-revaer-brand="stylized-r-v1" d="M185 272C191 198 253 151 333 151H516C674 151 785 250 785 385C785 490 727 568 620 598C656 708 734 790 843 799C847 799 849 802 848 806C838 850 796 876 749 876C615 876 554 753 494 644C463 589 433 580 396 582C340 585 305 626 305 684V777C305 821 283 844 249 844C213 844 192 819 193 777L195 619C196 548 247 497 317 497H526C595 497 640 452 640 385C640 317 594 272 516 272Z" fill="url(#revaer-purple-fill)" stroke="url(#revaer-purple-gradient)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

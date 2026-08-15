@@ -5,7 +5,7 @@ const tableData = [
         amount: 120,
         status: "success",
         email: "alice.j@mail.com",
-        avatar: "/images/avatars/1.png",
+        avatar: "/static/nexus/images/avatars/1.svg",
     },
     {
         id: "e5f6g7h8",
@@ -13,7 +13,7 @@ const tableData = [
         amount: 250,
         status: "pending",
         email: "bobsmith@outlk.com",
-        avatar: "/images/avatars/2.png",
+        avatar: "/static/nexus/images/avatars/2.svg",
     },
     {
         id: "i9j0k1l2",
@@ -21,7 +21,7 @@ const tableData = [
         amount: 75,
         status: "failed",
         email: "charl.davis@ex.com",
-        avatar: "/images/avatars/3.png",
+        avatar: "/static/nexus/images/avatars/3.svg",
     },
     {
         id: "m3n4o5p6",
@@ -29,7 +29,7 @@ const tableData = [
         amount: 300,
         status: "processing",
         email: "diana.c@gnail.com",
-        avatar: "/images/avatars/4.png",
+        avatar: "/static/nexus/images/avatars/4.svg",
     },
     {
         id: "q7r8s9t0",
@@ -37,7 +37,7 @@ const tableData = [
         amount: 190,
         status: "success",
         email: "ethan.f@fastmal.com",
-        avatar: "/images/avatars/5.png",
+        avatar: "/static/nexus/images/avatars/5.svg",
     },
     {
         id: "u1v2w3x4",
@@ -45,7 +45,7 @@ const tableData = [
         amount: 220,
         status: "pending",
         email: "fiona.g@yaho.com",
-        avatar: "/images/avatars/6.png",
+        avatar: "/static/nexus/images/avatars/6.svg",
     },
     {
         id: "y5z6a7b8",
@@ -53,7 +53,7 @@ const tableData = [
         amount: 180,
         status: "failed",
         email: "george.h@mail.com",
-        avatar: "/images/avatars/7.png",
+        avatar: "/static/nexus/images/avatars/7.svg",
     },
     {
         id: "c9d0e1f2",
@@ -61,7 +61,7 @@ const tableData = [
         amount: 140,
         status: "processing",
         email: "hannah.l@ex.org",
-        avatar: "/images/avatars/8.png",
+        avatar: "/static/nexus/images/avatars/8.svg",
     },
     {
         id: "g3h4i5j6",
@@ -69,7 +69,7 @@ const tableData = [
         amount: 160,
         status: "success",
         email: "ian.mart@domain.com",
-        avatar: "/images/avatars/9.png",
+        avatar: "/static/nexus/images/avatars/9.svg",
     },
     {
         id: "k7l8m9n0",
@@ -77,7 +77,7 @@ const tableData = [
         amount: 275,
         status: "success",
         email: "jasm.k@outlk.com",
-        avatar: "/images/avatars/10.png",
+        avatar: "/static/nexus/images/avatars/10.svg",
     },
     {
         id: "o1p2q3r4",
@@ -85,7 +85,7 @@ const tableData = [
         amount: 130,
         status: "pending",
         email: "kyle.y@mail.com",
-        avatar: "/images/avatars/1.png",
+        avatar: "/static/nexus/images/avatars/1.svg",
     },
     {
         id: "s5t6u7v8",
@@ -93,7 +93,7 @@ const tableData = [
         amount: 210,
         status: "processing",
         email: "lara.s@gmail.com",
-        avatar: "/images/avatars/2.png",
+        avatar: "/static/nexus/images/avatars/2.svg",
     },
     {
         id: "w9x0y1z2",
@@ -101,7 +101,7 @@ const tableData = [
         amount: 85,
         status: "failed",
         email: "mike.t@ex.com",
-        avatar: "/images/avatars/3.png",
+        avatar: "/static/nexus/images/avatars/3.svg",
     },
     {
         id: "a3b4c5d6",
@@ -109,7 +109,7 @@ const tableData = [
         amount: 145,
         status: "success",
         email: "nina.a@domain.org",
-        avatar: "/images/avatars/4.png",
+        avatar: "/static/nexus/images/avatars/4.svg",
     },
     {
         id: "e7f8g9h0",
@@ -117,7 +117,7 @@ const tableData = [
         amount: 205,
         status: "processing",
         email: "oscar.p@mail.com",
-        avatar: "/images/avatars/5.png",
+        avatar: "/static/nexus/images/avatars/5.svg",
     },
     {
         id: "i1j2k3l4",
@@ -125,7 +125,7 @@ const tableData = [
         amount: 170,
         status: "pending",
         email: "paula.r@yaoo.com",
-        avatar: "/images/avatars/6.png",
+        avatar: "/static/nexus/images/avatars/6.svg",
     },
     {
         id: "m5n6o7p8",
@@ -133,7 +133,7 @@ const tableData = [
         amount: 125,
         status: "failed",
         email: "quinn.b@domain.com",
-        avatar: "/images/avatars/7.png",
+        avatar: "/static/nexus/images/avatars/7.svg",
     },
     {
         id: "q9r0s1t2",
@@ -141,7 +141,7 @@ const tableData = [
         amount: 195,
         status: "success",
         email: "rachel.n@gmail.com",
-        avatar: "/images/avatars/8.png",
+        avatar: "/static/nexus/images/avatars/8.svg",
     },
     {
         id: "u3v4w5x6",
@@ -149,7 +149,7 @@ const tableData = [
         amount: 155,
         status: "processing",
         email: "steve.w@fastml.com",
-        avatar: "/images/avatars/9.png",
+        avatar: "/static/nexus/images/avatars/9.svg",
     },
     {
         id: "y7z8a9b0",
@@ -157,7 +157,7 @@ const tableData = [
         amount: 110,
         status: "pending",
         email: "tina.b@mail.com",
-        avatar: "/images/avatars/10.png",
+        avatar: "/static/nexus/images/avatars/10.svg",
     },
     {
         id: "c1d2e3f4",
@@ -166,7 +166,7 @@ const tableData = [
         status: "success",
         email: "umar.k@outlk.com",
 
-        avatar: "/images/avatars/1.png",
+        avatar: "/static/nexus/images/avatars/1.svg",
     },
     {
         id: "g5h6i7j8",
@@ -175,7 +175,7 @@ const tableData = [
         status: "failed",
         email: "vera.l@ex.org",
 
-        avatar: "/images/avatars/2.png",
+        avatar: "/static/nexus/images/avatars/2.svg",
     },
     {
         id: "k9l0m1n2",
@@ -184,7 +184,7 @@ const tableData = [
         status: "processing",
         email: "will.g@gmail.com",
 
-        avatar: "/images/avatars/3.png",
+        avatar: "/static/nexus/images/avatars/3.svg",
     },
     {
         id: "o3p4q5r6",
@@ -193,7 +193,7 @@ const tableData = [
         status: "pending",
         email: "xena.f@domain.com",
 
-        avatar: "/images/avatars/4.png",
+        avatar: "/static/nexus/images/avatars/4.svg",
     },
     {
         id: "s7t8u9v0",
@@ -202,7 +202,7 @@ const tableData = [
         status: "success",
         email: "yara.b@mail.com",
 
-        avatar: "/images/avatars/5.png",
+        avatar: "/static/nexus/images/avatars/5.svg",
     },
     {
         id: "w1x2y3z4",
@@ -210,7 +210,7 @@ const tableData = [
         amount: 150,
         status: "failed",
         email: "zane.c@outlk.com",
-        avatar: "/images/avatars/6.png",
+        avatar: "/static/nexus/images/avatars/6.svg",
     },
     {
         id: "a5b6c7d8",
@@ -218,7 +218,7 @@ const tableData = [
         amount: 170,
         status: "processing",
         email: "amy.f@protonml.com",
-        avatar: "/images/avatars/7.png",
+        avatar: "/static/nexus/images/avatars/7.svg",
     },
     {
         id: "e9f0g1h2",
@@ -226,7 +226,7 @@ const tableData = [
         amount: 230,
         status: "pending",
         email: "ben.k@ex.com",
-        avatar: "/images/avatars/8.png",
+        avatar: "/static/nexus/images/avatars/8.svg",
     },
     {
         id: "i3j4k5l6",
@@ -234,7 +234,7 @@ const tableData = [
         amount: 215,
         status: "success",
         email: "cathy.h@domain.org",
-        avatar: "/images/avatars/9.png",
+        avatar: "/static/nexus/images/avatars/9.svg",
     },
     {
         id: "m7n8o9p0",
@@ -242,7 +242,7 @@ const tableData = [
         amount: 165,
         status: "processing",
         email: "dan.r@gmail.com",
-        avatar: "/images/avatars/10.png",
+        avatar: "/static/nexus/images/avatars/10.svg",
     },
     {
         id: "q1r2s3t4",
@@ -251,7 +251,7 @@ const tableData = [
         status: "failed",
         email: "elle.b@mail.com",
 
-        avatar: "/images/avatars/1.png",
+        avatar: "/static/nexus/images/avatars/1.svg",
     },
     {
         id: "u5v6w7x8",
@@ -259,7 +259,7 @@ const tableData = [
         amount: 250,
         status: "success",
         email: "frank.m@domain.com",
-        avatar: "/images/avatars/2.png",
+        avatar: "/static/nexus/images/avatars/2.svg",
     },
     {
         id: "y9z0a1b2",
@@ -267,7 +267,7 @@ const tableData = [
         amount: 135,
         status: "pending",
         email: "grace.o@fastml.com",
-        avatar: "/images/avatars/3.png",
+        avatar: "/static/nexus/images/avatars/3.svg",
     },
     {
         id: "c3d4e5f6",
@@ -275,7 +275,7 @@ const tableData = [
         amount: 200,
         status: "processing",
         email: "henry.w@ex.com",
-        avatar: "/images/avatars/4.png",
+        avatar: "/static/nexus/images/avatars/4.svg",
     },
     {
         id: "g7h8i9j0",
@@ -283,7 +283,7 @@ const tableData = [
         amount: 115,
         status: "failed",
         email: "isla.b@outlk.com",
-        avatar: "/images/avatars/5.png",
+        avatar: "/static/nexus/images/avatars/5.svg",
     },
     {
         id: "k1l2m3n4",
@@ -291,7 +291,7 @@ const tableData = [
         amount: 185,
         status: "success",
         email: "jake.s@gmail.com",
-        avatar: "/images/avatars/6.png",
+        avatar: "/static/nexus/images/avatars/6.svg",
     },
     {
         id: "o5p6q7r8",
@@ -299,7 +299,7 @@ const tableData = [
         amount: 145,
         status: "processing",
         email: "kara.d@domain.org",
-        avatar: "/images/avatars/7.png",
+        avatar: "/static/nexus/images/avatars/7.svg",
     },
     {
         id: "s9t0u1v2",
@@ -307,7 +307,7 @@ const tableData = [
         amount: 175,
         status: "pending",
         email: "leo.p@mail.com",
-        avatar: "/images/avatars/8.png",
+        avatar: "/static/nexus/images/avatars/8.svg",
     },
     {
         id: "w3x4y5z6",
@@ -315,7 +315,7 @@ const tableData = [
         amount: 210,
         status: "success",
         email: "maya.d@outlk.com",
-        avatar: "/images/avatars/9.png",
+        avatar: "/static/nexus/images/avatars/9.svg",
     },
     {
         id: "a7b8c9d0",
@@ -323,7 +323,7 @@ const tableData = [
         amount: 190,
         status: "failed",
         email: "noah.g@domain.com",
-        avatar: "/images/avatars/10.png",
+        avatar: "/static/nexus/images/avatars/10.svg",
     },
     {
         id: "e1f2g3h4",
@@ -332,7 +332,7 @@ const tableData = [
         status: "processing",
         email: "olivia.n@gmail.com",
 
-        avatar: "/images/avatars/1.png",
+        avatar: "/static/nexus/images/avatars/1.svg",
     },
     {
         id: "i5j6k7l8",
@@ -341,7 +341,7 @@ const tableData = [
         status: "pending",
         email: "paul.c@ex.com",
 
-        avatar: "/images/avatars/2.png",
+        avatar: "/static/nexus/images/avatars/2.svg",
     },
     {
         id: "m9n0o1p2",
@@ -350,7 +350,7 @@ const tableData = [
         status: "success",
         email: "rita.f@domain.org",
 
-        avatar: "/images/avatars/3.png",
+        avatar: "/static/nexus/images/avatars/3.svg",
     },
     {
         id: "q3r4s5t6",
@@ -358,7 +358,7 @@ const tableData = [
         amount: 235,
         status: "failed",
         email: "sam.w@fastml.com",
-        avatar: "/images/avatars/4.png",
+        avatar: "/static/nexus/images/avatars/4.svg",
     },
     {
         id: "u7v8w9x0",
@@ -366,7 +366,7 @@ const tableData = [
         amount: 100,
         status: "processing",
         email: "tara.n@mail.com",
-        avatar: "/images/avatars/5.png",
+        avatar: "/static/nexus/images/avatars/5.svg",
     },
     {
         id: "y1z2a3b4",
@@ -374,7 +374,7 @@ const tableData = [
         amount: 180,
         status: "pending",
         email: "victor.l@outlk.com",
-        avatar: "/images/avatars/6.png",
+        avatar: "/static/nexus/images/avatars/6.svg",
     },
     {
         id: "c5d6e7f8",
@@ -382,7 +382,7 @@ const tableData = [
         amount: 220,
         status: "success",
         email: "wendy.c@domain.com",
-        avatar: "/images/avatars/7.png",
+        avatar: "/static/nexus/images/avatars/7.svg",
     },
     {
         id: "u1v2w3x4",
@@ -390,7 +390,7 @@ const tableData = [
         amount: 220,
         status: "success",
         email: "lena.m@outlk.com",
-        avatar: "/images/avatars/8.png",
+        avatar: "/static/nexus/images/avatars/8.svg",
     },
     {
         id: "y5z6a7b8",
@@ -398,7 +398,7 @@ const tableData = [
         amount: 145,
         status: "failed",
         email: "marcus.l@protonml.com",
-        avatar: "/images/avatars/9.png",
+        avatar: "/static/nexus/images/avatars/9.svg",
     },
     {
         id: "c9d0e1f2",
@@ -406,12 +406,11 @@ const tableData = [
         amount: 310,
         status: "processing",
         email: "nora.p@mail.com",
-        avatar: "/images/avatars/10.png",
+        avatar: "/static/nexus/images/avatars/10.svg",
     },
 ].map((data) => {
     return {
         ...data,
-        avatar: data.avatar.replace(".png", ".svg"),
         dateTime: new Date(Date.now() - 1000 * 60 * 60 * Math.floor(Math.random() * 24 * 100)),
     }
 })

@@ -43,7 +43,7 @@
     - Confirm the OCI chart publish completed after the GitHub release so the `artifacthub.io/signKey` URL resolves.
     - Confirm the GHCR chart package is public so Artifact Hub can pull `oci://ghcr.io/<owner>/charts/revaer` anonymously.
     - In Artifact Hub, add or claim `oci://ghcr.io/<owner>/charts/revaer`, then verify that the published `artifacthub.io` metadata tag includes the expected repository ID and owner identity.
-    - After Artifact Hub shows `Verified publisher`, file the `official` status request for the Revaer publisher or organization. Use `revaer-logo.png` for the Artifact Hub repository and organization logo during that setup.
+    - After Artifact Hub shows `Verified publisher`, file the `official` status request for the Revaer publisher or organization. Use the committed purple stylized-R `revaer-logo.svg` for the Artifact Hub repository and organization logo during that setup, and visually confirm the rendered mark before publishing.
 
 7. **Post-Release Monitoring**
     - Watch rate-limit and guard-rail metrics.

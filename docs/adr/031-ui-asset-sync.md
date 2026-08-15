@@ -4,23 +4,25 @@
 - Date: 2025-12-23
 - Context:
   - The UI consumes Nexus HTML/CSS/JS as vendored, compiled assets with no JS toolchain in dev/CI.
-  - We need deterministic sync of vendor CSS, images, and JS into `crates/revaer-ui/static/` so Trunk can serve them.
+  - Nexus CSS and JS are synchronized while the scanner-readable SVG runtime images remain committed under `crates/revaer-ui/static/` so Trunk can serve them.
   - Output consistency must be verifiable in CI without relying on external asset pipelines.
 - Decision:
-  - Add a Rust CLI tool (`asset_sync`) that copies Nexus assets into `static/nexus`, validates the CSS, and writes a lock file.
+  - Add a Rust CLI tool (`asset_sync`) that copies Nexus CSS and JS into `static/nexus`, rewrites DataTables avatar references to `/static/nexus/images/avatars/*.svg`, validates the CSS and committed runtime assets, and writes a lock file.
+  - Fail closed when required SVGs are missing, runtime text is not UTF-8, a raster extension is present under `static`, an SVG lacks a valid root envelope and namespace, either Revaer brand SVG lacks the approved `revaer-purple-gradient` or `revaer-r-silhouette` identifier, or an icon, logo, or DataTables URL does not use its emitted `/static/...` path.
   - Wire the tool into `just` so `dev`, `build`, and CI checks always run the sync first.
-  - Update the UI entry HTML to copy the full static directory and load Nexus `app.css` directly.
+  - Update the UI entry HTML to copy the full static directory and load Nexus `app.css` directly. `just check-assets` compares the generated `crates/revaer-ui/static/nexus` tree from the repository root.
 - Dependency rationale:
   - `anyhow`: simplify CLI error propagation in the binary entrypoint; alternative was manual error mapping.
   - `fs_extra`: reliable directory copy with overwrite semantics; alternative was a bespoke recursive copy.
   - `sha2`: compute SHA-256 for `ASSET_LOCK.txt`; no standard library equivalent exists.
-  - `walkdir`: collect deterministic file counts/bytes for lock metadata; alternative was manual recursion.
+  - `walkdir`: collect deterministic file counts/bytes and validate the runtime asset tree; alternative was manual recursion.
+  - No dependency was added for SVG validation. The required check is deliberately limited to UTF-8, a complete `<svg ...>...</svg>` root envelope, and the SVG namespace; a general XML parser would add dependency surface without being used to transform or interpret SVG content.
 - Test coverage summary:
-  - Added unit tests for successful sync + lock creation and CSS validation failures in `crates/revaer-ui/tools/asset_sync/src/lib.rs`.
+  - Unit tests cover successful sync and lock creation, CSS validation, canonical DataTables URLs, and failures for missing, malformed, non-UTF-8, raster-extension, missing Revaer brand identifiers, and wrong-root runtime assets.
 - Observability updates:
   - None. The tool reports failures via exit status and error messages.
 - Risk & rollback plan:
-  - Risk: incorrect vendor paths or corrupted outputs. Mitigation: sanity-check the CSS and lock file.
+  - Risk: incorrect vendor paths, URL drift, or corrupted outputs. Mitigation: validate source references and the complete committed runtime tree before writing the lock file, then verify the Trunk release output.
   - Rollback: rerun `just sync-assets` or revert `static/nexus` changes in version control.
 - Follow-up:
   - Ensure CI runs `just check-assets` on changes touching `ui_vendor` or `static/nexus`.
