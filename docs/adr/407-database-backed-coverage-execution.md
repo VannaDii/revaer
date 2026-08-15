@@ -28,7 +28,7 @@
   - The change extracts only the coverage and disposable-Postgres lifecycle behavior validated by `104c54f0`.
   - No workflow, Sonar, release, dependency, or media-runtime behavior is moved into this prerequisite.
 - Test coverage summary:
-  - Focused URL composition and test-support unit tests passed before shared database gates.
+  - Focused URL composition and test-support unit tests cover local fallback, forced cleanup, and an unreachable IPv6 loopback endpoint without invoking Docker-host fallback.
   - `just ci` passed with database-backed coverage active and every per-package coverage assertion at or above 90%.
   - `just ui-e2e` passed all 101 API and browser tests.
 - Observability updates:
