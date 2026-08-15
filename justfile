@@ -216,11 +216,12 @@ cov:
 sonar-compile-db:
     mkdir -p coverage
     rm -f coverage/compile_commands.json
-    mkdir -p target/sonar-build
+    cargo clean --target-dir "${PWD}/target/sonar-build" -p revaer-torrent-libt
     REVAER_NATIVE_IT=1 \
     CARGO_TARGET_DIR="${PWD}/target/sonar-build" \
     REVAER_NATIVE_COMPILE_COMMANDS_PATH="${PWD}/coverage/compile_commands.json" \
         cargo --config 'build.rustflags=["-Dwarnings"]' build -p revaer-torrent-libt --all-features
+    test -s coverage/compile_commands.json
 
 sbom:
     mkdir -p artifacts
