@@ -369,3 +369,4 @@
     -   [484: Media operator surface boundary](adr/484-media-operator-surface-boundary.md)
     -   [485: Native FFI exception boundary](adr/485-native-ffi-exception-boundary.md)
     -   [486: Tracker credential transport](adr/486-tracker-credential-transport.md)
+    -   [488: Single authoritative Sonar scanner execution](adr/488-single-sonar-scanner-execution.md)
