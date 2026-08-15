@@ -29,6 +29,7 @@ jobs:
           POSTGRES_PASSWORD: revaer
           POSTGRES_DB: revaer
         options: >-
+          --shm-size=1g
           --health-cmd="pg_isready -U revaer -d revaer"
           --health-interval=10s
           --health-timeout=5s
@@ -43,7 +44,7 @@ jobs:
       - uses: ./.github/actions/setup-revaer
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: db
+          apt-profile: coverage
 
       - name: Run migrations
         env:

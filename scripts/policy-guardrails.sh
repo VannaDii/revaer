@@ -21,6 +21,8 @@ readonly exclude_globs=(
 failures=0
 rust_files=()
 
+bash scripts/advisory-exception-guardrails.sh
+
 load_rust_files() {
   rust_files=()
 

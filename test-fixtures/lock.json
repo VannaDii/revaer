@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "cacheKeyInputs": [
+    "test-fixtures/lock.json",
+    "test-fixtures/manifest.json",
+    "scripts/test-fixtures/*.sh"
+  ],
+  "upstreams": {
+    "chromium": {
+      "repository": "https://chromium.googlesource.com/chromium/src",
+      "mirror": "https://github.com/chromium/chromium",
+      "revision": "98a04f617f22fdc3621924151b877b19b87cd5fd",
+      "license": "BSD-3-Clause"
+    }
+  },
+  "sources": [
+    {
+      "id": "bbb-h264-mp4",
+      "path": "test-fixtures/source/bbb-h264.mp4",
+      "encoding": "raw",
+      "sha256": "77145c94c11f3754207499158df22406e1fe7635553c1c86dc5e881dfeb32016",
+      "minimumBytes": 991017,
+      "maximumBytes": 991017,
+      "urls": [
+        "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4"
+      ]
+    },
+    {
+      "id": "chromium-bear-1280x720-av-frag-mp4",
+      "path": "test-fixtures/chromium/bear-1280x720_av_frag.mp4",
+      "encoding": "raw",
+      "sha256": "affc4ce6c872f9d4160a92a7b959523b3cac2d171e89177e4cd211e55f756175",
+      "minimumBytes": 764465,
+      "maximumBytes": 764465,
+      "urls": [
+        "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-av_frag.mp4"
+      ]
+    }
+  ]
+}

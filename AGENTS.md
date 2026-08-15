@@ -49,7 +49,7 @@
 - `JSONB` and other conglomerate persistence formats are banned for application state. Persist normalized data.
 - Runtime collaborators are injected. Do not read environment variables or construct concrete infra implementations inside domain logic.
 - Zero dead code is mandatory. If code ships, it is exercised in production, tests, or an explicitly exercised feature configuration.
-- Temporary operational exceptions, such as duplicate-crate tolerances in [`deny.toml`](./deny.toml) or advisory ignores in [`.secignore`](./.secignore), must be explicit, ADR-backed, time-bounded, and kept outside authored source code.
+- Advisory ignores are forbidden by default: [`.secignore`](./.secignore), the advisory-ignore list in [`deny.toml`](./deny.toml), and npm audit exceptions must remain empty. Cargo and npm findings at every configured severity are mandatory fixes. Any exception requires explicit operator consent recorded in the task ADR, an expiry, and a guardrail change in the same commit. Exact duplicate-crate tolerances in `deny.toml` must be ADR-backed, time-bounded, and removed as soon as the graph can converge.
 
 ---
 
@@ -92,6 +92,9 @@
 
 - Every task persists a task record alongside the change as an ADR under [`docs/adr/`](./docs/adr/).
 - Start from [`docs/adr/template.md`](./docs/adr/template.md), number sequentially, and keep the file name concise and searchable.
+- Architectural decisions use `Proposed` until the operator gives explicit, decision-specific approval. Only then may the ADR use `Accepted`, and its operator-approval field must record the approval evidence and date.
+- Completed nonarchitectural task records use `Recorded` with `Operator approval: Not applicable: nonarchitectural task record`. `Recorded` documents completed corrective work; it does not imply an architectural decision or operator approval.
+- `Superseded` identifies a record replaced by a later ADR and must name the replacement. Do not use status changes to imply approval that was not given.
 - Every task record must include:
   - Motivation
   - Design notes

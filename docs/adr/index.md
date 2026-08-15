@@ -328,3 +328,13 @@
 -   [314](314-artifacthub-verification-and-official-readiness.md) – Artifact Hub verification and official readiness
 -   [315](315-indexer-import-job-runtime-worker.md) – Indexer import job runtime worker
 -   [316](316-import-runtime-gap-closure-followup.md) – Import runtime gap-closure follow-up
+-   [317](317-supply-chain-advisory-baseline.md) – Supply chain advisory baseline
+-   [404](404-doc-indexer-fixture-isolation.md) – Doc indexer fixture isolation
+-   [407](407-database-backed-coverage-execution.md) – Database-backed coverage execution
+-   [461](461-adr-task-record-status-semantics.md) – ADR and task-record status semantics
+-   [462](462-pr88-shell-return.md) – PR 88 shell return correction
+-   [477](477-stacked-pr-check-emission.md) – Uniform stacked-PR check emission
+-   [478](478-validation-foundation-advisory-refresh.md) – Validation foundation advisory refresh
+-   [479](479-platform-safe-test-dependencies.md) – Platform-safe test dependencies
+-   [480](480-postgres-test-shared-memory.md) – PostgreSQL test shared memory
+-   [481](481-warning-free-validation-tools.md) – Warning-free validation tools

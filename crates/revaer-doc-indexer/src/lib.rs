@@ -411,13 +411,15 @@ mod tests {
     use serde_json::Value;
     use std::env;
     use std::error::Error;
-    use std::io::Write;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::io::{ErrorKind, Write};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     fn repo_root() -> PathBuf {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         for ancestor in manifest_dir.ancestors() {
-            if ancestor.join("AGENT.md").is_file() {
+            if ancestor.join("AGENTS.md").is_file() {
                 return ancestor.to_path_buf();
             }
         }
@@ -436,11 +438,19 @@ mod tests {
 
     impl TempDir {
         fn new() -> std::result::Result<Self, Box<dyn Error>> {
-            let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-            let mut root = server_root()?;
-            root.push(format!("revaer-doc-indexer-{nanos}-{}", std::process::id()));
-            fs::create_dir_all(&root)?;
-            Ok(Self { path: root })
+            let base = server_root()?;
+            loop {
+                let sequence = TEMP_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+                let root = base.join(format!(
+                    "revaer-doc-indexer-{}-{sequence}",
+                    std::process::id()
+                ));
+                match fs::create_dir(&root) {
+                    Ok(()) => return Ok(Self { path: root }),
+                    Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+                    Err(error) => return Err(Box::new(error)),
+                }
+            }
         }
 
         fn path(&self) -> &Path {

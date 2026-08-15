@@ -1,11 +1,7 @@
 # cargo-deny configuration aligned with the Phase One licensing policy.
 
 [advisories]
-ignore = [
-    "RUSTSEC-2024-0370", # proc-macro-error unmaintained; yew transitive, no alternative in current release line
-    "RUSTSEC-2025-0141", # bincode unmaintained; transitive via gloo-worker in the UI stack
-    "RUSTSEC-2026-0097", # ADR 304: rand 0.8.5 still resolves transitively via sqlx-postgres until upstream removes the path
-]
+ignore = []
 
 [licenses]
 allow = [
@@ -37,8 +33,8 @@ reason = "Legacy rand 0.8 stack from password hashing dependencies."
 
 
 [[bans.skip]]
-crate = "rand@0.8.5"
-reason = "sqlx 0.8 transitively depends on rand 0.8.x."
+crate = "rand@0.8.7"
+reason = "SQLx transitively depends on the patched rand 0.8.x line."
 
 [[bans.skip]]
 crate = "rand@0.9.4"
@@ -65,10 +61,6 @@ reason = "rand 0.9.x stack accompanies the workspace rand dependency; argon2 sta
 crate = "http@0.2.12"
 reason = "Legacy gloo-net depends on http 0.2; allow alongside http 1.x."
 
-
-[[bans.skip]]
-crate = "syn@1.0.109"
-reason = "proc-macro-error pulls syn 1.x; unavoidable via yew 0.21."
 
 [[bans.skip]]
 crate = "thiserror@1.0.69"

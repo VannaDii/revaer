@@ -1,0 +1,52 @@
+# Validation Foundation Advisory Refresh
+
+- Status: Recorded
+- Date: 2026-08-15
+- Operator approval: Not applicable: nonarchitectural task record
+- Context:
+  - The approved validation foundation must pass its own supply-chain gates when it targets `main`.
+  - The dependency graph still resolved `event-listener 5.4.1`, which is affected by RUSTSEC-2026-0221.
+  - The UI test lock resolved vulnerable `brace-expansion 2.0.2`, `fast-uri 3.1.0`, and `js-yaml 4.1.1`, while the canonical gate did not run npm audit.
+  - `.secignore` retained three legacy exceptions even though the accepted supply-chain baseline removed the affected dependency paths.
+  - Combining the accepted ADR 317 baseline with the full fixture catalogue exceeded the 10,000-change pull-request limit.
+- Decision:
+  - Refresh `event-listener` to 5.4.2 and retain the already accepted ADR 317 advisory-clean dependency baseline at the first validation boundary.
+  - Empty `.secignore` and require both it and `deny.toml`'s advisory-ignore list to remain empty through a fail-closed policy guard and mutation tests.
+  - Refresh the three vulnerable UI test transitive packages, install the exact lock with lifecycle scripts disabled, and fail the canonical UI gate on any npm advisory at `info` or higher.
+  - Keep the smallest rigorous initial fixture subset: exact-byte H.264 acquisition, revision-pinned fragmented MP4 diagnostics, and FFmpeg-generated subtitle Matroska metadata and disposition coverage.
+  - Leave broader codec, container, audio-topology, and malformed-input catalogue expansion to the later fixture delivery already present in the approved stack.
+- Consequences:
+  - The first pull request can emit meaningful media and supply-chain checks while remaining below 10,000 changed lines.
+  - Advisory findings cannot be converted into ignored successes without an explicit policy and guardrail change.
+  - The first fixture gate validates the complete acquisition, generation, probing, reporting, and cleanup mechanism without claiming final codec coverage.
+- Follow-up:
+  - Run `just audit`, `just deny`, `just ci`, and `just ui-e2e` on the exact first-boundary tree.
+  - Expand the fixture catalogue in its later outside-in delivery without weakening the established gate.
+
+## Task Record
+
+- Motivation:
+  - Make the approved bottom boundary independently reviewable and green under the repository's strict advisory and PR-size rules.
+- Design notes:
+  - The fixture subset was selected by an independent read-only review and preserves two immutable upstreams, one allowed bounded diagnostic path, real FFmpeg generation, subtitle metadata, forced disposition, and canonical probe snapshots.
+  - The existing supply-vendor delivery remains above this boundary for its remaining native-build and CI work.
+- Test coverage summary:
+  - Ran `just policy`, including mutation tests for nonempty and missing advisory-ignore configuration.
+  - Ran `just audit` against the current RustSec database and `just deny`; both passed without advisory exceptions.
+  - Ran npm audit against the refreshed exact UI test lock; it reported zero vulnerabilities at every severity.
+  - Ran `just test-fixture-scripts` and `actionlint .github/workflows/pr.yml`.
+  - Ran the real cold-cache download, forced generation, and `just test-media-conversion` flow: two locked sources, three reviewed fixtures, and one bounded diagnostic emission passed.
+  - Ran `just clean-test-fixtures` through an exit trap after the real fixture flow.
+  - Ran `just ci`, including the 90% per-package coverage assertions and optimized release build, and `just ui-e2e`, including all 101 API and browser tests.
+- Observability updates:
+  - The media gate retains a nonempty Markdown report with locked-source, reviewed-fixture, and bounded-diagnostic counts.
+- Status-doc validation:
+  - Updated fixture documentation, the ADR catalogue, and the documentation summary to match the reduced first-boundary scope.
+- Risk & rollback plan:
+  - Restore the previous lockfile and fixture catalogue only by reverting this task record and its implementation together.
+  - Do not restore advisory ignores during rollback; a newly discovered unavoidable exception requires separate explicit operator consent.
+- Dependency rationale:
+  - No new dependency was added. The lock refresh selects the patched `event-listener 5.4.2` release and removes its no-longer-needed `concurrent-queue` edge.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, the Rust and DevOps scoped instructions, `justfile`, `deny.toml`, and `.secignore`.
+  - Drift was found in the legacy advisory exceptions and the Rust instruction scope; both were corrected and mechanically enforced.

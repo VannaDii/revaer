@@ -25,7 +25,19 @@ applyTo:
 - Release packaging should publish an explicit `artifacthub.io/images` chart annotation for the Revaer image so Artifact Hub can index the runtime image and generate package security scans reliably.
 - Workflows that install Rust toolchains must use the repository's configured toolchain source of truth rather than hard-coded ad hoc channels unless a documented exception is required.
 - Workflow build, lint, test, coverage, and release gates must call `just` recipes. Do not reintroduce raw `cargo` pipelines into CI jobs.
+- Media fixture acquisition must use `test-fixtures/lock.json` as the immutable
+  source, revision, SHA-256, and byte-bound record. Cache keys must include that
+  lock. Normal verification must create canonical probes in a private temporary
+  tree and diff them against reviewed snapshots without modifying the worktree;
+  snapshot replacement is allowed only through the explicit
+  `just update-test-fixture-probes` operator recipe.
 - `pr.yml` is the sole pull-request validation workflow. Keep formatting, lint, test, audit, deny, coverage, E2E, and other verification gates there so pull requests are validated exactly once before merge.
+- `pr.yml` must run its release-build validation job on pull requests. Keep post-merge and tag publication in `ci.yml`, but do not hide PR release-build validation behind main/tag-only guards.
+- Required CI recipes must install Rust CLI tools at exact reviewed versions with `--locked`; do not let floating registry resolution decide the tool version at check time. `just sqlx-install` must install SQLx CLI `0.8.6` because newer CLI releases can outrun the configured Rust toolchain, `just trunk-install` must install Trunk `0.21.14` because newer transitive CSS tooling can outrun the configured Rust toolchain, and `just udeps` must run cargo-udeps on the configured nightly toolchain directly because cargo-udeps requires nightly-only compiler flags.
+- The canonical UI E2E gate must install the exact `tests/package-lock.json` graph with lifecycle scripts disabled and run `npm audit --audit-level=info` before generating clients or starting browsers. Every reported npm severity is blocking; refresh the lock or dependency graph instead of adding an audit exception.
+- Documentation builds must pin mdBook `0.5.0` to the protocol version used by pinned `mdbook-mermaid 0.17.0`. Browser validation must not pass conflicting `NO_COLOR` and `FORCE_COLOR` settings into Playwright; remove the inherited `NO_COLOR` setting at that process boundary instead of discarding warning output.
+- Every pull request must emit `Supply Chain Checks` as a fail-closed aggregate of the independent audit, deny, and unused-dependency jobs. The aggregate must run under `if: always()` and reject every upstream result except `success` through the canonical `just` verifier.
+- `pr.yml` must run the media fixture gate through the canonical fixture recipes, publish a nonempty report, and run `just clean-test-fixtures` under `if: always()` after report upload. Image and release-build jobs must depend on that fixture gate.
 - `ci.yml` is the post-merge and tag-release workflow. Limit it to release-artifact, publish, and image-build activity for `main` pushes and release tags; do not duplicate PR validation jobs there.
 - Manual release verification belongs in dedicated `workflow_dispatch` workflows, not in `pr.yml`, and should reuse the same `just` entrypoints and pinned third-party actions as the release path they exercise.
 - Manual workflows that publish PR-scoped dev Helm artifacts should encode the PR number into the default prerelease version so registry output is traceable back to the reviewed change.
@@ -58,6 +70,9 @@ applyTo:
 
 - CI-only credentials may be ephemeral only when they are clearly scoped to isolated test infrastructure, such as throwaway Postgres service containers.
 - Ephemeral test credentials must never be reused as application secrets, committed runtime credentials, or user-facing examples.
+- `just cov` must pass its resolved test database URL to both database startup and the coverage process in the same recipe shell so database-backed tests cannot silently lose their configured endpoint. Disposable test databases must be dropped with forced session cleanup, and local-only host fallback must remain bounded to `localhost` and `127.0.0.1` inputs.
+- Sonar coverage jobs must fetch complete Git history and exercise authored Rust and native C/C++ code in one `just cov` run so the scanner can resolve the main-branch baseline and import both retained reports.
+- PostgreSQL service containers used by pull-request, Sonar, and managed local validation must reserve 1 GiB of shared memory so concurrent isolated-schema migrations cannot exhaust Docker's 64 MiB default. `just db-start` must recreate its named managed container when the configured allocation is smaller.
 - Do not log secrets or secret-like values. Mask or omit them.
 - Keep Helm registry credentials (`HELM_API_KEY_ID`, `HELM_API_KEY_SECRET`) separate from chart-signing material (`HELM_GPG_PRIVATE`, `HELM_GPG_PUBLIC`). Publishing jobs may use registry credentials only when consuming an already-packaged chart artifact.
 - GHCR chart publication on GitHub-hosted runners should prefer the job-scoped `GITHUB_TOKEN` plus explicit `packages: write` over long-lived custom registry secrets. Keep `HELM_API_KEY_*` only for non-GitHub or local override paths.
