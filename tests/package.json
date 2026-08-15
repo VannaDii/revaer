@@ -16,5 +16,15 @@
         "dotenv": "17.3",
         "openapi-fetch": "0.17",
         "openapi-typescript": "7.13"
+    },
+    "overrides": {
+        "minimatch@^5.1.0": {
+            "brace-expansion": "2.1.4"
+        },
+        "minimatch@^10.2.0": {
+            "brace-expansion": "5.0.9"
+        },
+        "fast-uri": "3.1.5",
+        "js-yaml": "4.3.1"
     }
 }
