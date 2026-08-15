@@ -107,6 +107,24 @@ run_matches="$(
 )"
 report_matches 'workflow run blocks must not interpolate ${{ inputs.* }} directly' "${run_matches}"
 
+postgres_service_count="$(
+  awk '
+    /^[[:space:]]*image:[[:space:]]*postgres:16-alpine([[:space:]]|$)/ { count++ }
+    END { print count + 0 }
+  ' "${files[@]}"
+)"
+postgres_shm_count="$(
+  awk '
+    /^[[:space:]]*--shm-size=1g([[:space:]]|$)/ { count++ }
+    END { print count + 0 }
+  ' "${files[@]}"
+)"
+if [ "${postgres_service_count}" -ne "${postgres_shm_count}" ]; then
+  report_matches \
+    "every PostgreSQL 16 service must reserve 1 GiB of shared memory" \
+    "PostgreSQL services: ${postgres_service_count}; 1 GiB allocations: ${postgres_shm_count}"
+fi
+
 if [ "${failures}" -ne 0 ]; then
   exit 1
 fi

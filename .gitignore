@@ -20,5 +20,9 @@ docs/book
 /tests/.auth
 /tests/.runtime
 /tests/logs
+/test-fixtures/source/
+/test-fixtures/matroska/
+/test-fixtures/chromium/
+/test-fixtures/derived/
 node_modules
 release/next-release.json

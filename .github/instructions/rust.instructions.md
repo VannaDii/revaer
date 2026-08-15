@@ -3,6 +3,7 @@ applyTo:
   - "Cargo.toml"
   - "rust-toolchain.toml"
   - ".clippy.toml"
+  - ".secignore"
   - "deny.toml"
   - "justfile"
   - "crates/**/*.rs"
@@ -28,8 +29,9 @@ applyTo:
 # Lint And Cfg Hygiene
 
 - Keep workspace lint posture aligned with `AGENTS.md`, the active `just` recipes, and crate-root attributes.
+- Keep `.secignore` and the `[advisories].ignore` list in `deny.toml` empty. An exception requires exact operator consent, an expiry, and a matching guardrail change; an agent-authored ADR is not consent.
 - `just lint` includes `scripts/policy-guardrails.sh`. Keep that guardrail aligned with the root policy when the lint posture changes.
-- `scripts/policy-guardrails.sh` currently enforces no source-level lint suppressions, no authored stubs, FFI-only `unsafe`/`catch_unwind`, and the stored-procedure-only runtime SQL boundary. The inline DDL/DML scan is case-insensitive, excludes test-only sidecar modules at `crates/**/src/**/tests.rs`, and must keep working when `rg` is unavailable by falling back to the tracked Rust file list.
+- `scripts/policy-guardrails.sh` currently enforces empty advisory-ignore lists, no source-level lint suppressions, no authored stubs, FFI-only `unsafe`/`catch_unwind`, and the stored-procedure-only runtime SQL boundary. The inline DDL/DML scan is case-insensitive, excludes test-only sidecar modules at `crates/**/src/**/tests.rs`, and must keep working when `rg` is unavailable by falling back to the tracked Rust file list.
 - `just lint` also runs a production-target Clippy pass on workspace libs, bins, and examples that forbids `panic!`, `unwrap()`, `expect()`, `unreachable!()`, `todo!()`, and `unimplemented!()` without applying those restrictions to test targets.
 - Keep repo-level Clippy exceptions in `just lint`, not in crate source. Today that includes the ADR-backed `clippy::multiple_crate_versions` exception and the workspace `pub(crate)` style exception for `clippy::redundant_pub_crate`. The owning `clippy::cargo` and `clippy::nursery` groups are enforced from the Justfile for the same reason.
 - `#[allow(...)]` and `#[expect(...)]` are not permitted in authored code. Split or redesign the code instead.

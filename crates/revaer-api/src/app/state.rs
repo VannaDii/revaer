@@ -404,6 +404,7 @@ pub(crate) struct ApiState {
     rate_limiters: Mutex<HashMap<String, RateLimiter>>,
     torrent_metadata: Mutex<HashMap<Uuid, TorrentMetadata>>,
     pub(crate) torrent: Option<TorrentHandles>,
+    dashboard_disk_usage: fn(&Path) -> std::io::Result<(u32, u32)>,
     #[cfg(feature = "compat-qb")]
     compat_sessions: Mutex<HashMap<String, CompatSession>>,
 }
@@ -439,9 +440,19 @@ impl ApiState {
             rate_limiters: Mutex::new(HashMap::new()),
             torrent_metadata: Mutex::new(HashMap::new()),
             torrent,
+            dashboard_disk_usage: dashboard_disk_usage_gb,
             #[cfg(feature = "compat-qb")]
             compat_sessions: Mutex::new(HashMap::new()),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_dashboard_disk_usage(
+        mut self,
+        dashboard_disk_usage: fn(&Path) -> std::io::Result<(u32, u32)>,
+    ) -> Self {
+        self.dashboard_disk_usage = dashboard_disk_usage;
+        self
     }
 
     pub(crate) fn add_degraded_component(&self, component: &str) -> bool {
@@ -514,7 +525,7 @@ impl ApiState {
         let statuses = self.dashboard_statuses().await;
         let (download_bps, upload_bps, active, paused, completed) =
             aggregate_dashboard_counts(&statuses);
-        let (disk_total_gb, disk_used_gb) = match dashboard_disk_usage_gb(library_root) {
+        let (disk_total_gb, disk_used_gb) = match (self.dashboard_disk_usage)(library_root) {
             Ok(snapshot) => {
                 self.remove_degraded_component(DASHBOARD_DISK_COMPONENT);
                 snapshot

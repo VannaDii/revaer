@@ -9,6 +9,11 @@ fmt-fix:
 policy:
     bash scripts/policy-guardrails.sh
     bash scripts/workflow-guardrails.sh
+    ruby --disable-gems scripts/stack-check-contract.rb
+    just advisory-exception-guardrails-test
+    just test-fixture-scripts
+    just stack-check-contract-test
+    just supply-chain-results-test
 
 instruction-drift:
     bash scripts/instruction-drift-check.sh
@@ -45,6 +50,40 @@ test-features-min:
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --no-default-features
+
+test-fixture-scripts:
+    bash scripts/test-fixtures/test-lock-manifest.sh
+    bash scripts/test-fixtures/test-download-integrity.sh
+    bash scripts/test-fixtures/test-probe-verification.sh
+
+download-test-fixtures:
+    bash scripts/test-fixtures/download-test-fixtures.sh
+
+generate-test-fixtures:
+    bash scripts/test-fixtures/generate-derived-fixtures.sh
+
+verify-test-fixtures:
+    bash scripts/test-fixtures/verify-fixtures.sh
+
+test-media-conversion: verify-test-fixtures
+
+update-test-fixture-probes:
+    bash scripts/test-fixtures/update-probe-snapshots.sh
+
+clean-test-fixtures:
+    bash scripts/test-fixtures/clean-test-fixtures.sh
+
+verify-supply-chain-results:
+    bash scripts/verify-supply-chain-results.sh
+
+stack-check-contract-test:
+    bash scripts/tests/stack-check-contract-test.sh
+
+supply-chain-results-test:
+    bash scripts/tests/supply-chain-results-test.sh
+
+advisory-exception-guardrails-test:
+    bash scripts/tests/advisory-exception-guardrails-test.sh
 
 build: sync-assets
     cargo build --workspace --all-targets --all-features
@@ -169,10 +208,14 @@ cov:
     fi
     rustup component add llvm-tools-preview
     cargo llvm-cov clean --workspace
-    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}"; \
-    DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}"; \
-        export REVAER_TEST_DATABASE_URL DATABASE_URL; \
-    just db-start
+    test_database_url="${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh postgres)}"; \
+    database_url="${DATABASE_URL:-${test_database_url}}"; \
+    db_managed="${REVAER_DB_MANAGED:-0}"; \
+    if [ -z "${DATABASE_URL:-}" ]; then \
+        db_managed="${REVAER_DB_MANAGED:-1}"; \
+    fi; \
+    REVAER_DB_MANAGED="${db_managed}" REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" just db-start && \
+    REVAER_TEST_DATABASE_URL="${test_database_url}" DATABASE_URL="${database_url}" \
     RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}" \
     CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}" \
         cargo llvm-cov --workspace --all-features --no-report
@@ -316,7 +359,8 @@ ui-build: sync-assets trunk-install
     cd crates/revaer-ui && NO_COLOR=true trunk build --release
 
 ui-e2e: trunk-install
-    cd tests && npm install
+    cd tests && npm ci --ignore-scripts
+    cd tests && npm audit --audit-level=info
     cd tests && npm run gen:api-client
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
         cd tests && npx playwright install --with-deps; \
@@ -327,7 +371,7 @@ ui-e2e: trunk-install
     if [ -n "${PLAYWRIGHT_SHARD_INDEX:-}" ] && [ -n "${PLAYWRIGHT_SHARD_TOTAL:-}" ]; then \
         shard_arg="--shard=${PLAYWRIGHT_SHARD_INDEX}/${PLAYWRIGHT_SHARD_TOTAL}"; \
     fi; \
-    cd tests && npx playwright test ${shard_arg}
+    cd tests && env -u NO_COLOR npx playwright test ${shard_arg}
 
 ui-e2e-coverage:
     node tests/scripts/check-e2e-coverage.js
@@ -482,25 +526,35 @@ dev: sync-assets
     wait $api_pid $ui_pid
 
 docs-install:
+    cargo_bin_dir="${CARGO_HOME:-${HOME}/.cargo}/bin"; \
+    mdbook_bin="${cargo_bin_dir}/mdbook"; \
+    mdbook_mermaid_bin="${cargo_bin_dir}/mdbook-mermaid"; \
+    required_mdbook_version="0.5.0"; \
     required_mdbook_mermaid_version="0.17.0"; \
-    if ! command -v mdbook >/dev/null 2>&1; then \
-        cargo install --locked mdbook; \
+    current_mdbook_version=""; \
+    if [ -x "$mdbook_bin" ]; then \
+        current_mdbook_version="$("$mdbook_bin" --version | awk '{print $2}' | sed 's/^v//')"; \
     fi; \
-    if ! command -v mdbook-mermaid >/dev/null 2>&1; then \
+    if [ "$current_mdbook_version" != "$required_mdbook_version" ]; then \
+        cargo install --locked mdbook --version "$required_mdbook_version" --force; \
+    fi; \
+    if [ ! -x "$mdbook_mermaid_bin" ]; then \
         cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version"; \
     else \
-        current_mdbook_mermaid_version="$(mdbook-mermaid --version | awk '{print $2}')"; \
+        current_mdbook_mermaid_version="$("$mdbook_mermaid_bin" --version | awk '{print $2}')"; \
         if [ "$current_mdbook_mermaid_version" != "$required_mdbook_mermaid_version" ]; then \
             cargo install --locked mdbook-mermaid --version "$required_mdbook_mermaid_version" --force; \
         fi; \
     fi; \
-    mdbook-mermaid install ./docs
+    "$mdbook_mermaid_bin" install ./docs
 
 docs-build:
-    cd docs && mdbook build
+    mdbook_bin="${CARGO_HOME:-${HOME}/.cargo}/bin/mdbook"; \
+    cd docs && "$mdbook_bin" build
 
 docs-serve:
-    cd docs && mdbook serve --open
+    mdbook_bin="${CARGO_HOME:-${HOME}/.cargo}/bin/mdbook"; \
+    cd docs && "$mdbook_bin" serve --open
 
 docs-index:
     cargo run -p revaer-doc-indexer --release
@@ -533,6 +587,7 @@ db-start:
     fi; \
     echo "Using database URL: ${db_url}"; \
     container_name="${PG_CONTAINER:-revaer-db}"; \
+    required_shm_bytes="1073741824"; \
     db_data_dir="${PWD}/.server_root/postgres-data"; \
     mkdir -p "${db_data_dir}"; \
     existing_container="$(docker ps -aq -f name=^${container_name}$)"; \
@@ -540,6 +595,14 @@ db-start:
         if docker logs --tail 50 "${container_name}" 2>&1 | grep -q 'No space left on device'; then \
             echo "Recreating failed Postgres container (${container_name}) with host-backed storage"; \
             docker rm -f "${container_name}" >/dev/null 2>&1 || true; \
+            existing_container=""; \
+        fi; \
+    fi; \
+    if [ -n "${existing_container}" ]; then \
+        configured_shm_bytes="$(docker inspect "${container_name}" 2>/dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin)[0]["HostConfig"].get("ShmSize", 0))' || printf '0')"; \
+        if [ "${configured_shm_bytes}" -lt "${required_shm_bytes}" ]; then \
+            echo "Recreating underprovisioned Postgres container (${container_name}) with 1 GiB shared memory"; \
+            docker rm -f "${container_name}" >/dev/null; \
             existing_container=""; \
         fi; \
     fi; \
@@ -567,6 +630,7 @@ db-start:
             echo "Starting new Postgres container (${container_name})"; \
             docker run -d \
                 --name "${container_name}" \
+                --shm-size 1g \
                 -e POSTGRES_USER=revaer \
                 -e POSTGRES_PASSWORD=revaer \
                 -e POSTGRES_DB=revaer \

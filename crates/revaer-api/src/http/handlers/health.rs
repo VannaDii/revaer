@@ -145,7 +145,11 @@ mod tests {
         AddTorrent, PeerSnapshot, RemoveTorrent, TorrentInspector, TorrentProgress, TorrentRates,
         TorrentResult, TorrentStatus, TorrentWorkflow,
     };
-    use std::{path::PathBuf, sync::Arc as StdArc, time::Duration};
+    use std::{
+        path::{Path, PathBuf},
+        sync::Arc as StdArc,
+        time::Duration,
+    };
     use uuid::Uuid;
 
     #[derive(Clone)]
@@ -387,14 +391,28 @@ mod tests {
     ) -> Result<Arc<ApiState>> {
         let telemetry = Metrics::new()?;
         let handles = TorrentHandles::new(StdArc::new(StubWorkflow), StdArc::new(inspector));
-        Ok(Arc::new(ApiState::new(
-            config,
-            test_indexers(),
-            telemetry,
-            Arc::new(serde_json::json!({})),
-            EventBus::new(),
-            Some(handles),
-        )))
+        Ok(Arc::new(
+            ApiState::new(
+                config,
+                test_indexers(),
+                telemetry,
+                Arc::new(serde_json::json!({})),
+                EventBus::new(),
+                Some(handles),
+            )
+            .with_dashboard_disk_usage(deterministic_dashboard_disk_usage),
+        ))
+    }
+
+    fn deterministic_dashboard_disk_usage(path: &Path) -> std::io::Result<(u32, u32)> {
+        if path.exists() {
+            Ok((32, 4))
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "dashboard test library root missing",
+            ))
+        }
     }
 
     struct TestDir {

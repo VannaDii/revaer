@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "id": "bbb-h264-mp4",
+      "path": "test-fixtures/source/bbb-h264.mp4",
+      "source": "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4",
+      "license": "CC-BY-3.0",
+      "attribution": "(c) copyright 2008, Blender Foundation / www.bigbuckbunny.org; redistributed by Test-Videos.",
+      "container": "mp4",
+      "expectedVideoCodecs": ["h264"],
+      "expectedAudioCodecs": [],
+      "expectedSubtitleCodecs": [],
+      "expectedVideoStreamCount": 1,
+      "expectedAudioStreamCount": 0,
+      "expectedSubtitleStreamCount": 0,
+      "purpose": "Common MP4 and H.264 video-only coverage.",
+      "generated": false,
+      "shouldDownload": true,
+      "shouldGenerate": false,
+      "notes": "The specified 1 MB Test-Videos sample is video-only."
+    },
+    {
+      "id": "chromium-bear-1280x720-av-frag-mp4",
+      "path": "test-fixtures/chromium/bear-1280x720_av_frag.mp4",
+      "source": "https://raw.githubusercontent.com/chromium/chromium/98a04f617f22fdc3621924151b877b19b87cd5fd/media/test/data/bear-1280x720-av_frag.mp4",
+      "license": "BSD-3-Clause",
+      "attribution": "Copyright The Chromium Authors.",
+      "container": "mp4",
+      "expectedVideoCodecs": ["h264"],
+      "expectedAudioCodecs": ["aac"],
+      "expectedSubtitleCodecs": [],
+      "allowProbeDiagnostics": true,
+      "expectedVideoStreamCount": 1,
+      "expectedAudioStreamCount": 1,
+      "expectedSubtitleStreamCount": 0,
+      "purpose": "Fragmented MP4 parser and conversion behavior.",
+      "generated": false,
+      "shouldDownload": true,
+      "shouldGenerate": false,
+      "notes": "Pinned Chromium stores the source with a hyphen; the deterministic destination preserves the planned underscore filename."
+    },
+    {
+      "id": "subtitles-mkv",
+      "path": "test-fixtures/derived/subtitles.mkv",
+      "source": "generated from test-fixtures/source/bbb-h264.mp4",
+      "license": "CC-BY-3.0",
+      "attribution": "Derived from Big Buck Bunny source video; SRT text generated locally.",
+      "container": "matroska",
+      "expectedVideoCodecs": ["h264"],
+      "expectedAudioCodecs": [],
+      "expectedSubtitleCodecs": ["subrip"],
+      "expectedVideoStreamCount": 1,
+      "expectedAudioStreamCount": 0,
+      "expectedSubtitleStreamCount": 2,
+      "purpose": "Subtitle retention, forced subtitle selection, and metadata behavior.",
+      "generated": true,
+      "shouldDownload": false,
+      "shouldGenerate": true,
+      "notes": "The source fixture is video-only, so no original audio is present to copy."
+    }
+  ]
+}

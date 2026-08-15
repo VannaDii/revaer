@@ -6,6 +6,7 @@ use revaer_test_support::fixtures::{docker_available, docker_available_with_host
 use revaer_test_support::postgres::{start_postgres, start_postgres_at};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{AssertSqlSafe, Row, raw_sql};
+use url::Url;
 
 fn current_database_name(url: &str) -> Result<String, Box<dyn std::error::Error>> {
     let url = url.to_owned();
@@ -58,6 +59,12 @@ where
     .join()
     .map_err(|_| anyhow::Error::msg("postgres test worker panicked"))?
     .map_err(Into::into)
+}
+
+fn admin_database_url(url: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut admin_url = Url::parse(url)?;
+    admin_url.set_path("/postgres");
+    Ok(admin_url.to_string())
 }
 
 #[test]
@@ -130,15 +137,16 @@ fn start_postgres_at_reports_unreachable_database() {
 #[test]
 fn start_postgres_uses_external_database_when_available() -> Result<(), Box<dyn std::error::Error>>
 {
-    let base_url = std::env::var("REVAER_TEST_DATABASE_URL")
+    let has_base_url = std::env::var("REVAER_TEST_DATABASE_URL")
         .ok()
-        .or_else(|| std::env::var("DATABASE_URL").ok());
-    let Some(base_url) = base_url else {
+        .or_else(|| std::env::var("DATABASE_URL").ok())
+        .is_some();
+    if !has_base_url {
         eprintln!(
             "skipping start_postgres_uses_external_database_when_available: no DATABASE_URL configured"
         );
         return Ok(());
-    };
+    }
 
     let db = match start_postgres() {
         Ok(database) => database,
@@ -150,8 +158,9 @@ fn start_postgres_uses_external_database_when_available() -> Result<(), Box<dyn 
 
     let current_database = current_database_name(db.connection_string())?;
     assert!(current_database.starts_with("revaer_test_"));
-    assert!(database_exists(&base_url, &current_database)?);
+    let admin_url = admin_database_url(db.connection_string())?;
+    assert!(database_exists(&admin_url, &current_database)?);
     drop(db);
-    assert!(!database_exists(&base_url, &current_database)?);
+    assert!(!database_exists(&admin_url, &current_database)?);
     Ok(())
 }
