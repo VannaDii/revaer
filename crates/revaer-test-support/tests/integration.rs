@@ -129,7 +129,7 @@ fn start_postgres_at_rejects_invalid_url() {
 
 #[test]
 fn start_postgres_at_reports_unreachable_database() {
-    let err = start_postgres_at("postgres://127.0.0.1:1/revaer")
+    let err = start_postgres_at("postgres://[::1]:1/revaer")
         .expect_err("unreachable database should fail");
     assert!(format!("{err:#}").contains("failed to create database"));
 }
