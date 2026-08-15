@@ -44,7 +44,7 @@ jobs:
       - uses: ./.github/actions/setup-revaer
         with:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
-          apt-profile: db
+          apt-profile: coverage
 
       - name: Run migrations
         env:

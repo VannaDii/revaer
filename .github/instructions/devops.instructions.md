@@ -71,6 +71,7 @@ applyTo:
 - CI-only credentials may be ephemeral only when they are clearly scoped to isolated test infrastructure, such as throwaway Postgres service containers.
 - Ephemeral test credentials must never be reused as application secrets, committed runtime credentials, or user-facing examples.
 - `just cov` must pass its resolved test database URL to both database startup and the coverage process in the same recipe shell so database-backed tests cannot silently lose their configured endpoint. Disposable test databases must be dropped with forced session cleanup, and local-only host fallback must remain bounded to `localhost` and `127.0.0.1` inputs.
+- Sonar coverage jobs must fetch complete Git history and exercise authored Rust and native C/C++ code in one `just cov` run so the scanner can resolve the main-branch baseline and import both retained reports.
 - PostgreSQL service containers used by pull-request, Sonar, and managed local validation must reserve 1 GiB of shared memory so concurrent isolated-schema migrations cannot exhaust Docker's 64 MiB default. `just db-start` must recreate its named managed container when the configured allocation is smaller.
 - Do not log secrets or secret-like values. Mask or omit them.
 - Keep Helm registry credentials (`HELM_API_KEY_ID`, `HELM_API_KEY_SECRET`) separate from chart-signing material (`HELM_GPG_PRIVATE`, `HELM_GPG_PUBLIC`). Publishing jobs may use registry credentials only when consuming an already-packaged chart artifact.

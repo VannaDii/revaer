@@ -11,9 +11,11 @@
   - Compose the local URL through `scripts/local-postgres-url.sh` so credentials, host, port, and database remain explicit inputs rather than duplicated URI literals.
   - Try a `host.docker.internal` fallback only after a local `localhost` or `127.0.0.1` endpoint fails, and force disposable database removal so stale test-pool sessions cannot leak databases between tests.
   - Preserve the exact 90% per-package coverage floor and complete workspace/all-features instrumentation.
+  - Fetch complete Git history for Sonar analysis and retain separate Rust LCOV and native LLVM coverage reports from the same instrumented run.
   - Rejected alternatives were coverage exclusions, threshold relaxation, redundant tests before activating the existing corpus, and moving the broader quality-baseline commit ahead of its dependencies.
 - Consequences:
   - Existing integration tests contribute coverage consistently in local and CI execution.
+  - Sonar can resolve the main-branch baseline and publish coverage for authored Rust and native C/C++ code instead of accepting a zero-coverage analysis.
   - Coverage now fails before instrumentation when the required database cannot be started or reached.
   - PostgreSQL 13 or newer is required for `DROP DATABASE ... WITH (FORCE)`; CI and local development use PostgreSQL 16.
 - Follow-up:
@@ -26,7 +28,7 @@
   - Restore truthful coverage execution before PR #71 without adding suppression or consuming that PR's remaining review budget.
 - Design notes:
   - The change extracts only the coverage and disposable-Postgres lifecycle behavior validated by `104c54f0`.
-  - No workflow, Sonar, release, dependency, or media-runtime behavior is moved into this prerequisite.
+  - The prerequisite also aligns PR and main Sonar jobs with the coverage tool profile, complete SCM history, and both authored-language report formats.
 - Test coverage summary:
   - Focused URL composition and test-support unit tests passed before shared database gates.
   - `just ci` passed with database-backed coverage active and every per-package coverage assertion at or above 90%.
