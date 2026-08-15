@@ -100,7 +100,7 @@ mkdir "${path_root}"
 for command_name in cat chmod dirname git grep mktemp rm; do
   ln -s "$(command -v "${command_name}")" "${path_root}/${command_name}"
 done
-expect_failure missing-jq env PATH="${path_root}" TMPDIR="${test_root}" \
+expect_failure missing-jq env -u BASH_ENV PATH="${path_root}" TMPDIR="${test_root}" \
   /bin/bash "${fixture_root}/scripts/media-compliance-guardrails.sh"
 
 printf 'Media compliance guardrail regression tests passed\n'

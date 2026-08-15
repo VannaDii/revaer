@@ -64,6 +64,7 @@
   - The exact-input manifest pins Rust 1.96.0, Node.js 24.14.1, npm 11.12.1, just 1.49.0, immutable multi-platform Rust/Alpine image digests, Alpine 3.23.5, and every builder/runtime APK version. Just 1.49.0 is the newest checksum-backed release in the pinned `taiki-e/install-action` manifest; newer releases fail closed as unsupported with `checksum: true` and `fallback: none`. Docker verifies requested build arguments against the manifest and embeds it in the runtime image; compliance bundles hash and validate the same file. The declared runtime inventory records verified arm64 and amd64 APK SHA-256 values for updated runtime packages.
   - PR Sonar now generates JavaScript LCOV, validates every configured report and native input, verifies the published result, and retains the scanner report. Reusable image architecture jobs install `just` before the blocking Trivy SARIF verifier.
   - The npm self-install remains a literal exact version so static workflow analysis can prove it is locked; the media-compliance guardrail requires that literal to match `NPM_VERSION` in `.github/build-inputs.env`.
+  - Missing-tool regression fixtures clear inherited `BASH_ENV` before constraining `PATH`, so caller bootstrap configuration cannot reintroduce the tool under test.
   - Container builds resolve `TARGETARCH` to the corresponding supported musl triple and fail closed when a caller supplies a different `RUST_TARGET`; this keeps the same Dockerfile valid for local and matrix-driven architecture builds.
   - Playwright runs the compiled specs, fixtures, global setup, and global teardown under one `c8` process and emits shard-aware, source-mapped LCOV from the real harness. Sonar input verification remains a canonical `just` recipe, and the scanner runs only after npm dependency installs and the generated API schema mirror are removed from the checkout without changing source scope or adding exclusions.
 - Test coverage summary:
@@ -76,6 +77,7 @@
   - `just trivy-sarif-policy-test`
   - `just image-compliance-test`
   - `just media-compliance-guardrails-test`
+  - The missing-`jq` media-compliance fixture fails closed even when the parent validation shell uses `BASH_ENV`.
   - Remote Supply Chain Checks and Trivy jobs.
   - Remote SonarQube PR checks on normally chained branches.
   - Remote UI E2E shard startup on cold GitHub-hosted runners.

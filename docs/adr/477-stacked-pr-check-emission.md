@@ -44,10 +44,13 @@
   - The decision follows outside-in delivery by moving executable fixture contracts ahead of runtime implementation.
   - `pr.yml` remains the sole pull-request validation workflow.
   - The supply aggregate reports the three dependency-gate outcomes without replacing them.
+  - The lightweight stack contract and structural workflow guardrail resolve the same canonical media-conversion step name.
 - Test coverage summary:
   - Live API inspection confirmed 21 required stack contexts with `CodeQL` excluded.
   - An exact definition audit found `Media Conversion Fixtures` on 23 of 99 branches and `Supply Chain Checks` on none.
   - PR 142 proves that a job added to the existing `pr.yml` is emitted on the pull request that introduces it.
+  - The stack-check contract rejects branch, path, and activity-type filters on the sole pull-request workflow trigger.
+  - `just policy` verifies that the stack contract accepts the canonical integration step and still rejects noncanonical recipes.
 - Observability updates:
   - Retain the media conversion report, Sonar evidence, supply results, and a machine-readable final audit of required contexts per pull request.
 - Status-doc validation:

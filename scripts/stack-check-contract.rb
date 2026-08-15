@@ -36,7 +36,7 @@ else
     failures << "media-conversion must always upload a required nonempty report"
   end
 
-  conversion = find_step.call(media, "Media conversion fixtures")
+  conversion = find_step.call(media, "Media conversion integration tests")
   failures << "media-conversion must run the canonical conversion recipe" unless conversion && conversion["run"] == "just test-media-conversion"
 end
 
