@@ -23,7 +23,67 @@ fn pkg_config_defines_are_ordered_and_forwarded() {
     );
     assert!(BUILD_SCRIPT.contains("ordered_defines(libtorrent.defines)"));
     assert!(BUILD_SCRIPT.contains("bridge.define(&name, value.as_deref())"));
+    assert!(BUILD_SCRIPT.contains("REVAER_LIBTORRENT_ABI_VERSION"));
+    assert!(BUILD_SCRIPT.contains("bridge.flag(\"-fexceptions\")"));
     assert!(BUILD_SCRIPT.contains("cargo:rerun-if-changed=build_support.rs"));
+}
+
+#[test]
+fn manual_defines_require_a_single_valid_abi() {
+    let defines = build_support::parse_defines(
+        "TORRENT_USE_OPENSSL;TORRENT_ABI_VERSION=2;BOOST_SYSTEM_USE_UTF8",
+    );
+    assert!(
+        defines
+            .as_ref()
+            .is_some_and(|defines| { build_support::abi_version(defines) == Some("2") })
+    );
+    assert!(build_support::parse_defines("TORRENT_ABI_VERSION=2;TORRENT_ABI_VERSION=1").is_none());
+    assert!(build_support::parse_defines("torrent_abi=2").is_none());
+    assert!(build_support::parse_defines("TORRENT_ABI_VERSION=").is_none());
+    assert_eq!(
+        build_support::preprocessor_abi_version(
+            "#define OTHER 1\n#define TORRENT_ABI_VERSION 2\n",
+        )
+        .as_deref(),
+        Some("2")
+    );
+    assert!(build_support::preprocessor_abi_version("#define TORRENT_ABI_VERSION 0\n").is_none());
+    assert!(BUILD_SCRIPT.contains("probe_header_abi_version(&bridge)"));
+}
+
+#[test]
+fn dependency_headers_are_selected_from_the_libtorrent_prefix() -> Result<(), Box<dyn Error>> {
+    let fixture = tempfile::tempdir()?;
+    let root = fixture.path().join("homebrew");
+    let libtorrent_include = root.join("Cellar/libtorrent-rasterbar/2.1.0/include");
+    let boost_include = root.join("opt/boost/include");
+    let openssl_include = root.join("opt/openssl@3/include");
+    fs::create_dir_all(libtorrent_include.join("libtorrent"))?;
+    fs::create_dir_all(boost_include.join("boost"))?;
+    fs::create_dir_all(openssl_include.join("openssl"))?;
+    fs::write(boost_include.join("boost/version.hpp"), b"fixture")?;
+    fs::write(openssl_include.join("openssl/opensslv.h"), b"fixture")?;
+
+    assert_eq!(
+        build_support::dependency_include_path(
+            std::slice::from_ref(&libtorrent_include),
+            None,
+            std::path::Path::new("boost/version.hpp"),
+            &["boost"],
+        ),
+        Some(boost_include)
+    );
+    assert_eq!(
+        build_support::dependency_include_path(
+            std::slice::from_ref(&libtorrent_include),
+            None,
+            std::path::Path::new("openssl/opensslv.h"),
+            &["openssl@3", "openssl"],
+        ),
+        Some(openssl_include)
+    );
+    Ok(())
 }
 
 #[test]

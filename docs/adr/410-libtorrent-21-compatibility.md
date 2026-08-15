@@ -9,8 +9,14 @@
 - Decision:
   - Select one coherent native source in this precedence order: bundle, paired explicit include/library override, pkg-config, then one complete fallback prefix.
   - Propagate every pkg-config preprocessor define and re-run discovery when relevant pkg-config environment changes.
+  - Resolve Boost and OpenSSL headers from the selected libtorrent installation family before ambient compiler search paths, require a valid ABI definition, and emit a shim-owned compile-time ABI sentinel.
+  - When a packaged pkg-config file omits the ABI definition, query the already configured C++ preprocessor for the effective packaged-header ABI; a failed or invalid probe aborts the native build.
+  - Clean the isolated native Sonar package build before regenerating its compilation database and reject an empty or missing report, so repeated scans cannot delete the prior report and then reuse a cached build-script result.
+  - Import Rust LCOV and instrumented native LLVM coverage into Sonar without coverage exclusions, and retain full checkout history for pull-request new-code attribution.
+  - Require manual bundle, include/library override, and fallback sources to provide their complete semicolon-delimited build definitions through `LIBTORRENT_DEFINES`; missing or malformed ABI metadata fails closed.
   - Accept libtorrent `>=2.0.10,<2.2.0` and validate the selected macOS libtorrent binary with `lipo` against the Cargo target architecture.
   - Keep compile-time C++ branches for both pre-2.1 and 2.1 APIs covering torrent loading, file layouts and strong indexes, torrent authoring, magnet generation, peer data, resume state, and metadata ownership.
+  - Render alert errors through libtorrent's exported virtual `message()` API instead of directly reading version-sensitive public `error_code` fields.
   - Serialize the native test recipe because overlapping in-process libtorrent sessions have not been validated across both supported API lines.
 - Consequences:
   - ARM Homebrew libtorrent 2.1 can compile and run the native adapter without deprecated API warnings, while supported 2.0 builds retain their existing API path.
@@ -29,17 +35,30 @@
   - Extracted only `.github/instructions/rust.instructions.md`, `justfile`, `crates/revaer-torrent-libt/src/ffi/session.cpp`, and `crates/revaer-torrent-libt/src/session/native.rs` compatibility concepts or hunks from `38fbf569`; no media, API, schema, or target-model files were imported.
 - Test coverage summary:
   - Added deterministic build-script tests for source coherence, pkg-config definitions, version bounds, architecture parsing, and both C++ API branches.
+  - Added build guardrails for manual definition parsing, exact ABI selection, dependency-header discovery, exception support, and the shim ABI sentinel.
+  - Added Linux package coverage for the preprocessor ABI fallback after Ubuntu's libtorrent pkg-config metadata omitted `TORRENT_ABI_VERSION` in remote native CI.
+  - Ran `just sonar-compile-db` twice consecutively and required a nonempty native compilation database from both executions.
+  - Verified the Sonar configuration leaves coverage exclusions explicitly empty and the workflow guardrail rejects any nonempty replacement.
+  - Instrumented the linked C++ bridge with compatible Clang/LLVM tools and exported its real execution coverage to Sonar; the pre-fix scan reported 0% for 140 new C++ lines despite successful native tests.
+  - Scoped the torrent-detail route assertion to its loading spinner so unrelated status toasts cannot trigger Playwright strict-mode failures.
+  - Reduced the two reported Rust cognitive-complexity findings by extracting dependency-prefix discovery and tracker-fixture/event helpers; reduced `Session::Impl` to the configured 35-method ceiling by moving its stateless regex matcher to file scope.
+  - Added a native unreachable-tracker regression that repeatedly polls the alert queue and requires a nonempty tracker error, covering the libtorrent 2.1 crash path found by UI E2E.
   - Ran warning-free native compile and test validation against installed ARM Homebrew libtorrent 2.1.0.
+  - Verified the emitted Sonar compile command selects ARM Homebrew Boost and OpenSSL headers, enables C++ exceptions, and defines the same ABI selected by libtorrent; DWARF field offsets then matched the linked libtorrent 2.1 binary.
   - Ran a warning-free x86_64 C++ syntax compile against installed Intel Homebrew libtorrent 2.0.11 headers and verified that the ARM build rejects its x86_64 library before link.
+  - Re-ran `just test-native` after the Sonar refactors; all 104 native tests passed.
+  - Ran `just ci`, including workspace and per-package 90% line-coverage gates, and `just ui-e2e`, including 101 API and browser tests.
   - The 2.0 Rust/native runtime suite cannot execute on this workstation because the x86_64 Rust target is not installed; runtime coverage for that line remains a CI matrix follow-up.
 - Observability updates:
   - Build failures now identify missing native libraries, unsupported target architectures, failed `lipo` probes, and architecture mismatches before link or runtime.
+  - Build failures identify missing coherent Boost/OpenSSL headers and missing, malformed, or ABI-incomplete manual compile definitions.
+  - Tracker, network, port-mapping, storage, and torrent errors retain libtorrent's complete alert text without directly coupling the shim to alert field layout.
 - Status-doc validation:
   - Updated the ADR index and mdBook summary; no media status or operator-facing media documentation changed.
 - Risk & rollback plan:
-  - The remaining risk is unexecuted local 2.0 native coverage and behavioral variation in future 2.1 patch releases. Revert this commit to restore the 2.0-only native path if stack integration regresses.
+  - The remaining risk is unexecuted local 2.0 native coverage and behavioral variation in future 2.1 patch releases. Revert this commit to restore the 2.0-only native path if stack integration regresses; do not restore direct alert `error_code` field access because UI E2E proved that path can terminate the process.
 - Dependency rationale:
-  - No dependency was added; build guardrails use `std` and the crate's existing `tempfile` development dependency.
+  - `cc` is now a direct build dependency because the build script configures the `cc::Build` returned by `cxx-build` through reusable fail-closed helpers. It was already present at the same version transitively through `cxx-build`, so this adds no package to the resolved graph.
 - Stale-policy check:
-  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/ffi.instructions.md`, and `.github/instructions/devops.instructions.md`.
-  - Updated Rust instructions for coherent native selection, supported versions, architecture validation, and serialized native tests. No contradictory policy was retained.
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, `.github/instructions/ffi.instructions.md`, `.github/instructions/devops.instructions.md`, and `.github/instructions/sonarqube_mcp.instructions.md`.
+  - Updated Rust instructions for coherent native selection, supported versions, architecture validation, and serialized native tests; updated DevOps and Sonar instructions for mandatory LCOV import and full SCM history. No contradictory policy was retained.

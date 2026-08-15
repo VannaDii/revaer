@@ -125,6 +125,11 @@ if [ "${postgres_service_count}" -ne "${postgres_shm_count}" ]; then
     "PostgreSQL services: ${postgres_service_count}; 1 GiB allocations: ${postgres_shm_count}"
 fi
 
+sonar_coverage_exclusions="$(awk -F= '
+  $1 == "sonar.coverage.exclusions" && $2 != "" { print FNR ":" $0 }
+' sonar-project.properties)"
+report_matches "Sonar coverage exclusions must remain empty" "${sonar_coverage_exclusions}"
+
 if [ "${failures}" -ne 0 ]; then
   exit 1
 fi
