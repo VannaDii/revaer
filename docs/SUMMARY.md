@@ -364,3 +364,8 @@
     -   [479: Platform-safe test dependencies](adr/479-platform-safe-test-dependencies.md)
     -   [480: PostgreSQL test shared memory](adr/480-postgres-test-shared-memory.md)
     -   [481: Warning-free validation tools](adr/481-warning-free-validation-tools.md)
+    -   [482: Tooling module boundaries](adr/482-tooling-module-boundaries.md)
+    -   [483: Media execution and worker runtime boundaries](adr/483-media-execution-runtime-boundaries.md)
+    -   [484: Media operator surface boundary](adr/484-media-operator-surface-boundary.md)
+    -   [485: Native FFI exception boundary](adr/485-native-ffi-exception-boundary.md)
+    -   [486: Tracker credential transport](adr/486-tracker-credential-transport.md)
