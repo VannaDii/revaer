@@ -1,4 +1,4 @@
-set shell := ["bash", "-lc"]
+set shell := ["bash", "-c"]
 
 fmt:
     cargo fmt --all --check
@@ -14,6 +14,7 @@ policy:
     just test-fixture-scripts
     just stack-check-contract-test
     just supply-chain-results-test
+    bash scripts/test-exact-cargo-tool.sh
 
 instruction-drift:
     bash scripts/instruction-drift-check.sh
@@ -98,69 +99,49 @@ release-artifacts: build-release api-export
     cp docs/api/openapi.json dist/openapi.json
 
 udeps:
+    set -euo pipefail; \
     required_udeps_version="0.1.57"; \
-    install_udeps() { \
-        cargo install cargo-udeps --locked --force --version "${required_udeps_version}"; \
-    }; \
-    version_ge() { \
-        awk -v actual="$1" -v required="$2" 'BEGIN { \
-            ac = split(actual, a, /[.]/); rc = split(required, r, /[.]/); \
-            max = (ac > rc ? ac : rc); \
-            for (i = 1; i <= max; i++) { \
-                av = (a[i] == "" ? 0 : a[i]) + 0; rv = (r[i] == "" ? 0 : r[i]) + 0; \
-                if (av > rv) exit 0; if (av < rv) exit 1; \
-            } \
-            exit 0; \
-        }'; \
-    }; \
-    if command -v cargo-udeps >/dev/null 2>&1; then \
-        installed_version="$(cargo udeps --version | awk '{print $2}')"; \
-        if ! version_ge "$installed_version" "$required_udeps_version"; then \
-            install_udeps; \
-        fi; \
-    else \
-        install_udeps; \
-    fi
-    udeps_toolchain="${REVAER_UDEPS_TOOLCHAIN:-nightly}"; \
+    requested_udeps_version="${REVAER_UDEPS_VERSION:-${required_udeps_version}}"; \
+    if [ "${requested_udeps_version}" != "${required_udeps_version}" ]; then \
+        echo "REVAER_UDEPS_VERSION must equal ${required_udeps_version}" >&2; \
+        exit 1; \
+    fi; \
+    required_udeps_toolchain="nightly-2026-06-13"; \
+    udeps_toolchain="${REVAER_UDEPS_TOOLCHAIN:-${required_udeps_toolchain}}"; \
+    if [ "${udeps_toolchain}" != "${required_udeps_toolchain}" ]; then \
+        echo "REVAER_UDEPS_TOOLCHAIN must equal ${required_udeps_toolchain}" >&2; \
+        exit 1; \
+    fi; \
+    bash scripts/ensure-exact-cargo-tool.sh \
+        cargo-udeps cargo-udeps "${requested_udeps_version}"; \
     if ! rustup run "${udeps_toolchain}" rustc --version >/dev/null 2>&1; then \
         rustup toolchain install "${udeps_toolchain}" --no-self-update; \
     fi; \
+    mkdir -p target; \
+    { \
+        printf 'cargo-udeps-version='; \
+        cargo udeps --version; \
+        printf 'toolchain=%s\n' "${udeps_toolchain}"; \
+        rustup run "${udeps_toolchain}" rustc --version --verbose; \
+        printf 'command=cargo +%s udeps --workspace --all-targets\n' "${udeps_toolchain}"; \
+    } | tee target/udeps-toolchain-evidence.txt; \
     cargo +"${udeps_toolchain}" udeps --workspace --all-targets
 
 sqlx-install:
     required_sqlx_version="0.8.6"; \
-    install_sqlx() { \
-        cargo install sqlx-cli --locked --force --version "${required_sqlx_version}" --no-default-features --features postgres; \
-    }; \
-    if command -v sqlx >/dev/null 2>&1; then \
-        installed_version="$(sqlx --version | awk '{print $2}')"; \
-        if [ "$installed_version" != "$required_sqlx_version" ]; then \
-            install_sqlx; \
-        fi; \
-    else \
-        install_sqlx; \
-    fi
+    bash scripts/ensure-exact-cargo-tool.sh \
+        sqlx sqlx-cli "${required_sqlx_version}" \
+        --no-default-features --features postgres
 
 db-migrate: sqlx-install
     db_url="${DATABASE_URL:-${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}}"; \
     DATABASE_URL="${db_url}" sqlx migrate run --source crates/revaer-data/migrations
 
 audit:
+    set -euo pipefail; \
     required_audit_version="0.22.0"; \
-    install_audit() { \
-        cargo install cargo-audit --locked --force --version "${required_audit_version}"; \
-    }; \
-    version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
-    }; \
-    if command -v cargo-audit >/dev/null 2>&1; then \
-        installed_version="$(cargo audit -V | awk 'NR==1 {print $2}')"; \
-        if ! version_ge "$installed_version" "$required_audit_version"; then \
-            install_audit; \
-        fi; \
-    else \
-        install_audit; \
-    fi; \
+    bash scripts/ensure-exact-cargo-tool.sh \
+        cargo-audit cargo-audit "${required_audit_version}"; \
     ignore_args=""; \
     if [ -f .secignore ]; then \
         while IFS= read -r advisory; do \
@@ -174,38 +155,14 @@ audit:
 
 deny:
     required_deny_version="0.18.9"; \
-    install_deny() { \
-        cargo install cargo-deny --locked --force --version "${required_deny_version}"; \
-    }; \
-    version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
-    }; \
-    if command -v cargo-deny >/dev/null 2>&1; then \
-        installed_version="$(cargo deny --version | awk 'NR==1 {print $2}')"; \
-        if ! version_ge "$installed_version" "$required_deny_version"; then \
-            install_deny; \
-        fi; \
-    else \
-        install_deny; \
-    fi
+    bash scripts/ensure-exact-cargo-tool.sh \
+        cargo-deny cargo-deny "${required_deny_version}"
     cargo deny check
 
 cov:
     required_llvm_cov_version="0.8.5"; \
-    install_llvm_cov() { \
-        cargo install cargo-llvm-cov --locked --force --version "${required_llvm_cov_version}"; \
-    }; \
-    version_ge() { \
-        [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]; \
-    }; \
-    if command -v cargo-llvm-cov >/dev/null 2>&1; then \
-        installed_version="$(cargo llvm-cov --version | awk '{print $2}')"; \
-        if ! version_ge "$installed_version" "$required_llvm_cov_version"; then \
-            install_llvm_cov; \
-        fi; \
-    else \
-        install_llvm_cov; \
-    fi
+    bash scripts/ensure-exact-cargo-tool.sh \
+        cargo-llvm-cov cargo-llvm-cov "${required_llvm_cov_version}"
     rustup component add llvm-tools-preview
     cargo llvm-cov clean --workspace
     test_database_url="${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh postgres)}"; \
@@ -270,9 +227,7 @@ sbom:
     cargo metadata --format-version 1 --all-features --locked > artifacts/sbom.json
 
 licenses:
-    if ! command -v cargo-deny >/dev/null 2>&1; then \
-        cargo install cargo-deny --locked; \
-    fi
+    bash scripts/ensure-exact-cargo-tool.sh cargo-deny cargo-deny 0.18.9
     mkdir -p artifacts
     cargo deny list --format json > artifacts/licenses.json
 
@@ -345,13 +300,8 @@ check-assets: sync-assets
 
 trunk-install:
     required_trunk_version="0.21.14"; \
-    installed_trunk_version=""; \
-    if command -v trunk >/dev/null 2>&1; then \
-        installed_trunk_version="$(trunk --version | awk '{print $2}')"; \
-    fi; \
-    if [ "${installed_trunk_version}" != "${required_trunk_version}" ]; then \
-        cargo install trunk --locked --force --version "${required_trunk_version}"; \
-    fi
+    bash scripts/ensure-exact-cargo-tool.sh \
+        trunk trunk "${required_trunk_version}"
 
 ui-serve: sync-assets trunk-install
     rustup target add wasm32-unknown-unknown
@@ -439,7 +389,7 @@ zombies:
         fi; \
     done
 
-dev: sync-assets
+dev: sync-assets trunk-install
     just db-start
     db_url="${DATABASE_URL:-postgres://revaer:revaer@localhost:5432/revaer}"; \
     check_port_free() { \
@@ -459,9 +409,6 @@ dev: sync-assets
         cargo install cargo-watch; \
     fi; \
     rustup target add wasm32-unknown-unknown; \
-    if ! command -v trunk >/dev/null 2>&1; then \
-        cargo install trunk; \
-    fi; \
     DATABASE_URL="${db_url}" RUST_LOG=${RUST_LOG:-debug} cargo watch \
         --ignore 'docs/api/openapi.json' \
         --ignore 'crates/revaer-ui/dist/**' \

@@ -348,6 +348,7 @@
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
     -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
     -   [404: Doc indexer fixture isolation](adr/404-doc-indexer-fixture-isolation.md)
+    -   [406: PR 71 deterministic Cargo tools](adr/406-pr-71-deterministic-cargo-tools.md)
     -   [407: Database-backed coverage execution](adr/407-database-backed-coverage-execution.md)
     -   [461: ADR and task-record status semantics](adr/461-adr-task-record-status-semantics.md)
     -   [462: PR 88 shell return correction](adr/462-pr88-shell-return.md)
