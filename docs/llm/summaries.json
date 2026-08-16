@@ -4433,6 +4433,38 @@
     "href": "/adr/535-bounded-cancellation-aware-fingerprint-admission/"
   },
   {
+    "id": "adr/536-capability-proven-chapter-muxer-support",
+    "title": "Capability-proven chapter muxer support",
+    "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+    "tags": [
+      "consequences",
+      "follow-up",
+      "implementation-boundary",
+      "options",
+      "problem",
+      "recommendation",
+      "task-record",
+      "validation"
+    ],
+    "href": "/adr/536-capability-proven-chapter-muxer-support/"
+  },
+  {
+    "id": "adr/537-normalized-opaque-state-and-attachment-payload-evidence",
+    "title": "Normalized opaque state and attachment payload evidence",
+    "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+    "tags": [
+      "consequences",
+      "follow-up",
+      "implementation-boundary",
+      "options",
+      "problem",
+      "recommendation",
+      "task-record",
+      "validation"
+    ],
+    "href": "/adr/537-normalized-opaque-state-and-attachment-payload-evidence/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",

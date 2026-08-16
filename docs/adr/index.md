@@ -466,3 +466,5 @@
 -   [533](533-descriptor-bound-source-material-lifecycle.md) – Descriptor-bound source material lifecycle
 -   [534](534-atomic-source-identity-checked-replacement.md) – Atomic source-identity-checked replacement
 -   [535](535-bounded-cancellation-aware-fingerprint-admission.md) – Bounded cancellation-aware fingerprint admission
+-   [536](536-capability-proven-chapter-muxer-support.md) – Capability-proven chapter muxer support
+-   [537](537-normalized-opaque-state-and-attachment-payload-evidence.md) – Normalized opaque state and attachment payload evidence
