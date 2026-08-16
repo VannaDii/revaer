@@ -471,3 +471,4 @@
 -   [537](537-normalized-opaque-state-and-attachment-payload-evidence.md) – Normalized opaque state and attachment payload evidence
 -   [540](540-schema-stable-media-job-status-helpers.md) – Schema-stable media job status helpers
 -   [541](541-packaged-init-bootstrap-lifecycle.md) – Packaged init-script bootstrap lifecycle
+-   [544](544-pre-v1-init-assembly-slice-01.md) – Pre-v1 init assembly slice 01
