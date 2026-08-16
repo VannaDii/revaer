@@ -8,6 +8,8 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::{DateTime, Utc};
 use revaer_events::Event as CoreEvent;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -37,16 +39,17 @@ use crate::models::{
     MediaDiscoveryScheduleResponse, MediaDiscoverySkippedItemResponse,
     MediaDiscoveryWatcherListResponse, MediaDiscoveryWatcherResponse, MediaJobArtifactListResponse,
     MediaJobCompactAuditListResponse, MediaJobCreateRequest, MediaJobCreateResponse,
-    MediaJobListResponse, MediaJobOperationListResponse, MediaJobPlanReasonListResponse,
-    MediaJobResponse, MediaJobRetentionResponse, MediaJobRetentionUpdateRequest,
+    MediaJobDiagnosticCounts, MediaJobDiagnosticsResponse, MediaJobListResponse,
+    MediaJobOperationListResponse, MediaJobPlanReasonListResponse, MediaJobResponse,
+    MediaJobRetentionResponse, MediaJobRetentionUpdateRequest,
     MediaJobVerificationCheckListResponse, MediaJobViolationListResponse,
     MediaPlanningPreviewRequest, MediaPlanningPreviewResponse, MediaPolicyListResponse,
     MediaPolicyResponse, MediaPolicyUpsertRequest, MediaProfileDesiredTargetRequest,
     MediaProfileListResponse, MediaProfilePatchRequest, MediaProfileResponse,
-    MediaProfileUpsertRequest, MediaProfileValidationResponse, MediaTextValidationError,
-    MediaYamlApplyResponse, MediaYamlExportResponse, MediaYamlImportRequest,
-    MediaYamlIssueResponse, MediaYamlValidationResponse, validate_media_display,
-    validate_media_key,
+    MediaProfileUpsertRequest, MediaProfileValidationResponse, MediaRecentJobPageResponse,
+    MediaRecentJobSummaryResponse, MediaTextValidationError, MediaYamlApplyResponse,
+    MediaYamlExportResponse, MediaYamlImportRequest, MediaYamlIssueResponse,
+    MediaYamlValidationResponse, validate_media_display, validate_media_key,
 };
 
 const MEDIA_PROFILE_UPSERT_FAILED: &str = "failed to upsert media profile";
@@ -61,6 +64,9 @@ const MEDIA_DISCOVERY_WATCHER_RUN_FAILED: &str = "failed to run watcher media di
 const MEDIA_DISCOVERY_WATCHER_LIST_FAILED: &str = "failed to list media discovery watchers";
 const MEDIA_JOB_LIST_FAILED: &str = "failed to list media jobs";
 const MEDIA_JOB_GET_FAILED: &str = "failed to load media job";
+const MEDIA_JOB_RECENT_FAILED: &str = "failed to list recent media jobs";
+const MEDIA_JOB_DIAGNOSTICS_FAILED: &str = "failed to load media job diagnostics";
+const MEDIA_JOB_DIAGNOSTIC_LIMIT: usize = 1_024;
 const MEDIA_JOB_CANCEL_FAILED: &str = "failed to cancel media job";
 const MEDIA_JOB_RETRY_FAILED: &str = "failed to retry media job";
 const MEDIA_JOB_OPERATION_LIST_FAILED: &str = "failed to list media job operations";
@@ -129,6 +135,13 @@ const MEDIA_LICENSE_EXCLUDED_CAPABILITIES: [&str; 5] = [
 pub(crate) struct MediaJobsQuery {
     media_profile_public_id: Option<Uuid>,
     status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct MediaRecentJobsQuery {
+    limit: Option<i32>,
+    cursor: Option<String>,
+    media_profile_public_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -961,6 +974,122 @@ pub(crate) async fn list_media_jobs(
         .collect();
 
     Ok(Json(MediaJobListResponse { jobs }))
+}
+
+pub(crate) async fn list_recent_media_jobs(
+    State(state): State<Arc<ApiState>>,
+    Query(query): Query<MediaRecentJobsQuery>,
+) -> Result<Json<MediaRecentJobPageResponse>, ApiError> {
+    let limit = query.limit.unwrap_or(10);
+    if !(1..=100).contains(&limit) {
+        return Err(ApiError::bad_request("limit must be between 1 and 100"));
+    }
+    let cursor = query
+        .cursor
+        .as_deref()
+        .map(decode_recent_job_cursor)
+        .transpose()?;
+    let page = state
+        .media
+        .media_job_recent(limit, cursor, query.media_profile_public_id)
+        .await
+        .map_err(|err| map_media_error("media_job_recent", MEDIA_JOB_RECENT_FAILED, &err))?;
+    let jobs = page
+        .jobs
+        .into_iter()
+        .map(|summary| MediaRecentJobSummaryResponse {
+            job: map_job(summary.job),
+            media_profile_public_id: summary.media_profile_public_id,
+            diagnostic_counts: MediaJobDiagnosticCounts {
+                operations: summary.operation_count,
+                violations: summary.violation_count,
+                plan_reasons: summary.plan_reason_count,
+                verification_checks: summary.verification_check_count,
+                artifacts: summary.artifact_count,
+                compact_audits: summary.compact_audit_count,
+            },
+        })
+        .collect();
+    Ok(Json(MediaRecentJobPageResponse {
+        jobs,
+        next_cursor: page.next_cursor.map(encode_recent_job_cursor),
+    }))
+}
+
+pub(crate) async fn get_media_job_diagnostics(
+    State(state): State<Arc<ApiState>>,
+    Path(media_job_public_id): Path<Uuid>,
+) -> Result<Json<MediaJobDiagnosticsResponse>, ApiError> {
+    if state
+        .media
+        .media_job_get(media_job_public_id)
+        .await
+        .map_err(|err| map_media_error("media_job_get", MEDIA_JOB_GET_FAILED, &err))?
+        .is_none()
+    {
+        return Err(ApiError::not_found(MEDIA_JOB_GET_FAILED));
+    }
+    let (operations, violations, plan_reasons, verification_checks, artifacts, compact_audits) =
+        tokio::try_join!(
+            state.media.media_job_operation_list(media_job_public_id),
+            state.media.media_job_violation_list(media_job_public_id),
+            state.media.media_job_plan_reason_list(media_job_public_id),
+            state
+                .media
+                .media_job_verification_check_list(media_job_public_id),
+            state.media.media_job_artifact_list(media_job_public_id),
+            state
+                .media
+                .media_job_compact_audit_list(media_job_public_id),
+        )
+        .map_err(|err| {
+            map_media_error("media_job_diagnostics", MEDIA_JOB_DIAGNOSTICS_FAILED, &err)
+        })?;
+    if [
+        operations.len(),
+        violations.len(),
+        plan_reasons.len(),
+        verification_checks.len(),
+        artifacts.len(),
+        compact_audits.len(),
+    ]
+    .into_iter()
+    .any(|count| count > MEDIA_JOB_DIAGNOSTIC_LIMIT)
+    {
+        return Err(ApiError::internal(
+            "media job diagnostic collection exceeds limit",
+        ));
+    }
+    Ok(Json(MediaJobDiagnosticsResponse {
+        operations,
+        violations,
+        plan_reasons,
+        verification_checks,
+        artifacts,
+        compact_audits,
+    }))
+}
+
+fn encode_recent_job_cursor((queued_at, id): (DateTime<Utc>, Uuid)) -> String {
+    URL_SAFE_NO_PAD.encode(format!("{}|{id}", queued_at.to_rfc3339()))
+}
+
+fn decode_recent_job_cursor(cursor: &str) -> Result<(DateTime<Utc>, Uuid), ApiError> {
+    let decoded = URL_SAFE_NO_PAD
+        .decode(cursor)
+        .map_err(|_| ApiError::bad_request("cursor is invalid"))?;
+    let text =
+        std::str::from_utf8(&decoded).map_err(|_| ApiError::bad_request("cursor is invalid"))?;
+    let (timestamp, id) = text
+        .split_once('|')
+        .ok_or_else(|| ApiError::bad_request("cursor is invalid"))?;
+    Ok((
+        timestamp
+            .parse::<DateTime<Utc>>()
+            .map_err(|_| ApiError::bad_request("cursor is invalid"))?,
+        id.parse()
+            .map_err(|_| ApiError::bad_request("cursor is invalid"))?,
+    ))
 }
 
 pub(crate) async fn get_media_job(
@@ -1882,6 +2011,7 @@ mod tests {
     use crate::models::ProblemDetails;
     use axum::body::to_bytes;
     use axum::response::IntoResponse;
+    use chrono::TimeZone;
 
     #[tokio::test]
     async fn list_media_profiles_reports_unavailable_default_facade() -> anyhow::Result<()> {
@@ -1893,6 +2023,37 @@ mod tests {
             error.into_response().status(),
             StatusCode::SERVICE_UNAVAILABLE
         );
+        Ok(())
+    }
+
+    #[test]
+    fn recent_job_cursor_round_trips_and_rejects_malformed_values() -> anyhow::Result<()> {
+        let queued_at = Utc
+            .timestamp_opt(1_700_000_000, 123)
+            .single()
+            .ok_or_else(|| anyhow::anyhow!("timestamp unavailable"))?;
+        let id = Uuid::new_v4();
+        let encoded = encode_recent_job_cursor((queued_at, id));
+        assert_eq!(decode_recent_job_cursor(&encoded)?, (queued_at, id));
+        assert!(decode_recent_job_cursor("not-base64!").is_err());
+        assert!(decode_recent_job_cursor(&URL_SAFE_NO_PAD.encode("incomplete")).is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recent_jobs_defaults_to_empty_bounded_page() -> anyhow::Result<()> {
+        let state = indexer_test_state(Arc::new(RecordingIndexers::default()))?;
+        let Json(response) = list_recent_media_jobs(
+            State(state),
+            Query(MediaRecentJobsQuery {
+                limit: None,
+                cursor: None,
+                media_profile_public_id: None,
+            }),
+        )
+        .await?;
+        assert!(response.jobs.is_empty());
+        assert!(response.next_cursor.is_none());
         Ok(())
     }
 

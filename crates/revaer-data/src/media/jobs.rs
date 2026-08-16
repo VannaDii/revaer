@@ -9,32 +9,33 @@ use super::configuration::MediaVerificationToggle;
 const MEDIA_JOB_CREATE_V1: &str = "SELECT media_job_create_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, dry_run_input => $5)";
 const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, phase_index_input => $3, phase_name_input => $4, phase_status_input => $5, details_text_input => $6)";
 const MEDIA_JOB_OPERATION_APPEND_V1: &str = "SELECT media_job_operation_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, operation_index_input => $3, operation_kind_input => $4, stream_id_input => $5, command_bin_input => $6, arg_1_input => $7, arg_2_input => $8, arg_3_input => $9, arg_4_input => $10, arg_5_input => $11)";
-const MEDIA_JOB_OPERATION_LIST_V1: &str = "SELECT operation_index, operation_kind, stream_id, command_bin, arg_1, arg_2, arg_3, arg_4, arg_5, created_at FROM media_job_operation_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_OPERATION_LIST_V1: &str = "SELECT operation_index, operation_kind, stream_id, command_bin, arg_1, arg_2, arg_3, arg_4, arg_5, created_at FROM media_job_operation_list_v1(media_job_public_id_input => $1) LIMIT 1025";
 const MEDIA_JOB_VIOLATION_APPEND_V1: &str = "SELECT media_job_violation_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, violation_index_input => $3, violation_kind_input => $4, severity_input => $5, stream_id_input => $6)";
-const MEDIA_JOB_VIOLATION_LIST_V1: &str = "SELECT violation_index, violation_kind, severity, stream_id, created_at FROM media_job_violation_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_VIOLATION_LIST_V1: &str = "SELECT violation_index, violation_kind, severity, stream_id, created_at FROM media_job_violation_list_v1(media_job_public_id_input => $1) LIMIT 1025";
 const MEDIA_JOB_PLAN_REASON_APPEND_V1: &str = "SELECT media_job_plan_reason_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, reason_index_input => $3, candidate_index_input => $4, selected_input => $5, reason_code_input => $6, reason_text_input => $7)";
-const MEDIA_JOB_PLAN_REASON_LIST_V1: &str = "SELECT reason_index, candidate_index, selected, reason_code, reason_text, created_at FROM media_job_plan_reason_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_PLAN_REASON_LIST_V1: &str = "SELECT reason_index, candidate_index, selected, reason_code, reason_text, created_at FROM media_job_plan_reason_list_v1(media_job_public_id_input => $1) LIMIT 1025";
 const MEDIA_JOB_VERIFICATION_CHECK_APPEND_V1: &str = "SELECT media_job_verification_check_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, check_index_input => $3, check_kind_input => $4, check_status_input => $5, expected_value_input => $6, actual_value_input => $7, details_text_input => $8)";
-const MEDIA_JOB_VERIFICATION_CHECK_LIST_V1: &str = "SELECT check_index, check_kind, check_status, expected_value, actual_value, details_text, created_at FROM media_job_verification_check_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_VERIFICATION_CHECK_LIST_V1: &str = "SELECT check_index, check_kind, check_status, expected_value, actual_value, details_text, created_at FROM media_job_verification_check_list_v1(media_job_public_id_input => $1) LIMIT 1025";
 const MEDIA_JOB_ARTIFACT_APPEND_V1: &str = "SELECT media_job_artifact_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, artifact_index_input => $3, artifact_kind_input => $4, artifact_path_input => $5, size_bytes_input => $6, content_type_input => $7)";
-const MEDIA_JOB_ARTIFACT_LIST_V1: &str = "SELECT artifact_index, artifact_kind, artifact_path, size_bytes, content_type, created_at FROM media_job_artifact_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_ARTIFACT_LIST_V1: &str = "SELECT artifact_index, artifact_kind, artifact_path, size_bytes, content_type, created_at FROM media_job_artifact_list_v1(media_job_public_id_input => $1) LIMIT 1025";
 const MEDIA_JOB_COMPACT_AUDIT_APPEND_V1: &str = "SELECT media_job_compact_audit_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, audit_index_input => $3, fact_kind_input => $4, fact_text_input => $5)";
-const MEDIA_JOB_COMPACT_AUDIT_LIST_V1: &str = "SELECT audit_index, fact_kind, fact_text, created_at FROM media_job_compact_audit_list_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_COMPACT_AUDIT_LIST_V1: &str = "SELECT audit_index, fact_kind, fact_text, created_at FROM media_job_compact_audit_list_v1(media_job_public_id_input => $1) LIMIT 1025";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
+const MEDIA_JOB_RECENT_PAGE_V1: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, status_text, dry_run, queued_at, started_at, completed_at, last_error, operation_count, violation_count, plan_reason_count, verification_check_count, artifact_count, compact_audit_count FROM media_job_recent_page_v1(limit_input => $1, cursor_queued_at_input => $2, cursor_public_id_input => $3, media_profile_public_id_input => $4)";
 const MEDIA_JOB_CANCEL_V2: &str = "SELECT media_job_cancel_v2(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETRY_V1: &str = "SELECT media_job_retry_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_MARK_COMPLETED_V1: &str =
     "SELECT media_job_mark_completed_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_jobs_pruned, failed_detail_rows_deleted FROM media_job_retention_run_v1(as_of_input => $1)";
-const MEDIA_JOB_WORKER_CLAIM_NEXT_V2: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, attempt_number, claim_generation, cancel_generation FROM media_job_worker_claim_next_v2()";
+const MEDIA_JOB_WORKER_CLAIM_NEXT_V3: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, attempt_number, claim_generation, discovery_source_size_bytes, discovery_source_modified_ns, discovery_source_sha256, cancel_generation FROM media_job_worker_claim_next_v3()";
 const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str = "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1, claim_generation_input => $2)";
 const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, claim_generation_input => $2, status_input => $3::media_job_status, last_error_input => $4)";
 const MEDIA_JOB_WORKER_POLL_CONTROL_V1: &str = "SELECT cancel_requested, cancel_generation FROM media_job_worker_poll_control_v1(media_job_public_id_input => $1, claim_generation_input => $2, observed_cancel_generation_input => $3)";
 const MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1: &str = "SELECT media_job_worker_acknowledge_cancel_v1(media_job_public_id_input => $1, claim_generation_input => $2, observed_cancel_generation_input => $3)";
 const MEDIA_JOB_WORKER_COMPLETE_V1: &str = "SELECT media_job_worker_complete_v1(media_job_public_id_input => $1, claim_generation_input => $2, observed_cancel_generation_input => $3)";
 const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
-const MEDIA_DISCOVERY_JOB_ENQUEUE_V1: &str = "SELECT media_discovery_job_enqueue_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
+const MEDIA_DISCOVERY_JOB_ENQUEUE_V2: &str = "SELECT media_discovery_job_enqueue_v2(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
 
 /// Create media job payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,6 +175,43 @@ pub struct MediaJobRow {
     pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Last error text.
     pub last_error: Option<String>,
+}
+
+/// Recent-job summary with set-wise diagnostic counts.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct MediaRecentJobRow {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+    /// Profile public id.
+    pub media_profile_public_id: Uuid,
+    /// Source path.
+    pub source_path: String,
+    /// Output path.
+    pub output_path: Option<String>,
+    /// Status text.
+    pub status_text: String,
+    /// Dry-run flag.
+    pub dry_run: bool,
+    /// Queued timestamp.
+    pub queued_at: chrono::DateTime<chrono::Utc>,
+    /// Started timestamp.
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Completed timestamp.
+    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Last error.
+    pub last_error: Option<String>,
+    /// Operation count.
+    pub operation_count: i64,
+    /// Violation count.
+    pub violation_count: i64,
+    /// Plan-reason count.
+    pub plan_reason_count: i64,
+    /// Verification-check count.
+    pub verification_check_count: i64,
+    /// Artifact count.
+    pub artifact_count: i64,
+    /// Compact-audit count.
+    pub compact_audit_count: i64,
 }
 
 /// Media job operation row.
@@ -350,6 +388,12 @@ pub struct ClaimedMediaJobRow {
     pub attempt_number: i32,
     /// Fencing generation that must accompany worker-owned mutations.
     pub claim_generation: i64,
+    /// Immutable aggregate source size captured by discovery.
+    pub discovery_source_size_bytes: Option<i64>,
+    /// Immutable aggregate modification timestamp captured by discovery.
+    pub discovery_source_modified_ns: Option<i64>,
+    /// Immutable aggregate SHA-256 captured by discovery.
+    pub discovery_source_sha256: Option<String>,
     /// Durable cancellation generation observed when the worker claimed the job.
     pub cancel_generation: i64,
 }
@@ -447,7 +491,7 @@ pub async fn enqueue_discovered_media_job(
     pool: &PgPool,
     input: &EnqueueDiscoveredMediaJobInput<'_>,
 ) -> Result<Option<Uuid>> {
-    sqlx::query_scalar::<_, Option<Uuid>>(MEDIA_DISCOVERY_JOB_ENQUEUE_V1)
+    sqlx::query_scalar::<_, Option<Uuid>>(MEDIA_DISCOVERY_JOB_ENQUEUE_V2)
         .bind(input.actor_public_id)
         .bind(input.media_profile_public_id)
         .bind(input.source_path)
@@ -672,6 +716,28 @@ pub async fn list_media_jobs(
         .map_err(try_op("media job list"))
 }
 
+/// Read one bounded keyset page of recent jobs with diagnostic counts.
+///
+/// # Errors
+///
+/// Returns an error when the page or cursor is invalid or stored-procedure execution fails.
+pub async fn list_recent_media_jobs(
+    pool: &PgPool,
+    limit: i32,
+    cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
+    media_profile_public_id: Option<Uuid>,
+) -> Result<Vec<MediaRecentJobRow>> {
+    let (cursor_queued_at, cursor_public_id) = cursor.unzip();
+    sqlx::query_as::<_, MediaRecentJobRow>(MEDIA_JOB_RECENT_PAGE_V1)
+        .bind(limit)
+        .bind(cursor_queued_at)
+        .bind(cursor_public_id)
+        .bind(media_profile_public_id)
+        .fetch_all(pool)
+        .await
+        .map_err(try_op("media recent job page"))
+}
+
 /// List media job operations for one job.
 ///
 /// # Errors
@@ -847,7 +913,7 @@ pub async fn run_media_job_retention(
 ///
 /// Returns an error when stored-procedure execution fails.
 pub async fn media_job_worker_claim_next(pool: &PgPool) -> Result<Option<ClaimedMediaJobRow>> {
-    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V2)
+    sqlx::query_as::<_, ClaimedMediaJobRow>(MEDIA_JOB_WORKER_CLAIM_NEXT_V3)
         .fetch_optional(pool)
         .await
         .map_err(try_op("media job worker claim next"))
@@ -969,8 +1035,9 @@ mod tests {
         enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
         list_media_job_compact_audits, list_media_job_operations, list_media_job_plan_reasons,
         list_media_job_verification_checks, list_media_job_violations, list_media_jobs,
-        mark_media_job_completed, media_job_worker_acknowledge_cancel, media_job_worker_claim_next,
-        media_job_worker_mark_status, media_job_worker_poll_control, run_media_job_retention,
+        list_recent_media_jobs, mark_media_job_completed, media_job_worker_acknowledge_cancel,
+        media_job_worker_claim_next, media_job_worker_mark_status, media_job_worker_poll_control,
+        run_media_job_retention,
     };
     use crate::DataError;
     use crate::media::configuration::{
@@ -1464,6 +1531,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn migration_guards_bounded_recent_job_read_model() {
+        let migration = include_str!("../../migrations/0187_media_bounded_read_models.sql");
+        assert!(migration.contains("media_job_recent_page_v1"));
+        assert!(migration.contains("limit_input + 1"));
+        assert!(migration.contains("operation_count"));
+        assert!(migration.contains("compact_audit_count"));
+        assert!(migration.contains("media_desired_target_graph_page_v1"));
+        assert!(migration.contains("LIMIT 1025"));
+        assert!(migration.contains("media_job_worker_claim_next_v2() claimed"));
+        assert!(migration.contains("claimed.attempt_number, claimed.claim_generation"));
+    }
+
     #[tokio::test]
     async fn create_and_list_media_job() -> anyhow::Result<()> {
         let db = match setup_media_db("create_and_list_media_job").await {
@@ -1573,6 +1653,88 @@ mod tests {
 
         append_and_assert_verification_check(db.pool(), job_id, claimed.claim_generation).await?;
         append_and_assert_artifact_and_audit(db.pool(), job_id, claimed.claim_generation).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn recent_job_page_is_keyset_bounded_and_counts_diagnostics_set_wise()
+    -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("recent_job_page").await? else {
+            return Ok(());
+        };
+        let profile_id = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "recent-jobs",
+                source_root: "/input/recent",
+                output_root: "/output/recent",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        let mut ids = Vec::new();
+        for index in 0..12 {
+            ids.push(
+                create_media_job(
+                    db.pool(),
+                    &CreateMediaJobInput {
+                        actor_public_id: db.system_user_public_id,
+                        media_profile_public_id: profile_id,
+                        source_path: &format!("/input/recent/{index}.mkv"),
+                        output_path: Some(&format!("/output/recent/{index}.mkv")),
+                        dry_run: true,
+                    },
+                )
+                .await?,
+            );
+        }
+        let mut latest_claim = None;
+        for expected_id in &ids {
+            let claim = media_job_worker_claim_next(db.pool())
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("expected queued media job"))?;
+            assert_eq!(claim.media_job_public_id, *expected_id);
+            latest_claim = Some(claim);
+        }
+        let latest_claim = latest_claim.ok_or_else(|| anyhow::anyhow!("expected media claim"))?;
+        append_media_job_operation(
+            db.pool(),
+            latest_claim.claim_generation,
+            &AppendMediaJobOperationInput {
+                media_job_public_id: ids[11],
+                operation_index: 0,
+                operation_kind: "copy",
+                stream_id: None,
+                command_bin: "ffmpeg",
+                args: [None, None, None, None, None],
+            },
+        )
+        .await?;
+        let first = list_recent_media_jobs(db.pool(), 10, None, Some(profile_id)).await?;
+        assert_eq!(first.len(), 11);
+        assert_eq!(first[0].operation_count, 1);
+        let cursor = first
+            .get(9)
+            .map(|row| (row.queued_at, row.media_job_public_id));
+        let second = list_recent_media_jobs(db.pool(), 10, cursor, Some(profile_id)).await?;
+        assert_eq!(second.len(), 2);
+        assert!(
+            list_recent_media_jobs(db.pool(), 0, None, None)
+                .await
+                .is_err()
+        );
+        assert!(
+            list_recent_media_jobs(db.pool(), 101, None, None)
+                .await
+                .is_err()
+        );
         Ok(())
     }
 
@@ -2198,10 +2360,18 @@ mod tests {
             source_sha256: &"a".repeat(64),
         };
 
-        assert!(
-            enqueue_discovered_media_job(db.pool(), &first)
-                .await?
-                .is_some()
+        let first_job_id = enqueue_discovered_media_job(db.pool(), &first)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("first discovery did not enqueue"))?;
+        let claimed = media_job_worker_claim_next(db.pool())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("discovered job was not claimable"))?;
+        assert_eq!(claimed.media_job_public_id, first_job_id);
+        assert_eq!(claimed.discovery_source_size_bytes, Some(10));
+        assert_eq!(claimed.discovery_source_modified_ns, Some(100));
+        assert_eq!(
+            claimed.discovery_source_sha256.as_deref(),
+            Some(first.source_sha256)
         );
         assert_eq!(enqueue_discovered_media_job(db.pool(), &first).await?, None);
 

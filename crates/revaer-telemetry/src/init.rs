@@ -373,6 +373,32 @@ mod tests {
         assert!(!filter.to_string().is_empty());
     }
 
+    #[test]
+    fn logging_config_default_uses_recorded_build_sha() {
+        let config = LoggingConfig::default();
+        assert_eq!(config.level, DEFAULT_LOG_LEVEL);
+        assert_eq!(config.build_sha, build_sha());
+    }
+
+    #[test]
+    fn init_logging_with_disabled_otel_uses_fmt_subscriber() {
+        let config = LoggingConfig {
+            level: "info",
+            format: LogFormat::Pretty,
+            build_sha: "dev",
+        };
+        let otel = OpenTelemetryConfig {
+            enabled: false,
+            service_name: Cow::Borrowed("revaer"),
+            endpoint: Some(Cow::Borrowed("http://collector")),
+        };
+
+        assert!(matches!(
+            init_logging_with_otel(&config, Some(&otel)),
+            Ok(None) | Err(TelemetryError::SubscriberInstall { .. })
+        ));
+    }
+
     #[cfg(feature = "otel")]
     #[test]
     fn validate_otel_config_rejects_empty_service_name() {
@@ -413,6 +439,37 @@ mod tests {
 
     #[cfg(feature = "otel")]
     #[test]
+    fn validate_otel_config_rejects_empty_endpoint() {
+        let config = OpenTelemetryConfig {
+            enabled: true,
+            service_name: Cow::Borrowed("revaer"),
+            endpoint: Some(Cow::Borrowed("   ")),
+        };
+
+        assert!(matches!(
+            validate_otel_config(&config),
+            Err(TelemetryError::OtelConfig {
+                field: "endpoint",
+                reason: "empty",
+                value: None,
+            })
+        ));
+    }
+
+    #[cfg(feature = "otel")]
+    #[test]
+    fn validate_otel_config_accepts_trimmed_values() -> Result<()> {
+        let config = OpenTelemetryConfig {
+            enabled: true,
+            service_name: Cow::Borrowed(" revaer "),
+            endpoint: Some(Cow::Borrowed(" https://collector ")),
+        };
+
+        validate_otel_config(&config)
+    }
+
+    #[cfg(feature = "otel")]
+    #[test]
     fn build_otel_tracer_provider_accepts_http_endpoint() -> Result<()> {
         let config = OpenTelemetryConfig {
             enabled: true,
@@ -425,6 +482,44 @@ mod tests {
             return Err(TelemetryError::OtelInstall {
                 source: opentelemetry_otlp::ExporterBuildError::InternalFailure(source.to_string()),
             });
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "otel")]
+    #[test]
+    fn build_otel_layer_accepts_valid_config() -> Result<()> {
+        let config = OpenTelemetryConfig {
+            enabled: true,
+            service_name: Cow::Borrowed("revaer"),
+            endpoint: None,
+        };
+
+        let telemetry = build_otel_layer(&config)?;
+        drop(telemetry);
+        Ok(())
+    }
+
+    #[cfg(feature = "otel")]
+    #[test]
+    fn install_with_otel_layer_handles_both_formats() -> Result<()> {
+        for format in [LogFormat::Json, LogFormat::Pretty] {
+            let otel = OpenTelemetryConfig {
+                enabled: true,
+                service_name: Cow::Borrowed("revaer"),
+                endpoint: None,
+            };
+            let telemetry = build_otel_layer(&otel)?;
+            let logging = LoggingConfig {
+                level: "info",
+                format,
+                build_sha: "dev",
+            };
+
+            assert!(matches!(
+                install_with_otel_layer(&logging, telemetry),
+                Ok(_) | Err(TelemetryError::SubscriberInstall { .. })
+            ));
         }
         Ok(())
     }
