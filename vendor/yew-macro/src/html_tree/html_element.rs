@@ -1,4 +1,5 @@
 use proc_macro2::{Delimiter, Group, Span, TokenStream};
+use proc_macro_error3::emit_warning;
 use quote::{quote, quote_spanned, ToTokens};
 use syn::buffer::Cursor;
 use syn::parse::{Parse, ParseStream};
@@ -9,13 +10,6 @@ use super::{HtmlChildrenTree, HtmlDashedName, TagTokens};
 use crate::props::{ElementProps, Prop, PropDirective};
 use crate::stringify::{Stringify, Value};
 use crate::{is_ide_completion, non_capitalized_ascii, Peek, PeekValue};
-
-macro_rules! emit_warning {
-    ($span:expr, $message:expr $(,)?) => {{
-        let _ = &$span;
-        let _ = &$message;
-    }};
-}
 
 fn is_normalised_element_name(name: &str) -> bool {
     match name {

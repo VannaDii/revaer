@@ -29,117 +29,114 @@ multiple-versions = "deny"
 wildcards = "allow"
 
 [[bans.skip]]
-crate = "getrandom@0.2.17"
-reason = "ADR 321: gloo/ring/rand_core retain getrandom 0.2 while jsonschema/tempfile and sqlx use newer getrandom lines."
+crate = "getrandom@0.2.16"
+reason = "ADR 322, expires 2026-10-01: rustls/ring still use getrandom 0.2 while rand/jsonschema/sqlx target newer getrandom lines."
 
 [[bans.skip]]
 crate = "getrandom@0.3.4"
-reason = "ADR 321: jsonschema/tempfile/opentelemetry use getrandom 0.3 while workspace rand and sqlx-postgres use getrandom 0.4."
+reason = "ADR 322, expires 2026-10-01: jsonschema/tempfile/opentelemetry use getrandom 0.3 while workspace rand and sqlx-postgres use getrandom 0.4."
 
 [[bans.skip]]
 crate = "r-efi@5.3.0"
-reason = "ADR 321: getrandom 0.3 and 0.4 target different WASI support stacks until upstream converges."
+reason = "ADR 322, expires 2026-10-01: getrandom 0.3 and 0.4 target different WASI support stacks until upstream converges."
 
 [[bans.skip]]
-crate = "hashbrown@0.16.1"
-reason = "ADR 321: hashlink/referencing/sqlx use hashbrown 0.16 while indexmap remains on hashbrown 0.17."
+crate = "wit-bindgen@0.46.0"
+reason = "ADR 322, expires 2026-10-01: getrandom 0.3 and 0.4 target different WASI support stacks until upstream converges."
 
 [[bans.skip]]
 crate = "block-buffer@0.10.4"
-reason = "ADR 321: argon2/headers/sqlx-core use digest 0.10 while sqlx-postgres 0.9 uses digest 0.11."
+reason = "ADR 322, expires 2026-10-01: argon2/headers/sqlx-core use digest 0.10 while sqlx-postgres 0.9 uses digest 0.11."
 
 [[bans.skip]]
 crate = "cpufeatures@0.2.17"
-reason = "ADR 321: digest 0.10 consumers remain on cpufeatures 0.2 while rand/sqlx-postgres use cpufeatures 0.3."
+reason = "ADR 322, expires 2026-10-01: digest 0.10 consumers remain on cpufeatures 0.2 while rand/sqlx-postgres use cpufeatures 0.3."
 
 [[bans.skip]]
 crate = "crypto-common@0.1.7"
-reason = "ADR 321: digest 0.10 consumers remain on crypto-common 0.1 while sqlx-postgres 0.9 uses digest 0.11."
+reason = "ADR 322, expires 2026-10-01: digest 0.10 consumers remain on crypto-common 0.1 while sqlx-postgres 0.9 uses digest 0.11."
 
 [[bans.skip]]
 crate = "digest@0.10.7"
-reason = "ADR 321: argon2/headers/sqlx-core use digest 0.10 while sqlx-postgres 0.9 uses digest 0.11."
+reason = "ADR 322, expires 2026-10-01: argon2/headers/sqlx-core use digest 0.10 while sqlx-postgres 0.9 uses digest 0.11."
 
 [[bans.skip]]
 crate = "sha2@0.10.9"
-reason = "ADR 321: asset_sync/fsops/sqlx-core use sha2 0.10 while sqlx-postgres 0.9 uses sha2 0.11."
+reason = "ADR 322, expires 2026-10-01: asset_sync/fsops/sqlx-core use sha2 0.10 while sqlx-postgres 0.9 uses sha2 0.11."
 
 [[bans.skip]]
-crate = "rand@0.9.5"
-reason = "ADR 321: opentelemetry uses rand 0.9 while workspace token generation and sqlx-postgres use rand 0.10."
+crate = "rand@0.9.4"
+reason = "ADR 322, expires 2026-10-01: opentelemetry uses rand 0.9 while workspace token generation and sqlx-postgres use rand 0.10."
 
 [[bans.skip]]
 crate = "rand_core@0.6.4"
-reason = "ADR 321: argon2/password-hash use rand_core 0.6 while opentelemetry and rand 0.10 use newer rand_core lines."
+reason = "ADR 322, expires 2026-10-01: argon2/password-hash use rand_core 0.6 while opentelemetry and rand 0.10 use newer rand_core lines."
 
 [[bans.skip]]
-crate = "rand_core@0.9.5"
-reason = "ADR 321: opentelemetry uses rand_core 0.9 while workspace token generation and sqlx-postgres use rand_core 0.10."
+crate = "rand_core@0.9.3"
+reason = "ADR 322, expires 2026-10-01: opentelemetry uses rand_core 0.9 while workspace token generation and sqlx-postgres use rand_core 0.10."
 
-[[bans.skip]]
-crate = "syn@2.0.119"
-reason = "ADR 321: yew-macro uses syn 3 while current macro dependencies retain syn 2."
 
 [[bans.skip]]
 crate = "http@0.2.12"
-reason = "Legacy gloo-net depends on http 0.2; allow alongside http 1.x."
+reason = "ADR 322, expires 2026-10-01: legacy gloo-net depends on http 0.2 while the workspace uses http 1.x."
 
 
 [[bans.skip]]
 crate = "thiserror@1.0.69"
-reason = "Prometheus/protobuf pin the 1.x line."
+reason = "ADR 322, expires 2026-10-01: prometheus/protobuf pin thiserror 1.x while the workspace uses thiserror 2.x."
 
 [[bans.skip]]
 crate = "thiserror-impl@1.0.69"
-reason = "Matches thiserror 1.x pinned by prometheus/protobuf."
+reason = "ADR 322, expires 2026-10-01: matches thiserror 1.x pinned by prometheus/protobuf while the workspace uses thiserror 2.x."
 
 [[bans.skip]]
 crate = "windows-sys@0.52.0"
-reason = "ADR 317/321, expires 2026-10-01: ring uses 0.52 while rpassword and notify require newer Windows support lines."
+reason = "ADR 317/322, expires 2026-10-01: ring uses 0.52 while rpassword and notify require newer Windows support lines."
 
 [[bans.skip]]
 crate = "windows-sys@0.59.0"
-reason = "ADR 317/321, expires 2026-10-01: rpassword uses 0.59 while ring and notify require adjacent Windows support lines."
+reason = "ADR 317/322, expires 2026-10-01: rpassword uses 0.59 while ring and notify require adjacent Windows support lines."
 
 [[bans.skip]]
 crate = "windows-sys@0.60.2"
-reason = "ADR 318, expires 2026-10-01: notify 8.2 pins 0.60 while the workspace's current general Windows support line is 0.61."
+reason = "ADR 317, expires 2026-10-01: notify 8.2 pins 0.60 while the workspace's current general Windows support line is 0.61."
 
 [[bans.skip]]
 crate = "windows-targets@0.53.5"
-reason = "ADR 318, expires 2026-10-01: notify 8.2 requires windows-sys 0.60 while ring and rpassword remain on older Windows target lines."
+reason = "ADR 317, expires 2026-10-01: notify 8.2 requires windows-sys 0.60 while ring remains on windows-sys 0.52."
 
 [[bans.skip]]
 crate = "windows_aarch64_gnullvm@0.53.1"
-reason = "ADR 318, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
+reason = "ADR 317, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
 
 [[bans.skip]]
 crate = "windows_aarch64_msvc@0.53.1"
-reason = "ADR 318, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
+reason = "ADR 317, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
 
 [[bans.skip]]
 crate = "windows_i686_gnu@0.53.1"
-reason = "ADR 318, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
+reason = "ADR 317, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
 
 [[bans.skip]]
 crate = "windows_i686_gnullvm@0.53.1"
-reason = "ADR 318, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
+reason = "ADR 317, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
 
 [[bans.skip]]
 crate = "windows_i686_msvc@0.53.1"
-reason = "ADR 318, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
+reason = "ADR 317, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
 
 [[bans.skip]]
 crate = "windows_x86_64_gnu@0.53.1"
-reason = "ADR 318, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
+reason = "ADR 317, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
 
 [[bans.skip]]
 crate = "windows_x86_64_gnullvm@0.53.1"
-reason = "ADR 318, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
+reason = "ADR 317, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
 
 [[bans.skip]]
 crate = "windows_x86_64_msvc@0.53.1"
-reason = "ADR 318, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
+reason = "ADR 317, expires 2026-10-01: target support follows notify's exact windows-targets 0.53 graph."
 
 [sources]
 unknown-registry = "deny"
