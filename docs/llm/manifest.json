@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T19:15:07.936762+00:00",
+  "generated": "2026-08-16T19:16:39.757805+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4475,6 +4475,15 @@
         "validation"
       ],
       "href": "/adr/537-normalized-opaque-state-and-attachment-payload-evidence/"
+    },
+    {
+      "id": "adr/538-native-process-supervisor-port",
+      "title": "Native process supervisor port",
+      "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: Accepted ADR 501 defines one injected, bounded process envelope for native media tools. The current integration branch still used separate capability and inspection process implementations. The authorized supervisor work in commits 7dbbba38 and 3a4bced9 was developed against an earlier stack state and required a narrow current-tree port. Review found that the source implementation retained secondary cleanup evidence in unbounded Vec<String> constructors and accumulators. Decision: Port only ADR 501's capability and inspection process-envelope slice. Construct one SystemNativeProcessSupervisor in application bootstrap and inject it into capability probing and media-job inspection.",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/538-native-process-supervisor-port/"
     },
     {
       "id": "adr/539-release-logo-byte-synchronization",

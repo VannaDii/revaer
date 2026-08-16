@@ -24,7 +24,7 @@ pub mod capabilities;
 pub mod execute;
 pub mod inspect;
 pub mod jobs;
-mod process;
+pub mod process;
 pub mod replacement;
 pub mod sidecar;
 pub mod verification;

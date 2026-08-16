@@ -43,13 +43,14 @@ use revaer_media_runtime::execute::{
 };
 use revaer_media_runtime::inspect::{
     ChapterInspection, FfprobeInspectAdapter, InspectAdapter, InspectCancellation, InspectError,
-    MediaInspection, MetadataEntry, StreamInspection, SystemInspectProbeExecutor,
+    MediaInspection, MetadataEntry, StreamInspection, SupervisedInspectProbeExecutor,
 };
 use revaer_media_runtime::jobs::{
     JobPreflightEvaluation, JobPreflightReport, PreflightBuildTemplate, PreflightPolicyInput,
     build_preflight_input, evaluate_preflight_from_compiled_target,
     evaluate_preflight_from_planning_outcome, preflight_compact_audit_facts,
 };
+use revaer_media_runtime::process::NativeProcessSupervisor;
 use revaer_media_runtime::replacement::{
     CommittedReplacement, ReplacementArtifactRequest, ReplacementBundleRequest,
     ReplacementCommitter, ReplacementError, ReplacementRecoveryAction, SystemReplacementCommitter,
@@ -423,12 +424,15 @@ impl MediaJobRuntime {
         events: EventBus,
         telemetry: Metrics,
         workspace_root: PathBuf,
+        native_process_supervisor: Arc<dyn NativeProcessSupervisor>,
     ) -> Self {
         Self::with_components(
             store,
             MediaJobRuntimeComponents {
                 inspector: Arc::new(FfprobeInspectAdapter::new(
-                    Arc::new(SystemInspectProbeExecutor),
+                    Arc::new(SupervisedInspectProbeExecutor::new(
+                        native_process_supervisor,
+                    )),
                     "ffprobe",
                 )),
                 command_runner: Arc::new(ProcessCommandRunner),
@@ -1833,7 +1837,7 @@ impl MediaJobRuntime {
             .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
         let inspection =
             inspection.map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
-        if cancellation_requested || matches!(inspection, Err(InspectError::Cancelled)) {
+        if cancellation_requested || matches!(inspection, Err(InspectError::Cancelled { .. })) {
             return Err(MediaJobRuntimeError::Cancelled);
         }
         inspection.map_err(|error| MediaJobRuntimeError::Inspect(error.to_string()))
@@ -4650,6 +4654,7 @@ mod tests {
         MediaInspection, MetadataEntry, StreamInspection,
     };
     use revaer_media_runtime::jobs::{JobPreflightReport, PlannedJob, PlannedJobSummary};
+    use revaer_media_runtime::process::NativeProcessSecondaryEvidence;
     use revaer_media_runtime::replacement::{
         CommittedReplacement, PreparedReplacement, RecoveredReplacement, ReplacementCommitter,
         ReplacementError, ReplacementRecoveryAction, ReplacementRequest,
@@ -4988,7 +4993,9 @@ mod tests {
         cancellation: &dyn InspectCancellation,
     ) -> Result<&'a str, InspectError> {
         if cancellation.is_cancelled() {
-            return Err(InspectError::Cancelled);
+            return Err(InspectError::Cancelled {
+                secondary_evidence: NativeProcessSecondaryEvidence::default(),
+            });
         }
         source_path.to_str().ok_or_else(|| {
             InspectError::OutputMalformed("test inspection path is not valid UTF-8".to_string())

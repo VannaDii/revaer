@@ -6,6 +6,7 @@ use std::time::Duration;
 use revaer_media_core::model::MediaGraph;
 use thiserror::Error;
 
+use crate::process::NativeProcessSecondaryEvidence;
 use crate::sidecar::{SidecarDiscoveryError, SidecarSubtitle};
 
 const REVIEWED_MAX_INVOCATIONS: usize = 65;
@@ -57,16 +58,6 @@ impl Default for InspectionLimits {
 pub trait InspectCancellation: Send + Sync {
     /// Return whether cancellation has been requested.
     fn is_cancelled(&self) -> bool;
-}
-
-/// Cancellation signal that never requests cancellation.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct NeverCancelled;
-
-impl InspectCancellation for NeverCancelled {
-    fn is_cancelled(&self) -> bool {
-        false
-    }
 }
 
 /// Thread-safe cancellation token for an active inspection.
@@ -133,11 +124,19 @@ pub enum InspectError {
     #[error(transparent)]
     Sidecar(#[from] SidecarDiscoveryError),
     /// Cancellation was requested before inspection completed.
-    #[error("media inspection cancelled")]
-    Cancelled,
+    #[error("media inspection cancelled{secondary_evidence}")]
+    Cancelled {
+        /// Cleanup or stream evidence observed after cancellation became primary.
+        secondary_evidence: NativeProcessSecondaryEvidence,
+    },
     /// The end-to-end inspection deadline elapsed.
-    #[error("media inspection deadline exceeded after {0:?}")]
-    DeadlineExceeded(Duration),
+    #[error("media inspection deadline exceeded after {timeout:?}{secondary_evidence}")]
+    DeadlineExceeded {
+        /// Reviewed end-to-end inspection deadline.
+        timeout: Duration,
+        /// Cleanup or stream evidence observed after the deadline became primary.
+        secondary_evidence: NativeProcessSecondaryEvidence,
+    },
     /// More logical sidecars were returned than the reviewed budget permits.
     #[error("inspection sidecar budget exceeded: maximum {0}")]
     SidecarLimitExceeded(usize),
@@ -145,19 +144,26 @@ pub enum InspectError {
     #[error("inspection invocation budget exceeded: maximum {0}")]
     InvocationLimitExceeded(usize),
     /// One process stream exceeded its reviewed byte limit.
-    #[error("inspection process {stream} exceeded {maximum_bytes} bytes")]
+    #[error("inspection process {stream} exceeded {maximum_bytes} bytes{secondary_evidence}")]
     ProcessOutputLimitExceeded {
         /// Process stream that exceeded its limit.
         stream: &'static str,
         /// Configured maximum bytes.
         maximum_bytes: usize,
+        /// Cleanup or stream evidence observed after the output limit became primary.
+        secondary_evidence: NativeProcessSecondaryEvidence,
     },
     /// Aggregate process output exceeded its reviewed byte limit.
     #[error("inspection aggregate output exceeded {0} bytes")]
     TotalOutputLimitExceeded(usize),
     /// Process creation, waiting, termination, or exit failed.
-    #[error("inspection probe failed: {0}")]
-    ProbeFailed(String),
+    #[error("inspection probe failed: {message}{secondary_evidence}")]
+    ProbeFailed {
+        /// Primary probe failure rendered as bounded detail.
+        message: String,
+        /// Cleanup or stream evidence observed after the probe failure became primary.
+        secondary_evidence: NativeProcessSecondaryEvidence,
+    },
     /// Probe output was not valid or could not be mapped unambiguously.
     #[error("inspection probe output malformed: {0}")]
     OutputMalformed(String),
@@ -181,6 +187,40 @@ pub enum InspectError {
     /// A discovered sidecar has an invalid physical-file shape or byte count.
     #[error("inspection sidecar inventory is inconsistent: {0}")]
     InvalidSidecarInventory(String),
+}
+
+impl InspectError {
+    pub(super) fn cancelled() -> Self {
+        Self::Cancelled {
+            secondary_evidence: NativeProcessSecondaryEvidence::default(),
+        }
+    }
+
+    pub(super) fn deadline_exceeded(timeout: Duration) -> Self {
+        Self::DeadlineExceeded {
+            timeout,
+            secondary_evidence: NativeProcessSecondaryEvidence::default(),
+        }
+    }
+
+    pub(super) fn process_output_limit_exceeded(
+        stream: &'static str,
+        maximum_bytes: usize,
+    ) -> Self {
+        Self::ProcessOutputLimitExceeded {
+            stream,
+            maximum_bytes,
+            secondary_evidence: NativeProcessSecondaryEvidence::default(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn probe_failed(message: String) -> Self {
+        Self::ProbeFailed {
+            message,
+            secondary_evidence: NativeProcessSecondaryEvidence::default(),
+        }
+    }
 }
 
 /// One normalized metadata key/value pair.

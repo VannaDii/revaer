@@ -10,7 +10,7 @@ use std::os::unix::fs::MetadataExt;
 
 use super::model::{
     InspectCancellation, InspectError, InspectProbeExecutor, InspectProbeOutput,
-    InspectProbeRequest, InspectionLimits, MediaInspection, NeverCancelled,
+    InspectProbeRequest, InspectionLimits, MediaInspection,
 };
 use super::parse::{parse_source, validate_sidecar_output};
 use crate::sidecar::{
@@ -19,15 +19,6 @@ use crate::sidecar::{
 
 /// Bounded media-inspection boundary.
 pub trait InspectAdapter: Send + Sync {
-    /// Inspect a source under the adapter's reviewed budgets.
-    ///
-    /// # Errors
-    ///
-    /// Returns a deterministic discovery, safety, resource, execution, or parse error.
-    fn inspect(&self, source_path: &Path) -> Result<MediaInspection, InspectError> {
-        self.inspect_with_cancellation(source_path, &NeverCancelled)
-    }
-
     /// Inspect a source while honoring cooperative cancellation.
     ///
     /// # Errors
@@ -170,16 +161,16 @@ impl ProbeBudget {
 
     fn consume(&mut self, output: InspectProbeOutput) -> Result<Vec<u8>, InspectError> {
         if output.stdout.len() > self.limits.max_stdout_bytes {
-            return Err(InspectError::ProcessOutputLimitExceeded {
-                stream: "stdout",
-                maximum_bytes: self.limits.max_stdout_bytes,
-            });
+            return Err(InspectError::process_output_limit_exceeded(
+                "stdout",
+                self.limits.max_stdout_bytes,
+            ));
         }
         if output.stderr.len() > self.limits.max_stderr_bytes {
-            return Err(InspectError::ProcessOutputLimitExceeded {
-                stream: "stderr",
-                maximum_bytes: self.limits.max_stderr_bytes,
-            });
+            return Err(InspectError::process_output_limit_exceeded(
+                "stderr",
+                self.limits.max_stderr_bytes,
+            ));
         }
         let invocation_bytes = output.stdout.len().checked_add(output.stderr.len()).ok_or(
             InspectError::TotalOutputLimitExceeded(self.limits.max_total_output_bytes),
@@ -340,10 +331,10 @@ fn check_request_state(
     cancellation: &dyn InspectCancellation,
 ) -> Result<(), InspectError> {
     if cancellation.is_cancelled() {
-        return Err(InspectError::Cancelled);
+        return Err(InspectError::cancelled());
     }
     if started.elapsed() >= deadline {
-        return Err(InspectError::DeadlineExceeded(deadline));
+        return Err(InspectError::deadline_exceeded(deadline));
     }
     Ok(())
 }
@@ -355,5 +346,5 @@ fn remaining_time(
     deadline
         .checked_sub(started.elapsed())
         .filter(|remaining| !remaining.is_zero())
-        .ok_or(InspectError::DeadlineExceeded(deadline))
+        .ok_or_else(|| InspectError::deadline_exceeded(deadline))
 }

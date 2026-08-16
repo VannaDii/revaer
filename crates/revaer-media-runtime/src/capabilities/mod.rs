@@ -6,7 +6,7 @@ mod parse;
 
 pub use detect::{
     CapabilityDetectError, CapabilityDetector, CapabilityProbeExecutor, FfmpegCapabilityDetector,
-    SystemCapabilityProbeExecutor, UnavailableCapabilityDetector,
+    SupervisedCapabilityProbeExecutor, UnavailableCapabilityDetector,
 };
 pub use model::{CapabilitySnapshot, CodecCapability};
 

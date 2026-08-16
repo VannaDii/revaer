@@ -286,7 +286,11 @@ async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
     let events = EventBus::with_capacity(4);
     let telemetry = Metrics::new().map_err(|err| AppError::telemetry("telemetry.metrics", err))?;
 
-    let media = Arc::new(build_media_service(&config, telemetry.clone()));
+    let media = Arc::new(build_media_service(
+        &config,
+        telemetry.clone(),
+        system_native_process_supervisor(),
+    ));
     let server = build_api_server(&config, &events, None, telemetry, media)?;
     drop(server);
     Ok(())

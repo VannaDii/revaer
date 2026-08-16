@@ -23,7 +23,12 @@ use revaer_events::EventBus;
 use revaer_telemetry::{GlobalContextGuard, LoggingConfig, Metrics, OpenTelemetryConfig};
 use tracing::{error, info, warn};
 
-use revaer_media_runtime::capabilities::{FfmpegCapabilityDetector, SystemCapabilityProbeExecutor};
+use revaer_media_runtime::capabilities::{
+    FfmpegCapabilityDetector, SupervisedCapabilityProbeExecutor,
+};
+use revaer_media_runtime::process::{
+    NativeProcessSupervisor, NeverStopNativeProcess, SystemNativeProcessSupervisor,
+};
 use revaer_runtime::RuntimeStore;
 use revaer_runtime::media::MediaStore;
 use uuid::Uuid;
@@ -336,15 +341,25 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         None
     };
 
-    let media = Arc::new(build_media_service(&config, telemetry.clone()));
+    let native_process_supervisor = system_native_process_supervisor();
+    let media = Arc::new(build_media_service(
+        &config,
+        telemetry.clone(),
+        Arc::clone(&native_process_supervisor),
+    ));
     refresh_startup_media_capabilities(&media, &events, &telemetry).await;
     let api = build_api_server(&config, &events, torrent_handles, telemetry.clone(), media)?;
     let indexer_runtime_task =
         IndexerRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
     let import_job_runtime_task =
         ImportJobRuntime::new(Arc::new(config.clone()), telemetry.clone()).spawn();
-    let media_runtime_tasks =
-        spawn_media_runtime_tasks(&config, &events, &telemetry, media_workspace_root);
+    let media_runtime_tasks = spawn_media_runtime_tasks(
+        &config,
+        &events,
+        &telemetry,
+        media_workspace_root,
+        native_process_supervisor,
+    );
     info!(addr = %addr, "Launching API listener");
 
     let serve_result = api.serve(addr).await;
@@ -389,6 +404,7 @@ fn spawn_media_runtime_tasks(
     events: &EventBus,
     telemetry: &Metrics,
     media_workspace_root: PathBuf,
+    native_process_supervisor: Arc<dyn NativeProcessSupervisor>,
 ) -> MediaRuntimeTasks {
     let (shutdown, receiver) = runtime_shutdown::channel();
     let media_store = MediaStore::new(config.pool().clone());
@@ -399,6 +415,7 @@ fn spawn_media_runtime_tasks(
         events.clone(),
         telemetry.clone(),
         media_workspace_root.clone(),
+        native_process_supervisor,
     )
     .spawn(receiver.clone());
     let media_workspace_retention = Arc::new(MediaWorkspaceRetentionService::new(
@@ -523,11 +540,22 @@ fn build_api_server(
     .map_err(|err| AppError::api_server("api_server.new", err))
 }
 
-fn build_media_service(config: &ConfigService, telemetry: Metrics) -> MediaService {
+fn system_native_process_supervisor() -> Arc<dyn NativeProcessSupervisor> {
+    Arc::new(SystemNativeProcessSupervisor)
+}
+
+fn build_media_service(
+    config: &ConfigService,
+    telemetry: Metrics,
+    native_process_supervisor: Arc<dyn NativeProcessSupervisor>,
+) -> MediaService {
     MediaService::new(
         MediaStore::new(config.pool().clone()),
         Arc::new(FfmpegCapabilityDetector::new(
-            Arc::new(SystemCapabilityProbeExecutor),
+            Arc::new(SupervisedCapabilityProbeExecutor::new(
+                native_process_supervisor,
+                Arc::new(NeverStopNativeProcess),
+            )),
             "ffmpeg",
             "ffprobe",
             "ffplay",

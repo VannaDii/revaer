@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 
-use crate::process::{ProcessLimits, run_bounded};
+use crate::process::{NativeProcessControl, NativeProcessRequest, NativeProcessSupervisor};
 
 use super::model::CapabilitySnapshot;
 use super::parse::{
@@ -61,23 +61,48 @@ pub trait CapabilityProbeExecutor: Send + Sync {
     fn run(&self, program: &str, args: &[&str]) -> Result<String, CapabilityDetectError>;
 }
 
-/// System-process probe executor with deadlines and bounded output capture.
-#[derive(Debug, Default)]
-pub struct SystemCapabilityProbeExecutor;
+/// Capability probe executor using the process supervisor shared by runtime wiring.
+pub struct SupervisedCapabilityProbeExecutor {
+    supervisor: Arc<dyn NativeProcessSupervisor>,
+    control: Arc<dyn NativeProcessControl>,
+}
 
-impl CapabilityProbeExecutor for SystemCapabilityProbeExecutor {
+impl std::fmt::Debug for SupervisedCapabilityProbeExecutor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SupervisedCapabilityProbeExecutor")
+            .finish_non_exhaustive()
+    }
+}
+
+impl SupervisedCapabilityProbeExecutor {
+    /// Construct a capability executor from shared process supervision and live control.
+    #[must_use]
+    pub fn new(
+        supervisor: Arc<dyn NativeProcessSupervisor>,
+        control: Arc<dyn NativeProcessControl>,
+    ) -> Self {
+        Self {
+            supervisor,
+            control,
+        }
+    }
+}
+
+impl CapabilityProbeExecutor for SupervisedCapabilityProbeExecutor {
     fn run(&self, program: &str, args: &[&str]) -> Result<String, CapabilityDetectError> {
-        let output = run_bounded(
+        let request = NativeProcessRequest::inspection(
             program,
-            args,
-            ProcessLimits {
-                timeout: CAPABILITY_PROBE_TIMEOUT,
-                max_stdout_bytes: CAPABILITY_STDOUT_LIMIT,
-                max_stderr_bytes: CAPABILITY_STDERR_LIMIT,
-            },
-        )
-        .map_err(|error| CapabilityDetectError::CommandFailed(error.to_string()))?;
-        String::from_utf8(output)
+            args.iter().copied(),
+            CAPABILITY_PROBE_TIMEOUT,
+            CAPABILITY_STDOUT_LIMIT,
+            CAPABILITY_STDERR_LIMIT,
+        );
+        let output = self
+            .supervisor
+            .run(&request, self.control.as_ref())
+            .map_err(|error| CapabilityDetectError::CommandFailed(error.to_string()))?;
+        String::from_utf8(output.into_streams().0)
             .map_err(|error| CapabilityDetectError::OutputMalformed(error.to_string()))
     }
 }
@@ -204,6 +229,19 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+    #[cfg(unix)]
+    use crate::process::{NativeProcessStopReason, SystemNativeProcessSupervisor};
+
+    #[cfg(unix)]
+    #[derive(Debug, Default)]
+    struct ActiveProcessControl;
+
+    #[cfg(unix)]
+    impl NativeProcessControl for ActiveProcessControl {
+        fn stop_reason(&self) -> Option<NativeProcessStopReason> {
+            None
+        }
+    }
 
     #[derive(Default)]
     struct StubExecutor {
@@ -315,7 +353,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn system_executor_returns_utf8_stdout() -> Result<(), CapabilityDetectError> {
-        let output = SystemCapabilityProbeExecutor.run("/bin/sh", &["-c", "printf detector"])?;
+        let output = system_executor().run("/bin/sh", &["-c", "printf detector"])?;
 
         assert_eq!(output, "detector");
         Ok(())
@@ -324,7 +362,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn system_executor_maps_process_failure() {
-        let result = SystemCapabilityProbeExecutor.run("/revaer/missing-probe", &[]);
+        let result = system_executor().run("/revaer/missing-probe", &[]);
 
         assert!(matches!(
             result,
@@ -336,12 +374,20 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn system_executor_rejects_non_utf8_stdout() {
-        let result = SystemCapabilityProbeExecutor.run("/bin/sh", &["-c", "printf '\\377'"]);
+        let result = system_executor().run("/bin/sh", &["-c", "printf '\\377'"]);
 
         assert!(matches!(
             result,
             Err(CapabilityDetectError::OutputMalformed(message))
                 if message.contains("invalid utf-8 sequence")
         ));
+    }
+
+    #[cfg(unix)]
+    fn system_executor() -> SupervisedCapabilityProbeExecutor {
+        SupervisedCapabilityProbeExecutor::new(
+            Arc::new(SystemNativeProcessSupervisor),
+            Arc::new(ActiveProcessControl),
+        )
     }
 }

@@ -74,14 +74,14 @@ impl QueueExecutor {
         self.requests
             .lock()
             .map(|requests| requests.len())
-            .map_err(|error| InspectError::ProbeFailed(error.to_string()))
+            .map_err(|error| InspectError::probe_failed(error.to_string()))
     }
 
     fn requests(&self) -> Result<Vec<InspectProbeRequest>, InspectError> {
         self.requests
             .lock()
             .map(|requests| requests.clone())
-            .map_err(|error| InspectError::ProbeFailed(error.to_string()))
+            .map_err(|error| InspectError::probe_failed(error.to_string()))
     }
 }
 
@@ -93,13 +93,13 @@ impl InspectProbeExecutor for QueueExecutor {
     ) -> Result<InspectProbeOutput, InspectError> {
         self.requests
             .lock()
-            .map_err(|error| InspectError::ProbeFailed(error.to_string()))?
+            .map_err(|error| InspectError::probe_failed(error.to_string()))?
             .push(request.clone());
         self.outputs
             .lock()
-            .map_err(|error| InspectError::ProbeFailed(error.to_string()))?
+            .map_err(|error| InspectError::probe_failed(error.to_string()))?
             .pop_front()
-            .ok_or_else(|| InspectError::ProbeFailed("unexpected probe".to_string()))
+            .ok_or_else(|| InspectError::probe_failed("unexpected probe".to_string()))
     }
 }
 
@@ -114,7 +114,7 @@ impl InspectProbeExecutor for MutatingExecutor {
         _cancellation: &dyn InspectCancellation,
     ) -> Result<InspectProbeOutput, InspectError> {
         fs::write(&self.path, b"changed while probing")
-            .map_err(|error| InspectError::ProbeFailed(error.to_string()))?;
+            .map_err(|error| InspectError::probe_failed(error.to_string()))?;
         Ok(InspectProbeOutput {
             stdout: SOURCE_JSON.as_bytes().to_vec(),
             stderr: Vec::new(),
@@ -145,7 +145,7 @@ fn normalizes_complete_report_and_deterministic_result_order()
         InspectionLimits::reviewed(),
     );
 
-    let inspection = adapter.inspect(&source)?;
+    let inspection = inspect_active(&adapter, &source)?;
 
     assert_eq!(inspection.graph.streams[0].stream_id, 0);
     assert_eq!(inspection.graph.streams[1].stream_id, 2);
@@ -325,7 +325,7 @@ fn logical_sidecar_budget_accepts_maximum() -> Result<(), Box<dyn std::error::Er
         InspectionLimits::reviewed(),
     );
 
-    assert_eq!(adapter.inspect(&source)?.sidecars.len(), 64);
+    assert_eq!(inspect_active(&adapter, &source)?.sidecars.len(), 64);
     assert_eq!(executor.request_count()?, 65);
 
     remove_temp_directory(&directory)
@@ -352,7 +352,7 @@ fn logical_sidecar_budget_rejects_maximum_plus_one() -> Result<(), Box<dyn std::
     );
 
     assert!(matches!(
-        adapter.inspect(&source),
+        inspect_active(&adapter, &source),
         Err(InspectError::SidecarLimitExceeded(64))
     ));
     assert_eq!(executor.request_count()?, 0);
@@ -372,7 +372,7 @@ fn aggregate_output_budget_accepts_exact_maximum() -> Result<(), Box<dyn std::er
         limits,
     );
 
-    assert!(adapter.inspect(&source).is_ok());
+    assert!(inspect_active(&adapter, &source).is_ok());
 
     remove_temp_directory(&directory)
 }
@@ -389,7 +389,7 @@ fn aggregate_output_budget_rejects_maximum_plus_one() -> Result<(), Box<dyn std:
     );
 
     assert!(matches!(
-        adapter.inspect(&source),
+        inspect_active(&adapter, &source),
         Err(InspectError::TotalOutputLimitExceeded(1024))
     ));
 
@@ -408,7 +408,7 @@ fn default_adapter_uses_filesystem_sidecar_discovery() -> Result<(), Box<dyn std
     let collaborator: Arc<dyn InspectProbeExecutor> = executor.clone();
     let adapter = FfprobeInspectAdapter::new(collaborator, "ffprobe");
 
-    assert_eq!(adapter.inspect(&source)?.sidecars.len(), 1);
+    assert_eq!(inspect_active(&adapter, &source)?.sidecars.len(), 1);
     assert_eq!(executor.request_count()?, 2);
 
     remove_temp_directory(&directory)
@@ -436,10 +436,11 @@ fn adapter_defends_process_and_invocation_limits_from_collaborator_violations()
         limits,
     );
     assert!(matches!(
-        stdout_adapter.inspect(&source),
+        inspect_active(&stdout_adapter, &source),
         Err(InspectError::ProcessOutputLimitExceeded {
             stream: "stdout",
-            maximum_bytes: 4
+            maximum_bytes: 4,
+            ..
         })
     ));
 
@@ -452,17 +453,18 @@ fn adapter_defends_process_and_invocation_limits_from_collaborator_violations()
         limits,
     );
     assert!(matches!(
-        stderr_adapter.inspect(&source),
+        inspect_active(&stderr_adapter, &source),
         Err(InspectError::ProcessOutputLimitExceeded {
             stream: "stderr",
-            maximum_bytes: 2
+            maximum_bytes: 2,
+            ..
         })
     ));
 
     let sidecar = write_sidecar(&directory, "movie.en.srt", b"subtitle", SidecarFormat::Srt)?;
     let invocation_adapter = adapter(Arc::new(QueueExecutor::default()), vec![sidecar], limits);
     assert!(matches!(
-        invocation_adapter.inspect(&source),
+        inspect_active(&invocation_adapter, &source),
         Err(InspectError::InvocationLimitExceeded(1))
     ));
 
@@ -502,7 +504,7 @@ fn adapter_rejects_invalid_sidecar_physical_shapes() -> Result<(), Box<dyn std::
             InspectionLimits::reviewed(),
         );
         assert!(matches!(
-            invalid.inspect(&source),
+            inspect_active(&invalid, &source),
             Err(InspectError::InvalidSidecarInventory(_))
         ));
     }
@@ -521,7 +523,7 @@ fn adapter_rejects_invalid_sidecar_physical_shapes() -> Result<(), Box<dyn std::
         InspectionLimits::reviewed(),
     );
     assert!(matches!(
-        invalid.inspect(&source),
+        inspect_active(&invalid, &source),
         Err(InspectError::InvalidSidecarInventory(_))
     ));
 
@@ -538,12 +540,12 @@ fn adapter_rejects_unsafe_missing_and_already_expired_inputs()
         InspectionLimits::reviewed(),
     );
     assert!(matches!(
-        unsafe_adapter.inspect(&directory),
+        inspect_active(&unsafe_adapter, &directory),
         Err(InspectError::UnsafeInput(path)) if path == directory
     ));
     let missing = directory.join("missing.mkv");
     assert!(matches!(
-        unsafe_adapter.inspect(&missing),
+        inspect_active(&unsafe_adapter, &missing),
         Err(InspectError::InputMetadata { path, .. }) if path == missing
     ));
 
@@ -557,8 +559,11 @@ fn adapter_rejects_unsafe_missing_and_already_expired_inputs()
         },
     );
     assert!(matches!(
-        expired.inspect(&source),
-        Err(InspectError::DeadlineExceeded(Duration::ZERO))
+        inspect_active(&expired, &source),
+        Err(InspectError::DeadlineExceeded {
+            timeout: Duration::ZERO,
+            ..
+        })
     ));
 
     remove_temp_directory(&directory)
@@ -591,7 +596,7 @@ fn vobsub_pair_counts_as_one_logical_probe_and_both_files() -> Result<(), Box<dy
         InspectionLimits::reviewed(),
     );
 
-    assert_eq!(adapter.inspect(&source)?.sidecars.len(), 1);
+    assert_eq!(inspect_active(&adapter, &source)?.sidecars.len(), 1);
     let requests = executor.requests()?;
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[1].args.last(), Some(&index.into_os_string()));
@@ -629,7 +634,7 @@ fn vobsub_pair_rejects_incorrect_physical_byte_accounting() -> Result<(), Box<dy
     );
 
     assert!(matches!(
-        adapter.inspect(&source),
+        inspect_active(&adapter, &source),
         Err(InspectError::InvalidSidecarInventory(_))
     ));
     assert_eq!(executor.request_count()?, 0);
@@ -650,7 +655,7 @@ fn rejects_input_changed_during_probe() -> Result<(), Box<dyn std::error::Error>
     );
 
     assert!(matches!(
-        adapter.inspect(&source),
+        inspect_active(&adapter, &source),
         Err(InspectError::InputChanged(path)) if path == source
     ));
 
@@ -667,7 +672,7 @@ fn rejects_malformed_and_ambiguous_probe_output() -> Result<(), Box<dyn std::err
         InspectionLimits::reviewed(),
     );
     assert!(matches!(
-        malformed.inspect(&source),
+        inspect_active(&malformed, &source),
         Err(InspectError::OutputMalformed(_))
     ));
 
@@ -681,7 +686,7 @@ fn rejects_malformed_and_ambiguous_probe_output() -> Result<(), Box<dyn std::err
         InspectionLimits::reviewed(),
     );
     assert!(matches!(
-        ambiguous.inspect(&source),
+        inspect_active(&ambiguous, &source),
         Err(InspectError::OutputMalformed(message)) if message.contains("duplicate stream")
     ));
 
@@ -704,7 +709,7 @@ fn cancellation_before_discovery_fails_without_process_invocation()
 
     assert!(matches!(
         adapter.inspect_with_cancellation(&source, &cancellation),
-        Err(InspectError::Cancelled)
+        Err(InspectError::Cancelled { .. })
     ));
     assert_eq!(executor.request_count()?, 0);
 
@@ -718,8 +723,8 @@ fn system_executor_terminates_hung_process_at_deadline() {
     let started = Instant::now();
 
     assert!(matches!(
-        SystemInspectProbeExecutor.run(&request, &NeverCancelled),
-        Err(InspectError::DeadlineExceeded(_))
+        system_executor().run(&request, &InspectCancellationToken::default()),
+        Err(InspectError::DeadlineExceeded { .. })
     ));
     assert!(started.elapsed() < Duration::from_secs(2));
 }
@@ -736,9 +741,9 @@ fn system_executor_terminates_process_on_cancellation() -> Result<(), Box<dyn st
     });
     let started = Instant::now();
 
-    let result = SystemInspectProbeExecutor.run(&request, cancellation.as_ref());
+    let result = system_executor().run(&request, cancellation.as_ref());
     thread.join().map_err(|_| "canceller thread failed")?;
-    assert!(matches!(result, Err(InspectError::Cancelled)));
+    assert!(matches!(result, Err(InspectError::Cancelled { .. })));
     assert!(started.elapsed() < Duration::from_secs(2));
     Ok(())
 }
@@ -748,17 +753,18 @@ fn system_executor_terminates_process_on_cancellation() -> Result<(), Box<dyn st
 fn system_executor_accepts_stdout_maximum_and_rejects_maximum_plus_one()
 -> Result<(), Box<dyn std::error::Error>> {
     let exact = shell_request("printf 1234", Duration::from_secs(1), 4, 1);
-    let output = SystemInspectProbeExecutor.run(&exact, &NeverCancelled)?;
+    let output = system_executor().run(&exact, &InspectCancellationToken::default())?;
     assert_eq!(output.stdout, b"1234");
 
     let exceeded = shell_request("printf 12345; sleep 5", Duration::from_secs(1), 4, 1);
-    let exceeded_result = SystemInspectProbeExecutor.run(&exceeded, &NeverCancelled);
+    let exceeded_result = system_executor().run(&exceeded, &InspectCancellationToken::default());
     assert!(
         matches!(
             exceeded_result,
             Err(InspectError::ProcessOutputLimitExceeded {
                 stream: "stdout",
-                maximum_bytes: 4
+                maximum_bytes: 4,
+                ..
             })
         ),
         "unexpected result: {exceeded_result:?}"
@@ -777,12 +783,12 @@ fn system_executor_maps_spawn_nonzero_and_stderr_limit_failures() {
         max_stderr_bytes: 1,
     };
     assert!(matches!(
-        SystemInspectProbeExecutor.run(&missing, &NeverCancelled),
-        Err(InspectError::ProbeFailed(_))
+        system_executor().run(&missing, &InspectCancellationToken::default()),
+        Err(InspectError::ProbeFailed { .. })
     ));
 
     let nonzero = shell_request("printf failure >&2; exit 7", Duration::from_secs(1), 1, 16);
-    let nonzero_result = SystemInspectProbeExecutor.run(&nonzero, &NeverCancelled);
+    let nonzero_result = system_executor().run(&nonzero, &InspectCancellationToken::default());
     assert!(
         nonzero_result
             .as_ref()
@@ -792,10 +798,11 @@ fn system_executor_maps_spawn_nonzero_and_stderr_limit_failures() {
 
     let stderr = shell_request("printf 12345 >&2; sleep 5", Duration::from_secs(1), 1, 4);
     assert!(matches!(
-        SystemInspectProbeExecutor.run(&stderr, &NeverCancelled),
+        system_executor().run(&stderr, &InspectCancellationToken::default()),
         Err(InspectError::ProcessOutputLimitExceeded {
             stream: "stderr",
-            maximum_bytes: 4
+            maximum_bytes: 4,
+            ..
         })
     ));
 }
@@ -814,6 +821,18 @@ where
         Arc::new(StaticDiscoverer { sidecars }),
         limits,
     )
+}
+
+fn inspect_active(
+    adapter: &impl InspectAdapter,
+    source: &Path,
+) -> Result<MediaInspection, InspectError> {
+    adapter.inspect_with_cancellation(source, &InspectCancellationToken::default())
+}
+
+#[cfg(unix)]
+fn system_executor() -> SupervisedInspectProbeExecutor {
+    SupervisedInspectProbeExecutor::new(Arc::new(crate::process::SystemNativeProcessSupervisor))
 }
 
 fn test_limits(max_total_output_bytes: usize) -> InspectionLimits {

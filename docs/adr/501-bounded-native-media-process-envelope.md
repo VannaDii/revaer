@@ -56,28 +56,76 @@
 ## Task Record
 
 - Motivation:
-  - Make native media execution fail closed under the same bounded contract used
-    by capability detection and inspection.
+  - Establish one fail-closed native-process contract for the capability and
+    inspection paths present in this runtime-foundation slice without importing
+    execution, verification, audio-analysis, readiness, or telemetry behavior.
 - Design notes:
-  - Source duration is already available from bounded inspection and becomes an
-    immutable input to deadline calculation. Checked arithmetic must saturate at
-    the stated ceilings.
+  - Implemented scope is limited to capability probing and media inspection in
+    this runtime-foundation slice. Transcoding, playback verification, and
+    FFmpeg audio analysis are not routed through this supervisor here; their
+    approved duration-derived envelopes remain unimplemented follow-up work in
+    their owning slices.
+  - Capability and inspection adapters receive the same injected
+    `Arc<dyn NativeProcessSupervisor>`; neither adapter constructs a concrete
+    supervisor or launches a process directly.
+  - Every invocation requires a live `NativeProcessControl`. The inspection
+    adapter's cancellation signal is translated at the supervisor boundary, and
+    the capability adapter receives its control from composition.
+  - The system supervisor starts its deadline before cancellation, spawn, and
+    pipe setup; closes stdin; drains nonblocking stdout and stderr on one thread;
+    and retains at most 16 MiB per stream.
+  - A typed primary cancellation, deadline, output-limit, exit, or supervision
+    failure remains the primary error and stable reason code. Read, cleanup, and
+    later-boundary diagnostics are normalized as separate secondary evidence.
+    The approved 16 MiB diagnostic budget bounds aggregate data, each item, and
+    collection metadata; the inspection adapter retains that structure instead
+    of collapsing a typed primary into `Supervision` or `ProbeFailed`.
+  - A leader exit is not success until its process group is absent. Surviving
+    descendants receive `TERM`, five seconds of grace, `KILL`, and bounded
+    reap/absence verification before return. Cancellation and the absolute
+    request deadline remain live while descendant cleanup and stream draining
+    continue. Reaching the deadline cuts short the graceful wait, forces cleanup,
+    and cannot produce a successful result.
 - Test coverage summary:
-  - Existing coverage proves bounded inspection, direct-child cancellation,
-    workspace reserve loss, and verifier cleanup. The follow-up matrix above is
-    required before this proposal is implemented.
+  - Deterministic regressions cover pre-cancellation before spawn, exact and
+    maximum-plus-one stream bounds, deadline accounting across pipe setup,
+    `TERM` grace followed by forced escalation, successful leaders with
+    descendants that retain or close inherited output streams, and one shared
+    injected supervisor across capability and inspection adapters. Descendant
+    readiness is synchronized through a named pipe before the leader exits; no
+    fixed readiness sleep is used.
+  - Review regressions additionally cover cancellation and deadline observation
+    after leader exit, deadline-driven interruption of graceful cleanup, typed
+    primary errors with separate read/cleanup evidence, and typed inspection
+    adapter mapping with that evidence intact.
+  - Current-tree validation is recorded by ADR 538 and includes the focused
+    runtime behavior plus repository check, lint, policy, instruction-drift,
+    documentation, diff, and media-cleanup gates.
 - Observability updates:
-  - Add bounded-cardinality termination-reason metrics and stable error codes;
-    do not persist command values or unbounded diagnostics.
+  - The supervisor exposes stable bounded-cardinality primary reason codes and
+    normalized secondary diagnostic evidence. Telemetry wiring is intentionally
+    outside this transplant, and no command values or unbounded process output
+    are persisted.
 - Status-doc validation:
-  - Reviewed `MEDIA_TRANSCODING.md` and ADRs 318, 427, 429, and 483. This proposal
-    does not change a current capability claim.
+  - Reviewed `MEDIA_TRANSCODING.md` and ADRs 318, 427, 429, and 483. This
+    implementation does not change a current capability claim.
 - Risk & rollback plan:
-  - Acceptance alone changes no production behavior. After implementation,
-    rollback is one coordinated revert to the prior injected adapters;
-    deployment resource limits remain in force.
+  - The principal risks are platform process-group semantics and regressions in
+    probe error translation. Rollback is one coordinated revert of the shared
+    supervisor and the capability/inspection adapter injection; deployment
+    resource limits remain in force.
+- Residual limits:
+  - A descendant that successfully creates a new session or changes to another
+    process group before cleanup is outside the original process-group envelope.
+    ADR 501 does not authorize host-wide process discovery or containment beyond
+    the spawned group, so validated deployment containment remains required.
+  - Process-group identifiers are kernel-reused. A narrow race remains between
+    process-group existence checks and later signals if the original group
+    disappears and its identifier is reused. ADR 501 does not authorize a new
+    kernel containment mechanism, pidfd-based group abstraction, or external
+    supervisor dependency to close that platform limit.
 - Dependency rationale:
-  - No dependency is proposed. Existing Unix process-group support and current
+  - No dependency was added. Existing Unix process-group support and current
     injected executor patterns cover the recommendation.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,

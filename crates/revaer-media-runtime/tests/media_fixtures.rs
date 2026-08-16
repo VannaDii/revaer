@@ -11,8 +11,10 @@ mod fanout_fixture {
         CommandRunner, ProcessCommandRunner, VideoTranscodePolicy, build_desired_graph_ffmpeg_argv,
     };
     use revaer_media_runtime::inspect::{
-        FfprobeInspectAdapter, InspectAdapter, SystemInspectProbeExecutor,
+        FfprobeInspectAdapter, InspectAdapter, InspectCancellationToken,
+        SupervisedInspectProbeExecutor,
     };
+    use revaer_media_runtime::process::SystemNativeProcessSupervisor;
 
     #[test]
     fn one_audio_source_executes_to_two_verified_outputs_and_cleans_up()
@@ -38,8 +40,14 @@ mod fanout_fixture {
             ],
         )?;
 
-        let inspector = FfprobeInspectAdapter::new(Arc::new(SystemInspectProbeExecutor), "ffprobe");
-        let source_inspection = inspector.inspect(&source)?;
+        let inspector = FfprobeInspectAdapter::new(
+            Arc::new(SupervisedInspectProbeExecutor::new(Arc::new(
+                SystemNativeProcessSupervisor,
+            ))),
+            "ffprobe",
+        );
+        let cancellation = InspectCancellationToken::default();
+        let source_inspection = inspector.inspect_with_cancellation(&source, &cancellation)?;
         let target = fanout_target()?;
         let output_text = path_text(&output)?;
         let outcome = compile_and_plan(
@@ -69,7 +77,7 @@ mod fanout_fixture {
         )?;
         runner.run("ffmpeg", &argv)?;
 
-        let output_inspection = inspector.inspect(&output)?;
+        let output_inspection = inspector.inspect_with_cancellation(&output, &cancellation)?;
         let audio_streams = output_inspection
             .graph
             .streams
@@ -182,9 +190,10 @@ use revaer_media_core::model::{
 use revaer_media_core::plan::{OperationKind, PlannedOperation};
 use revaer_media_runtime::execute::{ProcessCommandRunner, execute_step_sequence};
 use revaer_media_runtime::inspect::{
-    FfprobeInspectAdapter, InspectAdapter, SystemInspectProbeExecutor,
+    FfprobeInspectAdapter, InspectAdapter, InspectCancellationToken, SupervisedInspectProbeExecutor,
 };
 use revaer_media_runtime::jobs::{build_job_execution_steps, plan_job_from_source_graph};
+use revaer_media_runtime::process::SystemNativeProcessSupervisor;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1636,8 +1645,16 @@ fn assert_subtitle_selection(
 }
 
 fn inspect_graph(path: &Path) -> TestResult<MediaGraph> {
-    let inspector = FfprobeInspectAdapter::new(Arc::new(SystemInspectProbeExecutor), "ffprobe");
-    Ok(inspector.inspect(path)?.graph)
+    let inspector = FfprobeInspectAdapter::new(
+        Arc::new(SupervisedInspectProbeExecutor::new(Arc::new(
+            SystemNativeProcessSupervisor,
+        ))),
+        "ffprobe",
+    );
+    let cancellation = InspectCancellationToken::default();
+    Ok(inspector
+        .inspect_with_cancellation(path, &cancellation)?
+        .graph)
 }
 
 fn desired_graph(output_path: String, streams: Vec<MediaStream>) -> TestResult<DesiredGraph> {

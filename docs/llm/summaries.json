@@ -4474,6 +4474,15 @@
     "href": "/adr/537-normalized-opaque-state-and-attachment-payload-evidence/"
   },
   {
+    "id": "adr/538-native-process-supervisor-port",
+    "title": "Native process supervisor port",
+    "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: Accepted ADR 501 defines one injected, bounded process envelope for native media tools. The current integration branch still used separate capability and inspection process implementations. The authorized supervisor work in commits 7dbbba38 and 3a4bced9 was developed against an earlier stack state and required a narrow current-tree port. Review found that the source implementation retained secondary cleanup evidence in unbounded Vec<String> constructors and accumulators. Decision: Port only ADR 501's capability and inspection process-envelope slice. Construct one SystemNativeProcessSupervisor in application bootstrap and inject it into capability probing and media-job inspection.",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/538-native-process-supervisor-port/"
+  },
+  {
     "id": "adr/539-release-logo-byte-synchronization",
     "title": "Release logo byte synchronization",
     "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: charts/revaer/Chart.yaml and docs/release-checklist.md identify the repository-root revaer-logo.svg as the canonical purple stylized-R release mark. Independent review of the accepted ADR 379 implementation found that the repository-root logo still contained an older wordmark while crates/revaer-ui/static/revaer-logo.svg contained the approved mark. Decision: Make the repository-root logo byte-identical to the canonical runtime logo. Extend just check-assets with a deterministic cmp -s check so future byte drift fails closed after asset synchronization. Change no other UI asset, Sonar criterion, runtime reference, or visual design. Consequences: Release and Artifact Hub branding now uses the",

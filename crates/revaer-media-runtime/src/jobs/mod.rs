@@ -22,7 +22,7 @@ use crate::execute::{
     SubtitleArtifactPlan, VideoTranscodePolicy, build_desired_graph_execution_steps_with_sidecars,
     compile_execution_step_audits,
 };
-use crate::inspect::{InspectAdapter, InspectError};
+use crate::inspect::{InspectAdapter, InspectCancellationToken, InspectError};
 use crate::workspace::{
     WorkspaceCapacityReport, WorkspaceError, WorkspacePolicy, WorkspaceRejectionReason,
 };
@@ -895,7 +895,8 @@ pub fn plan_job_from_inspect(
     desired: &DesiredGraph,
     source_file_bytes: u64,
 ) -> Result<PlannedJob, JobPreflightError> {
-    let inspection = inspector.inspect(Path::new(source_path))?;
+    let cancellation = InspectCancellationToken::default();
+    let inspection = inspector.inspect_with_cancellation(Path::new(source_path), &cancellation)?;
     let mut planned = plan_job_from_source_graph(desired, source_file_bytes, &inspection.graph)
         .map_err(JobPreflightError::Plan)?;
     planned.source_duration_millis = inspection.container.duration_millis;
@@ -1731,6 +1732,7 @@ mod tests {
     use crate::inspect::{
         ContainerInspection, InspectAdapter, InspectCancellation, InspectError, MediaInspection,
     };
+    use crate::process::NativeProcessSecondaryEvidence;
     use crate::workspace::{WorkspaceError, WorkspacePolicy};
     use revaer_media_core::compliance::{Status, report_for_status};
     use revaer_media_core::model::{DesiredGraph, MediaGraph, MediaStream, StreamKind};
@@ -2280,12 +2282,18 @@ mod tests {
             _cancellation: &dyn InspectCancellation,
         ) -> Result<MediaInspection, InspectError> {
             if let Some(message) = self.error {
-                return Err(InspectError::ProbeFailed(message.to_string()));
+                return Err(InspectError::ProbeFailed {
+                    message: message.to_string(),
+                    secondary_evidence: NativeProcessSecondaryEvidence::default(),
+                });
             }
             let graph = self
                 .graph
                 .clone()
-                .ok_or_else(|| InspectError::ProbeFailed("missing graph".to_string()))?;
+                .ok_or_else(|| InspectError::ProbeFailed {
+                    message: "missing graph".to_string(),
+                    secondary_evidence: NativeProcessSecondaryEvidence::default(),
+                })?;
             Ok(MediaInspection {
                 container: ContainerInspection {
                     formats: graph.container_formats.clone(),
