@@ -496,3 +496,4 @@
     -   [546: Pre-v1 init assembly slice 03](adr/546-pre-v1-init-assembly-slice-03.md)
     -   [548: Retired media write route contract coverage](adr/548-retired-media-write-route-contract.md)
     -   [550: Packaged root-catalog source and evidence contract](adr/550-packaged-root-catalog-source-contract.md)
+    -   [551: Packaged database baseline contract](adr/551-packaged-database-baseline-contract.md)

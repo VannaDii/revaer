@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T17:43:37.226662+00:00",
+  "generated": "2026-08-16T18:08:58.819529+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4572,6 +4572,24 @@
         "task-record"
       ],
       "href": "/adr/550-packaged-root-catalog-source-contract/"
+    },
+    {
+      "id": "adr/551-packaged-database-baseline-contract",
+      "title": "Packaged database baseline contract",
+      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "tags": [
+        "consequences",
+        "current-constraints",
+        "exact-validation",
+        "follow-up",
+        "implementation-boundary",
+        "operator-questions",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record"
+      ],
+      "href": "/adr/551-packaged-database-baseline-contract/"
     },
     {
       "id": "adr/index",
