@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T19:19:43.531661+00:00",
+  "generated": "2026-08-16T19:30:47.808873+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4649,7 +4649,7 @@
     {
       "id": "adr/554-preemptible-native-process-broker-contract",
       "title": "Preemptible native process broker contract",
-      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Approved by Vanna on 2026-08-16",
       "tags": [
         "consequences",
         "context",

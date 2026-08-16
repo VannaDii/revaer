@@ -1,8 +1,8 @@
 # Preemptible native process broker contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Approved by Vanna on 2026-08-16
 
 ## Context
 
