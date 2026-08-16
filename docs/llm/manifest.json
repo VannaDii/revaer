@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T19:17:59.306760+00:00",
+  "generated": "2026-08-16T19:18:40.585888+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4586,7 +4586,7 @@
     {
       "id": "adr/549-preemptible-native-process-startup-boundary",
       "title": "Preemptible native process startup boundary",
-      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending Context: Accepted ADR 501 requires the absolute native-process deadline to start before spawn and pipe setup. The current supervisor starts its monotonic clock before std::process::Command::spawn and includes all elapsed startup time when it next evaluates the deadline. Command::spawn and the file-descriptor setup calls are synchronous. The standard library provides no operation that can interrupt a thread blocked in spawn, and a Child handle is unavailable until spawn returns. Moving spawn to a Rust thread does not close the gap: Rust cannot terminate that thread, returning at the deadline could leave a later-created process",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: Accepted ADR 501 requires the absolute native-process deadline to start before spawn and pipe setup. The current supervisor starts its monotonic clock before std::process::Command::spawn and includes all elapsed startup time when it next evaluates the deadline. Command::spawn and the file-descriptor setup calls are synchronous. The standard library provides no operation that can interrupt a thread blocked in spawn, and a Child handle is unavailable until spawn returns. Moving spawn to a Rust thread",
       "tags": [
         "implementation-boundary",
         "task-record"

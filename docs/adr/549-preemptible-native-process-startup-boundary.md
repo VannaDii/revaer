@@ -1,8 +1,9 @@
 # Preemptible native process startup boundary
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 - Context:
   - Accepted ADR 501 requires the absolute native-process deadline to start
     before spawn and pipe setup. The current supervisor starts its monotonic
@@ -42,32 +43,31 @@
     the final solution because it does not prove the hard startup bound required
     by ADR 501.
 - Decision:
-  - Pending. No startup architecture is selected or authorized by this proposal.
+  - Select the independently supervised native-process broker.
 - Recommendation:
   - Prefer the independently supervised broker because it establishes a control
     handle before per-request process creation and can meet the deadline without
     introducing unsafe process-creation code into the application process.
 - Consequences:
-  - Accepting the recommendation would add a new packaged runtime component and
+  - The selected recommendation adds a new packaged runtime component and
     make broker availability, protocol compatibility, containment, and restart
     behavior part of media readiness.
-  - Rejecting both viable architectures leaves the ADR 501 startup guarantee
-    unvalidated; elapsed startup time would still be counted, but hard
-    preemption could not be proven.
+  - The ADR 501 startup guarantee remains unvalidated until the separately
+    approved broker contract is implemented and passes its exact validation.
 - Follow-up:
-  - Obtain explicit operator approval for one option before implementation.
-  - After approval, specify the bounded IPC protocol, containment ownership,
-    readiness contract, platform support, failure reasons, and deterministic
-    startup-timeout tests in the implementing deliverable.
+  - Specify the bounded IPC protocol, containment ownership, readiness contract,
+    platform support, failure reasons, and deterministic startup-timeout tests in
+    a separate Proposed ADR before implementation.
 
 ## Implementation Boundary
 
-- This proposal authorizes no code, dependency, packaged process, readiness
-  behavior, or change to accepted ADR 501 text.
+- Approval selects the broker architecture but does not by itself authorize an
+  unspecified protocol, dependency, packaged process, readiness behavior, or
+  change to accepted ADR 501 text.
 - No prototype may be committed or pushed until the operator explicitly approves
-  a named option in this ADR.
+  the detailed broker contract.
 - The ADR 501 implementation cannot be described as fully validated against a
-  hard startup deadline while this proposal remains pending.
+  hard startup deadline until the broker is implemented and validated.
 
 ## Task Record
 
@@ -80,22 +80,23 @@
     spawn thread.
 - Test coverage summary:
   - No runtime test can validate an unimplemented architecture. Documentation
-    link/build checks cover this proposal; implementation tests remain pending
-    operator selection.
+    link/build checks cover this decision record; implementation tests remain
+    pending approval and implementation of the detailed broker contract.
 - Observability updates:
   - None. An accepted implementation would need bounded broker lifecycle and
     request-outcome signals defined in its own task record.
 - Status-doc validation:
-  - ADR 501 remains accepted and unchanged. ADR 538 records this proposal as an
-    approval blocker rather than narrowing the accepted requirement.
+  - ADR 501 remains accepted and unchanged. ADR 538 records the broker contract
+    as an implementation blocker rather than narrowing the accepted requirement.
 - Risk & rollback plan:
-  - This proposal changes no runtime behavior. Rollback is removal of the
-    proposal and its catalogue entries if the problem statement is superseded.
+  - Recording acceptance changes no runtime behavior. Changing the selected
+    architecture requires a superseding Proposed ADR and decision-specific
+    operator approval.
 - Dependency rationale:
   - No dependency is added. A broker or low-level spawn implementation would
     require separate dependency and platform review after operator approval.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,
     `.github/instructions/ffi.instructions.md`, ADR 461, and ADR 501.
-  - No policy relaxation is proposed; architectural implementation remains
-    blocked on explicit operator approval.
+  - No policy relaxation is introduced. Architectural implementation remains
+    blocked on explicit approval of the detailed broker contract.
