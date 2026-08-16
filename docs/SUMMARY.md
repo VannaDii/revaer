@@ -348,6 +348,7 @@
     -   [316: Import runtime gap-closure follow-up](adr/316-import-runtime-gap-closure-followup.md)
     -   [317: Supply chain advisory baseline](adr/317-supply-chain-advisory-baseline.md)
     -   [318: Media transcoding foundation](adr/318-media-transcoding-foundation.md)
+    -   [458: Media data module boundary integration correction](adr/458-media-data-module-boundary.md)
     -   [322: Supply chain CI and advisory remediation](adr/322-supply-chain-ci-tool-cache.md)
     -   [323: Core planner review repair](adr/323-core-planner-review-repair.md)
     -   [378: UI vendor image input pruning](adr/378-ui-vendor-image-input-pruning.md)
@@ -377,3 +378,4 @@
     -   [486: Tracker credential transport](adr/486-tracker-credential-transport.md)
     -   [487: Strict Sonar analysis foundation implementation](adr/487-strict-sonar-analysis-foundation.md)
     -   [488: Single authoritative Sonar scanner execution](adr/488-single-sonar-scanner-execution.md)
+    -   [495: PR 77 attempt-fencing integration](adr/495-pr77-attempt-fencing-integration.md)

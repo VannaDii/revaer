@@ -2118,6 +2118,21 @@ ALTER TABLE media_job_compact_audit
     ADD CONSTRAINT media_job_compact_audit_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id)
         REFERENCES media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
 
+CREATE TABLE media_job_compact_audit_archive (
+    media_job_public_id UUID NOT NULL,
+    attempt_number INT NOT NULL,
+    audit_index INT NOT NULL,
+    fact_kind TEXT NOT NULL,
+    fact_text TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (media_job_public_id, attempt_number, audit_index),
+    CONSTRAINT media_job_compact_audit_archive_attempt_positive CHECK (attempt_number > 0),
+    CONSTRAINT media_job_compact_audit_archive_index_nonnegative CHECK (audit_index >= 0),
+    CONSTRAINT media_job_compact_audit_archive_kind_nonempty CHECK (btrim(fact_kind) <> ''),
+    CONSTRAINT media_job_compact_audit_archive_text_nonempty CHECK (btrim(fact_text) <> '')
+);
+
 DROP INDEX uq_media_job_phase_job_index;
 DROP INDEX uq_media_job_operation_job_index;
 DROP INDEX uq_media_job_violation_job_index;
@@ -2986,7 +3001,12 @@ AS $$
       JOIN media_job_attempt attempt ON attempt.media_job_id = job.media_job_id
       JOIN media_job_compact_audit evidence ON evidence.media_job_attempt_id = attempt.media_job_attempt_id
      WHERE job.media_job_public_id = media_job_public_id_input
-     ORDER BY attempt.attempt_number DESC, evidence.audit_index;
+    UNION ALL
+    SELECT archive.attempt_number, FALSE, archive.audit_index,
+           archive.fact_kind, archive.fact_text, archive.created_at
+      FROM media_job_compact_audit_archive archive
+     WHERE archive.media_job_public_id = media_job_public_id_input
+     ORDER BY attempt_number DESC, audit_index;
 $$;
 
 
@@ -3157,6 +3177,20 @@ BEGIN
                FOR UPDATE SKIP LOCKED
                LIMIT media_job_retention_batch_limit_v1()
           ) candidate;
+
+        INSERT INTO media_job_compact_audit_archive (
+            media_job_public_id, attempt_number, audit_index,
+            fact_kind, fact_text, created_at
+        )
+        SELECT audit.media_job_public_id, attempt.attempt_number, audit.audit_index,
+               audit.fact_kind, audit.fact_text, audit.created_at
+          FROM media_job_compact_audit audit
+          JOIN media_job_attempt attempt
+            ON attempt.media_job_attempt_id = audit.media_job_attempt_id
+         WHERE audit.media_job_id = ANY(completed_ids)
+        ON CONFLICT (media_job_public_id, attempt_number, audit_index)
+        DO NOTHING;
+
         DELETE FROM media_job WHERE media_job_id = ANY(completed_ids);
         GET DIAGNOSTICS completed_count = ROW_COUNT;
     END IF;

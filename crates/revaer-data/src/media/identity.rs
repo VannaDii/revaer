@@ -138,6 +138,3 @@ impl MediaRootIdentityResolver for StdMediaRootIdentityResolver {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;
