@@ -472,6 +472,7 @@
 -   [539](539-release-logo-byte-synchronization.md) – Release logo byte synchronization
 -   [540](540-schema-stable-media-job-status-helpers.md) – Schema-stable media job status helpers
 -   [541](541-packaged-init-bootstrap-lifecycle.md) – Packaged init-script bootstrap lifecycle
+-   [542](542-playwright-html-report-path.md) – Playwright HTML report path correction
 -   [544](544-pre-v1-init-assembly-slice-01.md) – Pre-v1 init assembly slice 01
 -   [545](545-pre-v1-init-assembly-slice-02.md) – Pre-v1 init assembly slice 02
 -   [546](546-pre-v1-init-assembly-slice-03.md) – Pre-v1 init assembly slice 03

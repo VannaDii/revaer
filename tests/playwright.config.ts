@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test';
 import dotenv from 'dotenv';
 import path from 'node:path';
 
+const envDir = path.resolve(process.env.E2E_ENV_DIR ?? __dirname);
+
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 type BrowserName = 'chromium' | 'firefox' | 'webkit';
