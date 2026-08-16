@@ -426,6 +426,9 @@ jobs:
   udeps:
     name: Check Unused Deps
     runs-on: ubuntu-latest
+    env:
+      REVAER_UDEPS_VERSION: "0.1.57"
+      REVAER_UDEPS_TOOLCHAIN: "nightly-2026-06-13"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: ./.github/actions/setup-revaer
@@ -433,8 +436,22 @@ jobs:
           toolchain: ${{ vars.RUST_TOOLCHAIN_VERSION }}
           apt-profile: base
 
+      - name: Restore exact cargo-udeps binary
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.cargo/bin/cargo-udeps
+          key: ${{ runner.os }}-cargo-udeps-${{ env.REVAER_UDEPS_VERSION }}-${{ env.REVAER_UDEPS_TOOLCHAIN }}
+
       - name: Unused Deps
         run: just udeps
+
+      - name: Upload cargo-udeps toolchain evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: cargo-udeps-toolchain-evidence
+          path: target/udeps-toolchain-evidence.txt
+          if-no-files-found: error
 
   supply-chain:
     name: Supply Chain Checks
