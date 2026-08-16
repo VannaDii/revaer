@@ -16,7 +16,7 @@ for tool in ffmpeg ffprobe curl git base64; do
   require_tool "${tool}"
 done
 
-rm -rf test-fixtures/source test-fixtures/chromium test-fixtures/derived
+rm -rf test-fixtures/source test-fixtures/matroska test-fixtures/chromium test-fixtures/derived
 mkdir -p test-fixtures/probe
 
 printf 'clean-test-fixtures: removed ignored media fixture directories\n'

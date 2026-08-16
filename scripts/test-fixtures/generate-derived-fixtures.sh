@@ -12,7 +12,7 @@ require_tool() {
   fi
 }
 
-for tool in ffmpeg ffprobe mktemp; do
+for tool in ffmpeg ffprobe awk mktemp; do
   require_tool "${tool}"
 done
 
@@ -27,7 +27,17 @@ if ! ffprobe -v error -show_streams -of json "${source_fixture}" >/dev/null; the
   exit 1
 fi
 
+duration="$(
+  ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${source_fixture}" \
+    | awk 'NR == 1 && $1 + 0 > 0 { printf "%.3f", $1 + 0 }'
+)"
+if [[ -z "${duration}" ]]; then
+  printf 'generate-derived-fixtures: unable to derive duration from %s\n' "${source_fixture}" >&2
+  exit 1
+fi
+
 mkdir -p test-fixtures/derived
+readonly tone_440="sine=frequency=440:sample_rate=48000"
 
 tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/revaer-derived-fixtures.XXXXXX")"
 cleanup_tmpdir() {
@@ -74,6 +84,24 @@ skip_existing() {
   return 1
 }
 
+if ! skip_existing multi-audio-mkv test-fixtures/derived/multi-audio.mkv; then
+  temp="$(mktemp "${tmpdir}/multi-audio.XXXXXX")"
+  ffmpeg -hide_banner -v error -y \
+    -i "${source_fixture}" \
+    -f lavfi -t "${duration}" -i "${tone_440}" \
+    -f lavfi -t "${duration}" -i "sine=frequency=554:sample_rate=48000" \
+    -f lavfi -t "${duration}" -i "sine=frequency=659:sample_rate=48000" \
+    -f lavfi -t "${duration}" -i "anullsrc=channel_layout=stereo:sample_rate=48000" \
+    -map 0:v:0 -map 1:a:0 -map 2:a:0 -map 3:a:0 -map 4:a:0 \
+    -c:v copy -c:a:0 aac -c:a:1 libopus -c:a:2 ac3 -c:a:3 aac \
+    -metadata:s:a:0 language=eng -metadata:s:a:0 title="English AAC Tone" \
+    -metadata:s:a:1 language=jpn -metadata:s:a:1 title="Japanese Opus Tone" \
+    -metadata:s:a:2 language=spa -metadata:s:a:2 title="Spanish AC3 Tone" \
+    -metadata:s:a:3 language=und -metadata:s:a:3 title="Undeclared Silent AAC" \
+    -shortest -f matroska "${temp}"
+  move_generated "${temp}" test-fixtures/derived/multi-audio.mkv
+fi
+
 if ! skip_existing subtitles-mkv test-fixtures/derived/subtitles.mkv; then
   write_srt_files
   temp="$(mktemp "${tmpdir}/subtitles.XXXXXX")"
@@ -86,9 +114,58 @@ if ! skip_existing subtitles-mkv test-fixtures/derived/subtitles.mkv; then
     -metadata:s:s:0 language=eng -metadata:s:s:0 title="English Full Subtitles" \
     -metadata:s:s:1 language=eng -metadata:s:s:1 title="English Forced Subtitles" \
     -disposition:s:0 0 -disposition:s:1 forced \
-    -default_mode passthrough \
     -f matroska "${temp}"
   move_generated "${temp}" test-fixtures/derived/subtitles.mkv
+fi
+
+if ! skip_existing video-only-mp4 test-fixtures/derived/video-only.mp4; then
+  temp="$(mktemp "${tmpdir}/video-only.XXXXXX")"
+  ffmpeg -hide_banner -v error -y -i "${source_fixture}" -map 0:v:0 -c:v copy -an -sn -f mp4 "${temp}"
+  move_generated "${temp}" test-fixtures/derived/video-only.mp4
+fi
+
+if ! skip_existing audio-only-m4a test-fixtures/derived/audio-only.m4a; then
+  temp="$(mktemp "${tmpdir}/audio-only.XXXXXX")"
+  ffmpeg -hide_banner -v error -y \
+    -f lavfi -t "${duration}" -i "${tone_440}" \
+    -vn -c:a aac -movflags +faststart -f ipod "${temp}"
+  move_generated "${temp}" test-fixtures/derived/audio-only.m4a
+fi
+
+if ! skip_existing silent-audio-mp4 test-fixtures/derived/silent-audio.mp4; then
+  temp="$(mktemp "${tmpdir}/silent-audio.XXXXXX")"
+  ffmpeg -hide_banner -v error -y \
+    -i "${source_fixture}" \
+    -f lavfi -t "${duration}" -i "anullsrc=channel_layout=stereo:sample_rate=48000" \
+    -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -shortest -movflags +faststart -f mp4 "${temp}"
+  move_generated "${temp}" test-fixtures/derived/silent-audio.mp4
+fi
+
+if ! skip_existing h264-aac-ts test-fixtures/derived/h264-aac.ts; then
+  temp="$(mktemp "${tmpdir}/h264-aac-ts.XXXXXX")"
+  ffmpeg -hide_banner -v error -y \
+    -i "${source_fixture}" \
+    -f lavfi -t "${duration}" -i "${tone_440}" \
+    -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -f mpegts "${temp}"
+  move_generated "${temp}" test-fixtures/derived/h264-aac.ts
+fi
+
+if ! skip_existing h264-aac-mov test-fixtures/derived/h264-aac.mov; then
+  temp="$(mktemp "${tmpdir}/h264-aac-mov.XXXXXX")"
+  ffmpeg -hide_banner -v error -y \
+    -i "${source_fixture}" \
+    -f lavfi -t "${duration}" -i "${tone_440}" \
+    -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -f mov "${temp}"
+  move_generated "${temp}" test-fixtures/derived/h264-aac.mov
+fi
+
+if ! skip_existing mpeg4-mp3-avi test-fixtures/derived/mpeg4-mp3.avi; then
+  temp="$(mktemp "${tmpdir}/mpeg4-mp3.XXXXXX")"
+  ffmpeg -hide_banner -v error -y \
+    -i "${source_fixture}" \
+    -f lavfi -t "${duration}" -i "${tone_440}" \
+    -map 0:v:0 -map 1:a:0 -c:v mpeg4 -q:v 5 -c:a libmp3lame -q:a 4 -f avi "${temp}"
+  move_generated "${temp}" test-fixtures/derived/mpeg4-mp3.avi
 fi
 
 printf 'generate-derived-fixtures: complete\n'
