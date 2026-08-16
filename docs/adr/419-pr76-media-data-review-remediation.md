@@ -1,0 +1,54 @@
+# PR 76 media data review remediation
+
+- Status: Accepted
+- Date: 2026-08-12
+- Context:
+  - PR 76 review identified seven data-integrity gaps in the media control plane: flattened mutable configuration, unbounded history reads, retry evidence reuse, unfenced worker writes, textual-only root overlap checks, repeated unbounded diagnostic pruning, and create-upsert inheritance of live state.
+  - The data layer must preserve Rust 2024, stored-procedure-only runtime access, fail-closed bounds, deterministic behavior, and panic-free production code.
+  - Migration number `0182` is reserved for this remediation because `0181` belongs to a later stack layer.
+- Decision:
+  - Add normalized, ordered profile roots, file rules, filters, subtitle rules, discovery schedules/watchers, and separately versioned policy component tables. Capture immutable copies of selected profile and policy data when each job is created.
+  - Resolve each configured root through an injected filesystem boundary, persist canonical path plus Unix device/inode identity, reject physical and ancestor overlap transactionally, and require a fresh matching identity when a watcher or scheduled scan starts.
+  - Add immutable job attempts with globally monotonic claim generations. Require the active claim generation on every worker status mutation and evidence append, and key all evidence by attempt.
+  - Replace retained-history reads with hard-capped keyset pagination over `(queued_at, media_job_id)` and matching indexes for every profile/status filter shape.
+  - Prune failed diagnostics in locked batches of 100 and mark each shell once, independently from completed parent-row retention.
+  - Make legacy create procedures insert-only, always create safe dry-run profiles, reject automation without verified normalized roots, and reserve promotion for the explicit update path.
+  - Alternatives rejected: textual path comparison cannot identify symlink or bind aliases; offset pagination has unstable traversal and increasing work; mutable retry rows cannot provide reliable attempt attribution; compatibility upserts can inherit unsafe execution state.
+- Consequences:
+  - Job configuration and attempt evidence remain reproducible after later profile changes and retries.
+  - Stale workers cannot mutate or complete a newer attempt through database procedures.
+  - Callers must adopt the new claim token and paginated procedure signatures when this stack layer is integrated with later runtime/API layers.
+  - Unix device/inode identity is required; unsupported platforms fail closed instead of enabling discovery with weak identity.
+- Follow-up:
+  - Thread the normalized configuration, claim token, and page cursor through later data adapters, runtime workers, API models, and operator UI stack layers.
+  - Keep filesystem replacement operations behind the same active-attempt fence before enabling live execution.
+
+## Task Record
+
+- Motivation:
+  - Resolve all seven actionable PR 76 review threads at the database ownership boundary before dependent transcoding layers build on unsafe contracts.
+- Design notes:
+  - Ordered child data uses explicit nonnegative order columns and per-parent uniqueness.
+  - Policy components remain configurable until selected by a job; after selection, trigger guards make that policy version immutable. Job snapshot tables reject direct update/delete while their parent job exists.
+  - Discovery identity validation uses exact case-sensitive canonical paths plus physical device/inode equality. Advisory locking serializes overlap checks.
+  - Attempts own lifecycle timestamps, errors, claim generation, and every evidence row. Terminal attempts and identity fields are immutable.
+  - Retention candidates use fixed-size ordered locked batches with `SKIP LOCKED`; `diagnostics_pruned_at` removes processed shells from later ticks.
+- Test coverage summary:
+  - Clean migration replay through `just db-migrate` on PostgreSQL 16.
+  - Focused source-owned `revaer-data` coverage for multiple roots and associations, case-sensitive siblings, symlink and bind aliases, start-time identity drift, policy bounds, immutable snapshots, insert-only create safety, cross-profile/status keyset traversal, stale-worker fencing, retry evidence history, and multi-batch one-shot pruning.
+  - Migrated-schema catalog inspection verifies all worker/evidence procedures require claim generations and all evidence tables require attempt IDs.
+- Observability updates:
+  - Attempt-list and evidence-list procedures expose attempt number and current/historical attribution.
+  - `diagnostics_pruned_at` records successful diagnostic pruning, and retention results report separately bounded parent deletions, shells pruned, and detail rows removed.
+- Status-doc validation:
+  - Rechecked `MEDIA_TRANSCODING.md` and synchronized its persisted-object contract with root identity, immutable configuration snapshots, attempts, claim generations, keyset history, and one-shot pruning.
+  - No roadmap, README, operator-guide, workflow, Justfile, or Sonar policy behavior changed.
+- Risk & rollback plan:
+  - Existing profiles are backfilled as disabled normalized roots because historical rows lack trustworthy physical identity; migration fails if legacy automation is enabled so an operator cannot silently lose or weaken scheduling behavior.
+  - Rollback before dependent layers adopt the new procedures is to revert migration `0182` and this ADR. After production migration, use a forward migration because attempt and snapshot history must not be discarded.
+- Dependency rationale:
+  - No dependencies were added. Filesystem identity uses `std` canonicalization and Unix metadata.
+  - The existing test-only `js-yaml` override advances from `4.3.0` to `4.3.1` because the required UI gate reported GHSA-5p4m-2wfm-xmqj; the patch release preserves the dependency surface while removing the advisory.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and `.github/instructions/revaer-data.instructions.md`.
+  - No drift or contradiction was found. Operational policy did not change, so scoped instructions were not edited.
