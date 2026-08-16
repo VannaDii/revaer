@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T17:13:24.833513+00:00",
+  "generated": "2026-08-16T17:26:26.405772+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4548,9 +4548,18 @@
       "href": "/adr/546-pre-v1-init-assembly-slice-03/"
     },
     {
+      "id": "adr/548-retired-media-write-route-contract",
+      "title": "Retired media write route contract coverage",
+      "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: test correction for accepted ADRs 359 and 362. Context: ADR 359 removed public phase-history writes so only the media worker can append lifecycle evidence. ADR 362 removed public job creation so admitted discovery and worker paths remain the only job-creation authorities. The API end-to-end route inventory still treated both retired methods as required writable routes and rejected their intentional 405 Method Not Allowed responses before later media behavior could run. Decision: Keep both methods in end-to-end coverage, but move them into an explicit retired-write inventory that requires exact 405 responses. Keep every",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/548-retired-media-write-route-contract/"
+    },
+    {
       "id": "adr/index",
       "title": "ADRs",
-      "summary": "654ed33b (fix(test): restore Playwright HTML report path)",
+      "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",
       "tags": [
         "catalogue",
         "suggested-use-workflow"

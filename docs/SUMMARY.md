@@ -494,3 +494,4 @@
     -   [544: Pre-v1 init assembly slice 01](adr/544-pre-v1-init-assembly-slice-01.md)
     -   [545: Pre-v1 init assembly slice 02](adr/545-pre-v1-init-assembly-slice-02.md)
     -   [546: Pre-v1 init assembly slice 03](adr/546-pre-v1-init-assembly-slice-03.md)
+    -   [548: Retired media write route contract coverage](adr/548-retired-media-write-route-contract.md)

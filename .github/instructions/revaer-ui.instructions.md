@@ -37,6 +37,7 @@ applyTo:
 
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
 - API E2E media tests must create real source files beneath private per-test temporary profile roots and remove the complete temporary tree in `afterEach`, including when an assertion fails. Synthetic paths may be used only for routes whose contract explicitly rejects or never reads the filesystem.
+- API E2E route coverage must reject `405` for every supported media operation and must separately require exact `405` responses for worker-owned `POST /v1/media/jobs` and `POST /v1/media/jobs/{media_job_public_id}/phases`; do not restore those retired writes or remove them from end-to-end coverage.
 - Treat generated API clients and synchronized assets as generated artifacts; regenerate them intentionally and keep authored wrappers separate.
 - Run every Node command through `scripts/with-node.sh`. The wrapper must select and verify the exact `.nvmrc` version so an operator's NVM-managed Node remains active rather than being replaced by a login shell.
 - `tests/playwright.config.ts` must resolve reporter artifacts from the exact `E2E_ENV_DIR` supplied by `just ui-e2e`, with the configuration directory as the direct-invocation fallback, so both source and coverage-compiled runs write the HTML report to `tests/playwright-report`.

@@ -6,7 +6,7 @@ import { authHeaders } from '../../support/headers';
 
 const MISSING_JOB_ID = '00000000-0000-0000-0000-000000000001';
 
-const OPERATIONS = [
+const ROUTED_OPERATIONS = [
   ['GET', '/v1/media/capabilities'],
   ['GET', '/v1/media/capabilities/readiness'],
   ['GET', '/v1/media/compatibility-targets'],
@@ -40,15 +40,18 @@ const OPERATIONS = [
   ['POST', '/v1/media/discovery/watchers'],
   ['POST', '/v1/media/imports/apply'],
   ['POST', '/v1/media/imports/validate'],
-  ['POST', '/v1/media/jobs'],
   ['POST', '/v1/media/jobs/{media_job_public_id}/cancel'],
-  ['POST', '/v1/media/jobs/{media_job_public_id}/phases'],
   ['POST', '/v1/media/jobs/{media_job_public_id}/retry'],
   ['POST', '/v1/media/planning/preview'],
   ['POST', '/v1/media/policies'],
   ['POST', '/v1/media/profiles'],
   ['POST', '/v1/media/profiles/validate'],
   ['POST', '/v1/media/targets'],
+] as const;
+
+const RETIRED_WRITE_OPERATIONS = [
+  ['POST', '/v1/media/jobs'],
+  ['POST', '/v1/media/jobs/{media_job_public_id}/phases'],
 ] as const;
 
 const mediaRootsToRemove = new Set<string>();
@@ -61,7 +64,7 @@ test.afterEach(async () => {
 
 test.describe('Media API', () => {
   test('routes bounded empty requests without server errors', async ({ baseUrl, session }) => {
-    for (const [method, route] of OPERATIONS) {
+    for (const [method, route] of ROUTED_OPERATIONS) {
       const response = await apiFetchRaw({
         baseUrl,
         method,
@@ -74,6 +77,19 @@ test.describe('Media API', () => {
       });
       expect(response.status, `${method} ${route} returned a server error`).toBeLessThan(500);
       expect(response.status, `${method} ${route} is not wired`).not.toBe(405);
+    }
+  });
+
+  test('keeps worker-owned media writes unavailable', async ({ baseUrl, session }) => {
+    for (const [method, route] of RETIRED_WRITE_OPERATIONS) {
+      const response = await apiFetchRaw({
+        baseUrl,
+        method,
+        route,
+        path: { media_job_public_id: MISSING_JOB_ID },
+        headers: authHeaders(session),
+      });
+      expect(response.status, `${method} ${route} must remain unavailable`).toBe(405);
     }
   });
 
