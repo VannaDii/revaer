@@ -36,6 +36,8 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 
 - Generated or vendored paths excluded by `sonar-project.properties` are not first-party maintainability targets unless the user explicitly asks about them.
 - If Sonar noise appears to come from generated or vendored files, verify whether the scope or exclusion rules need to be updated in `sonar-project.properties`.
+- Scanner-readable UI runtime media must remain UTF-8 SVG. Preserve the validated Revaer purple-gradient and stylized-R identifiers; do not restore raster assets, weaken `asset_sync` validation, or add Sonar exclusions to hide malformed, off-brand, or binary runtime media.
+- Treat canonical `/static/...` references and successful Trunk release-output URL checks as runtime correctness evidence; a clean source scan alone does not prove that emitted assets resolve.
 
 # Expectations After Fixes
 

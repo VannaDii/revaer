@@ -37,4 +37,8 @@ applyTo:
 
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
 - Treat generated API clients and synchronized assets as generated artifacts; regenerate them intentionally and keep authored wrappers separate.
+- `asset_sync` must fail closed unless every required runtime SVG exists, runtime text is UTF-8, SVG files have a complete namespaced root envelope, and `crates/revaer-ui/static` contains no raster-extension assets.
+- `static/revaer-logo.svg` and `static/icons/app-icon.svg` must preserve the approved purple stylized-R composition and the `revaer-purple-gradient` and `revaer-r-silhouette` identifiers; do not substitute a wordmark, palette, or symbol during asset synchronization.
+- Keep emitted icon, logo, dashboard, and DataTables references rooted under `/static`; verify their targets in a Trunk release build rather than inferring paths from source layout.
+- `just check-assets` must compare `crates/revaer-ui/static/nexus` from the repository root after regeneration.
 - When UI structure, selectors, or synced assets change, update the relevant docs, tests, and instructions in the same change.

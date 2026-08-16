@@ -9,7 +9,7 @@
 - Decision:
   - Remove the Playwright API-key handoff for browser projects entirely and run the UI suite against the existing no-auth local E2E project, relying on the app shell's anonymous-local flow instead of persisting or brokering API keys.
   - Harden the remaining live findings by avoiding default-from-user setup payload allocation patterns, bounding indexer tag normalization allocations, and removing sensitive/semi-sensitive CLI/UI logging surfaces.
-  - Remove the unused executable vendor HTML reference files under `crates/revaer-ui/ui_vendor/nexus-html@3.1.0/{src,html}` while keeping the runtime asset inputs (`html/assets`, `html/images`, `public/js`) used by `asset_sync`.
+  - Remove the unused executable vendor HTML reference files under `crates/revaer-ui/ui_vendor/nexus-html@3.1.0/{src,html}` while keeping the synchronized runtime inputs (`html/assets` and `public/js`) used by `asset_sync`; runtime SVG images are committed under `crates/revaer-ui/static/nexus/images`.
   - Alternatives considered:
     - Dismissing alerts or relying on PR replies alone: rejected because the PR check must go green from real code changes.
     - Adding more vendored third-party JS/CSS with SRI or rewriting the vendor reference pages: rejected because those files are not part of the shipped runtime path.
