@@ -1,8 +1,8 @@
 # ADR 468: PR 99 Native Watcher Test Stability
 
-- Status: Proposed
+- Status: Recorded
 - Date: 2026-08-13
-- Operator approval: Pending; this is a nonarchitectural corrective task record awaiting ADR 461 status semantics.
+- Operator approval: Not applicable: nonarchitectural task record
 - Context:
   - The native watcher integration test depends on the host operating system delivering an event from a temporary directory after registration.
   - The backend can register successfully without delivering such events in constrained local and hosted environments, so the test can time out without identifying a production-code defect.

@@ -1,7 +1,7 @@
 # ADR 470: PR 85 Media Runtime Fixture Correction
 
-- Status: Proposed
-- Operator approval: Pending
+- Status: Recorded
+- Operator approval: Not applicable: nonarchitectural task record
 - Date: 2026-08-13
 - Context:
   - PR 85 retained test fixtures for older stream-constraint and inspection field names.

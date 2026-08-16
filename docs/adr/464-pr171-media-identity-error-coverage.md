@@ -1,8 +1,8 @@
 # ADR 464: PR 171 Media Identity Error Coverage
 
-- Status: Proposed
+- Status: Recorded
 - Date: 2026-08-13
-- Operator approval: Pending
+- Operator approval: Not applicable: nonarchitectural task record
 - Context:
   - PR 171's Sonar analysis measured 61.5% new-code coverage: 32 of the 52 executable lines in `crates/revaer-data/src/media.rs` were covered.
   - The 20 uncovered lines were the `Display`, `std::error::Error::source`, and `From<std::io::Error>` paths for `MediaRootIdentityError`.
@@ -11,7 +11,6 @@
   - Exercise every `MediaRootIdentityError` reporting variant through its public error contract, including preservation of the wrapped I/O source.
   - Keep production code, stored procedures, migrations, runtime database access, and Sonar configuration unchanged.
   - This is a nonarchitectural test-coverage correction; it introduces no new system boundary or architectural choice.
-  - Final task-record status awaits the operator's decision on the status semantics proposed in ADR 461.
 - Consequences:
   - Error diagnostics and source chaining are regression-tested in addition to resolver behavior.
   - The previously uncovered 20 executable lines are exercised by the Rust coverage suite.

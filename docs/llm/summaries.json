@@ -3556,7 +3556,7 @@
   {
     "id": "adr/463-pr-78-sonar-complexity-correction",
     "title": "ADR 463: PR 78 Sonar Complexity Correction",
-    "summary": "Status: Proposed Date: 2026-08-13 Operator approval: Pending. Context: Sonar reports cognitive complexity 18 for verify_plan, above the enforced limit of 15. The validator's category-first error precedence and exact diagnostics are observable behavior and must remain unchanged. This is a nonarchitectural corrective task record. Its final status semantics await the operator's decision on proposed ADR461; the code correction itself makes no architectural choice. Decision: Extract the existing operation-scope predicates into private pure functions. Preserve validation order, accepted inputs, and exact error strings. Add focused public-behavior tests for scope categories that lacked direct coverage. Consequences: verify_plan remains a linear validation sequence below",
+    "summary": "Status: Recorded Date: 2026-08-13 Operator approval: Not applicable: nonarchitectural task record Context: Sonar reports cognitive complexity 18 for verify_plan, above the enforced limit of 15. The validator's category-first error precedence and exact diagnostics are observable behavior and must remain unchanged. This is a nonarchitectural corrective task record; the code correction makes no architectural choice. Decision: Extract the existing operation-scope predicates into private pure functions. Preserve validation order, accepted inputs, and exact error strings. Add focused public-behavior tests for scope categories that lacked direct coverage. Consequences: verify_plan remains a linear validation sequence below the cognitive-complexity limit. The helper predicates expose no",
     "tags": [
       "task-record"
     ],
@@ -3565,7 +3565,7 @@
   {
     "id": "adr/464-pr171-media-identity-error-coverage",
     "title": "ADR 464: PR 171 Media Identity Error Coverage",
-    "summary": "Status: Proposed Date: 2026-08-13 Operator approval: Pending Context: PR 171's Sonar analysis measured 61.5% new-code coverage: 32 of the 52 executable lines in crates/revaer-data/src/media.rs were covered. The 20 uncovered lines were the Display, std::error::Error::source, and From<std::io::Error> paths for MediaRootIdentityError. Coverage must be raised with executed behavior, without changing Sonar scope, exclusions, thresholds, or analyzer configuration. Decision: Exercise every MediaRootIdentityError reporting variant through its public error contract, including preservation of the wrapped I/O source. Keep production code, stored procedures, migrations, runtime database access, and Sonar configuration unchanged. This is a nonarchitectural test-coverage correction; it introduces no new system boundary or architectural",
+    "summary": "Status: Recorded Date: 2026-08-13 Operator approval: Not applicable: nonarchitectural task record Context: PR 171's Sonar analysis measured 61.5% new-code coverage: 32 of the 52 executable lines in crates/revaer-data/src/media.rs were covered. The 20 uncovered lines were the Display, std::error::Error::source, and From<std::io::Error> paths for MediaRootIdentityError. Coverage must be raised with executed behavior, without changing Sonar scope, exclusions, thresholds, or analyzer configuration. Decision: Exercise every MediaRootIdentityError reporting variant through its public error contract, including preservation of the wrapped I/O source. Keep production code, stored procedures, migrations, runtime database access, and Sonar configuration unchanged. This is a nonarchitectural test-coverage correction; it introduces no new",
     "tags": [
       "task-record"
     ],
@@ -3574,7 +3574,7 @@
   {
     "id": "adr/467-pr99-openapi-lint-boundary",
     "title": "ADR 467: PR 99 OpenAPI Lint Boundary Correction",
-    "summary": "Status: Proposed Date: 2026-08-13 Operator approval: Pending; this is a nonarchitectural corrective task record awaiting ADR 461 status semantics. Context: PR 99 first increases the OpenAPI media schema inventory enough for the existing test function to exceed the repository's 100-line Clippy limit. A later stack commit extracts the same inventory into a module-level constant, leaving PR 99 independently red even though the integrated leaf passes. Decision: Move the existing behavior-preserving schema-name extraction to PR 99, the first affected integration boundary. Keep the schema inventory and assertions unchanged. Remove the redundant extraction from the later descendant while replaying the stack. Consequences:",
+    "summary": "Status: Recorded Date: 2026-08-13 Operator approval: Not applicable: nonarchitectural task record Context: PR 99 first increases the OpenAPI media schema inventory enough for the existing test function to exceed the repository's 100-line Clippy limit. A later stack commit extracts the same inventory into a module-level constant, leaving PR 99 independently red even though the integrated leaf passes. Decision: Move the existing behavior-preserving schema-name extraction to PR 99, the first affected integration boundary. Keep the schema inventory and assertions unchanged. Remove the redundant extraction from the later descendant while replaying the stack. Consequences: PR 99 and its descendants satisfy the same",
     "tags": [
       "task-record"
     ],
@@ -3583,7 +3583,7 @@
   {
     "id": "adr/468-pr99-native-watcher-test-stability",
     "title": "ADR 468: PR 99 Native Watcher Test Stability",
-    "summary": "Status: Proposed Date: 2026-08-13 Operator approval: Pending; this is a nonarchitectural corrective task record awaiting ADR 461 status semantics. Context: The native watcher integration test depends on the host operating system delivering an event from a temporary directory after registration. The backend can register successfully without delivering such events in constrained local and hosted environments, so the test can time out without identifying a production-code defect. Decision: Extract the existing native callback body into a private function without changing its behavior. Test native recursive registration as a host-backend smoke boundary. Test the exact callback-to-buffer path deterministically with a recursive media",
+    "summary": "Status: Recorded Date: 2026-08-13 Operator approval: Not applicable: nonarchitectural task record Context: The native watcher integration test depends on the host operating system delivering an event from a temporary directory after registration. The backend can register successfully without delivering such events in constrained local and hosted environments, so the test can time out without identifying a production-code defect. Decision: Extract the existing native callback body into a private function without changing its behavior. Test native recursive registration as a host-backend smoke boundary. Test the exact callback-to-buffer path deterministically with a recursive media path and profile identity. Consequences: Registration failures and",
     "tags": [
       "task-record"
     ],
@@ -3592,7 +3592,7 @@
   {
     "id": "adr/470-pr85-media-runtime-fixtures",
     "title": "ADR 470: PR 85 Media Runtime Fixture Correction",
-    "summary": "Status: Proposed Operator approval: Pending Date: 2026-08-13 Context: PR 85 retained test fixtures for older stream-constraint and inspection field names. The stale fixtures prevented the intermediate stack boundary from compiling even though later commits happened to repair the same construction sites. Decision: Update the fixtures to initialize max_bitrate_bps and max_bit_rate exactly as the current types require. Treat this as a nonarchitectural integration correction; no runtime behavior, public contract, or architectural boundary changes. Consequences: PR 85 compiles and tests independently instead of relying on a descendant commit. The fixtures remain explicit when fields are absent. Follow-up: Keep PR 85 check, lint,",
+    "summary": "Status: Recorded Operator approval: Not applicable: nonarchitectural task record Date: 2026-08-13 Context: PR 85 retained test fixtures for older stream-constraint and inspection field names. The stale fixtures prevented the intermediate stack boundary from compiling even though later commits happened to repair the same construction sites. Decision: Update the fixtures to initialize max_bitrate_bps and max_bit_rate exactly as the current types require. Treat this as a nonarchitectural integration correction; no runtime behavior, public contract, or architectural boundary changes. Consequences: PR 85 compiles and tests independently instead of relying on a descendant commit. The fixtures remain explicit when fields are absent. Follow-up: Keep",
     "tags": [
       "task-record"
     ],

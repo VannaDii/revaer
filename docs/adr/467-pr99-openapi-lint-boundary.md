@@ -1,8 +1,8 @@
 # ADR 467: PR 99 OpenAPI Lint Boundary Correction
 
-- Status: Proposed
+- Status: Recorded
 - Date: 2026-08-13
-- Operator approval: Pending; this is a nonarchitectural corrective task record awaiting ADR 461 status semantics.
+- Operator approval: Not applicable: nonarchitectural task record
 - Context:
   - PR 99 first increases the OpenAPI media schema inventory enough for the existing test function to exceed the repository's 100-line Clippy limit.
   - A later stack commit extracts the same inventory into a module-level constant, leaving PR 99 independently red even though the integrated leaf passes.

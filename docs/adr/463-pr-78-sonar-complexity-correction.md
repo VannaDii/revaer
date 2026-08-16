@@ -1,12 +1,12 @@
 # ADR 463: PR 78 Sonar Complexity Correction
 
-- Status: Proposed
+- Status: Recorded
 - Date: 2026-08-13
-- Operator approval: Pending.
+- Operator approval: Not applicable: nonarchitectural task record
 - Context:
   - Sonar reports cognitive complexity 18 for `verify_plan`, above the enforced limit of 15.
   - The validator's category-first error precedence and exact diagnostics are observable behavior and must remain unchanged.
-  - This is a nonarchitectural corrective task record. Its final status semantics await the operator's decision on proposed ADR461; the code correction itself makes no architectural choice.
+  - This is a nonarchitectural corrective task record; the code correction makes no architectural choice.
 - Decision:
   - Extract the existing operation-scope predicates into private pure functions.
   - Preserve validation order, accepted inputs, and exact error strings.
