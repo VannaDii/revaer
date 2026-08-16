@@ -326,6 +326,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn profile_upsert_enforces_media_key_boundary() -> anyhow::Result<()> {
+        let db = match setup_media_db("profile_upsert_enforces_media_key_boundary").await {
+            Ok(Some(db)) => db,
+            Ok(None) => return Ok(()),
+            Err(err) => return Err(err),
+        };
+        let exact = format!("a{}z", "b".repeat(126));
+        let exact_id = upsert_profile(&db, &exact, "/input/exact-key", "/output/exact-key").await?;
+        assert_ne!(exact_id, Uuid::nil());
+
+        let oversized = format!("a{}z", "b".repeat(127));
+        let result = upsert_profile(
+            &db,
+            &oversized,
+            "/input/oversized-key",
+            "/output/oversized-key",
+        )
+        .await;
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn upsert_forces_new_profiles_to_dry_run_only() -> anyhow::Result<()> {
         let db = match setup_media_db("upsert_forces_new_profiles_to_dry_run_only").await {
             Ok(Some(db)) => db,

@@ -342,6 +342,7 @@
 -   [411](411-untracked-generated-api-schema.md) – Untracked generated API schema
 -   [418](418-ci-postgres-credential-coherence.md) – CI Postgres credential coherence
 -   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation
+-   [420](420-media-text-input-contract.md) – Media text input contract
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
 -   [431](431-lazy-media-job-diagnostics-ui.md) – Lazy media job diagnostics UI
 -   [458](458-media-data-module-boundary.md) – Media data module boundary integration correction
