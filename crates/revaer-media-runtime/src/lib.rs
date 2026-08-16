@@ -21,3 +21,4 @@
 
 pub mod capabilities;
 mod process;
+pub mod workspace;
