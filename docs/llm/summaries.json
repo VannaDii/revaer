@@ -3386,7 +3386,7 @@
   {
     "id": "adr/379-ui-runtime-image-canonicalization",
     "title": "UI runtime image canonicalization",
-    "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: Strict all-authored-source Sonar analysis reads committed raster runtime assets as invalid UTF-8, and repository policy requires every scanner warning to be fixed without source, suffix, analyzer, coverage, or test-scope exclusions. Revaer still needs deterministic product branding, icons, dashboard images, queue avatars, and manifest assets at runtime. A prior SVG canonicalization implementation was prepared and pushed in the existing stack without decision-specific operator approval. Its presence and passing checks are not approval; the replacement",
+    "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: Strict all-authored-source Sonar analysis reads committed raster runtime assets as invalid UTF-8, and repository policy requires every scanner warning to be fixed without source, suffix, analyzer, coverage, or test-scope exclusions. Revaer still needs deterministic product branding, icons, dashboard images, queue avatars, and manifest assets at runtime. The deterministic SVG canonicalization implementation was independently reviewed after decision-specific approval and is integrated in this stack. The review found equivalent or stricter asset validation than the",
     "tags": [
       "implementation-boundary",
       "task-record"
@@ -4472,6 +4472,15 @@
       "validation"
     ],
     "href": "/adr/537-normalized-opaque-state-and-attachment-payload-evidence/"
+  },
+  {
+    "id": "adr/539-release-logo-byte-synchronization",
+    "title": "Release logo byte synchronization",
+    "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: charts/revaer/Chart.yaml and docs/release-checklist.md identify the repository-root revaer-logo.svg as the canonical purple stylized-R release mark. Independent review of the accepted ADR 379 implementation found that the repository-root logo still contained an older wordmark while crates/revaer-ui/static/revaer-logo.svg contained the approved mark. Decision: Make the repository-root logo byte-identical to the canonical runtime logo. Extend just check-assets with a deterministic cmp -s check so future byte drift fails closed after asset synchronization. Change no other UI asset, Sonar criterion, runtime reference, or visual design. Consequences: Release and Artifact Hub branding now uses the",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/539-release-logo-byte-synchronization/"
   },
   {
     "id": "adr/540-schema-stable-media-job-status-helpers",

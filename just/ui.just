@@ -3,6 +3,10 @@ sync-assets:
 
 check-assets: sync-assets
     git diff --exit-code -- crates/revaer-ui/static/nexus
+    cmp -s revaer-logo.svg crates/revaer-ui/static/revaer-logo.svg || { \
+        echo "revaer-logo.svg must be byte-identical to crates/revaer-ui/static/revaer-logo.svg" >&2; \
+        exit 1; \
+    }
 
 trunk-install:
     required_trunk_version="0.21.14"; \

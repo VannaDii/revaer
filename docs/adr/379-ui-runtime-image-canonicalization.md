@@ -11,12 +11,12 @@
     exclusions.
   - Revaer still needs deterministic product branding, icons, dashboard images,
     queue avatars, and manifest assets at runtime.
-  - A prior SVG canonicalization implementation was prepared and pushed in the
-    existing stack without decision-specific operator approval. Its presence and
-    passing checks are not approval; the replacement stack must hold that
-    implementation until an explicit decision is recorded. This accepted ADR is
-    that decision; replay still requires implementation review against the exact
-    boundary below.
+  - The deterministic SVG canonicalization implementation was independently
+    reviewed after decision-specific approval and is integrated in this stack.
+    The review found equivalent or stricter asset validation than the prior held
+    implementation and identified one remaining release defect: repository-root
+    `revaer-logo.svg` differed from the canonical runtime logo referenced by the
+    chart metadata and release checklist.
 - Constraints:
   - Sonar criteria may not be relaxed.
   - Runtime assets must remain license-compliant, deterministic, reviewable,
@@ -51,9 +51,10 @@
   - Unknown raster references, missing generated assets, or asset-lock drift fail
     CI instead of being hidden from Sonar.
 - Follow-up:
-  - Replay the held implementation only after reviewing its exact
-    image set, licensing, runtime references, asset-lock evidence, and local UI
-    screenshots against this boundary.
+  - Preserve the reviewed implementation's exact image set, licensing, runtime
+    references, asset-lock evidence, and purple stylized-R identifiers.
+  - Keep repository-root `revaer-logo.svg` byte-identical to
+    `crates/revaer-ui/static/revaer-logo.svg` through the canonical asset gate.
 
 ## Implementation Boundary
 
@@ -70,17 +71,16 @@
   - Resolve binary scanner inputs without weakening maximal Sonar analysis or
     leaving the UI visually incomplete.
 - Design notes:
-  - The held implementation is feasibility evidence only. This ADR accepts the
-    architecture, but the implementation still requires review against the
-    accepted boundary.
+  - The reviewed implementation is integrated. ADR 539 closes the isolated
+    release-logo byte drift without changing any other asset or scanner rule.
 - Test coverage summary:
-  - Require asset synchronization and unit tests, UI build, policy,
-    instruction drift, full local gates, and desktop/mobile visual verification.
+  - ADR 539 records the validation performed for the release-logo correction.
+    This record makes no independent claim for a gate not listed there.
 - Observability updates:
   - None; this changes static asset inputs and validation.
 - Status-doc validation:
-  - Product claims do not change. The ADR index and documentation summary already
-    reference this accepted but unimplemented decision.
+  - Product claims do not change. The release checklist's canonical purple
+    stylized-R claim now matches both committed logo locations.
 - Risk & rollback plan:
   - Revert references and replacements together if visual or package validation
     fails. Do not restore binary inputs through a Sonar exception without a
