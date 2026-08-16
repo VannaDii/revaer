@@ -680,7 +680,15 @@ mod tests {
         AddTorrent, AddTorrentOptions, EngineEvent, FileSelectionRules, TorrentSource,
         model::{TorrentAuthorRequest, TrackerAuth},
     };
-    use std::{convert::TryFrom, fs, path::Path, time::Duration};
+    use std::{
+        convert::TryFrom,
+        fs,
+        io::Write,
+        net::TcpListener,
+        path::Path,
+        thread,
+        time::{Duration, Instant},
+    };
     use tokio::time::sleep;
     use uuid::Uuid;
 
@@ -692,6 +700,49 @@ mod tests {
         193,
     ];
     const MISMATCH_PIECE_HASH: [u8; 20] = [0_u8; 20];
+
+    fn serve_tracker_error(listener: &TcpListener) -> std::io::Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    stream.write_all(
+                        b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    )?;
+                    return Ok(());
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "tracker request was not received",
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    fn is_tracker_error(event: &EngineEvent, torrent_id: Uuid) -> bool {
+        let EngineEvent::TrackerStatus {
+            torrent_id: event_torrent_id,
+            trackers,
+        } = event
+        else {
+            return false;
+        };
+
+        *event_torrent_id == torrent_id
+            && trackers.iter().any(|tracker| {
+                tracker.status.as_deref() == Some("error")
+                    && tracker
+                        .message
+                        .as_ref()
+                        .is_some_and(|message| !message.is_empty())
+            })
+    }
 
     fn seed_mode_metainfo(hash: &[u8; 20]) -> Vec<u8> {
         let mut encoded = Vec::new();
@@ -989,6 +1040,51 @@ mod tests {
         harness.session.add_torrent(&descriptor).await?;
         // Polling immediately should succeed even if no events are queued yet.
         let _ = harness.session.poll_events().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn native_session_reports_tracker_errors_without_invalid_memory_access()
+    -> TorrentResult<()> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let tracker_address = listener.local_addr()?;
+        listener.set_nonblocking(true)?;
+        let tracker = thread::spawn(move || serve_tracker_error(&listener));
+
+        let mut harness = NativeSessionHarness::new()?;
+        let config = harness.runtime_config();
+        harness.session.apply_config(&config).await?;
+
+        let descriptor = AddTorrent {
+            id: Uuid::new_v4(),
+            source: TorrentSource::magnet(
+                "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567",
+            ),
+            options: AddTorrentOptions {
+                trackers: vec![format!("http://{tracker_address}/announce")],
+                replace_trackers: true,
+                ..AddTorrentOptions::default()
+            },
+        };
+        harness.session.add_torrent(&descriptor).await?;
+        harness.session.reannounce(descriptor.id).await?;
+
+        let mut tracker_error = false;
+        for _ in 0..200 {
+            sleep(Duration::from_millis(25)).await;
+            let events = harness.session.poll_events().await?;
+            tracker_error = events
+                .iter()
+                .any(|event| is_tracker_error(event, descriptor.id));
+            if tracker_error {
+                break;
+            }
+        }
+
+        assert!(tracker_error, "expected unreachable tracker error");
+        tracker
+            .join()
+            .map_err(|_| anyhow!("tracker fixture thread panicked"))??;
         Ok(())
     }
 
