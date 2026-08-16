@@ -42,4 +42,21 @@ pub(crate) const EVENT_KIND_WHITELIST: &[&str] = &[
     "settings_changed",
     "health_changed",
     "selection_reconciled",
+    "media_profile_changed",
+    "media_capabilities_refreshed",
+    "media_capabilities_refresh_failed",
+    "media_discovery_previewed",
+    "media_job_queued",
+    "media_job_inspected",
+    "media_job_planned",
+    "media_job_execution_started",
+    "media_job_verification_failed",
+    "media_job_completed",
+    "media_job_failed",
+    "media_job_history_pruned",
 ];
+
+pub(crate) const MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH: &str =
+    "/app/compliance/final-image-compliance-bundle.json";
+pub(crate) const MEDIA_SOURCE_COMPLIANCE_BUNDLE_DIGEST_UNAVAILABLE: &str =
+    "unavailable-until-final-image-bundle-is-present";
