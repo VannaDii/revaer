@@ -504,3 +504,4 @@
     -   [552: Pre-v1 init assembly slice 05](adr/552-pre-v1-init-assembly-slice-05.md)
     -   [553: Native inspection error arbitration](adr/553-native-inspection-error-arbitration.md)
     -   [554: Preemptible native process broker contract](adr/554-preemptible-native-process-broker-contract.md)
+    -   [555: Pre-v1 init assembly slice 06](adr/555-pre-v1-init-assembly-slice-06.md)

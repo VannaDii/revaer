@@ -36986,3 +36986,7645 @@ ALTER TABLE public.media_job_terminal_outbox ALTER COLUMN media_job_terminal_out
     NO MAXVALUE
     CACHE 1
 );
+
+
+--
+-- Name: media_job_verification_check; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_verification_check (
+    media_job_verification_check_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    check_index integer NOT NULL,
+    check_kind text NOT NULL,
+    check_status text NOT NULL,
+    expected_value text,
+    actual_value text,
+    details_text text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_verification_check_index_nonnegative CHECK ((check_index >= 0)),
+    CONSTRAINT media_job_verification_check_kind_nonempty CHECK ((btrim(check_kind) <> ''::text)),
+    CONSTRAINT media_job_verification_check_status_valid CHECK ((check_status = ANY (ARRAY['passed'::text, 'failed'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: media_job_verification_check_media_job_verification_check_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_verification_check ALTER COLUMN media_job_verification_check_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_verification_check_media_job_verification_check_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_job_violation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_job_violation (
+    media_job_violation_id bigint NOT NULL,
+    media_job_id bigint NOT NULL,
+    violation_index integer NOT NULL,
+    violation_kind text NOT NULL,
+    severity text NOT NULL,
+    stream_id integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    media_job_attempt_id bigint NOT NULL,
+    CONSTRAINT media_job_violation_index_nonnegative CHECK ((violation_index >= 0)),
+    CONSTRAINT media_job_violation_kind_nonempty CHECK ((btrim(violation_kind) <> ''::text)),
+    CONSTRAINT media_job_violation_severity_valid CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text])))
+);
+
+
+--
+-- Name: media_job_violation_media_job_violation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_job_violation ALTER COLUMN media_job_violation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_job_violation_media_job_violation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_policy_backup; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_backup (
+    media_policy_profile_id bigint NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    retention_days integer,
+    min_free_space_bytes bigint,
+    CONSTRAINT media_policy_backup_complete CHECK (((NOT enabled) OR ((retention_days IS NOT NULL) AND (min_free_space_bytes IS NOT NULL)))),
+    CONSTRAINT media_policy_backup_retention_bounds CHECK (((retention_days IS NULL) OR ((retention_days >= 1) AND (retention_days <= 3650)))),
+    CONSTRAINT media_policy_backup_space_bounds CHECK (((min_free_space_bytes IS NULL) OR ((min_free_space_bytes >= 0) AND (min_free_space_bytes <= '1152921504606846976'::bigint))))
+);
+
+
+--
+-- Name: media_policy_compatibility_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_compatibility_rule (
+    media_policy_profile_id bigint NOT NULL,
+    unsupported_format_action text NOT NULL,
+    require_all_targets boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_compatibility_rule_action_known CHECK ((unsupported_format_action = ANY (ARRAY['transcode'::text, 'drop'::text, 'fail'::text])))
+);
+
+
+--
+-- Name: media_policy_compatibility_target; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_compatibility_target (
+    media_policy_profile_id bigint NOT NULL,
+    media_compatibility_target_id bigint NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_compatibility_target_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+--
+-- Name: media_policy_maintenance_window; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_maintenance_window (
+    media_policy_profile_id bigint NOT NULL,
+    day_of_week smallint NOT NULL,
+    start_time time without time zone NOT NULL,
+    end_time time without time zone NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_maintenance_window_day_bounds CHECK (((day_of_week >= 0) AND (day_of_week <= 6))),
+    CONSTRAINT media_policy_maintenance_window_not_empty CHECK ((start_time <> end_time)),
+    CONSTRAINT media_policy_maintenance_window_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+--
+-- Name: media_policy_operation_cost; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_operation_cost (
+    media_policy_profile_id bigint NOT NULL,
+    operation_kind text NOT NULL,
+    cost_weight integer NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_operation_cost_kind_nonempty CHECK ((btrim(operation_kind) <> ''::text)),
+    CONSTRAINT media_policy_operation_cost_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_policy_operation_cost_weight_bounds CHECK (((cost_weight >= 0) AND (cost_weight <= 1000000)))
+);
+
+
+--
+-- Name: media_policy_output; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_output (
+    media_policy_profile_id bigint NOT NULL,
+    dry_run boolean DEFAULT true NOT NULL,
+    replacement_mode text NOT NULL,
+    quarantine_enabled boolean DEFAULT true NOT NULL,
+    preserve_permissions boolean DEFAULT true NOT NULL,
+    preserve_ownership boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_output_replacement_known CHECK ((replacement_mode = ANY (ARRAY['disabled'::text, 'atomic_replace'::text, 'side_by_side'::text])))
+);
+
+
+--
+-- Name: media_policy_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_profile (
+    media_policy_profile_id bigint NOT NULL,
+    policy_key text NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    display_name text NOT NULL,
+    video_intent text DEFAULT public.media_policy_general_v1() NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    unmatched_stream_policy text DEFAULT 'remove'::text NOT NULL,
+    verification_strictness text DEFAULT 'balanced'::text NOT NULL,
+    verification_duration_tolerance_millis bigint DEFAULT 1000 NOT NULL,
+    verification_mux_validation boolean DEFAULT true NOT NULL,
+    verification_decode_all_streams boolean DEFAULT true NOT NULL,
+    verification_keyframe_seek boolean DEFAULT true NOT NULL,
+    verification_playback_probe boolean DEFAULT false NOT NULL,
+    CONSTRAINT media_policy_profile_display_contract CHECK (public.media_display_valid_v1(display_name)),
+    CONSTRAINT media_policy_profile_display_nonempty CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT media_policy_profile_intent_known CHECK ((video_intent = ANY (ARRAY[public.media_policy_general_v1(), public.media_policy_anime_v1(), public.media_policy_archival_v1()]))),
+    CONSTRAINT media_policy_profile_key_contract CHECK (public.media_key_valid_v1(policy_key)),
+    CONSTRAINT media_policy_profile_key_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_policy_profile_unmatched_stream_policy_known CHECK ((unmatched_stream_policy = ANY (ARRAY['remove'::text, 'preserve'::text, 'reject'::text]))),
+    CONSTRAINT media_policy_profile_version_positive CHECK ((version > 0)),
+    CONSTRAINT media_policy_verification_duration_tolerance_bounded CHECK (((verification_duration_tolerance_millis >= 0) AND (verification_duration_tolerance_millis <= 60000))),
+    CONSTRAINT media_policy_verification_fast_checks CHECK (((verification_strictness <> 'fast'::text) OR ((NOT verification_decode_all_streams) AND (NOT verification_keyframe_seek) AND (NOT verification_playback_probe)))),
+    CONSTRAINT media_policy_verification_strict_checks CHECK (((verification_strictness <> 'strict'::text) OR (verification_mux_validation AND verification_decode_all_streams AND verification_keyframe_seek AND verification_playback_probe))),
+    CONSTRAINT media_policy_verification_strictness_known CHECK ((verification_strictness = ANY (ARRAY['strict'::text, 'balanced'::text, 'fast'::text])))
+);
+
+
+--
+-- Name: media_policy_profile_media_policy_profile_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_policy_profile ALTER COLUMN media_policy_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_policy_profile_media_policy_profile_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_policy_retention_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_retention_rule (
+    media_policy_retention_rule_id bigint NOT NULL,
+    media_policy_profile_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text,
+    language_code text,
+    codec_or_format text,
+    action text NOT NULL,
+    placement text,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_retention_rule_action_known CHECK ((action = ANY (ARRAY['retain'::text, 'drop'::text, 'convert'::text, 'extract'::text]))),
+    CONSTRAINT media_policy_retention_rule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_policy_retention_rule_stream_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text, 'attachment'::text, 'data'::text])))
+);
+
+
+--
+-- Name: media_policy_retention_rule_media_policy_retention_rule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_policy_retention_rule ALTER COLUMN media_policy_retention_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_policy_retention_rule_media_policy_retention_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_policy_runtime_limit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_runtime_limit (
+    media_policy_profile_id bigint NOT NULL,
+    max_concurrency integer NOT NULL,
+    max_retries integer NOT NULL,
+    max_runtime_seconds integer NOT NULL,
+    max_io_megabytes_per_second integer NOT NULL,
+    min_free_space_bytes bigint NOT NULL,
+    pause_on_battery boolean DEFAULT true NOT NULL,
+    minimum_battery_percent integer,
+    thermal_pressure_limit text DEFAULT 'serious'::text NOT NULL,
+    pause_when_thermal_exceeded boolean DEFAULT true NOT NULL,
+    CONSTRAINT media_policy_runtime_limit_battery_bounds CHECK (((minimum_battery_percent IS NULL) OR ((minimum_battery_percent >= 1) AND (minimum_battery_percent <= 100)))),
+    CONSTRAINT media_policy_runtime_limit_battery_complete CHECK ((pause_on_battery OR (minimum_battery_percent IS NULL))),
+    CONSTRAINT media_policy_runtime_limit_concurrency_bounds CHECK (((max_concurrency >= 1) AND (max_concurrency <= 256))),
+    CONSTRAINT media_policy_runtime_limit_io_bounds CHECK (((max_io_megabytes_per_second >= 1) AND (max_io_megabytes_per_second <= 1048576))),
+    CONSTRAINT media_policy_runtime_limit_retry_bounds CHECK (((max_retries >= 0) AND (max_retries <= 100))),
+    CONSTRAINT media_policy_runtime_limit_runtime_bounds CHECK (((max_runtime_seconds >= 1) AND (max_runtime_seconds <= 604800))),
+    CONSTRAINT media_policy_runtime_limit_space_bounds CHECK (((min_free_space_bytes >= 0) AND (min_free_space_bytes <= '1152921504606846976'::bigint))),
+    CONSTRAINT media_policy_runtime_limit_thermal_known CHECK ((thermal_pressure_limit = ANY (ARRAY['nominal'::text, 'fair'::text, 'serious'::text, 'critical'::text])))
+);
+
+
+--
+-- Name: media_policy_unmatched_stream_behavior; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_unmatched_stream_behavior (
+    media_policy_profile_id bigint NOT NULL,
+    video_action text NOT NULL,
+    audio_action text NOT NULL,
+    subtitle_action text NOT NULL,
+    attachment_action text NOT NULL,
+    data_action text NOT NULL,
+    CONSTRAINT media_policy_unmatched_stream_actions_known CHECK (((video_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (audio_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (subtitle_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (attachment_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text])) AND (data_action = ANY (ARRAY['retain'::text, 'drop'::text, 'fail'::text]))))
+);
+
+
+--
+-- Name: media_policy_verification; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_verification (
+    media_policy_profile_id bigint NOT NULL,
+    strictness text NOT NULL,
+    duration_tolerance_millis bigint NOT NULL,
+    mux_validation boolean NOT NULL,
+    decode_all_streams boolean NOT NULL,
+    keyframe_seek boolean NOT NULL,
+    playback_probe boolean NOT NULL,
+    CONSTRAINT media_policy_verification_duration_bounds CHECK (((duration_tolerance_millis >= 0) AND (duration_tolerance_millis <= 60000))),
+    CONSTRAINT media_policy_verification_strict_complete CHECK (((strictness <> 'strict'::text) OR (mux_validation AND decode_all_streams AND keyframe_seek AND playback_probe))),
+    CONSTRAINT media_policy_verification_strictness_known CHECK ((strictness = ANY (ARRAY['strict'::text, 'balanced'::text, 'fast'::text])))
+);
+
+
+--
+-- Name: media_policy_workspace; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_policy_workspace (
+    media_policy_profile_id bigint NOT NULL,
+    retention_hours integer NOT NULL,
+    diagnostics_enabled boolean DEFAULT true NOT NULL,
+    stale_cleanup_hours integer NOT NULL,
+    max_workspace_bytes bigint NOT NULL,
+    CONSTRAINT media_policy_workspace_cleanup_bounds CHECK (((stale_cleanup_hours >= 1) AND (stale_cleanup_hours <= 87600))),
+    CONSTRAINT media_policy_workspace_retention_bounds CHECK (((retention_hours >= 1) AND (retention_hours <= 87600))),
+    CONSTRAINT media_policy_workspace_size_bounds CHECK (((max_workspace_bytes >= 1) AND (max_workspace_bytes <= '1152921504606846976'::bigint)))
+);
+
+
+--
+-- Name: media_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile (
+    media_profile_id bigint NOT NULL,
+    media_profile_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_key text NOT NULL,
+    source_root text NOT NULL,
+    output_root text NOT NULL,
+    dry_run_only boolean DEFAULT true NOT NULL,
+    retention_days integer DEFAULT 30 NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    compatibility_target_key text,
+    policy_key text DEFAULT 'safe_dry_run'::text NOT NULL,
+    watcher_enabled boolean DEFAULT false NOT NULL,
+    schedule_enabled boolean DEFAULT false NOT NULL,
+    schedule_interval_minutes integer,
+    desired_target_profile_id bigint,
+    configuration_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT media_profile_compatibility_key_contract CHECK (((compatibility_target_key IS NULL) OR public.media_key_valid_v1(compatibility_target_key))),
+    CONSTRAINT media_profile_compatibility_target_nonempty CHECK (((compatibility_target_key IS NULL) OR (btrim(compatibility_target_key) <> ''::text))),
+    CONSTRAINT media_profile_configuration_version_positive CHECK ((configuration_version > 0)),
+    CONSTRAINT media_profile_key_contract CHECK (public.media_key_valid_v1(profile_key)),
+    CONSTRAINT media_profile_key_nonempty CHECK ((btrim(profile_key) <> ''::text)),
+    CONSTRAINT media_profile_policy_key_contract CHECK (public.media_key_valid_v1(policy_key)),
+    CONSTRAINT media_profile_policy_key_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_profile_retention_bounds CHECK (((retention_days >= 1) AND (retention_days <= 3650))),
+    CONSTRAINT media_profile_roots_nonempty CHECK (((btrim(source_root) <> ''::text) AND (btrim(output_root) <> ''::text))),
+    CONSTRAINT media_profile_schedule_interval_bounds CHECK (((schedule_interval_minutes IS NULL) OR ((schedule_interval_minutes >= 1) AND (schedule_interval_minutes <= 525600)))),
+    CONSTRAINT media_profile_schedule_requires_interval CHECK (((schedule_enabled = false) OR (schedule_interval_minutes IS NOT NULL)))
+);
+
+
+--
+-- Name: media_profile_file_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile_file_rule (
+    media_profile_file_rule_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    rule_kind text NOT NULL,
+    matcher_kind text NOT NULL,
+    matcher_value text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_file_rule_kind_known CHECK ((rule_kind = ANY (ARRAY['include'::text, 'exclude'::text]))),
+    CONSTRAINT media_profile_file_rule_matcher_known CHECK ((matcher_kind = ANY (ARRAY['glob'::text, 'extension'::text]))),
+    CONSTRAINT media_profile_file_rule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_profile_file_rule_value_bounded CHECK (((char_length(btrim(matcher_value)) >= 1) AND (char_length(btrim(matcher_value)) <= 512)))
+);
+
+
+--
+-- Name: media_profile_file_rule_media_profile_file_rule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_profile_file_rule ALTER COLUMN media_profile_file_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_file_rule_media_profile_file_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_profile_filter; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile_filter (
+    media_profile_id bigint NOT NULL,
+    min_size_bytes bigint,
+    max_size_bytes bigint,
+    min_duration_millis bigint,
+    max_duration_millis bigint,
+    include_samples boolean DEFAULT false NOT NULL,
+    include_trailers boolean DEFAULT false NOT NULL,
+    exclude_trash boolean DEFAULT true NOT NULL,
+    exclude_quarantine boolean DEFAULT true NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_filter_duration_bounds CHECK ((((min_duration_millis IS NULL) OR (min_duration_millis >= 0)) AND ((max_duration_millis IS NULL) OR (max_duration_millis >= 0)) AND ((min_duration_millis IS NULL) OR (max_duration_millis IS NULL) OR (min_duration_millis <= max_duration_millis)))),
+    CONSTRAINT media_profile_filter_is_bounded CHECK (((min_size_bytes IS NOT NULL) OR (max_size_bytes IS NOT NULL) OR (min_duration_millis IS NOT NULL) OR (max_duration_millis IS NOT NULL))),
+    CONSTRAINT media_profile_filter_size_bounds CHECK ((((min_size_bytes IS NULL) OR (min_size_bytes >= 0)) AND ((max_size_bytes IS NULL) OR (max_size_bytes >= 0)) AND ((min_size_bytes IS NULL) OR (max_size_bytes IS NULL) OR (min_size_bytes <= max_size_bytes))))
+);
+
+
+--
+-- Name: media_profile_import_draft; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile_import_draft (
+    media_profile_import_draft_id bigint NOT NULL,
+    media_profile_import_draft_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_key text NOT NULL,
+    source_root text NOT NULL,
+    output_root text NOT NULL,
+    source_root_resolved boolean NOT NULL,
+    output_root_resolved boolean NOT NULL,
+    retention_days integer NOT NULL,
+    compatibility_target_key text,
+    desired_target_key text,
+    desired_target_version integer,
+    policy_key text NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_import_draft_desired_target_complete CHECK ((((desired_target_key IS NULL) AND (desired_target_version IS NULL)) OR ((desired_target_key IS NOT NULL) AND (btrim(desired_target_key) <> ''::text) AND (desired_target_version IS NOT NULL) AND (desired_target_version > 0)))),
+    CONSTRAINT media_profile_import_draft_key_nonempty CHECK ((btrim(profile_key) <> ''::text)),
+    CONSTRAINT media_profile_import_draft_policy_nonempty CHECK ((btrim(policy_key) <> ''::text)),
+    CONSTRAINT media_profile_import_draft_retention_bounds CHECK (((retention_days >= 1) AND (retention_days <= 3650))),
+    CONSTRAINT media_profile_import_draft_roots_nonempty CHECK (((btrim(source_root) <> ''::text) AND (btrim(output_root) <> ''::text))),
+    CONSTRAINT media_profile_import_draft_unresolved CHECK (((NOT source_root_resolved) OR (NOT output_root_resolved)))
+);
+
+
+--
+-- Name: media_profile_import_draft_media_profile_import_draft_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_profile_import_draft ALTER COLUMN media_profile_import_draft_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_import_draft_media_profile_import_draft_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_profile_media_profile_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_profile ALTER COLUMN media_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_media_profile_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_profile_root; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_profile_root (
+    media_profile_root_id bigint NOT NULL,
+    media_profile_root_public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    media_profile_id bigint NOT NULL,
+    root_kind text NOT NULL,
+    requested_path text NOT NULL,
+    canonical_path text NOT NULL,
+    filesystem_device bigint,
+    filesystem_inode bigint,
+    media_type text NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    identity_verified_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_profile_root_enabled_verified CHECK (((NOT enabled) OR (identity_verified_at IS NOT NULL))),
+    CONSTRAINT media_profile_root_identity_complete CHECK ((((filesystem_device IS NULL) AND (filesystem_inode IS NULL) AND (identity_verified_at IS NULL)) OR ((filesystem_device IS NOT NULL) AND (filesystem_inode IS NOT NULL) AND (filesystem_device >= 0) AND (filesystem_inode >= 0) AND (identity_verified_at IS NOT NULL)))),
+    CONSTRAINT media_profile_root_kind_known CHECK ((root_kind = ANY (ARRAY['source'::text, 'output'::text, 'workspace'::text, 'backup'::text, 'quarantine'::text]))),
+    CONSTRAINT media_profile_root_media_type_nonempty CHECK ((btrim(media_type) <> ''::text)),
+    CONSTRAINT media_profile_root_paths_absolute CHECK (((requested_path ~~ '/%'::text) AND (canonical_path ~~ '/%'::text))),
+    CONSTRAINT media_profile_root_paths_bounded CHECK (((char_length(requested_path) >= 1) AND (char_length(requested_path) <= 4096) AND ((char_length(canonical_path) >= 1) AND (char_length(canonical_path) <= 4096)))),
+    CONSTRAINT media_profile_root_sort_nonnegative CHECK ((sort_order >= 0))
+);
+
+
+--
+-- Name: media_profile_root_media_profile_root_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_profile_root ALTER COLUMN media_profile_root_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_profile_root_media_profile_root_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_stream_classification_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_stream_classification_rule (
+    media_stream_classification_rule_id bigint NOT NULL,
+    media_policy_profile_id bigint NOT NULL,
+    stream_kind text NOT NULL,
+    semantic_role text NOT NULL,
+    match_kind text NOT NULL,
+    match_pattern text NOT NULL,
+    confidence smallint NOT NULL,
+    sort_order integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_stream_classification_rule_confidence_bounds CHECK (((confidence >= 0) AND (confidence <= 100))),
+    CONSTRAINT media_stream_classification_rule_match_known CHECK ((match_kind = ANY (ARRAY['title_contains'::text, 'title_regex'::text, 'disposition'::text, 'language'::text, 'codec'::text, 'filename_glob'::text]))),
+    CONSTRAINT media_stream_classification_rule_pattern_bounded CHECK (((char_length(btrim(match_pattern)) >= 1) AND (char_length(btrim(match_pattern)) <= 512))),
+    CONSTRAINT media_stream_classification_rule_role_bounded CHECK (((char_length(btrim(semantic_role)) >= 1) AND (char_length(btrim(semantic_role)) <= 64))),
+    CONSTRAINT media_stream_classification_rule_sort_nonnegative CHECK ((sort_order >= 0)),
+    CONSTRAINT media_stream_classification_rule_stream_known CHECK ((stream_kind = ANY (ARRAY['video'::text, 'audio'::text, 'subtitle'::text, 'attachment'::text, 'data'::text])))
+);
+
+
+--
+-- Name: media_stream_classification_r_media_stream_classification_r_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_stream_classification_rule ALTER COLUMN media_stream_classification_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_stream_classification_r_media_stream_classification_r_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_subtitle_discovery_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_subtitle_discovery_rule (
+    media_subtitle_discovery_rule_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    discovery_pattern text NOT NULL,
+    precedence integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_subtitle_discovery_rule_pattern_bounded CHECK (((char_length(btrim(discovery_pattern)) >= 1) AND (char_length(btrim(discovery_pattern)) <= 512))),
+    CONSTRAINT media_subtitle_discovery_rule_precedence_nonnegative CHECK ((precedence >= 0))
+);
+
+
+--
+-- Name: media_subtitle_discovery_rule_media_subtitle_discovery_rule_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_subtitle_discovery_rule ALTER COLUMN media_subtitle_discovery_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_subtitle_discovery_rule_media_subtitle_discovery_rule_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: media_target; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_target (
+    media_target_id bigint NOT NULL,
+    media_profile_id bigint NOT NULL,
+    target_key text NOT NULL,
+    video_codec text,
+    audio_codec text,
+    subtitle_codec text,
+    priority smallint DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_target_key_contract CHECK (public.media_key_valid_v1(target_key)),
+    CONSTRAINT media_target_key_nonempty CHECK ((btrim(target_key) <> ''::text))
+);
+
+
+--
+-- Name: media_target_media_target_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.media_target ALTER COLUMN media_target_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.media_target_media_target_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: outbound_request_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.outbound_request_log (
+    outbound_request_log_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    routing_policy_id bigint,
+    search_request_id bigint,
+    request_type public.outbound_request_type NOT NULL,
+    correlation_id uuid NOT NULL,
+    retry_seq smallint NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone NOT NULL,
+    outcome public.outbound_request_outcome NOT NULL,
+    via_mitigation public.outbound_via_mitigation NOT NULL,
+    rate_limit_denied_scope public.rate_limit_scope,
+    error_class public.error_class,
+    http_status integer,
+    latency_ms integer,
+    parse_ok boolean DEFAULT false NOT NULL,
+    result_count integer,
+    cf_detected boolean DEFAULT false NOT NULL,
+    page_number integer,
+    page_cursor_key character varying(64),
+    page_cursor_is_hashed boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT outbound_request_log_latency_chk CHECK (((latency_ms IS NULL) OR (latency_ms >= 0))),
+    CONSTRAINT outbound_request_log_outcome_chk CHECK ((((outcome = 'success'::public.outbound_request_outcome) AND (error_class IS NULL) AND (parse_ok = true)) OR ((outcome = 'failure'::public.outbound_request_outcome) AND (error_class IS NOT NULL)))),
+    CONSTRAINT outbound_request_log_page_number_chk CHECK (((page_number IS NULL) OR (page_number >= 1))),
+    CONSTRAINT outbound_request_log_rate_limit_scope_chk CHECK ((((rate_limit_denied_scope IS NULL) AND (error_class IS DISTINCT FROM 'rate_limited'::public.error_class)) OR ((rate_limit_denied_scope IS NOT NULL) AND (error_class = 'rate_limited'::public.error_class)))),
+    CONSTRAINT outbound_request_log_result_count_chk CHECK (((result_count IS NULL) OR (result_count >= 0))),
+    CONSTRAINT outbound_request_log_retry_seq_check CHECK ((retry_seq >= 0))
+);
+
+
+--
+-- Name: outbound_request_log_outbound_request_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.outbound_request_log ALTER COLUMN outbound_request_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.outbound_request_log_outbound_request_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_rule (
+    policy_rule_id bigint NOT NULL,
+    policy_set_id bigint NOT NULL,
+    policy_rule_public_id uuid NOT NULL,
+    rule_type public.policy_rule_type NOT NULL,
+    match_field public.policy_match_field NOT NULL,
+    match_operator public.policy_match_operator NOT NULL,
+    sort_order integer DEFAULT 1000 NOT NULL,
+    match_value_text character varying(512),
+    match_value_int integer,
+    match_value_uuid uuid,
+    value_set_id bigint,
+    action public.policy_action NOT NULL,
+    severity public.policy_severity NOT NULL,
+    is_case_insensitive boolean DEFAULT true NOT NULL,
+    is_disabled boolean DEFAULT false NOT NULL,
+    rationale character varying(1024),
+    expires_at timestamp with time zone,
+    immutable_flag boolean DEFAULT false NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: policy_rule_policy_rule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_rule ALTER COLUMN policy_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_rule_policy_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_rule_value_set; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_rule_value_set (
+    value_set_id bigint NOT NULL,
+    policy_rule_id bigint NOT NULL,
+    value_set_type public.value_set_type NOT NULL
+);
+
+
+--
+-- Name: policy_rule_value_set_item; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_rule_value_set_item (
+    value_set_item_id bigint NOT NULL,
+    value_set_id bigint NOT NULL,
+    value_text character varying(256),
+    value_bigint bigint,
+    value_int integer,
+    value_uuid uuid,
+    CONSTRAINT policy_rule_value_set_item_single_chk CHECK (((((((value_text IS NOT NULL))::integer + ((value_bigint IS NOT NULL))::integer) + ((value_int IS NOT NULL))::integer) + ((value_uuid IS NOT NULL))::integer) = 1)),
+    CONSTRAINT policy_rule_value_set_item_text_lc CHECK (((value_text IS NULL) OR ((value_text)::text = lower((value_text)::text))))
+);
+
+
+--
+-- Name: policy_rule_value_set_item_value_set_item_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_rule_value_set_item ALTER COLUMN value_set_item_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_rule_value_set_item_value_set_item_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_rule_value_set_value_set_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_rule_value_set ALTER COLUMN value_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_rule_value_set_value_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_set; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_set (
+    policy_set_id bigint NOT NULL,
+    policy_set_public_id uuid NOT NULL,
+    user_id bigint,
+    display_name character varying(256) NOT NULL,
+    scope public.policy_scope NOT NULL,
+    is_enabled boolean NOT NULL,
+    sort_order integer DEFAULT 1000 NOT NULL,
+    is_auto_created boolean DEFAULT false NOT NULL,
+    created_for_search_request_id bigint,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+--
+-- Name: policy_set_policy_set_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_set ALTER COLUMN policy_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_set_policy_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_snapshot (
+    policy_snapshot_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    snapshot_hash character(64) NOT NULL,
+    ref_count integer DEFAULT 0 NOT NULL,
+    excluded_disabled_count integer DEFAULT 0 NOT NULL,
+    excluded_expired_count integer DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: policy_snapshot_policy_snapshot_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_snapshot ALTER COLUMN policy_snapshot_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_snapshot_policy_snapshot_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: policy_snapshot_rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.policy_snapshot_rule (
+    policy_snapshot_rule_id bigint NOT NULL,
+    policy_snapshot_id bigint NOT NULL,
+    policy_rule_public_id uuid NOT NULL,
+    rule_order integer NOT NULL
+);
+
+
+--
+-- Name: policy_snapshot_rule_policy_snapshot_rule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.policy_snapshot_rule ALTER COLUMN policy_snapshot_rule_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.policy_snapshot_rule_policy_snapshot_rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: query_presets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.query_presets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    expression text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: rate_limit_policy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rate_limit_policy (
+    rate_limit_policy_id bigint NOT NULL,
+    rate_limit_policy_public_id uuid NOT NULL,
+    display_name character varying(256) NOT NULL,
+    requests_per_minute integer NOT NULL,
+    burst integer NOT NULL,
+    concurrent_requests integer NOT NULL,
+    is_system boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT rate_limit_policy_burst_check CHECK (((burst >= 0) AND (burst <= 6000))),
+    CONSTRAINT rate_limit_policy_concurrent_requests_check CHECK (((concurrent_requests >= 1) AND (concurrent_requests <= 64))),
+    CONSTRAINT rate_limit_policy_requests_per_minute_check CHECK (((requests_per_minute >= 1) AND (requests_per_minute <= 6000)))
+);
+
+
+--
+-- Name: rate_limit_policy_rate_limit_policy_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.rate_limit_policy ALTER COLUMN rate_limit_policy_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.rate_limit_policy_rate_limit_policy_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: rate_limit_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rate_limit_state (
+    rate_limit_state_id bigint NOT NULL,
+    scope_type public.rate_limit_scope NOT NULL,
+    scope_id bigint NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    tokens_used integer NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT rate_limit_state_tokens_used_check CHECK ((tokens_used >= 0))
+);
+
+
+--
+-- Name: rate_limit_state_rate_limit_state_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.rate_limit_state ALTER COLUMN rate_limit_state_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.rate_limit_state_rate_limit_state_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: routing_policy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.routing_policy (
+    routing_policy_id bigint NOT NULL,
+    routing_policy_public_id uuid NOT NULL,
+    display_name character varying(256) NOT NULL,
+    mode public.routing_policy_mode NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+--
+-- Name: routing_policy_parameter; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.routing_policy_parameter (
+    routing_policy_parameter_id bigint NOT NULL,
+    routing_policy_id bigint NOT NULL,
+    param_key public.routing_param_key NOT NULL,
+    value_plain character varying(2048),
+    value_int integer,
+    value_bool boolean,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: routing_policy_parameter_routing_policy_parameter_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.routing_policy_parameter ALTER COLUMN routing_policy_parameter_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.routing_policy_parameter_routing_policy_parameter_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: routing_policy_rate_limit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.routing_policy_rate_limit (
+    routing_policy_rate_limit_id bigint NOT NULL,
+    routing_policy_id bigint NOT NULL,
+    rate_limit_policy_id bigint NOT NULL
+);
+
+
+--
+-- Name: routing_policy_rate_limit_routing_policy_rate_limit_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.routing_policy_rate_limit ALTER COLUMN routing_policy_rate_limit_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.routing_policy_rate_limit_routing_policy_rate_limit_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: routing_policy_routing_policy_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.routing_policy ALTER COLUMN routing_policy_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.routing_policy_routing_policy_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_filter_decision; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_filter_decision (
+    search_filter_decision_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    policy_rule_public_id uuid NOT NULL,
+    policy_snapshot_id bigint NOT NULL,
+    observation_id bigint,
+    canonical_torrent_id bigint,
+    canonical_torrent_source_id bigint,
+    decision public.decision_type NOT NULL,
+    decision_detail character varying(512),
+    decided_at timestamp with time zone NOT NULL,
+    CONSTRAINT search_filter_decision_target_chk CHECK (((canonical_torrent_id IS NOT NULL) OR (canonical_torrent_source_id IS NOT NULL)))
+);
+
+
+--
+-- Name: search_filter_decision_search_filter_decision_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_filter_decision ALTER COLUMN search_filter_decision_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_filter_decision_search_filter_decision_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_page; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_page (
+    search_page_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    page_number integer NOT NULL,
+    sealed_at timestamp with time zone,
+    CONSTRAINT search_page_page_number_check CHECK ((page_number >= 1))
+);
+
+
+--
+-- Name: search_page_item; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_page_item (
+    search_page_item_id bigint NOT NULL,
+    search_page_id bigint NOT NULL,
+    search_request_canonical_id bigint NOT NULL,
+    "position" integer NOT NULL,
+    CONSTRAINT search_page_item_position_check CHECK (("position" >= 1))
+);
+
+
+--
+-- Name: search_page_item_search_page_item_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_page_item ALTER COLUMN search_page_item_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_page_item_search_page_item_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_page_search_page_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_page ALTER COLUMN search_page_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_page_search_page_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile (
+    search_profile_id bigint NOT NULL,
+    search_profile_public_id uuid NOT NULL,
+    user_id bigint,
+    display_name character varying(256) NOT NULL,
+    is_default boolean NOT NULL,
+    page_size integer DEFAULT 50 NOT NULL,
+    default_media_domain_id bigint,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT search_profile_page_size_check CHECK (((page_size >= 10) AND (page_size <= 200)))
+);
+
+
+--
+-- Name: search_profile_indexer_allow; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_indexer_allow (
+    search_profile_indexer_allow_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_indexer_allow_search_profile_indexer_allow_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_indexer_allow ALTER COLUMN search_profile_indexer_allow_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_indexer_allow_search_profile_indexer_allow_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_indexer_block; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_indexer_block (
+    search_profile_indexer_block_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_indexer_block_search_profile_indexer_block_i_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_indexer_block ALTER COLUMN search_profile_indexer_block_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_indexer_block_search_profile_indexer_block_i_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_media_domain; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_media_domain (
+    search_profile_media_domain_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    media_domain_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_media_domain_search_profile_media_domain_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_media_domain ALTER COLUMN search_profile_media_domain_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_media_domain_search_profile_media_domain_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_policy_set; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_policy_set (
+    search_profile_policy_set_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    policy_set_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_policy_set_search_profile_policy_set_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_policy_set ALTER COLUMN search_profile_policy_set_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_policy_set_search_profile_policy_set_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_search_profile_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile ALTER COLUMN search_profile_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_search_profile_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_tag_allow; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_tag_allow (
+    search_profile_tag_allow_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_tag_allow_search_profile_tag_allow_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_tag_allow ALTER COLUMN search_profile_tag_allow_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_tag_allow_search_profile_tag_allow_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_tag_block; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_tag_block (
+    search_profile_tag_block_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    tag_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_profile_tag_block_search_profile_tag_block_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_tag_block ALTER COLUMN search_profile_tag_block_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_tag_block_search_profile_tag_block_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_tag_prefer; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_tag_prefer (
+    search_profile_tag_prefer_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    tag_id bigint NOT NULL,
+    weight_override integer DEFAULT 5,
+    CONSTRAINT search_profile_tag_prefer_weight_override_check CHECK (((weight_override IS NULL) OR ((weight_override >= '-50'::integer) AND (weight_override <= 50))))
+);
+
+
+--
+-- Name: search_profile_tag_prefer_search_profile_tag_prefer_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_tag_prefer ALTER COLUMN search_profile_tag_prefer_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_tag_prefer_search_profile_tag_prefer_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_profile_trust_tier; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_profile_trust_tier (
+    search_profile_trust_tier_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    trust_tier_id bigint NOT NULL,
+    weight_override integer,
+    CONSTRAINT search_profile_trust_tier_weight_override_check CHECK (((weight_override IS NULL) OR ((weight_override >= '-50'::integer) AND (weight_override <= 50))))
+);
+
+
+--
+-- Name: search_profile_trust_tier_search_profile_trust_tier_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_profile_trust_tier ALTER COLUMN search_profile_trust_tier_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_profile_trust_tier_search_profile_trust_tier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request (
+    search_request_id bigint NOT NULL,
+    search_request_public_id uuid NOT NULL,
+    user_id bigint,
+    search_profile_id bigint,
+    policy_set_id bigint,
+    policy_snapshot_id bigint NOT NULL,
+    requested_media_domain_id bigint,
+    effective_media_domain_id bigint,
+    query_text character varying(512) NOT NULL,
+    query_type public.query_type NOT NULL,
+    torznab_mode public.torznab_mode,
+    page_size integer DEFAULT 50 NOT NULL,
+    season_number integer,
+    episode_number integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    canceled_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    status public.search_status NOT NULL,
+    failure_class public.failure_class,
+    error_detail character varying(1024),
+    CONSTRAINT search_request_canceled_at_chk CHECK ((((status = 'canceled'::public.search_status) AND (canceled_at IS NOT NULL)) OR ((status <> 'canceled'::public.search_status) AND (canceled_at IS NULL)))),
+    CONSTRAINT search_request_episode_number_chk CHECK (((episode_number IS NULL) OR (episode_number >= 0))),
+    CONSTRAINT search_request_failure_class_chk CHECK ((((status = 'failed'::public.search_status) AND (failure_class IS NOT NULL)) OR ((status <> 'failed'::public.search_status) AND (failure_class IS NULL)))),
+    CONSTRAINT search_request_finished_at_chk CHECK ((((status = ANY (ARRAY['finished'::public.search_status, 'failed'::public.search_status, 'canceled'::public.search_status])) AND (finished_at IS NOT NULL)) OR ((status = 'running'::public.search_status) AND (finished_at IS NULL)))),
+    CONSTRAINT search_request_page_size_check CHECK (((page_size >= 10) AND (page_size <= 200))),
+    CONSTRAINT search_request_season_episode_mode_chk CHECK ((((torznab_mode IS NULL) AND (((query_type = 'season_episode'::public.query_type) AND (season_number IS NOT NULL) AND (episode_number IS NOT NULL)) OR ((query_type <> 'season_episode'::public.query_type) AND (season_number IS NULL) AND (episode_number IS NULL)))) OR ((torznab_mode = 'tv'::public.torznab_mode) AND ((episode_number IS NULL) OR (season_number IS NOT NULL))) OR ((torznab_mode = ANY (ARRAY['generic'::public.torznab_mode, 'movie'::public.torznab_mode])) AND (season_number IS NULL) AND (episode_number IS NULL)))),
+    CONSTRAINT search_request_season_number_chk CHECK (((season_number IS NULL) OR (season_number >= 0)))
+);
+
+
+--
+-- Name: search_request_canonical; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_canonical (
+    search_request_canonical_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: search_request_canonical_search_request_canonical_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_canonical ALTER COLUMN search_request_canonical_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_canonical_search_request_canonical_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_identifier; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_identifier (
+    search_request_identifier_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    id_type public.identifier_type NOT NULL,
+    id_value_normalized character varying(32) NOT NULL,
+    id_value_raw character varying(64) NOT NULL,
+    CONSTRAINT search_request_identifier_imdb_chk CHECK (((id_type <> 'imdb'::public.identifier_type) OR ((id_value_normalized)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT search_request_identifier_tmdb_chk CHECK (((id_type <> 'tmdb'::public.identifier_type) OR ((id_value_normalized)::text ~ '^[0-9]{1,10}$'::text))),
+    CONSTRAINT search_request_identifier_tvdb_chk CHECK (((id_type <> 'tvdb'::public.identifier_type) OR ((id_value_normalized)::text ~ '^[0-9]{1,10}$'::text)))
+);
+
+
+--
+-- Name: search_request_identifier_search_request_identifier_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_identifier ALTER COLUMN search_request_identifier_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_identifier_search_request_identifier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_indexer_run; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_indexer_run (
+    search_request_indexer_run_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    next_attempt_at timestamp with time zone,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    rate_limited_attempt_count integer DEFAULT 0 NOT NULL,
+    last_error_class public.error_class,
+    last_rate_limit_scope public.rate_limit_scope,
+    last_correlation_id uuid,
+    status public.run_status NOT NULL,
+    error_class public.error_class,
+    error_detail character varying(1024),
+    items_seen_count integer DEFAULT 0 NOT NULL,
+    items_emitted_count integer DEFAULT 0 NOT NULL,
+    canonical_added_count integer DEFAULT 0 NOT NULL,
+    CONSTRAINT search_request_indexer_run_attempt_count_check CHECK ((attempt_count >= 0)),
+    CONSTRAINT search_request_indexer_run_canonical_added_count_check CHECK ((canonical_added_count >= 0)),
+    CONSTRAINT search_request_indexer_run_error_class_chk CHECK ((((status = 'failed'::public.run_status) AND (error_class IS NOT NULL)) OR ((status <> 'failed'::public.run_status) AND (error_class IS NULL)))),
+    CONSTRAINT search_request_indexer_run_finished_at_chk CHECK ((((status = ANY (ARRAY['finished'::public.run_status, 'failed'::public.run_status, 'canceled'::public.run_status])) AND (finished_at IS NOT NULL)) OR ((status = ANY (ARRAY['queued'::public.run_status, 'running'::public.run_status])) AND (finished_at IS NULL)))),
+    CONSTRAINT search_request_indexer_run_items_emitted_count_check CHECK ((items_emitted_count >= 0)),
+    CONSTRAINT search_request_indexer_run_items_seen_count_check CHECK ((items_seen_count >= 0)),
+    CONSTRAINT search_request_indexer_run_rate_limit_scope_chk CHECK ((((last_error_class = 'rate_limited'::public.error_class) AND (last_rate_limit_scope IS NOT NULL)) OR ((last_error_class IS DISTINCT FROM 'rate_limited'::public.error_class) AND (last_rate_limit_scope IS NULL)))),
+    CONSTRAINT search_request_indexer_run_rate_limited_attempt_count_check CHECK ((rate_limited_attempt_count >= 0)),
+    CONSTRAINT search_request_indexer_run_started_at_chk CHECK ((((status = 'queued'::public.run_status) AND (started_at IS NULL)) OR ((status <> 'queued'::public.run_status) AND (started_at IS NOT NULL))))
+);
+
+
+--
+-- Name: search_request_indexer_run_correlation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_indexer_run_correlation (
+    search_request_indexer_run_correlation_id bigint NOT NULL,
+    search_request_indexer_run_id bigint NOT NULL,
+    correlation_id uuid NOT NULL,
+    page_number integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT search_request_indexer_run_correlation_page_chk CHECK (((page_number IS NULL) OR (page_number >= 1)))
+);
+
+
+--
+-- Name: search_request_indexer_run_co_search_request_indexer_run_co_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_indexer_run_correlation ALTER COLUMN search_request_indexer_run_correlation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_indexer_run_co_search_request_indexer_run_co_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_indexer_run_search_request_indexer_run_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_indexer_run ALTER COLUMN search_request_indexer_run_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_indexer_run_search_request_indexer_run_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_search_request_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request ALTER COLUMN search_request_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_search_request_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_source_observation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_source_observation (
+    observation_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    canonical_torrent_id bigint,
+    canonical_torrent_source_id bigint,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    seeders integer,
+    leechers integer,
+    published_at timestamp with time zone,
+    uploader character varying(256),
+    source_guid character varying(256),
+    details_url character varying(2048),
+    download_url character varying(2048),
+    magnet_uri character varying(2048),
+    title_raw character varying(512) NOT NULL,
+    size_bytes bigint,
+    infohash_v1 character(40),
+    infohash_v2 character(64),
+    magnet_hash character(64),
+    guid_conflict boolean DEFAULT false NOT NULL,
+    was_downranked boolean DEFAULT false NOT NULL,
+    was_flagged boolean DEFAULT false NOT NULL,
+    CONSTRAINT search_request_source_observation_infohash_v1_chk CHECK (((infohash_v1 IS NULL) OR (infohash_v1 ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT search_request_source_observation_infohash_v2_chk CHECK (((infohash_v2 IS NULL) OR (infohash_v2 ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT search_request_source_observation_leechers_chk CHECK (((leechers IS NULL) OR (leechers >= 0))),
+    CONSTRAINT search_request_source_observation_magnet_hash_chk CHECK (((magnet_hash IS NULL) OR (magnet_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT search_request_source_observation_seeders_chk CHECK (((seeders IS NULL) OR (seeders >= 0))),
+    CONSTRAINT search_request_source_observation_size_bytes_chk CHECK (((size_bytes IS NULL) OR (size_bytes >= 0)))
+);
+
+
+--
+-- Name: search_request_source_observation_attr; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_source_observation_attr (
+    observation_attr_id bigint NOT NULL,
+    observation_id bigint NOT NULL,
+    attr_key public.observation_attr_key NOT NULL,
+    value_text character varying(512),
+    value_int integer,
+    value_bigint bigint,
+    value_numeric numeric(12,4),
+    value_bool boolean,
+    value_uuid uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT search_request_source_observation_attr_episode_chk CHECK (((attr_key <> 'episode'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_files_count_chk CHECK (((attr_key <> 'files_count'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_imdb_chk CHECK (((attr_key <> 'imdb_id'::public.observation_attr_key) OR ((value_text)::text ~ '^tt[0-9]{7,9}$'::text))),
+    CONSTRAINT search_request_source_observation_attr_key_type_chk CHECK ((((attr_key = ANY (ARRAY['tracker_name'::public.observation_attr_key, 'release_group'::public.observation_attr_key, 'language_primary'::public.observation_attr_key, 'subtitles_primary'::public.observation_attr_key, 'imdb_id'::public.observation_attr_key])) AND (value_text IS NOT NULL)) OR ((attr_key = 'size_bytes_reported'::public.observation_attr_key) AND (value_bigint IS NOT NULL)) OR ((attr_key = ANY (ARRAY['tracker_category'::public.observation_attr_key, 'tracker_subcategory'::public.observation_attr_key, 'files_count'::public.observation_attr_key, 'season'::public.observation_attr_key, 'episode'::public.observation_attr_key, 'year'::public.observation_attr_key, 'tmdb_id'::public.observation_attr_key, 'tvdb_id'::public.observation_attr_key, 'minimum_seed_time_hours'::public.observation_attr_key])) AND (value_int IS NOT NULL)) OR ((attr_key = 'minimum_ratio'::public.observation_attr_key) AND (value_numeric IS NOT NULL)) OR ((attr_key = ANY (ARRAY['freeleech'::public.observation_attr_key, 'internal_flag'::public.observation_attr_key, 'scene_flag'::public.observation_attr_key])) AND (value_bool IS NOT NULL)))),
+    CONSTRAINT search_request_source_observation_attr_min_ratio_chk CHECK (((attr_key <> 'minimum_ratio'::public.observation_attr_key) OR ((value_numeric IS NOT NULL) AND (value_numeric >= (0)::numeric)))),
+    CONSTRAINT search_request_source_observation_attr_min_seed_time_chk CHECK (((attr_key <> 'minimum_seed_time_hours'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_season_chk CHECK (((attr_key <> 'season'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_single_value_chk CHECK (((((((((value_text IS NOT NULL))::integer + ((value_int IS NOT NULL))::integer) + ((value_bigint IS NOT NULL))::integer) + ((value_numeric IS NOT NULL))::integer) + ((value_bool IS NOT NULL))::integer) + ((value_uuid IS NOT NULL))::integer) = 1)),
+    CONSTRAINT search_request_source_observation_attr_size_bytes_chk CHECK (((attr_key <> 'size_bytes_reported'::public.observation_attr_key) OR ((value_bigint IS NOT NULL) AND (value_bigint >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_tmdb_chk CHECK (((attr_key <> 'tmdb_id'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT search_request_source_observation_attr_tracker_category_chk CHECK (((attr_key <> 'tracker_category'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_tracker_subcategory_chk CHECK (((attr_key <> 'tracker_subcategory'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0)))),
+    CONSTRAINT search_request_source_observation_attr_tvdb_chk CHECK (((attr_key <> 'tvdb_id'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int > 0)))),
+    CONSTRAINT search_request_source_observation_attr_year_chk CHECK (((attr_key <> 'year'::public.observation_attr_key) OR ((value_int IS NOT NULL) AND (value_int >= 0))))
+);
+
+
+--
+-- Name: search_request_source_observation_attr_observation_attr_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_source_observation_attr ALTER COLUMN observation_attr_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_source_observation_attr_observation_attr_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_source_observation_observation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_source_observation ALTER COLUMN observation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_source_observation_observation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_torznab_category_effective; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_torznab_category_effective (
+    search_request_torznab_category_effective_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    torznab_category_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_request_torznab_catego_search_request_torznab_categ_seq1; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_torznab_category_effective ALTER COLUMN search_request_torznab_category_effective_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_torznab_catego_search_request_torznab_categ_seq1
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: search_request_torznab_category_requested; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.search_request_torznab_category_requested (
+    search_request_torznab_category_requested_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    torznab_category_id bigint NOT NULL
+);
+
+
+--
+-- Name: search_request_torznab_catego_search_request_torznab_catego_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.search_request_torznab_category_requested ALTER COLUMN search_request_torznab_category_requested_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_request_torznab_catego_search_request_torznab_catego_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: secret; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.secret (
+    secret_id bigint NOT NULL,
+    secret_public_id uuid NOT NULL,
+    secret_type public.secret_type NOT NULL,
+    cipher_text bytea NOT NULL,
+    key_id character varying(128) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    rotated_at timestamp with time zone,
+    is_revoked boolean DEFAULT false NOT NULL,
+    CONSTRAINT secret_key_id_len_chk CHECK (((char_length((key_id)::text) >= 1) AND (char_length((key_id)::text) <= 128)))
+);
+
+
+--
+-- Name: secret_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.secret_audit_log (
+    secret_audit_log_id bigint NOT NULL,
+    secret_id bigint NOT NULL,
+    action public.secret_audit_action NOT NULL,
+    actor_user_id bigint,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    detail character varying(256) NOT NULL,
+    CONSTRAINT secret_audit_detail_len_chk CHECK (((char_length((detail)::text) >= 1) AND (char_length((detail)::text) <= 256)))
+);
+
+
+--
+-- Name: secret_audit_log_secret_audit_log_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.secret_audit_log ALTER COLUMN secret_audit_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.secret_audit_log_secret_audit_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: secret_binding; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.secret_binding (
+    secret_binding_id bigint NOT NULL,
+    secret_id bigint NOT NULL,
+    bound_table public.secret_bound_table NOT NULL,
+    bound_id bigint NOT NULL,
+    binding_name public.secret_binding_name NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT secret_binding_name_chk CHECK ((((bound_table = 'indexer_instance_field_value'::public.secret_bound_table) AND (binding_name = ANY (ARRAY['api_key'::public.secret_binding_name, 'password'::public.secret_binding_name, 'cookie'::public.secret_binding_name, 'token'::public.secret_binding_name, 'header_value'::public.secret_binding_name]))) OR ((bound_table = 'routing_policy_parameter'::public.secret_bound_table) AND (binding_name = ANY (ARRAY['proxy_password'::public.secret_binding_name, 'socks_password'::public.secret_binding_name])))))
+);
+
+
+--
+-- Name: secret_binding_secret_binding_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.secret_binding ALTER COLUMN secret_binding_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.secret_binding_secret_binding_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: secret_secret_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.secret ALTER COLUMN secret_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.secret_secret_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: settings_revision; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.settings_revision (
+    id smallint DEFAULT 1 NOT NULL,
+    revision bigint DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT settings_revision_id_check CHECK ((id = 1))
+);
+
+
+--
+-- Name: settings_secret; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.settings_secret (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    ciphertext bytea NOT NULL,
+    created_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: setup_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.setup_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    token_hash text NOT NULL,
+    issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    consumed_at timestamp with time zone,
+    issued_by text
+);
+
+
+--
+-- Name: source_metadata_conflict; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_metadata_conflict (
+    source_metadata_conflict_id bigint NOT NULL,
+    canonical_torrent_source_id bigint NOT NULL,
+    conflict_type public.conflict_type NOT NULL,
+    existing_value character varying(256) NOT NULL,
+    incoming_value character varying(256) NOT NULL,
+    observed_at timestamp with time zone NOT NULL,
+    resolved_at timestamp with time zone,
+    resolved_by_user_id bigint,
+    resolution public.conflict_resolution,
+    resolution_note character varying(256)
+);
+
+
+--
+-- Name: source_metadata_conflict_audit_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_metadata_conflict_audit_log (
+    source_metadata_conflict_audit_log_id bigint NOT NULL,
+    conflict_id bigint NOT NULL,
+    action public.source_metadata_conflict_action NOT NULL,
+    actor_user_id bigint,
+    occurred_at timestamp with time zone NOT NULL,
+    note character varying(256)
+);
+
+
+--
+-- Name: source_metadata_conflict_audi_source_metadata_conflict_audi_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.source_metadata_conflict_audit_log ALTER COLUMN source_metadata_conflict_audit_log_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.source_metadata_conflict_audi_source_metadata_conflict_audi_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: source_metadata_conflict_source_metadata_conflict_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.source_metadata_conflict ALTER COLUMN source_metadata_conflict_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.source_metadata_conflict_source_metadata_conflict_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: source_reputation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_reputation (
+    source_reputation_id bigint NOT NULL,
+    indexer_instance_id bigint NOT NULL,
+    window_key public.reputation_window NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    request_success_rate numeric(5,4) NOT NULL,
+    acquisition_success_rate numeric(5,4) NOT NULL,
+    fake_rate numeric(5,4) NOT NULL,
+    dmca_rate numeric(5,4) NOT NULL,
+    request_count integer NOT NULL,
+    request_success_count integer NOT NULL,
+    acquisition_count integer NOT NULL,
+    acquisition_success_count integer NOT NULL,
+    min_samples integer NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT source_reputation_acquisition_count_check CHECK ((acquisition_count >= 0)),
+    CONSTRAINT source_reputation_acquisition_success_count_check CHECK ((acquisition_success_count >= 0)),
+    CONSTRAINT source_reputation_acquisition_success_rate_check CHECK (((acquisition_success_rate >= (0)::numeric) AND (acquisition_success_rate <= (1)::numeric))),
+    CONSTRAINT source_reputation_dmca_rate_check CHECK (((dmca_rate >= (0)::numeric) AND (dmca_rate <= (1)::numeric))),
+    CONSTRAINT source_reputation_fake_rate_check CHECK (((fake_rate >= (0)::numeric) AND (fake_rate <= (1)::numeric))),
+    CONSTRAINT source_reputation_min_samples_check CHECK ((min_samples >= 0)),
+    CONSTRAINT source_reputation_request_count_check CHECK ((request_count >= 0)),
+    CONSTRAINT source_reputation_request_success_count_check CHECK ((request_success_count >= 0)),
+    CONSTRAINT source_reputation_request_success_rate_check CHECK (((request_success_rate >= (0)::numeric) AND (request_success_rate <= (1)::numeric)))
+);
+
+
+--
+-- Name: source_reputation_source_reputation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.source_reputation ALTER COLUMN source_reputation_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.source_reputation_source_reputation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: tag; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tag (
+    tag_id bigint NOT NULL,
+    tag_public_id uuid NOT NULL,
+    tag_key character varying(128) NOT NULL,
+    display_name character varying(256) NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    updated_by_user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone,
+    CONSTRAINT tag_key_lc CHECK (((tag_key)::text = lower((tag_key)::text)))
+);
+
+
+--
+-- Name: tag_tag_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tag ALTER COLUMN tag_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.tag_tag_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: torznab_category; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.torznab_category (
+    torznab_category_id bigint NOT NULL,
+    torznab_cat_id integer NOT NULL,
+    name character varying(128) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: torznab_category_torznab_category_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.torznab_category ALTER COLUMN torznab_category_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.torznab_category_torznab_category_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: torznab_instance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.torznab_instance (
+    torznab_instance_id bigint NOT NULL,
+    search_profile_id bigint NOT NULL,
+    torznab_instance_public_id uuid NOT NULL,
+    display_name character varying(256) NOT NULL,
+    api_key_hash text NOT NULL,
+    is_enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    deleted_at timestamp with time zone
+);
+
+
+--
+-- Name: torznab_instance_torznab_instance_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.torznab_instance ALTER COLUMN torznab_instance_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.torznab_instance_torznab_instance_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: tracker_category_mapping; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tracker_category_mapping (
+    tracker_category_mapping_id bigint NOT NULL,
+    indexer_definition_id bigint,
+    tracker_category integer NOT NULL,
+    tracker_subcategory integer DEFAULT 0 NOT NULL,
+    torznab_category_id bigint NOT NULL,
+    media_domain_id bigint,
+    confidence numeric(4,3) DEFAULT 1.0 NOT NULL,
+    indexer_instance_id bigint,
+    torznab_instance_id bigint,
+    CONSTRAINT tracker_category_mapping_tracker_category_check CHECK ((tracker_category >= 0)),
+    CONSTRAINT tracker_category_mapping_tracker_subcategory_check CHECK ((tracker_subcategory >= 0))
+);
+
+
+--
+-- Name: tracker_category_mapping_tracker_category_mapping_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tracker_category_mapping ALTER COLUMN tracker_category_mapping_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.tracker_category_mapping_tracker_category_mapping_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: trust_tier; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trust_tier (
+    trust_tier_id bigint NOT NULL,
+    trust_tier_key public.trust_tier_key NOT NULL,
+    display_name character varying(256) NOT NULL,
+    default_weight numeric(12,4) NOT NULL,
+    rank smallint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT trust_tier_default_weight_check CHECK (((default_weight >= ('-50'::integer)::numeric) AND (default_weight <= (50)::numeric)))
+);
+
+
+--
+-- Name: trust_tier_trust_tier_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.trust_tier ALTER COLUMN trust_tier_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.trust_tier_trust_tier_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: user_result_action; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_result_action (
+    user_result_action_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    search_request_id bigint NOT NULL,
+    canonical_torrent_id bigint NOT NULL,
+    action public.user_action NOT NULL,
+    reason_code public.user_reason_code NOT NULL,
+    reason_text character varying(512),
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: user_result_action_kv; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_result_action_kv (
+    user_result_action_kv_id bigint NOT NULL,
+    user_result_action_id bigint NOT NULL,
+    key public.user_action_kv_key NOT NULL,
+    value character varying(512) NOT NULL
+);
+
+
+--
+-- Name: user_result_action_kv_user_result_action_kv_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.user_result_action_kv ALTER COLUMN user_result_action_kv_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.user_result_action_kv_user_result_action_kv_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: user_result_action_user_result_action_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.user_result_action ALTER COLUMN user_result_action_id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.user_result_action_user_result_action_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: fs_jobs; Type: TABLE; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TABLE revaer_runtime.fs_jobs (
+    id bigint NOT NULL,
+    torrent_id uuid NOT NULL,
+    src_path text NOT NULL,
+    dst_path text,
+    transfer_mode text,
+    status revaer_runtime.fs_status DEFAULT 'pending'::revaer_runtime.fs_status NOT NULL,
+    attempt smallint DEFAULT 0 NOT NULL,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: fs_jobs_id_seq; Type: SEQUENCE; Schema: revaer_runtime; Owner: -
+--
+
+CREATE SEQUENCE revaer_runtime.fs_jobs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: fs_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: revaer_runtime; Owner: -
+--
+
+ALTER SEQUENCE revaer_runtime.fs_jobs_id_seq OWNED BY revaer_runtime.fs_jobs.id;
+
+
+--
+-- Name: torrent_files; Type: TABLE; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TABLE revaer_runtime.torrent_files (
+    torrent_id uuid NOT NULL,
+    file_index integer NOT NULL,
+    path text NOT NULL,
+    size_bytes bigint NOT NULL,
+    bytes_completed bigint NOT NULL,
+    priority text NOT NULL,
+    selected boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: torrents; Type: TABLE; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TABLE revaer_runtime.torrents (
+    torrent_id uuid NOT NULL,
+    name text,
+    state revaer_runtime.torrent_state NOT NULL,
+    state_message text,
+    progress_bytes_downloaded bigint DEFAULT 0 NOT NULL,
+    progress_bytes_total bigint DEFAULT 0 NOT NULL,
+    progress_eta_seconds bigint,
+    download_bps bigint DEFAULT 0 NOT NULL,
+    upload_bps bigint DEFAULT 0 NOT NULL,
+    ratio double precision DEFAULT 0 NOT NULL,
+    sequential boolean DEFAULT false NOT NULL,
+    library_path text,
+    download_dir text,
+    comment text,
+    source text,
+    private boolean,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: engine_tracker_endpoints id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_endpoints ALTER COLUMN id SET DEFAULT nextval('public.engine_tracker_endpoints_id_seq'::regclass);
+
+
+--
+-- Name: fs_jobs id; Type: DEFAULT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.fs_jobs ALTER COLUMN id SET DEFAULT nextval('revaer_runtime.fs_jobs_id_seq'::regclass);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_pkey PRIMARY KEY (acquisition_attempt_id);
+
+
+--
+-- Name: app_label_policies app_label_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_label_policies
+    ADD CONSTRAINT app_label_policies_pkey PRIMARY KEY (profile_id, kind, name);
+
+
+--
+-- Name: app_profile_immutable_keys app_profile_immutable_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile_immutable_keys
+    ADD CONSTRAINT app_profile_immutable_keys_pkey PRIMARY KEY (profile_id, key);
+
+
+--
+-- Name: app_profile_local_networks app_profile_local_networks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile_local_networks
+    ADD CONSTRAINT app_profile_local_networks_pkey PRIMARY KEY (profile_id, cidr);
+
+
+--
+-- Name: app_profile app_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile
+    ADD CONSTRAINT app_profile_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_user app_user_email_normalized_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_email_normalized_uq UNIQUE (email_normalized);
+
+
+--
+-- Name: app_user app_user_email_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_email_uq UNIQUE (email);
+
+
+--
+-- Name: app_user app_user_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: app_user app_user_user_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_user
+    ADD CONSTRAINT app_user_user_public_id_uq UNIQUE (user_public_id);
+
+
+--
+-- Name: auth_api_keys auth_api_keys_key_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_api_keys
+    ADD CONSTRAINT auth_api_keys_key_id_key UNIQUE (key_id);
+
+
+--
+-- Name: auth_api_keys auth_api_keys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.auth_api_keys
+    ADD CONSTRAINT auth_api_keys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: canonical_disambiguation_rule canonical_disambiguation_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_disambiguation_rule
+    ADD CONSTRAINT canonical_disambiguation_rule_pkey PRIMARY KEY (canonical_disambiguation_rule_id);
+
+
+--
+-- Name: canonical_disambiguation_rule canonical_disambiguation_rule_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_disambiguation_rule
+    ADD CONSTRAINT canonical_disambiguation_rule_uq UNIQUE (identity_left_type, identity_left_value_text, identity_left_value_uuid, identity_right_type, identity_right_value_text, identity_right_value_uuid);
+
+
+--
+-- Name: canonical_external_id canonical_external_id_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_external_id
+    ADD CONSTRAINT canonical_external_id_pkey PRIMARY KEY (canonical_external_id_id);
+
+
+--
+-- Name: canonical_size_rollup canonical_size_rollup_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_rollup
+    ADD CONSTRAINT canonical_size_rollup_pkey PRIMARY KEY (canonical_size_rollup_id);
+
+
+--
+-- Name: canonical_size_rollup canonical_size_rollup_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_rollup
+    ADD CONSTRAINT canonical_size_rollup_uq UNIQUE (canonical_torrent_id);
+
+
+--
+-- Name: canonical_size_sample canonical_size_sample_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_sample
+    ADD CONSTRAINT canonical_size_sample_pkey PRIMARY KEY (canonical_size_sample_id);
+
+
+--
+-- Name: canonical_size_sample canonical_size_sample_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_sample
+    ADD CONSTRAINT canonical_size_sample_uq UNIQUE (canonical_torrent_id, observed_at, size_bytes);
+
+
+--
+-- Name: canonical_torrent_best_source_context canonical_torrent_best_source_context_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_context_pkey PRIMARY KEY (canonical_torrent_best_source_context_id);
+
+
+--
+-- Name: canonical_torrent_best_source_context canonical_torrent_best_source_context_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_context_uq UNIQUE (context_key_type, context_key_id, canonical_torrent_id);
+
+
+--
+-- Name: canonical_torrent_best_source_global canonical_torrent_best_source_global_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source_global_pkey PRIMARY KEY (canonical_torrent_best_source_global_id);
+
+
+--
+-- Name: canonical_torrent_best_source_global canonical_torrent_best_source_global_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source_global_uq UNIQUE (canonical_torrent_id);
+
+
+--
+-- Name: canonical_torrent canonical_torrent_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent
+    ADD CONSTRAINT canonical_torrent_pkey PRIMARY KEY (canonical_torrent_id);
+
+
+--
+-- Name: canonical_torrent canonical_torrent_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent
+    ADD CONSTRAINT canonical_torrent_public_id_uq UNIQUE (canonical_torrent_public_id);
+
+
+--
+-- Name: canonical_torrent_signal canonical_torrent_signal_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_signal
+    ADD CONSTRAINT canonical_torrent_signal_pkey PRIMARY KEY (canonical_torrent_signal_id);
+
+
+--
+-- Name: canonical_torrent_signal canonical_torrent_signal_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_signal
+    ADD CONSTRAINT canonical_torrent_signal_uq UNIQUE (canonical_torrent_id, signal_key, value_text, value_int);
+
+
+--
+-- Name: canonical_torrent_source_attr canonical_torrent_source_attr_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_attr
+    ADD CONSTRAINT canonical_torrent_source_attr_pkey PRIMARY KEY (canonical_torrent_source_attr_id);
+
+
+--
+-- Name: canonical_torrent_source_attr canonical_torrent_source_attr_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_attr
+    ADD CONSTRAINT canonical_torrent_source_attr_uq UNIQUE (canonical_torrent_source_id, attr_key);
+
+
+--
+-- Name: canonical_torrent_source_base_score canonical_torrent_source_base_score_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base_score_pkey PRIMARY KEY (canonical_torrent_source_base_score_id);
+
+
+--
+-- Name: canonical_torrent_source_base_score canonical_torrent_source_base_score_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base_score_uq UNIQUE (canonical_torrent_id, canonical_torrent_source_id);
+
+
+--
+-- Name: canonical_torrent_source_context_score canonical_torrent_source_context_score_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_context_score_pkey PRIMARY KEY (canonical_torrent_source_context_score_id);
+
+
+--
+-- Name: canonical_torrent_source_context_score canonical_torrent_source_context_score_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_context_score_uq UNIQUE (context_key_type, context_key_id, canonical_torrent_id, canonical_torrent_source_id);
+
+
+--
+-- Name: canonical_torrent_source canonical_torrent_source_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source
+    ADD CONSTRAINT canonical_torrent_source_pkey PRIMARY KEY (canonical_torrent_source_id);
+
+
+--
+-- Name: canonical_torrent_source canonical_torrent_source_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source
+    ADD CONSTRAINT canonical_torrent_source_public_id_uq UNIQUE (canonical_torrent_source_public_id);
+
+
+--
+-- Name: config_audit_log config_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config_audit_log
+    ADD CONSTRAINT config_audit_log_pkey PRIMARY KEY (audit_log_id);
+
+
+--
+-- Name: deployment_config deployment_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_config
+    ADD CONSTRAINT deployment_config_pkey PRIMARY KEY (deployment_config_id);
+
+
+--
+-- Name: deployment_maintenance_state deployment_maintenance_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployment_maintenance_state
+    ADD CONSTRAINT deployment_maintenance_state_pkey PRIMARY KEY (deployment_maintenance_state_id);
+
+
+--
+-- Name: engine_alt_speed_days engine_alt_speed_days_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_alt_speed_days
+    ADD CONSTRAINT engine_alt_speed_days_pkey PRIMARY KEY (profile_id, ord);
+
+
+--
+-- Name: engine_alt_speed engine_alt_speed_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_alt_speed
+    ADD CONSTRAINT engine_alt_speed_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: engine_ip_filter_entries engine_ip_filter_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_ip_filter_entries
+    ADD CONSTRAINT engine_ip_filter_entries_pkey PRIMARY KEY (profile_id, ord);
+
+
+--
+-- Name: engine_ip_filter engine_ip_filter_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_ip_filter
+    ADD CONSTRAINT engine_ip_filter_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: engine_peer_class_defaults engine_peer_class_defaults_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_class_defaults
+    ADD CONSTRAINT engine_peer_class_defaults_pkey PRIMARY KEY (profile_id, class_id);
+
+
+--
+-- Name: engine_peer_classes engine_peer_classes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_classes
+    ADD CONSTRAINT engine_peer_classes_pkey PRIMARY KEY (profile_id, class_id);
+
+
+--
+-- Name: engine_profile_list_values engine_profile_list_values_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_profile_list_values
+    ADD CONSTRAINT engine_profile_list_values_pkey PRIMARY KEY (profile_id, kind, ord);
+
+
+--
+-- Name: engine_profile engine_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_profile
+    ADD CONSTRAINT engine_profile_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: engine_tracker_config engine_tracker_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_config
+    ADD CONSTRAINT engine_tracker_config_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: engine_tracker_endpoints engine_tracker_endpoints_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_endpoints
+    ADD CONSTRAINT engine_tracker_endpoints_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fs_policy_list_values fs_policy_list_values_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fs_policy_list_values
+    ADD CONSTRAINT fs_policy_list_values_pkey PRIMARY KEY (policy_id, kind, ord);
+
+
+--
+-- Name: fs_policy fs_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fs_policy
+    ADD CONSTRAINT fs_policy_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: import_indexer_result_media_domain import_indexer_result_media_domain_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domain_pkey PRIMARY KEY (import_indexer_result_media_domain_id);
+
+
+--
+-- Name: import_indexer_result_media_domain import_indexer_result_media_domain_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domain_uq UNIQUE (import_indexer_result_id, media_domain_id);
+
+
+--
+-- Name: import_indexer_result import_indexer_result_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result
+    ADD CONSTRAINT import_indexer_result_pkey PRIMARY KEY (import_indexer_result_id);
+
+
+--
+-- Name: import_indexer_result_tag import_indexer_result_tag_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_pkey PRIMARY KEY (import_indexer_result_tag_id);
+
+
+--
+-- Name: import_indexer_result_tag import_indexer_result_tag_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_uq UNIQUE (import_indexer_result_id, tag_id);
+
+
+--
+-- Name: import_indexer_result import_indexer_result_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result
+    ADD CONSTRAINT import_indexer_result_uq UNIQUE (import_job_id, prowlarr_identifier);
+
+
+--
+-- Name: import_job import_job_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_pkey PRIMARY KEY (import_job_id);
+
+
+--
+-- Name: import_job import_job_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_public_id_uq UNIQUE (import_job_public_id);
+
+
+--
+-- Name: indexer_cf_state indexer_cf_state_instance_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_cf_state
+    ADD CONSTRAINT indexer_cf_state_instance_uq UNIQUE (indexer_instance_id);
+
+
+--
+-- Name: indexer_cf_state indexer_cf_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_cf_state
+    ADD CONSTRAINT indexer_cf_state_pkey PRIMARY KEY (indexer_cf_state_id);
+
+
+--
+-- Name: indexer_connectivity_profile indexer_connectivity_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_connectivity_profile
+    ADD CONSTRAINT indexer_connectivity_profile_pkey PRIMARY KEY (indexer_instance_id);
+
+
+--
+-- Name: indexer_definition_field indexer_definition_field_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field
+    ADD CONSTRAINT indexer_definition_field_name_uq UNIQUE (indexer_definition_id, name);
+
+
+--
+-- Name: indexer_definition_field_option indexer_definition_field_option_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_option
+    ADD CONSTRAINT indexer_definition_field_option_pkey PRIMARY KEY (indexer_definition_field_option_id);
+
+
+--
+-- Name: indexer_definition_field_option indexer_definition_field_option_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_option
+    ADD CONSTRAINT indexer_definition_field_option_uq UNIQUE (indexer_definition_field_id, option_value);
+
+
+--
+-- Name: indexer_definition_field indexer_definition_field_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field
+    ADD CONSTRAINT indexer_definition_field_pkey PRIMARY KEY (indexer_definition_field_id);
+
+
+--
+-- Name: indexer_definition_field_validation indexer_definition_field_validation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_validation_pkey PRIMARY KEY (indexer_definition_field_validation_id);
+
+
+--
+-- Name: indexer_definition_field_value_set_item indexer_definition_field_value_set_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set_item
+    ADD CONSTRAINT indexer_definition_field_value_set_item_pkey PRIMARY KEY (value_set_item_id);
+
+
+--
+-- Name: indexer_definition_field_value_set indexer_definition_field_value_set_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set
+    ADD CONSTRAINT indexer_definition_field_value_set_pkey PRIMARY KEY (value_set_id);
+
+
+--
+-- Name: indexer_definition_field_value_set indexer_definition_field_value_set_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set
+    ADD CONSTRAINT indexer_definition_field_value_set_uq UNIQUE (indexer_definition_field_validation_id);
+
+
+--
+-- Name: indexer_definition indexer_definition_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition
+    ADD CONSTRAINT indexer_definition_pkey PRIMARY KEY (indexer_definition_id);
+
+
+--
+-- Name: indexer_definition indexer_definition_upstream_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition
+    ADD CONSTRAINT indexer_definition_upstream_uq UNIQUE (upstream_source, upstream_slug);
+
+
+--
+-- Name: indexer_health_event indexer_health_event_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_event
+    ADD CONSTRAINT indexer_health_event_pkey PRIMARY KEY (indexer_health_event_id);
+
+
+--
+-- Name: indexer_health_notification_hook indexer_health_notification_hook_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_pkey PRIMARY KEY (indexer_health_notification_hook_id);
+
+
+--
+-- Name: indexer_health_notification_hook indexer_health_notification_hook_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_public_id_uq UNIQUE (indexer_health_notification_hook_public_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_display_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_display_name_uq UNIQUE (display_name);
+
+
+--
+-- Name: indexer_instance_field_value indexer_instance_field_value_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_pkey PRIMARY KEY (indexer_instance_field_value_id);
+
+
+--
+-- Name: indexer_instance_field_value indexer_instance_field_value_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_uq UNIQUE (indexer_instance_id, field_name);
+
+
+--
+-- Name: indexer_instance_import_blob indexer_instance_import_blob_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_import_blob
+    ADD CONSTRAINT indexer_instance_import_blob_pkey PRIMARY KEY (indexer_instance_import_blob_id);
+
+
+--
+-- Name: indexer_instance_import_blob indexer_instance_import_blob_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_import_blob
+    ADD CONSTRAINT indexer_instance_import_blob_uq UNIQUE (indexer_instance_id, source_system);
+
+
+--
+-- Name: indexer_instance_media_domain indexer_instance_media_domain_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_pkey PRIMARY KEY (indexer_instance_media_domain_id);
+
+
+--
+-- Name: indexer_instance_media_domain indexer_instance_media_domain_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_uq UNIQUE (indexer_instance_id, media_domain_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_pkey PRIMARY KEY (indexer_instance_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_public_id_uq UNIQUE (indexer_instance_public_id);
+
+
+--
+-- Name: indexer_instance_rate_limit indexer_instance_rate_limit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_pkey PRIMARY KEY (indexer_instance_rate_limit_id);
+
+
+--
+-- Name: indexer_instance_rate_limit indexer_instance_rate_limit_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_uq UNIQUE (indexer_instance_id);
+
+
+--
+-- Name: indexer_instance_tag indexer_instance_tag_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_pkey PRIMARY KEY (indexer_instance_tag_id);
+
+
+--
+-- Name: indexer_instance_tag indexer_instance_tag_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_uq UNIQUE (indexer_instance_id, tag_id);
+
+
+--
+-- Name: indexer_rss_item_seen indexer_rss_item_seen_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_item_seen
+    ADD CONSTRAINT indexer_rss_item_seen_pkey PRIMARY KEY (rss_item_seen_id);
+
+
+--
+-- Name: indexer_rss_subscription indexer_rss_subscription_instance_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_subscription
+    ADD CONSTRAINT indexer_rss_subscription_instance_uq UNIQUE (indexer_instance_id);
+
+
+--
+-- Name: indexer_rss_subscription indexer_rss_subscription_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_subscription
+    ADD CONSTRAINT indexer_rss_subscription_pkey PRIMARY KEY (indexer_rss_subscription_id);
+
+
+--
+-- Name: indexer_run_cursor indexer_run_cursor_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_run_cursor
+    ADD CONSTRAINT indexer_run_cursor_pkey PRIMARY KEY (indexer_run_cursor_id);
+
+
+--
+-- Name: indexer_run_cursor indexer_run_cursor_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_run_cursor
+    ADD CONSTRAINT indexer_run_cursor_uq UNIQUE (search_request_indexer_run_id);
+
+
+--
+-- Name: job_schedule job_schedule_job_key_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_schedule
+    ADD CONSTRAINT job_schedule_job_key_uq UNIQUE (job_key);
+
+
+--
+-- Name: job_schedule job_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_schedule
+    ADD CONSTRAINT job_schedule_pkey PRIMARY KEY (job_schedule_id);
+
+
+--
+-- Name: media_capability_snapshot_encoder media_capability_snapshot_encoder_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_encoder
+    ADD CONSTRAINT media_capability_snapshot_encoder_pkey PRIMARY KEY (media_capability_snapshot_encoder_id);
+
+
+--
+-- Name: media_capability_snapshot_feature media_capability_snapshot_feature_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_feature
+    ADD CONSTRAINT media_capability_snapshot_feature_pkey PRIMARY KEY (media_capability_snapshot_feature_id);
+
+
+--
+-- Name: media_capability_snapshot media_capability_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot
+    ADD CONSTRAINT media_capability_snapshot_pkey PRIMARY KEY (media_capability_snapshot_id);
+
+
+--
+-- Name: media_capability_snapshot_run media_capability_snapshot_run_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_run
+    ADD CONSTRAINT media_capability_snapshot_run_pkey PRIMARY KEY (snapshot_run_public_id);
+
+
+--
+-- Name: media_compatibility_target media_compatibility_target_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_compatibility_target
+    ADD CONSTRAINT media_compatibility_target_pkey PRIMARY KEY (media_compatibility_target_id);
+
+
+--
+-- Name: media_desired_target_audio_stream media_desired_target_audio_stream_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_audio_stream
+    ADD CONSTRAINT media_desired_target_audio_stream_pkey PRIMARY KEY (media_desired_target_stream_id);
+
+
+--
+-- Name: media_desired_target_container media_desired_target_container_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_container
+    ADD CONSTRAINT media_desired_target_container_pkey PRIMARY KEY (media_desired_target_profile_id);
+
+
+--
+-- Name: media_desired_target_profile media_desired_target_profile_media_desired_target_profile_p_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_profile
+    ADD CONSTRAINT media_desired_target_profile_media_desired_target_profile_p_key UNIQUE (media_desired_target_profile_public_id);
+
+
+--
+-- Name: media_desired_target_profile media_desired_target_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_profile
+    ADD CONSTRAINT media_desired_target_profile_pkey PRIMARY KEY (media_desired_target_profile_id);
+
+
+--
+-- Name: media_desired_target_stream media_desired_target_stream_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_stream
+    ADD CONSTRAINT media_desired_target_stream_pkey PRIMARY KEY (media_desired_target_stream_id);
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_discovery_schedule_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_discovery_schedule_public_id_key UNIQUE (media_discovery_schedule_public_id);
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_profile_id_sort_order_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_id_sort_order_key UNIQUE (media_profile_id, sort_order);
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_profile_root_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_root_id_key UNIQUE (media_profile_root_id);
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_pkey PRIMARY KEY (media_discovery_schedule_id);
+
+
+--
+-- Name: media_discovery_source_fingerprint media_discovery_source_fingerprint_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_source_fingerprint
+    ADD CONSTRAINT media_discovery_source_fingerprint_pkey PRIMARY KEY (media_discovery_source_fingerprint_id);
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_discovery_watcher_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_discovery_watcher_public_id_key UNIQUE (media_discovery_watcher_public_id);
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_profile_id_sort_order_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_id_sort_order_key UNIQUE (media_profile_id, sort_order);
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_profile_root_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_root_id_key UNIQUE (media_profile_root_id);
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_pkey PRIMARY KEY (media_discovery_watcher_id);
+
+
+--
+-- Name: media_domain media_domain_key_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain
+    ADD CONSTRAINT media_domain_key_uq UNIQUE (media_domain_key);
+
+
+--
+-- Name: media_domain media_domain_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain
+    ADD CONSTRAINT media_domain_pkey PRIMARY KEY (media_domain_id);
+
+
+--
+-- Name: media_domain_to_torznab_category media_domain_to_torznab_category_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_pkey PRIMARY KEY (media_domain_to_torznab_category_id);
+
+
+--
+-- Name: media_domain_to_torznab_category media_domain_to_torznab_category_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_uq UNIQUE (media_domain_id, torznab_category_id);
+
+
+--
+-- Name: media_job_artifact media_job_artifact_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_artifact
+    ADD CONSTRAINT media_job_artifact_pkey PRIMARY KEY (media_job_artifact_id);
+
+
+--
+-- Name: media_job_attempt media_job_attempt_claim_generation_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_claim_generation_key UNIQUE (claim_generation);
+
+
+--
+-- Name: media_job_attempt media_job_attempt_media_job_id_attempt_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_media_job_id_attempt_number_key UNIQUE (media_job_id, attempt_number);
+
+
+--
+-- Name: media_job_attempt media_job_attempt_media_job_id_media_job_attempt_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_media_job_id_media_job_attempt_id_key UNIQUE (media_job_id, media_job_attempt_id);
+
+
+--
+-- Name: media_job_attempt media_job_attempt_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_pkey PRIMARY KEY (media_job_attempt_id);
+
+
+--
+-- Name: media_job_compact_audit_archive media_job_compact_audit_archive_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_compact_audit_archive
+    ADD CONSTRAINT media_job_compact_audit_archive_pkey PRIMARY KEY (media_job_public_id, attempt_number, audit_index);
+
+
+--
+-- Name: media_job_compact_audit media_job_compact_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_compact_audit
+    ADD CONSTRAINT media_job_compact_audit_pkey PRIMARY KEY (media_job_compact_audit_id);
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snapshot_pkey PRIMARY KEY (media_job_id);
+
+
+--
+-- Name: media_job_desired_target_stream media_job_desired_target_stream_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_desired_target_stream
+    ADD CONSTRAINT media_job_desired_target_stream_pkey PRIMARY KEY (media_job_desired_target_stream_id);
+
+
+--
+-- Name: media_job_file_rule_snapshot media_job_file_rule_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_file_rule_snapshot
+    ADD CONSTRAINT media_job_file_rule_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_filter_snapshot media_job_filter_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_filter_snapshot
+    ADD CONSTRAINT media_job_filter_snapshot_pkey PRIMARY KEY (media_job_id);
+
+
+--
+-- Name: media_job media_job_media_job_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_media_job_public_id_key UNIQUE (media_job_public_id);
+
+
+--
+-- Name: media_job_operation media_job_operation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_operation
+    ADD CONSTRAINT media_job_operation_pkey PRIMARY KEY (media_job_operation_id);
+
+
+--
+-- Name: media_job_phase media_job_phase_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_phase
+    ADD CONSTRAINT media_job_phase_pkey PRIMARY KEY (media_job_phase_id);
+
+
+--
+-- Name: media_job media_job_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_pkey PRIMARY KEY (media_job_id);
+
+
+--
+-- Name: media_job_plan_reason media_job_plan_reason_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_plan_reason
+    ADD CONSTRAINT media_job_plan_reason_pkey PRIMARY KEY (media_job_plan_reason_id);
+
+
+--
+-- Name: media_job_policy_behavior_snapshot media_job_policy_behavior_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_behavior_snapshot
+    ADD CONSTRAINT media_job_policy_behavior_snapshot_pkey PRIMARY KEY (media_job_id);
+
+
+--
+-- Name: media_job_policy_compatibility_target_snapshot media_job_policy_compatibility_target_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_compatibility_target_snapshot
+    ADD CONSTRAINT media_job_policy_compatibility_target_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_policy_maintenance_window_snapshot media_job_policy_maintenance_window_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_maintenance_window_snapshot
+    ADD CONSTRAINT media_job_policy_maintenance_window_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_policy_operation_cost_snapshot media_job_policy_operation_cost_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_operation_cost_snapshot
+    ADD CONSTRAINT media_job_policy_operation_cost_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_policy_retention_rule_snapshot media_job_policy_retention_rule_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_retention_rule_snapshot
+    ADD CONSTRAINT media_job_policy_retention_rule_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_retention_policy media_job_retention_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_retention_policy
+    ADD CONSTRAINT media_job_retention_policy_pkey PRIMARY KEY (media_job_retention_policy_id);
+
+
+--
+-- Name: media_job_root_snapshot media_job_root_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_root_snapshot
+    ADD CONSTRAINT media_job_root_snapshot_pkey PRIMARY KEY (media_job_id, root_kind, sort_order);
+
+
+--
+-- Name: media_job_stream_classification_rule_snapshot media_job_stream_classification_rule_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_stream_classification_rule_snapshot
+    ADD CONSTRAINT media_job_stream_classification_rule_snapshot_pkey PRIMARY KEY (media_job_id, sort_order);
+
+
+--
+-- Name: media_job_subtitle_discovery_rule_snapshot media_job_subtitle_discovery_rule_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_subtitle_discovery_rule_snapshot
+    ADD CONSTRAINT media_job_subtitle_discovery_rule_snapshot_pkey PRIMARY KEY (media_job_id, precedence);
+
+
+--
+-- Name: media_job_terminal_outbox media_job_terminal_outbox_job_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_job_unique UNIQUE (media_job_id);
+
+
+--
+-- Name: media_job_terminal_outbox media_job_terminal_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_pkey PRIMARY KEY (media_job_terminal_outbox_id);
+
+
+--
+-- Name: media_job_verification_check media_job_verification_check_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_verification_check
+    ADD CONSTRAINT media_job_verification_check_pkey PRIMARY KEY (media_job_verification_check_id);
+
+
+--
+-- Name: media_job_violation media_job_violation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_violation
+    ADD CONSTRAINT media_job_violation_pkey PRIMARY KEY (media_job_violation_id);
+
+
+--
+-- Name: media_policy_backup media_policy_backup_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_backup
+    ADD CONSTRAINT media_policy_backup_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_compatibility_rule media_policy_compatibility_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_rule
+    ADD CONSTRAINT media_policy_compatibility_rule_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_ta_media_policy_profile_id_sort__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_ta_media_policy_profile_id_sort__key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_target_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_target_pkey PRIMARY KEY (media_policy_profile_id, media_compatibility_target_id);
+
+
+--
+-- Name: media_policy_maintenance_window media_policy_maintenance_wind_media_policy_profile_id_sort__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_maintenance_window
+    ADD CONSTRAINT media_policy_maintenance_wind_media_policy_profile_id_sort__key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_policy_maintenance_window media_policy_maintenance_window_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_maintenance_window
+    ADD CONSTRAINT media_policy_maintenance_window_pkey PRIMARY KEY (media_policy_profile_id, day_of_week, start_time);
+
+
+--
+-- Name: media_policy_operation_cost media_policy_operation_cost_media_policy_profile_id_sort_or_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_operation_cost
+    ADD CONSTRAINT media_policy_operation_cost_media_policy_profile_id_sort_or_key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_policy_operation_cost media_policy_operation_cost_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_operation_cost
+    ADD CONSTRAINT media_policy_operation_cost_pkey PRIMARY KEY (media_policy_profile_id, operation_kind);
+
+
+--
+-- Name: media_policy_output media_policy_output_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_output
+    ADD CONSTRAINT media_policy_output_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_profile media_policy_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_profile
+    ADD CONSTRAINT media_policy_profile_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_retention_rule media_policy_retention_rule_media_policy_profile_id_sort_or_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_retention_rule
+    ADD CONSTRAINT media_policy_retention_rule_media_policy_profile_id_sort_or_key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_policy_retention_rule media_policy_retention_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_retention_rule
+    ADD CONSTRAINT media_policy_retention_rule_pkey PRIMARY KEY (media_policy_retention_rule_id);
+
+
+--
+-- Name: media_policy_runtime_limit media_policy_runtime_limit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_runtime_limit
+    ADD CONSTRAINT media_policy_runtime_limit_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_unmatched_stream_behavior media_policy_unmatched_stream_behavior_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_unmatched_stream_behavior
+    ADD CONSTRAINT media_policy_unmatched_stream_behavior_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_verification media_policy_verification_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_verification
+    ADD CONSTRAINT media_policy_verification_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_policy_workspace media_policy_workspace_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_workspace
+    ADD CONSTRAINT media_policy_workspace_pkey PRIMARY KEY (media_policy_profile_id);
+
+
+--
+-- Name: media_profile_file_rule media_profile_file_rule_media_profile_id_sort_order_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_file_rule
+    ADD CONSTRAINT media_profile_file_rule_media_profile_id_sort_order_key UNIQUE (media_profile_id, sort_order);
+
+
+--
+-- Name: media_profile_file_rule media_profile_file_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_file_rule
+    ADD CONSTRAINT media_profile_file_rule_pkey PRIMARY KEY (media_profile_file_rule_id);
+
+
+--
+-- Name: media_profile_filter media_profile_filter_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_filter
+    ADD CONSTRAINT media_profile_filter_pkey PRIMARY KEY (media_profile_id);
+
+
+--
+-- Name: media_profile_import_draft media_profile_import_draft_media_profile_import_draft_publi_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_import_draft
+    ADD CONSTRAINT media_profile_import_draft_media_profile_import_draft_publi_key UNIQUE (media_profile_import_draft_public_id);
+
+
+--
+-- Name: media_profile_import_draft media_profile_import_draft_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_import_draft
+    ADD CONSTRAINT media_profile_import_draft_pkey PRIMARY KEY (media_profile_import_draft_id);
+
+
+--
+-- Name: media_profile media_profile_media_profile_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_media_profile_public_id_key UNIQUE (media_profile_public_id);
+
+
+--
+-- Name: media_profile media_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_pkey PRIMARY KEY (media_profile_id);
+
+
+--
+-- Name: media_profile_root media_profile_root_media_profile_root_public_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_root
+    ADD CONSTRAINT media_profile_root_media_profile_root_public_id_key UNIQUE (media_profile_root_public_id);
+
+
+--
+-- Name: media_profile_root media_profile_root_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_root
+    ADD CONSTRAINT media_profile_root_pkey PRIMARY KEY (media_profile_root_id);
+
+
+--
+-- Name: media_stream_classification_rule media_stream_classification_r_media_policy_profile_id_sort__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_stream_classification_rule
+    ADD CONSTRAINT media_stream_classification_r_media_policy_profile_id_sort__key UNIQUE (media_policy_profile_id, sort_order);
+
+
+--
+-- Name: media_stream_classification_rule media_stream_classification_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_stream_classification_rule
+    ADD CONSTRAINT media_stream_classification_rule_pkey PRIMARY KEY (media_stream_classification_rule_id);
+
+
+--
+-- Name: media_subtitle_discovery_rule media_subtitle_discovery_rule_media_profile_id_precedence_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_subtitle_discovery_rule
+    ADD CONSTRAINT media_subtitle_discovery_rule_media_profile_id_precedence_key UNIQUE (media_profile_id, precedence);
+
+
+--
+-- Name: media_subtitle_discovery_rule media_subtitle_discovery_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_subtitle_discovery_rule
+    ADD CONSTRAINT media_subtitle_discovery_rule_pkey PRIMARY KEY (media_subtitle_discovery_rule_id);
+
+
+--
+-- Name: media_target media_target_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_target
+    ADD CONSTRAINT media_target_pkey PRIMARY KEY (media_target_id);
+
+
+--
+-- Name: outbound_request_log outbound_request_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_pkey PRIMARY KEY (outbound_request_log_id);
+
+
+--
+-- Name: policy_rule policy_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_pkey PRIMARY KEY (policy_rule_id);
+
+
+--
+-- Name: policy_rule policy_rule_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_public_id_uq UNIQUE (policy_rule_public_id);
+
+
+--
+-- Name: policy_rule_value_set_item policy_rule_value_set_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set_item
+    ADD CONSTRAINT policy_rule_value_set_item_pkey PRIMARY KEY (value_set_item_id);
+
+
+--
+-- Name: policy_rule_value_set policy_rule_value_set_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set
+    ADD CONSTRAINT policy_rule_value_set_pkey PRIMARY KEY (value_set_id);
+
+
+--
+-- Name: policy_rule_value_set policy_rule_value_set_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set
+    ADD CONSTRAINT policy_rule_value_set_uq UNIQUE (policy_rule_id);
+
+
+--
+-- Name: policy_set policy_set_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_pkey PRIMARY KEY (policy_set_id);
+
+
+--
+-- Name: policy_set policy_set_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_public_id_uq UNIQUE (policy_set_public_id);
+
+
+--
+-- Name: policy_snapshot policy_snapshot_hash_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot
+    ADD CONSTRAINT policy_snapshot_hash_uq UNIQUE (snapshot_hash);
+
+
+--
+-- Name: policy_snapshot policy_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot
+    ADD CONSTRAINT policy_snapshot_pkey PRIMARY KEY (policy_snapshot_id);
+
+
+--
+-- Name: policy_snapshot_rule policy_snapshot_rule_order_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_order_uq UNIQUE (policy_snapshot_id, rule_order);
+
+
+--
+-- Name: policy_snapshot_rule policy_snapshot_rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_pkey PRIMARY KEY (policy_snapshot_rule_id);
+
+
+--
+-- Name: policy_snapshot_rule policy_snapshot_rule_public_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_public_uq UNIQUE (policy_snapshot_id, policy_rule_public_id);
+
+
+--
+-- Name: query_presets query_presets_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.query_presets
+    ADD CONSTRAINT query_presets_name_key UNIQUE (name);
+
+
+--
+-- Name: query_presets query_presets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.query_presets
+    ADD CONSTRAINT query_presets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rate_limit_policy rate_limit_policy_display_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_policy
+    ADD CONSTRAINT rate_limit_policy_display_name_uq UNIQUE (display_name);
+
+
+--
+-- Name: rate_limit_policy rate_limit_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_policy
+    ADD CONSTRAINT rate_limit_policy_pkey PRIMARY KEY (rate_limit_policy_id);
+
+
+--
+-- Name: rate_limit_policy rate_limit_policy_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_policy
+    ADD CONSTRAINT rate_limit_policy_public_id_uq UNIQUE (rate_limit_policy_public_id);
+
+
+--
+-- Name: rate_limit_state rate_limit_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_state
+    ADD CONSTRAINT rate_limit_state_pkey PRIMARY KEY (rate_limit_state_id);
+
+
+--
+-- Name: rate_limit_state rate_limit_state_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rate_limit_state
+    ADD CONSTRAINT rate_limit_state_uq UNIQUE (scope_type, scope_id, window_start);
+
+
+--
+-- Name: routing_policy routing_policy_display_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_display_name_uq UNIQUE (display_name);
+
+
+--
+-- Name: routing_policy_parameter routing_policy_parameter_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_parameter
+    ADD CONSTRAINT routing_policy_parameter_pkey PRIMARY KEY (routing_policy_parameter_id);
+
+
+--
+-- Name: routing_policy_parameter routing_policy_parameter_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_parameter
+    ADD CONSTRAINT routing_policy_parameter_uq UNIQUE (routing_policy_id, param_key);
+
+
+--
+-- Name: routing_policy routing_policy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_pkey PRIMARY KEY (routing_policy_id);
+
+
+--
+-- Name: routing_policy routing_policy_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_public_id_uq UNIQUE (routing_policy_public_id);
+
+
+--
+-- Name: routing_policy_rate_limit routing_policy_rate_limit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_pkey PRIMARY KEY (routing_policy_rate_limit_id);
+
+
+--
+-- Name: routing_policy_rate_limit routing_policy_rate_limit_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_uq UNIQUE (routing_policy_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_pkey PRIMARY KEY (search_filter_decision_id);
+
+
+--
+-- Name: search_page_item search_page_item_canonical_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_canonical_uq UNIQUE (search_request_canonical_id);
+
+
+--
+-- Name: search_page_item search_page_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_pkey PRIMARY KEY (search_page_item_id);
+
+
+--
+-- Name: search_page_item search_page_item_position_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_position_uq UNIQUE (search_page_id, "position");
+
+
+--
+-- Name: search_page search_page_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page
+    ADD CONSTRAINT search_page_pkey PRIMARY KEY (search_page_id);
+
+
+--
+-- Name: search_page search_page_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page
+    ADD CONSTRAINT search_page_uq UNIQUE (search_request_id, page_number);
+
+
+--
+-- Name: search_profile_indexer_allow search_profile_indexer_allow_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_pkey PRIMARY KEY (search_profile_indexer_allow_id);
+
+
+--
+-- Name: search_profile_indexer_allow search_profile_indexer_allow_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_uq UNIQUE (search_profile_id, indexer_instance_id);
+
+
+--
+-- Name: search_profile_indexer_block search_profile_indexer_block_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_pkey PRIMARY KEY (search_profile_indexer_block_id);
+
+
+--
+-- Name: search_profile_indexer_block search_profile_indexer_block_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_uq UNIQUE (search_profile_id, indexer_instance_id);
+
+
+--
+-- Name: search_profile_media_domain search_profile_media_domain_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_pkey PRIMARY KEY (search_profile_media_domain_id);
+
+
+--
+-- Name: search_profile_media_domain search_profile_media_domain_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_uq UNIQUE (search_profile_id, media_domain_id);
+
+
+--
+-- Name: search_profile search_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_pkey PRIMARY KEY (search_profile_id);
+
+
+--
+-- Name: search_profile_policy_set search_profile_policy_set_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_pkey PRIMARY KEY (search_profile_policy_set_id);
+
+
+--
+-- Name: search_profile_policy_set search_profile_policy_set_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_uq UNIQUE (search_profile_id, policy_set_id);
+
+
+--
+-- Name: search_profile search_profile_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_public_id_uq UNIQUE (search_profile_public_id);
+
+
+--
+-- Name: search_profile_tag_allow search_profile_tag_allow_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_pkey PRIMARY KEY (search_profile_tag_allow_id);
+
+
+--
+-- Name: search_profile_tag_allow search_profile_tag_allow_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_uq UNIQUE (search_profile_id, tag_id);
+
+
+--
+-- Name: search_profile_tag_block search_profile_tag_block_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_pkey PRIMARY KEY (search_profile_tag_block_id);
+
+
+--
+-- Name: search_profile_tag_block search_profile_tag_block_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_uq UNIQUE (search_profile_id, tag_id);
+
+
+--
+-- Name: search_profile_tag_prefer search_profile_tag_prefer_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_pkey PRIMARY KEY (search_profile_tag_prefer_id);
+
+
+--
+-- Name: search_profile_tag_prefer search_profile_tag_prefer_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_uq UNIQUE (search_profile_id, tag_id);
+
+
+--
+-- Name: search_profile_trust_tier search_profile_trust_tier_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_pkey PRIMARY KEY (search_profile_trust_tier_id);
+
+
+--
+-- Name: search_profile_trust_tier search_profile_trust_tier_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_uq UNIQUE (search_profile_id, trust_tier_id);
+
+
+--
+-- Name: search_request_canonical search_request_canonical_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_pkey PRIMARY KEY (search_request_canonical_id);
+
+
+--
+-- Name: search_request_canonical search_request_canonical_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_uq UNIQUE (search_request_id, canonical_torrent_id);
+
+
+--
+-- Name: search_request_identifier search_request_identifier_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_identifier
+    ADD CONSTRAINT search_request_identifier_pkey PRIMARY KEY (search_request_identifier_id);
+
+
+--
+-- Name: search_request_identifier search_request_identifier_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_identifier
+    ADD CONSTRAINT search_request_identifier_uq UNIQUE (search_request_id, id_type);
+
+
+--
+-- Name: search_request_indexer_run_correlation search_request_indexer_run_correlation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run_correlation
+    ADD CONSTRAINT search_request_indexer_run_correlation_pkey PRIMARY KEY (search_request_indexer_run_correlation_id);
+
+
+--
+-- Name: search_request_indexer_run_correlation search_request_indexer_run_correlation_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run_correlation
+    ADD CONSTRAINT search_request_indexer_run_correlation_uq UNIQUE (search_request_indexer_run_id, correlation_id);
+
+
+--
+-- Name: search_request_indexer_run search_request_indexer_run_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_pkey PRIMARY KEY (search_request_indexer_run_id);
+
+
+--
+-- Name: search_request_indexer_run search_request_indexer_run_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_uq UNIQUE (search_request_id, indexer_instance_id);
+
+
+--
+-- Name: search_request search_request_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_pkey PRIMARY KEY (search_request_id);
+
+
+--
+-- Name: search_request search_request_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_public_id_uq UNIQUE (search_request_public_id);
+
+
+--
+-- Name: search_request_source_observation_attr search_request_source_observation_attr_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation_attr
+    ADD CONSTRAINT search_request_source_observation_attr_pkey PRIMARY KEY (observation_attr_id);
+
+
+--
+-- Name: search_request_source_observation_attr search_request_source_observation_attr_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation_attr
+    ADD CONSTRAINT search_request_source_observation_attr_uq UNIQUE (observation_id, attr_key);
+
+
+--
+-- Name: search_request_source_observation search_request_source_observation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_pkey PRIMARY KEY (observation_id);
+
+
+--
+-- Name: search_request_torznab_category_effective search_request_torznab_category_effective_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effective_pkey PRIMARY KEY (search_request_torznab_category_effective_id);
+
+
+--
+-- Name: search_request_torznab_category_effective search_request_torznab_category_effective_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effective_uq UNIQUE (search_request_id, torznab_category_id);
+
+
+--
+-- Name: search_request_torznab_category_requested search_request_torznab_category_requested_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_requested_pkey PRIMARY KEY (search_request_torznab_category_requested_id);
+
+
+--
+-- Name: search_request_torznab_category_requested search_request_torznab_category_requested_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_requested_uq UNIQUE (search_request_id, torznab_category_id);
+
+
+--
+-- Name: secret_audit_log secret_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_audit_log
+    ADD CONSTRAINT secret_audit_log_pkey PRIMARY KEY (secret_audit_log_id);
+
+
+--
+-- Name: secret_binding secret_binding_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_binding
+    ADD CONSTRAINT secret_binding_pkey PRIMARY KEY (secret_binding_id);
+
+
+--
+-- Name: secret_binding secret_binding_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_binding
+    ADD CONSTRAINT secret_binding_uq UNIQUE (bound_table, bound_id, binding_name);
+
+
+--
+-- Name: secret secret_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret
+    ADD CONSTRAINT secret_pkey PRIMARY KEY (secret_id);
+
+
+--
+-- Name: secret secret_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret
+    ADD CONSTRAINT secret_public_id_uq UNIQUE (secret_public_id);
+
+
+--
+-- Name: settings_revision settings_revision_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settings_revision
+    ADD CONSTRAINT settings_revision_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: settings_secret settings_secret_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settings_secret
+    ADD CONSTRAINT settings_secret_name_key UNIQUE (name);
+
+
+--
+-- Name: settings_secret settings_secret_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settings_secret
+    ADD CONSTRAINT settings_secret_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: setup_tokens setup_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.setup_tokens
+    ADD CONSTRAINT setup_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_metadata_conflict_audit_log source_metadata_conflict_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict_audit_log
+    ADD CONSTRAINT source_metadata_conflict_audit_log_pkey PRIMARY KEY (source_metadata_conflict_audit_log_id);
+
+
+--
+-- Name: source_metadata_conflict source_metadata_conflict_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict
+    ADD CONSTRAINT source_metadata_conflict_pkey PRIMARY KEY (source_metadata_conflict_id);
+
+
+--
+-- Name: source_reputation source_reputation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_reputation
+    ADD CONSTRAINT source_reputation_pkey PRIMARY KEY (source_reputation_id);
+
+
+--
+-- Name: source_reputation source_reputation_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_reputation
+    ADD CONSTRAINT source_reputation_uq UNIQUE (indexer_instance_id, window_key, window_start);
+
+
+--
+-- Name: tag tag_key_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_key_uq UNIQUE (tag_key);
+
+
+--
+-- Name: tag tag_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_pkey PRIMARY KEY (tag_id);
+
+
+--
+-- Name: tag tag_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_public_id_uq UNIQUE (tag_public_id);
+
+
+--
+-- Name: torznab_category torznab_category_cat_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_category
+    ADD CONSTRAINT torznab_category_cat_id_uq UNIQUE (torznab_cat_id);
+
+
+--
+-- Name: torznab_category torznab_category_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_category
+    ADD CONSTRAINT torznab_category_pkey PRIMARY KEY (torznab_category_id);
+
+
+--
+-- Name: torznab_instance torznab_instance_display_name_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_display_name_uq UNIQUE (display_name);
+
+
+--
+-- Name: torznab_instance torznab_instance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_pkey PRIMARY KEY (torznab_instance_id);
+
+
+--
+-- Name: torznab_instance torznab_instance_public_id_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_public_id_uq UNIQUE (torznab_instance_public_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_pkey PRIMARY KEY (tracker_category_mapping_id);
+
+
+--
+-- Name: trust_tier trust_tier_key_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_tier
+    ADD CONSTRAINT trust_tier_key_uq UNIQUE (trust_tier_key);
+
+
+--
+-- Name: trust_tier trust_tier_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trust_tier
+    ADD CONSTRAINT trust_tier_pkey PRIMARY KEY (trust_tier_id);
+
+
+--
+-- Name: user_result_action_kv user_result_action_kv_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action_kv
+    ADD CONSTRAINT user_result_action_kv_pkey PRIMARY KEY (user_result_action_kv_id);
+
+
+--
+-- Name: user_result_action_kv user_result_action_kv_uq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action_kv
+    ADD CONSTRAINT user_result_action_kv_uq UNIQUE (user_result_action_id, key);
+
+
+--
+-- Name: user_result_action user_result_action_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_pkey PRIMARY KEY (user_result_action_id);
+
+
+--
+-- Name: fs_jobs fs_jobs_pkey; Type: CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.fs_jobs
+    ADD CONSTRAINT fs_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: torrent_files torrent_files_pkey; Type: CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.torrent_files
+    ADD CONSTRAINT torrent_files_pkey PRIMARY KEY (torrent_id, file_index);
+
+
+--
+-- Name: torrents torrents_pkey; Type: CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.torrents
+    ADD CONSTRAINT torrents_pkey PRIMARY KEY (torrent_id);
+
+
+--
+-- Name: acquisition_attempt_client_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX acquisition_attempt_client_uq ON public.acquisition_attempt USING btree (torrent_client_name, torrent_client_id) WHERE ((torrent_client_id IS NOT NULL) AND (torrent_client_name <> 'unknown'::public.torrent_client_name));
+
+
+--
+-- Name: app_profile_immutable_keys_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX app_profile_immutable_keys_order ON public.app_profile_immutable_keys USING btree (profile_id, ord);
+
+
+--
+-- Name: app_profile_local_networks_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX app_profile_local_networks_order ON public.app_profile_local_networks USING btree (profile_id, ord);
+
+
+--
+-- Name: auth_api_keys_enabled_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX auth_api_keys_enabled_idx ON public.auth_api_keys USING btree (enabled) WHERE (enabled = true);
+
+
+--
+-- Name: canonical_external_id_int_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_external_id_int_uq ON public.canonical_external_id USING btree (canonical_torrent_id, id_type, id_value_int) WHERE (id_value_int IS NOT NULL);
+
+
+--
+-- Name: canonical_external_id_text_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_external_id_text_uq ON public.canonical_external_id USING btree (canonical_torrent_id, id_type, id_value_text) WHERE (id_value_text IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_infohash_v1_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_infohash_v1_uq ON public.canonical_torrent USING btree (infohash_v1) WHERE (infohash_v1 IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_infohash_v2_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_infohash_v2_uq ON public.canonical_torrent USING btree (infohash_v2) WHERE (infohash_v2 IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_magnet_hash_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_magnet_hash_uq ON public.canonical_torrent USING btree (magnet_hash) WHERE (magnet_hash IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_source_guid_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_source_guid_uq ON public.canonical_torrent_source USING btree (indexer_instance_id, source_guid) WHERE (source_guid IS NOT NULL);
+
+
+--
+-- Name: canonical_torrent_title_size_hash_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX canonical_torrent_title_size_hash_uq ON public.canonical_torrent USING btree (title_size_hash) WHERE (title_size_hash IS NOT NULL);
+
+
+--
+-- Name: engine_alt_speed_days_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_alt_speed_days_dedup ON public.engine_alt_speed_days USING btree (profile_id, day);
+
+
+--
+-- Name: engine_ip_filter_entries_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_ip_filter_entries_dedup ON public.engine_ip_filter_entries USING btree (profile_id, cidr);
+
+
+--
+-- Name: engine_profile_list_values_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_profile_list_values_dedup ON public.engine_profile_list_values USING btree (profile_id, kind, value);
+
+
+--
+-- Name: engine_tracker_endpoints_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_tracker_endpoints_dedup ON public.engine_tracker_endpoints USING btree (profile_id, kind, url);
+
+
+--
+-- Name: engine_tracker_endpoints_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX engine_tracker_endpoints_order ON public.engine_tracker_endpoints USING btree (profile_id, kind, ord);
+
+
+--
+-- Name: fs_policy_list_values_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX fs_policy_list_values_dedup ON public.fs_policy_list_values USING btree (policy_id, kind, value);
+
+
+--
+-- Name: idx_acquisition_infohash_v1_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_acquisition_infohash_v1_started ON public.acquisition_attempt USING btree (infohash_v1, started_at DESC) WHERE (infohash_v1 IS NOT NULL);
+
+
+--
+-- Name: idx_acquisition_infohash_v2_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_acquisition_infohash_v2_started ON public.acquisition_attempt USING btree (infohash_v2, started_at DESC) WHERE (infohash_v2 IS NOT NULL);
+
+
+--
+-- Name: idx_acquisition_magnet_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_acquisition_magnet_started ON public.acquisition_attempt USING btree (magnet_hash, started_at DESC) WHERE (magnet_hash IS NOT NULL);
+
+
+--
+-- Name: idx_canon_source_base_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_base_score ON public.canonical_torrent_source_base_score USING btree (canonical_torrent_id, score_total_base DESC);
+
+
+--
+-- Name: idx_canon_source_context_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_context_score ON public.canonical_torrent_source_context_score USING btree (context_key_type, context_key_id, canonical_torrent_id, score_total_context DESC);
+
+
+--
+-- Name: idx_canon_source_idx_magnet; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_idx_magnet ON public.canonical_torrent_source USING btree (indexer_instance_id, magnet_hash) WHERE ((magnet_hash IS NOT NULL) AND (source_guid IS NULL));
+
+
+--
+-- Name: idx_canon_source_idx_title_size; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_idx_title_size ON public.canonical_torrent_source USING btree (indexer_instance_id, title_normalized, size_bytes) WHERE ((size_bytes IS NOT NULL) AND (source_guid IS NULL) AND (infohash_v2 IS NULL) AND (infohash_v1 IS NULL) AND (magnet_hash IS NULL));
+
+
+--
+-- Name: idx_canon_source_idx_v1; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_idx_v1 ON public.canonical_torrent_source USING btree (indexer_instance_id, infohash_v1) WHERE ((infohash_v1 IS NOT NULL) AND (source_guid IS NULL));
+
+
+--
+-- Name: idx_canon_source_idx_v2; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_idx_v2 ON public.canonical_torrent_source USING btree (indexer_instance_id, infohash_v2) WHERE ((infohash_v2 IS NOT NULL) AND (source_guid IS NULL));
+
+
+--
+-- Name: idx_canon_source_last_seen; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canon_source_last_seen ON public.canonical_torrent_source USING btree (last_seen_at DESC);
+
+
+--
+-- Name: idx_canonical_torrent_title_norm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canonical_torrent_title_norm ON public.canonical_torrent USING btree (title_normalized);
+
+
+--
+-- Name: idx_canonical_torrent_title_size; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canonical_torrent_title_size ON public.canonical_torrent USING btree (title_normalized, size_bytes) WHERE (size_bytes IS NOT NULL);
+
+
+--
+-- Name: idx_canonical_torrent_updated_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_canonical_torrent_updated_at ON public.canonical_torrent USING btree (updated_at DESC);
+
+
+--
+-- Name: idx_cf_state_status_changed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cf_state_status_changed ON public.indexer_cf_state USING btree (state, last_changed_at DESC);
+
+
+--
+-- Name: idx_connectivity_profile_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_connectivity_profile_status ON public.indexer_connectivity_profile USING btree (status);
+
+
+--
+-- Name: idx_disambig_left_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_disambig_left_identity ON public.canonical_disambiguation_rule USING btree (identity_left_type, identity_left_value_text, identity_left_value_uuid);
+
+
+--
+-- Name: idx_disambig_pair_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_disambig_pair_identity ON public.canonical_disambiguation_rule USING btree (identity_left_type, identity_left_value_text, identity_left_value_uuid, identity_right_type, identity_right_value_text, identity_right_value_uuid);
+
+
+--
+-- Name: idx_disambig_right_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_disambig_right_identity ON public.canonical_disambiguation_rule USING btree (identity_right_type, identity_right_value_text, identity_right_value_uuid);
+
+
+--
+-- Name: idx_health_event_instance_error_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_health_event_instance_error_time ON public.indexer_health_event USING btree (indexer_instance_id, error_class, occurred_at DESC) WHERE (error_class IS NOT NULL);
+
+
+--
+-- Name: idx_health_event_instance_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_health_event_instance_time ON public.indexer_health_event USING btree (indexer_instance_id, occurred_at DESC);
+
+
+--
+-- Name: idx_health_event_instance_type_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_health_event_instance_type_time ON public.indexer_health_event USING btree (indexer_instance_id, event_type, occurred_at DESC);
+
+
+--
+-- Name: idx_health_event_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_health_event_time ON public.indexer_health_event USING btree (occurred_at DESC);
+
+
+--
+-- Name: idx_instance_rate_limit_policy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_instance_rate_limit_policy ON public.indexer_instance_rate_limit USING btree (rate_limit_policy_id);
+
+
+--
+-- Name: idx_job_schedule_enabled_next; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_job_schedule_enabled_next ON public.job_schedule USING btree (enabled, next_run_at) WHERE (enabled = true);
+
+
+--
+-- Name: idx_outbound_log_correlation_retry; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_correlation_retry ON public.outbound_request_log USING btree (correlation_id, retry_seq);
+
+
+--
+-- Name: idx_outbound_log_instance_error_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_instance_error_started ON public.outbound_request_log USING btree (indexer_instance_id, error_class, started_at DESC) WHERE (error_class IS NOT NULL);
+
+
+--
+-- Name: idx_outbound_log_instance_outcome_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_instance_outcome_started ON public.outbound_request_log USING btree (indexer_instance_id, outcome, started_at DESC);
+
+
+--
+-- Name: idx_outbound_log_instance_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_instance_started ON public.outbound_request_log USING btree (indexer_instance_id, started_at DESC);
+
+
+--
+-- Name: idx_outbound_log_instance_type_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_instance_type_started ON public.outbound_request_log USING btree (indexer_instance_id, request_type, started_at DESC);
+
+
+--
+-- Name: idx_outbound_log_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_outbound_log_started ON public.outbound_request_log USING btree (started_at DESC);
+
+
+--
+-- Name: idx_policy_rule_set_sort_pub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_policy_rule_set_sort_pub ON public.policy_rule USING btree (policy_set_id, sort_order, policy_rule_public_id);
+
+
+--
+-- Name: idx_policy_rule_set_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_policy_rule_set_type ON public.policy_rule USING btree (policy_set_id, rule_type);
+
+
+--
+-- Name: idx_policy_snapshot_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_policy_snapshot_created_at ON public.policy_snapshot USING btree (created_at DESC);
+
+
+--
+-- Name: idx_policy_snapshot_rule_public; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_policy_snapshot_rule_public ON public.policy_snapshot_rule USING btree (policy_rule_public_id);
+
+
+--
+-- Name: idx_routing_rate_limit_policy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_routing_rate_limit_policy ON public.routing_policy_rate_limit USING btree (rate_limit_policy_id);
+
+
+--
+-- Name: idx_rss_subscription_enabled_next; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rss_subscription_enabled_next ON public.indexer_rss_subscription USING btree (is_enabled, next_poll_at) WHERE (is_enabled = true);
+
+
+--
+-- Name: idx_run_correlation_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_run_correlation_id ON public.search_request_indexer_run_correlation USING btree (correlation_id);
+
+
+--
+-- Name: idx_run_correlation_run_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_run_correlation_run_created ON public.search_request_indexer_run_correlation USING btree (search_request_indexer_run_id, created_at DESC);
+
+
+--
+-- Name: idx_search_filter_decision_canon_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_canon_time ON public.search_filter_decision USING btree (canonical_torrent_id, decided_at DESC) WHERE (canonical_torrent_id IS NOT NULL);
+
+
+--
+-- Name: idx_search_filter_decision_observation_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_observation_time ON public.search_filter_decision USING btree (observation_id, decided_at DESC);
+
+
+--
+-- Name: idx_search_filter_decision_request_source_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_request_source_time ON public.search_filter_decision USING btree (search_request_id, canonical_torrent_source_id, decided_at DESC) WHERE (canonical_torrent_source_id IS NOT NULL);
+
+
+--
+-- Name: idx_search_filter_decision_request_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_request_time ON public.search_filter_decision USING btree (search_request_id, decided_at DESC);
+
+
+--
+-- Name: idx_search_filter_decision_snapshot_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_snapshot_time ON public.search_filter_decision USING btree (policy_snapshot_id, decided_at DESC);
+
+
+--
+-- Name: idx_search_filter_decision_source_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_filter_decision_source_time ON public.search_filter_decision USING btree (canonical_torrent_source_id, decided_at DESC) WHERE (canonical_torrent_source_id IS NOT NULL);
+
+
+--
+-- Name: idx_search_page_request_sealed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_page_request_sealed ON public.search_page USING btree (search_request_id, sealed_at);
+
+
+--
+-- Name: idx_search_profile_policy_set_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_profile_policy_set_profile ON public.search_profile_policy_set USING btree (search_profile_id);
+
+
+--
+-- Name: idx_search_request_domain_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_request_domain_created_at ON public.search_request USING btree (effective_media_domain_id, created_at DESC);
+
+
+--
+-- Name: idx_search_request_status_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_request_status_created_at ON public.search_request USING btree (status, created_at DESC);
+
+
+--
+-- Name: idx_search_request_user_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_search_request_user_created_at ON public.search_request USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: idx_source_metadata_conflict_source_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_source_metadata_conflict_source_time ON public.source_metadata_conflict USING btree (canonical_torrent_source_id, observed_at DESC);
+
+
+--
+-- Name: idx_source_reputation_window_start; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_source_reputation_window_start ON public.source_reputation USING btree (window_key, window_start DESC);
+
+
+--
+-- Name: idx_srch_obs_attr_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_attr_key ON public.search_request_source_observation_attr USING btree (attr_key);
+
+
+--
+-- Name: idx_srch_obs_attr_observation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_attr_observation ON public.search_request_source_observation_attr USING btree (observation_id);
+
+
+--
+-- Name: idx_srch_obs_req_canon_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_req_canon_time ON public.search_request_source_observation USING btree (search_request_id, canonical_torrent_id, observed_at DESC);
+
+
+--
+-- Name: idx_srch_obs_req_indexer_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_req_indexer_time ON public.search_request_source_observation USING btree (search_request_id, indexer_instance_id, observed_at DESC);
+
+
+--
+-- Name: idx_srch_obs_req_source_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_obs_req_source_time ON public.search_request_source_observation USING btree (search_request_id, canonical_torrent_source_id, observed_at DESC);
+
+
+--
+-- Name: idx_srch_req_cat_effective; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_req_cat_effective ON public.search_request_torznab_category_effective USING btree (search_request_id);
+
+
+--
+-- Name: idx_srch_req_cat_requested; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_srch_req_cat_requested ON public.search_request_torznab_category_requested USING btree (search_request_id);
+
+
+--
+-- Name: idx_torznab_instance_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_torznab_instance_enabled ON public.torznab_instance USING btree (is_enabled);
+
+
+--
+-- Name: idx_torznab_instance_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_torznab_instance_profile ON public.torznab_instance USING btree (search_profile_id);
+
+
+--
+-- Name: idx_tracker_map_def_cat_sub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tracker_map_def_cat_sub ON public.tracker_category_mapping USING btree (indexer_definition_id, tracker_category, tracker_subcategory);
+
+
+--
+-- Name: idx_tracker_map_global_cat_sub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tracker_map_global_cat_sub ON public.tracker_category_mapping USING btree (tracker_category, tracker_subcategory) WHERE (indexer_definition_id IS NULL);
+
+
+--
+-- Name: idx_tracker_map_instance_cat_sub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tracker_map_instance_cat_sub ON public.tracker_category_mapping USING btree (indexer_instance_id, tracker_category, tracker_subcategory) WHERE (indexer_instance_id IS NOT NULL);
+
+
+--
+-- Name: idx_tracker_map_torznab_instance_cat_sub; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tracker_map_torznab_instance_cat_sub ON public.tracker_category_mapping USING btree (torznab_instance_id, tracker_category, tracker_subcategory) WHERE (torznab_instance_id IS NOT NULL);
+
+
+--
+-- Name: indexer_definition_field_validation_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_definition_field_validation_uq ON public.indexer_definition_field_validation USING btree (indexer_definition_field_id, validation_type, COALESCE(depends_on_field_name, ''::character varying), COALESCE(depends_on_operator, 'eq'::public.depends_on_operator), ((depends_on_operator IS NULL)), COALESCE(text_value_norm, ''::character varying), COALESCE(int_value, '-1'::integer), COALESCE(numeric_value, ('-1'::integer)::numeric), COALESCE(value_set_id, (0)::bigint), COALESCE(depends_on_value_set_id, (0)::bigint), COALESCE(depends_on_value_plain_norm, ''::character varying), COALESCE(depends_on_value_int, '-1'::integer), COALESCE(depends_on_value_bool, false));
+
+
+--
+-- Name: indexer_health_notification_hook_enabled_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX indexer_health_notification_hook_enabled_idx ON public.indexer_health_notification_hook USING btree (is_enabled, status_threshold, channel);
+
+
+--
+-- Name: indexer_rss_item_seen_guid_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_guid_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, item_guid) WHERE (item_guid IS NOT NULL);
+
+
+--
+-- Name: indexer_rss_item_seen_infohash_v1_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_infohash_v1_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, infohash_v1) WHERE (infohash_v1 IS NOT NULL);
+
+
+--
+-- Name: indexer_rss_item_seen_infohash_v2_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_infohash_v2_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, infohash_v2) WHERE (infohash_v2 IS NOT NULL);
+
+
+--
+-- Name: indexer_rss_item_seen_magnet_hash_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX indexer_rss_item_seen_magnet_hash_uq ON public.indexer_rss_item_seen USING btree (indexer_instance_id, magnet_hash) WHERE (magnet_hash IS NOT NULL);
+
+
+--
+-- Name: ix_media_capability_snapshot_encoder_run_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_capability_snapshot_encoder_run_observed ON public.media_capability_snapshot_encoder USING btree (snapshot_run_public_id, observed_at DESC, media_capability_snapshot_encoder_id DESC);
+
+
+--
+-- Name: ix_media_capability_snapshot_feature_run_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_capability_snapshot_feature_run_observed ON public.media_capability_snapshot_feature USING btree (snapshot_run_public_id, observed_at DESC, media_capability_snapshot_feature_id DESC);
+
+
+--
+-- Name: ix_media_capability_snapshot_observed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_capability_snapshot_observed_at ON public.media_capability_snapshot USING btree (observed_at DESC);
+
+
+--
+-- Name: ix_media_capability_snapshot_run_observed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_capability_snapshot_run_observed ON public.media_capability_snapshot USING btree (snapshot_run_public_id, observed_at DESC, media_capability_snapshot_id DESC);
+
+
+--
+-- Name: ix_media_job_active_heartbeat; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_active_heartbeat ON public.media_job USING btree (status, heartbeat_at, started_at, media_job_id) WHERE (status = ANY (ARRAY[public.media_job_status_running_v1(), public.media_job_status_verifying_v1()]));
+
+
+--
+-- Name: ix_media_job_attempt_current; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_attempt_current ON public.media_job_attempt USING btree (media_job_id, attempt_number DESC, media_job_attempt_id DESC);
+
+
+--
+-- Name: ix_media_job_diagnostic_prune; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_diagnostic_prune ON public.media_job USING btree (completed_at, media_job_id) WHERE ((diagnostics_pruned_at IS NULL) AND (status = ANY (ARRAY['failed'::public.media_job_status, 'cancelled'::public.media_job_status])));
+
+
+--
+-- Name: ix_media_job_history_all; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_history_all ON public.media_job USING btree (queued_at DESC, media_job_id DESC);
+
+
+--
+-- Name: ix_media_job_history_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_history_profile ON public.media_job USING btree (media_profile_id, queued_at DESC, media_job_id DESC);
+
+
+--
+-- Name: ix_media_job_history_profile_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_history_profile_status ON public.media_job USING btree (media_profile_id, status, queued_at DESC, media_job_id DESC);
+
+
+--
+-- Name: ix_media_job_history_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_history_status ON public.media_job USING btree (status, queued_at DESC, media_job_id DESC);
+
+
+--
+-- Name: ix_media_job_profile_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_profile_status ON public.media_job USING btree (media_profile_id, status, queued_at DESC);
+
+
+--
+-- Name: ix_media_job_terminal_outbox_unpublished; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_terminal_outbox_unpublished ON public.media_job_terminal_outbox USING btree (created_at, media_job_terminal_outbox_id) WHERE (published_at IS NULL);
+
+
+--
+-- Name: ix_media_job_worker_queue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_job_worker_queue ON public.media_job USING btree (status, queued_at, media_job_id) WHERE (status = public.media_job_status_queued_v1());
+
+
+--
+-- Name: ix_media_profile_root_canonical_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_media_profile_root_canonical_enabled ON public.media_profile_root USING btree (canonical_path, media_profile_root_id) WHERE enabled;
+
+
+--
+-- Name: media_domain_primary_torznab_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX media_domain_primary_torznab_uq ON public.media_domain_to_torznab_category USING btree (media_domain_id) WHERE (is_primary = true);
+
+
+--
+-- Name: policy_rule_value_set_item_bigint_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_bigint_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_bigint) WHERE (value_bigint IS NOT NULL);
+
+
+--
+-- Name: policy_rule_value_set_item_int_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_int_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_int) WHERE (value_int IS NOT NULL);
+
+
+--
+-- Name: policy_rule_value_set_item_text_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_text_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_text) WHERE (value_text IS NOT NULL);
+
+
+--
+-- Name: policy_rule_value_set_item_uuid_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX policy_rule_value_set_item_uuid_uq ON public.policy_rule_value_set_item USING btree (value_set_id, value_uuid) WHERE (value_uuid IS NOT NULL);
+
+
+--
+-- Name: search_request_source_observation_guid_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX search_request_source_observation_guid_uq ON public.search_request_source_observation USING btree (search_request_id, indexer_instance_id, source_guid) WHERE (source_guid IS NOT NULL);
+
+
+--
+-- Name: search_request_source_observation_source_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX search_request_source_observation_source_uq ON public.search_request_source_observation USING btree (search_request_id, indexer_instance_id, canonical_torrent_source_id) WHERE (source_guid IS NULL);
+
+
+--
+-- Name: setup_tokens_active_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX setup_tokens_active_unique ON public.setup_tokens USING btree ((true)) WHERE (consumed_at IS NULL);
+
+
+--
+-- Name: tracker_category_mapping_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX tracker_category_mapping_uq ON public.tracker_category_mapping USING btree (COALESCE(torznab_instance_id, (0)::bigint), COALESCE(indexer_instance_id, (0)::bigint), COALESCE(indexer_definition_id, (0)::bigint), tracker_category, tracker_subcategory);
+
+
+--
+-- Name: uq_media_capability_snapshot_encoder_run_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_capability_snapshot_encoder_run_name ON public.media_capability_snapshot_encoder USING btree (snapshot_run_public_id, lower(encoder_name));
+
+
+--
+-- Name: uq_media_capability_snapshot_feature_run_family_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_capability_snapshot_feature_run_family_name ON public.media_capability_snapshot_feature USING btree (snapshot_run_public_id, lower(feature_family), lower(feature_name));
+
+
+--
+-- Name: uq_media_compatibility_target_key_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_compatibility_target_key_version ON public.media_compatibility_target USING btree (lower(compatibility_target_key), version);
+
+
+--
+-- Name: uq_media_desired_target_profile_key_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_desired_target_profile_key_version ON public.media_desired_target_profile USING btree (lower(target_key), version);
+
+
+--
+-- Name: uq_media_desired_target_stream_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_desired_target_stream_key ON public.media_desired_target_stream USING btree (media_desired_target_profile_id, lower(stream_key));
+
+
+--
+-- Name: uq_media_desired_target_stream_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_desired_target_stream_order ON public.media_desired_target_stream USING btree (media_desired_target_profile_id, sort_order);
+
+
+--
+-- Name: uq_media_discovery_source_fingerprint_profile_path; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_discovery_source_fingerprint_profile_path ON public.media_discovery_source_fingerprint USING btree (media_profile_id, source_path);
+
+
+--
+-- Name: uq_media_job_artifact_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_artifact_attempt_index ON public.media_job_artifact USING btree (media_job_attempt_id, artifact_index);
+
+
+--
+-- Name: uq_media_job_compact_audit_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_compact_audit_attempt_index ON public.media_job_compact_audit USING btree (media_job_attempt_id, audit_index);
+
+
+--
+-- Name: uq_media_job_desired_target_stream_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_desired_target_stream_key ON public.media_job_desired_target_stream USING btree (media_job_id, lower(stream_key));
+
+
+--
+-- Name: uq_media_job_desired_target_stream_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_desired_target_stream_order ON public.media_job_desired_target_stream USING btree (media_job_id, sort_order);
+
+
+--
+-- Name: uq_media_job_operation_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_operation_attempt_index ON public.media_job_operation USING btree (media_job_attempt_id, operation_index);
+
+
+--
+-- Name: uq_media_job_phase_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_phase_attempt_index ON public.media_job_phase USING btree (media_job_attempt_id, phase_index);
+
+
+--
+-- Name: uq_media_job_plan_reason_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_plan_reason_attempt_index ON public.media_job_plan_reason USING btree (media_job_attempt_id, reason_index);
+
+
+--
+-- Name: uq_media_job_retention_policy_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_retention_policy_key ON public.media_job_retention_policy USING btree (lower(policy_key));
+
+
+--
+-- Name: uq_media_job_verification_check_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_verification_check_attempt_index ON public.media_job_verification_check USING btree (media_job_attempt_id, check_index);
+
+
+--
+-- Name: uq_media_job_violation_attempt_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_job_violation_attempt_index ON public.media_job_violation USING btree (media_job_attempt_id, violation_index);
+
+
+--
+-- Name: uq_media_policy_profile_key_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_policy_profile_key_version ON public.media_policy_profile USING btree (lower(policy_key), version);
+
+
+--
+-- Name: uq_media_profile_import_draft_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_profile_import_draft_key ON public.media_profile_import_draft USING btree (lower(profile_key));
+
+
+--
+-- Name: uq_media_profile_profile_key_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_profile_profile_key_active ON public.media_profile USING btree (lower(profile_key)) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: uq_media_profile_root_identity_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_profile_root_identity_enabled ON public.media_profile_root USING btree (filesystem_device, filesystem_inode) WHERE enabled;
+
+
+--
+-- Name: uq_media_profile_root_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_profile_root_order ON public.media_profile_root USING btree (media_profile_id, root_kind, sort_order);
+
+
+--
+-- Name: uq_media_target_profile_target_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_media_target_profile_target_key ON public.media_target USING btree (media_profile_id, lower(target_key));
+
+
+--
+-- Name: revaer_runtime_fs_jobs_torrent_idx; Type: INDEX; Schema: revaer_runtime; Owner: -
+--
+
+CREATE UNIQUE INDEX revaer_runtime_fs_jobs_torrent_idx ON revaer_runtime.fs_jobs USING btree (torrent_id);
+
+
+--
+-- Name: app_label_policies app_label_policies_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_label_policies_touch_updated_at BEFORE UPDATE ON public.app_label_policies FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: app_profile app_profile_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_profile_bump_revision AFTER INSERT OR UPDATE ON public.app_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: app_profile_immutable_keys app_profile_immutable_keys_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_profile_immutable_keys_touch_updated_at BEFORE UPDATE ON public.app_profile_immutable_keys FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: app_profile_local_networks app_profile_local_networks_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_profile_local_networks_touch_updated_at BEFORE UPDATE ON public.app_profile_local_networks FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: app_profile app_profile_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_profile_touch_updated_at BEFORE UPDATE ON public.app_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: auth_api_keys auth_api_keys_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER auth_api_keys_bump_revision AFTER INSERT OR DELETE OR UPDATE ON public.auth_api_keys FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: auth_api_keys auth_api_keys_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER auth_api_keys_touch_updated_at BEFORE UPDATE ON public.auth_api_keys FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_alt_speed_days engine_alt_speed_days_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_alt_speed_days_touch_updated_at BEFORE UPDATE ON public.engine_alt_speed_days FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_alt_speed engine_alt_speed_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_alt_speed_touch_updated_at BEFORE UPDATE ON public.engine_alt_speed FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_ip_filter_entries engine_ip_filter_entries_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_ip_filter_entries_touch_updated_at BEFORE UPDATE ON public.engine_ip_filter_entries FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_ip_filter engine_ip_filter_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_ip_filter_touch_updated_at BEFORE UPDATE ON public.engine_ip_filter FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_profile engine_profile_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_profile_bump_revision AFTER INSERT OR UPDATE ON public.engine_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: engine_profile_list_values engine_profile_list_values_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_profile_list_values_touch_updated_at BEFORE UPDATE ON public.engine_profile_list_values FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_profile engine_profile_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_profile_touch_updated_at BEFORE UPDATE ON public.engine_profile FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_tracker_config engine_tracker_config_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_tracker_config_touch_updated_at BEFORE UPDATE ON public.engine_tracker_config FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: engine_tracker_endpoints engine_tracker_endpoints_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER engine_tracker_endpoints_touch_updated_at BEFORE UPDATE ON public.engine_tracker_endpoints FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: fs_policy fs_policy_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER fs_policy_bump_revision AFTER INSERT OR UPDATE ON public.fs_policy FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: fs_policy_list_values fs_policy_list_values_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER fs_policy_list_values_touch_updated_at BEFORE UPDATE ON public.fs_policy_list_values FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: fs_policy fs_policy_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER fs_policy_touch_updated_at BEFORE UPDATE ON public.fs_policy FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: media_desired_target_stream media_desired_target_stream_insert_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_desired_target_stream_insert_guard BEFORE INSERT ON public.media_desired_target_stream FOR EACH ROW EXECUTE FUNCTION public.media_desired_target_stream_insert_guard_v1();
+
+
+--
+-- Name: media_job_attempt media_job_attempt_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_attempt_guard_trigger BEFORE UPDATE ON public.media_job_attempt FOR EACH ROW EXECUTE FUNCTION public.media_job_attempt_guard_v1();
+
+
+--
+-- Name: media_job media_job_capture_configuration_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_capture_configuration_trigger AFTER INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_capture_configuration_v1();
+
+
+--
+-- Name: media_job media_job_configuration_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_configuration_immutable_trigger BEFORE UPDATE ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_configuration_immutable_v1();
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_configuration_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_configuration_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job media_job_current_attempt_required_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER media_job_current_attempt_required_trigger AFTER INSERT OR UPDATE OF current_attempt_id ON public.media_job DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.media_job_current_attempt_required_v1();
+
+
+--
+-- Name: media_job media_job_desired_target_snapshot_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_desired_target_snapshot_guard BEFORE INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_desired_target_snapshot_guard_v1();
+
+
+--
+-- Name: media_job_file_rule_snapshot media_job_file_rule_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_file_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_file_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_filter_snapshot media_job_filter_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_filter_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_filter_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job media_job_initial_attempt_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_initial_attempt_trigger AFTER INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_initial_attempt_v1();
+
+
+--
+-- Name: media_job_policy_behavior_snapshot media_job_policy_behavior_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_behavior_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_behavior_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_policy_compatibility_target_snapshot media_job_policy_compatibility_target_snapshot_immutable_trigge; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_compatibility_target_snapshot_immutable_trigge BEFORE DELETE OR UPDATE ON public.media_job_policy_compatibility_target_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_policy_maintenance_window_snapshot media_job_policy_maintenance_window_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_maintenance_window_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_maintenance_window_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_policy_operation_cost_snapshot media_job_policy_operation_cost_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_operation_cost_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_operation_cost_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_policy_retention_rule_snapshot media_job_policy_retention_rule_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_policy_retention_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_policy_retention_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_root_snapshot media_job_root_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_root_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_root_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job media_job_snapshot_source_fingerprint_before_insert; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_snapshot_source_fingerprint_before_insert BEFORE INSERT ON public.media_job FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_source_fingerprint_v1();
+
+
+--
+-- Name: media_job_stream_classification_rule_snapshot media_job_stream_classification_rule_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_stream_classification_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_stream_classification_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_job_subtitle_discovery_rule_snapshot media_job_subtitle_discovery_rule_snapshot_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_job_subtitle_discovery_rule_snapshot_immutable_trigger BEFORE DELETE OR UPDATE ON public.media_job_subtitle_discovery_rule_snapshot FOR EACH ROW EXECUTE FUNCTION public.media_job_snapshot_update_rejected_v1();
+
+
+--
+-- Name: media_policy_backup media_policy_backup_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_backup_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_backup FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_compatibility_rule media_policy_compatibility_rule_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_compatibility_rule_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_compatibility_rule FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_target_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_compatibility_target_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_compatibility_target FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_maintenance_window media_policy_maintenance_window_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_maintenance_window_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_maintenance_window FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_operation_cost media_policy_operation_cost_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_operation_cost_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_operation_cost FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_output media_policy_output_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_output_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_output FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_profile media_policy_profile_immutable_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_profile_immutable_trigger BEFORE UPDATE ON public.media_policy_profile FOR EACH ROW EXECUTE FUNCTION public.media_policy_profile_immutable_v1();
+
+
+--
+-- Name: media_policy_retention_rule media_policy_retention_rule_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_retention_rule_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_retention_rule FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_runtime_limit media_policy_runtime_limit_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_runtime_limit_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_runtime_limit FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_profile media_policy_seed_bounded_defaults_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_seed_bounded_defaults_trigger AFTER INSERT ON public.media_policy_profile FOR EACH ROW EXECUTE FUNCTION public.media_policy_seed_bounded_defaults_trigger_v1();
+
+
+--
+-- Name: media_policy_unmatched_stream_behavior media_policy_unmatched_stream_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_unmatched_stream_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_unmatched_stream_behavior FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_verification media_policy_verification_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_verification_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_verification FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_policy_workspace media_policy_workspace_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_policy_workspace_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_policy_workspace FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: media_profile media_profile_all_root_overlap_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_profile_all_root_overlap_trigger BEFORE INSERT OR UPDATE OF source_root, output_root, deleted_at ON public.media_profile FOR EACH ROW EXECUTE FUNCTION public.media_profile_validate_all_root_overlap_trigger_v1();
+
+
+--
+-- Name: media_profile media_profile_desired_target_activation_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_profile_desired_target_activation_guard BEFORE UPDATE OF desired_target_profile_id ON public.media_profile FOR EACH ROW EXECUTE FUNCTION public.media_profile_desired_target_activation_guard_v1();
+
+
+--
+-- Name: media_stream_classification_rule media_stream_classification_rule_version_guard_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER media_stream_classification_rule_version_guard_trigger BEFORE INSERT OR DELETE OR UPDATE ON public.media_stream_classification_rule FOR EACH ROW EXECUTE FUNCTION public.media_policy_component_version_guard_v1();
+
+
+--
+-- Name: query_presets query_presets_bump_revision; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER query_presets_bump_revision AFTER INSERT OR DELETE OR UPDATE ON public.query_presets FOR EACH ROW EXECUTE FUNCTION public.revaer_bump_revision();
+
+
+--
+-- Name: query_presets query_presets_touch_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER query_presets_touch_updated_at BEFORE UPDATE ON public.query_presets FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: search_request_indexer_run search_request_finalize_on_runs_terminal_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER search_request_finalize_on_runs_terminal_trigger AFTER INSERT OR UPDATE OF status ON public.search_request_indexer_run FOR EACH ROW EXECUTE FUNCTION public.search_request_finalize_on_runs_terminal_v1();
+
+
+--
+-- Name: media_job_desired_target_stream trg_media_job_desired_target_audio_constraints_snapshot; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_media_job_desired_target_audio_constraints_snapshot BEFORE INSERT ON public.media_job_desired_target_stream FOR EACH ROW EXECUTE FUNCTION public.media_job_desired_target_audio_constraints_snapshot_v1();
+
+
+--
+-- Name: fs_jobs revaer_runtime_fs_jobs_touch_updated_at; Type: TRIGGER; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TRIGGER revaer_runtime_fs_jobs_touch_updated_at BEFORE UPDATE ON revaer_runtime.fs_jobs FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: torrents revaer_runtime_torrents_touch_updated_at; Type: TRIGGER; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TRIGGER revaer_runtime_torrents_touch_updated_at BEFORE UPDATE ON revaer_runtime.torrents FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: torrent_files torrent_files_touch_updated_at; Type: TRIGGER; Schema: revaer_runtime; Owner: -
+--
+
+CREATE TRIGGER torrent_files_touch_updated_at BEFORE UPDATE ON revaer_runtime.torrent_files FOR EACH ROW EXECUTE FUNCTION public.revaer_touch_updated_at();
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_torznab_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_torznab_instance_id_fkey FOREIGN KEY (torznab_instance_id) REFERENCES public.torznab_instance(torznab_instance_id);
+
+
+--
+-- Name: acquisition_attempt acquisition_attempt_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acquisition_attempt
+    ADD CONSTRAINT acquisition_attempt_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: app_label_policies app_label_policies_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_label_policies
+    ADD CONSTRAINT app_label_policies_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.app_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_profile_immutable_keys app_profile_immutable_keys_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile_immutable_keys
+    ADD CONSTRAINT app_profile_immutable_keys_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.app_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: app_profile_local_networks app_profile_local_networks_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_profile_local_networks
+    ADD CONSTRAINT app_profile_local_networks_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.app_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_disambiguation_rule canonical_disambiguation_rule_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_disambiguation_rule
+    ADD CONSTRAINT canonical_disambiguation_rule_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: canonical_external_id canonical_external_id_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_external_id
+    ADD CONSTRAINT canonical_external_id_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_external_id canonical_external_id_source_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_external_id
+    ADD CONSTRAINT canonical_external_id_source_canonical_torrent_source_id_fkey FOREIGN KEY (source_canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+--
+-- Name: canonical_size_rollup canonical_size_rollup_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_rollup
+    ADD CONSTRAINT canonical_size_rollup_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_size_sample canonical_size_sample_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_size_sample
+    ADD CONSTRAINT canonical_size_sample_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_best_source_global canonical_torrent_best_source__canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source__canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_best_source_context canonical_torrent_best_source_canonical_torrent_source_id_fkey1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_canonical_torrent_source_id_fkey1 FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_best_source_context canonical_torrent_best_source_context_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_context
+    ADD CONSTRAINT canonical_torrent_best_source_context_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_best_source_global canonical_torrent_best_source_global_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_best_source_global
+    ADD CONSTRAINT canonical_torrent_best_source_global_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_signal canonical_torrent_signal_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_signal
+    ADD CONSTRAINT canonical_torrent_signal_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_attr canonical_torrent_source_attr_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_attr
+    ADD CONSTRAINT canonical_torrent_source_attr_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_base_score canonical_torrent_source_base__canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base__canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_base_score canonical_torrent_source_base_score_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_base_score
+    ADD CONSTRAINT canonical_torrent_source_base_score_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_context_score canonical_torrent_source_conte_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_conte_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source_context_score canonical_torrent_source_context_scor_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source_context_score
+    ADD CONSTRAINT canonical_torrent_source_context_scor_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: canonical_torrent_source canonical_torrent_source_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.canonical_torrent_source
+    ADD CONSTRAINT canonical_torrent_source_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: config_audit_log config_audit_log_changed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config_audit_log
+    ADD CONSTRAINT config_audit_log_changed_by_user_id_fkey FOREIGN KEY (changed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: engine_alt_speed_days engine_alt_speed_days_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_alt_speed_days
+    ADD CONSTRAINT engine_alt_speed_days_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_alt_speed engine_alt_speed_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_alt_speed
+    ADD CONSTRAINT engine_alt_speed_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_ip_filter_entries engine_ip_filter_entries_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_ip_filter_entries
+    ADD CONSTRAINT engine_ip_filter_entries_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_ip_filter engine_ip_filter_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_ip_filter
+    ADD CONSTRAINT engine_ip_filter_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_peer_class_defaults engine_peer_class_defaults_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_class_defaults
+    ADD CONSTRAINT engine_peer_class_defaults_fk FOREIGN KEY (profile_id, class_id) REFERENCES public.engine_peer_classes(profile_id, class_id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_peer_class_defaults engine_peer_class_defaults_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_class_defaults
+    ADD CONSTRAINT engine_peer_class_defaults_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_peer_classes engine_peer_classes_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_peer_classes
+    ADD CONSTRAINT engine_peer_classes_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_profile_list_values engine_profile_list_values_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_profile_list_values
+    ADD CONSTRAINT engine_profile_list_values_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_tracker_config engine_tracker_config_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_config
+    ADD CONSTRAINT engine_tracker_config_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: engine_tracker_endpoints engine_tracker_endpoints_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.engine_tracker_endpoints
+    ADD CONSTRAINT engine_tracker_endpoints_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.engine_profile(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fs_policy_list_values fs_policy_list_values_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fs_policy_list_values
+    ADD CONSTRAINT fs_policy_list_values_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.fs_policy(id) ON DELETE CASCADE;
+
+
+--
+-- Name: import_indexer_result import_indexer_result_import_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result
+    ADD CONSTRAINT import_indexer_result_import_job_id_fkey FOREIGN KEY (import_job_id) REFERENCES public.import_job(import_job_id);
+
+
+--
+-- Name: import_indexer_result_media_domain import_indexer_result_media_domai_import_indexer_result_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domai_import_indexer_result_id_fkey FOREIGN KEY (import_indexer_result_id) REFERENCES public.import_indexer_result(import_indexer_result_id) ON DELETE CASCADE;
+
+
+--
+-- Name: import_indexer_result_media_domain import_indexer_result_media_domain_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_media_domain
+    ADD CONSTRAINT import_indexer_result_media_domain_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: import_indexer_result_tag import_indexer_result_tag_import_indexer_result_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_import_indexer_result_id_fkey FOREIGN KEY (import_indexer_result_id) REFERENCES public.import_indexer_result(import_indexer_result_id) ON DELETE CASCADE;
+
+
+--
+-- Name: import_indexer_result_tag import_indexer_result_tag_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_indexer_result_tag
+    ADD CONSTRAINT import_indexer_result_tag_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: import_job import_job_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: import_job import_job_target_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_target_search_profile_id_fkey FOREIGN KEY (target_search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: import_job import_job_target_torznab_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_job
+    ADD CONSTRAINT import_job_target_torznab_instance_id_fkey FOREIGN KEY (target_torznab_instance_id) REFERENCES public.torznab_instance(torznab_instance_id);
+
+
+--
+-- Name: indexer_cf_state indexer_cf_state_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_cf_state
+    ADD CONSTRAINT indexer_cf_state_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_connectivity_profile indexer_connectivity_profile_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_connectivity_profile
+    ADD CONSTRAINT indexer_connectivity_profile_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_definition_field indexer_definition_field_indexer_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field
+    ADD CONSTRAINT indexer_definition_field_indexer_definition_id_fkey FOREIGN KEY (indexer_definition_id) REFERENCES public.indexer_definition(indexer_definition_id);
+
+
+--
+-- Name: indexer_definition_field_option indexer_definition_field_optio_indexer_definition_field_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_option
+    ADD CONSTRAINT indexer_definition_field_optio_indexer_definition_field_id_fkey FOREIGN KEY (indexer_definition_field_id) REFERENCES public.indexer_definition_field(indexer_definition_field_id);
+
+
+--
+-- Name: indexer_definition_field_validation indexer_definition_field_valid_indexer_definition_field_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_valid_indexer_definition_field_id_fkey FOREIGN KEY (indexer_definition_field_id) REFERENCES public.indexer_definition_field(indexer_definition_field_id);
+
+
+--
+-- Name: indexer_definition_field_validation indexer_definition_field_validation_depends_value_set_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_validation_depends_value_set_fk FOREIGN KEY (depends_on_value_set_id) REFERENCES public.indexer_definition_field_value_set(value_set_id);
+
+
+--
+-- Name: indexer_definition_field_validation indexer_definition_field_validation_value_set_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_validation
+    ADD CONSTRAINT indexer_definition_field_validation_value_set_fk FOREIGN KEY (value_set_id) REFERENCES public.indexer_definition_field_value_set(value_set_id);
+
+
+--
+-- Name: indexer_definition_field_value_set indexer_definition_field_valu_indexer_definition_field_val_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set
+    ADD CONSTRAINT indexer_definition_field_valu_indexer_definition_field_val_fkey FOREIGN KEY (indexer_definition_field_validation_id) REFERENCES public.indexer_definition_field_validation(indexer_definition_field_validation_id);
+
+
+--
+-- Name: indexer_definition_field_value_set_item indexer_definition_field_value_set_item_value_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_definition_field_value_set_item
+    ADD CONSTRAINT indexer_definition_field_value_set_item_value_set_id_fkey FOREIGN KEY (value_set_id) REFERENCES public.indexer_definition_field_value_set(value_set_id);
+
+
+--
+-- Name: indexer_health_event indexer_health_event_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_event
+    ADD CONSTRAINT indexer_health_event_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_health_notification_hook indexer_health_notification_hook_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_health_notification_hook indexer_health_notification_hook_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_health_notification_hook
+    ADD CONSTRAINT indexer_health_notification_hook_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_instance_field_value indexer_instance_field_value_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance_field_value indexer_instance_field_value_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_field_value
+    ADD CONSTRAINT indexer_instance_field_value_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_instance_import_blob indexer_instance_import_blob_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_import_blob
+    ADD CONSTRAINT indexer_instance_import_blob_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance indexer_instance_indexer_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_indexer_definition_id_fkey FOREIGN KEY (indexer_definition_id) REFERENCES public.indexer_definition(indexer_definition_id);
+
+
+--
+-- Name: indexer_instance_media_domain indexer_instance_media_domain_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance_media_domain indexer_instance_media_domain_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_media_domain
+    ADD CONSTRAINT indexer_instance_media_domain_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: indexer_instance_rate_limit indexer_instance_rate_limit_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance_rate_limit indexer_instance_rate_limit_rate_limit_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_rate_limit
+    ADD CONSTRAINT indexer_instance_rate_limit_rate_limit_policy_id_fkey FOREIGN KEY (rate_limit_policy_id) REFERENCES public.rate_limit_policy(rate_limit_policy_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_routing_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id);
+
+
+--
+-- Name: indexer_instance_tag indexer_instance_tag_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_instance_tag indexer_instance_tag_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance_tag
+    ADD CONSTRAINT indexer_instance_tag_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: indexer_instance indexer_instance_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_instance
+    ADD CONSTRAINT indexer_instance_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: indexer_rss_item_seen indexer_rss_item_seen_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_item_seen
+    ADD CONSTRAINT indexer_rss_item_seen_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_rss_subscription indexer_rss_subscription_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_rss_subscription
+    ADD CONSTRAINT indexer_rss_subscription_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: indexer_run_cursor indexer_run_cursor_search_request_indexer_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indexer_run_cursor
+    ADD CONSTRAINT indexer_run_cursor_search_request_indexer_run_id_fkey FOREIGN KEY (search_request_indexer_run_id) REFERENCES public.search_request_indexer_run(search_request_indexer_run_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_capability_snapshot_encoder media_capability_snapshot_encoder_observed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_encoder
+    ADD CONSTRAINT media_capability_snapshot_encoder_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_capability_snapshot_feature media_capability_snapshot_feature_observed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_feature
+    ADD CONSTRAINT media_capability_snapshot_feature_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_capability_snapshot media_capability_snapshot_observed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot
+    ADD CONSTRAINT media_capability_snapshot_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_capability_snapshot_run media_capability_snapshot_run_observed_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_capability_snapshot_run
+    ADD CONSTRAINT media_capability_snapshot_run_observed_by_user_id_fkey FOREIGN KEY (observed_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_desired_target_audio_stream media_desired_target_audio_st_media_desired_target_stream__fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_audio_stream
+    ADD CONSTRAINT media_desired_target_audio_st_media_desired_target_stream__fkey FOREIGN KEY (media_desired_target_stream_id) REFERENCES public.media_desired_target_stream(media_desired_target_stream_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_desired_target_container media_desired_target_containe_media_desired_target_profile_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_container
+    ADD CONSTRAINT media_desired_target_containe_media_desired_target_profile_fkey FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_desired_target_profile media_desired_target_profile_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_profile
+    ADD CONSTRAINT media_desired_target_profile_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_desired_target_stream media_desired_target_stream_media_desired_target_profile_i_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_desired_target_stream
+    ADD CONSTRAINT media_desired_target_stream_media_desired_target_profile_i_fkey FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_discovery_schedule media_discovery_schedule_media_profile_root_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_schedule
+    ADD CONSTRAINT media_discovery_schedule_media_profile_root_id_fkey FOREIGN KEY (media_profile_root_id) REFERENCES public.media_profile_root(media_profile_root_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_discovery_source_fingerprint media_discovery_source_fingerprint_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_source_fingerprint
+    ADD CONSTRAINT media_discovery_source_fingerprint_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_discovery_watcher media_discovery_watcher_media_profile_root_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_discovery_watcher
+    ADD CONSTRAINT media_discovery_watcher_media_profile_root_id_fkey FOREIGN KEY (media_profile_root_id) REFERENCES public.media_profile_root(media_profile_root_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_domain_to_torznab_category media_domain_to_torznab_category_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: media_domain_to_torznab_category media_domain_to_torznab_category_torznab_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_domain_to_torznab_category
+    ADD CONSTRAINT media_domain_to_torznab_category_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+--
+-- Name: media_job_artifact media_job_artifact_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_artifact
+    ADD CONSTRAINT media_job_artifact_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_artifact media_job_artifact_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_artifact
+    ADD CONSTRAINT media_job_artifact_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_attempt media_job_attempt_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_attempt
+    ADD CONSTRAINT media_job_attempt_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_compact_audit media_job_compact_audit_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_compact_audit
+    ADD CONSTRAINT media_job_compact_audit_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_compact_audit media_job_compact_audit_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_compact_audit
+    ADD CONSTRAINT media_job_compact_audit_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE SET NULL;
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snaps_media_desired_target_profile_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snaps_media_desired_target_profile_fkey FOREIGN KEY (media_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id);
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_configuration_snapshot media_job_configuration_snapshot_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_configuration_snapshot
+    ADD CONSTRAINT media_job_configuration_snapshot_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id);
+
+
+--
+-- Name: media_job media_job_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_job media_job_current_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_current_attempt_fk FOREIGN KEY (media_job_id, current_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id);
+
+
+--
+-- Name: media_job_desired_target_stream media_job_desired_target_stream_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_desired_target_stream
+    ADD CONSTRAINT media_job_desired_target_stream_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_file_rule_snapshot media_job_file_rule_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_file_rule_snapshot
+    ADD CONSTRAINT media_job_file_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_filter_snapshot media_job_filter_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_filter_snapshot
+    ADD CONSTRAINT media_job_filter_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job media_job_intent_compatibility_target_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_intent_compatibility_target_id_fkey FOREIGN KEY (intent_compatibility_target_id) REFERENCES public.media_compatibility_target(media_compatibility_target_id);
+
+
+--
+-- Name: media_job media_job_intent_desired_target_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_intent_desired_target_profile_id_fkey FOREIGN KEY (intent_desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id);
+
+
+--
+-- Name: media_job media_job_intent_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_intent_policy_profile_id_fkey FOREIGN KEY (intent_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id);
+
+
+--
+-- Name: media_job media_job_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job
+    ADD CONSTRAINT media_job_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id);
+
+
+--
+-- Name: media_job_operation media_job_operation_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_operation
+    ADD CONSTRAINT media_job_operation_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_operation media_job_operation_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_operation
+    ADD CONSTRAINT media_job_operation_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_phase media_job_phase_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_phase
+    ADD CONSTRAINT media_job_phase_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_phase media_job_phase_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_phase
+    ADD CONSTRAINT media_job_phase_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_plan_reason media_job_plan_reason_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_plan_reason
+    ADD CONSTRAINT media_job_plan_reason_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_plan_reason media_job_plan_reason_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_plan_reason
+    ADD CONSTRAINT media_job_plan_reason_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_behavior_snapshot media_job_policy_behavior_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_behavior_snapshot
+    ADD CONSTRAINT media_job_policy_behavior_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_compatibility_target_snapshot media_job_policy_compatibility_target_snapsho_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_compatibility_target_snapshot
+    ADD CONSTRAINT media_job_policy_compatibility_target_snapsho_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_maintenance_window_snapshot media_job_policy_maintenance_window_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_maintenance_window_snapshot
+    ADD CONSTRAINT media_job_policy_maintenance_window_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_operation_cost_snapshot media_job_policy_operation_cost_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_operation_cost_snapshot
+    ADD CONSTRAINT media_job_policy_operation_cost_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_policy_retention_rule_snapshot media_job_policy_retention_rule_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_policy_retention_rule_snapshot
+    ADD CONSTRAINT media_job_policy_retention_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_root_snapshot media_job_root_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_root_snapshot
+    ADD CONSTRAINT media_job_root_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_stream_classification_rule_snapshot media_job_stream_classification_rule_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_stream_classification_rule_snapshot
+    ADD CONSTRAINT media_job_stream_classification_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_subtitle_discovery_rule_snapshot media_job_subtitle_discovery_rule_snapshot_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_subtitle_discovery_rule_snapshot
+    ADD CONSTRAINT media_job_subtitle_discovery_rule_snapshot_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_terminal_outbox media_job_terminal_outbox_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_terminal_outbox media_job_terminal_outbox_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_terminal_outbox
+    ADD CONSTRAINT media_job_terminal_outbox_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_verification_check media_job_verification_check_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_verification_check
+    ADD CONSTRAINT media_job_verification_check_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_verification_check media_job_verification_check_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_verification_check
+    ADD CONSTRAINT media_job_verification_check_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_violation media_job_violation_attempt_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_violation
+    ADD CONSTRAINT media_job_violation_attempt_fk FOREIGN KEY (media_job_id, media_job_attempt_id) REFERENCES public.media_job_attempt(media_job_id, media_job_attempt_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_job_violation media_job_violation_media_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_job_violation
+    ADD CONSTRAINT media_job_violation_media_job_id_fkey FOREIGN KEY (media_job_id) REFERENCES public.media_job(media_job_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_backup media_policy_backup_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_backup
+    ADD CONSTRAINT media_policy_backup_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_compatibility_rule media_policy_compatibility_rule_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_rule
+    ADD CONSTRAINT media_policy_compatibility_rule_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_ta_media_compatibility_target_i_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_ta_media_compatibility_target_i_fkey FOREIGN KEY (media_compatibility_target_id) REFERENCES public.media_compatibility_target(media_compatibility_target_id);
+
+
+--
+-- Name: media_policy_compatibility_target media_policy_compatibility_target_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_compatibility_target
+    ADD CONSTRAINT media_policy_compatibility_target_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_maintenance_window media_policy_maintenance_window_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_maintenance_window
+    ADD CONSTRAINT media_policy_maintenance_window_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_operation_cost media_policy_operation_cost_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_operation_cost
+    ADD CONSTRAINT media_policy_operation_cost_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_output media_policy_output_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_output
+    ADD CONSTRAINT media_policy_output_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_retention_rule media_policy_retention_rule_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_retention_rule
+    ADD CONSTRAINT media_policy_retention_rule_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_runtime_limit media_policy_runtime_limit_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_runtime_limit
+    ADD CONSTRAINT media_policy_runtime_limit_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_unmatched_stream_behavior media_policy_unmatched_stream_beha_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_unmatched_stream_behavior
+    ADD CONSTRAINT media_policy_unmatched_stream_beha_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_verification media_policy_verification_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_verification
+    ADD CONSTRAINT media_policy_verification_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_policy_workspace media_policy_workspace_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_policy_workspace
+    ADD CONSTRAINT media_policy_workspace_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_profile media_profile_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_profile media_profile_desired_target_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile
+    ADD CONSTRAINT media_profile_desired_target_profile_id_fkey FOREIGN KEY (desired_target_profile_id) REFERENCES public.media_desired_target_profile(media_desired_target_profile_id);
+
+
+--
+-- Name: media_profile_file_rule media_profile_file_rule_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_file_rule
+    ADD CONSTRAINT media_profile_file_rule_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_profile_filter media_profile_filter_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_filter
+    ADD CONSTRAINT media_profile_filter_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_profile_import_draft media_profile_import_draft_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_import_draft
+    ADD CONSTRAINT media_profile_import_draft_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: media_profile_root media_profile_root_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_profile_root
+    ADD CONSTRAINT media_profile_root_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_stream_classification_rule media_stream_classification_rule_media_policy_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_stream_classification_rule
+    ADD CONSTRAINT media_stream_classification_rule_media_policy_profile_id_fkey FOREIGN KEY (media_policy_profile_id) REFERENCES public.media_policy_profile(media_policy_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_subtitle_discovery_rule media_subtitle_discovery_rule_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_subtitle_discovery_rule
+    ADD CONSTRAINT media_subtitle_discovery_rule_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: media_target media_target_media_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.media_target
+    ADD CONSTRAINT media_target_media_profile_id_fkey FOREIGN KEY (media_profile_id) REFERENCES public.media_profile(media_profile_id) ON DELETE CASCADE;
+
+
+--
+-- Name: outbound_request_log outbound_request_log_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: outbound_request_log outbound_request_log_routing_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id);
+
+
+--
+-- Name: outbound_request_log outbound_request_log_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_request_log
+    ADD CONSTRAINT outbound_request_log_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id);
+
+
+--
+-- Name: policy_rule policy_rule_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_rule policy_rule_policy_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_policy_set_id_fkey FOREIGN KEY (policy_set_id) REFERENCES public.policy_set(policy_set_id) ON DELETE CASCADE;
+
+
+--
+-- Name: policy_rule policy_rule_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_rule policy_rule_value_set_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule
+    ADD CONSTRAINT policy_rule_value_set_fk FOREIGN KEY (value_set_id) REFERENCES public.policy_rule_value_set(value_set_id);
+
+
+--
+-- Name: policy_rule_value_set_item policy_rule_value_set_item_value_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set_item
+    ADD CONSTRAINT policy_rule_value_set_item_value_set_id_fkey FOREIGN KEY (value_set_id) REFERENCES public.policy_rule_value_set(value_set_id);
+
+
+--
+-- Name: policy_rule_value_set policy_rule_value_set_policy_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_rule_value_set
+    ADD CONSTRAINT policy_rule_value_set_policy_rule_id_fkey FOREIGN KEY (policy_rule_id) REFERENCES public.policy_rule(policy_rule_id);
+
+
+--
+-- Name: policy_set policy_set_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_set policy_set_created_for_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_created_for_search_request_id_fkey FOREIGN KEY (created_for_search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: policy_set policy_set_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_set policy_set_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_set
+    ADD CONSTRAINT policy_set_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: policy_snapshot_rule policy_snapshot_rule_policy_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.policy_snapshot_rule
+    ADD CONSTRAINT policy_snapshot_rule_policy_snapshot_id_fkey FOREIGN KEY (policy_snapshot_id) REFERENCES public.policy_snapshot(policy_snapshot_id) ON DELETE CASCADE;
+
+
+--
+-- Name: routing_policy routing_policy_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: routing_policy_parameter routing_policy_parameter_routing_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_parameter
+    ADD CONSTRAINT routing_policy_parameter_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id);
+
+
+--
+-- Name: routing_policy_rate_limit routing_policy_rate_limit_rate_limit_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_rate_limit_policy_id_fkey FOREIGN KEY (rate_limit_policy_id) REFERENCES public.rate_limit_policy(rate_limit_policy_id);
+
+
+--
+-- Name: routing_policy_rate_limit routing_policy_rate_limit_routing_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy_rate_limit
+    ADD CONSTRAINT routing_policy_rate_limit_routing_policy_id_fkey FOREIGN KEY (routing_policy_id) REFERENCES public.routing_policy(routing_policy_id) ON DELETE CASCADE;
+
+
+--
+-- Name: routing_policy routing_policy_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routing_policy
+    ADD CONSTRAINT routing_policy_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_observation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_observation_id_fkey FOREIGN KEY (observation_id) REFERENCES public.search_request_source_observation(observation_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_policy_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_policy_snapshot_id_fkey FOREIGN KEY (policy_snapshot_id) REFERENCES public.policy_snapshot(policy_snapshot_id);
+
+
+--
+-- Name: search_filter_decision search_filter_decision_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_filter_decision
+    ADD CONSTRAINT search_filter_decision_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_page_item search_page_item_search_page_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_search_page_id_fkey FOREIGN KEY (search_page_id) REFERENCES public.search_page(search_page_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_page_item search_page_item_search_request_canonical_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page_item
+    ADD CONSTRAINT search_page_item_search_request_canonical_id_fkey FOREIGN KEY (search_request_canonical_id) REFERENCES public.search_request_canonical(search_request_canonical_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_page search_page_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_page
+    ADD CONSTRAINT search_page_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_profile search_profile_created_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: search_profile search_profile_default_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_default_media_domain_id_fkey FOREIGN KEY (default_media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: search_profile_indexer_allow search_profile_indexer_allow_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: search_profile_indexer_allow search_profile_indexer_allow_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_allow
+    ADD CONSTRAINT search_profile_indexer_allow_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_indexer_block search_profile_indexer_block_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: search_profile_indexer_block search_profile_indexer_block_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_indexer_block
+    ADD CONSTRAINT search_profile_indexer_block_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_media_domain search_profile_media_domain_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: search_profile_media_domain search_profile_media_domain_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_media_domain
+    ADD CONSTRAINT search_profile_media_domain_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_policy_set search_profile_policy_set_policy_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_policy_set_id_fkey FOREIGN KEY (policy_set_id) REFERENCES public.policy_set(policy_set_id);
+
+
+--
+-- Name: search_profile_policy_set search_profile_policy_set_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_policy_set
+    ADD CONSTRAINT search_profile_policy_set_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_tag_allow search_profile_tag_allow_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_tag_allow search_profile_tag_allow_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_allow
+    ADD CONSTRAINT search_profile_tag_allow_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: search_profile_tag_block search_profile_tag_block_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_tag_block search_profile_tag_block_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_block
+    ADD CONSTRAINT search_profile_tag_block_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: search_profile_tag_prefer search_profile_tag_prefer_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_tag_prefer search_profile_tag_prefer_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_tag_prefer
+    ADD CONSTRAINT search_profile_tag_prefer_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tag(tag_id);
+
+
+--
+-- Name: search_profile_trust_tier search_profile_trust_tier_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_profile_trust_tier search_profile_trust_tier_trust_tier_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile_trust_tier
+    ADD CONSTRAINT search_profile_trust_tier_trust_tier_id_fkey FOREIGN KEY (trust_tier_id) REFERENCES public.trust_tier(trust_tier_id);
+
+
+--
+-- Name: search_profile search_profile_updated_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_updated_by_user_id_fkey FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: search_profile search_profile_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_profile
+    ADD CONSTRAINT search_profile_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: search_request_canonical search_request_canonical_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: search_request_canonical search_request_canonical_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_canonical
+    ADD CONSTRAINT search_request_canonical_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request search_request_effective_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_effective_media_domain_id_fkey FOREIGN KEY (effective_media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: search_request_identifier search_request_identifier_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_identifier
+    ADD CONSTRAINT search_request_identifier_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_indexer_run_correlation search_request_indexer_run_co_search_request_indexer_run_i_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run_correlation
+    ADD CONSTRAINT search_request_indexer_run_co_search_request_indexer_run_i_fkey FOREIGN KEY (search_request_indexer_run_id) REFERENCES public.search_request_indexer_run(search_request_indexer_run_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_indexer_run search_request_indexer_run_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: search_request_indexer_run search_request_indexer_run_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_indexer_run
+    ADD CONSTRAINT search_request_indexer_run_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request search_request_policy_set_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_policy_set_id_fkey FOREIGN KEY (policy_set_id) REFERENCES public.policy_set(policy_set_id);
+
+
+--
+-- Name: search_request search_request_policy_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_policy_snapshot_id_fkey FOREIGN KEY (policy_snapshot_id) REFERENCES public.policy_snapshot(policy_snapshot_id);
+
+
+--
+-- Name: search_request search_request_requested_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_requested_media_domain_id_fkey FOREIGN KEY (requested_media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: search_request search_request_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: search_request_source_observation search_request_source_observat_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observat_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id);
+
+
+--
+-- Name: search_request_source_observation_attr search_request_source_observation_attr_observation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation_attr
+    ADD CONSTRAINT search_request_source_observation_attr_observation_id_fkey FOREIGN KEY (observation_id) REFERENCES public.search_request_source_observation(observation_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_source_observation search_request_source_observation_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: search_request_source_observation search_request_source_observation_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id);
+
+
+--
+-- Name: search_request_source_observation search_request_source_observation_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_source_observation
+    ADD CONSTRAINT search_request_source_observation_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_torznab_category_effective search_request_torznab_category_effect_torznab_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effect_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+--
+-- Name: search_request_torznab_category_effective search_request_torznab_category_effectiv_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_effective
+    ADD CONSTRAINT search_request_torznab_category_effectiv_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request_torznab_category_requested search_request_torznab_category_reques_torznab_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_reques_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+--
+-- Name: search_request_torznab_category_requested search_request_torznab_category_requeste_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request_torznab_category_requested
+    ADD CONSTRAINT search_request_torznab_category_requeste_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id) ON DELETE CASCADE;
+
+
+--
+-- Name: search_request search_request_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.search_request
+    ADD CONSTRAINT search_request_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: secret_audit_log secret_audit_log_actor_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_audit_log
+    ADD CONSTRAINT secret_audit_log_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: secret_audit_log secret_audit_log_secret_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_audit_log
+    ADD CONSTRAINT secret_audit_log_secret_id_fkey FOREIGN KEY (secret_id) REFERENCES public.secret(secret_id) ON DELETE RESTRICT;
+
+
+--
+-- Name: secret_binding secret_binding_secret_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.secret_binding
+    ADD CONSTRAINT secret_binding_secret_id_fkey FOREIGN KEY (secret_id) REFERENCES public.secret(secret_id) ON DELETE RESTRICT;
+
+
+--
+-- Name: source_metadata_conflict_audit_log source_metadata_conflict_audit_log_actor_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict_audit_log
+    ADD CONSTRAINT source_metadata_conflict_audit_log_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: source_metadata_conflict_audit_log source_metadata_conflict_audit_log_conflict_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict_audit_log
+    ADD CONSTRAINT source_metadata_conflict_audit_log_conflict_id_fkey FOREIGN KEY (conflict_id) REFERENCES public.source_metadata_conflict(source_metadata_conflict_id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_metadata_conflict source_metadata_conflict_canonical_torrent_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict
+    ADD CONSTRAINT source_metadata_conflict_canonical_torrent_source_id_fkey FOREIGN KEY (canonical_torrent_source_id) REFERENCES public.canonical_torrent_source(canonical_torrent_source_id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_metadata_conflict source_metadata_conflict_resolved_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_metadata_conflict
+    ADD CONSTRAINT source_metadata_conflict_resolved_by_user_id_fkey FOREIGN KEY (resolved_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: source_reputation source_reputation_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_reputation
+    ADD CONSTRAINT source_reputation_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: tag tag_created_by_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_created_by_fk FOREIGN KEY (created_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: tag tag_updated_by_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tag
+    ADD CONSTRAINT tag_updated_by_fk FOREIGN KEY (updated_by_user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: torznab_instance torznab_instance_search_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.torznab_instance
+    ADD CONSTRAINT torznab_instance_search_profile_id_fkey FOREIGN KEY (search_profile_id) REFERENCES public.search_profile(search_profile_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_indexer_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_indexer_definition_id_fkey FOREIGN KEY (indexer_definition_id) REFERENCES public.indexer_definition(indexer_definition_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_indexer_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_indexer_instance_id_fkey FOREIGN KEY (indexer_instance_id) REFERENCES public.indexer_instance(indexer_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_media_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_media_domain_id_fkey FOREIGN KEY (media_domain_id) REFERENCES public.media_domain(media_domain_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_torznab_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_torznab_category_id_fkey FOREIGN KEY (torznab_category_id) REFERENCES public.torznab_category(torznab_category_id);
+
+
+--
+-- Name: tracker_category_mapping tracker_category_mapping_torznab_instance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tracker_category_mapping
+    ADD CONSTRAINT tracker_category_mapping_torznab_instance_id_fkey FOREIGN KEY (torznab_instance_id) REFERENCES public.torznab_instance(torznab_instance_id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_result_action user_result_action_canonical_torrent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_canonical_torrent_id_fkey FOREIGN KEY (canonical_torrent_id) REFERENCES public.canonical_torrent(canonical_torrent_id);
+
+
+--
+-- Name: user_result_action_kv user_result_action_kv_user_result_action_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action_kv
+    ADD CONSTRAINT user_result_action_kv_user_result_action_id_fkey FOREIGN KEY (user_result_action_id) REFERENCES public.user_result_action(user_result_action_id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_result_action user_result_action_search_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_search_request_id_fkey FOREIGN KEY (search_request_id) REFERENCES public.search_request(search_request_id);
+
+
+--
+-- Name: user_result_action user_result_action_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_result_action
+    ADD CONSTRAINT user_result_action_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(user_id);
+
+
+--
+-- Name: fs_jobs fs_jobs_torrent_id_fkey; Type: FK CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.fs_jobs
+    ADD CONSTRAINT fs_jobs_torrent_id_fkey FOREIGN KEY (torrent_id) REFERENCES revaer_runtime.torrents(torrent_id) ON DELETE CASCADE;
+
+
+--
+-- Name: torrent_files torrent_files_torrent_id_fkey; Type: FK CONSTRAINT; Schema: revaer_runtime; Owner: -
+--
+
+ALTER TABLE ONLY revaer_runtime.torrent_files
+    ADD CONSTRAINT torrent_files_torrent_id_fkey FOREIGN KEY (torrent_id) REFERENCES revaer_runtime.torrents(torrent_id) ON DELETE CASCADE;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+-- Initialize the repository's existing canonical default state.
+SET search_path = public, revaer_config, revaer_runtime;
+SELECT revaer_config.factory_reset();
+RESET search_path;

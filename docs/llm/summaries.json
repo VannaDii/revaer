@@ -4661,6 +4661,15 @@
     "href": "/adr/554-preemptible-native-process-broker-contract/"
   },
   {
+    "id": "adr/555-pre-v1-init-assembly-slice-06",
+    "title": "Pre-v1 init assembly slice 06",
+    "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: bounded implementation of accepted ADRs 522, 528, and 541 Context: ADR 522 requires the complete final-state init candidate to be assembled in statement-aligned pull requests that remain below the 8,500 changed-line assembly limit. ADR 528 froze the 167-file migration corpus and proved a complete candidate with SHA-256 fb0d371f1afe365a72bbe34e9c8fe628e318be6de0e1f43b6f73c37897c95858 and 1,624 SQL statements. ADR 552 established the fifth inert candidate prefix through statement 781, byte 1,306,068, and line 36,988. ADR 541 keeps the migration corpus authoritative until the complete init script passes parity and the accepted packaged-bootstrap cutover is made. Decision: Extend crates/revaer-data/init.sql",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/555-pre-v1-init-assembly-slice-06/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",
