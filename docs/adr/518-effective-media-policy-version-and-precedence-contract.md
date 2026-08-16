@@ -1,0 +1,206 @@
+# Effective media policy version and precedence contract
+
+- Status: Proposed
+- Date: 2026-08-16
+- Operator approval: Pending
+
+## Problem
+
+- Accepted ADR 451 assigns effective-policy compilation to a pure Rust domain
+  compiler, but it leaves the exact family inventory, precedence, identity hash,
+  and compiler-version behavior undecided.
+- Distributed defaults already exist in SQL, API conversion, the planner, and
+  runtime constants. Reproducing those defaults inside a new compiler would
+  preserve ambiguity rather than establish one immutable contract.
+- Proposed ADRs 507-511, 515, and 516 describe additional target and discovery
+  semantics. Pending recommendations cannot be treated as compiler inputs or
+  permissive defaults before separate approval.
+
+## Options
+
+1. **Compile only fields used by the current runtime.** This is smaller but
+   continues to ignore persisted policy families and cannot satisfy ADR 451.
+2. **Compile one exhaustive, versioned domain value.** Require every accepted
+   family, apply a closed precedence table, and derive one canonical identity
+   consumed by planning, execution, verification, and audit.
+3. **Let each subsystem compile its own view.** This avoids a broad type but
+   permits discovery, planning, execution, and verification to disagree.
+
+## Recommendation
+
+- Adopt option 2.
+- The pure entry point is conceptually
+  `compile_effective_media_policy(snapshot, contract_version) -> Result<EffectiveMediaPolicy, PolicyCompileError>`.
+  It receives only the bounded persistence DTO from ADR 517. It performs no I/O,
+  environment reads, clock reads, capability discovery, path resolution,
+  filesystem inspection, logging, or adapter construction.
+- `EffectiveMediaPolicyV1` contains these exhaustive families:
+
+| Family | Required compiled content |
+| --- | --- |
+| Identity | profile configuration version, policy key/version, target key/version, snapshot contract version |
+| File selection | ordered include/exclude rules and one explicit size/duration/sample/trailer/trash/quarantine filter |
+| Sidecar discovery | explicit disabled state or one compiled ADR 524 rule set; no built-in patterns |
+| Stream classification | ordered typed stream-kind, role, matcher, and confidence rules |
+| Desired target | one container contract and 1-64 ordered video/audio/subtitle target streams |
+| Stream disposition | ordered retention rules and explicit per-kind unmatched actions |
+| Compatibility | ordered target identities, unsupported-format action, and require-all behavior |
+| Planning cost | a complete map for every v1 operation kind and whether the operation is permitted |
+| Runtime control | concurrency, retry, absolute runtime, I/O, free-space, battery, and thermal constraints |
+| Maintenance | ordered weekly windows with one explicit inside/outside interpretation |
+| Output | dry-run, replacement mode, quarantine, permission, and ownership behavior |
+| Workspace and backup | retention, diagnostics, cleanup, maximum bytes, backup enablement, backup retention, and reserves |
+| Verification | strictness plus duration, mux, decode, keyframe, and playback requirements |
+| Root requirements | five stable binding ids and required root-kind semantics, but no host path or filesystem handle |
+
+- Source inspection, resolved host paths, capability evidence, command lines,
+  attempts, checkpoints, clocks, and mutable job state are not policy families.
+  They remain separate inputs to later planning or execution boundaries.
+- The v1 operation-cost map contains exactly these thirteen normalized keys:
+  `no_op`, `remux`, `metadata_rewrite`, `disposition_rewrite`, `label_rewrite`,
+  `stream_reorder`, `embed_subtitle`, `extract_subtitle`,
+  `copy_sidecar_subtitle`, `remove_sidecar_subtitle`, `subtitle_transcode`,
+  `audio_transcode`, and `video_transcode`. A missing or unknown key is an error.
+  `enabled = false` forbids that operation; it is not an infinite or zero cost.
+
+### Closed Precedence Table
+
+1. Repository safety invariants and accepted architecture boundaries are
+   absolute. No profile value can permit root escape, unbounded work, unsupported
+   native execution, mutation during dry-run, or replacement before verification.
+2. The immutable desired-target graph owns matched output state. A retention or
+   unmatched rule cannot rewrite a stream already bound to a target row.
+3. For source streams and sidecars left unmatched by the target, an accepted ADR
+   509 contract owns per-kind precedence. Until ADR 509 is accepted, compilation
+   of its proposed action values fails as unsupported.
+4. Ordered rule families use first matching **enabled** row. Disabled rows remain
+   in snapshot identity but never match. Equal precedence or duplicate order is
+   invalid; there is no database-order tie break.
+5. Explicit scalar behavior rows are complete values, not optional overrides.
+   Defaults are materialized when a new version is authored and snapshotted;
+   the worker compiler never consults a current default.
+6. Runtime, maintenance, capacity, and compatibility constraints may remove
+   candidate plans or delay work. They may not relax target, verification,
+   source-identity, process, or replacement requirements.
+7. Verification strictness may add checks. It may not disable exact checks
+   required by an accepted target contract, including any later accepted ADR
+   507-511 or 515 contract.
+8. `dry_run = true` dominates every mutation setting. Backup, quarantine, and
+   replacement fields remain compiled for explanation but cannot authorize a
+   filesystem mutation.
+9. Backup enablement requires one accepted backup root binding and complete
+   backup policy. Quarantine enablement similarly requires its root binding.
+   Missing bindings are compile errors, not reasons to disable behavior.
+10. No live profile, target, capability run, environment value, or application
+    constant participates as a final fallback.
+
+### Identity And Versioning
+
+- Persist `policy_contract_version` and `policy_compiler_version` with every job
+  snapshot. The first supported pair is `(1, 1)`.
+- The effective identity is the tuple `(policy_contract_version,
+  policy_compiler_version, sha256)`. The digest uses the same framed primitives
+  as ADR 517 but a distinct domain prefix:
+  `revaer-effective-media-policy`, zero byte, contract version, compiler version.
+- The digest covers every compiled semantic value in the family order above,
+  normalized enum ordinals, ordered collections, operation permission and cost,
+  stable root binding ids, and accepted nested target-contract versions. It
+  excludes capture timestamps, database row ids, host paths, capability runs,
+  source facts, command text, and diagnostics.
+- Snapshot creation compiles and stores the expected effective digest before a
+  job is admitted. The worker recompiles the loaded DTO and requires exact
+  identity equality before planning.
+- Any change to defaults, normalization, precedence, cross-field validation, or
+  hash framing increments `policy_compiler_version`. Any change to the accepted
+  family or field contract increments `policy_contract_version`. Existing jobs
+  retain their recorded pair and are never reinterpreted by a newer compiler.
+- A binary may support multiple explicit compiler versions. An unsupported pair
+  yields `media_policy_compiler_version_unsupported` and requires the explicit
+  ADR 520 re-plan path or an older compatible runtime; it does not auto-upgrade.
+
+### Stable Compile Errors
+
+- Use a closed error enum including `family_missing`, `family_incomplete`,
+  `unknown_value`, `duplicate_rule_order`, `rule_conflict`,
+  `operation_cost_incomplete`, `root_binding_incomplete`,
+  `cross_field_invariant`, `pending_contract_unsupported`,
+  `compiler_version_unsupported`, and `effective_identity_mismatch`.
+- Errors carry bounded family and field enums and an optional row ordinal. They
+  do not contain paths, metadata values, YAML fragments, or command arguments.
+
+## Consequences
+
+- Every runtime phase consumes one immutable semantic value instead of selecting
+  its own defaults.
+- Versioning prevents a deploy from silently changing queued-job meaning, at the
+  cost of retaining explicit compiler implementations while supported jobs
+  exist.
+- Proposed target and audio contracts cannot leak into production through
+  existing rows. They require approval and a deliberate contract-version change.
+- The compiler type is broad, but it remains pure and decomposable into private
+  family validators and values rather than coupling domain logic to persistence.
+
+## Implementation Boundary
+
+- This proposal authorizes no implementation while its status is `Proposed`.
+- Acceptance would authorize only the v1 family inventory, thirteen operation
+  keys, precedence table, domain separation, identity tuple, version rules, and
+  stable compile-error shape described above.
+- Acceptance would not approve any pending value or behavior in ADRs 507-516.
+  If those ADRs are later accepted, their exact fields enter through a new or
+  explicitly revised contract version and retain their own implementation
+  boundaries.
+- ADR 517 owns persistence transport; ADR 519 owns executable capability
+  identity; ADR 523 owns host root resolution. This compiler may validate their
+  stable references but may not perform their I/O.
+- No SQL, Rust, API, YAML, UI, workflow, generated contract, or runtime behavior
+  may change until this ADR receives explicit decision-specific approval.
+
+## Validation
+
+- Proposal validation is documentation-only.
+- After approval, add table-driven tests that remove, duplicate, disable, reorder,
+  or alter every family and prove one stable result or error.
+- Add precedence matrices for matched and unmatched streams, conflicting ordered
+  rules, dry-run versus every mutation flag, compatibility versus target
+  exactness, and verification strictness versus mandatory checks.
+- Publish known-answer hashes for minimum and maximum policies and prove database,
+  API, YAML, and worker round trips preserve them.
+- Add compatibility tests proving compiler version 1 remains stable after a
+  version 2 implementation is introduced and unsupported versions fail closed.
+- An accepted implementation is not complete until focused tests, `just ci`,
+  and `just ui-e2e` pass.
+
+## Follow-up
+
+- Obtain explicit operator approval before implementation or changing status.
+- Decide ADRs 517, 521, 523, and 524 together so the first DTO, operator surface,
+  root references, and compiler inventory agree.
+- Resolve pending ADRs 507-516 individually; do not reserve hidden fields or
+  activate their semantics in compiler version 1 without approval.
+
+## Task Record
+
+- Motivation:
+  - Complete the semantic and versioning decision deferred by accepted ADR 451.
+- Design notes:
+  - The effective value is exhaustive but excludes I/O identities and mutable
+    execution state.
+- Test coverage summary:
+  - Proposal only; no compiler or behavioral tests were added.
+- Observability updates:
+  - Future telemetry may use bounded compiler version, family, and error enums.
+    Digests, policy keys, paths, and row values must not become metric labels.
+- Status-doc validation:
+  - Reviewed `MEDIA_TRANSCODING.md`, accepted ADRs 446-451, 484, 500, and 501,
+    and proposed ADRs 507-516. No pending proposal is claimed as accepted.
+- Risk & rollback plan:
+  - This record can be removed with its catalogue entries. A later rollback must
+    keep old compiler versions available or hold incompatible jobs explicitly.
+- Dependency rationale:
+  - No dependency is proposed; existing typed domain and SHA-256 facilities are
+    sufficient.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and
+    `.github/instructions/revaer-data.instructions.md`; no drift or relaxation
+    was found.

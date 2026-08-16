@@ -439,5 +439,14 @@
 -   [514](514-packaged-media-subsystem-lifecycle-and-health-contract.md) – Packaged media subsystem lifecycle and health contract
 -   [515](515-versioned-audio-transformation-and-acceptance-contract.md) – Versioned audio transformation and acceptance contract
 -   [516](516-durable-discovery-scheduling-and-versioned-aggregate-identity.md) – Durable discovery scheduling and versioned aggregate identity
+-   [517](517-generation-fenced-media-job-snapshot-reader-contract.md) – Generation-fenced media job snapshot reader contract
+-   [518](518-effective-media-policy-version-and-precedence-contract.md) – Effective media policy version and precedence contract
+-   [519](519-immutable-media-capability-execution-identity.md) – Immutable media capability execution identity
+-   [520](520-explicit-media-job-replan-contract.md) – Explicit media job re-plan contract
+-   [521](521-normalized-media-operator-resource-contract.md) – Normalized media operator resource contract
+-   [522](522-pre-v1-single-init-script-transition.md) – Pre-v1 single init-script transition
+-   [523](523-managed-root-catalog-and-job-binding-contract.md) – Managed-root catalog and job binding contract
+-   [524](524-versioned-sidecar-token-grammar-and-bounds.md) – Versioned sidecar token grammar and bounds
+-   [525](525-attempt-scoped-backup-and-rollback-layout.md) – Attempt-scoped backup and rollback layout
 -   [530](530-cataloged-task-record-restoration.md) – Cataloged task-record restoration
 -   [532](532-admitted-media-source-intent-preservation.md) – Admitted media source intent preservation
