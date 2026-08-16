@@ -23,7 +23,6 @@ tokio.workspace = true
 tracing.workspace = true
 sqlx.workspace = true
 rand.workspace = true
-rand_core.workspace = true
 revaer-data = { path = "../revaer-data" }
 
 [dev-dependencies]
