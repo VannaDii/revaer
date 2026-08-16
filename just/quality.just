@@ -201,9 +201,8 @@ script-coverage:
     command -v kcov >/dev/null 2>&1 || { echo "kcov is required for authored shell coverage" >&2; exit 1; }
     rm -rf coverage/scripts
     mkdir -p coverage/scripts/ruby
-    REVAER_RUBY_COVERAGE_DIR="${PWD}/coverage/scripts/ruby" \
-    RUBYOPT="-r${PWD}/scripts/ruby-coverage-bootstrap.rb" \
-        kcov --include-path="${PWD}/scripts" coverage/scripts/kcov scripts/tests/policy-suite.sh
+    bash scripts/run-kcov-script-coverage.sh \
+        coverage/scripts/kcov coverage/scripts/kcov.log
     REVAER_RUBY_COVERAGE_DIR="${PWD}/coverage/scripts/ruby" \
     RUBYOPT="-r${PWD}/scripts/ruby-coverage-bootstrap.rb" \
         ruby scripts/generate-generic-coverage.rb \

@@ -478,5 +478,6 @@
     -   [525: Attempt-scoped backup and rollback layout](adr/525-attempt-scoped-backup-and-rollback-layout.md)
     -   [526: Descriptor-bound media inspection inputs](adr/526-descriptor-bound-media-inspection-inputs.md)
     -   [527: Fail-closed native media inspection confinement](adr/527-fail-closed-native-media-inspection-confinement.md)
+    -   [529: Fail-closed kcov Bash tracing](adr/529-kcov-inline-shell-source.md)
     -   [530: Cataloged task-record restoration](adr/530-cataloged-task-record-restoration.md)
     -   [532: Admitted media source intent preservation](adr/532-admitted-media-source-intent-preservation.md)
