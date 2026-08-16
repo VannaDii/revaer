@@ -51,6 +51,7 @@
   - PR 142 proves that a job added to the existing `pr.yml` is emitted on the pull request that introduces it.
   - The stack-check contract rejects branch, path, and activity-type filters on the sole pull-request workflow trigger.
   - `just policy` verifies that the stack contract accepts the canonical integration step and still rejects noncanonical recipes.
+  - Clean reconstruction keeps the enforced step name and canonical recipe aligned before any media runtime implementation is replayed.
 - Observability updates:
   - Retain the media conversion report, Sonar evidence, supply results, and a machine-readable final audit of required contexts per pull request.
 - Status-doc validation:

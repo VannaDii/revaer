@@ -289,7 +289,7 @@ jobs:
           just download-test-fixtures
           just generate-test-fixtures
 
-      - name: Media conversion fixtures
+      - name: Media conversion integration tests
         run: just test-media-conversion
 
       - name: Publish media conversion report
