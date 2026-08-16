@@ -491,3 +491,4 @@
     -   [540: Schema-stable media job status helpers](adr/540-schema-stable-media-job-status-helpers.md)
     -   [541: Packaged init-script bootstrap lifecycle](adr/541-packaged-init-bootstrap-lifecycle.md)
     -   [544: Pre-v1 init assembly slice 01](adr/544-pre-v1-init-assembly-slice-01.md)
+    -   [545: Pre-v1 init assembly slice 02](adr/545-pre-v1-init-assembly-slice-02.md)
