@@ -425,5 +425,9 @@
 -   [496](496-pr168-api-service-review.md) – PR 168 API service review remediation
 -   [500](500-attempt-scoped-replacement-reconciliation.md) – Attempt-scoped replacement reconciliation
 -   [501](501-bounded-native-media-process-envelope.md) – Bounded native media process envelope
+-   [502](502-ci-node-path-fallback.md) – Exact CI Node PATH fallback
+-   [504](504-attempt-aware-media-job-phase-reads.md) – Attempt-aware media job phase reads
+-   [505](505-profile-readiness-and-source-bound-planning.md) – Profile readiness and source-bound planning
+-   [506](506-explicit-manual-media-execution-command.md) – Explicit manual media execution command
 -   [530](530-cataloged-task-record-restoration.md) – Cataloged task-record restoration
 -   [532](532-admitted-media-source-intent-preservation.md) – Admitted media source intent preservation
