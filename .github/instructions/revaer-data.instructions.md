@@ -2,6 +2,7 @@
 applyTo:
   - "crates/revaer-data/**"
   - "crates/**/migrations/**"
+  - "config/database-rebaseline.env"
   - "scripts/dev-seed.sql"
 ---
 
@@ -18,9 +19,21 @@ applyTo:
 
 # Migration Rules
 
-- Every behavior change that affects persisted state ships with a migration.
-- Migrations must be versioned, deterministic, and safe to replay in clean environments.
-- If the runtime behavior changes, update the stored procedure layer and the Rust caller in the same change.
+- During ADR 522's freeze and assembly phases, the exact numbered migration
+  corpus pinned by `config/database-rebaseline.env` remains the sole bootstrap
+  authority. Do not add, edit, rename, or remove a migration after the freeze.
+- `crates/revaer-data/init.sql` must remain absent during the freeze phase. A
+  later assembly-phase prefix is review evidence only and must not be selected
+  by runtime, development, or ordinary tests before the accepted cutover step.
+- Run the canonical database rebaseline guard before schema handoff. Candidate
+  output belongs only under the ignored `target/database-rebaseline/` evidence
+  directory and must match the pinned digest and statement count.
+- Before the ADR 522 cutover, persisted-state behavior changes are blocked from
+  the frozen corpus. Complete them before candidate freeze or defer them to a
+  direct pre-v1 `init.sql` edit after cutover; do not create another migration.
+- If runtime database behavior changes after cutover, update the authoritative
+  stored procedure layer and the Rust caller in the same change. A post-v1
+  migration system requires a separately approved decision.
 
 # Testing
 

@@ -460,6 +460,7 @@
 -   [525](525-attempt-scoped-backup-and-rollback-layout.md) – Attempt-scoped backup and rollback layout
 -   [526](526-descriptor-bound-media-inspection-inputs.md) – Descriptor-bound media inspection inputs
 -   [527](527-fail-closed-native-media-inspection-confinement.md) – Fail-closed native media inspection confinement
+-   [528](528-pre-v1-init-freeze-guard.md) – Pre-v1 init freeze and candidate guard
 -   [529](529-kcov-inline-shell-source.md) – Fail-closed kcov Bash tracing
 -   [530](530-cataloged-task-record-restoration.md) – Cataloged task-record restoration
 -   [532](532-admitted-media-source-intent-preservation.md) – Admitted media source intent preservation

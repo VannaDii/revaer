@@ -4358,6 +4358,15 @@
     "href": "/adr/527-fail-closed-native-media-inspection-confinement/"
   },
   {
+    "id": "adr/528-pre-v1-init-freeze-guard",
+    "title": "Pre-v1 init freeze and candidate guard",
+    "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: Accepted ADR 522 requires a bounded freeze-and-guard step before any init.sql assembly. Existing numbered migrations must remain the sole bootstrap authority during this step. A complete candidate must exist before assembly begins, but committing the 44,630-line candidate in this change would exceed the bounded delivery and would expose an incomplete tracked init transition. Decision: Record implementation of ADR 522 step 1 only. No new architecture is introduced and no runtime, development, test, or release bootstrap path is switched. Freeze all 167 files through crates/revaer-data/migrations/0188_media_workspace_retention.sql with aggregate SHA-256 966d3a286c7fb6f221987fd4906e9fc25cd19fe4729afd70405dee6b72a6bbac.",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/528-pre-v1-init-freeze-guard/"
+  },
+  {
     "id": "adr/529-kcov-inline-shell-source",
     "title": "Fail-closed kcov Bash tracing",
     "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: Kcov instruments authored Bash with a PS4 trace expression that reads BASH_SOURCE. Policy tests invoke selected just recipes whose inline bash -c bodies enable nounset. Those inline shells have no source file, so trace expansion failed before the database and exact-tool assertions ran. The same missing identity affects temporary Bash command doubles, while assigning one fixed source through the complete process would corrupt child-script path discovery and coverage identity. Bash before 4.2 has no BASH_XTRACEFD, so kcov multiplexes trace records with ordinary standard error and can report parser",

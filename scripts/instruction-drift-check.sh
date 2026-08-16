@@ -113,6 +113,9 @@ fi
 collect_matches lint_control_matches \
   "justfile" \
   "just/**" \
+  "config/database-rebaseline.env" \
+  "scripts/database-rebaseline.rb" \
+  "scripts/database_rebaseline/**" \
   "scripts/policy-guardrails.sh" \
   "scripts/workflow-guardrails.sh" \
   "scripts/workflow_guardrails/**" \
@@ -120,11 +123,15 @@ collect_matches lint_control_matches \
 collect_matches devops_matches \
   ".github/workflows/**" \
   ".github/actions/**" \
+  ".github/build-inputs.env" \
   "Dockerfile" \
+  "config/database-rebaseline.env" \
   "just/**" \
   "scripts/cargo-install-retry.sh" \
   "scripts/ensure-exact-cargo-tool.sh" \
   "scripts/image-release.sh" \
+  "scripts/database-rebaseline.rb" \
+  "scripts/database_rebaseline/**" \
   "scripts/with-node.sh" \
   "scripts/workflow-guardrails.sh" \
   "scripts/workflow_guardrails/**" \

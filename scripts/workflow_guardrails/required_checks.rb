@@ -45,6 +45,7 @@ module WorkflowGuardrails
       validate_pr_dependency_graph
       validate_required_pr_job_conditions
       validate_udeps_contract
+      validate_database_rebaseline_contract
       validate_supply_chain_aggregate
       validate_ui_coverage_aggregate
       validate_image_workflow_contract
@@ -158,6 +159,21 @@ module WorkflowGuardrails
       }
         error("cargo-udeps toolchain evidence must be retained fail closed")
       end
+    end
+
+    def validate_database_rebaseline_contract
+      job = pr_jobs["feature-matrix"]
+      candidate = named_step(job, "Database rebaseline contract")
+      unless candidate&.dig("run") == "just db-rebaseline-candidate"
+        error("Feature Matrix must run the exact database rebaseline candidate proof")
+        return
+      end
+
+      candidate_index = step_index(job, "Database rebaseline contract")
+      migration_index = step_index(job, "Run migrations")
+      return if candidate_index && migration_index && candidate_index < migration_index
+
+      error("database rebaseline proof must run before Feature Matrix migrations")
     end
 
     def validate_ui_coverage_aggregate

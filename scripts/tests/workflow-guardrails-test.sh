@@ -209,6 +209,17 @@ replace_once "${case_root}/.github/workflows/pr.yml" \
   $'  pull_request:\n    branches: [main]\n'
 expect_failure "a branch-narrowed pull request trigger" "${case_root}"
 
+case_root="$(new_case missing-database-rebaseline-proof)"
+replace_once "${case_root}/.github/workflows/pr.yml" \
+  $'      - name: Database rebaseline contract\n        run: just db-rebaseline-candidate\n\n' ''
+expect_failure "a missing database rebaseline proof" "${case_root}"
+
+case_root="$(new_case reordered-database-rebaseline-proof)"
+replace_once "${case_root}/.github/workflows/pr.yml" \
+  $'      - name: Database rebaseline contract\n        run: just db-rebaseline-candidate\n\n      - name: Run migrations\n        env:\n          DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}\n        run: just db-migrate' \
+  $'      - name: Run migrations\n        env:\n          DATABASE_URL: ${{ env.REVAER_TEST_DATABASE_URL }}\n        run: just db-migrate\n\n      - name: Database rebaseline contract\n        run: just db-rebaseline-candidate'
+expect_failure "a database rebaseline proof after migrations" "${case_root}"
+
 case_root="$(new_case ui-shard-upload-warn)"
 replace_once "${case_root}/.github/workflows/pr.yml" \
   $'          name: ui-e2e-coverage-shard-${{ matrix.shard }}\n          path: |\n            tests/test-results/api-coverage-*.json\n            tests/test-results/ui-coverage-*.json\n          if-no-files-found: error' \

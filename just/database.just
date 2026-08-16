@@ -8,6 +8,21 @@ db-migrate: sqlx-install
     db_url="${DATABASE_URL:-${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh revaer)}}"; \
     DATABASE_URL="${db_url}" sqlx migrate run --source crates/revaer-data/migrations
 
+db-rebaseline-freeze:
+    ruby --disable-gems scripts/database-rebaseline.rb freeze
+
+db-rebaseline-candidate: sqlx-install
+    ruby --disable-gems scripts/database-rebaseline.rb generate
+
+db-init-prefix-check:
+    ruby --disable-gems scripts/database-rebaseline.rb prefix
+
+stack-changed-lines base_ref head_ref:
+    ruby --disable-gems scripts/database-rebaseline.rb changed-lines stack "{{base_ref}}" "{{head_ref}}"
+
+db-init-assembly-changed-lines base_ref head_ref:
+    ruby --disable-gems scripts/database-rebaseline.rb changed-lines init-assembly "{{base_ref}}" "{{head_ref}}"
+
 # Start local Postgres only when the caller selected managed lifecycle ownership.
 # Explicit reachable database URLs remain caller-owned and are never replaced by Docker.
 db-start:
