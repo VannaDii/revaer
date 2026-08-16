@@ -1,6 +1,12 @@
 ---
 applyTo:
+  - ".github/workflows/pr.yml"
   - ".github/workflows/sonar.yml"
+  - "just/quality.just"
+  - "scripts/install-sonar-scanner.sh"
+  - "scripts/prepare-sonar-scm.sh"
+  - "scripts/sonar-*.sh"
+  - "scripts/verify-sonar-inputs.sh"
   - "sonar-project.properties"
 ---
 
@@ -23,19 +29,22 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 
 # Revaer Sonar Workflow
 
-- Revaer versions its complete strict Sonar scope in `sonar-project.properties`. Keep every authored tracked top-level entry in main-code scope, use only the committed empty `.sonar-test-scope` sentinel for `sonar.tests`, and keep source, test, coverage, duplication, JavaScript, SCA, and issue-scope filters explicitly empty.
-- PostgreSQL migrations must remain visible to generic text, secrets, and main-code analysis. Do not assign `.sql`, `.pgsql`, or `.plpgsql` to the PL/SQL analyzer; reserve `sonar.plsql.file.suffixes=.plsql` for actual PL/SQL.
-- Sonar property policy is enforced after Java-properties parsing. Escaped keys, leading-whitespace forms, continuations, duplicate logical keys, workflow overrides, and properties outside the exact reviewed allowlist are forbidden.
-- `sonar.coverageReportPaths` must consume the generic report emitted by `just script-coverage`. That report must come from the exact archive-hash-verified `kcov` revision installed by the canonical setup action and Ruby line/branch execution data, retain uncovered executable lines, include both covered and uncovered records, and fail closed when either language is absent.
-- Follow the repo-wide external action versioning rule in `.github/instructions/devops.instructions.md` when editing `.github/workflows/sonar.yml`. Do not restate a conflicting Sonar-only pinning rule here.
-- Revaer uses Sonar as a strict merge-control signal on pull requests. Prefer PR quality-gate status and decoration over scanner-side waiting in PR workflows.
-- Treat zero published coverage, a missing Rust LCOV report, a missing native LLVM coverage report, or unavailable SCM baseline data as a failed analysis even when Sonar reports a green quality gate.
-- Pull-request and main-branch scans must receive the same complete Rust, native, JavaScript, Bash, and Ruby coverage inputs and must retain the scanner report as uploaded evidence after post-scan verification.
-- Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked.
-- New Security Hotspots on touched code must be reviewed before merge. Backlog hotspots outside touched code are tracked separately and do not automatically block unrelated work.
-
-# Noise And Scope
-
+- `sonar-project.properties` is the only scanner-criteria source. Workflow `-Dsonar.*` overrides, duplicate keys, unreviewed properties, and server-side criteria changes are forbidden.
+- `sonar.sources` must exactly enumerate every tracked authored top-level entry. The committed empty `.sonar-test-scope/.gitkeep` sentinel is the only `sonar.tests` target, so tests, documentation, scripts, generated-looking first-party files, and vendored first-party sources remain in main-code scope.
+- Every source, test, coverage, duplication, issue, analyzer-default, and SCA filter remains explicitly empty. Do not add exclusions, inclusions, ignored rules, `NOSONAR`, suffix suppression, bundle detection, or generated-code hiding. PostgreSQL `.sql`, `.pgsql`, and `.plpgsql` sources must not be misrouted to the PL/SQL analyzer.
+- Hidden-file, text, YAML, JSON, Rust, JavaScript/TypeScript, native C-family, and available SCA analysis stay enabled. Keep full SCM reload, SCM-ignore bypass, analyzer cache, retained scanner report, and the scanner-wide 100 MB file limit. JavaScript's KB limit must remain aligned at 100000 KB.
+- SCA is enabled and fail-closed. Add `sonar.sca.sbomImportPaths=release/media-compliance/media-runtime-inventory.spdx.json` only when that exact committed matching inventory exists in the integrated tree; once present, the property and inventory are mandatory together.
+- Coverage must include the complete Rust workspace with all features and `--include-ffi` using exact cargo-llvm-cov 0.8.7, positive Rust LCOV, JavaScript/TypeScript LCOV, authored shell/Ruby generic coverage, a native compilation database, and retained native llvm-cov text. Hosted Linux must fail unless the `session.cpp` section contains at least one positive covered-line record; macOS may omit it only when the real native backend was not compiled.
+- Use available pinned clang-19 with Rust-bundled llvm-cov and llvm-profdata. Compatibility is behavioral, not exact LLVM-major equality.
+- PR and main workflows install exact SonarScanner CLI 8.1.0.6389 through `setup-revaer` only. Installation requires exact per-platform SHA-256 validation plus detached-signature verification against the committed key and pinned fingerprint. `just sonar-scan` is the one and only scanner invocation.
+- Sonar checkout uses complete Git history and the exact event head. The exact event base SHA must be an ancestor of the head; divergent or stale stacked branches fail with a restack requirement before analysis.
+- Reject every scanner log containing the `WARN` token after ANSI normalization. Retain one complete scanner log, one SCM evidence file, one `report-task.txt`, one submitted-report archive, one exact task ID, and the API result JSON used for verification.
+- Scanner-side quality-gate waiting and API verification are both mandatory. The quality gate must evaluate without ignored conditions, coverage and line coverage must be positive, and lines-to-cover must be positive.
+- PR verification scopes issues and hotspots to the pull request's new-code semantics. Main verification omits leak-period narrowing and queries all unresolved issues and all current hotspots. Hotspot status is never a filter: REVIEWED, SAFE, ACKNOWLEDGED-like, or any other disposition remains blocking.
+- Zero unresolved issues and zero hotspots are required. Do not change issue or hotspot dispositions, rule activation or severity, gate conditions, new-code definitions, project settings, organization settings, or branch protection to make a run pass.
+- Any scanner or server criteria relaxation requires exact operator consent naming the property or setting, scope, reason, and expiry. Silence, a prior exception, an agent-authored ADR, a green decoration, or time pressure is not consent; stop and ask instead.
+- Follow the external-action, timeout, `continue-on-error`, required-context, and canonical-`just` rules in `devops.instructions.md` when changing either workflow.
+- Use pull-request-specific quality-gate checks when the user asks whether a PR is blocked; use complete-project queries when assessing main.
 - Scanner-readable UI runtime media must remain UTF-8 SVG. Preserve the validated Revaer purple-gradient and stylized-R identifiers; do not restore raster assets, weaken `asset_sync` validation, or add Sonar exclusions to hide malformed, off-brand, or binary runtime media.
 - Treat canonical `/static/...` references and successful Trunk release-output URL checks as runtime correctness evidence; a clean source scan alone does not prove that emitted assets resolve.
 - If Sonar noise comes from committed generated, vendored, or binary files, delete, regenerate, or replace the input with reviewable UTF-8 source. Do not hide the input through scanner exclusions without explicit operator consent.

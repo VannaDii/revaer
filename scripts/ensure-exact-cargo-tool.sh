@@ -22,10 +22,8 @@ read_installed_version() {
     if ! version_output="$(cargo "${binary#cargo-}" --version 2>/dev/null)"; then
       return 0
     fi
-  else
-    if ! version_output="$("${binary}" --version 2>/dev/null)"; then
-      return 0
-    fi
+  elif ! version_output="$("${binary}" --version 2>/dev/null)"; then
+    return 0
   fi
   installed_version="$(printf '%s\n' "${version_output}" | awk 'NR == 1 { print $2 }')"
 }
@@ -50,6 +48,7 @@ hash -r
 installed_version=""
 read_installed_version
 if [[ "${installed_version}" != "${required_version}" ]]; then
-  echo "${binary} version check failed: expected ${required_version}, found ${installed_version:-missing}" >&2
+  printf '%s version check failed: expected %s, found %s\n' \
+    "${binary}" "${required_version}" "${installed_version:-missing}" >&2
   exit 1
 fi

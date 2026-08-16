@@ -38,7 +38,7 @@ class GenericCoverage
       lines.sort.each do |line_number, coverage|
         attributes = {
           "lineNumber" => line_number.to_s,
-          "covered" => (coverage.hits.positive?).to_s
+          "covered" => coverage.hits.positive?.to_s
         }
         unless coverage.branches.empty?
           attributes["branchesToCover"] = coverage.branches.length.to_s
@@ -62,7 +62,7 @@ class GenericCoverage
     expanded_path = Pathname.new(path).expand_path
     relative_path = expanded_path.relative_path_from(@repository_root).to_s
     raise CoverageGenerationError, "coverage path escapes the repository: #{path}" if relative_path.start_with?("../")
-    unless relative_path.match?(/\Ascripts\/.+\.(?:rb|sh)\z/)
+    unless relative_path.match?(%r{\Ascripts/.+\.(?:rb|sh)\z})
       raise CoverageGenerationError, "coverage path is not an authored script: #{path}"
     end
 

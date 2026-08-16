@@ -346,3 +346,10 @@
 -   [479](479-platform-safe-test-dependencies.md) – Platform-safe test dependencies
 -   [480](480-postgres-test-shared-memory.md) – PostgreSQL test shared memory
 -   [481](481-warning-free-validation-tools.md) – Warning-free validation tools
+-   [482](482-tooling-module-boundaries.md) – Tooling module boundaries
+-   [483](483-media-execution-runtime-boundaries.md) – Media execution and worker runtime boundaries
+-   [484](484-media-operator-surface-boundary.md) – Media operator surface boundary
+-   [485](485-native-ffi-exception-boundary.md) – Native FFI exception boundary
+-   [486](486-tracker-credential-transport.md) – Tracker credential transport
+-   [487](487-strict-sonar-analysis-foundation.md) – Strict Sonar analysis foundation implementation
+-   [488](488-single-sonar-scanner-execution.md) – Single authoritative Sonar scanner execution

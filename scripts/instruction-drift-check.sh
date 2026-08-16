@@ -92,6 +92,7 @@ root_updated=false
 rust_updated=false
 devops_updated=false
 sonar_updated=false
+ui_updated=false
 
 if contains_file "AGENTS.md"; then
   root_updated=true
@@ -105,20 +106,42 @@ fi
 if contains_file ".github/instructions/sonarqube_mcp.instructions.md"; then
   sonar_updated=true
 fi
+if contains_file ".github/instructions/revaer-ui.instructions.md"; then
+  ui_updated=true
+fi
 
 collect_matches lint_control_matches \
   "justfile" \
+  "just/**" \
   "scripts/policy-guardrails.sh" \
   "scripts/workflow-guardrails.sh" \
+  "scripts/workflow_guardrails/**" \
   "scripts/instruction-drift-check.sh"
 collect_matches devops_matches \
   ".github/workflows/**" \
   ".github/actions/**" \
   "Dockerfile" \
+  "just/**" \
+  "scripts/cargo-install-retry.sh" \
+  "scripts/ensure-exact-cargo-tool.sh" \
+  "scripts/image-release.sh" \
+  "scripts/with-node.sh" \
+  "scripts/workflow-guardrails.sh" \
+  "scripts/workflow_guardrails/**" \
   "release/**"
 collect_matches sonar_matches \
+  ".github/workflows/pr.yml" \
   ".github/workflows/sonar.yml" \
+  "just/quality.just" \
+  "scripts/install-sonar-scanner.sh" \
+  "scripts/prepare-sonar-scm.sh" \
+  "scripts/sonar-*.sh" \
+  "scripts/verify-sonar-inputs.sh" \
   "sonar-project.properties"
+collect_matches ui_matches \
+  "just/ui.just" \
+  "scripts/verify-ui-e2e-shard-coverage.rb" \
+  "tests/**"
 
 declare -a failures=()
 
@@ -140,6 +163,13 @@ if [ -n "${sonar_matches}" ] && ! ${root_updated} && ! ${devops_updated} && ! ${
   failures+=(
     "Changed Sonar files require an update to AGENTS.md, .github/instructions/devops.instructions.md, or .github/instructions/sonarqube_mcp.instructions.md:
 ${sonar_matches}"
+  )
+fi
+
+if [ -n "${ui_matches}" ] && ! ${root_updated} && ! ${devops_updated} && ! ${ui_updated}; then
+  failures+=(
+    "Changed UI/E2E control files require an update to AGENTS.md, .github/instructions/devops.instructions.md, or .github/instructions/revaer-ui.instructions.md:
+${ui_matches}"
   )
 fi
 

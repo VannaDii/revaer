@@ -27,3 +27,4 @@ applyTo:
 - Keep C++ exception translation narrow and explicit where possible.
 - Avoid blanket `catch (...)` handlers unless the ABI or toolchain truly requires one and the reason is documented and tested.
 - Do not leak foreign exceptions or panic behavior into the rest of the Rust workspace.
+- Native build changes must preserve the Sonar compilation database and staged CXX bridge headers. Hosted Linux coverage must retain a `crates/revaer-torrent-libt/src/ffi/session.cpp` llvm-cov section with at least one positive covered-line record; local macOS may omit that assertion only when the real native backend was not compiled.

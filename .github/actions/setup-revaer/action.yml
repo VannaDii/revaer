@@ -24,6 +24,10 @@ inputs:
     description: Restore and save the shared Cargo and sccache artifact cache.
     required: false
     default: "true"
+  sonar-scanner:
+    description: Install the exact checksum- and signature-verified Sonar scanner and cache analyzers.
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -112,6 +116,15 @@ runs:
         npm install --global --ignore-scripts --no-audit --no-fund "npm@11.12.1"
         test "$(npm --version)" = "${EXPECTED_NPM_VERSION}"
 
+    - name: Cache Sonar analyzers
+      if: ${{ inputs.sonar-scanner == 'true' }}
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      with:
+        path: ~/.sonar/cache
+        key: ${{ runner.os }}-sonar-analyzers-${{ hashFiles('sonar-project.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-sonar-analyzers-
+
     - name: Install apt packages
       shell: bash
       env:
@@ -154,6 +167,10 @@ runs:
                 zlib1g-dev
                 libdw-dev
                 libiberty-dev
+                jq
+                gnupg
+                unzip
+                xz-utils
               )
               ;;
             "")
@@ -183,6 +200,39 @@ runs:
 
         sudo apt-get update
         sudo apt-get install -y -- "${packages[@]}"
+
+    - name: Configure coverage toolchain
+      if: ${{ inputs.apt-profile == 'coverage' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        toolchain_env="$(CC="$(command -v clang-19)" CXX="$(command -v clang++-19)" \
+          bash scripts/coverage-toolchain-env.sh)"
+        eval "${toolchain_env}"
+        {
+          printf 'CC=%s\n' "${CC}"
+          printf 'CXX=%s\n' "${CXX}"
+          printf 'LLVM_COV=%s\n' "${LLVM_COV}"
+          printf 'LLVM_PROFDATA=%s\n' "${LLVM_PROFDATA}"
+          printf 'REVAER_RUST_LLVM_VERSION=%s\n' "${REVAER_RUST_LLVM_VERSION}"
+        } >> "${GITHUB_ENV}"
+
+    - name: Cache exact Sonar scanner
+      if: ${{ inputs.sonar-scanner == 'true' }}
+      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      with:
+        path: ~/.local/revaer/sonar-scanner
+        key: ${{ runner.os }}-${{ runner.arch }}-sonar-scanner-8.1.0.6389
+
+    - name: Install checksum- and signature-verified Sonar scanner
+      if: ${{ inputs.sonar-scanner == 'true' }}
+      shell: bash
+      env:
+        SONAR_SCANNER_VERSION: 8.1.0.6389
+      run: |
+        set -euo pipefail
+        scanner_bin="$(bash scripts/install-sonar-scanner.sh)"
+        echo "${scanner_bin}" >> "${GITHUB_PATH}"
 
     - name: Cache exact kcov
       if: ${{ inputs.apt-profile == 'coverage' }}
