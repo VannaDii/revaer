@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T18:22:49.273086+00:00",
+  "generated": "2026-08-16T19:01:37.614990+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4577,7 +4577,7 @@
     {
       "id": "adr/550-packaged-root-catalog-source-contract",
       "title": "Packaged root-catalog source and evidence contract",
-      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
       "tags": [
         "consequences",
         "exact-validation",
@@ -4594,7 +4594,7 @@
     {
       "id": "adr/551-packaged-database-baseline-contract",
       "title": "Packaged database baseline contract",
-      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
       "tags": [
         "consequences",
         "current-constraints",

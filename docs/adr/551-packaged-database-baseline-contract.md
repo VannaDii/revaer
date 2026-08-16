@@ -1,8 +1,9 @@
 # Packaged database baseline contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -22,9 +23,8 @@
   supported server identity or committed catalog evidence.
 - The bootstrap connection name, runtime-role input, advisory-lock identity,
   deadlines, cancellation behavior, and externally visible reason codes are
-  not selected. Implementing any of those values without approval would make
-  an architectural decision in code.
-- This proposal closes those decision gaps only. It implements no SQL, Rust,
+  selected by this accepted contract.
+- This ADR closes those decision gaps only. It implements no SQL, Rust,
   workflow, image, Helm, or database behavior.
 
 ## Current Constraints
@@ -69,9 +69,8 @@
 ## Recommendation
 
 - Adopt option 3 with every exact value and boundary below.
-- This proposal becomes implementation authority only after decision-specific
-  operator approval. Until then, the values below are recommendations, not
-  permission to change behavior.
+- The operator's decision-specific approval makes the exact values below the
+  implementation authority.
 
 ### Normalized Baseline State
 
@@ -430,7 +429,7 @@
 
 ## Implementation Boundary
 
-- If accepted, this ADR authorizes only:
+- This ADR authorizes only:
   - the exact baseline schema, table, constraints, contract version, and two
     stored-procedure contracts above;
   - the exact externally provisioned owner/bootstrap and runtime role model and
@@ -450,15 +449,15 @@
 - This ADR does not relax, remove, skip, rename, or make optional any required
   GitHub check, Sonar property, analyzer, coverage input, quality-gate condition,
   policy guardrail, security scan, or stacked-review line limit.
-- The current documentation-only change authorizes no implementation. Any value
-  not written above remains undecided and requires a Proposed ADR before code.
+- Recording acceptance implements no runtime behavior. Any value not written
+  above remains undecided and requires a Proposed ADR before code.
 
 ## Exact Validation
 
-- **Documentation proposal:** run the policy suite, instruction-drift check,
+- **Documentation acceptance record:** run the policy suite, instruction-drift check,
   documentation index generation, documentation build, full documentation link
-  check, and Git diff checks. Do not run implementation gates for this
-  documentation-only proposal.
+  check, and Git diff checks. Runtime implementation gates apply to later
+  implementation slices.
 - **Schema shape:** compare `pg_catalog` evidence for the exact schema, table,
   column order/types/nullability, named constraints, function argument and
   result signatures, volatility, security mode, owner, search path, and grants.
@@ -538,15 +537,13 @@
 
 ## Follow-up
 
-- Present this Proposed ADR to the operator. Do not implement any recommended
-  value until the operator provides explicit decision-specific approval.
-- If accepted, implement the work in bounded outside-in stack slices: final-init
+- Implement the work in bounded outside-in stack slices: final-init
   proof, verified pool boundary, baseline lifecycle and privilege tests,
   packaged command modes, Docker/Helm and CI convergence, atomic cutover, then
   migration retirement and transition cleanup.
 - Record each implementation slice in a separate task ADR with exact evidence.
-  A requested change to any value in this proposal requires updating the
-  proposal before approval or a later superseding Proposed ADR.
+  A requested change to any accepted value requires a later Proposed ADR and
+  decision-specific operator approval before implementation.
 
 ## Task Record
 
@@ -569,7 +566,7 @@
     documentation indexing/build/links, and Git diff checks.
 - Observability updates:
   - No runtime telemetry changes are made.
-  - The proposal defines a future closed reason-code surface and explicitly
+  - The ADR defines a future closed reason-code surface and explicitly
     excludes URLs, credentials, raw SQL, arbitrary catalog names, dynamic server
     messages, and role names from logs and readiness evidence.
 - Status-doc validation:
@@ -578,11 +575,11 @@
     recipes, PR/Sonar services, Helm database values, and scoped instructions.
   - Product and operator guides remain unchanged because no behavior is
     implemented. The ADR index, mdBook summary, and generated LLM index expose
-    the proposal.
+    the accepted contract.
 - Risk & rollback plan:
-  - The proposal changes no runtime behavior. Rollback is removal or revision of
-    this unapproved ADR and its catalogue entries.
-  - If later accepted implementation fails before cutover, revert the bounded
+  - Recording acceptance changes no runtime behavior. Changing the contract
+    requires a superseding Proposed ADR and decision-specific operator approval.
+  - If implementation fails before cutover, revert the bounded
     implementation slices. After a committed v0 baseline, rollback remains only
     verified full-database restore or disposable recreation with a same-digest
     artifact; no in-place downgrade is authorized.
@@ -594,6 +591,6 @@
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,
     `.github/instructions/revaer-data.instructions.md`, and
     `.github/instructions/devops.instructions.md`.
-  - No stale-policy contradiction was found for a documentation-only proposal.
+  - No stale-policy contradiction was found for this accepted contract.
     No required check, Sonar criterion, stored-procedure rule, migration freeze,
     dependency rule, or review-size limit is relaxed.

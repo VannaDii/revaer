@@ -1,8 +1,9 @@
 # Packaged root-catalog source and evidence contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -57,7 +58,7 @@
 
 ## Recommendation
 
-- Adopt option 2, subject to explicit operator approval of this ADR.
+- Adopt option 2.
 - `RootCatalogSource` loads exactly one versioned UTF-8 JSON document at process
   bootstrap. It returns typed slots and source evidence to the root resolver;
   domain, API, profile, discovery, and worker code receive only normalized root
@@ -293,7 +294,7 @@ validated:
 
 ## Implementation Boundary
 
-- Approval would authorize only:
+- Approval authorizes only:
   - the injected startup-only JSON source, exact version 1 schema and canonical
     digest;
   - the fixed packaged location and native Linux location override;
@@ -304,7 +305,7 @@ validated:
     needed to expose those exact outcomes; and
   - focused parser, filesystem, package, API, UI, and E2E validation of the
     accepted ADR 523 root-catalog and profile-binding workflow.
-- Approval would not authorize raw path authority in API, UI, YAML, database,
+- Approval does not authorize raw path authority in API, UI, YAML, database,
   discovery, job, or worker input; a service-writable catalog; symlink following;
   arbitrary JSON fields; live reload; a second parser; an unbounded document;
   secret material; cross-platform inference; or destructive work on disposable
@@ -315,12 +316,10 @@ validated:
   on remote path authority remain binding and are not relaxed.
 - ADRs 512-516, 525, 535, and 537 retain every unresolved scheduler, lease,
   recovery, cleanup, retry, fingerprint, parser, extraction, and numeric hold.
-  This proposal supplies no missing value, default, activation, or workaround
+  This accepted ADR supplies no missing value, default, activation, or workaround
   for those decisions.
-- No schema, workflow, chart, UI, API, runtime, config, or package behavior may
-  change until the operator approves this ADR. An accepted implementation must
-  remain within this boundary and use the authoritative pre-v1 `init.sql` under
-  ADR 522 rather than adding a migration.
+- Every implementation must remain within this boundary and use the
+  authoritative pre-v1 `init.sql` under ADR 522 rather than adding a migration.
 
 ## Exact Validation
 
@@ -388,9 +387,7 @@ validated:
 
 ## Follow-up
 
-- Present this ADR for decision-specific operator approval before changing any
-  implementation or packaged configuration.
-- After approval, implement the source and root-administration workflow outside
+- Implement the source and root-administration workflow outside
   in: package document, typed parser and resolver, attestation persistence,
   authenticated catalog API/UI, logical profile and association bindings, exact
   five-kind job snapshot, then descriptor-owned runtime revalidation.
@@ -409,8 +406,7 @@ validated:
   - Durability and sole-writer state require both a closed deployment assertion
     and independent runtime evidence; no writable-path heuristic grants
     destructive readiness.
-  - This record is proposed only. It makes no implementation decision effective
-    before explicit operator approval.
+  - The operator accepted the recommendation as written on 2026-08-16.
 - Test coverage summary:
   - This documentation-only change adds no parser, filesystem, schema, package,
     API, UI, workflow, chart, config, or media test.
@@ -428,11 +424,11 @@ validated:
     535, 537, and 541.
   - Current product, package, API, UI, and runtime claims remain unchanged. The
     ADR index, documentation summary, and generated documentation catalogue are
-    updated only to expose this pending decision.
+    updated to expose this accepted decision.
 - Risk & rollback plan:
-  - The proposal changes no runtime behavior and needs no operational rollback.
-    Rejection removes this record or supersedes it with another proposed source
-    contract.
+  - Recording acceptance changes no runtime behavior and needs no operational
+    rollback. Changing the accepted contract requires a superseding Proposed
+    ADR and decision-specific operator approval.
   - After implementation, rollback must disable root-bound writes when the prior
     runtime cannot parse or prove an attestation. It must preserve recorded jobs
     and attestations and must never reinterpret unknown evidence as valid.
@@ -446,5 +442,5 @@ validated:
     `.github/instructions/revaer-ui.instructions.md`, and
     `.github/instructions/devops.instructions.md`.
   - No policy drift, contradiction, suppression, criteria relaxation, or stale
-    implementation claim was found. This proposal preserves the explicit
-    architecture-approval hold.
+    implementation claim was found. The operator approval satisfies the
+    architecture-approval hold for this exact contract.
