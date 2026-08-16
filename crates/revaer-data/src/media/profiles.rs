@@ -275,6 +275,19 @@ mod tests {
         Ok(())
     }
 
+    fn assert_filesystem_identity_required(result: crate::DataResult<Uuid>) -> anyhow::Result<()> {
+        let Err(err) = result else {
+            return Err(anyhow::anyhow!(
+                "expected filesystem identity validation error"
+            ));
+        };
+        assert_eq!(
+            err.database_detail(),
+            Some("media_profile_filesystem_identity_required")
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn upsert_and_list_media_profile() -> anyhow::Result<()> {
         let db = match setup_media_db("upsert_and_list_media_profile").await {
@@ -332,9 +345,9 @@ mod tests {
                 retention_days: 30,
                 compatibility_target_key: None,
                 policy_key: "safe_dry_run",
-                watcher_enabled: true,
-                schedule_enabled: true,
-                schedule_interval_minutes: Some(60),
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
             },
         )
         .await?;
@@ -344,8 +357,46 @@ mod tests {
             return Err(anyhow::anyhow!("profile should exist after upsert"));
         };
         assert!(profile.dry_run_only);
-        assert!(profile.watcher_enabled);
-        assert!(profile.schedule_enabled);
+        assert!(!profile.watcher_enabled);
+        assert!(!profile.schedule_enabled);
+
+        let watcher_automation = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "tv-create-watcher",
+                source_root: "/input/tv-create-watcher",
+                output_root: "/output/tv-create-watcher",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: true,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await;
+        assert_filesystem_identity_required(watcher_automation)?;
+
+        let scheduled_automation = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "tv-create-scheduled",
+                source_root: "/input/tv-create-scheduled",
+                output_root: "/output/tv-create-scheduled",
+                dry_run_only: true,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: true,
+                schedule_interval_minutes: Some(60),
+            },
+        )
+        .await;
+        assert_filesystem_identity_required(scheduled_automation)?;
         Ok(())
     }
 
@@ -491,9 +542,9 @@ mod tests {
             },
         )
         .await;
-        assert_discovery_root_overlap(update_to_conflicting_source_root)?;
+        assert_filesystem_identity_required(update_to_conflicting_source_root)?;
 
-        let self_update = update_media_profile(
+        let legacy_self_root_change = update_media_profile(
             db.pool(),
             &UpdateMediaProfileInput {
                 actor_public_id: db.system_user_public_id,
@@ -509,8 +560,27 @@ mod tests {
                 schedule_interval_minutes: None,
             },
         )
+        .await;
+        assert_filesystem_identity_required(legacy_self_root_change)?;
+
+        let metadata_update = update_media_profile(
+            db.pool(),
+            &UpdateMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: existing_profile_id,
+                source_root: None,
+                output_root: None,
+                dry_run_only: None,
+                retention_days: Some(31),
+                compatibility_target_key: None,
+                policy_key: None,
+                watcher_enabled: None,
+                schedule_enabled: None,
+                schedule_interval_minutes: None,
+            },
+        )
         .await?;
-        assert_eq!(self_update, existing_profile_id);
+        assert_eq!(metadata_update, existing_profile_id);
 
         Ok(())
     }
