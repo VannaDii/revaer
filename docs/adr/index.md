@@ -398,6 +398,16 @@
 -   [434](434-config-rng-cleanup.md) – Configuration RNG cleanup
 -   [435](435-media-workspace-retention.md) – Media workspace retention runtime
 -   [436](436-app-openapi-media-contract.md) – App OpenAPI media contract
+-   [442](442-capability-derived-media-planning.md) – Capability-derived media planning
+-   [443](443-managed-postgres-worktree-storage.md) – Managed PostgreSQL worktree storage
+-   [444](444-dry-run-workspace-isolation.md) – Dry-run workspace isolation
+-   [446](446-worker-policy-snapshot-boundary.md) – Worker policy snapshot boundary
+-   [447](447-media-managed-root-ownership.md) – Media managed-root ownership
+-   [448](448-resumable-media-execution.md) – Resumable media execution
+-   [449](449-media-capability-snapshot-binding.md) – Media capability snapshot binding
+-   [450](450-media-sidecar-discovery-policy.md) – Media sidecar discovery policy
+-   [451](451-effective-media-policy-compilation.md) – Effective media policy compilation
+-   [452](452-bootstrap-media-runtime-dependencies.md) – Bootstrap media runtime dependencies
 -   [458](458-media-data-module-boundary.md) – Media data module boundary integration correction
 -   [459](459-bootstrap-media-task-boundary.md) – Bootstrap media task boundary integration correction
 -   [461](461-adr-task-record-status-semantics.md) – ADR and task-record status semantics
