@@ -4554,6 +4554,23 @@
     "href": "/adr/548-retired-media-write-route-contract/"
   },
   {
+    "id": "adr/550-packaged-root-catalog-source-contract",
+    "title": "Packaged root-catalog source and evidence contract",
+    "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+    "tags": [
+      "consequences",
+      "exact-validation",
+      "follow-up",
+      "implementation-boundary",
+      "operator-questions",
+      "options",
+      "problem",
+      "recommendation",
+      "task-record"
+    ],
+    "href": "/adr/550-packaged-root-catalog-source-contract/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",

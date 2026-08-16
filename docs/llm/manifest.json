@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T17:26:26.405772+00:00",
+  "generated": "2026-08-16T17:43:37.226662+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4555,6 +4555,23 @@
         "task-record"
       ],
       "href": "/adr/548-retired-media-write-route-contract/"
+    },
+    {
+      "id": "adr/550-packaged-root-catalog-source-contract",
+      "title": "Packaged root-catalog source and evidence contract",
+      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "tags": [
+        "consequences",
+        "exact-validation",
+        "follow-up",
+        "implementation-boundary",
+        "operator-questions",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record"
+      ],
+      "href": "/adr/550-packaged-root-catalog-source-contract/"
     },
     {
       "id": "adr/index",

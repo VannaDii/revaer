@@ -477,3 +477,4 @@
 -   [545](545-pre-v1-init-assembly-slice-02.md) – Pre-v1 init assembly slice 02
 -   [546](546-pre-v1-init-assembly-slice-03.md) – Pre-v1 init assembly slice 03
 -   [548](548-retired-media-write-route-contract.md) – Retired media write route contract coverage
+-   [550](550-packaged-root-catalog-source-contract.md) – Packaged root-catalog source and evidence contract
