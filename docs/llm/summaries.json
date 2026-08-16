@@ -4554,6 +4554,15 @@
     "href": "/adr/546-pre-v1-init-assembly-slice-03/"
   },
   {
+    "id": "adr/547-pre-v1-init-assembly-slice-04",
+    "title": "Pre-v1 init assembly slice 04",
+    "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: bounded implementation of accepted ADRs 522, 528, and 541 Context: ADR 522 requires the complete final-state init candidate to be assembled in statement-aligned pull requests that remain below the 8,500 changed-line assembly limit. ADR 528 froze the 167-file migration corpus and proved a complete candidate with SHA-256 fb0d371f1afe365a72bbe34e9c8fe628e318be6de0e1f43b6f73c37897c95858 and 1,624 SQL statements. ADR 546 established the third inert candidate prefix through statement 485, byte 782,363, and line 22,088. ADR 541 keeps the migration corpus authoritative until the complete init script passes parity and the accepted packaged-bootstrap cutover is made. Decision: Extend crates/revaer-data/init.sql",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/547-pre-v1-init-assembly-slice-04/"
+  },
+  {
     "id": "adr/548-retired-media-write-route-contract",
     "title": "Retired media write route contract coverage",
     "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: test correction for accepted ADRs 359 and 362. Context: ADR 359 removed public phase-history writes so only the media worker can append lifecycle evidence. ADR 362 removed public job creation so admitted discovery and worker paths remain the only job-creation authorities. The API end-to-end route inventory still treated both retired methods as required writable routes and rejected their intentional 405 Method Not Allowed responses before later media behavior could run. Decision: Keep both methods in end-to-end coverage, but move them into an explicit retired-write inventory that requires exact 405 responses. Keep every",
