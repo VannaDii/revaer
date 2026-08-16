@@ -707,6 +707,7 @@ mod tests {
                 profile: Some("high".to_string()),
                 duration_millis: Some(duration_millis),
                 bit_rate: Some(8192),
+                max_bit_rate: Some(8192),
                 sample_rate: None,
                 width: Some(1920),
                 height: Some(1080),

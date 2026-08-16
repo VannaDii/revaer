@@ -1,6 +1,7 @@
 //! Durable source-filesystem replacement transactions.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Write};
@@ -259,6 +260,17 @@ pub trait ReplacementCommitter {
     ///
     /// Returns [`ReplacementError`] when manifests cannot be read or conservative recovery fails.
     fn recover(&self, source_root: &Path) -> Result<Vec<RecoveredReplacement>, ReplacementError>;
+
+    /// Recover transactions while preserving replacements with a durable terminal database commit.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReplacementError`] when manifests cannot be read or recovery fails.
+    fn recover_with_terminal_jobs(
+        &self,
+        source_root: &Path,
+        terminal_job_keys: &BTreeSet<String>,
+    ) -> Result<Vec<RecoveredReplacement>, ReplacementError>;
 }
 
 /// Standard-library implementation of durable replacement transactions.
@@ -325,6 +337,14 @@ impl ReplacementCommitter for SystemReplacementCommitter {
     }
 
     fn recover(&self, source_root: &Path) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
+        self.recover_with_terminal_jobs(source_root, &BTreeSet::new())
+    }
+
+    fn recover_with_terminal_jobs(
+        &self,
+        source_root: &Path,
+        terminal_job_keys: &BTreeSet<String>,
+    ) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
         let source_root = open_source_root(source_root)?;
         let root = replacement_root(&source_root.path);
         if !root.exists() {
@@ -341,7 +361,7 @@ impl ReplacementCommitter for SystemReplacementCommitter {
                 source,
             })?;
             let transaction_path = entry.path();
-            match recover_transaction(&source_root, &transaction_path) {
+            match recover_transaction(&source_root, &transaction_path, terminal_job_keys) {
                 Ok(result) => recovered.push(result),
                 Err(error) => recovered.push(quarantine_invalid_transaction(
                     &source_root.path,
@@ -638,6 +658,7 @@ fn remove_recovery_files(entries: &[PreparedEntry]) -> Result<(), ReplacementErr
 fn recover_transaction(
     source_root: &PinnedSourceRoot,
     transaction_path: &Path,
+    terminal_job_keys: &BTreeSet<String>,
 ) -> Result<RecoveredReplacement, ReplacementError> {
     let transaction_metadata =
         fs::symlink_metadata(transaction_path).map_err(|source| ReplacementError::Io {
@@ -675,6 +696,7 @@ fn recover_transaction(
         transaction_path,
         &source_path,
         &manifest,
+        terminal_job_keys.contains(&manifest.job_key),
     )?;
     remove_transaction(transaction_path)?;
     Ok(RecoveredReplacement {
@@ -691,11 +713,12 @@ fn recover_transaction_state(
     transaction_path: &Path,
     source_path: &Path,
     manifest: &ReplacementManifest,
+    terminal_committed: bool,
 ) -> Result<ReplacementRecoveryAction, ReplacementError> {
     if !manifest.entries.is_empty() {
         let entries =
             prepared_entries_from_manifest(source_root, transaction_path, &manifest.entries)?;
-        if manifest.phase == ReplacementPhase::Verified {
+        if terminal_committed && manifest.committed_entries > 0 {
             remove_recovery_files(&entries)?;
             sync_directory(
                 transaction_path,
@@ -711,7 +734,12 @@ fn recover_transaction_state(
         });
     }
     let recovery_path = transaction_path.join(RECOVERY_FILE_NAME);
-    if manifest.phase == ReplacementPhase::Verified {
+    if terminal_committed
+        && matches!(
+            manifest.phase,
+            ReplacementPhase::Committed | ReplacementPhase::Verified
+        )
+    {
         if recovery_path.is_file() {
             remove_file(
                 &recovery_path,
@@ -1367,6 +1395,7 @@ mod tests {
         ReplacementRecoveryAction, ReplacementRequest, SystemReplacementCommitter,
         manifest_entries, transaction_job_key, write_manifest,
     };
+    use std::collections::BTreeSet;
     use std::fs;
     use std::os::unix::fs::symlink;
 
@@ -1565,7 +1594,38 @@ mod tests {
     }
 
     #[test]
-    fn startup_recovery_preserves_verified_committed_source() -> anyhow::Result<()> {
+    fn startup_recovery_finalizes_committed_source_with_durable_terminal_outcome()
+    -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let candidate_root = tempfile::tempdir()?;
+        let source = root.path().join("movie.mkv");
+        let candidate = candidate_root.path().join("movie.mkv");
+        fs::write(&source, b"original")?;
+        fs::write(&candidate, b"durably-completed")?;
+        let committer = SystemReplacementCommitter;
+        let prepared = committer.prepare(ReplacementRequest {
+            job_key: "terminal-job",
+            source_root: root.path(),
+            source_path: &source,
+            candidate_path: &candidate,
+        })?;
+        let _committed = committer.commit(prepared)?;
+
+        let recovered = committer.recover_with_terminal_jobs(
+            root.path(),
+            &BTreeSet::from(["terminal-job".to_string()]),
+        )?;
+
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].action, ReplacementRecoveryAction::Finalized);
+        assert_eq!(fs::read(&source)?, b"durably-completed");
+        assert!(committer.recover(root.path())?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn startup_recovery_rolls_back_verified_source_without_durable_terminal_outcome()
+    -> anyhow::Result<()> {
         let root = tempfile::tempdir()?;
         let candidate_root = tempfile::tempdir()?;
         let source = root.path().join("movie.mkv");
@@ -1595,8 +1655,8 @@ mod tests {
         let recovered = committer.recover(root.path())?;
 
         assert_eq!(recovered.len(), 1);
-        assert_eq!(recovered[0].action, ReplacementRecoveryAction::Finalized);
-        assert_eq!(fs::read(&source)?, b"verified");
+        assert_eq!(recovered[0].action, ReplacementRecoveryAction::RolledBack);
+        assert_eq!(fs::read(&source)?, b"original");
         Ok(())
     }
 

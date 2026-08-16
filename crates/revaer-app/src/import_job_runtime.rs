@@ -329,6 +329,40 @@ fn parse_inline_backup_snapshot(input: &str) -> Option<IndexerBackupSnapshot> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use revaer_data::indexers::import_jobs::{
+        import_job_create, import_job_get_status, import_job_list_results,
+        import_job_run_prowlarr_backup,
+    };
+    use revaer_test_support::postgres::start_postgres;
+
+    type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+    async fn running_backup_job(config: &ConfigService, backup_ref: &str) -> TestResult<Uuid> {
+        let job_id = import_job_create(
+            config.pool(),
+            Uuid::nil(),
+            "prowlarr_backup",
+            Some(false),
+            None,
+            None,
+        )
+        .await?;
+        import_job_run_prowlarr_backup(config.pool(), job_id, backup_ref).await?;
+        Ok(job_id)
+    }
+
+    fn claimed_job(
+        import_job_public_id: Uuid,
+        source: &str,
+        config_detail: Option<&str>,
+    ) -> ClaimedImportJobRow {
+        ClaimedImportJobRow {
+            import_job_public_id,
+            source: source.to_string(),
+            is_dry_run: false,
+            config_detail: config_detail.map(str::to_string),
+        }
+    }
 
     #[test]
     fn parse_config_value_reads_key_pairs() {
@@ -338,6 +372,12 @@ mod tests {
             Some("http://localhost:9696")
         );
         assert_eq!(parse_config_value(config, "missing"), None);
+        assert_eq!(parse_config_value(None, "prowlarr_url"), None);
+        assert_eq!(parse_config_value(Some("malformed"), "prowlarr_url"), None);
+        assert_eq!(
+            parse_config_value(Some("prowlarr_url=  "), "prowlarr_url"),
+            None
+        );
     }
 
     #[test]
@@ -354,6 +394,14 @@ mod tests {
             "prowlarr.example.test:9696"
         );
         assert_eq!(prowlarr_identifier_from_url(""), "prowlarr-api");
+        assert_eq!(
+            prowlarr_identifier_from_url("https://?query"),
+            "prowlarr-api"
+        );
+        assert_eq!(
+            prowlarr_identifier_from_url("host.example#fragment"),
+            "host.example"
+        );
     }
 
     #[test]
@@ -370,5 +418,136 @@ mod tests {
     fn parse_inline_backup_snapshot_rejects_invalid_payload() {
         assert!(parse_inline_backup_snapshot("backup").is_none());
         assert!(parse_inline_backup_snapshot("inline-json:{bad}").is_none());
+    }
+
+    async fn assert_backup_job_paths(
+        runtime: &ImportJobRuntime,
+        config: &ConfigService,
+    ) -> TestResult<()> {
+        let backup_id = running_backup_job(config, "snapshot-ref").await?;
+        runtime.run_tick().await?;
+        let backup_status = import_job_get_status(config.pool(), backup_id).await?;
+        assert_eq!(backup_status.status, "completed");
+        let backup_results = import_job_list_results(config.pool(), backup_id).await?;
+        assert_eq!(backup_results.len(), 1);
+        assert_eq!(backup_results[0].status, "imported_needs_secret");
+        assert_eq!(backup_results[0].resolved_is_enabled, Some(false));
+
+        let default_backup_id = running_backup_job(config, "ignored").await?;
+        runtime
+            .process_job(claimed_job(default_backup_id, "prowlarr_backup", None))
+            .await;
+        let default_results = import_job_list_results(config.pool(), default_backup_id).await?;
+        assert_eq!(default_results[0].prowlarr_identifier, "backup");
+
+        let invalid_inline_id = running_backup_job(config, "inline-json:{bad}").await?;
+        runtime.run_tick().await?;
+        let invalid_inline_status = import_job_get_status(config.pool(), invalid_inline_id).await?;
+        assert_eq!(invalid_inline_status.status, "failed");
+        let invalid_inline_results =
+            import_job_list_results(config.pool(), invalid_inline_id).await?;
+        assert_eq!(
+            invalid_inline_results[0].detail.as_deref(),
+            Some(BACKUP_INLINE_INVALID_DETAIL)
+        );
+
+        let empty_snapshot = r#"inline-json:{"version":"1","exported_at":"2026-01-01T00:00:00Z","tags":[],"rate_limit_policies":[],"routing_policies":[],"indexer_instances":[],"secrets":[]}"#;
+        let inline_success_id = running_backup_job(config, empty_snapshot).await?;
+        runtime.run_tick().await?;
+        let inline_success_status = import_job_get_status(config.pool(), inline_success_id).await?;
+        assert_eq!(inline_success_status.status, "completed");
+        let inline_success_results =
+            import_job_list_results(config.pool(), inline_success_id).await?;
+        assert_eq!(inline_success_results[0].status, "imported_ready");
+        assert_eq!(inline_success_results[0].missing_secret_fields, 0);
+
+        let failing_snapshot = r#"inline-json:{"version":"1","exported_at":"2026-01-01T00:00:00Z","tags":[],"rate_limit_policies":[],"routing_policies":[{"display_name":"missing-rate-policy","mode":"http_proxy","rate_limit_display_name":"absent","parameters":[]}],"indexer_instances":[],"secrets":[]}"#;
+        let inline_failure_id = running_backup_job(config, failing_snapshot).await?;
+        runtime.run_tick().await?;
+        let inline_failure_status = import_job_get_status(config.pool(), inline_failure_id).await?;
+        assert_eq!(inline_failure_status.status, "failed");
+        let inline_failure_results =
+            import_job_list_results(config.pool(), inline_failure_id).await?;
+        assert_eq!(
+            inline_failure_results[0].detail.as_deref(),
+            Some(BACKUP_RESTORE_FAILED_DETAIL)
+        );
+        Ok(())
+    }
+
+    async fn assert_rejected_job_paths(
+        runtime: &ImportJobRuntime,
+        config: &ConfigService,
+    ) -> TestResult<()> {
+        let api_missing_id = running_backup_job(config, "ignored").await?;
+        runtime
+            .process_job(claimed_job(api_missing_id, "prowlarr_api", None))
+            .await;
+        let api_missing_results = import_job_list_results(config.pool(), api_missing_id).await?;
+        assert_eq!(
+            api_missing_results[0].detail.as_deref(),
+            Some(API_CONFIG_MISSING_DETAIL)
+        );
+
+        let api_configured_id = running_backup_job(config, "ignored").await?;
+        runtime
+            .process_job(claimed_job(
+                api_configured_id,
+                "prowlarr_api",
+                Some("prowlarr_url=https://prowlarr.example.test/api;secret_public_id=secret"),
+            ))
+            .await;
+        let api_configured_results =
+            import_job_list_results(config.pool(), api_configured_id).await?;
+        assert_eq!(
+            api_configured_results[0].prowlarr_identifier,
+            "prowlarr.example.test"
+        );
+        assert_eq!(
+            api_configured_results[0].detail.as_deref(),
+            Some(API_NOT_CONFIGURED_DETAIL)
+        );
+
+        let unsupported_id = running_backup_job(config, "ignored").await?;
+        runtime
+            .process_job(claimed_job(unsupported_id, "unsupported", None))
+            .await;
+        let unsupported_status = import_job_get_status(config.pool(), unsupported_id).await?;
+        assert_eq!(unsupported_status.status, "failed");
+        assert!(
+            import_job_list_results(config.pool(), unsupported_id)
+                .await?
+                .is_empty()
+        );
+
+        runtime
+            .process_job(claimed_job(
+                Uuid::new_v4(),
+                "prowlarr_backup",
+                Some("backup_blob_ref=missing-job"),
+            ))
+            .await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn runtime_processes_supported_and_rejected_import_jobs() -> TestResult<()> {
+        let Ok(postgres) = start_postgres() else {
+            return Ok(());
+        };
+        let config = Arc::new(ConfigService::new(postgres.connection_string().to_string()).await?);
+        let telemetry = Metrics::new()?;
+        let runtime = ImportJobRuntime::new(Arc::clone(&config), telemetry.clone());
+
+        runtime.run_tick().await?;
+        assert_backup_job_paths(&runtime, &config).await?;
+        assert_rejected_job_paths(&runtime, &config).await?;
+
+        config.pool().close().await;
+        let handle = ImportJobRuntime::new(config, telemetry).spawn();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        handle.abort();
+        assert!(handle.await.is_err());
+        Ok(())
     }
 }

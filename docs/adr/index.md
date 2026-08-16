@@ -344,6 +344,7 @@
 -   [419](419-pr76-media-data-review-remediation.md) – PR 76 media data review remediation
 -   [420](420-media-text-input-contract.md) – Media text input contract
 -   [427](427-runtime-execution-review-hardening.md) – Runtime execution review hardening
+-   [429](429-pr81-job-runtime-review-closeout.md) – PR 81 job runtime review closeout
 -   [430](430-bounded-media-discovery-and-read-models.md) – Bounded media discovery and read models
 -   [431](431-lazy-media-job-diagnostics-ui.md) – Lazy media job diagnostics UI
 -   [432](432-docs-openapi-media-contract.md) – Docs OpenAPI media contract
@@ -370,3 +371,5 @@
 -   [488](488-single-sonar-scanner-execution.md) – Single authoritative Sonar scanner execution
 -   [495](495-pr77-attempt-fencing-integration.md) – PR 77 attempt-fencing integration
 -   [496](496-pr168-api-service-review.md) – PR 168 API service review remediation
+-   [500](500-attempt-scoped-replacement-reconciliation.md) – Attempt-scoped replacement reconciliation
+-   [501](501-bounded-native-media-process-envelope.md) – Bounded native media process envelope
