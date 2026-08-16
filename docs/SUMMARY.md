@@ -486,4 +486,5 @@
     -   [535: Bounded cancellation-aware fingerprint admission](adr/535-bounded-cancellation-aware-fingerprint-admission.md)
     -   [536: Capability-proven chapter muxer support](adr/536-capability-proven-chapter-muxer-support.md)
     -   [537: Normalized opaque state and attachment payload evidence](adr/537-normalized-opaque-state-and-attachment-payload-evidence.md)
+    -   [540: Schema-stable media job status helpers](adr/540-schema-stable-media-job-status-helpers.md)
     -   [541: Packaged init-script bootstrap lifecycle](adr/541-packaged-init-bootstrap-lifecycle.md)

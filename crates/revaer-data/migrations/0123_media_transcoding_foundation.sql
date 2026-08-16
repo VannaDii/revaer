@@ -16,51 +16,51 @@ AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_status_queued_v1()
-RETURNS media_job_status
+RETURNS public.media_job_status
 LANGUAGE sql
 IMMUTABLE
 AS $$
-    SELECT 'queued'::media_job_status
+    SELECT 'queued'::public.media_job_status
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_status_running_v1()
-RETURNS media_job_status
+RETURNS public.media_job_status
 LANGUAGE sql
 IMMUTABLE
 AS $$
-    SELECT 'running'::media_job_status
+    SELECT 'running'::public.media_job_status
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_status_verifying_v1()
-RETURNS media_job_status
+RETURNS public.media_job_status
 LANGUAGE sql
 IMMUTABLE
 AS $$
-    SELECT 'verifying'::media_job_status
+    SELECT 'verifying'::public.media_job_status
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_status_completed_v1()
-RETURNS media_job_status
+RETURNS public.media_job_status
 LANGUAGE sql
 IMMUTABLE
 AS $$
-    SELECT 'completed'::media_job_status
+    SELECT 'completed'::public.media_job_status
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_status_failed_v1()
-RETURNS media_job_status
+RETURNS public.media_job_status
 LANGUAGE sql
 IMMUTABLE
 AS $$
-    SELECT 'failed'::media_job_status
+    SELECT 'failed'::public.media_job_status
 $$;
 
 CREATE OR REPLACE FUNCTION media_job_status_cancelled_v1()
-RETURNS media_job_status
+RETURNS public.media_job_status
 LANGUAGE sql
 IMMUTABLE
 AS $$
-    SELECT 'cancelled'::media_job_status
+    SELECT 'cancelled'::public.media_job_status
 $$;
 
 CREATE OR REPLACE FUNCTION media_actor_id_for_public_id_v1(actor_public_id_input UUID)

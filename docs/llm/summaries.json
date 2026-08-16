@@ -4465,6 +4465,15 @@
     "href": "/adr/537-normalized-opaque-state-and-attachment-payload-evidence/"
   },
   {
+    "id": "adr/540-schema-stable-media-job-status-helpers",
+    "title": "Schema-stable media job status helpers",
+    "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: The accepted ADR 522 rebaseline applies a schema-only PostgreSQL dump with the dump's intentionally empty search path before selecting init.sql. Six immutable media-job status helpers returned the public enum but cast literals through the unqualified media_job_status name in their SQL bodies. PostgreSQL could create the dump with function-body checks disabled, then failed while validating a dependent constraint because the empty search path could not resolve that body reference. Decision: Schema-qualify both the return type and literal cast in all six status helpers as public.media_job_status. Preserve the function names,",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/540-schema-stable-media-job-status-helpers/"
+  },
+  {
     "id": "adr/541-packaged-init-bootstrap-lifecycle",
     "title": "Packaged init-script bootstrap lifecycle",
     "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
