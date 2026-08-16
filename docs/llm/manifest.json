@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T16:55:26.224368+00:00",
+  "generated": "2026-08-16T17:12:22.918066+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4528,6 +4528,15 @@
         "task-record"
       ],
       "href": "/adr/545-pre-v1-init-assembly-slice-02/"
+    },
+    {
+      "id": "adr/546-pre-v1-init-assembly-slice-03",
+      "title": "Pre-v1 init assembly slice 03",
+      "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: bounded implementation of accepted ADRs 522 and 528 Context: ADR 522 requires the complete final-state init candidate to be assembled in statement-aligned pull requests that remain below the 8,500 changed-line assembly limit. ADR 528 froze the 167-file migration corpus and proved a complete candidate with SHA-256 fb0d371f1afe365a72bbe34e9c8fe628e318be6de0e1f43b6f73c37897c95858 and 1,624 SQL statements. ADR 545 established the second inert candidate prefix through statement 363, byte 528,189, and line 14,764. Existing migrations remain the sole bootstrap authority until the later parity and cutover step accepted by ADRs 522 and 541. Decision: Extend crates/revaer-data/init.sql to the",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/546-pre-v1-init-assembly-slice-03/"
     },
     {
       "id": "adr/index",

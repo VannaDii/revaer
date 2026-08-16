@@ -14762,3 +14762,7327 @@ CREATE FUNCTION public.media_policy_profile_list_v1() RETURNS TABLE(policy_key t
      WHERE profile.enabled
      ORDER BY lower(profile.policy_key), profile.version DESC;
 $$;
+
+
+--
+-- Name: media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_policy_profile_upsert_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, display_name_input text, video_intent_input text, verification_strictness_input text, verification_duration_tolerance_millis_input bigint, verification_mux_validation_input boolean, verification_decode_all_streams_input boolean, verification_keyframe_seek_input boolean, verification_playback_probe_input boolean) RETURNS TABLE(policy_key text, version integer, display_name text, video_intent text, verification_strictness text, verification_duration_tolerance_millis bigint, verification_mux_validation boolean, verification_decode_all_streams boolean, verification_keyframe_seek boolean, verification_playback_probe boolean)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+#variable_conflict use_column
+DECLARE
+    actor_id BIGINT;
+BEGIN
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
+    BEGIN
+        RETURN QUERY
+        INSERT INTO media_policy_profile (
+            policy_key, version, display_name, video_intent,
+            verification_strictness, verification_duration_tolerance_millis,
+            verification_mux_validation, verification_decode_all_streams,
+            verification_keyframe_seek, verification_playback_probe, enabled
+        ) VALUES (
+            btrim(policy_key_input), version_input, btrim(display_name_input),
+            lower(btrim(video_intent_input)), lower(btrim(verification_strictness_input)),
+            verification_duration_tolerance_millis_input,
+            verification_mux_validation_input, verification_decode_all_streams_input,
+            verification_keyframe_seek_input, verification_playback_probe_input, TRUE
+        )
+        RETURNING media_policy_profile.policy_key, media_policy_profile.version,
+                  media_policy_profile.display_name, media_policy_profile.video_intent,
+                  media_policy_profile.verification_strictness,
+                  media_policy_profile.verification_duration_tolerance_millis,
+                  media_policy_profile.verification_mux_validation,
+                  media_policy_profile.verification_decode_all_streams,
+                  media_policy_profile.verification_keyframe_seek,
+                  media_policy_profile.verification_playback_probe;
+    EXCEPTION WHEN unique_violation THEN
+        RAISE EXCEPTION 'policy version already exists'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_policy_version_conflict';
+    END;
+END;
+$$;
+
+
+--
+-- Name: media_policy_retention_rule_append_v1(uuid, text, integer, text, text, text, text, text, text, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_policy_retention_rule_append_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, stream_kind_input text, semantic_role_input text, language_code_input text, codec_or_format_input text, action_input text, placement_input text, sort_order_input integer, enabled_input boolean) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    policy_id BIGINT;
+    rule_id_out BIGINT;
+BEGIN
+    policy_id := media_policy_profile_id_v1(actor_public_id_input, policy_key_input, version_input);
+    INSERT INTO media_policy_retention_rule (
+        media_policy_profile_id, stream_kind, semantic_role, language_code,
+        codec_or_format, action, placement, sort_order, enabled
+    ) VALUES (
+        policy_id, lower(btrim(stream_kind_input)), NULLIF(btrim(semantic_role_input), ''),
+        NULLIF(lower(btrim(language_code_input)), ''), NULLIF(lower(btrim(codec_or_format_input)), ''),
+        lower(btrim(action_input)), NULLIF(lower(btrim(placement_input)), ''),
+        sort_order_input, COALESCE(enabled_input, TRUE)
+    ) RETURNING media_policy_retention_rule_id INTO rule_id_out;
+    RETURN rule_id_out;
+END;
+$$;
+
+
+--
+-- Name: media_policy_runtime_limit_set_v1(uuid, text, integer, integer, integer, integer, integer, bigint, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_policy_runtime_limit_set_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, max_concurrency_input integer, max_retries_input integer, max_runtime_seconds_input integer, max_io_megabytes_per_second_input integer, min_free_space_bytes_input bigint, pause_on_battery_input boolean) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    policy_id BIGINT;
+BEGIN
+    policy_id := media_policy_profile_id_v1(actor_public_id_input, policy_key_input, version_input);
+    INSERT INTO media_policy_runtime_limit (
+        media_policy_profile_id, max_concurrency, max_retries, max_runtime_seconds,
+        max_io_megabytes_per_second, min_free_space_bytes, pause_on_battery
+    ) VALUES (
+        policy_id, max_concurrency_input, max_retries_input, max_runtime_seconds_input,
+        max_io_megabytes_per_second_input, min_free_space_bytes_input,
+        COALESCE(pause_on_battery_input, TRUE)
+    )
+    ON CONFLICT (media_policy_profile_id) DO UPDATE SET
+        max_concurrency = EXCLUDED.max_concurrency,
+        max_retries = EXCLUDED.max_retries,
+        max_runtime_seconds = EXCLUDED.max_runtime_seconds,
+        max_io_megabytes_per_second = EXCLUDED.max_io_megabytes_per_second,
+        min_free_space_bytes = EXCLUDED.min_free_space_bytes,
+        pause_on_battery = EXCLUDED.pause_on_battery;
+END;
+$$;
+
+
+--
+-- Name: media_policy_runtime_limit_set_v2(uuid, text, integer, integer, integer, integer, integer, bigint, boolean, integer, text, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_policy_runtime_limit_set_v2(actor_public_id_input uuid, policy_key_input text, version_input integer, max_concurrency_input integer, max_retries_input integer, max_runtime_seconds_input integer, max_io_megabytes_per_second_input integer, min_free_space_bytes_input bigint, pause_on_battery_input boolean, minimum_battery_percent_input integer, thermal_pressure_limit_input text, pause_when_thermal_exceeded_input boolean) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    policy_id BIGINT;
+BEGIN
+    policy_id := media_policy_profile_id_v1(actor_public_id_input, policy_key_input, version_input);
+    INSERT INTO media_policy_runtime_limit (
+        media_policy_profile_id, max_concurrency, max_retries, max_runtime_seconds,
+        max_io_megabytes_per_second, min_free_space_bytes, pause_on_battery,
+        minimum_battery_percent, thermal_pressure_limit,
+        pause_when_thermal_exceeded
+    ) VALUES (
+        policy_id, max_concurrency_input, max_retries_input, max_runtime_seconds_input,
+        max_io_megabytes_per_second_input, min_free_space_bytes_input,
+        COALESCE(pause_on_battery_input, TRUE), minimum_battery_percent_input,
+        lower(btrim(thermal_pressure_limit_input)),
+        COALESCE(pause_when_thermal_exceeded_input, TRUE)
+    ) ON CONFLICT (media_policy_profile_id) DO UPDATE SET
+        max_concurrency = EXCLUDED.max_concurrency,
+        max_retries = EXCLUDED.max_retries,
+        max_runtime_seconds = EXCLUDED.max_runtime_seconds,
+        max_io_megabytes_per_second = EXCLUDED.max_io_megabytes_per_second,
+        min_free_space_bytes = EXCLUDED.min_free_space_bytes,
+        pause_on_battery = EXCLUDED.pause_on_battery,
+        minimum_battery_percent = EXCLUDED.minimum_battery_percent,
+        thermal_pressure_limit = EXCLUDED.thermal_pressure_limit,
+        pause_when_thermal_exceeded = EXCLUDED.pause_when_thermal_exceeded;
+END;
+$$;
+
+
+--
+-- Name: media_policy_safe_dry_run_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_policy_safe_dry_run_v1() RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT 'safe_dry_run'
+$$;
+
+
+--
+-- Name: media_policy_seed_bounded_defaults_trigger_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_policy_seed_bounded_defaults_trigger_v1() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM media_policy_seed_bounded_defaults_v1(NEW.media_policy_profile_id);
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: media_policy_seed_bounded_defaults_v1(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_policy_seed_bounded_defaults_v1(policy_id_input bigint) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    INSERT INTO media_policy_unmatched_stream_behavior (
+        media_policy_profile_id, video_action, audio_action, subtitle_action,
+        attachment_action, data_action
+    ) VALUES (policy_id_input, 'fail', 'fail', 'fail', 'fail', 'fail')
+    ON CONFLICT (media_policy_profile_id) DO NOTHING;
+
+    INSERT INTO media_policy_compatibility_rule (
+        media_policy_profile_id, unsupported_format_action, require_all_targets
+    ) VALUES (policy_id_input, 'fail', TRUE)
+    ON CONFLICT (media_policy_profile_id) DO NOTHING;
+
+    INSERT INTO media_policy_runtime_limit (
+        media_policy_profile_id, max_concurrency, max_retries, max_runtime_seconds,
+        max_io_megabytes_per_second, min_free_space_bytes, pause_on_battery,
+        minimum_battery_percent, thermal_pressure_limit,
+        pause_when_thermal_exceeded
+    ) VALUES (
+        policy_id_input, 1, 0, 21600, 1024, 10737418240, TRUE,
+        20, 'serious', TRUE
+    )
+    ON CONFLICT (media_policy_profile_id) DO NOTHING;
+
+    INSERT INTO media_policy_output (
+        media_policy_profile_id, dry_run, replacement_mode, quarantine_enabled,
+        preserve_permissions, preserve_ownership
+    ) VALUES (policy_id_input, TRUE, 'disabled', TRUE, TRUE, TRUE)
+    ON CONFLICT (media_policy_profile_id) DO NOTHING;
+
+    INSERT INTO media_policy_workspace (
+        media_policy_profile_id, retention_hours, diagnostics_enabled,
+        stale_cleanup_hours, max_workspace_bytes
+    ) VALUES (policy_id_input, 24, TRUE, 48, 107374182400)
+    ON CONFLICT (media_policy_profile_id) DO NOTHING;
+
+    INSERT INTO media_policy_backup (
+        media_policy_profile_id, enabled, retention_days, min_free_space_bytes
+    ) VALUES (policy_id_input, FALSE, NULL, NULL)
+    ON CONFLICT (media_policy_profile_id) DO NOTHING;
+
+    INSERT INTO media_policy_verification (
+        media_policy_profile_id, strictness, duration_tolerance_millis,
+        mux_validation, decode_all_streams, keyframe_seek, playback_probe
+    )
+    SELECT policy.media_policy_profile_id, policy.verification_strictness,
+           policy.verification_duration_tolerance_millis,
+           policy.verification_mux_validation,
+           policy.verification_decode_all_streams,
+           policy.verification_keyframe_seek,
+           policy.verification_playback_probe
+      FROM media_policy_profile policy
+     WHERE policy.media_policy_profile_id = policy_id_input
+    ON CONFLICT (media_policy_profile_id) DO NOTHING;
+END;
+$$;
+
+
+--
+-- Name: media_policy_workspace_set_v1(uuid, text, integer, integer, boolean, integer, bigint, boolean, integer, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_policy_workspace_set_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, retention_hours_input integer, diagnostics_enabled_input boolean, stale_cleanup_hours_input integer, max_workspace_bytes_input bigint, backup_enabled_input boolean, backup_retention_days_input integer, backup_min_free_space_bytes_input bigint) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    policy_id BIGINT;
+BEGIN
+    policy_id := media_policy_profile_id_v1(actor_public_id_input, policy_key_input, version_input);
+    INSERT INTO media_policy_workspace (
+        media_policy_profile_id, retention_hours, diagnostics_enabled,
+        stale_cleanup_hours, max_workspace_bytes
+    ) VALUES (
+        policy_id, retention_hours_input, COALESCE(diagnostics_enabled_input, TRUE),
+        stale_cleanup_hours_input, max_workspace_bytes_input
+    ) ON CONFLICT (media_policy_profile_id) DO UPDATE SET
+        retention_hours = EXCLUDED.retention_hours,
+        diagnostics_enabled = EXCLUDED.diagnostics_enabled,
+        stale_cleanup_hours = EXCLUDED.stale_cleanup_hours,
+        max_workspace_bytes = EXCLUDED.max_workspace_bytes;
+
+    INSERT INTO media_policy_backup (
+        media_policy_profile_id, enabled, retention_days, min_free_space_bytes
+    ) VALUES (
+        policy_id, COALESCE(backup_enabled_input, FALSE),
+        backup_retention_days_input, backup_min_free_space_bytes_input
+    ) ON CONFLICT (media_policy_profile_id) DO UPDATE SET
+        enabled = EXCLUDED.enabled,
+        retention_days = EXCLUDED.retention_days,
+        min_free_space_bytes = EXCLUDED.min_free_space_bytes;
+END;
+$$;
+
+
+--
+-- Name: media_profile_create_v3(uuid, text, text, text, bigint, bigint, text, text, bigint, bigint, integer, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_create_v3(actor_public_id_input uuid, profile_key_input text, source_requested_path_input text, source_canonical_path_input text, source_filesystem_device_input bigint, source_filesystem_inode_input bigint, output_requested_path_input text, output_canonical_path_input text, output_filesystem_device_input bigint, output_filesystem_inode_input bigint, retention_days_input integer, compatibility_target_key_input text, policy_key_input text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+    actor_id BIGINT;
+    profile_id BIGINT;
+    profile_public_id_out UUID;
+BEGIN
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
+    PERFORM media_profile_validate_root_identity_v1(
+        NULL, source_canonical_path_input, source_filesystem_device_input, source_filesystem_inode_input
+    );
+    PERFORM media_profile_validate_root_identity_v1(
+        NULL, output_canonical_path_input, output_filesystem_device_input, output_filesystem_inode_input
+    );
+    IF (source_filesystem_device_input, source_filesystem_inode_input)
+        = (output_filesystem_device_input, output_filesystem_inode_input)
+       OR regexp_replace(btrim(source_canonical_path_input), '/+$', '')
+            = regexp_replace(btrim(output_canonical_path_input), '/+$', '')
+       OR regexp_replace(btrim(source_canonical_path_input), '/+$', '')
+            LIKE regexp_replace(btrim(output_canonical_path_input), '/+$', '') || '/%'
+       OR regexp_replace(btrim(output_canonical_path_input), '/+$', '')
+            LIKE regexp_replace(btrim(source_canonical_path_input), '/+$', '') || '/%' THEN
+        RAISE EXCEPTION 'profile roots overlap'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_roots_overlap';
+    END IF;
+    PERFORM media_profile_validate_catalog_refs_v1(
+        NULLIF(btrim(compatibility_target_key_input), ''),
+        COALESCE(NULLIF(btrim(policy_key_input), ''), media_policy_safe_dry_run_v1())
+    );
+
+    BEGIN
+        INSERT INTO media_profile (
+            profile_key,
+            source_root,
+            output_root,
+            dry_run_only,
+            retention_days,
+            compatibility_target_key,
+            policy_key,
+            watcher_enabled,
+            schedule_enabled,
+            schedule_interval_minutes,
+            created_by_user_id
+        ) VALUES (
+            btrim(profile_key_input),
+            regexp_replace(btrim(source_canonical_path_input), '/+$', ''),
+            regexp_replace(btrim(output_canonical_path_input), '/+$', ''),
+            TRUE,
+            COALESCE(retention_days_input, 30),
+            NULLIF(btrim(compatibility_target_key_input), ''),
+            COALESCE(NULLIF(btrim(policy_key_input), ''), media_policy_safe_dry_run_v1()),
+            FALSE,
+            FALSE,
+            NULL,
+            actor_id
+        ) RETURNING media_profile_id, media_profile_public_id
+          INTO profile_id, profile_public_id_out;
+    EXCEPTION WHEN unique_violation THEN
+        RAISE EXCEPTION 'profile key already exists'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_key_conflict';
+    END;
+
+    INSERT INTO media_profile_root (
+        media_profile_id, root_kind, requested_path, canonical_path,
+        filesystem_device, filesystem_inode, media_type, sort_order, enabled,
+        identity_verified_at
+    ) VALUES
+        (
+            profile_id, 'source', btrim(source_requested_path_input),
+            regexp_replace(btrim(source_canonical_path_input), '/+$', ''),
+            source_filesystem_device_input, source_filesystem_inode_input,
+            'mixed', 0, TRUE, now()
+        ),
+        (
+            profile_id, 'output', btrim(output_requested_path_input),
+            regexp_replace(btrim(output_canonical_path_input), '/+$', ''),
+            output_filesystem_device_input, output_filesystem_inode_input,
+            'mixed', 0, TRUE, now()
+        );
+
+    RETURN profile_public_id_out;
+END;
+$_$;
+
+
+--
+-- Name: media_profile_desired_target_activation_guard_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_desired_target_activation_guard_v1() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    IF NEW.desired_target_profile_id IS NOT NULL
+        AND NEW.desired_target_profile_id IS DISTINCT FROM OLD.desired_target_profile_id THEN
+        PERFORM media_desired_target_validate_and_activate_v1(
+            NEW.desired_target_profile_id
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: media_profile_desired_target_set_v1(uuid, uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_desired_target_set_v1(actor_public_id_input uuid, media_profile_public_id_input uuid, desired_target_key_input text, desired_target_version_input integer) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    target_id BIGINT;
+    profile_public_id UUID;
+BEGIN
+    PERFORM media_actor_id_for_public_id_v1(actor_public_id_input);
+
+    IF NULLIF(btrim(desired_target_key_input), '') IS NULL THEN
+        UPDATE media_profile
+           SET desired_target_profile_id = NULL,
+               updated_at = now()
+         WHERE media_profile_public_id = media_profile_public_id_input
+           AND deleted_at IS NULL
+        RETURNING media_profile_public_id INTO profile_public_id;
+    ELSE
+        SELECT media_desired_target_profile_id
+          INTO target_id
+          FROM media_desired_target_profile
+         WHERE lower(target_key) = lower(btrim(desired_target_key_input))
+           AND version = desired_target_version_input
+           AND enabled;
+
+        IF target_id IS NULL THEN
+            RAISE EXCEPTION 'desired target not found'
+                USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_desired_target_not_found';
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1
+              FROM media_desired_target_stream
+             WHERE media_desired_target_profile_id = target_id
+        ) THEN
+            RAISE EXCEPTION 'desired target has no streams'
+                USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_desired_target_streams_required';
+        END IF;
+
+        UPDATE media_profile
+           SET desired_target_profile_id = target_id,
+               updated_at = now()
+         WHERE media_profile_public_id = media_profile_public_id_input
+           AND deleted_at IS NULL
+        RETURNING media_profile_public_id INTO profile_public_id;
+    END IF;
+
+    IF profile_public_id IS NULL THEN
+        RAISE EXCEPTION 'profile not found'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
+    END IF;
+
+    RETURN profile_public_id;
+END;
+$$;
+
+
+--
+-- Name: media_profile_file_rule_append_v1(uuid, text, text, text, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_file_rule_append_v1(media_profile_public_id_input uuid, rule_kind_input text, matcher_kind_input text, matcher_value_input text, sort_order_input integer, enabled_input boolean) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    profile_id BIGINT;
+    rule_id_out BIGINT;
+BEGIN
+    SELECT media_profile_id INTO profile_id
+      FROM media_profile
+     WHERE media_profile_public_id = media_profile_public_id_input
+       AND deleted_at IS NULL
+     FOR UPDATE;
+    IF profile_id IS NULL THEN
+        RAISE EXCEPTION 'profile not found'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
+    END IF;
+
+    INSERT INTO media_profile_file_rule (
+        media_profile_id, rule_kind, matcher_kind, matcher_value, sort_order, enabled
+    ) VALUES (
+        profile_id,
+        lower(btrim(rule_kind_input)),
+        lower(btrim(matcher_kind_input)),
+        btrim(matcher_value_input),
+        sort_order_input,
+        COALESCE(enabled_input, TRUE)
+    ) RETURNING media_profile_file_rule_id INTO rule_id_out;
+
+    UPDATE media_profile
+       SET configuration_version = configuration_version + 1, updated_at = now()
+     WHERE media_profile_id = profile_id;
+    RETURN rule_id_out;
+END;
+$$;
+
+
+--
+-- Name: media_profile_file_rule_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_file_rule_list_v1(media_profile_public_id_input uuid) RETURNS TABLE(rule_kind text, matcher_kind text, matcher_value text, sort_order integer, enabled boolean)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT rule.rule_kind, rule.matcher_kind, rule.matcher_value,
+           rule.sort_order, rule.enabled
+      FROM media_profile profile
+      JOIN media_profile_file_rule rule ON rule.media_profile_id = profile.media_profile_id
+     WHERE profile.media_profile_public_id = media_profile_public_id_input
+       AND profile.deleted_at IS NULL
+     ORDER BY rule.sort_order;
+$$;
+
+
+--
+-- Name: media_profile_filter_get_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_filter_get_v1(media_profile_public_id_input uuid) RETURNS TABLE(min_size_bytes bigint, max_size_bytes bigint, min_duration_millis bigint, max_duration_millis bigint, include_samples boolean, include_trailers boolean, exclude_trash boolean, exclude_quarantine boolean)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT filter.min_size_bytes, filter.max_size_bytes,
+           filter.min_duration_millis, filter.max_duration_millis,
+           filter.include_samples, filter.include_trailers,
+           filter.exclude_trash, filter.exclude_quarantine
+      FROM media_profile profile
+      JOIN media_profile_filter filter ON filter.media_profile_id = profile.media_profile_id
+     WHERE profile.media_profile_public_id = media_profile_public_id_input
+       AND profile.deleted_at IS NULL;
+$$;
+
+
+--
+-- Name: media_profile_filter_set_v1(uuid, bigint, bigint, bigint, bigint, boolean, boolean, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_filter_set_v1(media_profile_public_id_input uuid, min_size_bytes_input bigint, max_size_bytes_input bigint, min_duration_millis_input bigint, max_duration_millis_input bigint, include_samples_input boolean, include_trailers_input boolean, exclude_trash_input boolean, exclude_quarantine_input boolean) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    profile_id BIGINT;
+BEGIN
+    SELECT media_profile_id INTO profile_id
+      FROM media_profile
+     WHERE media_profile_public_id = media_profile_public_id_input
+       AND deleted_at IS NULL
+     FOR UPDATE;
+    IF profile_id IS NULL THEN
+        RAISE EXCEPTION 'profile not found'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
+    END IF;
+
+    INSERT INTO media_profile_filter (
+        media_profile_id,
+        min_size_bytes,
+        max_size_bytes,
+        min_duration_millis,
+        max_duration_millis,
+        include_samples,
+        include_trailers,
+        exclude_trash,
+        exclude_quarantine,
+        updated_at
+    ) VALUES (
+        profile_id,
+        min_size_bytes_input,
+        max_size_bytes_input,
+        min_duration_millis_input,
+        max_duration_millis_input,
+        COALESCE(include_samples_input, FALSE),
+        COALESCE(include_trailers_input, FALSE),
+        COALESCE(exclude_trash_input, TRUE),
+        COALESCE(exclude_quarantine_input, TRUE),
+        now()
+    )
+    ON CONFLICT (media_profile_id) DO UPDATE SET
+        min_size_bytes = EXCLUDED.min_size_bytes,
+        max_size_bytes = EXCLUDED.max_size_bytes,
+        min_duration_millis = EXCLUDED.min_duration_millis,
+        max_duration_millis = EXCLUDED.max_duration_millis,
+        include_samples = EXCLUDED.include_samples,
+        include_trailers = EXCLUDED.include_trailers,
+        exclude_trash = EXCLUDED.exclude_trash,
+        exclude_quarantine = EXCLUDED.exclude_quarantine,
+        updated_at = now();
+
+    UPDATE media_profile
+       SET configuration_version = configuration_version + 1, updated_at = now()
+     WHERE media_profile_id = profile_id;
+END;
+$$;
+
+
+--
+-- Name: media_profile_get_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_get_v1(media_profile_public_id_input uuid) RETURNS TABLE(media_profile_public_id uuid, profile_key text, source_root text, output_root text, dry_run_only boolean, retention_days integer, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT
+        mp.media_profile_public_id,
+        mp.profile_key,
+        mp.source_root,
+        mp.output_root,
+        mp.dry_run_only,
+        mp.retention_days,
+        mp.updated_at
+    FROM media_profile mp
+    WHERE mp.media_profile_public_id = media_profile_public_id_input
+      AND mp.deleted_at IS NULL;
+$$;
+
+
+--
+-- Name: media_profile_get_v2(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_get_v2(media_profile_public_id_input uuid) RETURNS TABLE(media_profile_public_id uuid, profile_key text, source_root text, output_root text, dry_run_only boolean, retention_days integer, compatibility_target_key text, policy_key text, watcher_enabled boolean, schedule_enabled boolean, schedule_interval_minutes integer, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT
+        mp.media_profile_public_id,
+        mp.profile_key,
+        mp.source_root,
+        mp.output_root,
+        mp.dry_run_only,
+        mp.retention_days,
+        mp.compatibility_target_key,
+        mp.policy_key,
+        mp.watcher_enabled,
+        mp.schedule_enabled,
+        mp.schedule_interval_minutes,
+        mp.updated_at
+    FROM media_profile mp
+    WHERE mp.media_profile_public_id = media_profile_public_id_input
+      AND mp.deleted_at IS NULL;
+$$;
+
+
+--
+-- Name: media_profile_get_v3(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_get_v3(media_profile_public_id_input uuid) RETURNS TABLE(media_profile_public_id uuid, profile_key text, source_root text, output_root text, dry_run_only boolean, retention_days integer, compatibility_target_key text, policy_key text, watcher_enabled boolean, schedule_enabled boolean, schedule_interval_minutes integer, desired_target_key text, desired_target_version integer, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT profile.media_profile_public_id, profile.profile_key,
+           profile.source_root, profile.output_root, profile.dry_run_only,
+           profile.retention_days, profile.compatibility_target_key,
+           profile.policy_key, profile.watcher_enabled, profile.schedule_enabled,
+           profile.schedule_interval_minutes, target.target_key, target.version,
+           profile.updated_at
+      FROM media_profile profile
+      LEFT JOIN media_desired_target_profile target
+        ON target.media_desired_target_profile_id = profile.desired_target_profile_id
+     WHERE profile.media_profile_public_id = media_profile_public_id_input
+       AND profile.deleted_at IS NULL;
+$$;
+
+
+--
+-- Name: media_profile_import_draft_delete_v1(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_import_draft_delete_v1(profile_key_input text) RETURNS boolean
+    LANGUAGE sql
+    AS $$
+    WITH removed AS (
+        DELETE FROM media_profile_import_draft
+         WHERE lower(profile_key) = lower(btrim(profile_key_input))
+        RETURNING 1
+    )
+    SELECT EXISTS (SELECT 1 FROM removed);
+$$;
+
+
+--
+-- Name: media_profile_import_draft_list_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_import_draft_list_v1() RETURNS TABLE(media_profile_import_draft_public_id uuid, profile_key text, source_root text, output_root text, source_root_resolved boolean, output_root_resolved boolean, retention_days integer, compatibility_target_key text, desired_target_key text, desired_target_version integer, policy_key text, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT draft.media_profile_import_draft_public_id,
+           draft.profile_key,
+           draft.source_root,
+           draft.output_root,
+           draft.source_root_resolved,
+           draft.output_root_resolved,
+           draft.retention_days,
+           draft.compatibility_target_key,
+           draft.desired_target_key,
+           draft.desired_target_version,
+           draft.policy_key,
+           draft.updated_at
+      FROM media_profile_import_draft draft
+     ORDER BY lower(draft.profile_key);
+$$;
+
+
+--
+-- Name: media_profile_import_draft_upsert_v1(uuid, text, text, text, boolean, boolean, integer, text, text, integer, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_import_draft_upsert_v1(actor_public_id_input uuid, profile_key_input text, source_root_input text, output_root_input text, source_root_resolved_input boolean, output_root_resolved_input boolean, retention_days_input integer, compatibility_target_key_input text, desired_target_key_input text, desired_target_version_input integer, policy_key_input text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    actor_id BIGINT;
+    draft_public_id UUID;
+BEGIN
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
+
+    IF COALESCE(source_root_resolved_input, FALSE)
+       AND COALESCE(output_root_resolved_input, FALSE) THEN
+        RAISE EXCEPTION 'draft has no unresolved path'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_yaml_draft_paths_resolved';
+    END IF;
+
+    INSERT INTO media_profile_import_draft (
+        profile_key,
+        source_root,
+        output_root,
+        source_root_resolved,
+        output_root_resolved,
+        retention_days,
+        compatibility_target_key,
+        desired_target_key,
+        desired_target_version,
+        policy_key,
+        created_by_user_id
+    ) VALUES (
+        btrim(profile_key_input),
+        btrim(source_root_input),
+        btrim(output_root_input),
+        COALESCE(source_root_resolved_input, FALSE),
+        COALESCE(output_root_resolved_input, FALSE),
+        retention_days_input,
+        NULLIF(btrim(compatibility_target_key_input), ''),
+        NULLIF(btrim(desired_target_key_input), ''),
+        desired_target_version_input,
+        btrim(policy_key_input),
+        actor_id
+    )
+    ON CONFLICT ((lower(profile_key)))
+    DO UPDATE SET
+        source_root = EXCLUDED.source_root,
+        output_root = EXCLUDED.output_root,
+        source_root_resolved = EXCLUDED.source_root_resolved,
+        output_root_resolved = EXCLUDED.output_root_resolved,
+        retention_days = EXCLUDED.retention_days,
+        compatibility_target_key = EXCLUDED.compatibility_target_key,
+        desired_target_key = EXCLUDED.desired_target_key,
+        desired_target_version = EXCLUDED.desired_target_version,
+        policy_key = EXCLUDED.policy_key,
+        created_by_user_id = EXCLUDED.created_by_user_id,
+        updated_at = now()
+    RETURNING media_profile_import_draft_public_id INTO draft_public_id;
+
+    RETURN draft_public_id;
+END;
+$$;
+
+
+--
+-- Name: media_profile_list_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_list_v1() RETURNS TABLE(media_profile_public_id uuid, profile_key text, source_root text, output_root text, dry_run_only boolean, retention_days integer, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT
+        mp.media_profile_public_id,
+        mp.profile_key,
+        mp.source_root,
+        mp.output_root,
+        mp.dry_run_only,
+        mp.retention_days,
+        mp.updated_at
+    FROM media_profile mp
+    WHERE mp.deleted_at IS NULL
+    ORDER BY lower(mp.profile_key) ASC;
+$$;
+
+
+--
+-- Name: media_profile_list_v2(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_list_v2() RETURNS TABLE(media_profile_public_id uuid, profile_key text, source_root text, output_root text, dry_run_only boolean, retention_days integer, compatibility_target_key text, policy_key text, watcher_enabled boolean, schedule_enabled boolean, schedule_interval_minutes integer, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT
+        mp.media_profile_public_id,
+        mp.profile_key,
+        mp.source_root,
+        mp.output_root,
+        mp.dry_run_only,
+        mp.retention_days,
+        mp.compatibility_target_key,
+        mp.policy_key,
+        mp.watcher_enabled,
+        mp.schedule_enabled,
+        mp.schedule_interval_minutes,
+        mp.updated_at
+    FROM media_profile mp
+    WHERE mp.deleted_at IS NULL
+    ORDER BY lower(mp.profile_key) ASC;
+$$;
+
+
+--
+-- Name: media_profile_list_v3(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_list_v3() RETURNS TABLE(media_profile_public_id uuid, profile_key text, source_root text, output_root text, dry_run_only boolean, retention_days integer, compatibility_target_key text, policy_key text, watcher_enabled boolean, schedule_enabled boolean, schedule_interval_minutes integer, desired_target_key text, desired_target_version integer, updated_at timestamp with time zone)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT profile.media_profile_public_id, profile.profile_key,
+           profile.source_root, profile.output_root, profile.dry_run_only,
+           profile.retention_days, profile.compatibility_target_key,
+           profile.policy_key, profile.watcher_enabled, profile.schedule_enabled,
+           profile.schedule_interval_minutes, target.target_key, target.version,
+           profile.updated_at
+      FROM media_profile profile
+      LEFT JOIN media_desired_target_profile target
+        ON target.media_desired_target_profile_id = profile.desired_target_profile_id
+     WHERE profile.deleted_at IS NULL
+     ORDER BY lower(profile.profile_key);
+$$;
+
+
+--
+-- Name: media_profile_normalized_root_v1(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_normalized_root_v1(root_input text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $_$
+    SELECT COALESCE(NULLIF(lower(regexp_replace(btrim(root_input), '/+$', '')), ''), '/')
+$_$;
+
+
+--
+-- Name: media_profile_root_add_v1(uuid, text, text, text, bigint, bigint, text, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_root_add_v1(media_profile_public_id_input uuid, root_kind_input text, requested_path_input text, canonical_path_input text, filesystem_device_input bigint, filesystem_inode_input bigint, media_type_input text, sort_order_input integer, enabled_input boolean) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+    profile_id BIGINT;
+    root_public_id_out UUID;
+    canonical_path_value TEXT;
+BEGIN
+    SELECT media_profile_id INTO profile_id
+      FROM media_profile
+     WHERE media_profile_public_id = media_profile_public_id_input
+       AND deleted_at IS NULL
+     FOR UPDATE;
+
+    IF profile_id IS NULL THEN
+        RAISE EXCEPTION 'profile not found'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
+    END IF;
+
+    canonical_path_value := regexp_replace(btrim(canonical_path_input), '/+$', '');
+    IF canonical_path_value = '' THEN
+        canonical_path_value := '/';
+    END IF;
+
+    IF COALESCE(enabled_input, FALSE) THEN
+        PERFORM media_profile_validate_root_identity_v1(
+            NULL,
+            canonical_path_value,
+            filesystem_device_input,
+            filesystem_inode_input
+        );
+    END IF;
+
+    INSERT INTO media_profile_root (
+        media_profile_id,
+        root_kind,
+        requested_path,
+        canonical_path,
+        filesystem_device,
+        filesystem_inode,
+        media_type,
+        sort_order,
+        enabled,
+        identity_verified_at
+    )
+    VALUES (
+        profile_id,
+        lower(btrim(root_kind_input)),
+        btrim(requested_path_input),
+        canonical_path_value,
+        filesystem_device_input,
+        filesystem_inode_input,
+        lower(btrim(media_type_input)),
+        sort_order_input,
+        COALESCE(enabled_input, FALSE),
+        CASE WHEN filesystem_device_input IS NOT NULL AND filesystem_inode_input IS NOT NULL THEN now() END
+    )
+    RETURNING media_profile_root_public_id INTO root_public_id_out;
+
+    UPDATE media_profile
+       SET configuration_version = configuration_version + 1,
+           updated_at = now()
+     WHERE media_profile_id = profile_id;
+
+    RETURN root_public_id_out;
+END;
+$_$;
+
+
+--
+-- Name: media_profile_root_list_v1(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_root_list_v1(media_profile_public_id_input uuid) RETURNS TABLE(media_profile_root_public_id uuid, root_kind text, requested_path text, canonical_path text, filesystem_device bigint, filesystem_inode bigint, media_type text, sort_order integer, enabled boolean, identity_verified_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT root.media_profile_root_public_id, root.root_kind,
+           root.requested_path, root.canonical_path, root.filesystem_device,
+           root.filesystem_inode, root.media_type, root.sort_order,
+           root.enabled, root.identity_verified_at
+      FROM media_profile profile
+      JOIN media_profile_root root ON root.media_profile_id = profile.media_profile_id
+     WHERE profile.media_profile_public_id = media_profile_public_id_input
+       AND profile.deleted_at IS NULL
+     ORDER BY root.root_kind, root.sort_order;
+$$;
+
+
+--
+-- Name: media_profile_root_revalidate_v1(uuid, text, bigint, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_root_revalidate_v1(media_profile_root_public_id_input uuid, canonical_path_input text, filesystem_device_input bigint, filesystem_inode_input bigint) RETURNS timestamp with time zone
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+    verified_at_out TIMESTAMPTZ;
+BEGIN
+    UPDATE media_profile_root root
+       SET identity_verified_at = now()
+     WHERE root.media_profile_root_public_id = media_profile_root_public_id_input
+       AND root.enabled
+       AND root.canonical_path = regexp_replace(btrim(canonical_path_input), '/+$', '')
+       AND (root.filesystem_device, root.filesystem_inode)
+           = (filesystem_device_input, filesystem_inode_input)
+    RETURNING root.identity_verified_at INTO verified_at_out;
+
+    IF verified_at_out IS NULL THEN
+        RAISE EXCEPTION 'filesystem identity changed'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_root_identity_changed';
+    END IF;
+
+    RETURN verified_at_out;
+END;
+$_$;
+
+
+--
+-- Name: media_profile_roots_overlap_v1(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_roots_overlap_v1(left_root_input text, right_root_input text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT media_profile_normalized_root_v1(left_root_input)
+               = media_profile_normalized_root_v1(right_root_input)
+        OR media_profile_normalized_root_v1(left_root_input)
+               LIKE media_profile_normalized_root_v1(right_root_input) || '/%'
+        OR media_profile_normalized_root_v1(right_root_input)
+               LIKE media_profile_normalized_root_v1(left_root_input) || '/%'
+$$;
+
+
+--
+-- Name: media_profile_update_v1(uuid, uuid, text, text, boolean, integer, text, text, boolean, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_update_v1(actor_public_id_input uuid, media_profile_public_id_input uuid, source_root_input text, output_root_input text, dry_run_only_input boolean, retention_days_input integer, compatibility_target_key_input text, policy_key_input text, watcher_enabled_input boolean, schedule_enabled_input boolean, schedule_interval_minutes_input integer) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    actor_id BIGINT;
+    profile_id BIGINT;
+    current_source_root TEXT;
+    current_output_root TEXT;
+BEGIN
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
+    SELECT media_profile_id, source_root, output_root
+      INTO profile_id, current_source_root, current_output_root
+      FROM media_profile
+     WHERE media_profile_public_id = media_profile_public_id_input
+       AND deleted_at IS NULL
+     FOR UPDATE;
+    IF profile_id IS NULL THEN
+        RAISE EXCEPTION 'profile not found'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
+    END IF;
+    IF (NULLIF(btrim(source_root_input), '') IS NOT NULL
+            AND btrim(source_root_input) <> current_source_root)
+       OR (NULLIF(btrim(output_root_input), '') IS NOT NULL
+            AND btrim(output_root_input) <> current_output_root)
+       OR COALESCE(watcher_enabled_input, FALSE)
+       OR COALESCE(schedule_enabled_input, FALSE)
+       OR schedule_interval_minutes_input IS NOT NULL THEN
+        RAISE EXCEPTION 'root and automation changes require verified normalized procedures'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_filesystem_identity_required';
+    END IF;
+    PERFORM media_profile_validate_catalog_refs_v1(
+        CASE WHEN compatibility_target_key_input IS NULL THEN NULL
+             ELSE NULLIF(btrim(compatibility_target_key_input), '') END,
+        COALESCE(NULLIF(btrim(policy_key_input), ''), media_policy_safe_dry_run_v1())
+    );
+    UPDATE media_profile
+       SET dry_run_only = COALESCE(dry_run_only_input, dry_run_only),
+           retention_days = COALESCE(retention_days_input, retention_days),
+           compatibility_target_key = CASE
+               WHEN compatibility_target_key_input IS NULL THEN compatibility_target_key
+               ELSE NULLIF(btrim(compatibility_target_key_input), '')
+           END,
+           policy_key = COALESCE(NULLIF(btrim(policy_key_input), ''), policy_key),
+           configuration_version = configuration_version + 1,
+           updated_at = now()
+     WHERE media_profile_id = profile_id;
+    RETURN media_profile_public_id_input;
+END;
+$$;
+
+
+--
+-- Name: media_profile_upsert_v1(uuid, text, text, text, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_upsert_v1(actor_public_id_input uuid, profile_key_input text, source_root_input text, output_root_input text, dry_run_only_input boolean, retention_days_input integer) RETURNS uuid
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    SELECT media_profile_upsert_v2(
+        actor_public_id_input,
+        profile_key_input,
+        source_root_input,
+        output_root_input,
+        TRUE,
+        retention_days_input,
+        NULL,
+        media_policy_safe_dry_run_v1(),
+        FALSE,
+        FALSE,
+        NULL
+    )
+$$;
+
+
+--
+-- Name: media_profile_upsert_v2(uuid, text, text, text, boolean, integer, text, text, boolean, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_upsert_v2(actor_public_id_input uuid, profile_key_input text, source_root_input text, output_root_input text, dry_run_only_input boolean, retention_days_input integer, compatibility_target_key_input text, policy_key_input text, watcher_enabled_input boolean, schedule_enabled_input boolean, schedule_interval_minutes_input integer) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    actor_id BIGINT;
+    profile_id BIGINT;
+    profile_public_id_out UUID;
+BEGIN
+    actor_id := media_actor_id_for_public_id_v1(actor_public_id_input);
+    IF COALESCE(watcher_enabled_input, FALSE) OR COALESCE(schedule_enabled_input, FALSE) THEN
+        RAISE EXCEPTION 'verified filesystem identity is required for automation'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_filesystem_identity_required';
+    END IF;
+    PERFORM media_profile_validate_catalog_refs_v1(
+        NULLIF(btrim(compatibility_target_key_input), ''),
+        COALESCE(NULLIF(btrim(policy_key_input), ''), media_policy_safe_dry_run_v1())
+    );
+
+    BEGIN
+        INSERT INTO media_profile (
+            profile_key, source_root, output_root, dry_run_only, retention_days,
+            compatibility_target_key, policy_key, watcher_enabled, schedule_enabled,
+            schedule_interval_minutes, created_by_user_id
+        ) VALUES (
+            btrim(profile_key_input), btrim(source_root_input), btrim(output_root_input), TRUE,
+            COALESCE(retention_days_input, 30), NULLIF(btrim(compatibility_target_key_input), ''),
+            COALESCE(NULLIF(btrim(policy_key_input), ''), media_policy_safe_dry_run_v1()),
+            FALSE, FALSE, NULL, actor_id
+        ) RETURNING media_profile_id, media_profile_public_id
+          INTO profile_id, profile_public_id_out;
+    EXCEPTION WHEN unique_violation THEN
+        RAISE EXCEPTION 'profile key already exists'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_key_conflict';
+    END;
+
+    INSERT INTO media_profile_root (
+        media_profile_id, root_kind, requested_path, canonical_path,
+        media_type, sort_order, enabled
+    ) VALUES
+        (profile_id, 'source', btrim(source_root_input), btrim(source_root_input), 'mixed', 0, FALSE),
+        (profile_id, 'output', btrim(output_root_input), btrim(output_root_input), 'mixed', 0, FALSE);
+    RETURN profile_public_id_out;
+END;
+$$;
+
+
+--
+-- Name: media_profile_validate_all_root_overlap_trigger_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_validate_all_root_overlap_trigger_v1() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    effective_profile_id BIGINT;
+BEGIN
+    IF NEW.deleted_at IS NULL THEN
+        effective_profile_id := NEW.media_profile_id;
+
+        IF TG_OP = 'INSERT' THEN
+            SELECT existing.media_profile_id
+              INTO effective_profile_id
+              FROM media_profile AS existing
+             WHERE lower(existing.profile_key) = lower(btrim(NEW.profile_key))
+               AND existing.deleted_at IS NULL;
+
+            effective_profile_id := COALESCE(effective_profile_id, NEW.media_profile_id);
+        END IF;
+
+        PERFORM media_profile_validate_all_root_overlap_v1(
+            effective_profile_id,
+            NEW.source_root,
+            NEW.output_root
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: media_profile_validate_all_root_overlap_v1(bigint, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_validate_all_root_overlap_v1(media_profile_id_input bigint, source_root_input text, output_root_input text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_profile_all_root_overlap_v1', 0));
+
+    IF media_profile_roots_overlap_v1(source_root_input, output_root_input) THEN
+        RAISE EXCEPTION 'profile roots overlap'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_roots_overlap';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM media_profile AS existing
+         WHERE existing.deleted_at IS NULL
+           AND (
+               media_profile_id_input IS NULL
+               OR existing.media_profile_id <> media_profile_id_input
+           )
+           AND (
+               media_profile_roots_overlap_v1(source_root_input, existing.source_root)
+               OR media_profile_roots_overlap_v1(source_root_input, existing.output_root)
+               OR media_profile_roots_overlap_v1(output_root_input, existing.source_root)
+               OR media_profile_roots_overlap_v1(output_root_input, existing.output_root)
+           )
+    ) THEN
+        RAISE EXCEPTION 'profile roots overlap another active profile'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_discovery_root_overlap';
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: media_profile_validate_catalog_refs_v1(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_validate_catalog_refs_v1(compatibility_target_key_input text, policy_key_input text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    compatibility_target_key_value TEXT;
+    policy_key_value TEXT;
+BEGIN
+    compatibility_target_key_value := NULLIF(btrim(compatibility_target_key_input), '');
+    policy_key_value := COALESCE(NULLIF(btrim(policy_key_input), ''), 'safe_dry_run');
+
+    IF compatibility_target_key_value IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1
+             FROM media_compatibility_target
+            WHERE lower(compatibility_target_key) = lower(replace(compatibility_target_key_value, '_', '-'))
+              AND enabled
+       ) THEN
+        RAISE EXCEPTION 'compatibility target not found'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_compatibility_target_not_found';
+    END IF;
+
+    IF NOT EXISTS (
+           SELECT 1
+             FROM media_policy_profile
+            WHERE lower(policy_key) = lower(policy_key_value)
+              AND enabled
+       ) THEN
+        RAISE EXCEPTION 'policy profile not found'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_policy_profile_not_found';
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: media_profile_validate_discovery_root_overlap_v1(bigint, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_validate_discovery_root_overlap_v1(media_profile_id_input bigint, source_root_input text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    source_root_compare_value TEXT;
+BEGIN
+    source_root_compare_value := media_profile_normalized_root_v1(source_root_input);
+
+    IF EXISTS (
+        SELECT 1
+          FROM media_profile AS existing
+         WHERE existing.deleted_at IS NULL
+           AND (
+               media_profile_id_input IS NULL
+               OR existing.media_profile_id <> media_profile_id_input
+           )
+           AND (
+               source_root_compare_value = media_profile_normalized_root_v1(existing.source_root)
+               OR source_root_compare_value LIKE media_profile_normalized_root_v1(existing.source_root) || '/%'
+               OR media_profile_normalized_root_v1(existing.source_root) LIKE source_root_compare_value || '/%'
+           )
+    ) THEN
+        RAISE EXCEPTION 'profile discovery roots overlap'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_discovery_root_overlap';
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: media_profile_validate_root_identity_v1(bigint, text, bigint, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_profile_validate_root_identity_v1(media_profile_root_id_input bigint, canonical_path_input text, filesystem_device_input bigint, filesystem_inode_input bigint) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+    canonical_path_value TEXT;
+BEGIN
+    canonical_path_value := regexp_replace(btrim(canonical_path_input), '/+$', '');
+    IF canonical_path_value = '' THEN
+        canonical_path_value := '/';
+    END IF;
+
+    IF canonical_path_value NOT LIKE '/%'
+       OR canonical_path_value = '/'
+       OR filesystem_device_input IS NULL
+       OR filesystem_inode_input IS NULL
+       OR filesystem_device_input < 0
+       OR filesystem_inode_input < 0 THEN
+        RAISE EXCEPTION 'filesystem identity is incomplete'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_root_identity_invalid';
+    END IF;
+
+    PERFORM pg_advisory_xact_lock(hashtextextended('media_profile_root_identity_v1', 0));
+
+    IF EXISTS (
+        SELECT 1
+          FROM media_profile_root root
+         WHERE root.enabled
+           AND (media_profile_root_id_input IS NULL OR root.media_profile_root_id <> media_profile_root_id_input)
+           AND (
+               (root.filesystem_device, root.filesystem_inode)
+                   = (filesystem_device_input, filesystem_inode_input)
+               OR root.canonical_path = canonical_path_value
+               OR root.canonical_path LIKE canonical_path_value || '/%'
+               OR canonical_path_value LIKE root.canonical_path || '/%'
+           )
+    ) THEN
+        RAISE EXCEPTION 'filesystem roots overlap'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_root_identity_overlap';
+    END IF;
+END;
+$_$;
+
+
+--
+-- Name: media_retention_mode_age_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_retention_mode_age_v1() RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT 'age'
+$$;
+
+
+--
+-- Name: media_retention_mode_count_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_retention_mode_count_v1() RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT 'count'
+$$;
+
+
+--
+-- Name: media_retention_policy_default_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_retention_policy_default_v1() RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT 'default'
+$$;
+
+
+--
+-- Name: media_stream_classification_rule_append_v1(uuid, text, integer, text, text, text, text, smallint, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_stream_classification_rule_append_v1(actor_public_id_input uuid, policy_key_input text, version_input integer, stream_kind_input text, semantic_role_input text, match_kind_input text, match_pattern_input text, confidence_input smallint, sort_order_input integer, enabled_input boolean) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    policy_id BIGINT;
+    rule_id_out BIGINT;
+BEGIN
+    policy_id := media_policy_profile_id_v1(actor_public_id_input, policy_key_input, version_input);
+    INSERT INTO media_stream_classification_rule (
+        media_policy_profile_id, stream_kind, semantic_role, match_kind,
+        match_pattern, confidence, sort_order, enabled
+    ) VALUES (
+        policy_id, lower(btrim(stream_kind_input)), btrim(semantic_role_input),
+        lower(btrim(match_kind_input)), btrim(match_pattern_input), confidence_input,
+        sort_order_input, COALESCE(enabled_input, TRUE)
+    ) RETURNING media_stream_classification_rule_id INTO rule_id_out;
+    RETURN rule_id_out;
+END;
+$$;
+
+
+--
+-- Name: media_subtitle_discovery_rule_append_v1(uuid, text, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_subtitle_discovery_rule_append_v1(media_profile_public_id_input uuid, discovery_pattern_input text, precedence_input integer, enabled_input boolean) RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+    profile_id BIGINT;
+    rule_id_out BIGINT;
+BEGIN
+    SELECT media_profile_id INTO profile_id
+      FROM media_profile
+     WHERE media_profile_public_id = media_profile_public_id_input
+       AND deleted_at IS NULL
+     FOR UPDATE;
+    IF profile_id IS NULL THEN
+        RAISE EXCEPTION 'profile not found'
+            USING ERRCODE = media_app_error_code_v1(), DETAIL = 'media_profile_not_found';
+    END IF;
+
+    INSERT INTO media_subtitle_discovery_rule (
+        media_profile_id, discovery_pattern, precedence, enabled
+    ) VALUES (
+        profile_id, btrim(discovery_pattern_input), precedence_input,
+        COALESCE(enabled_input, TRUE)
+    ) RETURNING media_subtitle_discovery_rule_id INTO rule_id_out;
+
+    UPDATE media_profile
+       SET configuration_version = configuration_version + 1, updated_at = now()
+     WHERE media_profile_id = profile_id;
+    RETURN rule_id_out;
+END;
+$$;
+
+
+--
+-- Name: media_subtitle_policy_all_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_subtitle_policy_all_v1() RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT 'all'
+$$;
+
+
+--
+-- Name: media_subtitle_policy_none_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_subtitle_policy_none_v1() RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT 'none'
+$$;
+
+
+--
+-- Name: media_subtitle_policy_selected_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_subtitle_policy_selected_v1() RETURNS text
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT 'selected'
+$$;
+
+
+--
+-- Name: media_video_color_value_known_v1(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_video_color_value_known_v1(field_input text, value_input text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+    SELECT CASE lower(btrim(field_input))
+        WHEN 'color_primaries' THEN
+            NULLIF(lower(btrim(value_input)), '') IS NULL
+            OR lower(btrim(value_input)) IN (
+                'bt709',
+                'bt470m',
+                'bt470bg',
+                'smpte170m',
+                'smpte240m',
+                'film',
+                'bt2020',
+                'smpte428',
+                'smpte431',
+                'smpte432',
+                'ebu3213'
+            )
+        WHEN 'color_transfer' THEN
+            NULLIF(lower(btrim(value_input)), '') IS NULL
+            OR lower(btrim(value_input)) IN (
+                'bt709',
+                'bt470m',
+                'bt470bg',
+                'smpte170m',
+                'smpte240m',
+                'linear',
+                'log',
+                'log_sqrt',
+                'iec61966-2-4',
+                'bt1361e',
+                'iec61966-2-1',
+                'bt2020-10',
+                'bt2020-12',
+                'smpte2084',
+                'smpte428',
+                'arib-std-b67'
+            )
+        WHEN 'color_space' THEN
+            NULLIF(lower(btrim(value_input)), '') IS NULL
+            OR lower(btrim(value_input)) IN (
+                'gbr',
+                'bt709',
+                'fcc',
+                'bt470bg',
+                'smpte170m',
+                'smpte240m',
+                'ycgco',
+                'bt2020nc',
+                'bt2020c',
+                'smpte2085',
+                'chroma-derived-nc',
+                'chroma-derived-c',
+                'ictcp'
+            )
+        ELSE FALSE
+    END
+$$;
+
+
+--
+-- Name: media_video_level_known_v1(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_video_level_known_v1(codec_input text, video_level_input text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+    SELECT CASE
+        WHEN NULLIF(lower(btrim(video_level_input)), '') IS NULL THEN TRUE
+        WHEN lower(btrim(codec_input)) IN ('h264', 'avc', 'avc1', 'libx264', 'x264') THEN
+            lower(btrim(video_level_input)) IN (
+                '1', '1.0', '10', '1b',
+                '1.1', '11', '1.2', '12', '1.3', '13',
+                '2', '2.0', '20', '2.1', '21', '2.2', '22',
+                '3', '3.0', '30', '3.1', '31', '3.2', '32',
+                '4', '4.0', '40', '4.1', '41', '4.2', '42',
+                '5', '5.0', '50', '5.1', '51', '5.2', '52',
+                '6', '6.0', '60', '6.1', '61', '6.2', '62'
+            )
+        WHEN lower(btrim(codec_input)) IN ('hevc', 'h265', 'libx265', 'x265') THEN
+            lower(btrim(video_level_input)) IN (
+                '1', '1.0', '10',
+                '2', '2.0', '20', '2.1', '21',
+                '3', '3.0', '30', '3.1', '31',
+                '4', '4.0', '40', '4.1', '41',
+                '5', '5.0', '50', '5.1', '51', '5.2', '52',
+                '6', '6.0', '60', '6.1', '61', '6.2', '62'
+            )
+        WHEN lower(btrim(codec_input)) IN (
+            'av1',
+            'av01',
+            'libaom-av1',
+            'librav1e',
+            'libsvtav1',
+            'libsvt-av1'
+        ) THEN
+            lower(btrim(video_level_input)) IN (
+                '2', '2.0', '20', '2.1', '21', '2.2', '22', '2.3', '23',
+                '3', '3.0', '30', '3.1', '31', '3.2', '32', '3.3', '33',
+                '4', '4.0', '40', '4.1', '41', '4.2', '42', '4.3', '43',
+                '5', '5.0', '50', '5.1', '51', '5.2', '52', '5.3', '53',
+                '6', '6.0', '60', '6.1', '61', '6.2', '62', '6.3', '63',
+                '7', '7.0', '70', '7.1', '71', '7.2', '72', '7.3', '73'
+            )
+        ELSE FALSE
+    END
+$$;
+
+
+--
+-- Name: media_workspace_retention_snapshot_v1(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.media_workspace_retention_snapshot_v1() RETURNS TABLE(media_job_public_id uuid, workspace_retention_seconds bigint, diagnostic_workspace_retention_seconds bigint, max_entries_per_tick integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+    WITH policy AS MATERIALIZED (
+        SELECT
+            retention.workspace_retention_hours::BIGINT * 3600
+                AS workspace_retention_seconds,
+            retention.diagnostic_workspace_retention_hours::BIGINT * 3600
+                AS diagnostic_workspace_retention_seconds,
+            retention.workspace_cleanup_batch_size AS max_entries_per_tick
+        FROM media_job_retention_policy retention
+        WHERE lower(retention.policy_key) = media_retention_policy_default_v1()
+          AND retention.enabled
+        ORDER BY retention.updated_at DESC, retention.media_job_retention_policy_id DESC
+        LIMIT 1
+    ), active_jobs AS MATERIALIZED (
+        SELECT job.media_job_public_id
+        FROM media_job job
+        WHERE job.status IN (
+            media_job_status_queued_v1(),
+            media_job_status_running_v1(),
+            media_job_status_verifying_v1()
+        )
+    )
+    SELECT
+        active_jobs.media_job_public_id,
+        policy.workspace_retention_seconds,
+        policy.diagnostic_workspace_retention_seconds,
+        policy.max_entries_per_tick
+    FROM policy
+    LEFT JOIN active_jobs ON TRUE
+    ORDER BY active_jobs.media_job_public_id NULLS FIRST;
+$$;
+
+
+--
+-- Name: normalize_magnet_uri(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.normalize_magnet_uri(raw_uri text) RETURNS text
+    LANGUAGE sql
+    AS $$
+    SELECT normalize_magnet_uri_v1(raw_uri => raw_uri);
+$$;
+
+
+--
+-- Name: normalize_magnet_uri_v1(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.normalize_magnet_uri_v1(raw_uri text) RETURNS text
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    trimmed TEXT;
+    scheme TEXT;
+    query TEXT;
+    params TEXT[];
+    normalized_parts TEXT[];
+BEGIN
+    IF raw_uri IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    trimmed := btrim(raw_uri);
+    IF trimmed = '' THEN
+        RETURN NULL;
+    END IF;
+
+    scheme := split_part(trimmed, ':', 1);
+    IF lower(scheme) <> 'magnet' THEN
+        RETURN trimmed;
+    END IF;
+
+    IF position('?' IN trimmed) = 0 THEN
+        RETURN 'magnet:?';
+    END IF;
+
+    query := split_part(trimmed, '?', 2);
+    IF query = '' THEN
+        RETURN 'magnet:?';
+    END IF;
+
+    params := string_to_array(query, '&');
+
+    SELECT array_agg(
+        CASE
+            WHEN value_part IS NULL THEN key_part
+            ELSE key_part || '=' || value_part
+        END
+        ORDER BY key_part, value_part
+    )
+    INTO normalized_parts
+    FROM (
+        SELECT lower(split_part(param, '=', 1)) AS key_part,
+               CASE
+                   WHEN position('=' IN param) > 0 THEN substring(param FROM position('=' IN param) + 1)
+                   ELSE NULL
+               END AS value_part
+        FROM unnest(params) AS param
+        WHERE split_part(param, '=', 1) <> ''
+    ) AS parts;
+
+    IF normalized_parts IS NULL THEN
+        RETURN 'magnet:?';
+    END IF;
+
+    RETURN 'magnet:?' || array_to_string(normalized_parts, '&');
+END;
+$$;
+
+
+--
+-- Name: normalize_title(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.normalize_title(title_raw text) RETURNS text
+    LANGUAGE sql
+    AS $$
+    SELECT normalize_title_v1(title_raw => title_raw);
+$$;
+
+
+--
+-- Name: normalize_title_v1(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.normalize_title_v1(title_raw text) RETURNS text
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    value TEXT;
+    token TEXT;
+    tokens TEXT[] := ARRAY[
+        '2160p', '1080p', '720p', '480p', '4320p', '4k', '8k',
+        'web', 'webrip', 'web dl', 'webdl', 'bluray', 'blu ray', 'bdrip', 'brip',
+        'dvdrip', 'hdrip', 'hdtv', 'tvrip', 'cam', 'ts', 'tc', 'scr', 'screener',
+        'x264', 'x265', 'h264', 'h265', 'hevc', 'avc', 'xvid', 'divx', 'vp9', 'av1',
+        'hdr', 'hdr10', 'hdr10plus', 'dv', 'dolbyvision',
+        'aac', 'ac3', 'eac3', 'ddp', 'dts', 'dtshd', 'truehd', 'atmos', 'flac', 'mp3', 'opus',
+        'mkv', 'mp4', 'avi',
+        'repack', 'proper', 'rerip', 'extended', 'uncut', 'remux',
+        'multi', 'dual', 'eng', 'en', 'ita', 'it', 'spa', 'es', 'fre', 'fr', 'ger', 'de', 'jpn',
+        'jp', 'kor', 'kr'
+    ];
+BEGIN
+    IF title_raw IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    value := lower(unaccent(title_raw));
+    value := regexp_replace(value, E'\\b(2\\.0|5\\.1|7\\.1)\\b', ' ', 'g');
+    value := regexp_replace(value, '[^a-z0-9]+', ' ', 'g');
+
+    FOREACH token IN ARRAY tokens LOOP
+        value := regexp_replace(
+            value,
+            E'\\m' || replace(token, ' ', E'\\s+') || E'\\M',
+            ' ',
+            'g'
+        );
+    END LOOP;
+
+    value := regexp_replace(value, E'\\s+', ' ', 'g');
+    value := btrim(value);
+
+    RETURN value;
+END;
+$$;
+
+
+--
+-- Name: outbound_request_log_write(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.outbound_request_log_write(indexer_instance_public_id_input uuid, routing_policy_public_id_input uuid, search_request_public_id_input uuid, request_type_input public.outbound_request_type, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, cf_detected_input boolean, page_number_input integer, page_cursor_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM outbound_request_log_write_v1(indexer_instance_public_id_input => indexer_instance_public_id_input, routing_policy_public_id_input => routing_policy_public_id_input, search_request_public_id_input => search_request_public_id_input, request_type_input => request_type_input, correlation_id_input => correlation_id_input, retry_seq_input => retry_seq_input, started_at_input => started_at_input, finished_at_input => finished_at_input, outcome_input => outcome_input, via_mitigation_input => via_mitigation_input, rate_limit_denied_scope_input => rate_limit_denied_scope_input, error_class_input => error_class_input, http_status_input => http_status_input, latency_ms_input => latency_ms_input, parse_ok_input => parse_ok_input, result_count_input => result_count_input, cf_detected_input => cf_detected_input, page_number_input => page_number_input, page_cursor_key_input => page_cursor_key_input);
+END;
+$$;
+
+
+--
+-- Name: outbound_request_log_write_v1(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.outbound_request_log_write_v1(indexer_instance_public_id_input uuid, routing_policy_public_id_input uuid, search_request_public_id_input uuid, request_type_input public.outbound_request_type, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, cf_detected_input boolean, page_number_input integer, page_cursor_key_input character varying) RETURNS void
+    LANGUAGE plpgsql
+    AS $_$
+DECLARE
+    base_message CONSTANT text := 'Failed to write outbound request log';
+    errcode CONSTANT text := 'P0001';
+    indexer_instance_id_value BIGINT;
+    indexer_instance_deleted_at TIMESTAMPTZ;
+    routing_policy_id_value BIGINT;
+    routing_policy_deleted_at TIMESTAMPTZ;
+    search_request_id_value BIGINT;
+    search_request_run_id_value BIGINT;
+    trimmed_cursor TEXT;
+    normalized_cursor TEXT;
+    cursor_is_hashed BOOLEAN := FALSE;
+    url_match TEXT[];
+    url_scheme TEXT;
+    url_host TEXT;
+    url_path TEXT;
+    url_query TEXT;
+    normalized_query TEXT;
+    normalized_candidate TEXT;
+    hash_hex TEXT;
+BEGIN
+    IF indexer_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_missing';
+    END IF;
+
+    SELECT indexer_instance_id, deleted_at
+    INTO indexer_instance_id_value, indexer_instance_deleted_at
+    FROM indexer_instance
+    WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+    IF indexer_instance_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_not_found';
+    END IF;
+
+    IF indexer_instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_deleted';
+    END IF;
+
+    routing_policy_id_value := NULL;
+    IF routing_policy_public_id_input IS NOT NULL THEN
+        SELECT routing_policy_id, deleted_at
+        INTO routing_policy_id_value, routing_policy_deleted_at
+        FROM routing_policy
+        WHERE routing_policy_public_id = routing_policy_public_id_input;
+
+        IF routing_policy_id_value IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'routing_policy_not_found';
+        END IF;
+
+        IF routing_policy_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'routing_policy_deleted';
+        END IF;
+    END IF;
+
+    search_request_id_value := NULL;
+    IF search_request_public_id_input IS NOT NULL THEN
+        SELECT search_request_id
+        INTO search_request_id_value
+        FROM search_request
+        WHERE search_request_public_id = search_request_public_id_input;
+
+        IF search_request_id_value IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'search_request_not_found';
+        END IF;
+
+        SELECT search_request_indexer_run_id
+        INTO search_request_run_id_value
+        FROM search_request_indexer_run
+        WHERE search_request_id = search_request_id_value
+          AND indexer_instance_id = indexer_instance_id_value;
+
+        IF search_request_run_id_value IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'search_run_not_found';
+        END IF;
+    END IF;
+
+    IF request_type_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'request_type_missing';
+    END IF;
+
+    IF correlation_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'correlation_id_missing';
+    END IF;
+
+    IF retry_seq_input IS NULL OR retry_seq_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'retry_seq_invalid';
+    END IF;
+
+    IF started_at_input IS NULL OR finished_at_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'timestamp_missing';
+    END IF;
+
+    IF outcome_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'outcome_missing';
+    END IF;
+
+    IF via_mitigation_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'via_mitigation_missing';
+    END IF;
+
+    IF parse_ok_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'parse_ok_missing';
+    END IF;
+
+    IF cf_detected_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'cf_detected_missing';
+    END IF;
+
+    IF latency_ms_input IS NOT NULL AND latency_ms_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'latency_invalid';
+    END IF;
+
+    IF result_count_input IS NOT NULL AND result_count_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'result_count_invalid';
+    END IF;
+
+    IF page_number_input IS NOT NULL AND page_number_input < 1 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'page_number_invalid';
+    END IF;
+
+    IF outcome_input = 'success' THEN
+        IF parse_ok_input IS DISTINCT FROM TRUE THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'parse_ok_required';
+        END IF;
+        IF error_class_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'error_class_not_allowed';
+        END IF;
+        IF request_type_input <> 'probe' AND result_count_input IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'result_count_missing';
+        END IF;
+        IF rate_limit_denied_scope_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'rate_limit_scope_invalid';
+        END IF;
+    ELSE
+        IF error_class_input IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'error_class_missing';
+        END IF;
+    END IF;
+
+    IF cf_detected_input = TRUE AND outcome_input = 'failure' THEN
+        IF error_class_input IS DISTINCT FROM 'cf_challenge' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'error_class_invalid';
+        END IF;
+    END IF;
+
+    IF error_class_input = 'rate_limited' THEN
+        IF rate_limit_denied_scope_input IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'rate_limit_scope_missing';
+        END IF;
+        IF result_count_input IS DISTINCT FROM 0 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'result_count_invalid';
+        END IF;
+    ELSE
+        IF rate_limit_denied_scope_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'rate_limit_scope_invalid';
+        END IF;
+        IF outcome_input = 'failure' AND result_count_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'result_count_not_allowed';
+        END IF;
+    END IF;
+
+    normalized_cursor := NULL;
+    cursor_is_hashed := FALSE;
+    IF page_cursor_key_input IS NOT NULL THEN
+        trimmed_cursor := btrim(page_cursor_key_input);
+        IF trimmed_cursor = '' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'page_cursor_invalid';
+        END IF;
+
+        url_match := regexp_match(
+            trimmed_cursor,
+            '^(https?)://([^/?#]+)([^?#]*)([?][^#]*)?(#.*)?$'
+        );
+
+        IF url_match IS NOT NULL THEN
+            url_scheme := lower(url_match[1]);
+            url_host := lower(url_match[2]);
+            url_path := COALESCE(url_match[3], '');
+            url_query := NULL;
+            IF array_length(url_match, 1) >= 4 THEN
+                url_query := url_match[4];
+            END IF;
+
+            IF url_query IS NOT NULL THEN
+                url_query := substring(url_query from 2);
+            END IF;
+
+            IF url_query IS NULL OR url_query = '' THEN
+                normalized_cursor := url_scheme || '://' || url_host || url_path;
+            ELSE
+                SELECT string_agg(param, '&' ORDER BY key, value)
+                INTO normalized_query
+                FROM (
+                    SELECT
+                        CASE
+                            WHEN position('=' in part) > 0 THEN split_part(part, '=', 1)
+                            ELSE part
+                        END AS key,
+                        CASE
+                            WHEN position('=' in part) > 0 THEN substring(part from position('=' in part) + 1)
+                            ELSE ''
+                        END AS value,
+                        part AS param
+                    FROM unnest(string_to_array(url_query, '&')) AS part
+                ) AS parts;
+
+                normalized_cursor := url_scheme || '://' || url_host || url_path || '?' || normalized_query;
+            END IF;
+        ELSE
+            normalized_cursor := trimmed_cursor;
+        END IF;
+
+        normalized_candidate := normalized_cursor;
+        IF char_length(normalized_candidate) > 64 THEN
+            hash_hex := encode(digest(normalized_candidate, 'sha256'), 'hex');
+            normalized_cursor := substring(hash_hex from 1 for 16);
+            cursor_is_hashed := TRUE;
+        END IF;
+    END IF;
+
+    INSERT INTO outbound_request_log (
+        indexer_instance_id,
+        routing_policy_id,
+        search_request_id,
+        request_type,
+        correlation_id,
+        retry_seq,
+        started_at,
+        finished_at,
+        outcome,
+        via_mitigation,
+        rate_limit_denied_scope,
+        error_class,
+        http_status,
+        latency_ms,
+        parse_ok,
+        result_count,
+        cf_detected,
+        page_number,
+        page_cursor_key,
+        page_cursor_is_hashed
+    )
+    VALUES (
+        indexer_instance_id_value,
+        routing_policy_id_value,
+        search_request_id_value,
+        request_type_input,
+        correlation_id_input,
+        retry_seq_input,
+        started_at_input,
+        finished_at_input,
+        outcome_input,
+        via_mitigation_input,
+        rate_limit_denied_scope_input,
+        error_class_input,
+        http_status_input,
+        latency_ms_input,
+        parse_ok_input,
+        result_count_input,
+        cf_detected_input,
+        page_number_input,
+        normalized_cursor,
+        cursor_is_hashed
+    );
+
+    IF search_request_run_id_value IS NOT NULL THEN
+        UPDATE search_request_indexer_run
+        SET last_correlation_id = correlation_id_input
+        WHERE search_request_indexer_run_id = search_request_run_id_value;
+
+        INSERT INTO search_request_indexer_run_correlation (
+            search_request_indexer_run_id,
+            correlation_id,
+            page_number
+        )
+        VALUES (
+            search_request_run_id_value,
+            correlation_id_input,
+            page_number_input
+        )
+        ON CONFLICT (search_request_indexer_run_id, correlation_id) DO NOTHING;
+    END IF;
+END;
+$_$;
+
+
+--
+-- Name: policy_int_match(integer, public.policy_match_operator, integer, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_int_match(candidate_input integer, match_operator_input public.policy_match_operator, match_value_int_input integer, value_set_id_input bigint) RETURNS boolean
+    LANGUAGE sql
+    AS $$
+    SELECT policy_int_match_v1(candidate_input => candidate_input, match_operator_input => match_operator_input, match_value_int_input => match_value_int_input, value_set_id_input => value_set_id_input);
+$$;
+
+
+--
+-- Name: policy_int_match_v1(integer, public.policy_match_operator, integer, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_int_match_v1(candidate_input integer, match_operator_input public.policy_match_operator, match_value_int_input integer, value_set_id_input bigint) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF candidate_input IS NULL THEN
+        RETURN FALSE;
+    END IF;
+
+    IF match_operator_input = 'eq' THEN
+        RETURN candidate_input = match_value_int_input;
+    ELSIF match_operator_input = 'in_set' THEN
+        IF value_set_id_input IS NULL THEN
+            RETURN FALSE;
+        END IF;
+        RETURN EXISTS (
+            SELECT 1
+            FROM policy_rule_value_set_item
+            WHERE value_set_id = value_set_id_input
+              AND value_int = candidate_input
+        );
+    END IF;
+
+    RETURN FALSE;
+END;
+$$;
+
+
+--
+-- Name: policy_release_group_match(bigint, text, public.policy_match_operator, text, bigint, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_release_group_match(canonical_torrent_id_input bigint, release_group_token_input text, match_operator_input public.policy_match_operator, match_value_text_input text, value_set_id_input bigint, is_case_insensitive_input boolean) RETURNS boolean
+    LANGUAGE sql
+    AS $$
+    SELECT policy_release_group_match_v1(canonical_torrent_id_input => canonical_torrent_id_input, release_group_token_input => release_group_token_input, match_operator_input => match_operator_input, match_value_text_input => match_value_text_input, value_set_id_input => value_set_id_input, is_case_insensitive_input => is_case_insensitive_input);
+$$;
+
+
+--
+-- Name: policy_release_group_match_v1(bigint, text, public.policy_match_operator, text, bigint, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_release_group_match_v1(canonical_torrent_id_input bigint, release_group_token_input text, match_operator_input public.policy_match_operator, match_value_text_input text, value_set_id_input bigint, is_case_insensitive_input boolean) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF release_group_token_input IS NOT NULL THEN
+        IF policy_text_match_v1(
+            release_group_token_input,
+            match_operator_input,
+            match_value_text_input,
+            value_set_id_input,
+            is_case_insensitive_input
+        ) THEN
+            RETURN TRUE;
+        END IF;
+    END IF;
+
+    RETURN EXISTS (
+        SELECT 1
+        FROM canonical_torrent_signal
+        WHERE canonical_torrent_id = canonical_torrent_id_input
+          AND signal_key = 'release_group'
+          AND policy_text_match_v1(
+              value_text,
+              match_operator_input,
+              match_value_text_input,
+              value_set_id_input,
+              is_case_insensitive_input
+          )
+    );
+END;
+$$;
+
+
+--
+-- Name: policy_rule_create(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_rule_create(actor_user_public_id uuid, policy_set_public_id_input uuid, rule_type_input public.policy_rule_type, match_field_input public.policy_match_field, match_operator_input public.policy_match_operator, sort_order_input integer, match_value_text_input character varying, match_value_int_input integer, match_value_uuid_input uuid, value_set_items_input public.policy_rule_value_item[], action_input public.policy_action, severity_input public.policy_severity, is_case_insensitive_input boolean, rationale_input character varying, expires_at_input timestamp with time zone) RETURNS uuid
+    LANGUAGE sql
+    AS $$
+    SELECT policy_rule_create_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input, rule_type_input => rule_type_input, match_field_input => match_field_input, match_operator_input => match_operator_input, sort_order_input => sort_order_input, match_value_text_input => match_value_text_input, match_value_int_input => match_value_int_input, match_value_uuid_input => match_value_uuid_input, value_set_items_input => value_set_items_input, action_input => action_input, severity_input => severity_input, is_case_insensitive_input => is_case_insensitive_input, rationale_input => rationale_input, expires_at_input => expires_at_input);
+$$;
+
+
+--
+-- Name: policy_rule_create_v1(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_rule_create_v1(actor_user_public_id uuid, policy_set_public_id_input uuid, rule_type_input public.policy_rule_type, match_field_input public.policy_match_field, match_operator_input public.policy_match_operator, sort_order_input integer, match_value_text_input character varying, match_value_int_input integer, match_value_uuid_input uuid, value_set_items_input public.policy_rule_value_item[], action_input public.policy_action, severity_input public.policy_severity, is_case_insensitive_input boolean, rationale_input character varying, expires_at_input timestamp with time zone) RETURNS uuid
+    LANGUAGE plpgsql
+    AS $_$
+DECLARE
+    base_message CONSTANT text := 'Failed to create policy rule';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_set_id_value BIGINT;
+    policy_scope_value policy_scope;
+    policy_user_id BIGINT;
+    policy_deleted_at TIMESTAMPTZ;
+    new_rule_id BIGINT;
+    new_rule_public_id UUID;
+    resolved_sort_order INTEGER;
+    resolved_is_case_insensitive BOOLEAN;
+    resolved_match_value_text VARCHAR(512);
+    value_set_id_value BIGINT;
+    value_set_type_value value_set_type;
+    item policy_rule_value_item;
+    item_count INTEGER;
+    seen_texts TEXT[];
+    seen_ints INTEGER[];
+    seen_bigints BIGINT[];
+    seen_uuids UUID[];
+    normalized_text TEXT;
+    non_null_count INTEGER;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF policy_set_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_missing';
+    END IF;
+
+    SELECT policy_set_id, scope, user_id, deleted_at
+    INTO policy_set_id_value, policy_scope_value, policy_user_id, policy_deleted_at
+    FROM policy_set
+    WHERE policy_set_public_id = policy_set_public_id_input;
+
+    IF policy_set_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_deleted';
+    END IF;
+
+    IF policy_scope_value IN ('global', 'profile') THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSIF policy_scope_value IN ('user', 'request') THEN
+        IF policy_user_id IS NULL OR policy_user_id <> actor_user_id THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    IF rule_type_input IS NULL OR match_field_input IS NULL OR match_operator_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'rule_definition_missing';
+    END IF;
+
+    IF action_input IS NULL OR severity_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'rule_action_missing';
+    END IF;
+
+    resolved_sort_order := COALESCE(sort_order_input, 1000);
+    resolved_is_case_insensitive := COALESCE(is_case_insensitive_input, TRUE);
+
+    IF rationale_input IS NOT NULL AND char_length(rationale_input) > 1024 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'rationale_too_long';
+    END IF;
+
+    IF rule_type_input = 'block_infohash_v1' AND match_field_input <> 'infohash_v1' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'match_field_invalid';
+    END IF;
+
+    IF rule_type_input = 'block_infohash_v2' AND match_field_input <> 'infohash_v2' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'match_field_invalid';
+    END IF;
+
+    IF rule_type_input = 'block_magnet' AND match_field_input <> 'magnet_hash' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'match_field_invalid';
+    END IF;
+
+    IF rule_type_input = 'block_infohash_v1'
+        OR rule_type_input = 'block_infohash_v2'
+        OR rule_type_input = 'block_magnet' THEN
+        IF action_input <> 'drop_canonical' OR severity_input <> 'hard' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'action_invalid';
+        END IF;
+    END IF;
+
+    IF rule_type_input = 'require_trust_tier_min' THEN
+        IF match_field_input <> 'trust_tier_rank'
+            OR match_operator_input <> 'eq'
+            OR match_value_int_input IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_value_invalid';
+        END IF;
+    END IF;
+
+    IF match_operator_input = 'in_set' THEN
+        IF match_value_text_input IS NOT NULL
+            OR match_value_int_input IS NOT NULL
+            OR match_value_uuid_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_value_invalid';
+        END IF;
+
+        IF value_set_items_input IS NULL
+            OR array_length(value_set_items_input, 1) IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'value_set_missing';
+        END IF;
+    ELSE
+        IF value_set_items_input IS NOT NULL
+            AND array_length(value_set_items_input, 1) IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'value_set_not_allowed';
+        END IF;
+    END IF;
+
+    resolved_match_value_text := NULL;
+
+    IF match_field_input IN ('infohash_v1', 'infohash_v2', 'magnet_hash') THEN
+        IF match_operator_input NOT IN ('eq', 'in_set') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_operator_invalid';
+        END IF;
+        IF match_value_int_input IS NOT NULL OR match_value_uuid_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_value_invalid';
+        END IF;
+
+        IF match_operator_input = 'eq' THEN
+            IF match_value_text_input IS NULL THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+            resolved_match_value_text := lower(trim(match_value_text_input));
+            IF resolved_match_value_text = '' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+            IF match_field_input = 'infohash_v1' AND resolved_match_value_text !~ '^[0-9a-f]{40}$' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+            IF match_field_input IN ('infohash_v2', 'magnet_hash')
+                AND resolved_match_value_text !~ '^[0-9a-f]{64}$' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+        END IF;
+        value_set_type_value := 'text';
+    ELSIF match_field_input = 'indexer_instance_public_id' THEN
+        IF match_operator_input NOT IN ('eq', 'in_set') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_operator_invalid';
+        END IF;
+        IF match_value_text_input IS NOT NULL OR match_value_int_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_value_invalid';
+        END IF;
+        IF match_operator_input = 'eq' THEN
+            IF match_value_uuid_input IS NULL THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+        END IF;
+        value_set_type_value := 'uuid';
+    ELSIF match_field_input IN ('media_domain_key', 'trust_tier_key') THEN
+        IF match_operator_input NOT IN ('eq', 'in_set') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_operator_invalid';
+        END IF;
+        IF match_value_int_input IS NOT NULL OR match_value_uuid_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_value_invalid';
+        END IF;
+        IF match_operator_input = 'eq' THEN
+            IF match_value_text_input IS NULL THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+            resolved_match_value_text := lower(trim(match_value_text_input));
+            IF resolved_match_value_text = '' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+        END IF;
+        value_set_type_value := 'text';
+    ELSIF match_field_input = 'trust_tier_rank' THEN
+        IF match_operator_input NOT IN ('eq', 'in_set') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_operator_invalid';
+        END IF;
+        IF match_value_text_input IS NOT NULL OR match_value_uuid_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_value_invalid';
+        END IF;
+        IF match_operator_input = 'eq' AND match_value_int_input IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_value_invalid';
+        END IF;
+        value_set_type_value := 'int';
+    ELSE
+        IF match_operator_input NOT IN ('eq', 'contains', 'regex', 'starts_with', 'ends_with', 'in_set') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_operator_invalid';
+        END IF;
+        IF match_value_int_input IS NOT NULL OR match_value_uuid_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'match_value_invalid';
+        END IF;
+        IF match_operator_input = 'eq'
+            OR match_operator_input = 'contains'
+            OR match_operator_input = 'regex'
+            OR match_operator_input = 'starts_with'
+            OR match_operator_input = 'ends_with' THEN
+            IF match_value_text_input IS NULL THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+            resolved_match_value_text := trim(match_value_text_input);
+            IF resolved_match_value_text = '' THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+            IF char_length(resolved_match_value_text) > 512 THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'match_value_invalid';
+            END IF;
+        END IF;
+        value_set_type_value := 'text';
+    END IF;
+
+    new_rule_public_id := gen_random_uuid();
+
+    INSERT INTO policy_rule (
+        policy_set_id,
+        policy_rule_public_id,
+        rule_type,
+        match_field,
+        match_operator,
+        sort_order,
+        match_value_text,
+        match_value_int,
+        match_value_uuid,
+        action,
+        severity,
+        is_case_insensitive,
+        is_disabled,
+        rationale,
+        expires_at,
+        immutable_flag,
+        created_by_user_id,
+        updated_by_user_id
+    )
+    VALUES (
+        policy_set_id_value,
+        new_rule_public_id,
+        rule_type_input,
+        match_field_input,
+        match_operator_input,
+        resolved_sort_order,
+        resolved_match_value_text,
+        match_value_int_input,
+        match_value_uuid_input,
+        action_input,
+        severity_input,
+        resolved_is_case_insensitive,
+        FALSE,
+        rationale_input,
+        expires_at_input,
+        TRUE,
+        actor_user_id,
+        actor_user_id
+    )
+    RETURNING policy_rule_id INTO new_rule_id;
+
+    IF match_operator_input = 'in_set' THEN
+        INSERT INTO policy_rule_value_set (
+            policy_rule_id,
+            value_set_type
+        )
+        VALUES (
+            new_rule_id,
+            value_set_type_value
+        )
+        RETURNING value_set_id INTO value_set_id_value;
+
+        UPDATE policy_rule
+        SET value_set_id = value_set_id_value
+        WHERE policy_rule_id = new_rule_id;
+
+        item_count := 0;
+        seen_texts := ARRAY[]::TEXT[];
+        seen_ints := ARRAY[]::INTEGER[];
+        seen_bigints := ARRAY[]::BIGINT[];
+        seen_uuids := ARRAY[]::UUID[];
+
+        FOREACH item IN ARRAY value_set_items_input LOOP
+            item_count := item_count + 1;
+            IF item_count > 100 THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'value_set_too_large';
+            END IF;
+
+            non_null_count := (item.value_text IS NOT NULL)::INT
+                + (item.value_int IS NOT NULL)::INT
+                + (item.value_bigint IS NOT NULL)::INT
+                + (item.value_uuid IS NOT NULL)::INT;
+
+            IF non_null_count <> 1 THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'value_set_item_invalid';
+            END IF;
+
+            IF value_set_type_value = 'text' THEN
+                IF item.value_text IS NULL THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'value_set_item_invalid';
+                END IF;
+                normalized_text := lower(trim(item.value_text));
+                IF normalized_text = '' OR char_length(normalized_text) > 256 THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'value_set_item_invalid';
+                END IF;
+                IF normalized_text = ANY(seen_texts) THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'value_set_duplicate';
+                END IF;
+                seen_texts := array_append(seen_texts, normalized_text);
+
+                INSERT INTO policy_rule_value_set_item (
+                    value_set_id,
+                    value_text
+                )
+                VALUES (
+                    value_set_id_value,
+                    normalized_text
+                );
+            ELSIF value_set_type_value = 'int' THEN
+                IF item.value_int IS NULL THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'value_set_item_invalid';
+                END IF;
+                IF item.value_int = ANY(seen_ints) THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'value_set_duplicate';
+                END IF;
+                seen_ints := array_append(seen_ints, item.value_int);
+
+                INSERT INTO policy_rule_value_set_item (
+                    value_set_id,
+                    value_int
+                )
+                VALUES (
+                    value_set_id_value,
+                    item.value_int
+                );
+            ELSIF value_set_type_value = 'bigint' THEN
+                IF item.value_bigint IS NULL THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'value_set_item_invalid';
+                END IF;
+                IF item.value_bigint = ANY(seen_bigints) THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'value_set_duplicate';
+                END IF;
+                seen_bigints := array_append(seen_bigints, item.value_bigint);
+
+                INSERT INTO policy_rule_value_set_item (
+                    value_set_id,
+                    value_bigint
+                )
+                VALUES (
+                    value_set_id_value,
+                    item.value_bigint
+                );
+            ELSIF value_set_type_value = 'uuid' THEN
+                IF item.value_uuid IS NULL THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'value_set_item_invalid';
+                END IF;
+                IF item.value_uuid = ANY(seen_uuids) THEN
+                    RAISE EXCEPTION USING
+                        ERRCODE = errcode,
+                        MESSAGE = base_message,
+                        DETAIL = 'value_set_duplicate';
+                END IF;
+                seen_uuids := array_append(seen_uuids, item.value_uuid);
+
+                INSERT INTO policy_rule_value_set_item (
+                    value_set_id,
+                    value_uuid
+                )
+                VALUES (
+                    value_set_id_value,
+                    item.value_uuid
+                );
+            END IF;
+        END LOOP;
+    END IF;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'policy_rule',
+        new_rule_id,
+        new_rule_public_id,
+        'create',
+        actor_user_id,
+        'policy_rule_create'
+    );
+
+    RETURN new_rule_public_id;
+END;
+$_$;
+
+
+--
+-- Name: policy_rule_disable(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_rule_disable(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM policy_rule_disable_v1(actor_user_public_id => actor_user_public_id, policy_rule_public_id_input => policy_rule_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: policy_rule_disable_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_rule_disable_v1(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to disable policy rule';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    rule_id BIGINT;
+    policy_set_id_value BIGINT;
+    policy_scope_value policy_scope;
+    policy_user_id BIGINT;
+    policy_deleted_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF policy_rule_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_rule_missing';
+    END IF;
+
+    SELECT policy_rule_id, policy_set_id
+    INTO rule_id, policy_set_id_value
+    FROM policy_rule
+    WHERE policy_rule_public_id = policy_rule_public_id_input;
+
+    IF rule_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_rule_not_found';
+    END IF;
+
+    SELECT scope, user_id, deleted_at
+    INTO policy_scope_value, policy_user_id, policy_deleted_at
+    FROM policy_set
+    WHERE policy_set_id = policy_set_id_value;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_deleted';
+    END IF;
+
+    IF policy_scope_value IN ('global', 'profile') THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSIF policy_scope_value IN ('user', 'request') THEN
+        IF policy_user_id IS NULL OR policy_user_id <> actor_user_id THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    UPDATE policy_rule
+    SET is_disabled = TRUE,
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    WHERE policy_rule_id = rule_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'policy_rule',
+        rule_id,
+        policy_rule_public_id_input,
+        'update',
+        actor_user_id,
+        'policy_rule_disable'
+    );
+END;
+$$;
+
+
+--
+-- Name: policy_rule_enable(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_rule_enable(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM policy_rule_enable_v1(actor_user_public_id => actor_user_public_id, policy_rule_public_id_input => policy_rule_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: policy_rule_enable_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_rule_enable_v1(actor_user_public_id uuid, policy_rule_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to enable policy rule';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    rule_id BIGINT;
+    policy_set_id_value BIGINT;
+    policy_scope_value policy_scope;
+    policy_user_id BIGINT;
+    policy_deleted_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF policy_rule_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_rule_missing';
+    END IF;
+
+    SELECT policy_rule_id, policy_set_id
+    INTO rule_id, policy_set_id_value
+    FROM policy_rule
+    WHERE policy_rule_public_id = policy_rule_public_id_input;
+
+    IF rule_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_rule_not_found';
+    END IF;
+
+    SELECT scope, user_id, deleted_at
+    INTO policy_scope_value, policy_user_id, policy_deleted_at
+    FROM policy_set
+    WHERE policy_set_id = policy_set_id_value;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_deleted';
+    END IF;
+
+    IF policy_scope_value IN ('global', 'profile') THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSIF policy_scope_value IN ('user', 'request') THEN
+        IF policy_user_id IS NULL OR policy_user_id <> actor_user_id THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    UPDATE policy_rule
+    SET is_disabled = FALSE,
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    WHERE policy_rule_id = rule_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'policy_rule',
+        rule_id,
+        policy_rule_public_id_input,
+        'update',
+        actor_user_id,
+        'policy_rule_enable'
+    );
+END;
+$$;
+
+
+--
+-- Name: policy_rule_reorder(uuid, uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_rule_reorder(actor_user_public_id uuid, policy_set_public_id_input uuid, ordered_rule_public_ids uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM policy_rule_reorder_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input, ordered_rule_public_ids => ordered_rule_public_ids);
+END;
+$$;
+
+
+--
+-- Name: policy_rule_reorder_v1(uuid, uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_rule_reorder_v1(actor_user_public_id uuid, policy_set_public_id_input uuid, ordered_rule_public_ids uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to reorder policy rules';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_set_id_value BIGINT;
+    policy_scope_value policy_scope;
+    policy_user_id BIGINT;
+    policy_deleted_at TIMESTAMPTZ;
+    rule_count INTEGER;
+    resolved_count INTEGER;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF policy_set_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_missing';
+    END IF;
+
+    SELECT policy_set_id, scope, user_id, deleted_at
+    INTO policy_set_id_value, policy_scope_value, policy_user_id, policy_deleted_at
+    FROM policy_set
+    WHERE policy_set_public_id = policy_set_public_id_input;
+
+    IF policy_set_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_deleted';
+    END IF;
+
+    IF policy_scope_value IN ('global', 'profile') THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSIF policy_scope_value IN ('user', 'request') THEN
+        IF policy_user_id IS NULL OR policy_user_id <> actor_user_id THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    IF ordered_rule_public_ids IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_rule_ids_missing';
+    END IF;
+
+    SELECT count(DISTINCT value)
+    INTO rule_count
+    FROM unnest(ordered_rule_public_ids) AS value;
+
+    IF rule_count = 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_rule_ids_empty';
+    END IF;
+
+    SELECT count(*)
+    INTO resolved_count
+    FROM policy_rule
+    WHERE policy_rule_public_id = ANY(ordered_rule_public_ids)
+      AND policy_set_id = policy_set_id_value;
+
+    IF resolved_count <> rule_count THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_rule_not_found';
+    END IF;
+
+    WITH ordered AS (
+        SELECT value AS policy_rule_public_id,
+               (row_number() OVER (ORDER BY ordinality) * 10) AS new_sort_order
+        FROM unnest(ordered_rule_public_ids) WITH ORDINALITY AS value
+    )
+    UPDATE policy_rule
+    SET sort_order = ordered.new_sort_order,
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    FROM ordered
+    WHERE policy_rule.policy_rule_public_id = ordered.policy_rule_public_id
+      AND policy_rule.policy_set_id = policy_set_id_value;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    SELECT
+        'policy_rule',
+        policy_rule_id,
+        policy_rule_public_id,
+        'update',
+        actor_user_id,
+        'policy_rule_reorder'
+    FROM policy_rule
+    WHERE policy_rule_public_id = ANY(ordered_rule_public_ids)
+      AND policy_set_id = policy_set_id_value;
+END;
+$$;
+
+
+--
+-- Name: policy_set_create(uuid, character varying, public.policy_scope, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_create(actor_user_public_id uuid, display_name_input character varying, scope_input public.policy_scope, enabled_input boolean) RETURNS uuid
+    LANGUAGE sql
+    AS $$
+    SELECT policy_set_create_v1(actor_user_public_id => actor_user_public_id, display_name_input => display_name_input, scope_input => scope_input, enabled_input => enabled_input);
+$$;
+
+
+--
+-- Name: policy_set_create_v1(uuid, character varying, public.policy_scope, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_create_v1(actor_user_public_id uuid, display_name_input character varying, scope_input public.policy_scope, enabled_input boolean) RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to create policy set';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    new_policy_set_id BIGINT;
+    new_policy_set_public_id UUID;
+    trimmed_display_name VARCHAR(256);
+    resolved_enabled BOOLEAN;
+    resolved_user_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    IF scope_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'scope_missing';
+    END IF;
+
+    resolved_enabled := COALESCE(enabled_input, TRUE);
+
+    IF scope_input IN ('global', 'profile') THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+        resolved_user_id := NULL;
+    ELSE
+        resolved_user_id := actor_user_id;
+    END IF;
+
+    IF scope_input = 'profile' AND resolved_enabled THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'profile_policy_set_requires_link';
+    END IF;
+
+    IF scope_input = 'global' AND resolved_enabled THEN
+        IF EXISTS (
+            SELECT 1
+            FROM policy_set
+            WHERE scope = 'global'
+              AND is_enabled = TRUE
+              AND deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'global_policy_set_exists';
+        END IF;
+    END IF;
+
+    IF scope_input = 'user' AND resolved_enabled THEN
+        IF EXISTS (
+            SELECT 1
+            FROM policy_set
+            WHERE scope = 'user'
+              AND user_id = resolved_user_id
+              AND is_enabled = TRUE
+              AND deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'user_policy_set_exists';
+        END IF;
+    END IF;
+
+    new_policy_set_public_id := gen_random_uuid();
+
+    INSERT INTO policy_set (
+        policy_set_public_id,
+        user_id,
+        display_name,
+        scope,
+        is_enabled,
+        is_auto_created,
+        created_for_search_request_id,
+        created_by_user_id,
+        updated_by_user_id
+    )
+    VALUES (
+        new_policy_set_public_id,
+        resolved_user_id,
+        trimmed_display_name,
+        scope_input,
+        resolved_enabled,
+        FALSE,
+        NULL,
+        actor_user_id,
+        actor_user_id
+    )
+    RETURNING policy_set_id INTO new_policy_set_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'policy_set',
+        new_policy_set_id,
+        new_policy_set_public_id,
+        'create',
+        actor_user_id,
+        'policy_set_create'
+    );
+
+    RETURN new_policy_set_public_id;
+END;
+$$;
+
+
+--
+-- Name: policy_set_disable(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_disable(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM policy_set_disable_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: policy_set_disable_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_disable_v1(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to disable policy set';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_set_id_value BIGINT;
+    policy_scope_value policy_scope;
+    policy_user_id BIGINT;
+    policy_deleted_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF policy_set_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_missing';
+    END IF;
+
+    SELECT policy_set_id, scope, user_id, deleted_at
+    INTO policy_set_id_value, policy_scope_value, policy_user_id, policy_deleted_at
+    FROM policy_set
+    WHERE policy_set_public_id = policy_set_public_id_input;
+
+    IF policy_set_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_deleted';
+    END IF;
+
+    IF policy_scope_value IN ('global', 'profile') THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSIF policy_scope_value IN ('user', 'request') THEN
+        IF policy_user_id IS NULL OR policy_user_id <> actor_user_id THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    UPDATE policy_set
+    SET is_enabled = FALSE,
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    WHERE policy_set_id = policy_set_id_value;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'policy_set',
+        policy_set_id_value,
+        policy_set_public_id_input,
+        'disable',
+        actor_user_id,
+        'policy_set_disable'
+    );
+END;
+$$;
+
+
+--
+-- Name: policy_set_enable(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_enable(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM policy_set_enable_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: policy_set_enable_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_enable_v1(actor_user_public_id uuid, policy_set_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to enable policy set';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_set_id_value BIGINT;
+    policy_scope_value policy_scope;
+    policy_user_id BIGINT;
+    policy_deleted_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF policy_set_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_missing';
+    END IF;
+
+    SELECT policy_set_id, scope, user_id, deleted_at
+    INTO policy_set_id_value, policy_scope_value, policy_user_id, policy_deleted_at
+    FROM policy_set
+    WHERE policy_set_public_id = policy_set_public_id_input;
+
+    IF policy_set_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_deleted';
+    END IF;
+
+    IF policy_scope_value IN ('global', 'profile') THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSIF policy_scope_value IN ('user', 'request') THEN
+        IF policy_user_id IS NULL OR policy_user_id <> actor_user_id THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    IF policy_scope_value = 'profile' THEN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM search_profile_policy_set
+            WHERE policy_set_id = policy_set_id_value
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'profile_policy_set_requires_link';
+        END IF;
+    END IF;
+
+    IF policy_scope_value = 'global' THEN
+        IF EXISTS (
+            SELECT 1
+            FROM policy_set
+            WHERE scope = 'global'
+              AND is_enabled = TRUE
+              AND deleted_at IS NULL
+              AND policy_set_id <> policy_set_id_value
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'global_policy_set_exists';
+        END IF;
+    END IF;
+
+    IF policy_scope_value = 'user' THEN
+        IF EXISTS (
+            SELECT 1
+            FROM policy_set
+            WHERE scope = 'user'
+              AND user_id = policy_user_id
+              AND is_enabled = TRUE
+              AND deleted_at IS NULL
+              AND policy_set_id <> policy_set_id_value
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'user_policy_set_exists';
+        END IF;
+    END IF;
+
+    UPDATE policy_set
+    SET is_enabled = TRUE,
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    WHERE policy_set_id = policy_set_id_value;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'policy_set',
+        policy_set_id_value,
+        policy_set_public_id_input,
+        'enable',
+        actor_user_id,
+        'policy_set_enable'
+    );
+END;
+$$;
+
+
+--
+-- Name: policy_set_reorder(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_reorder(actor_user_public_id uuid, ordered_policy_set_public_ids uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM policy_set_reorder_v1(actor_user_public_id => actor_user_public_id, ordered_policy_set_public_ids => ordered_policy_set_public_ids);
+END;
+$$;
+
+
+--
+-- Name: policy_set_reorder_v1(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_reorder_v1(actor_user_public_id uuid, ordered_policy_set_public_ids uuid[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to reorder policy sets';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    target_scope policy_scope;
+    target_user_id BIGINT;
+    id_count INTEGER;
+    resolved_count INTEGER;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF ordered_policy_set_public_ids IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_ids_missing';
+    END IF;
+
+    SELECT count(DISTINCT value)
+    INTO id_count
+    FROM unnest(ordered_policy_set_public_ids) AS value;
+
+    IF id_count = 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_ids_empty';
+    END IF;
+
+    SELECT scope, user_id
+    INTO target_scope, target_user_id
+    FROM policy_set
+    WHERE policy_set_public_id = ordered_policy_set_public_ids[1];
+
+    IF target_scope IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_not_found';
+    END IF;
+
+    SELECT count(*)
+    INTO resolved_count
+    FROM policy_set
+    WHERE policy_set_public_id = ANY(ordered_policy_set_public_ids)
+      AND deleted_at IS NULL
+      AND scope = target_scope
+      AND (
+          (target_scope IN ('user', 'request') AND user_id = target_user_id)
+          OR target_scope IN ('global', 'profile')
+      );
+
+    IF resolved_count <> id_count THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_not_found';
+    END IF;
+
+    IF target_scope IN ('global', 'profile') THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSIF target_scope IN ('user', 'request') THEN
+        IF target_user_id IS NULL OR target_user_id <> actor_user_id THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    WITH ordered AS (
+        SELECT value AS policy_set_public_id,
+               (row_number() OVER (ORDER BY ordinality) * 10) AS new_sort_order
+        FROM unnest(ordered_policy_set_public_ids) WITH ORDINALITY AS value
+    )
+    UPDATE policy_set
+    SET sort_order = ordered.new_sort_order,
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    FROM ordered
+    WHERE policy_set.policy_set_public_id = ordered.policy_set_public_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    SELECT
+        'policy_set',
+        policy_set_id,
+        policy_set_public_id,
+        'update',
+        actor_user_id,
+        'policy_set_reorder'
+    FROM policy_set
+    WHERE policy_set_public_id = ANY(ordered_policy_set_public_ids);
+END;
+$$;
+
+
+--
+-- Name: policy_set_update(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_update(actor_user_public_id uuid, policy_set_public_id_input uuid, display_name_input character varying) RETURNS uuid
+    LANGUAGE sql
+    AS $$
+    SELECT policy_set_update_v1(actor_user_public_id => actor_user_public_id, policy_set_public_id_input => policy_set_public_id_input, display_name_input => display_name_input);
+$$;
+
+
+--
+-- Name: policy_set_update_v1(uuid, uuid, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_set_update_v1(actor_user_public_id uuid, policy_set_public_id_input uuid, display_name_input character varying) RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to update policy set';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_set_id_value BIGINT;
+    policy_scope_value policy_scope;
+    policy_user_id BIGINT;
+    policy_deleted_at TIMESTAMPTZ;
+    trimmed_display_name VARCHAR(256);
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF policy_set_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_missing';
+    END IF;
+
+    SELECT policy_set_id, scope, user_id, deleted_at
+    INTO policy_set_id_value, policy_scope_value, policy_user_id, policy_deleted_at
+    FROM policy_set
+    WHERE policy_set_public_id = policy_set_public_id_input;
+
+    IF policy_set_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_deleted';
+    END IF;
+
+    IF policy_scope_value IN ('global', 'profile') THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSIF policy_scope_value IN ('user', 'request') THEN
+        IF policy_user_id IS NULL OR policy_user_id <> actor_user_id THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    UPDATE policy_set
+    SET display_name = trimmed_display_name,
+        updated_by_user_id = actor_user_id,
+        updated_at = now()
+    WHERE policy_set_id = policy_set_id_value;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'policy_set',
+        policy_set_id_value,
+        policy_set_public_id_input,
+        'update',
+        actor_user_id,
+        'policy_set_update'
+    );
+
+    RETURN policy_set_public_id_input;
+END;
+$$;
+
+
+--
+-- Name: policy_text_match(text, public.policy_match_operator, text, bigint, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_text_match(candidate_input text, match_operator_input public.policy_match_operator, match_value_text_input text, value_set_id_input bigint, is_case_insensitive_input boolean) RETURNS boolean
+    LANGUAGE sql
+    AS $$
+    SELECT policy_text_match_v1(candidate_input => candidate_input, match_operator_input => match_operator_input, match_value_text_input => match_value_text_input, value_set_id_input => value_set_id_input, is_case_insensitive_input => is_case_insensitive_input);
+$$;
+
+
+--
+-- Name: policy_text_match_v1(text, public.policy_match_operator, text, bigint, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_text_match_v1(candidate_input text, match_operator_input public.policy_match_operator, match_value_text_input text, value_set_id_input bigint, is_case_insensitive_input boolean) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    candidate_norm TEXT;
+BEGIN
+    IF candidate_input IS NULL THEN
+        RETURN FALSE;
+    END IF;
+
+    IF match_operator_input = 'regex' THEN
+        IF match_value_text_input IS NULL THEN
+            RETURN FALSE;
+        END IF;
+        IF is_case_insensitive_input THEN
+            RETURN candidate_input ~* match_value_text_input;
+        END IF;
+        RETURN candidate_input ~ match_value_text_input;
+    END IF;
+
+    candidate_norm := lower(candidate_input);
+
+    IF match_operator_input IN ('eq', 'contains', 'starts_with', 'ends_with') THEN
+        IF match_value_text_input IS NULL THEN
+            RETURN FALSE;
+        END IF;
+    END IF;
+
+    IF match_operator_input = 'eq' THEN
+        RETURN candidate_norm = lower(match_value_text_input);
+    ELSIF match_operator_input = 'contains' THEN
+        RETURN candidate_norm LIKE '%' || lower(match_value_text_input) || '%';
+    ELSIF match_operator_input = 'starts_with' THEN
+        RETURN candidate_norm LIKE lower(match_value_text_input) || '%';
+    ELSIF match_operator_input = 'ends_with' THEN
+        RETURN candidate_norm LIKE '%' || lower(match_value_text_input);
+    ELSIF match_operator_input = 'in_set' THEN
+        IF value_set_id_input IS NULL THEN
+            RETURN FALSE;
+        END IF;
+        RETURN EXISTS (
+            SELECT 1
+            FROM policy_rule_value_set_item
+            WHERE value_set_id = value_set_id_input
+              AND value_text = candidate_norm
+        );
+    END IF;
+
+    RETURN FALSE;
+END;
+$$;
+
+
+--
+-- Name: policy_uuid_match(uuid, public.policy_match_operator, uuid, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_uuid_match(candidate_input uuid, match_operator_input public.policy_match_operator, match_value_uuid_input uuid, value_set_id_input bigint) RETURNS boolean
+    LANGUAGE sql
+    AS $$
+    SELECT policy_uuid_match_v1(candidate_input => candidate_input, match_operator_input => match_operator_input, match_value_uuid_input => match_value_uuid_input, value_set_id_input => value_set_id_input);
+$$;
+
+
+--
+-- Name: policy_uuid_match_v1(uuid, public.policy_match_operator, uuid, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.policy_uuid_match_v1(candidate_input uuid, match_operator_input public.policy_match_operator, match_value_uuid_input uuid, value_set_id_input bigint) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF candidate_input IS NULL THEN
+        RETURN FALSE;
+    END IF;
+
+    IF match_operator_input = 'eq' THEN
+        RETURN candidate_input = match_value_uuid_input;
+    ELSIF match_operator_input = 'in_set' THEN
+        IF value_set_id_input IS NULL THEN
+            RETURN FALSE;
+        END IF;
+        RETURN EXISTS (
+            SELECT 1
+            FROM policy_rule_value_set_item
+            WHERE value_set_id = value_set_id_input
+              AND value_uuid = candidate_input
+        );
+    END IF;
+
+    RETURN FALSE;
+END;
+$$;
+
+
+--
+-- Name: random_jitter_seconds(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.random_jitter_seconds(max_seconds integer) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    errcode CONSTANT text := 'P0001';
+    bytes BYTEA;
+    value BIGINT;
+BEGIN
+    IF max_seconds < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = 'Failed to compute random jitter',
+            DETAIL = 'max_seconds_negative';
+    END IF;
+
+    bytes := gen_random_bytes(4);
+    value := (get_byte(bytes, 0)::BIGINT << 24)
+        + (get_byte(bytes, 1)::BIGINT << 16)
+        + (get_byte(bytes, 2)::BIGINT << 8)
+        + get_byte(bytes, 3)::BIGINT;
+
+    RETURN (value % (max_seconds + 1))::INTEGER;
+END;
+$$;
+
+
+--
+-- Name: rate_limit_policy_create(uuid, character varying, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_policy_create(actor_user_public_id uuid, display_name_input character varying, rpm_input integer, burst_input integer, concurrent_input integer) RETURNS uuid
+    LANGUAGE sql
+    AS $$
+    SELECT rate_limit_policy_create_v1(actor_user_public_id => actor_user_public_id, display_name_input => display_name_input, rpm_input => rpm_input, burst_input => burst_input, concurrent_input => concurrent_input);
+$$;
+
+
+--
+-- Name: rate_limit_policy_create_v1(uuid, character varying, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_policy_create_v1(actor_user_public_id uuid, display_name_input character varying, rpm_input integer, burst_input integer, concurrent_input integer) RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to create rate limit policy';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    trimmed_display_name VARCHAR(256);
+    new_policy_id BIGINT;
+    new_policy_public_id UUID;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    IF rpm_input IS NULL OR burst_input IS NULL OR concurrent_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'limit_missing';
+    END IF;
+
+    IF rpm_input < 1 OR rpm_input > 6000 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'rpm_out_of_range';
+    END IF;
+
+    IF burst_input < 0 OR burst_input > 6000 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'burst_out_of_range';
+    END IF;
+
+    IF concurrent_input < 1 OR concurrent_input > 64 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'concurrent_out_of_range';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM rate_limit_policy
+        WHERE display_name = trimmed_display_name
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_already_exists';
+    END IF;
+
+    new_policy_public_id := gen_random_uuid();
+
+    INSERT INTO rate_limit_policy (
+        rate_limit_policy_public_id,
+        display_name,
+        requests_per_minute,
+        burst,
+        concurrent_requests,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        new_policy_public_id,
+        trimmed_display_name,
+        rpm_input,
+        burst_input,
+        concurrent_input,
+        now(),
+        now()
+    )
+    RETURNING rate_limit_policy_id INTO new_policy_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'rate_limit_policy',
+        new_policy_id,
+        new_policy_public_id,
+        'create',
+        actor_user_id,
+        'rate_limit_policy_create'
+    );
+
+    RETURN new_policy_public_id;
+END;
+$$;
+
+
+--
+-- Name: rate_limit_policy_soft_delete(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_policy_soft_delete(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM rate_limit_policy_soft_delete_v1(actor_user_public_id => actor_user_public_id, rate_limit_policy_public_id_input => rate_limit_policy_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: rate_limit_policy_soft_delete_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_policy_soft_delete_v1(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to delete rate limit policy';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_id BIGINT;
+    is_system_policy BOOLEAN;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF rate_limit_policy_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_missing';
+    END IF;
+
+    SELECT rate_limit_policy_id, is_system
+    INTO policy_id, is_system_policy
+    FROM rate_limit_policy
+    WHERE rate_limit_policy_public_id = rate_limit_policy_public_id_input;
+
+    IF policy_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_not_found';
+    END IF;
+
+    IF is_system_policy THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_is_system';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM indexer_instance_rate_limit
+        WHERE rate_limit_policy_id = policy_id
+    ) OR EXISTS (
+        SELECT 1
+        FROM routing_policy_rate_limit
+        WHERE rate_limit_policy_id = policy_id
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_in_use';
+    END IF;
+
+    UPDATE rate_limit_policy
+    SET deleted_at = now(),
+        updated_at = now()
+    WHERE rate_limit_policy_id = policy_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'rate_limit_policy',
+        policy_id,
+        rate_limit_policy_public_id_input,
+        'soft_delete',
+        actor_user_id,
+        'rate_limit_policy_soft_delete'
+    );
+END;
+$$;
+
+
+--
+-- Name: rate_limit_policy_update(uuid, uuid, character varying, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_policy_update(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid, display_name_input character varying, rpm_input integer, burst_input integer, concurrent_input integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM rate_limit_policy_update_v1(actor_user_public_id => actor_user_public_id, rate_limit_policy_public_id_input => rate_limit_policy_public_id_input, display_name_input => display_name_input, rpm_input => rpm_input, burst_input => burst_input, concurrent_input => concurrent_input);
+END;
+$$;
+
+
+--
+-- Name: rate_limit_policy_update_v1(uuid, uuid, character varying, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_policy_update_v1(actor_user_public_id uuid, rate_limit_policy_public_id_input uuid, display_name_input character varying, rpm_input integer, burst_input integer, concurrent_input integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to update rate limit policy';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_id BIGINT;
+    is_system_policy BOOLEAN;
+    trimmed_display_name VARCHAR(256);
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF rate_limit_policy_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_missing';
+    END IF;
+
+    SELECT rate_limit_policy_id, is_system
+    INTO policy_id, is_system_policy
+    FROM rate_limit_policy
+    WHERE rate_limit_policy_public_id = rate_limit_policy_public_id_input;
+
+    IF policy_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_not_found';
+    END IF;
+
+    IF is_system_policy THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_is_system';
+    END IF;
+
+    IF display_name_input IS NOT NULL THEN
+        trimmed_display_name := trim(display_name_input);
+
+        IF trimmed_display_name = '' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'display_name_empty';
+        END IF;
+
+        IF char_length(trimmed_display_name) > 256 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'display_name_too_long';
+        END IF;
+
+        IF EXISTS (
+            SELECT 1
+            FROM rate_limit_policy
+            WHERE display_name = trimmed_display_name
+              AND rate_limit_policy_id <> policy_id
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'display_name_already_exists';
+        END IF;
+    END IF;
+
+    IF rpm_input IS NOT NULL AND (rpm_input < 1 OR rpm_input > 6000) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'rpm_out_of_range';
+    END IF;
+
+    IF burst_input IS NOT NULL AND (burst_input < 0 OR burst_input > 6000) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'burst_out_of_range';
+    END IF;
+
+    IF concurrent_input IS NOT NULL AND (concurrent_input < 1 OR concurrent_input > 64) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'concurrent_out_of_range';
+    END IF;
+
+    UPDATE rate_limit_policy
+    SET display_name = COALESCE(trimmed_display_name, display_name),
+        requests_per_minute = COALESCE(rpm_input, requests_per_minute),
+        burst = COALESCE(burst_input, burst),
+        concurrent_requests = COALESCE(concurrent_input, concurrent_requests),
+        updated_at = now()
+    WHERE rate_limit_policy_id = policy_id;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'rate_limit_policy',
+        policy_id,
+        rate_limit_policy_public_id_input,
+        'update',
+        actor_user_id,
+        'rate_limit_policy_update'
+    );
+END;
+$$;
+
+
+--
+-- Name: rate_limit_try_consume(public.rate_limit_scope, bigint, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_try_consume(scope_type_input public.rate_limit_scope, scope_id_input bigint, capacity_input integer, tokens_input integer DEFAULT 1) RETURNS TABLE(allowed boolean, tokens_used integer)
+    LANGUAGE sql
+    AS $$
+    SELECT * FROM rate_limit_try_consume_v1(scope_type_input => scope_type_input, scope_id_input => scope_id_input, capacity_input => capacity_input, tokens_input => tokens_input);
+$$;
+
+
+--
+-- Name: rate_limit_try_consume_v1(public.rate_limit_scope, bigint, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rate_limit_try_consume_v1(scope_type_input public.rate_limit_scope, scope_id_input bigint, capacity_input integer, tokens_input integer DEFAULT 1) RETURNS TABLE(allowed boolean, tokens_used integer)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to consume rate limit tokens';
+    errcode CONSTANT text := 'P0001';
+    window_start_value TIMESTAMPTZ;
+    existing_tokens INTEGER;
+BEGIN
+    IF scope_type_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'scope_missing';
+    END IF;
+
+    IF scope_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'scope_id_missing';
+    END IF;
+
+    IF capacity_input IS NULL OR capacity_input < 1 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'capacity_invalid';
+    END IF;
+
+    IF tokens_input IS NULL THEN
+        tokens_input := 1;
+    END IF;
+
+    IF tokens_input < 1 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'tokens_invalid';
+    END IF;
+
+    window_start_value := date_trunc('minute', now() AT TIME ZONE 'UTC');
+
+    INSERT INTO rate_limit_state (
+        scope_type,
+        scope_id,
+        window_start,
+        tokens_used
+    )
+    VALUES (
+        scope_type_input,
+        scope_id_input,
+        window_start_value,
+        0
+    )
+    ON CONFLICT (scope_type, scope_id, window_start)
+    DO NOTHING;
+
+    SELECT rate_limit_state.tokens_used
+    INTO existing_tokens
+    FROM rate_limit_state
+    WHERE scope_type = scope_type_input
+      AND scope_id = scope_id_input
+      AND window_start = window_start_value
+    FOR UPDATE;
+
+    IF existing_tokens + tokens_input <= capacity_input THEN
+        existing_tokens := existing_tokens + tokens_input;
+
+        UPDATE rate_limit_state
+        SET tokens_used = existing_tokens,
+            updated_at = now()
+        WHERE scope_type = scope_type_input
+          AND scope_id = scope_id_input
+          AND window_start = window_start_value;
+
+        allowed := TRUE;
+        tokens_used := existing_tokens;
+    ELSE
+        allowed := FALSE;
+        tokens_used := existing_tokens;
+    END IF;
+
+    RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: revaer_bump_revision(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.revaer_bump_revision() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    revision_setting TEXT;
+    effective_revision BIGINT;
+BEGIN
+    BEGIN
+        revision_setting := current_setting('revaer.current_revision', true);
+    EXCEPTION
+        WHEN others THEN
+            revision_setting := NULL;
+    END;
+
+    IF revision_setting IS NULL OR revision_setting = '' THEN
+        UPDATE settings_revision
+        SET revision = revision + 1,
+            updated_at = now()
+        WHERE id = 1
+        RETURNING revision INTO effective_revision;
+
+        PERFORM set_config('revaer.current_revision', effective_revision::TEXT, true);
+    ELSE
+        effective_revision := revision_setting::BIGINT;
+    END IF;
+
+    PERFORM pg_notify(
+        'revaer_settings_changed',
+        format('%s:%s:%s', TG_TABLE_NAME, effective_revision, TG_OP)
+    );
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$;
+
+
+--
+-- Name: revaer_touch_updated_at(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.revaer_touch_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: routing_policy_bind_secret(uuid, uuid, public.routing_param_key, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_bind_secret(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, secret_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM routing_policy_bind_secret_v1(actor_user_public_id => actor_user_public_id, routing_policy_public_id_input => routing_policy_public_id_input, param_key_input => param_key_input, secret_public_id_input => secret_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: routing_policy_bind_secret_v1(uuid, uuid, public.routing_param_key, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_bind_secret_v1(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, secret_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to bind routing policy secret';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_id BIGINT;
+    policy_mode routing_policy_mode;
+    policy_deleted_at TIMESTAMPTZ;
+    param_id BIGINT;
+    secret_id_value BIGINT;
+    binding_name_value secret_binding_name;
+    is_param_allowed BOOLEAN;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF routing_policy_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_missing';
+    END IF;
+
+    IF param_key_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'param_key_missing';
+    END IF;
+
+    IF secret_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_missing';
+    END IF;
+
+    SELECT routing_policy_id, mode, deleted_at
+    INTO policy_id, policy_mode, policy_deleted_at
+    FROM routing_policy
+    WHERE routing_policy_public_id = routing_policy_public_id_input;
+
+    IF policy_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_deleted';
+    END IF;
+
+    is_param_allowed := CASE policy_mode
+        WHEN 'http_proxy' THEN param_key_input = 'http_proxy_auth'
+        WHEN 'socks_proxy' THEN param_key_input = 'socks_proxy_auth'
+        ELSE FALSE
+    END;
+
+    IF is_param_allowed IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'param_not_allowed';
+    END IF;
+
+    SELECT secret_id
+    INTO secret_id_value
+    FROM secret
+    WHERE secret_public_id = secret_public_id_input
+      AND is_revoked = FALSE;
+
+    IF secret_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'secret_not_found';
+    END IF;
+
+    INSERT INTO routing_policy_parameter (
+        routing_policy_id,
+        param_key
+    )
+    VALUES (
+        policy_id,
+        param_key_input
+    )
+    ON CONFLICT (routing_policy_id, param_key)
+    DO NOTHING;
+
+    SELECT routing_policy_parameter_id
+    INTO param_id
+    FROM routing_policy_parameter
+    WHERE routing_policy_id = policy_id
+      AND param_key = param_key_input;
+
+    binding_name_value := CASE param_key_input
+        WHEN 'http_proxy_auth' THEN 'proxy_password'
+        WHEN 'socks_proxy_auth' THEN 'socks_password'
+        ELSE 'proxy_password'
+    END;
+
+    DELETE FROM secret_binding
+    WHERE bound_table = 'routing_policy_parameter'
+      AND bound_id = param_id
+      AND binding_name = binding_name_value;
+
+    INSERT INTO secret_binding (
+        secret_id,
+        bound_table,
+        bound_id,
+        binding_name
+    )
+    VALUES (
+        secret_id_value,
+        'routing_policy_parameter',
+        param_id,
+        binding_name_value
+    );
+
+    INSERT INTO secret_audit_log (
+        secret_id,
+        action,
+        actor_user_id,
+        detail
+    )
+    VALUES (
+        secret_id_value,
+        'bind',
+        actor_user_id,
+        'routing_policy_bind'
+    );
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'routing_policy',
+        policy_id,
+        routing_policy_public_id_input,
+        'update',
+        actor_user_id,
+        'routing_policy_bind_secret'
+    );
+END;
+$$;
+
+
+--
+-- Name: routing_policy_create(uuid, character varying, public.routing_policy_mode); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_create(actor_user_public_id uuid, display_name_input character varying, mode_input public.routing_policy_mode) RETURNS uuid
+    LANGUAGE sql
+    AS $$
+    SELECT routing_policy_create_v1(actor_user_public_id => actor_user_public_id, display_name_input => display_name_input, mode_input => mode_input);
+$$;
+
+
+--
+-- Name: routing_policy_create_v1(uuid, character varying, public.routing_policy_mode); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_create_v1(actor_user_public_id uuid, display_name_input character varying, mode_input public.routing_policy_mode) RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to create routing policy';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    trimmed_display_name VARCHAR(256);
+    new_policy_id BIGINT;
+    new_policy_public_id UUID;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF display_name_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_missing';
+    END IF;
+
+    trimmed_display_name := trim(display_name_input);
+
+    IF trimmed_display_name = '' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_empty';
+    END IF;
+
+    IF char_length(trimmed_display_name) > 256 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_too_long';
+    END IF;
+
+    IF mode_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'mode_missing';
+    END IF;
+
+    IF mode_input IN ('vpn_route', 'tor') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'unsupported_routing_mode';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM routing_policy
+        WHERE display_name = trimmed_display_name
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'display_name_already_exists';
+    END IF;
+
+    new_policy_public_id := gen_random_uuid();
+
+    INSERT INTO routing_policy (
+        routing_policy_public_id,
+        display_name,
+        mode,
+        created_by_user_id,
+        updated_by_user_id
+    )
+    VALUES (
+        new_policy_public_id,
+        trimmed_display_name,
+        mode_input,
+        actor_user_id,
+        actor_user_id
+    )
+    RETURNING routing_policy_id INTO new_policy_id;
+
+    INSERT INTO routing_policy_parameter (
+        routing_policy_id,
+        param_key,
+        value_bool
+    )
+    VALUES (
+        new_policy_id,
+        'verify_tls',
+        TRUE
+    );
+
+    IF mode_input = 'http_proxy' THEN
+        INSERT INTO routing_policy_parameter (
+            routing_policy_id,
+            param_key
+        )
+        VALUES (
+            new_policy_id,
+            'http_proxy_auth'
+        );
+    ELSIF mode_input = 'socks_proxy' THEN
+        INSERT INTO routing_policy_parameter (
+            routing_policy_id,
+            param_key
+        )
+        VALUES (
+            new_policy_id,
+            'socks_proxy_auth'
+        );
+    END IF;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'routing_policy',
+        new_policy_id,
+        new_policy_public_id,
+        'create',
+        actor_user_id,
+        'routing_policy_create'
+    );
+
+    RETURN new_policy_public_id;
+END;
+$$;
+
+
+--
+-- Name: routing_policy_get(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_get(actor_user_public_id uuid, routing_policy_public_id_input uuid) RETURNS TABLE(routing_policy_public_id uuid, display_name character varying, mode public.routing_policy_mode, rate_limit_policy_public_id uuid, rate_limit_display_name character varying, rate_limit_requests_per_minute integer, rate_limit_burst integer, rate_limit_concurrent_requests integer, param_key public.routing_param_key, value_plain character varying, value_int integer, value_bool boolean, secret_public_id uuid, secret_binding_name public.secret_binding_name)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT *
+    FROM routing_policy_get_v1(
+        actor_user_public_id,
+        routing_policy_public_id_input
+    );
+END;
+$$;
+
+
+--
+-- Name: routing_policy_get_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_get_v1(actor_user_public_id uuid, routing_policy_public_id_input uuid) RETURNS TABLE(routing_policy_public_id uuid, display_name character varying, mode public.routing_policy_mode, rate_limit_policy_public_id uuid, rate_limit_display_name character varying, rate_limit_requests_per_minute integer, rate_limit_burst integer, rate_limit_concurrent_requests integer, param_key public.routing_param_key, value_plain character varying, value_int integer, value_bool boolean, secret_public_id uuid, secret_binding_name public.secret_binding_name)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to fetch routing policy';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_id BIGINT;
+    policy_deleted_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF routing_policy_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_missing';
+    END IF;
+
+    SELECT routing_policy_id, deleted_at
+    INTO policy_id, policy_deleted_at
+    FROM routing_policy
+    WHERE routing_policy.routing_policy_public_id = routing_policy_public_id_input;
+
+    IF policy_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_deleted';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        policy.routing_policy_public_id,
+        policy.display_name,
+        policy.mode,
+        rate_limit.rate_limit_policy_public_id,
+        rate_limit.display_name,
+        rate_limit.requests_per_minute,
+        rate_limit.burst,
+        rate_limit.concurrent_requests,
+        param.param_key,
+        param.value_plain,
+        param.value_int,
+        param.value_bool,
+        secret.secret_public_id,
+        binding.binding_name
+    FROM routing_policy policy
+    LEFT JOIN routing_policy_rate_limit policy_rate_limit
+        ON policy_rate_limit.routing_policy_id = policy.routing_policy_id
+    LEFT JOIN rate_limit_policy rate_limit
+        ON rate_limit.rate_limit_policy_id = policy_rate_limit.rate_limit_policy_id
+       AND rate_limit.deleted_at IS NULL
+    LEFT JOIN routing_policy_parameter param
+        ON param.routing_policy_id = policy.routing_policy_id
+    LEFT JOIN secret_binding binding
+        ON binding.bound_table = 'routing_policy_parameter'
+       AND binding.bound_id = param.routing_policy_parameter_id
+    LEFT JOIN secret secret
+        ON secret.secret_id = binding.secret_id
+       AND secret.is_revoked = FALSE
+    WHERE policy.routing_policy_id = policy_id
+    ORDER BY param.param_key NULLS LAST;
+END;
+$$;
+
+
+--
+-- Name: routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_set_param(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, value_plain_input character varying, value_int_input integer, value_bool_input boolean) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM routing_policy_set_param_v1(actor_user_public_id => actor_user_public_id, routing_policy_public_id_input => routing_policy_public_id_input, param_key_input => param_key_input, value_plain_input => value_plain_input, value_int_input => value_int_input, value_bool_input => value_bool_input);
+END;
+$$;
+
+
+--
+-- Name: routing_policy_set_param_v1(uuid, uuid, public.routing_param_key, character varying, integer, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_set_param_v1(actor_user_public_id uuid, routing_policy_public_id_input uuid, param_key_input public.routing_param_key, value_plain_input character varying, value_int_input integer, value_bool_input boolean) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to update routing policy parameter';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_id BIGINT;
+    policy_mode routing_policy_mode;
+    policy_deleted_at TIMESTAMPTZ;
+    is_param_allowed BOOLEAN;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF routing_policy_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_missing';
+    END IF;
+
+    IF param_key_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'param_key_missing';
+    END IF;
+
+    SELECT routing_policy_id, mode, deleted_at
+    INTO policy_id, policy_mode, policy_deleted_at
+    FROM routing_policy
+    WHERE routing_policy_public_id = routing_policy_public_id_input;
+
+    IF policy_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_deleted';
+    END IF;
+
+    is_param_allowed := CASE policy_mode
+        WHEN 'direct' THEN param_key_input IN ('verify_tls')
+        WHEN 'http_proxy' THEN param_key_input IN (
+            'verify_tls',
+            'proxy_host',
+            'proxy_port',
+            'proxy_username',
+            'proxy_use_tls',
+            'http_proxy_auth'
+        )
+        WHEN 'socks_proxy' THEN param_key_input IN (
+            'verify_tls',
+            'socks_host',
+            'socks_port',
+            'socks_username',
+            'socks_proxy_auth'
+        )
+        WHEN 'flaresolverr' THEN param_key_input IN (
+            'verify_tls',
+            'fs_url',
+            'fs_timeout_ms',
+            'fs_session_ttl_seconds',
+            'fs_user_agent'
+        )
+        ELSE FALSE
+    END;
+
+    IF is_param_allowed IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'param_not_allowed';
+    END IF;
+
+    IF param_key_input IN ('http_proxy_auth', 'socks_proxy_auth') THEN
+        IF value_plain_input IS NOT NULL
+            OR value_int_input IS NOT NULL
+            OR value_bool_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_requires_secret';
+        END IF;
+
+        INSERT INTO routing_policy_parameter (
+            routing_policy_id,
+            param_key
+        )
+        VALUES (
+            policy_id,
+            param_key_input
+        )
+        ON CONFLICT (routing_policy_id, param_key)
+        DO NOTHING;
+    ELSIF param_key_input IN ('verify_tls', 'proxy_use_tls') THEN
+        IF value_bool_input IS NULL
+            OR value_plain_input IS NOT NULL
+            OR value_int_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_value_invalid';
+        END IF;
+
+        INSERT INTO routing_policy_parameter (
+            routing_policy_id,
+            param_key,
+            value_bool
+        )
+        VALUES (
+            policy_id,
+            param_key_input,
+            value_bool_input
+        )
+        ON CONFLICT (routing_policy_id, param_key)
+        DO UPDATE SET value_bool = EXCLUDED.value_bool;
+    ELSIF param_key_input IN ('proxy_port', 'socks_port') THEN
+        IF value_int_input IS NULL
+            OR value_plain_input IS NOT NULL
+            OR value_bool_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_value_invalid';
+        END IF;
+
+        IF value_int_input < 1 OR value_int_input > 65535 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_value_out_of_range';
+        END IF;
+
+        INSERT INTO routing_policy_parameter (
+            routing_policy_id,
+            param_key,
+            value_int
+        )
+        VALUES (
+            policy_id,
+            param_key_input,
+            value_int_input
+        )
+        ON CONFLICT (routing_policy_id, param_key)
+        DO UPDATE SET value_int = EXCLUDED.value_int;
+    ELSIF param_key_input IN ('fs_timeout_ms') THEN
+        IF value_int_input IS NULL
+            OR value_plain_input IS NOT NULL
+            OR value_bool_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_value_invalid';
+        END IF;
+
+        IF value_int_input < 1000 OR value_int_input > 300000 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_value_out_of_range';
+        END IF;
+
+        INSERT INTO routing_policy_parameter (
+            routing_policy_id,
+            param_key,
+            value_int
+        )
+        VALUES (
+            policy_id,
+            param_key_input,
+            value_int_input
+        )
+        ON CONFLICT (routing_policy_id, param_key)
+        DO UPDATE SET value_int = EXCLUDED.value_int;
+    ELSIF param_key_input IN ('fs_session_ttl_seconds') THEN
+        IF value_int_input IS NULL
+            OR value_plain_input IS NOT NULL
+            OR value_bool_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_value_invalid';
+        END IF;
+
+        IF value_int_input < 60 OR value_int_input > 86400 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_value_out_of_range';
+        END IF;
+
+        INSERT INTO routing_policy_parameter (
+            routing_policy_id,
+            param_key,
+            value_int
+        )
+        VALUES (
+            policy_id,
+            param_key_input,
+            value_int_input
+        )
+        ON CONFLICT (routing_policy_id, param_key)
+        DO UPDATE SET value_int = EXCLUDED.value_int;
+    ELSE
+        IF value_plain_input IS NULL
+            OR value_int_input IS NOT NULL
+            OR value_bool_input IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_value_invalid';
+        END IF;
+
+        IF char_length(value_plain_input) > 2048 THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'param_value_too_long';
+        END IF;
+
+        INSERT INTO routing_policy_parameter (
+            routing_policy_id,
+            param_key,
+            value_plain
+        )
+        VALUES (
+            policy_id,
+            param_key_input,
+            value_plain_input
+        )
+        ON CONFLICT (routing_policy_id, param_key)
+        DO UPDATE SET value_plain = EXCLUDED.value_plain;
+    END IF;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'routing_policy',
+        policy_id,
+        routing_policy_public_id_input,
+        'update',
+        actor_user_id,
+        'routing_policy_param_set'
+    );
+END;
+$$;
+
+
+--
+-- Name: routing_policy_set_rate_limit_policy(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_set_rate_limit_policy(actor_user_public_id uuid, routing_policy_public_id_input uuid, rate_limit_policy_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM routing_policy_set_rate_limit_policy_v1(actor_user_public_id => actor_user_public_id, routing_policy_public_id_input => routing_policy_public_id_input, rate_limit_policy_public_id_input => rate_limit_policy_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: routing_policy_set_rate_limit_policy_v1(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.routing_policy_set_rate_limit_policy_v1(actor_user_public_id uuid, routing_policy_public_id_input uuid, rate_limit_policy_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to set routing policy rate limit';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    policy_id BIGINT;
+    policy_deleted_at TIMESTAMPTZ;
+    rate_policy_id BIGINT;
+    rate_policy_deleted_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF actor_role NOT IN ('owner', 'admin') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_unauthorized';
+    END IF;
+
+    IF routing_policy_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_missing';
+    END IF;
+
+    SELECT routing_policy_id, deleted_at
+    INTO policy_id, policy_deleted_at
+    FROM routing_policy
+    WHERE routing_policy_public_id = routing_policy_public_id_input;
+
+    IF policy_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'routing_policy_deleted';
+    END IF;
+
+    IF rate_limit_policy_public_id_input IS NULL THEN
+        DELETE FROM routing_policy_rate_limit
+        WHERE routing_policy_id = policy_id;
+    ELSE
+        SELECT rate_limit_policy_id, deleted_at
+        INTO rate_policy_id, rate_policy_deleted_at
+        FROM rate_limit_policy
+        WHERE rate_limit_policy_public_id = rate_limit_policy_public_id_input;
+
+        IF rate_policy_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'policy_not_found';
+        END IF;
+
+        IF rate_policy_deleted_at IS NOT NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'policy_deleted';
+        END IF;
+
+        INSERT INTO routing_policy_rate_limit (
+            routing_policy_id,
+            rate_limit_policy_id
+        )
+        VALUES (
+            policy_id,
+            rate_policy_id
+        )
+        ON CONFLICT (routing_policy_id)
+        DO UPDATE SET rate_limit_policy_id = EXCLUDED.rate_limit_policy_id;
+    END IF;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'routing_policy',
+        policy_id,
+        routing_policy_public_id_input,
+        'update',
+        actor_user_id,
+        'routing_policy_rate_limit_set'
+    );
+END;
+$$;
+
+
+--
+-- Name: rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rss_poll_apply(rss_subscription_id_input bigint, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, cf_detected_input boolean, cf_retryable_input boolean, item_guid_input character varying[], infohash_v1_input character[], infohash_v2_input character[], magnet_hash_input character[]) RETURNS TABLE(items_parsed integer, items_eligible integer, items_inserted integer, subscription_succeeded boolean)
+    LANGUAGE sql
+    AS $$
+    SELECT * FROM rss_poll_apply_v1(rss_subscription_id_input => rss_subscription_id_input, correlation_id_input => correlation_id_input, retry_seq_input => retry_seq_input, started_at_input => started_at_input, finished_at_input => finished_at_input, outcome_input => outcome_input, error_class_input => error_class_input, http_status_input => http_status_input, latency_ms_input => latency_ms_input, parse_ok_input => parse_ok_input, result_count_input => result_count_input, via_mitigation_input => via_mitigation_input, rate_limit_denied_scope_input => rate_limit_denied_scope_input, cf_detected_input => cf_detected_input, cf_retryable_input => cf_retryable_input, item_guid_input => item_guid_input, infohash_v1_input => infohash_v1_input, infohash_v2_input => infohash_v2_input, magnet_hash_input => magnet_hash_input);
+$$;
+
+
+--
+-- Name: rss_poll_apply_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rss_poll_apply_v1(rss_subscription_id_input bigint, correlation_id_input uuid, retry_seq_input smallint, started_at_input timestamp with time zone, finished_at_input timestamp with time zone, outcome_input public.outbound_request_outcome, error_class_input public.error_class, http_status_input integer, latency_ms_input integer, parse_ok_input boolean, result_count_input integer, via_mitigation_input public.outbound_via_mitigation, rate_limit_denied_scope_input public.rate_limit_scope, cf_detected_input boolean, cf_retryable_input boolean, item_guid_input character varying[], infohash_v1_input character[], infohash_v2_input character[], magnet_hash_input character[]) RETURNS TABLE(items_parsed integer, items_eligible integer, items_inserted integer, subscription_succeeded boolean)
+    LANGUAGE plpgsql
+    AS $_$
+DECLARE
+    base_message CONSTANT text := 'Failed to apply RSS poll';
+    errcode CONSTANT text := 'P0001';
+    subscription_id_value BIGINT;
+    instance_id_value BIGINT;
+    instance_public_id_value UUID;
+    routing_policy_public_id_value UUID;
+    interval_seconds_value INTEGER;
+    current_backoff_seconds INTEGER;
+    now_value TIMESTAMPTZ := now();
+    effective_outcome outbound_request_outcome;
+    effective_error_class error_class;
+    parsed_success BOOLEAN;
+    retryable_failure BOOLEAN;
+    new_backoff_seconds INTEGER;
+    jitter_pct INTEGER;
+    jitter_seconds INTEGER;
+    max_len INTEGER;
+    detail_summary TEXT;
+    cf_state_value cf_state;
+    cf_consecutive_failures INTEGER;
+    cf_backoff_seconds INTEGER;
+BEGIN
+    IF rss_subscription_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'rss_subscription_missing';
+    END IF;
+
+    IF correlation_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'correlation_id_missing';
+    END IF;
+
+    IF retry_seq_input IS NULL OR retry_seq_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'retry_seq_invalid';
+    END IF;
+
+    IF started_at_input IS NULL OR finished_at_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'timestamp_missing';
+    END IF;
+
+    IF outcome_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'outcome_missing';
+    END IF;
+
+    IF parse_ok_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'parse_ok_missing';
+    END IF;
+
+    IF via_mitigation_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'via_mitigation_missing';
+    END IF;
+
+    IF cf_detected_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'cf_detected_missing';
+    END IF;
+
+    IF cf_retryable_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'cf_retryable_missing';
+    END IF;
+
+    IF latency_ms_input IS NOT NULL AND latency_ms_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'latency_invalid';
+    END IF;
+
+    IF result_count_input IS NOT NULL AND result_count_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'result_count_invalid';
+    END IF;
+
+    SELECT
+        sub.indexer_rss_subscription_id,
+        sub.indexer_instance_id,
+        sub.interval_seconds,
+        sub.backoff_seconds,
+        inst.indexer_instance_public_id,
+        rp.routing_policy_public_id
+    INTO
+        subscription_id_value,
+        instance_id_value,
+        interval_seconds_value,
+        current_backoff_seconds,
+        instance_public_id_value,
+        routing_policy_public_id_value
+    FROM indexer_rss_subscription sub
+    JOIN indexer_instance inst
+        ON inst.indexer_instance_id = sub.indexer_instance_id
+    LEFT JOIN routing_policy rp
+        ON rp.routing_policy_id = inst.routing_policy_id
+    WHERE sub.indexer_rss_subscription_id = rss_subscription_id_input
+    FOR UPDATE OF sub;
+
+    IF subscription_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'rss_subscription_not_found';
+    END IF;
+
+    effective_outcome := outcome_input;
+    effective_error_class := error_class_input;
+
+    IF outcome_input = 'success' THEN
+        IF parse_ok_input IS DISTINCT FROM TRUE OR result_count_input IS NULL THEN
+            effective_outcome := 'failure';
+            effective_error_class := 'parse_error';
+        ELSE
+            IF error_class_input IS NOT NULL THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = errcode,
+                    MESSAGE = base_message,
+                    DETAIL = 'error_class_not_allowed';
+            END IF;
+        END IF;
+    ELSE
+        IF error_class_input IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'error_class_missing';
+        END IF;
+    END IF;
+
+    parsed_success := (
+        effective_outcome = 'success'
+        AND parse_ok_input IS TRUE
+        AND result_count_input IS NOT NULL
+    );
+
+    items_parsed := COALESCE(result_count_input, 0);
+    items_eligible := 0;
+    items_inserted := 0;
+
+    IF parsed_success THEN
+        max_len := GREATEST(
+            COALESCE(array_length(item_guid_input, 1), 0),
+            COALESCE(array_length(infohash_v1_input, 1), 0),
+            COALESCE(array_length(infohash_v2_input, 1), 0),
+            COALESCE(array_length(magnet_hash_input, 1), 0)
+        );
+
+        IF max_len > 0 THEN
+            WITH item_rows AS (
+                SELECT
+                    i,
+                    NULLIF(btrim(item_guid_input[i]), '') AS item_guid_raw,
+                    lower(btrim(infohash_v1_input[i])) AS infohash_v1_raw,
+                    lower(btrim(infohash_v2_input[i])) AS infohash_v2_raw,
+                    lower(btrim(magnet_hash_input[i])) AS magnet_hash_raw
+                FROM generate_series(1, max_len) AS i
+            ),
+            normalized AS (
+                SELECT
+                    item_guid_raw AS item_guid,
+                    CASE
+                        WHEN infohash_v1_raw ~ '^[0-9a-f]{40}$' THEN infohash_v1_raw
+                        ELSE NULL
+                    END AS infohash_v1,
+                    CASE
+                        WHEN infohash_v2_raw ~ '^[0-9a-f]{64}$' THEN infohash_v2_raw
+                        ELSE NULL
+                    END AS infohash_v2,
+                    CASE
+                        WHEN magnet_hash_raw ~ '^[0-9a-f]{64}$' THEN magnet_hash_raw
+                        ELSE NULL
+                    END AS magnet_hash
+                FROM item_rows
+            ),
+            eligible AS (
+                SELECT *
+                FROM normalized
+                WHERE item_guid IS NOT NULL
+                   OR infohash_v1 IS NOT NULL
+                   OR infohash_v2 IS NOT NULL
+                   OR magnet_hash IS NOT NULL
+            ),
+            inserted AS (
+                INSERT INTO indexer_rss_item_seen (
+                    indexer_instance_id,
+                    item_guid,
+                    infohash_v1,
+                    infohash_v2,
+                    magnet_hash,
+                    first_seen_at
+                )
+                SELECT
+                    instance_id_value,
+                    item_guid,
+                    infohash_v1,
+                    infohash_v2,
+                    magnet_hash,
+                    finished_at_input
+                FROM eligible
+                ON CONFLICT DO NOTHING
+                RETURNING 1
+            )
+            SELECT
+                (SELECT count(*) FROM eligible),
+                (SELECT count(*) FROM inserted)
+            INTO items_eligible, items_inserted;
+        END IF;
+    END IF;
+
+    IF effective_outcome = 'failure' AND effective_error_class = 'rate_limited' THEN
+        items_parsed := 0;
+        items_eligible := 0;
+        items_inserted := 0;
+    END IF;
+
+    IF effective_error_class = 'rate_limited' THEN
+        IF rate_limit_denied_scope_input IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'rate_limit_scope_missing';
+        END IF;
+
+        PERFORM outbound_request_log_write_v1(
+            instance_public_id_value,
+            routing_policy_public_id_value,
+            NULL,
+            'rss',
+            correlation_id_input,
+            retry_seq_input,
+            now_value,
+            now_value,
+            'failure',
+            via_mitigation_input,
+            rate_limit_denied_scope_input,
+            'rate_limited',
+            http_status_input,
+            0,
+            FALSE,
+            0,
+            cf_detected_input,
+            NULL,
+            NULL
+        );
+    ELSE
+        PERFORM outbound_request_log_write_v1(
+            instance_public_id_value,
+            routing_policy_public_id_value,
+            NULL,
+            'rss',
+            correlation_id_input,
+            retry_seq_input,
+            started_at_input,
+            finished_at_input,
+            effective_outcome,
+            via_mitigation_input,
+            rate_limit_denied_scope_input,
+            CASE WHEN effective_outcome = 'success' THEN NULL ELSE effective_error_class END,
+            http_status_input,
+            latency_ms_input,
+            parse_ok_input,
+            result_count_input,
+            cf_detected_input,
+            NULL,
+            NULL
+        );
+    END IF;
+
+    IF parsed_success THEN
+        UPDATE indexer_rss_subscription
+        SET last_polled_at = now_value,
+            next_poll_at = now_value
+                + make_interval(secs => interval_seconds_value + random_jitter_seconds(60)),
+            last_error_class = NULL,
+            backoff_seconds = NULL
+        WHERE indexer_rss_subscription_id = subscription_id_value;
+
+        subscription_succeeded := TRUE;
+    ELSE
+        subscription_succeeded := FALSE;
+
+        retryable_failure := (
+            effective_error_class IN (
+                'dns',
+                'tls',
+                'timeout',
+                'connection_refused',
+                'http_5xx',
+                'http_429',
+                'rate_limited'
+            )
+            OR (effective_error_class = 'cf_challenge' AND cf_retryable_input)
+        );
+
+        IF retryable_failure THEN
+            IF current_backoff_seconds IS NULL THEN
+                new_backoff_seconds := 60;
+            ELSE
+                new_backoff_seconds := LEAST(current_backoff_seconds * 2, 1800);
+            END IF;
+
+            jitter_pct := random_jitter_seconds(25);
+            jitter_seconds := (new_backoff_seconds * jitter_pct) / 100;
+
+            UPDATE indexer_rss_subscription
+            SET backoff_seconds = new_backoff_seconds,
+                last_error_class = effective_error_class,
+                next_poll_at = now_value
+                    + make_interval(secs => new_backoff_seconds + jitter_seconds)
+            WHERE indexer_rss_subscription_id = subscription_id_value;
+        ELSE
+            UPDATE indexer_rss_subscription
+            SET is_enabled = FALSE,
+                last_error_class = effective_error_class,
+                backoff_seconds = NULL,
+                next_poll_at = NULL
+            WHERE indexer_rss_subscription_id = subscription_id_value;
+
+            detail_summary := 'RSS subscription auto-disabled: '
+                || effective_error_class::TEXT;
+
+            INSERT INTO config_audit_log (
+                entity_type,
+                entity_pk_bigint,
+                entity_public_id,
+                action,
+                changed_by_user_id,
+                change_summary
+            )
+            VALUES (
+                'indexer_instance',
+                instance_id_value,
+                instance_public_id_value,
+                'update',
+                0,
+                detail_summary
+            );
+        END IF;
+    END IF;
+
+    IF effective_error_class = 'cf_challenge' THEN
+        SELECT state, consecutive_failures, backoff_seconds
+        INTO cf_state_value, cf_consecutive_failures, cf_backoff_seconds
+        FROM indexer_cf_state
+        WHERE indexer_instance_id = instance_id_value
+        FOR UPDATE OF indexer_cf_state;
+
+        IF cf_state_value IS NULL THEN
+            INSERT INTO indexer_cf_state (
+                indexer_instance_id,
+                state,
+                last_changed_at,
+                cf_session_id,
+                cf_session_expires_at,
+                cooldown_until,
+                backoff_seconds,
+                consecutive_failures,
+                last_error_class
+            )
+            VALUES (
+                instance_id_value,
+                'challenged',
+                now_value,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                1,
+                'cf_challenge'
+            );
+        ELSE
+            cf_consecutive_failures := cf_consecutive_failures + 1;
+
+            IF cf_state_value = 'banned' THEN
+                UPDATE indexer_cf_state
+                SET consecutive_failures = cf_consecutive_failures,
+                    last_error_class = 'cf_challenge',
+                    last_changed_at = now_value
+                WHERE indexer_instance_id = instance_id_value;
+            ELSE
+                IF cf_consecutive_failures >= 5 THEN
+                    IF cf_backoff_seconds IS NULL THEN
+                        cf_backoff_seconds := 60;
+                    ELSE
+                        cf_backoff_seconds := LEAST(cf_backoff_seconds * 2, 21600);
+                    END IF;
+
+                    jitter_pct := random_jitter_seconds(25);
+                    jitter_seconds := (cf_backoff_seconds * jitter_pct) / 100;
+
+                    UPDATE indexer_cf_state
+                    SET state = 'cooldown',
+                        last_changed_at = now_value,
+                        cooldown_until = now_value
+                            + make_interval(secs => cf_backoff_seconds + jitter_seconds),
+                        backoff_seconds = cf_backoff_seconds,
+                        consecutive_failures = cf_consecutive_failures,
+                        last_error_class = 'cf_challenge'
+                    WHERE indexer_instance_id = instance_id_value;
+                ELSE
+                    UPDATE indexer_cf_state
+                    SET state = 'challenged',
+                        last_changed_at = now_value,
+                        cooldown_until = NULL,
+                        consecutive_failures = cf_consecutive_failures,
+                        last_error_class = 'cf_challenge'
+                    WHERE indexer_instance_id = instance_id_value;
+                END IF;
+            END IF;
+        END IF;
+    END IF;
+
+    IF parsed_success
+        AND via_mitigation_input = 'flaresolverr'
+    THEN
+        UPDATE indexer_cf_state
+        SET state = 'solved',
+            last_changed_at = now_value,
+            cooldown_until = NULL,
+            backoff_seconds = 60,
+            consecutive_failures = 0,
+            last_error_class = NULL
+        WHERE indexer_instance_id = instance_id_value
+          AND state IN ('challenged', 'cooldown');
+    END IF;
+
+    RETURN NEXT;
+    RETURN;
+END;
+$_$;
+
+
+--
+-- Name: rss_poll_claim(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rss_poll_claim(limit_input integer DEFAULT 25) RETURNS TABLE(rss_subscription_id bigint, indexer_instance_public_id uuid, routing_policy_public_id uuid, interval_seconds integer, connect_timeout_ms integer, read_timeout_ms integer, correlation_id uuid, retry_seq smallint)
+    LANGUAGE sql
+    AS $$
+    SELECT * FROM rss_poll_claim_v1(limit_input => limit_input);
+$$;
+
+
+--
+-- Name: rss_poll_claim_v1(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rss_poll_claim_v1(limit_input integer DEFAULT 25) RETURNS TABLE(rss_subscription_id bigint, indexer_instance_public_id uuid, routing_policy_public_id uuid, interval_seconds integer, connect_timeout_ms integer, read_timeout_ms integer, correlation_id uuid, retry_seq smallint)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    errcode CONSTANT text := 'P0001';
+    limit_value INTEGER;
+BEGIN
+    limit_value := COALESCE(limit_input, 25);
+
+    IF limit_value < 1 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = 'Failed to claim RSS subscriptions',
+            DETAIL = 'limit_invalid';
+    END IF;
+
+    RETURN QUERY
+    WITH due AS (
+        SELECT
+            sub.indexer_rss_subscription_id AS rss_subscription_id,
+            sub.interval_seconds,
+            inst.indexer_instance_id,
+            inst.indexer_instance_public_id,
+            inst.routing_policy_id,
+            inst.connect_timeout_ms,
+            inst.read_timeout_ms
+        FROM indexer_rss_subscription sub
+        JOIN indexer_instance inst
+            ON inst.indexer_instance_id = sub.indexer_instance_id
+        WHERE sub.is_enabled = TRUE
+          AND sub.next_poll_at <= now()
+          AND inst.is_enabled = TRUE
+          AND inst.enable_rss = TRUE
+        ORDER BY sub.next_poll_at ASC
+        LIMIT limit_value
+        FOR UPDATE OF sub SKIP LOCKED
+    ),
+    claimed AS (
+        UPDATE indexer_rss_subscription sub
+        SET next_poll_at = now() + make_interval(secs => sub.interval_seconds)
+        FROM due
+        WHERE sub.indexer_rss_subscription_id = due.rss_subscription_id
+        RETURNING
+            due.rss_subscription_id,
+            due.indexer_instance_id,
+            due.indexer_instance_public_id,
+            due.routing_policy_id,
+            due.interval_seconds,
+            due.connect_timeout_ms,
+            due.read_timeout_ms
+    )
+    SELECT
+        claimed.rss_subscription_id,
+        claimed.indexer_instance_public_id,
+        routing_policy.routing_policy_public_id,
+        claimed.interval_seconds,
+        claimed.connect_timeout_ms,
+        claimed.read_timeout_ms,
+        gen_random_uuid(),
+        0::SMALLINT
+    FROM claimed
+    LEFT JOIN routing_policy
+        ON routing_policy.routing_policy_id = claimed.routing_policy_id;
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_enqueue(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_enqueue(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM search_indexer_run_enqueue_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_enqueue_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_enqueue_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to enqueue indexer run';
+    errcode CONSTANT text := 'P0001';
+    request_id BIGINT;
+    request_status search_status;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    run_id BIGINT;
+    run_status run_status;
+BEGIN
+    IF search_request_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_missing';
+    END IF;
+
+    IF indexer_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_missing';
+    END IF;
+
+    SELECT search_request_id, status
+    INTO request_id, request_status
+    FROM search_request
+    WHERE search_request_public_id = search_request_public_id_input;
+
+    IF request_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_found';
+    END IF;
+
+    IF request_status <> 'running' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_running';
+    END IF;
+
+    SELECT indexer_instance_id, deleted_at
+    INTO instance_id, instance_deleted_at
+    FROM indexer_instance
+    WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_deleted';
+    END IF;
+
+    SELECT search_request_indexer_run_id, status
+    INTO run_id, run_status
+    FROM search_request_indexer_run
+    WHERE search_request_id = request_id
+      AND indexer_instance_id = instance_id;
+
+    IF run_id IS NOT NULL THEN
+        IF run_status = 'queued' THEN
+            RETURN;
+        END IF;
+
+        IF run_status = 'running' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'run_already_running';
+        END IF;
+
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'run_already_terminal';
+    END IF;
+
+    INSERT INTO search_request_indexer_run (
+        search_request_id,
+        indexer_instance_id,
+        status,
+        attempt_count,
+        rate_limited_attempt_count,
+        items_seen_count,
+        items_emitted_count,
+        canonical_added_count
+    )
+    VALUES (
+        request_id,
+        instance_id,
+        'queued',
+        0,
+        0,
+        0,
+        0,
+        0
+    );
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_mark_canceled(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_mark_canceled(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM search_indexer_run_mark_canceled_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_mark_canceled_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_mark_canceled_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to mark indexer run canceled';
+    errcode CONSTANT text := 'P0001';
+    request_id BIGINT;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    run_id BIGINT;
+    run_status run_status;
+BEGIN
+    IF search_request_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_missing';
+    END IF;
+
+    IF indexer_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_missing';
+    END IF;
+
+    SELECT search_request_id
+    INTO request_id
+    FROM search_request
+    WHERE search_request_public_id = search_request_public_id_input;
+
+    IF request_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_found';
+    END IF;
+
+    SELECT indexer_instance_id, deleted_at
+    INTO instance_id, instance_deleted_at
+    FROM indexer_instance
+    WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_deleted';
+    END IF;
+
+    SELECT search_request_indexer_run_id, status
+    INTO run_id, run_status
+    FROM search_request_indexer_run
+    WHERE search_request_id = request_id
+      AND indexer_instance_id = instance_id;
+
+    IF run_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'run_not_found';
+    END IF;
+
+    IF run_status IN ('finished', 'failed', 'canceled') THEN
+        RETURN;
+    END IF;
+
+    UPDATE search_request_indexer_run
+    SET status = 'canceled',
+        started_at = COALESCE(started_at, now()),
+        finished_at = now(),
+        next_attempt_at = NULL,
+        error_class = NULL,
+        error_detail = NULL
+    WHERE search_request_indexer_run_id = run_id;
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_mark_failed(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, error_class_input public.error_class, error_detail_input character varying, retry_after_seconds_input integer, retry_seq_input smallint, rate_limit_scope_input public.rate_limit_scope) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM search_indexer_run_mark_failed_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input, error_class_input => error_class_input, error_detail_input => error_detail_input, retry_after_seconds_input => retry_after_seconds_input, retry_seq_input => retry_seq_input, rate_limit_scope_input => rate_limit_scope_input);
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_mark_failed_v1(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_mark_failed_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, error_class_input public.error_class, error_detail_input character varying, retry_after_seconds_input integer, retry_seq_input smallint, rate_limit_scope_input public.rate_limit_scope) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to mark indexer run failed';
+    errcode CONSTANT text := 'P0001';
+    request_id BIGINT;
+    request_status search_status;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    run_id BIGINT;
+    run_status run_status;
+    max_retry_seq SMALLINT;
+    retry_seq_value SMALLINT;
+    delay_no_jitter INTEGER;
+    jitter_pct INTEGER;
+    jitter_seconds INTEGER;
+    next_attempt TIMESTAMPTZ;
+    new_rate_limited_count INTEGER;
+BEGIN
+    IF search_request_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_missing';
+    END IF;
+
+    IF indexer_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_missing';
+    END IF;
+
+    IF error_class_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'error_class_missing';
+    END IF;
+
+    IF error_detail_input IS NOT NULL AND char_length(error_detail_input) > 1024 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'error_detail_too_long';
+    END IF;
+
+    SELECT search_request_id, status
+    INTO request_id, request_status
+    FROM search_request
+    WHERE search_request_public_id = search_request_public_id_input;
+
+    IF request_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_found';
+    END IF;
+
+    IF request_status <> 'running' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_running';
+    END IF;
+
+    SELECT indexer_instance_id, deleted_at
+    INTO instance_id, instance_deleted_at
+    FROM indexer_instance
+    WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_deleted';
+    END IF;
+
+    SELECT search_request_indexer_run_id, status
+    INTO run_id, run_status
+    FROM search_request_indexer_run
+    WHERE search_request_id = request_id
+      AND indexer_instance_id = instance_id;
+
+    IF run_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'run_not_found';
+    END IF;
+
+    IF run_status IN ('finished', 'failed', 'canceled') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'run_already_terminal';
+    END IF;
+
+    IF error_class_input = 'rate_limited' THEN
+        IF run_status <> 'queued' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'run_invalid_state';
+        END IF;
+
+        IF rate_limit_scope_input IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'rate_limit_scope_missing';
+        END IF;
+
+        UPDATE search_request_indexer_run
+        SET attempt_count = attempt_count + 1,
+            rate_limited_attempt_count = rate_limited_attempt_count + 1,
+            last_error_class = 'rate_limited',
+            last_rate_limit_scope = rate_limit_scope_input
+        WHERE search_request_indexer_run_id = run_id
+        RETURNING rate_limited_attempt_count
+        INTO new_rate_limited_count;
+
+        IF new_rate_limited_count >= 10 THEN
+            UPDATE search_request_indexer_run
+            SET status = 'failed',
+                started_at = COALESCE(started_at, now()),
+                finished_at = now(),
+                next_attempt_at = NULL,
+                error_class = 'rate_limited',
+                error_detail = error_detail_input
+            WHERE search_request_indexer_run_id = run_id;
+
+            RETURN;
+        END IF;
+
+        delay_no_jitter := LEAST(5 * (1 << (new_rate_limited_count - 1)), 300);
+        jitter_pct := random_jitter_seconds(25);
+        jitter_seconds := (delay_no_jitter * jitter_pct) / 100;
+        next_attempt := now() + make_interval(secs => delay_no_jitter + jitter_seconds);
+
+        UPDATE search_request_indexer_run
+        SET status = 'queued',
+            started_at = NULL,
+            next_attempt_at = next_attempt
+        WHERE search_request_indexer_run_id = run_id;
+
+        RETURN;
+    END IF;
+
+    IF rate_limit_scope_input IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'rate_limit_scope_invalid';
+    END IF;
+
+    IF run_status <> 'running' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'run_invalid_state';
+    END IF;
+
+    IF error_class_input IN ('auth_error', 'http_403', 'cf_challenge', 'unknown') THEN
+        UPDATE search_request_indexer_run
+        SET status = 'failed',
+            started_at = COALESCE(started_at, now()),
+            finished_at = now(),
+            next_attempt_at = NULL,
+            error_class = error_class_input,
+            error_detail = error_detail_input,
+            last_error_class = error_class_input,
+            last_rate_limit_scope = NULL
+        WHERE search_request_indexer_run_id = run_id;
+
+        RETURN;
+    END IF;
+
+    IF retry_seq_input IS NULL OR retry_seq_input < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'retry_seq_invalid';
+    END IF;
+
+    retry_seq_value := retry_seq_input;
+
+    IF error_class_input IN ('tls', 'parse_error') THEN
+        max_retry_seq := 1;
+    ELSE
+        max_retry_seq := 3;
+    END IF;
+
+    IF retry_seq_value >= max_retry_seq THEN
+        UPDATE search_request_indexer_run
+        SET status = 'failed',
+            started_at = COALESCE(started_at, now()),
+            finished_at = now(),
+            next_attempt_at = NULL,
+            error_class = error_class_input,
+            error_detail = error_detail_input,
+            last_error_class = error_class_input,
+            last_rate_limit_scope = NULL
+        WHERE search_request_indexer_run_id = run_id;
+
+        RETURN;
+    END IF;
+
+    IF error_class_input = 'http_429' THEN
+        delay_no_jitter := LEAST(30 * (1 << retry_seq_value), 600);
+        IF retry_after_seconds_input IS NOT NULL AND retry_after_seconds_input > 0 THEN
+            delay_no_jitter := GREATEST(delay_no_jitter, retry_after_seconds_input);
+        END IF;
+    ELSE
+        delay_no_jitter := LEAST(2 * (1 << retry_seq_value), 120);
+    END IF;
+
+    jitter_pct := random_jitter_seconds(25);
+    jitter_seconds := (delay_no_jitter * jitter_pct) / 100;
+    next_attempt := now() + make_interval(secs => delay_no_jitter + jitter_seconds);
+
+    UPDATE search_request_indexer_run
+    SET status = 'queued',
+        started_at = NULL,
+        next_attempt_at = next_attempt,
+        last_error_class = error_class_input,
+        last_rate_limit_scope = NULL
+    WHERE search_request_indexer_run_id = run_id;
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_mark_finished(uuid, uuid, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_mark_finished(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, items_seen_delta_input integer, items_emitted_delta_input integer, canonical_added_delta_input integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM search_indexer_run_mark_finished_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input, items_seen_delta_input => items_seen_delta_input, items_emitted_delta_input => items_emitted_delta_input, canonical_added_delta_input => canonical_added_delta_input);
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_mark_finished_v1(uuid, uuid, integer, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_mark_finished_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, items_seen_delta_input integer, items_emitted_delta_input integer, canonical_added_delta_input integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to mark indexer run finished';
+    errcode CONSTANT text := 'P0001';
+    request_id BIGINT;
+    request_status search_status;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    run_id BIGINT;
+    run_status run_status;
+    items_seen_delta INTEGER;
+    items_emitted_delta INTEGER;
+    canonical_added_delta INTEGER;
+BEGIN
+    IF search_request_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_missing';
+    END IF;
+
+    IF indexer_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_missing';
+    END IF;
+
+    SELECT search_request_id, status
+    INTO request_id, request_status
+    FROM search_request
+    WHERE search_request_public_id = search_request_public_id_input;
+
+    IF request_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_found';
+    END IF;
+
+    IF request_status <> 'running' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_running';
+    END IF;
+
+    SELECT indexer_instance_id, deleted_at
+    INTO instance_id, instance_deleted_at
+    FROM indexer_instance
+    WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_deleted';
+    END IF;
+
+    SELECT search_request_indexer_run_id, status
+    INTO run_id, run_status
+    FROM search_request_indexer_run
+    WHERE search_request_id = request_id
+      AND indexer_instance_id = instance_id;
+
+    IF run_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'run_not_found';
+    END IF;
+
+    IF run_status <> 'running' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'run_invalid_state';
+    END IF;
+
+    items_seen_delta := COALESCE(items_seen_delta_input, 0);
+    items_emitted_delta := COALESCE(items_emitted_delta_input, 0);
+    canonical_added_delta := COALESCE(canonical_added_delta_input, 0);
+
+    IF items_seen_delta < 0 OR items_emitted_delta < 0 OR canonical_added_delta < 0 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'delta_negative';
+    END IF;
+
+    UPDATE search_request_indexer_run
+    SET status = 'finished',
+        started_at = COALESCE(started_at, now()),
+        finished_at = now(),
+        next_attempt_at = NULL,
+        error_class = NULL,
+        error_detail = NULL,
+        items_seen_count = items_seen_count + items_seen_delta,
+        items_emitted_count = items_emitted_count + items_emitted_delta,
+        canonical_added_count = canonical_added_count + canonical_added_delta
+    WHERE search_request_indexer_run_id = run_id;
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_mark_started(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_mark_started(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM search_indexer_run_mark_started_v1(search_request_public_id_input => search_request_public_id_input, indexer_instance_public_id_input => indexer_instance_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: search_indexer_run_mark_started_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_indexer_run_mark_started_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to mark indexer run started';
+    errcode CONSTANT text := 'P0001';
+    request_id BIGINT;
+    request_status search_status;
+    instance_id BIGINT;
+    instance_deleted_at TIMESTAMPTZ;
+    run_id BIGINT;
+    run_status run_status;
+BEGIN
+    IF search_request_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_missing';
+    END IF;
+
+    IF indexer_instance_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_missing';
+    END IF;
+
+    SELECT search_request_id, status
+    INTO request_id, request_status
+    FROM search_request
+    WHERE search_request_public_id = search_request_public_id_input;
+
+    IF request_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_found';
+    END IF;
+
+    IF request_status <> 'running' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_running';
+    END IF;
+
+    SELECT indexer_instance_id, deleted_at
+    INTO instance_id, instance_deleted_at
+    FROM indexer_instance
+    WHERE indexer_instance_public_id = indexer_instance_public_id_input;
+
+    IF instance_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_not_found';
+    END IF;
+
+    IF instance_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'indexer_instance_deleted';
+    END IF;
+
+    SELECT search_request_indexer_run_id, status
+    INTO run_id, run_status
+    FROM search_request_indexer_run
+    WHERE search_request_id = request_id
+      AND indexer_instance_id = instance_id;
+
+    IF run_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'run_not_found';
+    END IF;
+
+    IF run_status <> 'queued' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'run_invalid_state';
+    END IF;
+
+    UPDATE search_request_indexer_run
+    SET status = 'running',
+        started_at = now(),
+        next_attempt_at = NULL,
+        attempt_count = attempt_count + 1
+    WHERE search_request_indexer_run_id = run_id;
+END;
+$$;
+
+
+--
+-- Name: search_page_fetch(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_page_fetch(actor_user_public_id uuid, search_request_public_id_input uuid, page_number_input integer) RETURNS TABLE(page_number integer, sealed_at timestamp with time zone, item_count integer, item_position integer, canonical_torrent_public_id uuid, title_display character varying, size_bytes bigint, infohash_v1 character, infohash_v2 character, magnet_hash character, canonical_torrent_source_public_id uuid, indexer_instance_public_id uuid, indexer_display_name character varying, seeders integer, leechers integer, published_at timestamp with time zone, download_url character varying, magnet_uri character varying, details_url character varying, tracker_name character varying, tracker_category integer, tracker_subcategory integer)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM search_page_fetch_v1(
+        actor_user_public_id,
+        search_request_public_id_input,
+        page_number_input
+    );
+END;
+$$;
+
+
+--
+-- Name: search_page_fetch_v1(uuid, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_page_fetch_v1(actor_user_public_id uuid, search_request_public_id_input uuid, page_number_input integer) RETURNS TABLE(page_number integer, sealed_at timestamp with time zone, item_count integer, item_position integer, canonical_torrent_public_id uuid, title_display character varying, size_bytes bigint, infohash_v1 character, infohash_v2 character, magnet_hash character, canonical_torrent_source_public_id uuid, indexer_instance_public_id uuid, indexer_display_name character varying, seeders integer, leechers integer, published_at timestamp with time zone, download_url character varying, magnet_uri character varying, details_url character varying, tracker_name character varying, tracker_category integer, tracker_subcategory integer)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to fetch search page';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    request_id BIGINT;
+    request_user_id BIGINT;
+    page_id BIGINT;
+    sealed_at_value TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF search_request_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_missing';
+    END IF;
+
+    SELECT search_request_id, user_id
+    INTO request_id, request_user_id
+    FROM search_request
+    WHERE search_request_public_id = search_request_public_id_input;
+
+    IF request_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_found';
+    END IF;
+
+    IF request_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF request_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    IF page_number_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'page_number_missing';
+    END IF;
+
+    IF page_number_input < 1 THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'page_number_invalid';
+    END IF;
+
+    SELECT sp.search_page_id, sp.sealed_at
+    INTO page_id, sealed_at_value
+    FROM search_page AS sp
+    WHERE sp.search_request_id = request_id
+      AND sp.page_number = page_number_input;
+
+    IF page_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_page_not_found';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        page_number_input AS page_number,
+        sealed_at_value AS sealed_at,
+        COALESCE(item_counts.item_count, 0) AS item_count,
+        spi.position AS item_position,
+        ct.canonical_torrent_public_id,
+        ct.title_display,
+        COALESCE(ct.size_bytes, cts.size_bytes) AS size_bytes,
+        ct.infohash_v1,
+        ct.infohash_v2,
+        ct.magnet_hash,
+        cts.canonical_torrent_source_public_id,
+        ii.indexer_instance_public_id,
+        ii.display_name,
+        cts.last_seen_seeders,
+        cts.last_seen_leechers,
+        cts.last_seen_published_at,
+        cts.last_seen_download_url,
+        cts.last_seen_magnet_uri,
+        cts.last_seen_details_url,
+        tracker_name.value_text,
+        tracker_category.value_int,
+        tracker_subcategory.value_int
+    FROM (SELECT 1) AS seed
+    LEFT JOIN LATERAL (
+        SELECT COUNT(*)::INTEGER AS item_count
+        FROM search_page_item
+        WHERE search_page_id = page_id
+    ) AS item_counts ON TRUE
+    LEFT JOIN search_page_item spi
+        ON spi.search_page_id = page_id
+    LEFT JOIN search_request_canonical src
+        ON src.search_request_canonical_id = spi.search_request_canonical_id
+    LEFT JOIN canonical_torrent ct
+        ON ct.canonical_torrent_id = src.canonical_torrent_id
+    LEFT JOIN canonical_torrent_best_source_context bs
+        ON bs.context_key_type = 'search_request'
+        AND bs.context_key_id = request_id
+        AND bs.canonical_torrent_id = ct.canonical_torrent_id
+    LEFT JOIN canonical_torrent_source cts
+        ON cts.canonical_torrent_source_id = bs.canonical_torrent_source_id
+    LEFT JOIN indexer_instance ii
+        ON ii.indexer_instance_id = cts.indexer_instance_id
+    LEFT JOIN LATERAL (
+        SELECT value_text
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = cts.canonical_torrent_source_id
+          AND attr_key = 'tracker_name'
+    ) AS tracker_name ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT value_int
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = cts.canonical_torrent_source_id
+          AND attr_key = 'tracker_category'
+    ) AS tracker_category ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT value_int
+        FROM canonical_torrent_source_attr
+        WHERE canonical_torrent_source_id = cts.canonical_torrent_source_id
+          AND attr_key = 'tracker_subcategory'
+    ) AS tracker_subcategory ON TRUE
+    ORDER BY spi.position;
+END;
+$$;
+
+
+--
+-- Name: search_page_list(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_page_list(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS TABLE(page_number integer, sealed_at timestamp with time zone, item_count integer)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM search_page_list_v1(
+        actor_user_public_id,
+        search_request_public_id_input
+    );
+END;
+$$;
+
+
+--
+-- Name: search_page_list_v1(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_page_list_v1(actor_user_public_id uuid, search_request_public_id_input uuid) RETURNS TABLE(page_number integer, sealed_at timestamp with time zone, item_count integer)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to list search pages';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    request_id BIGINT;
+    request_user_id BIGINT;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF search_request_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_missing';
+    END IF;
+
+    SELECT search_request_id, user_id
+    INTO request_id, request_user_id
+    FROM search_request
+    WHERE search_request_public_id = search_request_public_id_input;
+
+    IF request_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_request_not_found';
+    END IF;
+
+    IF request_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF request_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        sp.page_number,
+        sp.sealed_at,
+        COUNT(spi.search_page_item_id)::INTEGER AS item_count
+    FROM search_page sp
+    LEFT JOIN search_page_item spi
+        ON spi.search_page_id = sp.search_page_id
+    WHERE sp.search_request_id = request_id
+    GROUP BY sp.search_page_id, sp.page_number, sp.sealed_at
+    ORDER BY sp.page_number;
+END;
+$$;
+
+
+--
+-- Name: search_profile_add_policy_set(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_profile_add_policy_set(actor_user_public_id uuid, search_profile_public_id_input uuid, policy_set_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    PERFORM search_profile_add_policy_set_v1(actor_user_public_id => actor_user_public_id, search_profile_public_id_input => search_profile_public_id_input, policy_set_public_id_input => policy_set_public_id_input);
+END;
+$$;
+
+
+--
+-- Name: search_profile_add_policy_set_v1(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_profile_add_policy_set_v1(actor_user_public_id uuid, search_profile_public_id_input uuid, policy_set_public_id_input uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    base_message CONSTANT text := 'Failed to add policy set';
+    errcode CONSTANT text := 'P0001';
+    actor_user_id BIGINT;
+    actor_role deployment_role;
+    profile_id BIGINT;
+    profile_user_id BIGINT;
+    profile_deleted_at TIMESTAMPTZ;
+    policy_set_id_value BIGINT;
+    policy_scope_value policy_scope;
+    policy_deleted_at TIMESTAMPTZ;
+BEGIN
+    IF actor_user_public_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_missing';
+    END IF;
+
+    SELECT user_id, role
+    INTO actor_user_id, actor_role
+    FROM app_user
+    WHERE user_public_id = actor_user_public_id;
+
+    IF actor_user_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'actor_not_found';
+    END IF;
+
+    IF search_profile_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_missing';
+    END IF;
+
+    IF policy_set_public_id_input IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_missing';
+    END IF;
+
+    SELECT search_profile_id, user_id, deleted_at
+    INTO profile_id, profile_user_id, profile_deleted_at
+    FROM search_profile
+    WHERE search_profile_public_id = search_profile_public_id_input;
+
+    IF profile_id IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_not_found';
+    END IF;
+
+    IF profile_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'search_profile_deleted';
+    END IF;
+
+    IF profile_user_id IS NULL THEN
+        IF actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    ELSE
+        IF profile_user_id <> actor_user_id AND actor_role NOT IN ('owner', 'admin') THEN
+            RAISE EXCEPTION USING
+                ERRCODE = errcode,
+                MESSAGE = base_message,
+                DETAIL = 'actor_unauthorized';
+        END IF;
+    END IF;
+
+    SELECT policy_set_id, scope, deleted_at
+    INTO policy_set_id_value, policy_scope_value, policy_deleted_at
+    FROM policy_set
+    WHERE policy_set_public_id = policy_set_public_id_input;
+
+    IF policy_set_id_value IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_not_found';
+    END IF;
+
+    IF policy_deleted_at IS NOT NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_deleted';
+    END IF;
+
+    IF policy_scope_value <> 'profile' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = errcode,
+            MESSAGE = base_message,
+            DETAIL = 'policy_set_invalid_scope';
+    END IF;
+
+    INSERT INTO search_profile_policy_set (
+        search_profile_id,
+        policy_set_id
+    )
+    VALUES (
+        profile_id,
+        policy_set_id_value
+    )
+    ON CONFLICT (search_profile_id, policy_set_id) DO NOTHING;
+
+    INSERT INTO config_audit_log (
+        entity_type,
+        entity_pk_bigint,
+        entity_public_id,
+        action,
+        changed_by_user_id,
+        change_summary
+    )
+    VALUES (
+        'search_profile_rule',
+        NULL,
+        search_profile_public_id_input,
+        'update',
+        actor_user_id,
+        'search_profile_policy_set_add'
+    );
+END;
+$$;
+
+
+--
+-- Name: search_profile_create(uuid, character varying, boolean, integer, character varying, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.search_profile_create(actor_user_public_id uuid, display_name_input character varying, is_default_input boolean, page_size_input integer, default_media_domain_key_input character varying, user_public_id_input uuid) RETURNS uuid
+    LANGUAGE sql
+    AS $$
+    SELECT search_profile_create_v1(actor_user_public_id => actor_user_public_id, display_name_input => display_name_input, is_default_input => is_default_input, page_size_input => page_size_input, default_media_domain_key_input => default_media_domain_key_input, user_public_id_input => user_public_id_input);
+$$;

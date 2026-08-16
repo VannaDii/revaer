@@ -474,3 +474,4 @@
 -   [541](541-packaged-init-bootstrap-lifecycle.md) – Packaged init-script bootstrap lifecycle
 -   [544](544-pre-v1-init-assembly-slice-01.md) – Pre-v1 init assembly slice 01
 -   [545](545-pre-v1-init-assembly-slice-02.md) – Pre-v1 init assembly slice 02
+-   [546](546-pre-v1-init-assembly-slice-03.md) – Pre-v1 init assembly slice 03
