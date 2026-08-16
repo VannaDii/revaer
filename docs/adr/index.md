@@ -468,3 +468,4 @@
 -   [535](535-bounded-cancellation-aware-fingerprint-admission.md) – Bounded cancellation-aware fingerprint admission
 -   [536](536-capability-proven-chapter-muxer-support.md) – Capability-proven chapter muxer support
 -   [537](537-normalized-opaque-state-and-attachment-payload-evidence.md) – Normalized opaque state and attachment payload evidence
+-   [541](541-packaged-init-bootstrap-lifecycle.md) – Packaged init-script bootstrap lifecycle

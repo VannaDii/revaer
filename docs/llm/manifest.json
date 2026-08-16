@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T15:59:06.966762+00:00",
+  "generated": "2026-08-16T16:07:51.707922+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4466,6 +4466,23 @@
         "validation"
       ],
       "href": "/adr/537-normalized-opaque-state-and-attachment-payload-evidence/"
+    },
+    {
+      "id": "adr/541-packaged-init-bootstrap-lifecycle",
+      "title": "Packaged init-script bootstrap lifecycle",
+      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "tags": [
+        "consequences",
+        "current-state",
+        "exact-validation",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record"
+      ],
+      "href": "/adr/541-packaged-init-bootstrap-lifecycle/"
     },
     {
       "id": "adr/index",
