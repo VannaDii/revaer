@@ -437,5 +437,7 @@
 -   [512](512-fenced-resumable-worker-ownership-and-recovery.md) – Fenced resumable worker ownership and recovery
 -   [513](513-attempt-scoped-workspace-retention-transaction.md) – Attempt-scoped workspace retention transaction
 -   [514](514-packaged-media-subsystem-lifecycle-and-health-contract.md) – Packaged media subsystem lifecycle and health contract
+-   [515](515-versioned-audio-transformation-and-acceptance-contract.md) – Versioned audio transformation and acceptance contract
+-   [516](516-durable-discovery-scheduling-and-versioned-aggregate-identity.md) – Durable discovery scheduling and versioned aggregate identity
 -   [530](530-cataloged-task-record-restoration.md) – Cataloged task-record restoration
 -   [532](532-admitted-media-source-intent-preservation.md) – Admitted media source intent preservation
