@@ -1,8 +1,9 @@
 # Profile readiness and source-bound planning
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Context
 
@@ -96,24 +97,23 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the advisory assessment vocabulary, universal
+- This accepted ADR authorizes only the advisory assessment vocabulary, universal
   impossibility rule, queue-admission behavior, and authoritative-preflight
   boundary described above.
-- It would not relax or supersede ADR 442, capability snapshot binding, managed
+- It does not relax or supersede ADR 442, capability snapshot binding, managed
   root checks, fingerprint admission, dry-run isolation, command-builder
   validation, or worker ownership.
-- It would not authorize speculative capabilities, a fallback
+- It does not authorize speculative capabilities, a fallback
   `all_supported` planner, source-independent approval of `copy`, caller-selected
   capability evidence, or execution based on the readiness endpoint alone.
-- It would not authorize a schema, runtime, API, or generated-contract change
-  until this ADR receives decision-specific operator approval.
+- Schema, runtime, API, and generated-contract changes must remain limited to the
+  accepted contract above.
 
 ## Follow-up
 
-- Obtain decision-specific operator approval before changing the readiness DTO,
-  queue admission, worker preflight, schema, OpenAPI, or UI.
-- After approval, prove every fixed blocker and source-contingent category with
+- Implement the readiness DTO, queue admission, worker preflight, schema, OpenAPI,
+  and UI only within the accepted boundary above.
+- Prove every fixed blocker and source-contingent category with
   table-driven evaluator tests, then prove direct, discovery, watcher, schedule,
   dry-run, and non-dry-run admission all use the same classification.
 - Add integration tests proving a source-dependent advisory result can be
@@ -132,34 +132,34 @@
   - Stable reason codes are shared, but the source-independent evaluator and
     source-bound planner remain separate responsibilities.
 - Test coverage summary:
-  - This change is proposal-only and adds no runtime, API, or schema behavior.
+  - The ADR-only change added no runtime, API, or schema behavior.
   - `just policy`, `just instruction-drift`, `just docs-build`,
     `just docs-link-check`, and `git diff --check` passed.
   - The evaluator and integration matrix in Follow-up is required before any
     accepted implementation is complete.
 - Observability updates:
-  - No telemetry changes are made by this proposal. A future implementation
+  - No telemetry changes are made by this ADR. A future implementation
     should preserve bounded readiness and admission outcome metrics using stable
     outcome codes, without profile, source, or snapshot identifiers as labels.
 - Status-doc validation:
-  - Reviewed ADRs 355, 356, 442, 449, and `MEDIA_TRANSCODING.md`. This proposal
+  - Reviewed ADRs 355, 356, 442, 449, and `MEDIA_TRANSCODING.md`. This ADR
     does not change the product requirement for capability-aware, source-bound
     preflight and does not claim the layered contract is implemented.
   - `README.md`, roadmap/status documents, and operator guides were not changed;
-    none currently claims this proposed contract is implemented.
+    none currently claims this accepted contract is implemented.
 - Risk & rollback plan:
-  - Proposal-only publication changes no production behavior and can be rolled
-    back by reverting this ADR and its index entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must keep ADR 442's authoritative preflight;
     the advisory API can be removed without restoring profile-only execution
     authority.
 - Dependency rationale:
-  - No dependency is proposed. Existing normalized catalog, capability, planner,
+  - No new dependency is required. Existing normalized catalog, capability, planner,
     and API primitives are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and
     `.github/instructions/revaer-data.instructions.md` as the prospective
     implementation constraints.
   - No instruction drift was found. ADRs 355 and 356 contain an architectural
-    assumption superseded in scope by ADR 442; this proposal makes the boundary
+    assumption superseded in scope by ADR 442; this ADR makes the boundary
     explicit without changing repository policy.

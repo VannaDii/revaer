@@ -1,8 +1,9 @@
 # Explicit manual media execution command
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Context
 
@@ -86,30 +87,29 @@
   bounded error handling.
 - API models, OpenAPI, stored procedures, facade boundaries, authorization tests,
   dry-run tests, and direct/discovery fingerprint equivalence tests must change
-  together after approval.
+  together during implementation.
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would supersede only ADR 362's conclusion that explicit manual
-  execution must be removed. It would preserve ADR 362's rejection of raw
+- This accepted ADR supersedes only ADR 362's conclusion that explicit manual
+  execution must be removed. It preserves ADR 362's rejection of raw
   caller-authored job records and evidence.
-- Acceptance would authorize only the profile-scoped command, exact `replace`
+- This ADR authorizes only the profile-scoped command, exact `replace`
   semantics, server-derived aggregate fingerprint, stored-procedure admission,
   immutable effective dry-run fact, and rejection of caller-authored state
   described above.
-- It would not authorize direct evidence append, arbitrary job fields, caller
+- It does not authorize direct evidence append, arbitrary job fields, caller
   command fragments, unmanaged paths, discovery dry-run overrides, mutation
   before authoritative preflight, or bypasses of worker ownership, cancellation,
   capability, fingerprint, workspace, and replacement controls.
-- It would not authorize a schema, runtime, API, or generated-contract change
-  until this ADR receives decision-specific operator approval.
+- Schema, runtime, API, and generated-contract changes must remain limited to the
+  accepted contract above.
 
 ## Follow-up
 
-- Obtain decision-specific operator approval before changing any route, DTO,
-  service, stored procedure, schema, OpenAPI document, generated client, or UI.
-- After approval, add contract tests for absent, exact, near-match, differently
+- Implement routes, DTOs, services, stored procedures, schema, OpenAPI, generated
+  clients, and UI only within the accepted boundary above.
+- Add contract tests for absent, exact, near-match, differently
   cased, padded, and Unicode-lookalike confirmations on both dry-run and
   non-dry-run profiles.
 - Prove direct and discovery admission compute the same aggregate identity for
@@ -129,13 +129,13 @@
   - Exact confirmation is deliberately not normalized so automation cannot turn
     an approximate value into destructive authorization.
 - Test coverage summary:
-  - This change is proposal-only and adds no runtime, API, or schema behavior.
+  - The ADR-only change added no runtime, API, or schema behavior.
   - `just policy`, `just instruction-drift`, `just docs-build`,
     `just docs-link-check`, and `git diff --check` passed.
   - The confirmation, fingerprint, admission, and ownership matrix in Follow-up
     remains mandatory before an accepted implementation can be handed off.
 - Observability updates:
-  - No telemetry changes are made by this proposal. A future implementation
+  - No telemetry changes are made by this ADR. A future implementation
     should distinguish manual command admission outcomes with stable bounded
     outcome codes and must not log the confirmation value or use profile,
     source, fingerprint, or job identifiers as metric labels.
@@ -144,16 +144,16 @@
     500; and `MEDIA_TRANSCODING.md` lines 209-222. The recommendation preserves
     the documented manual override while making no claim that it is implemented.
   - `README.md`, roadmap/status documents, and operator guides were not changed;
-    none currently claims this proposed contract is implemented.
+    none currently claims this accepted contract is implemented.
 - Risk & rollback plan:
-  - Proposal-only publication changes no production behavior and can be rolled
-    back by reverting this ADR and its index entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, disabling the command route is the simplest safe
     rollback. Existing admitted jobs must remain immutable and continue through
     normal worker cancellation or recovery; no caller-authored state path may be
     restored.
 - Dependency rationale:
-  - No dependency is proposed. Existing descriptor-safe discovery, aggregate
+  - No new dependency is required. Existing descriptor-safe discovery, aggregate
     fingerprint, stored-procedure, authorization, and worker primitives are
     sufficient.
 - Stale-policy check:
@@ -161,5 +161,5 @@
     `.github/instructions/revaer-data.instructions.md` as the prospective
     implementation constraints.
   - No instruction drift was found. ADR 362 conflicts with the current product
-    contract only in its removal of explicit manual execution; this proposal
+    contract only in its removal of explicit manual execution; this ADR
     preserves its state-ownership rationale and records the narrow correction.

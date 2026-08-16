@@ -1,8 +1,9 @@
 # Attempt-aware media job phase reads
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Context
 
@@ -74,26 +75,25 @@
   a current-attempt view. Because the product has not shipped, the contract can
   be corrected before compatibility obligations exist.
 - Cursor encoding, OpenAPI models, stored procedures, API tests, and operator UI
-  labels must be updated together after approval.
+  labels must be updated together during implementation.
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the two read contracts, public attempt number,
+- This accepted ADR authorizes only the two read contracts, public attempt number,
   ordering, page bounds, cursor binding, and stored-procedure reads described
   above.
-- It would not authorize changing attempt creation, claim fencing, cancellation,
+- It does not authorize changing attempt creation, claim fencing, cancellation,
   phase append ownership, evidence retention, retry policy, or worker state
   transitions.
-- It would not authorize a public phase mutation endpoint, caller-selected
+- It does not authorize a public phase mutation endpoint, caller-selected
   attempt identifiers, exposure of claim generations, offset pagination, or an
   unbounded compatibility mode.
 
 ## Follow-up
 
-- Obtain decision-specific operator approval before changing schema, stored
-  procedures, runtime facades, API models, OpenAPI, or UI behavior.
-- After approval, prove cursor stability across concurrent phase appends and an
+- Implement schema, stored procedures, runtime facades, API models, OpenAPI, and
+  UI behavior only within the accepted boundary above.
+- Prove cursor stability across concurrent phase appends and an
   intervening retry, as well as page bounds, attempt ordering, empty history,
   unknown jobs, and invalid cursors.
 
@@ -109,34 +109,34 @@
     write fencing.
   - Keyset ordering is total because phase indexes are unique within an attempt.
 - Test coverage summary:
-  - This change is proposal-only and adds no runtime, API, or schema behavior.
+  - The ADR-only change added no runtime, API, or schema behavior.
   - `just policy`, `just instruction-drift`, `just docs-build`,
     `just docs-link-check`, and `git diff --check` passed.
   - The runtime matrix in Follow-up remains mandatory before any accepted
     implementation can be handed off.
 - Observability updates:
-  - No telemetry changes are made by this proposal. A future implementation may
+  - No telemetry changes are made by this ADR. A future implementation may
     use existing bounded API latency and error telemetry; it must not put job,
     attempt, cursor, or source identifiers in metric labels.
 - Status-doc validation:
-  - Reviewed ADRs 353, 430, 495, and 500 and `MEDIA_TRANSCODING.md`. This proposal
+  - Reviewed ADRs 353, 430, 495, and 500 and `MEDIA_TRANSCODING.md`. This ADR
     corrects a read-contract ambiguity and does not claim the behavior already
     exists.
   - `README.md`, roadmap/status documents, and operator guides were not changed;
-    none currently claims this proposed contract is implemented.
+    none currently claims this accepted contract is implemented.
 - Risk & rollback plan:
-  - Proposal-only publication changes no production behavior and can be rolled
-    back by reverting this ADR and its index entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must preserve attempt-scoped evidence and may
     restore only a bounded current-attempt read, never the ambiguous unbounded
     merged list.
 - Dependency rationale:
-  - No dependency is proposed. Existing API, cursor, and stored-procedure
+  - No new dependency is required. Existing API, cursor, and stored-procedure
     patterns are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and
     `.github/instructions/revaer-data.instructions.md` as the prospective
     implementation constraints.
   - No instruction drift or contradiction was found. ADR 353's pre-attempt read
-    assumption is architectural history, not current policy, and this proposal
+    assumption is architectural history, not current policy, and this ADR
     records the required reconciliation without changing policy.

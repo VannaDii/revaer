@@ -1,8 +1,9 @@
 # Attempt-scoped backup and rollback layout
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -143,10 +144,10 @@
 - Crash after rename or deletion resumes idempotently from the database claim.
   A missing tree is success only when the exact cleanup row and manifest identity
   prove ownership. One failed bundle does not block unrelated eligible bundles.
-- Proposed ADR 513 recommends the same filesystem-before-evidence-pruning order
-  for workspaces. This ADR does not approve ADR 513 or its timings; if both are
-  accepted, their cleanup claims and root recovery barriers must use one ordering
-  discipline without sharing namespaces.
+- Accepted ADR 513 uses the same filesystem-before-evidence-pruning order for
+  workspaces. Their cleanup claims and root recovery barriers use one ordering
+  discipline without sharing namespaces; unresolved cleanup timings remain
+  separately held.
 
 ### Stable Errors
 
@@ -173,24 +174,22 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only attempt-scoped ownership, exact namespace,
+- This accepted ADR authorizes only attempt-scoped ownership, exact namespace,
   canonical manifest, publication and collision rules, aggregate rollback,
   retention protection and cleanup order, and stable errors described above.
-- Accepted ADRs 447, 448, 500, and 501 remain binding. ADR 517 must be accepted
-  before its framing primitives can be shared, and ADR 523 must be accepted
-  before a backup root can be authoritative. Proposed ADRs 512 and 513 remain
-  pending and are not imported by this record.
-- Acceptance would not authorize content-addressed sharing, timestamp suffixes,
+- Accepted ADRs 447, 448, 500, 501, 512, 513, 517, and 523 remain binding. This ADR
+  shares ADR 517 framing primitives and ADR 523 root authority while composing
+  with, but not redefining, ADRs 512 and 513 or their unresolved timings.
+- This ADR does not authorize content-addressed sharing, timestamp suffixes,
   source-relative backup trees, partial rollback, automatic deletion of unknown
   entries, shorter existing retention, or unbounded metadata capture.
-- No schema, filesystem, runtime, API, UI, workflow, or deployment behavior may
-  change before explicit decision-specific approval.
+- Schema, filesystem, runtime, API, UI, workflow, and deployment changes must
+  remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only.
-- After approval, test every crash boundary before, during, and after member
+- Decision validation to date is documentation-only.
+- During implementation, test every crash boundary before, during, and after member
   copy, manifest write, fsync, publish rename, database acknowledgement,
   rollback, deleting rename, removal, and cleanup acknowledgement.
 - Test same-attempt idempotency and every collision shape: extra file, missing
@@ -207,9 +206,8 @@
 
 ## Follow-up
 
-- Obtain explicit operator approval before implementation or status change.
-- Decide ADR 523 first and decide proposed ADRs 512 and 513 before selecting
-  recovery-leader and cleanup-claim timings.
+- Implement accepted ADRs 512, 513, and 523 with this record. Select recovery-
+  leader and cleanup-claim timings only through a separate approved follow-up.
 - Reconcile API diagnostics and operator restore controls with accepted ADR 484
   workflows without exposing raw host paths or permitting manual partial restore.
 
@@ -222,20 +220,21 @@
   - Database identity owns one immutable bundle; the filesystem layout contains
     no user-controlled names and every mutation is acknowledgement-backed.
 - Test coverage summary:
-  - Proposal only; no schema, filesystem, backup, rollback, or media test was
-    added.
+  - The ADR-only change added no schema, filesystem, backup, rollback, or media
+    test.
 - Observability updates:
   - No telemetry changes are made now. Future telemetry is bounded to state and
     reason enums as described above.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, accepted ADRs 446-451, 484, 500, and 501,
-    and proposed ADRs 507-516 and 523. No pending recovery model is claimed.
+    and accepted ADRs 507-516 and 523. No unresolved timing or exact value is
+    claimed as selected.
 - Risk & rollback plan:
-  - This record can be removed with its catalogue entries. A later rollback must
-    preserve every bundle an older runtime cannot verify and must not rename it
-    into a legacy layout heuristically.
+  - Any reversal requires a superseding ADR. A later rollback must preserve every
+    bundle an older runtime cannot verify and must not rename it into a legacy
+    layout heuristically.
 - Dependency rationale:
-  - No dependency is proposed. Existing hashing, descriptor, fsync, replacement,
+  - No new dependency is required. Existing hashing, descriptor, fsync, replacement,
     stored-procedure, and managed-workspace primitives are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,

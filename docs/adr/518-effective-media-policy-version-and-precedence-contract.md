@@ -1,8 +1,9 @@
 # Effective media policy version and precedence contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -12,9 +13,9 @@
 - Distributed defaults already exist in SQL, API conversion, the planner, and
   runtime constants. Reproducing those defaults inside a new compiler would
   preserve ambiguity rather than establish one immutable contract.
-- Proposed ADRs 507-511, 515, and 516 describe additional target and discovery
-  semantics. Pending recommendations cannot be treated as compiler inputs or
-  permissive defaults before separate approval.
+- Accepted ADRs 507-511, 515, and 516 describe additional target and discovery
+  semantics. The unresolved exact values in ADRs 515 and 516 cannot be treated as
+  compiler inputs or permissive defaults before separate approval.
 
 ## Options
 
@@ -70,9 +71,9 @@
    native execution, mutation during dry-run, or replacement before verification.
 2. The immutable desired-target graph owns matched output state. A retention or
    unmatched rule cannot rewrite a stream already bound to a target row.
-3. For source streams and sidecars left unmatched by the target, an accepted ADR
-   509 contract owns per-kind precedence. Until ADR 509 is accepted, compilation
-   of its proposed action values fails as unsupported.
+3. For source streams and sidecars left unmatched by the target, accepted ADR 509
+   owns per-kind precedence. Compilation must implement its exact action values
+   without a fallback or alternate precedence.
 4. Ordered rule families use first matching **enabled** row. Disabled rows remain
    in snapshot identity but never match. Equal precedence or duplicate order is
    invalid; there is no database-order tie break.
@@ -83,8 +84,8 @@
    candidate plans or delay work. They may not relax target, verification,
    source-identity, process, or replacement requirements.
 7. Verification strictness may add checks. It may not disable exact checks
-   required by an accepted target contract, including any later accepted ADR
-   507-511 or 515 contract.
+   required by an accepted target contract, including ADRs 507-511 and the
+   separately approved exact values carried by ADR 515.
 8. `dry_run = true` dominates every mutation setting. Backup, quarantine, and
    replacement fields remain compiled for explanation but cannot authorize a
    filesystem mutation.
@@ -135,31 +136,31 @@
 - Versioning prevents a deploy from silently changing queued-job meaning, at the
   cost of retaining explicit compiler implementations while supported jobs
   exist.
-- Proposed target and audio contracts cannot leak into production through
-  existing rows. They require approval and a deliberate contract-version change.
+- Unimplemented accepted target contracts and unresolved exact audio values cannot
+  leak into production through existing rows. They require a deliberate contract-
+  version change, and exact audio values require separate approval.
 - The compiler type is broad, but it remains pure and decomposable into private
   family validators and values rather than coupling domain logic to persistence.
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the v1 family inventory, thirteen operation
+- This accepted ADR authorizes only the v1 family inventory, thirteen operation
   keys, precedence table, domain separation, identity tuple, version rules, and
   stable compile-error shape described above.
-- Acceptance would not approve any pending value or behavior in ADRs 507-516.
-  If those ADRs are later accepted, their exact fields enter through a new or
-  explicitly revised contract version and retain their own implementation
-  boundaries.
+- This ADR incorporates fields authorized by accepted ADRs 507-514. ADRs 515 and
+  516 contribute only their accepted typed structures until exact values receive
+  separate approval; any later exact fields enter through a new or explicitly
+  revised contract version and retain their own implementation boundaries.
 - ADR 517 owns persistence transport; ADR 519 owns executable capability
   identity; ADR 523 owns host root resolution. This compiler may validate their
   stable references but may not perform their I/O.
-- No SQL, Rust, API, YAML, UI, workflow, generated contract, or runtime behavior
-  may change until this ADR receives explicit decision-specific approval.
+- SQL, Rust, API, YAML, UI, workflow, generated-contract, and runtime changes must
+  remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only.
-- After approval, add table-driven tests that remove, duplicate, disable, reorder,
+- Decision validation to date is documentation-only.
+- During implementation, add table-driven tests that remove, duplicate, disable, reorder,
   or alter every family and prove one stable result or error.
 - Add precedence matrices for matched and unmatched streams, conflicting ordered
   rules, dry-run versus every mutation flag, compatibility versus target
@@ -173,11 +174,10 @@
 
 ## Follow-up
 
-- Obtain explicit operator approval before implementation or changing status.
-- Decide ADRs 517, 521, 523, and 524 together so the first DTO, operator surface,
+- Implement accepted ADRs 517, 521, 523, and 524 together so the first DTO, operator surface,
   root references, and compiler inventory agree.
-- Resolve pending ADRs 507-516 individually; do not reserve hidden fields or
-  activate their semantics in compiler version 1 without approval.
+- Implement accepted ADRs 507-514 without hidden fields. Preserve the unresolved
+  exact-value holds in ADRs 515 and 516 until separate approval.
 
 ## Task Record
 
@@ -187,18 +187,19 @@
   - The effective value is exhaustive but excludes I/O identities and mutable
     execution state.
 - Test coverage summary:
-  - Proposal only; no compiler or behavioral tests were added.
+  - The ADR-only change added no compiler or behavioral tests.
 - Observability updates:
   - Future telemetry may use bounded compiler version, family, and error enums.
     Digests, policy keys, paths, and row values must not become metric labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, accepted ADRs 446-451, 484, 500, and 501,
-    and proposed ADRs 507-516. No pending proposal is claimed as accepted.
+    and accepted ADRs 507-516. The unresolved exact values in ADRs 515 and 516
+    remain unavailable.
 - Risk & rollback plan:
-  - This record can be removed with its catalogue entries. A later rollback must
-    keep old compiler versions available or hold incompatible jobs explicitly.
+  - Any reversal requires a superseding ADR. A later rollback must keep old
+    compiler versions available or hold incompatible jobs explicitly.
 - Dependency rationale:
-  - No dependency is proposed; existing typed domain and SHA-256 facilities are
+  - No new dependency is required; existing typed domain and SHA-256 facilities are
     sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and

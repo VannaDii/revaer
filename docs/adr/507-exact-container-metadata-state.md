@@ -1,8 +1,9 @@
 # Exact container metadata state
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -77,8 +78,7 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the three policy values, defaults,
+- This accepted ADR authorizes only the three policy values, defaults,
   normalization, resource bounds, normalized desired-target and immutable
   job-snapshot rows, deterministic materialization, and exact candidate and
   final verification described above.
@@ -88,18 +88,18 @@
 - Before v1, any accepted persistence change must modify
   `crates/revaer-data/init.sql`; historical migrations 0170, 0171, and 0173 are
   provenance only and must not be restored.
-- Acceptance would not authorize metadata merge or patch operations, per-stream
+- This ADR does not authorize metadata merge or patch operations, per-stream
   metadata editing, chapter metadata semantics, arbitrary FFmpeg arguments,
   verifier exclusions, live-profile reads, or relaxation of the approved
   capability and immutable-snapshot boundaries.
-- No schema, runtime, API, YAML, generated-contract, or UI behavior may change
-  until this ADR receives explicit decision-specific operator approval.
+- Schema, runtime, API, YAML, generated-contract, and UI changes must remain
+  limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is limited to documentation and repository-policy checks;
+- Decision validation to date is limited to documentation and repository-policy checks;
   no runtime, API, or schema behavior is changed by this record.
-- After approval, add table-driven tests for all policy and row-shape
+- During implementation, add table-driven tests for all policy and row-shape
   combinations, normalization, duplicate canonical keys, every resource bound,
   defaulting, and direct stored-procedure calls that try to bypass application
   validation.
@@ -124,13 +124,11 @@
   labels are not treated as operator approval.
 - Approved ADRs 442, 446, and 451 already govern capability-derived planning,
   immutable worker snapshot access, and pure effective-policy compilation.
-  This proposal does not reopen those decisions.
+  This ADR does not reopen those decisions.
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before changing any
-  implementation or changing this ADR to `Accepted`.
-- If approved, implement the contract outside-in from API/YAML and stored
+- Implement the contract outside-in from API/YAML and stored
   procedures through compilation, planning, command materialization, and both
   verification stages.
 - Reconcile `MEDIA_TRANSCODING.md`, OpenAPI, operator UI labels, and generated
@@ -148,31 +146,31 @@
   - Expected state is compiled once and consumed by planning, materialization,
     and verification rather than reinterpreted independently.
 - Test coverage summary:
-  - This change is proposal-only and adds no runtime, API, schema, or UI tests.
+  - The ADR-only change added no runtime, API, schema, or UI tests.
   - `git diff --check`, `just instruction-drift`, and
-    `just docs-link-check` passed for this proposal-only change.
+    `just docs-link-check` passed for this ADR-only change.
   - The focused and full validation listed above remains mandatory after any
-    approval and implementation.
+    implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation should persist bounded verification outcomes and
     stable reason codes without logging metadata values or using target, job,
     source, or metadata identifiers as metric labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, the source replay ADRs and commits, and the
-    approved planning and snapshot ADRs. This proposal makes no claim that the
-    recommended contract is approved or implemented.
+    approved planning and snapshot ADRs. This ADR is accepted but does not claim
+    that the contract is implemented.
   - `README.md`, roadmap/status documents, and operator guides are unchanged;
-    the ADR index and documentation summary are updated only to expose this
-    pending proposal.
+    the ADR index and documentation summary expose this accepted but unimplemented
+    decision.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    reverting this ADR and its two index entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must preserve immutable queued-job semantics;
     incompatible queued snapshots must drain or be rejected explicitly rather
     than being reinterpreted.
 - Dependency rationale:
-  - No dependency is proposed. Exact normalization and resource accounting can
+  - No new dependency is required. Exact normalization and resource accounting can
     use existing Rust and database primitives.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and

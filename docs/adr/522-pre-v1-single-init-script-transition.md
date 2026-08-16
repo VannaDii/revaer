@@ -1,8 +1,9 @@
 # Pre-v1 single init-script transition
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -115,22 +116,23 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the final `init.sql` authority, deterministic
+- This accepted ADR authorizes only the final `init.sql` authority, deterministic
   rebaseline, bounded assembly/cutover/deletion sequence, parity proof, fresh-
   database policy, and final guards described above.
-- Acceptance would not authorize skipping checks, reducing Sonar scope, hiding
+- This ADR does not authorize skipping checks, reducing Sonar scope, hiding
   SQL from analysis, exceeding 10,000 changed lines, preserving an alternate
   bootstrap, deleting user data, or creating a post-v1 migration policy.
 - The exact schema content remains governed by separately accepted media ADRs.
-  Proposed ADRs 507-521 and 523-525 add no SQL unless individually approved.
-- No SQL, script, workflow, dependency, or bootstrap change may occur until this
-  ADR receives explicit decision-specific approval.
+  Accepted ADRs 507-521 and 523-525 authorize only SQL within their recorded
+  scopes; unresolved exact values in ADRs 515 and 516 authorize no concrete
+  defaults.
+- SQL, script, workflow, dependency, and bootstrap changes must remain limited to
+  the accepted transition and media contracts.
 
 ## Validation
 
-- Proposal validation is documentation-only.
-- After approval, every assembly prefix must pass SQL parsing, empty-database
+- Decision validation to date is documentation-only.
+- During implementation, every assembly prefix must pass SQL parsing, empty-database
   prefix application, candidate-prefix digest, instruction drift, docs links,
   and changed-line enforcement.
 - Cutover must compare normalized catalogs and seed state in both directions and
@@ -143,7 +145,6 @@
 
 ## Follow-up
 
-- Obtain explicit operator approval before implementation or status change.
 - Generate and review the full local candidate before opening the first assembly
   slice; do not use incremental design decisions while appending bytes.
 - Place schema work for accepted ADRs before candidate freeze or defer it to a
@@ -157,19 +158,19 @@
   - Assembly and deletion are deliberately separate so no incomplete init script
     becomes authoritative and no pull request exceeds the size limit.
 - Test coverage summary:
-  - Proposal only; no SQL, bootstrap, workflow, or database test was added.
+  - The ADR-only change added no SQL, bootstrap, workflow, or database test.
 - Observability updates:
-  - No runtime telemetry is proposed. CI evidence later records bounded counts,
+  - No runtime telemetry is required. CI evidence later records bounded counts,
     candidate digest, parity result, and bootstrap source without database data.
 - Status-doc validation:
   - Reviewed the current migration corpus, `MEDIA_TRANSCODING.md`, accepted ADRs
-    446-451, 484, 500, and 501, and proposed ADRs 507-521.
+    446-451, 484, 500, 501, and 507-521.
 - Risk & rollback plan:
   - Before cutover, revert the affected leaf slices. After cutover, rollback
     means rebuilding an unpublished database from the prior stack commit; no
     in-place downgrade is claimed.
 - Dependency rationale:
-  - No dependency is proposed. Existing PostgreSQL tools, SHA-256 support, Git
+  - No new dependency is required. Existing PostgreSQL tools, SHA-256 support, Git
     diff accounting, and canonical `just` recipes are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/revaer-data.instructions.md`,

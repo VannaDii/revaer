@@ -1,8 +1,9 @@
 # Packaged media subsystem lifecycle and health contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -51,14 +52,14 @@
   root implicitly.
 - Root validation proves absolute managed placement, ownership and mode,
   filesystem identity, overlap rules, capacity access, and the durability and
-  sole-writer attestations required by approved ADR 447 and proposed ADR 512.
+  sole-writer attestations required by approved ADRs 447 and 512.
 - Destructive readiness requires an explicitly configured durable workspace
   volume. Helm's default `emptyDir` and any unattested writable root remain
   dry-run or disposable-evaluation only. The runtime must not infer durability
   from successful directory creation or filesystem writes.
 - One media-subsystem supervisor owns lifecycle states `starting`, `recovering`,
   `ready`, `degraded`, `draining`, `failed`, and `stopped`, plus the discovery,
-  job, and retention task handles and the proposed ADR 512 root-recovery barrier.
+  job, and retention task handles and the accepted ADR 512 root-recovery barrier.
 - Startup makes the API and non-media runtimes available after control-plane and
   database bootstrap. The media subsystem remains `recovering` until root
   provisioning, capability state, worker startup, and required reconciliation
@@ -80,7 +81,7 @@
   state, recovery state, workspace durability and eligibility, and capability
   degradation. It must not claim that media `ready` proves one profile and source
   can execute; that decision remains source-bound under approved ADR 442 and the
-  separate pending ADR 505 contract.
+  separate accepted ADR 505 contract.
 - Recoverable database, capability, or root-recovery errors keep the supervisor
   alive in `recovering` or `degraded` and retry through one injected bounded
   backoff policy. An unexpected child return, task panic, or invariant failure
@@ -89,7 +90,7 @@
 - SIGTERM and SIGINT atomically transition the process to `draining`, make global
   readiness fail, stop new claims, and start API drain plus media pause
   concurrently. Discovery and retention stop at safe boundaries; active jobs use
-  proposed ADR 512's resumable pause rather than terminal cancellation.
+  accepted ADR 512's resumable pause rather than terminal cancellation.
 - One aggregate application deadline covers API drain and every runtime task.
   Replacement finalization may complete within that deadline; unfinished work
   must leave durable recovery evidence. At the deadline, remaining tasks are
@@ -121,9 +122,9 @@
   whole-process failure. Deployment-supervisor restart and backoff timing remain
   outside this application contract.
 - Existing startup, readiness, and liveness probe periods and thresholds are not
-  changed or newly authorized by this architecture proposal. Any tuning requires
-  deployment evidence and must preserve the 30-second/45-second shutdown
-  relationship.
+  changed or newly authorized by this accepted architecture decision. Any tuning
+  requires deployment evidence and must preserve the 30-second/45-second
+  shutdown relationship.
 
 ## Consequences
 
@@ -143,38 +144,36 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only package-owned root provisioning and durability
+- This accepted ADR authorizes only package-owned root provisioning and durability
   classification, the media-subsystem lifecycle states, centralized child-task
   supervision, global versus media health semantics, handled capability
   degradation, whole-process failure behavior, concurrent signal drain, and
   supported shutdown values described above.
-- Approved ADRs 444, 447, 448, 452, 483, 500, and 501 remain binding. Proposed
-  ADRs 512 and 513 own worker recovery and retention ordering; this proposal
-  consumes their accepted contracts if they are separately approved.
-- Pending ADR 505 owns profile advisory readiness, universal impossibility, queue
-  admission, and source-bound preflight. This proposal does not accept, reject,
-  or redefine ADR 505 and does not make subsystem readiness an execution grant.
-- Pending ADRs 504 and 506 remain outside this lifecycle decision. Acceptance
-  would not authorize attempt-read API changes or manual-execution command
+- Approved ADRs 444, 447, 448, 452, 483, 500, and 501 remain binding. Accepted
+  ADRs 512 and 513 own worker recovery and retention ordering; this ADR consumes
+  their accepted contracts without redefining their unresolved timings.
+- Accepted ADR 505 owns profile advisory readiness, universal impossibility, queue
+  admission, and source-bound preflight. This ADR does not supersede or redefine
+  ADR 505 and does not make subsystem readiness an execution grant.
+- Accepted ADRs 504 and 506 remain outside this lifecycle decision. This ADR does
+  not authorize attempt-read API changes or manual-execution command
   semantics.
-- Acceptance would not authorize independent child-task restart, a new process
+- This ADR does not authorize independent child-task restart, a new process
   manager dependency, media-capability fallback, fabricated snapshots, media
   gating of remediation APIs, destructive work on ephemeral or unattested roots,
   a longer native-process grace, or a weaker shutdown deadline.
 - Environment reads and concrete adapters remain in bootstrap or package wiring;
   runtime logic receives the lifecycle, health, clock, backoff, root, and process
   collaborators from callers.
-- No runtime, API, Docker, Helm, schema, generated-contract, or operator-guide
-  behavior may change until this ADR receives explicit decision-specific operator
-  approval.
+- Runtime, API, Docker, Helm, schema, generated-contract, and operator-guide
+  changes must remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only; this record changes no bootstrap,
-  health, task, process, Docker, Helm, or runtime behavior.
+- Decision validation to date is documentation-only; this record changes no
+  bootstrap, health, task, process, Docker, Helm, or runtime behavior.
 
-| Scenario | Required result after approval |
+| Scenario | Required implementation result |
 | --- | --- |
 | Media tools are missing or malformed at startup | Process is live and globally ready after control-plane bootstrap; media is degraded; execution fails closed; refresh can recover. |
 | Workspace is missing, misowned, overlapping, ephemeral, or durably attested | Provisioning or eligibility fails closed, disposable storage remains dry-run-only, and only valid durable roots become destructive-ready. |
@@ -185,7 +184,7 @@
 | Long API connection and active native process exceed the application budget | Native escalation stays within 30 seconds, remaining tasks abort at the aggregate deadline, and the 45-second pod grace remains available. |
 | Media subsystem is ready but one profile/source is impossible | Global and subsystem health do not authorize execution; source-bound preflight remains authoritative. |
 
-- After approval, add packaged-image and Helm integration tests for root
+- During implementation, add packaged-image and Helm integration tests for root
   provisioning, empty and persistent volumes, ownership failures, capability
   repair, root-recovery blocking, task failure, nonzero restart, signal handling,
   active native processes, API drains, and aggregate deadline enforcement.
@@ -212,19 +211,18 @@
 - Explicitly approved ADRs 444, 447, 448, 452, 483, 500, and 501 constrain dry-run
   mutation, root ownership, resumability, dependency injection, crate ownership,
   workspace recovery, and native-process supervision.
-- Pending ADR 505 was inspected as a separate profile and admission proposal. Its
-  `Proposed` status and `Operator approval: Pending` field authorize no health or
-  lifecycle behavior.
+- Accepted ADR 505 was inspected as a separate profile and admission decision. Its
+  scope remains separate and does not make health or lifecycle state an execution
+  grant.
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before implementation or
-  before changing this ADR to `Accepted`.
-- Decide this proposal with proposed ADRs 512 and 513 so package startup,
+- Implement this ADR with accepted ADRs 512 and 513 so package startup,
   recovery, retention, and shutdown share one state model and barrier ordering.
 - Resolve retry-backoff timing from measured database and deployment failure
-  evidence before an accepted implementation requires concrete defaults.
-- If approved, implement the lifecycle registry and supervisor before changing
+  evidence through a separately approved follow-up before implementation requires
+  concrete defaults.
+- Implement the lifecycle registry and supervisor before changing
   health routes, root provisioning, Helm eligibility, or shutdown orchestration.
 - Reconcile `MEDIA_TRANSCODING.md`, Docker and Helm documentation, health and
   operator APIs, generated contracts, and deployment runbooks in the accepted
@@ -244,14 +242,14 @@
   - The 30-second application deadline is aggregate and leaves 15 seconds inside
     the current packaged pod grace for process and platform termination.
 - Test coverage summary:
-  - This proposal adds no bootstrap, health, runtime, Docker, Helm, process, or
-    integration tests.
+  - The ADR-only change added no bootstrap, health, runtime, Docker, Helm,
+    process, or integration tests.
   - `git diff --check`, `just instruction-drift`, and
-    `just docs-link-check` passed for this proposal-only change.
+    `just docs-link-check` passed for this ADR-only change.
   - The validation matrix and full repository gates remain mandatory after any
-    approval and implementation.
+    implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation must publish bounded lifecycle, worker-exit,
     recovery, capability, root-eligibility, drain, deadline, and forced-abort
     outcomes without source, path, job, attempt, profile, or pod identifiers as
@@ -259,25 +257,25 @@
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, historical ADRs 440 and 441, PR 190-194
     runtime and package behavior, approved ADRs 444, 447, 448, 452, 483, 500, and
-    501, and pending ADR 505. This proposal does not claim its recommendation is
-    approved or implemented.
+    501, and accepted ADR 505. This ADR is accepted but does not claim the contract
+    is implemented.
   - `README.md`, roadmap/status documents, runtime behavior, API contracts,
-    Docker and Helm behavior, and operator guides are unchanged; only the ADR
-    index and documentation summary expose this pending proposal.
+    Docker and Helm behavior, and operator guides are unchanged; the ADR index and
+    documentation summary expose this accepted but unimplemented decision.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    removing this ADR and its two catalogue entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must retain a package configuration that
     fails destructive work closed when durability or root ownership cannot be
     proven and must preserve recovery evidence across process replacement.
 - Dependency rationale:
-  - No dependency is proposed. Existing Tokio task supervision, watch channels,
-    health state, package primitives, deployment supervision, and injected
-    process boundaries are sufficient.
+  - No new dependency is required. Existing Tokio task supervision, watch
+    channels, health state, package primitives, deployment supervision, and
+    injected process boundaries are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,
     `.github/instructions/revaer-data.instructions.md`, and
     `.github/instructions/devops.instructions.md` as prospective implementation
     constraints.
-  - No policy drift was found. This proposal does not weaken readiness, resource,
+  - No policy drift was found. This ADR does not weaken readiness, resource,
     release, persistence, or quality-gate requirements.

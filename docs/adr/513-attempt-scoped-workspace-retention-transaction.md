@@ -1,8 +1,9 @@
 # Attempt-scoped workspace retention transaction
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -22,7 +23,7 @@
   current running claim.
 - Cleanup must remain bounded, deterministic, stored-procedure-backed, injected,
   preservation-biased under uncertainty, and compatible with per-root recovery
-  leadership from proposed ADR 512.
+  leadership from accepted ADR 512.
 
 ## Options
 
@@ -51,7 +52,7 @@
 - A queued job with no workspace requires no filesystem key. If admission or a
   prior implementation created a queued workspace, it remains protected until
   recovery classifies it explicitly.
-- Startup retention waits for the proposed ADR 512 recovery barrier for each
+- Startup retention waits for the accepted ADR 512 recovery barrier for each
   managed root. The recovery leader first classifies attempts, leases,
   checkpoints, replacement manifests, and the complete terminal outbox; only
   then may retention inspect that root.
@@ -96,9 +97,9 @@
 - No separate retry delay is selected for a failed cleanup candidate; absent a
   later approved policy, it becomes eligible at the next scheduled sweep.
 - Cleanup-claim expiry, abandoned-cleaner takeover, and fairness cursor lifetime
-  remain undecided until the worker lease and recovery timings in proposed ADR
+  remain undecided until the worker lease and recovery timings in accepted ADR
   512 are selected and fault-tested.
-- This proposal does not introduce an additional startup delay after the recovery
+- This ADR does not introduce an additional startup delay after the recovery
   barrier or shorten either persisted retention age without operational evidence.
 
 ## Consequences
@@ -119,35 +120,34 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the attempt-generation retention key, protected
+- This accepted ADR authorizes only the attempt-generation retention key, protected
   state set, per-root recovery barrier, per-attempt cleanup transaction,
   filesystem-before-evidence-pruning order, scoped partial-failure retry, orphan
   eligibility rules, and supported default values described above.
-- Approved ADR 500's attempt key and proposed ADR 512's worker ownership remain
-  authoritative inputs. This proposal does not redefine claim, checkpoint,
+- Approved ADR 500's attempt key and accepted ADR 512's worker ownership remain
+  authoritative inputs. This ADR does not redefine claim, checkpoint,
   aggregate-lease, replacement, or outbox semantics.
 - Before v1, accepted persistence changes must update
   `crates/revaer-data/init.sql`. Historical migration 0188 is provenance only and
   must not be restored.
-- Acceptance would not authorize database-first diagnostic deletion, job-only
+- This ADR does not authorize database-first diagnostic deletion, job-only
   workspace aliases, unbounded directory scans, heuristic deletion of malformed
   entries, deletion before root recovery, a background legacy-layout migration,
   or shorter retention defaults.
-- This proposal does not change completed-job or failed-job database-history
+- This ADR does not change completed-job or failed-job database-history
   policy beyond coordinating eligible diagnostic pruning after filesystem
   success. A different history-retention contract requires separate approval.
 - Runtime collaborators remain injected and all runtime persistence remains
   stored-procedure-backed.
-- No schema, runtime, filesystem, API, deployment, or documentation contract may
-  change until this ADR receives explicit decision-specific operator approval.
+- Schema, runtime, filesystem, API, deployment, and documentation changes must
+  remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only; this record changes no retention,
+- Decision validation to date is documentation-only; this record changes no retention,
   filesystem, schema, recovery, or database behavior.
 
-| Scenario | Required result after approval |
+| Scenario | Required implementation result |
 | --- | --- |
 | Service was stopped beyond a retention window | Paused, recovering, checkpoint-referenced, and unreconciled workspaces survive the startup sweep. |
 | One job has multiple attempts and claim generations | Only the exact eligible tuple is removed; every protected tuple remains unchanged. |
@@ -158,7 +158,7 @@
 | Malformed, ambiguous, or still-owned orphan directory | The entry is preserved, reported with a stable reason, and excluded from automatic deletion. |
 | More candidates exist than the configured bound | Each run remains bounded and the persisted cursor or ordering eventually reaches every eligible candidate. |
 
-- After approval, add stored-procedure and filesystem integration tests for every
+- During implementation, add stored-procedure and filesystem integration tests for every
   protected state, generation collision, policy edge, partial failure, absent
   path, acknowledgement crash, root outage, leadership takeover, malformed
   orphan, and bounded-fairness case.
@@ -181,17 +181,15 @@
 - Explicitly approved ADR 500 supersedes ADR 435's job-only workspace identity
   with the attempt-and-generation tuple. Approved ADRs 448 and 483 constrain
   checkpoint ownership and implementation boundaries.
-- Proposed ADR 512 supplies the root recovery barrier and resumable attempt states
-  consumed by this recommendation. It remains pending and authorizes no
-  implementation unless separately approved.
+- Accepted ADR 512 supplies the root recovery barrier and resumable attempt states
+  consumed by this recommendation. Its exact lease and recovery timings remain
+  unresolved and are not selected by this ADR.
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before implementation or
-  before changing this ADR to `Accepted`.
-- Decide this proposal together with proposed ADR 512 because retention safety
+- Implement this accepted ADR together with ADR 512 because retention safety
   depends on its attempt states, root recovery barrier, and ownership evidence.
-- If approved, implement the normalized eligibility and cleanup-acknowledgement
+- Implement the normalized eligibility and cleanup-acknowledgement
   contract before changing filesystem traversal or startup ordering.
 - Reconcile `MEDIA_TRANSCODING.md`, retention policy documentation, operator
   health surfaces, and capacity guidance in the accepted implementation change.
@@ -208,32 +206,32 @@
   - Failures are isolated to one attempt-generation candidate while uncertainty
     always fails toward preservation.
 - Test coverage summary:
-  - This proposal adds no retention, schema, filesystem, recovery, or integration
+  - The ADR-only change added no retention, schema, filesystem, recovery, or integration
     tests.
   - `git diff --check`, `just instruction-drift`, and
-    `just docs-link-check` passed for this proposal-only change.
+    `just docs-link-check` passed for this ADR-only change.
   - The validation matrix and full repository gates remain mandatory after any
-    approval and implementation.
+    implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation must expose bounded cleanup eligibility, protected,
     removed, partial-failure, acknowledgement-retry, orphan, and recovery-barrier
     outcomes without using paths, jobs, attempts, or generations as metric labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, ADR 435, approved ADRs 448, 483, and 500,
-    proposed ADR 512, PR 170 and PR 177 behavior, and current retention schema.
-    This proposal does not claim its recommendation is approved or implemented.
+    accepted ADR 512, PR 170 and PR 177 behavior, and current retention schema.
+    This ADR is accepted but does not claim the contract is implemented.
   - `README.md`, roadmap/status documents, operator guides, and runtime behavior
-    are unchanged; only the ADR index and documentation summary expose this
-    pending proposal.
+    are unchanged; the ADR index and documentation summary expose this accepted
+    but unimplemented decision.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    removing this ADR and its two catalogue entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must preserve every workspace or diagnostic
     record whose exact ownership cannot be represented by the older runtime;
     uncertain candidates must be quarantined or retained rather than rekeyed.
 - Dependency rationale:
-  - No dependency is proposed. Existing stored procedures, injected clocks,
+  - No new dependency is required. Existing stored procedures, injected clocks,
     bounded filesystem primitives, and current workspace layout utilities are
     sufficient.
 - Stale-policy check:

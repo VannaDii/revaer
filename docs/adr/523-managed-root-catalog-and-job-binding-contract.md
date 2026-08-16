@@ -1,8 +1,9 @@
 # Managed-root catalog and job binding contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -134,23 +135,22 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only deployment-authoritative slots, database
+- This accepted ADR authorizes only deployment-authoritative slots, database
   attestation, validation and overlap rules, profile/association binding, exact
   five-kind snapshots, identity revalidation, and stable errors described above.
 - Accepted ADRs 446, 447, 451, 484, 500, and 501 remain binding. ADR 517 owns the
   snapshot reader and ADR 525 separately owns backup layout and retention.
-- Acceptance would not authorize arbitrary API paths, distinct final-output
+- This ADR does not authorize arbitrary API paths, distinct final-output
   roots, path migration, symlink following, ephemeral destructive work,
-  automatic watcher activation from proposed ADR 516, or lifecycle behavior from
-  proposed ADR 514.
-- No schema, bootstrap, Helm, API, YAML, UI, filesystem, or runtime change may
-  occur before explicit decision-specific approval.
+  automatic watcher activation from ADR 516, or lifecycle behavior owned by ADR
+  514.
+- Schema, bootstrap, Helm, API, YAML, UI, filesystem, and runtime changes must
+  remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only.
-- After approval, test missing, duplicate, nested, aliased, bind-mounted,
+- Decision validation to date is documentation-only.
+- During implementation, test missing, duplicate, nested, aliased, bind-mounted,
   symlinked, non-directory, permission-invalid, ephemeral, and writer-uncontrolled
   slots on every supported platform.
 - Test all five kinds, optional states, source/output same-slot alias, forbidden
@@ -165,11 +165,10 @@
 
 ## Follow-up
 
-- Obtain explicit operator approval before implementation or status change.
-- Decide ADRs 517, 521, and 525 with this record so snapshot, operator mapping,
+- Implement accepted ADRs 517, 521, and 525 with this record so snapshot, operator mapping,
   and backup path ownership share the same root ids.
-- Reconcile proposed ADR 514's packaged provisioning text only if that separate
-  lifecycle proposal is approved.
+- Reconcile accepted ADR 514's packaged provisioning text in the same
+  implementation sequence.
 
 ## Task Record
 
@@ -180,20 +179,19 @@
   - Deployment config grants path authority; the database stores attestations,
     immutable bindings, and audit evidence.
 - Test coverage summary:
-  - Proposal only; no schema, package, filesystem, API, or runtime test was added.
+  - The ADR-only change added no schema, package, filesystem, API, or runtime test.
 - Observability updates:
   - Future metrics use root kind and bounded reason only. Paths, root keys,
     identities, devices, mounts, profiles, and jobs must not be labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, accepted ADRs 446-451, 484, 500, and 501,
-    and proposed ADRs 507-516. No pending lifecycle or discovery behavior is
-    imported.
+    and accepted ADRs 507-516. This ADR imports no unrelated lifecycle or
+    discovery behavior and preserves unresolved exact-value holds.
 - Risk & rollback plan:
-  - This proposal can be removed with its catalogue entries. A later rollback
-    must preserve bound-job identity evidence and hold roots an older runtime
-    cannot attest.
+  - Any reversal requires a superseding ADR. A later rollback must preserve
+    bound-job identity evidence and hold roots an older runtime cannot attest.
 - Dependency rationale:
-  - No dependency is proposed. Existing bootstrap injection, filesystem
+  - No new dependency is required. Existing bootstrap injection, filesystem
     descriptor, hashing, and stored-procedure facilities are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,

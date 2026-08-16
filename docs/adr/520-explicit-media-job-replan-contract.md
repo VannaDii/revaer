@@ -1,8 +1,9 @@
 # Explicit media job re-plan contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -71,10 +72,10 @@
 - A re-plan attempt does not consume the retry budget. A later retry of that
   attempt reuses the new plan generation and binding. Re-plan numbering and
   retry numbering remain independently visible in audit evidence.
-- Proposed ADR 512 currently recommends that only retry create a new attempt.
-  If both records are accepted, ADR 512 must be revised explicitly to admit the
-  `operator_replan` attempt cause; this proposal does not treat its pending state
-  machine as approved.
+- Accepted ADR 512 and this ADR use one attempt-creation rule: a new attempt
+  number is created only by explicit retry after a terminal failure or by the
+  accepted ADR 520 `operator_replan` transition; resuming an attempt only
+  advances claim generation.
 
 ### Prior Evidence And Checkpoint Invalidation
 
@@ -122,23 +123,23 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the command surface, authorization, request
+- This accepted ADR authorizes only the command surface, authorization, request
   bounds, same-job capability-only generation, successor rule, eligibility,
   atomic evidence, checkpoint invalidation, idempotency, and stable outcomes
   described above.
-- Accepted ADRs 448, 449, 500, and 501 remain binding. ADR 519 must be accepted
-  before this command can validate or bind an executable closure.
-- Acceptance would not authorize automatic re-plan, silent latest-run selection,
+- Accepted ADRs 448, 449, 500, 501, and 519 remain binding. This command validates
+  and binds executable closures only through ADR 519.
+- This ADR does not authorize automatic re-plan, silent latest-run selection,
   policy or target mutation, checkpoint reuse across capability identity,
-  completed-job replay, or any pending behavior from proposed ADRs 507-516.
-- No schema, API, UI, YAML, runtime, workflow, or generated-contract change may
-  occur until explicit decision-specific approval is recorded.
+  completed-job replay, or unrelated behavior from ADRs 507-516. It preserves the
+  exact-value holds in ADRs 515 and 516.
+- Schema, API, UI, YAML, runtime, workflow, and generated-contract changes must
+  remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only.
-- After approval, test authorization, confirmation, every input bound,
+- Decision validation to date is documentation-only.
+- During implementation, test authorization, confirmation, every input bound,
   optimistic concurrency, idempotent replay, conflicting idempotency, and
   concurrent re-plan requests.
 - Test every ownership and replacement phase, completed jobs, changed source,
@@ -152,9 +153,9 @@
 
 ## Follow-up
 
-- Obtain explicit operator approval before implementation or status change.
-- Decide ADR 519 first and reconcile the pending ADR 512 attempt-state wording if
-  both recommendations are selected.
+- Implement accepted ADR 519 and this ADR through one plan-generation schema. ADR
+  512 uses the same retry and `operator_replan` attempt-creation rule recorded
+  above.
 - Add read APIs that key all planning and attempt evidence by plan generation
   before exposing the command in the operator UI.
 
@@ -166,18 +167,19 @@
   - Capability-only evolution stays on one job; semantic intent changes require
     a successor job.
 - Test coverage summary:
-  - Proposal only; no schema, API, UI, or runtime tests were added.
+  - The ADR-only change added no schema, API, UI, or runtime tests.
 - Observability updates:
   - Future metrics may use bounded outcome and invalidation-reason enums. Actor,
     job, run, plan, attempt, and idempotency identifiers must not be labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, accepted ADRs 448, 449, 484, 500, and 501,
-    and proposed ADRs 507-516 and 519. No pending state model is imported.
+    and accepted ADRs 507-516 and 519. This ADR imports no unrelated state model
+    and preserves unresolved exact-value holds.
 - Risk & rollback plan:
-  - This proposal can be removed with its catalogue entries. A later rollback
-    must preserve all plan generations and refuse writes it cannot represent.
+  - Any reversal requires a superseding ADR. A later rollback must preserve all
+    plan generations and refuse writes it cannot represent.
 - Dependency rationale:
-  - No dependency is proposed; existing authentication, stored-procedure,
+  - No new dependency is required; existing authentication, stored-procedure,
     idempotency, and audit patterns are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,

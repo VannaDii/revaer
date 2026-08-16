@@ -1,8 +1,9 @@
 # Versioned sidecar token grammar and bounds
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -13,7 +14,7 @@
   not an approved persisted contract. Falling back to them when snapshot rules
   are absent would violate accepted ADRs 446 and 451.
 - Filename semantics influence filesystem traversal, sidecar ownership,
-  aggregate identity in proposed ADR 516, and destructive replacement under ADR
+  aggregate identity in accepted ADR 516, and destructive replacement under ADR
   500.
 
 ## Options
@@ -105,9 +106,9 @@
   aggregate with a stable reason. Unknown well-formed names that match no rule
   are ignored after bounded enumeration.
 - Record device, inode, byte length, high-resolution modification/change
-  observations, and an open-handle identity for each physical member. Proposed
-  ADR 516 owns any later aggregate hash and scheduling contract; this grammar
-  does not approve its pending algorithm or budgets.
+  observations, and an open-handle identity for each physical member. Accepted
+  ADR 516 owns the later aggregate hash and scheduling architecture; this grammar
+  does not select its unresolved algorithm or budgets.
 - Revalidate the complete selected sidecar membership and descriptor identities
   under ADR 500's cooperative aggregate ownership immediately before mutation.
   A changed directory or member blocks replacement.
@@ -138,22 +139,21 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only grammar version 1, four templates, token and
+- This accepted ADR authorizes only grammar version 1, four templates, token and
   alias semantics, zero-rule behavior, exact budgets, descriptor security,
   pair handling, ambiguity behavior, and stable errors described above.
 - Accepted ADRs 446, 450, 451, and 500 remain binding. ADRs 517, 518, 521, and
   523 must carry the versioned rules without changing their meaning.
-- Acceptance would not authorize glob, regex, recursion, external acquisition,
-  OCR, automatic watcher or schedule activation, proposed ADR 516 aggregate
-  encoding, or proposed ADR 509 unmatched actions.
-- No schema, API, YAML, UI, filesystem, runtime, workflow, or generated-contract
-  behavior may change before explicit decision-specific approval.
+- This ADR does not authorize glob, regex, recursion, external acquisition, OCR,
+  automatic watcher or schedule activation, unresolved ADR 516 aggregate values,
+  or any redefinition of accepted ADR 509 unmatched actions.
+- Schema, API, YAML, UI, filesystem, runtime, workflow, and generated-contract
+  changes must remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only.
-- After approval, exhaustively test all four forms, every role alias, language
+- Decision validation to date is documentation-only.
+- During implementation, exhaustively test all four forms, every role alias, language
   normalization, extension case, precedence order, zero and disabled rules, and
   every invalid token or extra component.
 - Test exact and exceeded entry, count, physical-member, per-sidecar, aggregate-
@@ -168,11 +168,10 @@
 
 ## Follow-up
 
-- Obtain explicit operator approval before implementation or status change.
-- Decide ADRs 517, 518, 521, and 523 with this record so persistence, compilation,
+- Implement accepted ADRs 517, 518, 521, and 523 with this record so persistence, compilation,
   API, and root traversal use one grammar version.
-- If ADR 516 is later approved, import this exact membership contract without
-  adopting any unapproved scheduler or hashing value by implication.
+- When implementing accepted ADR 516, import this exact membership contract
+  without selecting any unresolved scheduler or hashing value by implication.
 
 ## Task Record
 
@@ -182,18 +181,19 @@
   - A small closed parser replaces both hard-coded fallback and general-purpose
     pattern languages.
 - Test coverage summary:
-  - Proposal only; no parser, filesystem, schema, API, or media tests were added.
+  - The ADR-only change added no parser, filesystem, schema, API, or media tests.
 - Observability updates:
   - Future metrics use bounded format, rule ordinal, and reason only. Filenames,
     paths, source ids, and language values must not be labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, accepted ADRs 446-451, 484, 500, and 501,
-    and proposed ADRs 507-516. No pending aggregate behavior is claimed.
+    and accepted ADRs 507-516. No unresolved aggregate value is claimed as
+    selected.
 - Risk & rollback plan:
-  - This record can be removed with its catalogue entries. A later rollback must
-    reject snapshots whose grammar version it cannot interpret exactly.
+  - Any reversal requires a superseding ADR. A later rollback must reject
+    snapshots whose grammar version it cannot interpret exactly.
 - Dependency rationale:
-  - No dependency is proposed; a closed token enum and existing descriptor APIs
+  - No new dependency is required; a closed token enum and existing descriptor APIs
     are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,

@@ -1,8 +1,9 @@
 # Exact video technical constraints
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -64,7 +65,7 @@
     frame area.
   - Candidate bytes cannot exceed the amount admitted by workspace preflight.
   - Media execution retains ADR 501's approved duration-derived transcode
-    deadline and 24-hour maximum; this proposal does not define another process
+    deadline and 24-hour maximum; this ADR does not define another process
     deadline.
 - Persist declared constraints as normalized scalar desired-target rows and
   immutable job-snapshot rows. API responses and YAML export emit canonical
@@ -87,12 +88,11 @@
   before they consume unbounded CPU, memory, disk, or process time.
 - API/OpenAPI, YAML, normalized persistence and snapshots, compilation,
   planning, command construction, verification, docs, and UI labels must agree
-  on equality versus ceiling semantics after approval.
+  on equality versus ceiling semantics during implementation.
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the exact video fields, inclusive maximum
+- This accepted ADR authorizes only the exact video fields, inclusive maximum
   bitrate, canonical frame-rate representation, mismatch-only encode rule,
   listed resource limits, normalized desired-target and immutable snapshot
   state, capability projection, and exact candidate and final verification.
@@ -108,18 +108,18 @@
   not authorize or redefine its values.
 - ADR 501 remains authoritative for native-process deadlines, output bounds,
   cancellation, and process-group cleanup.
-- Acceptance would not authorize audio constraints, encoder quality or preset
+- This ADR does not authorize audio constraints, encoder quality or preset
   heuristics, automatic target relaxation, arbitrary scaling strategies, frame
   interpolation, tone mapping, approximate frame-rate comparison, capability
   fallback, or increased process and workspace bounds.
-- No schema, runtime, API, YAML, generated-contract, or UI behavior may change
-  until this ADR receives explicit decision-specific operator approval.
+- Schema, runtime, API, YAML, generated-contract, and UI changes must remain
+  limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only; this record changes no video,
+- Decision validation to date is documentation-only; this record changes no video,
   planner, encoder, workspace, or verification behavior.
-- After approval, add boundary tests for paired dimensions, per-axis and area
+- During implementation, add boundary tests for paired dimensions, per-axis and area
   limits, bitrate limits, frame-rate parsing and reduction, term and value
   limits, normalized profile/level and color values, and direct stored-procedure
   attempts to bypass every invariant.
@@ -149,13 +149,11 @@
   migration, and is outside this video decision.
 - Approved ADRs 442, 446, 449, and 451 continue to govern capability planning,
   immutable snapshots, capability binding, and effective-policy compilation.
-  This proposal does not reopen them.
+  This ADR does not reopen them.
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before implementation or
-  before changing this ADR to `Accepted`.
-- If approved, implement one typed constraint contract and make ingress,
+- Implement one typed constraint contract and make ingress,
   persistence, planning, command construction, and both verification stages
   consume it without field-specific reinterpretation.
 - Reconcile `MEDIA_TRANSCODING.md`, OpenAPI, YAML examples, generated clients,
@@ -172,31 +170,32 @@
   - Source-bound inspection determines whether encoding is necessary; the
     declaration alone does not authorize lossy work.
 - Test coverage summary:
-  - This proposal adds no runtime, API, schema, planner, command, workspace, or
+  - The ADR-only change added no runtime, API, schema, planner, command, workspace, or
     media-fixture tests.
   - `git diff --check`, `just instruction-drift`, and
-    `just docs-link-check` passed for this proposal-only change.
+    `just docs-link-check` passed for this ADR-only change.
   - The focused and full validation listed above remains mandatory after any
-    approval and implementation.
+    implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation should persist bounded mismatch, capability, and
     resource-rejection reason codes without placing source, target, job,
     capability, resolution, or bitrate values in metric labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, historical ADR 421 and PR 138 evidence, and
-    approved planning and snapshot ADRs. This proposal does not claim the
-    recommended constraints are approved or implemented.
+    approved planning and snapshot ADRs. This ADR is accepted but does not claim
+    the constraints are implemented.
   - `README.md`, roadmap/status documents, and operator guides are unchanged;
-    only the ADR index and documentation summary expose this pending proposal.
+    the ADR index and documentation summary expose this accepted but unimplemented
+    decision.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    reverting this ADR and its two index entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must not reinterpret immutable constraints
     or silently relax queued jobs. Incompatible jobs must drain or fail
     explicitly, and safety limits must remain fail-closed.
 - Dependency rationale:
-  - No dependency is proposed. Checked integer arithmetic, greatest-common-
+  - No new dependency is required. Checked integer arithmetic, greatest-common-
     divisor reduction, normalization, and existing process/workspace primitives
     are sufficient.
 - Stale-policy check:

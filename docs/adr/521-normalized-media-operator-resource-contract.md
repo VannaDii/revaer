@@ -1,8 +1,9 @@
 # Normalized media operator resource contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -86,13 +87,13 @@
   - 128 classification rules;
   - 32 maintenance windows;
   - 64 desired streams.
-- Any separately approved ADR 507-511 or 515 child state retains that ADR's
-  smaller field and aggregate bounds and also counts toward the 1 MiB request.
-  Pending proposals create no accepted field, default, or endpoint.
+- Child state from accepted ADRs 507-511 and the typed structure from ADR 515
+  retain their smaller field and aggregate bounds and also count toward the 1 MiB
+  request. Unresolved exact values create no field, default, or endpoint.
 - A discovery association path is root-relative, valid UTF-8, 1-4,096 bytes,
   normalized without `.` or `..`, and contains no absolute prefix. Watcher and
-  schedule fields remain disabled or rejected until proposed ADR 516 receives
-  approval and its exact timings and budgets are selected.
+  schedule fields remain disabled or rejected until ADR 516's exact timings and
+  budgets receive separate approval and its validation gates pass.
 
 ### YAML Contract
 
@@ -142,23 +143,21 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the seven resources, endpoint ownership,
+- This accepted ADR authorizes only the seven resources, endpoint ownership,
   complete replacement, ETag/version rules, transaction scopes, bounds, YAML
   structure, draft root mapping, and stable errors described above.
-- Accepted ADRs 446-451 and 484 remain binding. ADRs 517, 518, 523, and 524 must
-  be accepted before their rows and compiler can be exposed.
-- Acceptance would not approve watcher or schedule activation in proposed ADR
-  516 or any field or behavior in proposed ADRs 507-515. It would not authorize
-  JSONB, generic extension maps, raw paths in portable YAML, arbitrary commands,
-  or partial aggregate writes.
-- No schema, API, OpenAPI, YAML, UI, generated client, workflow, or runtime change
-  may occur before explicit decision-specific approval.
+- Accepted ADRs 446-451, 484, 517, 518, 523, and 524 remain binding. Their rows and
+  compiler must be exposed as one coordinated contract.
+- This ADR does not activate watchers or schedules, invent unresolved exact values
+  from ADRs 515 and 516, authorize JSONB or generic extension maps, place raw paths
+  in portable YAML, permit arbitrary commands, or allow partial aggregate writes.
+- Schema, API, OpenAPI, YAML, UI, generated-client, workflow, and runtime changes
+  must remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only.
-- After approval, add contract tests for create, replace, archive, every bound,
+- Decision validation to date is documentation-only.
+- During implementation, add contract tests for create, replace, archive, every bound,
   unknown/duplicate fields, canonical enums, 428, 412, 409, and concurrent PUTs.
 - Add direct stored-procedure tests proving an application caller cannot bypass
   version checks, references, child bounds, overlap checks, or compiler validity.
@@ -171,10 +170,10 @@
 
 ## Follow-up
 
-- Obtain explicit operator approval before implementation or status change.
 - Inventory existing routes against the seven resources and preserve compatible
   route names without preserving incomplete semantics.
-- Decide ADRs 517, 518, 523, and 524 before freezing OpenAPI or YAML version 1.
+- Implement accepted ADRs 517, 518, 523, and 524 together before freezing OpenAPI
+  or YAML version 1.
 
 ## Task Record
 
@@ -184,18 +183,18 @@
   - Public aggregates are typed and versioned while durable child state remains
     normalized relational rows.
 - Test coverage summary:
-  - Proposal only; no API, YAML, database, UI, or E2E tests were added.
+  - The ADR-only change added no API, YAML, database, UI, or E2E tests.
 - Observability updates:
   - Future metrics may use bounded resource kind and outcome only. Keys, public
     ids, paths, ETags, and validation values must not be labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, accepted ADRs 446-451, 484, 500, and 501,
-    and proposed ADRs 507-516. Pending fields remain unavailable.
+    and accepted ADRs 507-516. Unresolved exact-value fields remain unavailable.
 - Risk & rollback plan:
-  - This proposal can be removed with its catalogue entries. A later rollback
-    must retain immutable versions referenced by jobs and reject unknown versions.
+  - Any reversal requires a superseding ADR. A later rollback must retain
+    immutable versions referenced by jobs and reject unknown versions.
 - Dependency rationale:
-  - No dependency is proposed. Existing HTTP, YAML, typed model, transaction,
+  - No new dependency is required. Existing HTTP, YAML, typed model, transaction,
     and stored-procedure facilities are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/revaer-data.instructions.md`,

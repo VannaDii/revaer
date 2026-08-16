@@ -1,8 +1,9 @@
 # Generation-fenced media job snapshot reader contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -15,10 +16,11 @@
 - A set of independently successful reads is not sufficient. The worker must
   prove that every required family belongs to one immutable job snapshot and
   that its attempt and claim generation are still current.
-- Proposed ADRs 507-516 may add accepted metadata, chapter, stream, video,
-  recovery, retention, lifecycle, audio, or discovery state later. Their
-  pending recommendations are not part of an approved snapshot merely because
-  this transport can carry versioned extensions.
+- Accepted ADRs 507-514 define metadata, chapter, stream, video, recovery,
+  retention, and lifecycle contracts. Accepted ADRs 515 and 516 define versioned
+  architecture while leaving exact values unresolved. A snapshot carries only
+  fields authorized by those accepted contracts and separately approved exact
+  values; transport extensibility never invents state.
 
 ## Options
 
@@ -70,7 +72,7 @@
 | Header | exactly 1 | n/a |
 | Filter | exactly 1 | n/a |
 | Behavior | exactly 1 | n/a |
-| Managed roots | exactly 5 after separate ADR 523 approval | root-kind ordinal |
+| Managed roots | exactly 5 under accepted ADR 523 | root-kind ordinal |
 | File rules | 0 through 128 | `sort_order`, normalized rule key |
 | Subtitle discovery rules | 0 through 4; semantic zero-rule handling belongs to ADR 524 | precedence, normalized pattern |
 | Retention rules | 0 through 128 | `sort_order`, normalized rule key |
@@ -84,11 +86,12 @@
 - Bounds count enabled and disabled rows. Duplicate sort positions, duplicate
   normalized keys, a count different from the header, or a row beyond a bound
   invalidates the aggregate rather than being ignored.
-- Proposed ADRs 507-511 and 515 may add normalized target child families only
-  after separate approval. Each accepted family requires an explicit reader,
-  count, bound, canonical family ordinal, and snapshot-contract version change.
-  Proposed ADRs 512-514 and 516 describe operational state, not immutable job-
-  policy rows, and do not enter this aggregate by implication.
+- Accepted ADRs 507-511 define normalized target child families. Accepted ADR 515
+  defines only its typed contract structure until exact preset values receive
+  separate approval. Each implemented family requires an explicit reader, count,
+  bound, canonical family ordinal, and snapshot-contract version change. Accepted
+  ADRs 512-514 and 516 describe operational state, not immutable job-policy rows,
+  and do not enter this aggregate by implication.
 
 ### Isolation And Fence Handling
 
@@ -124,8 +127,8 @@
 - Snapshot creation persists the framed byte count and SHA-256 digest in the
   same transaction as the child rows. The bounded Rust loader independently
   frames the returned rows and requires exact byte-count and digest equality.
-  Existing `pgcrypto` and Rust SHA-256 support are sufficient; no dependency is
-  proposed.
+  Existing `pgcrypto` and Rust SHA-256 support are sufficient; no new dependency
+  is required.
 
 ### Stable Errors
 
@@ -154,30 +157,28 @@
 - The database and Rust implementations must share canonical framing test
   vectors. A framing or semantic change requires a new contract version rather
   than reinterpretation.
-- Cross-family semantic validation remains owned by the pure compiler proposed
+- Cross-family semantic validation remains owned by the pure compiler accepted
   in ADR 518. This ADR validates transport completeness only.
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the reader names and arguments, cardinality
+- This accepted ADR authorizes only the reader names and arguments, cardinality
   and ordering bounds, repeatable-read loading protocol, aggregate framing and
   digest, stable errors, and post-compile fence assertion described above.
-- Acceptance alone would not authorize the exact five-root content in ADR 523,
-  the policy semantics in ADR 518, capability binding in ADR 519, re-plan in ADR
-  520, operator resources in ADR 521, or any recommendation in proposed ADRs
-  507-516.
-- Persistence changes, if later approved, belong in the pre-v1 `init.sql` under
-  the separately approved transition contract. Runtime access remains stored-
+- This ADR does not redefine the separately accepted five-root content in ADR
+  523, policy semantics in ADR 518, capability binding in ADR 519, re-plan in ADR
+  520, operator resources in ADR 521, or contracts in ADRs 507-516. Implementation
+  must compose those accepted boundaries and preserve unresolved exact-value holds.
+- Persistence changes belong in the pre-v1 `init.sql` under accepted ADR 522.
+  Runtime access remains stored-
   procedure-only and collaborators remain injected.
-- No schema, SQL, Rust, API, workflow, generated contract, or runtime behavior
-  may change until this ADR receives explicit decision-specific approval and all
-  required cross-ADR contracts are accepted.
+- Schema, SQL, Rust, API, workflow, generated-contract, and runtime changes must
+  remain limited to this ADR and the accepted cross-ADR contracts above.
 
 ## Validation
 
-- Proposal validation is documentation-only.
-- After approval, add database and Rust known-answer vectors for empty, minimum,
+- Decision validation to date is documentation-only.
+- During implementation, add database and Rust known-answer vectors for empty, minimum,
   and maximum families; every scalar and nullable type; Unicode text; row-order
   changes; and one-bit value changes.
 - Add concurrency tests for claim loss before the first reader, between readers,
@@ -191,10 +192,9 @@
 
 ## Follow-up
 
-- Obtain explicit operator approval before implementation or changing this ADR
-  to `Accepted`.
-- Decide ADRs 518, 519, 521, 523, and 524 before freezing the first aggregate
-  version; decide any proposed target extensions before adding their families.
+- Implement accepted ADRs 518, 519, 521, 523, and 524 together before freezing the
+  first aggregate version; add future target extensions only after separate
+  approval.
 - Implement the database snapshot writer and reader contract before allowing
   the application compiler or worker to consume it.
 
@@ -206,19 +206,20 @@
   - Transport completeness, semantic compilation, resolved roots, and capability
     evidence remain separate typed boundaries.
 - Test coverage summary:
-  - Proposal only; no schema, SQL, Rust, API, UI, or runtime tests were added.
+  - The ADR-only change added no schema, SQL, Rust, API, UI, or runtime tests.
 - Observability updates:
   - A future implementation may count bounded error codes and family enums. Job,
     attempt, claim, path, digest, and value data must not be metric labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, accepted ADRs 446-451, 484, 500, and 501,
-    and proposed ADRs 507-516. This record claims no implementation.
+    and accepted ADRs 507-516. This record claims no implementation and preserves
+    the exact-value holds in ADRs 515 and 516.
 - Risk & rollback plan:
-  - The proposal can be rolled back by deleting this file and its catalogue
-    entries. A later implementation must reject unsupported queued snapshot
-    versions rather than reinterpret or partially load them.
+  - Any reversal requires a superseding ADR. A later implementation must reject
+    unsupported queued snapshot versions rather than reinterpret or partially
+    load them.
 - Dependency rationale:
-  - No dependency is proposed; the repository already uses PostgreSQL
+  - No new dependency is required; the repository already uses PostgreSQL
     `pgcrypto` and Rust SHA-256 support.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and

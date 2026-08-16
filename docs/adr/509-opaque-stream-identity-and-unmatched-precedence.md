@@ -1,8 +1,9 @@
 # Opaque stream identity and unmatched precedence
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -57,7 +58,7 @@
      stream in source order.
   4. Apply `unmatched_subtitle_action` to every remaining discovered sidecar and
      its owned companion as one aggregate.
-  5. Handle container chapters only through the independently proposed chapter
+  5. Handle container chapters only through the independently accepted ADR 508
      policy; chapters never use an unmatched-stream action.
 - Public and persisted unmatched actions are exactly `remove`, `preserve`, and
   `fail`. Defaults are video `fail`, audio `preserve`, subtitle `preserve`,
@@ -98,12 +99,11 @@
   separately bounded payload verifier is approved and implemented.
 - API/OpenAPI, YAML, normalized policy and job snapshots, compilation, planning,
   command construction, verification, documentation, and UI labels must change
-  together after approval.
+  together during implementation.
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the supported authored stream kinds, exact
+- This accepted ADR authorizes only the supported authored stream kinds, exact
   precedence order, five action values and defaults, explicit snapshots,
   binding-based identity, copy-only opaque retention, exact retained-state
   checks, and attachment payload verification described above.
@@ -116,18 +116,18 @@
 - ADR 450 continues to own sidecar filename discovery and ownership. This ADR
   governs only the action applied after approved discovery leaves a sidecar
   unmatched.
-- Acceptance would not authorize attachment or data replacement, attachment or
+- This ADR does not authorize attachment or data replacement, attachment or
   data target selectors, data transcoding, a new sidecar grammar, fuzzy codec
   matching, output-index identity, caller-authored bindings, live policy reads,
   or relaxation of process, workspace, cancellation, or verification bounds.
-- No schema, runtime, API, YAML, generated-contract, or UI behavior may change
-  until this ADR receives explicit decision-specific operator approval.
+- Schema, runtime, API, YAML, generated-contract, and UI changes must remain
+  limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only; this record changes no stream,
+- Decision validation to date is documentation-only; this record changes no stream,
   attachment, sidecar, planner, or verifier behavior.
-- After approval, add an exhaustive table for every stream kind and every
+- During implementation, add an exhaustive table for every stream kind and every
   `remove | preserve | fail` action, both attachment policies, matched and
   unmatched streams, multiple source streams, and subtitle sidecars with owned
   companions.
@@ -161,13 +161,11 @@
   decision or implementation claim is derived from PR 125.
 - Approved ADRs 442, 446, 449, 450, and 451 continue to govern planning,
   immutable snapshots, capability binding, sidecar discovery, and policy
-  compilation. This proposal does not reopen them.
+  compilation. This ADR does not reopen them.
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before implementation or
-  before changing this ADR to `Accepted`.
-- If approved, correct the API/core target-kind divergence and numeric-id
+- Correct the API/core target-kind divergence and numeric-id
   identity defects before expanding any opaque-stream surface.
 - Reconcile the contradictory attachment-removal language in
   `MEDIA_TRANSCODING.md`, then update OpenAPI, YAML examples, generated clients,
@@ -185,31 +183,32 @@
   - Attachment `strip` is the highest-precedence target rule; otherwise the
     immutable per-kind policy decides the remaining unmatched stream.
 - Test coverage summary:
-  - This proposal adds no runtime, API, schema, planner, verifier, or UI tests.
+  - The ADR-only change added no runtime, API, schema, planner, verifier, or UI tests.
   - `git diff --check`, `just instruction-drift`, and
-    `just docs-link-check` passed for this proposal-only change.
+    `just docs-link-check` passed for this ADR-only change.
   - The matrix and full validation listed above remains mandatory after any
-    approval and implementation.
+    implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation should persist bounded per-kind planning and
     retained-state verification reason codes. It must not log attachment
     payloads, metadata values, source paths, fingerprints, or identifiers as
     metric labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, historical ADRs 368-370, 375, 376, and 421,
-    and approved ADRs 442, 446, 449-451. This proposal makes no claim that the
-    recommended precedence or identity contract is approved or implemented.
+    and approved ADRs 442, 446, 449-451. This ADR is accepted but does not claim
+    that the precedence or identity contract is implemented.
   - `README.md`, roadmap/status documents, and operator guides are unchanged;
-    only the ADR index and documentation summary expose this pending proposal.
+    the ADR index and documentation summary expose this accepted but unimplemented
+    decision.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    reverting this ADR and its two index entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must preserve immutable queued-job actions
     and source bindings. Jobs carrying incompatible snapshots must drain or fail
     explicitly rather than reading mutable profile state.
 - Dependency rationale:
-  - No dependency is proposed. Existing bindings, normalization, hashing,
+  - No new dependency is required. Existing bindings, normalization, hashing,
     process, and workspace primitives are sufficient for the recommended scope.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,
@@ -217,4 +216,4 @@
     that constrain prospective implementation.
   - No repository-policy drift was found. The source-stack API/core divergence
     and contradictory attachment-removal statements are product-contract drift
-    recorded for resolution only after approval.
+    that implementation must resolve.

@@ -1,8 +1,9 @@
 # Durable discovery scheduling and versioned aggregate identity
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -40,10 +41,10 @@
 - The baseline requires automatic discovery to exist, but explicitly keeps it
   disabled by default and does not select the replayed scheduler topology or
   constants.
-- Automatic watchers and scheduled scans must remain disabled while this ADR is
-  pending and until an approved durable implementation passes its validation
-  gates. Existing profile flags, normalized rows, or passing watcher tests do not
-  authorize activation.
+- Automatic watchers and scheduled scans must remain disabled until exact
+  scheduler values and budgets receive separate approval and the durable
+  implementation passes its validation gates. Existing profile flags, normalized
+  rows, or passing watcher tests do not authorize activation.
 - The current aggregate algorithm, fixed sidecar ownership rules, resource
   limits, and path-plus-observation deduplication are held from destructive use.
   They must not authorize source replacement, backup, quarantine, source-adjacent
@@ -56,9 +57,9 @@
   versions, incomplete member evidence, or exhausted mandatory identity budgets.
   It must not silently omit members, restart with permissive defaults, or degrade
   to path and timestamp identity.
-- This proposal changes no runtime behavior and does not itself authorize adding
-  fail-closed enforcement. It records the hold that reconstruction and later
-  implementation must preserve pending approval.
+- This ADR changes no runtime behavior by itself. Its acceptance authorizes
+  fail-closed enforcement and the durable architecture, while automatic and
+  destructive behavior remains held pending separate exact-value approval.
 
 ## Options
 
@@ -83,7 +84,8 @@
 
 ## Recommendation
 
-- Adopt option 3 after the operator selects or revises the unresolved choices.
+- Adopt option 3 as the accepted architecture. Production activation follows only
+  after the operator selects or revises the unresolved choices.
 - Make PostgreSQL the durable source of truth for discovery schedule state,
   rescan requests, run generations, ownership, and bounded traversal progress.
   All runtime database access remains through stored procedures.
@@ -148,7 +150,7 @@
   affected unchanged sources or are activated through an explicit operator
   re-evaluation command.
 - No replayed capacity, timing, hash encoding, or ownership heuristic is adopted
-  merely because it already exists or has unit tests.
+  by this ADR merely because it already exists or has unit tests.
 
 ## Consequences
 
@@ -171,17 +173,15 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed` and
-  `Operator approval` is `Pending`.
-- Acceptance would authorize only durable fenced discovery-run ownership,
+- This accepted ADR authorizes only durable fenced discovery-run ownership,
   relational scan progress and rescan requests, watcher coalescing and overflow
   recovery, approved-root traversal, versioned exact aggregate identity,
-  configuration-aware deduplication, and the selected limits and failure states
-  explicitly approved by the operator.
-- Acceptance without selected scheduler timings, budgets, aggregate encoding,
-  and limit behavior does not authorize production activation. Those values must
-  be approved in this ADR or an explicitly linked follow-up decision before
-  automatic discovery is enabled.
+  and configuration-aware deduplication. Limits and failure states remain outside
+  this authorization until explicitly approved by the operator.
+- This acceptance does not authorize production activation without selected
+  scheduler timings, budgets, aggregate encoding, and limit behavior. Those
+  values must be approved in this ADR or an explicitly linked follow-up decision
+  before automatic discovery is enabled.
 - Any accepted persistence work belongs in the v0 `init.sql`; historical
   migrations 0152, 0182, and 0187 remain provenance and must not be replayed as
   the implementation mechanism.
@@ -189,24 +189,25 @@
   stored procedures, injected app runtime services, managed-root traversal,
   watcher adapters, aggregate construction and revalidation, API/UI operator
   surfaces, bounded telemetry, and their tests.
-- This proposal does not approve ADR 512's worker lease timings or state machine.
-  Discovery-run ownership must compose with, but remain distinct from, worker
-  attempt ownership and ADR 500's destructive source lease.
-- Acceptance would not authorize automatic enablement, JSONB application state,
+- Accepted ADR 512 separately owns the worker state machine; its exact lease
+  timings remain unresolved. Discovery-run ownership must compose with, but remain
+  distinct from, worker attempt ownership and ADR 500's destructive source lease.
+- This ADR does not authorize automatic enablement, JSONB application state,
   path or timestamp identity, fixed unsnapshotted sidecar fallback, an external
   scheduler, weaker root checks, criteria suppression, or unrelated worker,
   replacement, target, or policy behavior.
 - Approved ADRs 445, 446, 447, 449, 450, 451, 484, and 500 remain binding.
-- No schema, runtime, API, UI, workflow, generated-contract, deployment, or
-  specification behavior may change until explicit decision-specific approval is
-  recorded.
+- Structural schema, runtime, API, UI, workflow, generated-contract, deployment,
+  and specification changes may implement only the accepted disabled and fail-
+  closed architecture. Automatic or destructive behavior may not become active
+  until separate decision-specific approval records the unresolved values.
 
 ## Validation
 
-- Proposal validation is documentation-only. This ADR adds no implementation or
-  behavioral test.
+- Decision validation to date is documentation-only. This ADR adds no
+  implementation or behavioral test.
 
-| Scenario | Required result after approval |
+| Scenario | Required result after exact-value approval and implementation |
 | --- | --- |
 | Restart before, during, and after each scan batch | Durable due state and the fenced frontier resume without duplicate ownership, lost progress, or permissive restart. |
 | Two or more service processes claim one root | Exactly one current run generation advances or publishes; every stale write is rejected. |
@@ -219,11 +220,11 @@
 | Aggregate algorithm or encoding upgrade | Old and new versions remain distinguishable; no digest is reinterpreted under different canonical semantics. |
 | Budget exhaustion and cancellation | Work stops within approved bounds, persists valid progress only under the current generation, and reports bounded reasons without losing the recovery path. |
 
-- After approval, add stored-procedure concurrency and fencing tests, restart and
-  failover tests, traversal property and race tests, large-directory and large-
-  media benchmarks, watcher fault injection, sidecar ownership matrices,
-  aggregate known-answer vectors, deduplication tests across target and policy
-  versions, and destructive pre-mutation rejection tests.
+- Before production activation, add stored-procedure concurrency and fencing
+  tests, restart and failover tests, traversal property and race tests, large-
+  directory and large-media benchmarks, watcher fault injection, sidecar
+  ownership matrices, aggregate known-answer vectors, deduplication tests across
+  target and policy versions, and destructive pre-mutation rejection tests.
 - An accepted implementation is not complete until strict Sonar coverage and
   result guardrails, the complete media conversion and filesystem fault matrix,
   `just ci`, and `just ui-e2e` pass.
@@ -251,27 +252,26 @@
 - Approved ADRs 445, 446, 447, 449, 450, 451, 484, and 500 establish governance,
   immutable snapshot transport, managed-root ownership, capability binding,
   sidecar grammar, effective policy compilation, operator workflows, and
-  destructive source leasing preserved by this proposal.
-- Proposed ADR 512 was reviewed only to keep discovery-run ownership distinct
-  from pending worker-attempt ownership. Its pending recommendation and undecided
-  timings are not imported or approved here.
+  destructive source leasing preserved by this ADR.
+- Accepted ADR 512 keeps discovery-run ownership distinct from worker-attempt
+  ownership. Its undecided timings are not imported or selected here.
 
 ## Follow-up
 
-- Obtain explicit operator selection or revision of the unresolved choices before
-  changing this ADR to `Accepted`.
+- Obtain separate explicit operator selection or revision of the unresolved
+  choices before production activation.
 - Measure representative library sizes, directory fanout, watcher pressure,
   storage throughput, database contention, restart behavior, and aggregate hash
   cost before proposing concrete production limits or timings.
-- If approved, define the normalized run, frontier, rescan, member, and aggregate
-  contracts and stored procedures first. Then implement injected scheduling,
-  traversal, watchers, identity, operator surfaces, and observability against
-  those contracts.
+- Define the normalized run, frontier, rescan, member, and aggregate contracts and
+  stored procedures in disabled, fail-closed form first. After exact values are
+  approved, implement and activate injected scheduling, traversal, watchers,
+  identity, operator surfaces, and observability against those contracts.
 - Keep automatic watchers and schedules disabled throughout implementation until
   the complete approved validation matrix passes.
 - Reconcile `MEDIA_TRANSCODING.md`, generated API contracts, deployment guidance,
-  operator documentation, and status claims only in the later approved
-  implementation change.
+  operator documentation, and status claims only in the implementation change
+  that activates approved exact values.
 
 ## Task Record
 
@@ -287,32 +287,33 @@
     no current value becomes a default by implication.
 - Test coverage summary:
   - No runtime, schema, filesystem, watcher, API, UI, or media-conversion test was
-    added or run by this proposal.
-  - Proposal checks are `git diff --check`, `just instruction-drift`, and
+    added or run by the ADR-only change.
+  - ADR checks are `git diff --check`, `just instruction-drift`, and
     `just docs-link-check`.
   - The validation matrix and full repository gates remain mandatory after any
-    approval and implementation.
+    exact-value approval and implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation must expose bounded run transition, trigger,
     overflow, limit, identity, deduplication, and recovery outcomes. Root paths,
     source paths, member names, digests, and run ids must not be metric labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, historical ADR 430, approved ADRs 445-451,
-    484, and 500, and proposed ADR 512 for composition boundaries.
+    484, and 500, and accepted ADR 512 for composition boundaries.
   - `README.md`, runtime status, API contracts, operator guides, workflows,
-    deployment files, and the specification remain unchanged. Only the ADR index
-    and documentation summary expose this pending proposal.
+    deployment files, and the specification remain unchanged. The ADR index and
+    documentation summary expose this accepted architecture and unresolved exact-
+    value hold.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    removing this ADR and its two catalogue entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must retain readable run, cursor, member,
     aggregate-version, and deduplication evidence and must hold any state an older
     runtime cannot interpret exactly.
 - Dependency rationale:
-  - No dependency is proposed. PostgreSQL, existing filesystem descriptor APIs,
-    current digest support, injected runtime boundaries, and normalized policy
-    data are sufficient for the recommended design.
+  - No new dependency is required. PostgreSQL, existing filesystem descriptor
+    APIs, current digest support, injected runtime boundaries, and normalized
+    policy data are sufficient for the recommended design.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,
     `.github/instructions/revaer-data.instructions.md`,
@@ -320,5 +321,5 @@
     `.github/instructions/devops.instructions.md` as prospective implementation
     constraints.
   - No policy drift was found. Automation and destructive aggregate use remain
-    held, no criteria are relaxed, and all implementation remains blocked pending
-    decision-specific approval and measured limit selection.
+    held, no criteria are relaxed, and production activation remains blocked
+    pending separate decision-specific approval and measured limit selection.

@@ -1,8 +1,9 @@
 # Canonical exact HDR10 color volume
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -90,8 +91,7 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the twelve-field all-or-none object, exact
+- This accepted ADR authorizes only the twelve-field all-or-none object, exact
   fixed-point units, canonical ingress and export forms, physical invariants,
   normalized scalar persistence and snapshots, required HDR10 signaling,
   libx265 materialization, capability failure, and exact candidate and final
@@ -104,20 +104,20 @@
   construction, inspection normalization, and verification may change only as
   required for this contract.
 - Approved ADR 442 remains authoritative for capability-derived planning. This
-  proposal supplies exact HDR10 requirements to that boundary and does not
+  ADR supplies exact HDR10 requirements to that boundary and does not
   change capability snapshot binding or worker snapshot ownership.
-- Acceptance would not authorize HDR10+, Dolby Vision, HLG, tone mapping,
+- This ADR does not authorize HDR10+, Dolby Vision, HLG, tone mapping,
   arbitrary mastering metadata, approximate verification, silent rounding,
   another encoder, hardware fallback, or general video constraints covered by
   ADR 511.
-- No schema, runtime, API, YAML, generated-contract, or UI behavior may change
-  until this ADR receives explicit decision-specific operator approval.
+- Schema, runtime, API, YAML, generated-contract, and UI changes must remain
+  limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only; this record changes no HDR target,
+- Decision validation to date is documentation-only; this record changes no HDR target,
   encoder, planner, or verification behavior.
-- After approval, add exact parser tests for decimal and rational canonical
+- During implementation, add exact parser tests for decimal and rational canonical
   equivalents, every field unit, lower and upper boundaries, overflow,
   nonrepresentable fractions, negative and nonfinite input, and canonical export
   round-trips.
@@ -148,13 +148,11 @@
   parsed values with an epsilon of `1e-6`; that mismatch motivates this ADR.
 - Approved ADRs 442, 446, 449, and 451 continue to govern capability planning,
   immutable snapshots, capability binding, and policy compilation. This
-  proposal does not reopen them.
+  ADR does not reopen them.
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before implementation or
-  before changing this ADR to `Accepted`.
-- If approved, introduce the exact domain representation first and make every
+- Introduce the exact domain representation first and make every
   boundary consume it; do not retain a floating or free-form compatibility path.
 - Reconcile `MEDIA_TRANSCODING.md`, OpenAPI, YAML examples, generated clients,
   UI fields, and verification documentation with the accepted representation.
@@ -170,31 +168,32 @@
   - Exact parsing occurs before durable admission, and the same integer values
     drive materialization and verification.
 - Test coverage summary:
-  - This proposal adds no runtime, API, schema, planner, command, or HDR fixture
+  - The ADR-only change added no runtime, API, schema, planner, command, or HDR fixture
     tests.
   - `git diff --check`, `just instruction-drift`, and
-    `just docs-link-check` passed for this proposal-only change.
+    `just docs-link-check` passed for this ADR-only change.
   - The exactness and full validation listed above remains mandatory after any
-    approval and implementation.
+    implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation should persist bounded field and phase reason codes
     without logging authored color-volume values, command lines, source paths,
     or job and capability identifiers as metric labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, historical ADR 401 and PR 137 evidence, and
-    approved planning and snapshot ADRs. This proposal does not claim the fixed
-    representation is approved or implemented.
+    approved planning and snapshot ADRs. This ADR is accepted but does not claim
+    the fixed representation is implemented.
   - `README.md`, roadmap/status documents, and operator guides are unchanged;
-    only the ADR index and documentation summary expose this pending proposal.
+    the ADR index and documentation summary expose this accepted but unimplemented
+    decision.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    reverting this ADR and its two index entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must not reinterpret integer snapshots as
     free-form text. Incompatible queued jobs must drain or fail explicitly, and
     exact verification must remain fail-closed.
 - Dependency rationale:
-  - No dependency is proposed. A bounded exact decimal/rational parser and
+  - No new dependency is required. A bounded exact decimal/rational parser and
     checked integer conversion can use existing Rust primitives.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and

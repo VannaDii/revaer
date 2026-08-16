@@ -1,8 +1,9 @@
 # Fenced resumable worker ownership and recovery
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -48,7 +49,7 @@
 ## Recommendation
 
 - Adopt option 2.
-- This proposal supersedes the unapproved ADR 503 proposal. It supersedes only a
+- This accepted ADR supersedes the unapproved ADR 503 proposal. It supersedes only a
   pending proposal, not an accepted decision or implemented contract.
 - Persist attempt states sufficient to distinguish `queued`, `running`,
   `pausing`, `paused`, `recovering`, `verifying`, `finalizing`, and terminal
@@ -63,9 +64,10 @@
   resumable. Operator cancellation remains a distinct terminal transition and
   wins if it is pending during recovery.
 - A resumed attempt receives a new claim generation without consuming a retry.
-  A new attempt number is created only by the explicit retry contract after a
-  terminal failure. Every write remains fenced by job, attempt, and current claim
-  ownership.
+  A new attempt number is created only by explicit retry after a terminal failure
+  or by the accepted ADR 520 `operator_replan` transition; resuming an attempt
+  only advances claim generation. Every write remains fenced by job, attempt, and
+  current claim ownership.
 - The claim boundary enforces one instance-global capacity limit and the claimed
   job's immutable snapshotted policy limit. Eligible jobs are selected in stable
   oldest-first order while leased or otherwise ineligible aggregates are skipped
@@ -114,7 +116,7 @@
 ### Explicitly Undecided Timings
 
 - Aggregate-lease refresh and expiry timings remain undecided. In particular,
-  this proposal does not adopt ADR 503's proposed 10-second refresh or 60-second
+  this ADR does not adopt ADR 503's proposed 10-second refresh or 60-second
   expiry values.
 - Attempt-heartbeat persistence cadence and lease-based stale-recovery threshold
   remain undecided. The replay's one-hour terminal stale threshold is evidence of
@@ -143,19 +145,17 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the attempt and operation state machines,
+- This accepted ADR authorizes only the attempt and operation state machines,
   claim and capacity ordering, PostgreSQL-backed aggregate ownership, per-root
   recovery leadership, resumable shutdown distinction, checkpoint validation,
   stale recovery, and complete replacement/outbox reconciliation described here.
-- Acceptance would supersede the pending ADR 503 protocol proposal. ADR 503 must
-  not be changed to `Accepted` or implemented independently after this proposal
-  is accepted.
-- Acceptance would not authorize any exact lease refresh, lease expiry,
+- This ADR supersedes the pending ADR 503 protocol proposal. ADR 503 must remain
+  superseded and must not be implemented independently.
+- This ADR does not authorize any exact lease refresh, lease expiry,
   heartbeat, stale-recovery, contention, or recovery-backoff timing listed as
   undecided above.
 - Approved ADRs 442, 444, 446, 447, 448, 449, 483, 500, and 501 remain binding.
-  This proposal fills their worker-ownership and recovery protocol gap without
+  This ADR fills their worker-ownership and recovery protocol gap without
   reopening their planning, dry-run, snapshot, root, process, or crate decisions.
 - Implementation must remain within ADR 483's existing crate boundaries, use
   injected collaborators, and route every runtime database operation through a
@@ -163,19 +163,19 @@
 - Before v1, accepted persistence changes must update
   `crates/revaer-data/init.sql`. Historical migrations 0166, 0167, and 0186 are
   provenance only and must not be restored.
-- Acceptance would not authorize a distributed operation queue, an external
+- This ADR does not authorize a distributed operation queue, an external
   coordinator, filesystem-specific mandatory locks or snapshots, compatibility
   with noncooperating writers, background legacy-transaction migration, higher
   concurrency, or weaker fencing and verification.
-- No schema, runtime, API, health, deployment, or generated-contract behavior may
-  change until this ADR receives explicit decision-specific operator approval.
+- Schema, runtime, API, health, deployment, and generated-contract changes must
+  remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only; this record changes no worker,
+- Decision validation to date is documentation-only; this record changes no worker,
   database, filesystem, process, API, or deployment behavior.
 
-| Scenario | Required result after approval |
+| Scenario | Required implementation result |
 | --- | --- |
 | Two processes select the same aggregate | Exactly one aggregate lease and active attempt; contention consumes no attempt or retry and performs no filesystem mutation. |
 | Crash at every operation transition | Stale writes are fenced; completed valid checkpoints resume; interrupted output and dependant checkpoints are invalidated. |
@@ -186,7 +186,7 @@
 | Multiple policy limits and available global slots | Active work never exceeds either the instance-global bound or each job's immutable snapshotted policy bound. |
 | Database loss, lease expiry, or stale-owner finalization | New mutations fail closed and every stale owner write is rejected by current generations. |
 
-- After approval, run state-transition model tests, stored-procedure concurrency
+- During implementation, run state-transition model tests, stored-procedure concurrency
   tests with multiple database sessions, checkpoint corruption and dependency
   invalidation tests, real process interruption tests, every replacement crash
   point, and multi-process recovery-leadership tests.
@@ -205,7 +205,7 @@
   are not treated as decision-specific operator approval.
 - Explicitly approved ADRs 448, 483, 500, and 501 establish the resumability,
   crate-boundary, attempt-key, reconciliation, lease-requirement, reserve, and
-  native-process constraints preserved by this proposal.
+  native-process constraints preserved by this ADR.
 - Approved ADRs 442, 444, 446, 447, and 449 separately govern source-bound
   capability planning, dry-run isolation, immutable worker policy, root
   ownership, and capability binding.
@@ -216,12 +216,10 @@
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval or revision before
-  implementing this protocol or changing this ADR to `Accepted`.
 - Resolve lease refresh, expiry, heartbeat, stale-recovery, and retry-backoff
-  timings with measured fault and deployment evidence before implementation that
-  requires defaults.
-- If approved, define the normalized schema and stored-procedure state machine
+  timings through a separately approved follow-up using measured fault and
+  deployment evidence before implementation requires concrete defaults.
+- Define the normalized schema and stored-procedure state machine
   first, then implement scheduler, checkpoint, recovery, replacement, and
   shutdown behavior against that contract.
 - Reconcile `MEDIA_TRANSCODING.md`, API and operator status surfaces, deployment
@@ -241,14 +239,14 @@
   - The recommendation uses the existing PostgreSQL failure domain and does not
     introduce an operation queue or external coordinator.
 - Test coverage summary:
-  - This proposal adds no runtime, schema, filesystem, process, API, or deployment
+  - The ADR-only change added no runtime, schema, filesystem, process, API, or deployment
     tests.
   - `git diff --check`, `just instruction-drift`, and
-    `just docs-link-check` passed for this proposal-only change.
+    `just docs-link-check` passed for this ADR-only change.
   - The validation matrix and full repository gates remain mandatory after any
-    approval and implementation.
+    implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation must report bounded attempt and operation
     transitions, claim capacity, lease contention and takeover, checkpoint reuse
     and invalidation, recovery results, and replacement reconciliation reasons
@@ -256,19 +254,18 @@
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, replayed shutdown and recovery ADRs, the
     pending ADR 503 proposal, and approved ADRs 442, 444, 446-449, 483, 500, and
-    501. This proposal does not claim its recommendation is approved or
-    implemented.
+    501. This ADR is accepted but does not claim the contract is implemented.
   - `README.md`, roadmap/status documents, operator guides, API contracts, and
-    runtime documentation are unchanged; only the ADR index and documentation
-    summary expose this pending proposal.
+    runtime documentation are unchanged; the ADR index and documentation summary
+    expose this accepted but unimplemented decision.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    removing this ADR and its two catalogue entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must preserve readable attempt, lease,
     checkpoint, replacement, and outbox evidence and must invalidate rather than
     reinterpret any state an older runtime cannot prove safe.
 - Dependency rationale:
-  - No dependency is proposed. PostgreSQL, existing filesystem transaction
+  - No new dependency is required. PostgreSQL, existing filesystem transaction
     manifests, checked fingerprints, injected clocks, and current runtime
     primitives cover the recommended contract.
 - Stale-policy check:
@@ -277,4 +274,5 @@
     `.github/instructions/devops.instructions.md` as prospective implementation
     constraints.
   - No policy drift was found. Historical migrations remain provenance-only, and
-    all implementation remains blocked pending decision-specific approval.
+    implementation requiring unresolved timing defaults remains blocked pending a
+    separate decision-specific approval.

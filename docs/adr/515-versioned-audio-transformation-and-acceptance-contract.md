@@ -1,8 +1,9 @@
 # Versioned audio transformation and acceptance contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -37,16 +38,16 @@
 - The current `dialog-normalized` recipe, its target and acceptance values, the
   current `speech` compressor and parameters, their order when combined, and the
   symmetric audio bitrate tolerance are unapproved existing choices.
-- Until this ADR receives decision-specific approval and the selected preset is
-  measured against real fixtures, `dialog-normalized`, `speech`, and any audio
-  bitrate constraint whose nominal, maximum, or per-channel meaning is unresolved
-  are held from production execution.
+- Until exact preset values and evidence receive separate decision-specific
+  approval after measurement against real fixtures, `dialog-normalized`, `speech`,
+  and any audio bitrate constraint whose nominal, maximum, or per-channel meaning
+  is unresolved are held from production execution.
 - Reconstruction must fail closed before native command construction when a held
   value is encountered. It must not silently preserve, reinterpret, ignore, or
   substitute another audio policy.
-- This proposal makes no runtime change and does not itself authorize adding that
-  fail-closed behavior. It records the boundary that implementation and stack
-  reconstruction must preserve pending approval.
+- This ADR changes no runtime behavior by itself. Its acceptance authorizes the
+  fail-closed hold and versioned contract structure, while production behavior
+  remains held pending separate exact-value approval.
 - Preserve-only audio behavior, codec and channel selection, and exact sample-rate
   verification remain outside this hold when they do not depend on a held
   loudness, dynamic-range, or bitrate interpretation.
@@ -75,7 +76,8 @@
 
 ## Recommendation
 
-- Adopt option 2 after the operator selects or revises the unresolved choices.
+- Adopt option 2 as the accepted architecture. Production activation follows only
+  after the operator selects or revises the unresolved choices.
 - Represent each approved preset with a stable semantic key, an explicit contract
   version, and a typed immutable compiled value. Do not persist or accept raw
   FFmpeg filter strings as operator policy.
@@ -116,7 +118,7 @@
 - The evidence threshold for approving a preset: objective fixture measurements,
   operator listening review, or both.
 - No replayed numeric value, tolerance, coefficient, or filter literal is adopted
-  by this proposal merely because it already exists or currently passes tests.
+  by this ADR merely because it already exists or currently passes tests.
 
 ## Consequences
 
@@ -136,16 +138,13 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed` and
-  `Operator approval` is `Pending`.
-- Acceptance would authorize only a versioned typed audio preset contract, shared
-  execution and verification compilation, required measured analysis, fail-closed
-  parsing, immutable snapshot and attempt evidence, and the approved treatment of
-  bitrate selected by the operator.
-- Acceptance without selected preset measurements does not authorize production
-  activation. The operator must approve the exact values and evidence as part of
-  this ADR or an explicitly linked follow-up decision before held behavior is
-  enabled.
+- This accepted ADR authorizes only a versioned typed audio preset contract,
+  shared execution and verification compilation, required measured analysis,
+  fail-closed parsing, immutable snapshot and attempt evidence, and fail-closed
+  treatment of any unselected bitrate meaning.
+- This acceptance does not authorize production activation. The operator must
+  approve the exact values and evidence as part of this ADR or an explicitly
+  linked follow-up decision before held behavior is enabled.
 - Any accepted persistence work belongs in the v0 `init.sql`; historical
   migrations 0157 and 0159 remain provenance and must not be replayed as the
   implementation mechanism.
@@ -153,19 +152,21 @@
   snapshot contracts, API/YAML/UI representations, pure policy compilation,
   media-runtime command construction, the injected ADR 501 supervisor,
   verification, audit evidence, and their focused tests.
-- Acceptance would not authorize arbitrary filter strings, new codecs, a new
+- This ADR does not authorize arbitrary filter strings, new codecs, a new
   process runner, weaker source or replacement verification, source-level lint or
   Sonar suppression, or unrelated target and stream-policy changes.
 - Approved ADRs 445, 446, 448, 451, 483, 484, and 501 remain binding.
-- No schema, runtime, API, generated-contract, UI, workflow, or specification
-  behavior may change until explicit decision-specific approval is recorded.
+- Structural schema, runtime, API, generated-contract, UI, workflow, and
+  specification changes may implement only the accepted typed and fail-closed
+  boundary. Held exact preset and bitrate behavior may not become production-
+  active until separate decision-specific approval is recorded.
 
 ## Validation
 
-- Proposal validation is documentation-only. This ADR adds no implementation or
-  behavioral test.
+- Decision validation to date is documentation-only. This ADR adds no
+  implementation or behavioral test.
 
-| Scenario | Required result after approval |
+| Scenario | Required result after exact-value approval and implementation |
 | --- | --- |
 | Preset compilation | One immutable typed contract supplies both process arguments and acceptance checks; no duplicated semantic constants remain. |
 | Dialog, music, audiobook, silence, clipped, low-range, and high-range fixtures | Real packaged-tool conversion records finite pre- and post-transform measurements and meets only the operator-approved preset. |
@@ -176,10 +177,10 @@
 | Retry or resume after analysis or transformation | The preset version and completed valid measurement checkpoint are reused only when all approved input identities still match. |
 | Candidate or final mismatch | Durable verification evidence records bounded expected and actual values and replacement remains blocked. |
 
-- After approval, add pure compiler and boundary tests, real conversion fixtures,
-  analyzer parser tests including all non-finite values, process cancellation and
-  timeout tests, API/YAML/UI validation, database procedure tests, and replacement
-  prevention tests.
+- Before production activation, add pure compiler and boundary tests, real
+  conversion fixtures, analyzer parser tests including all non-finite values,
+  process cancellation and timeout tests, API/YAML/UI validation, database
+  procedure tests, and replacement prevention tests.
 - An accepted implementation is not complete until the full fixture acceptance
   matrix, strict Sonar coverage and result guardrails, `just ci`, and
   `just ui-e2e` pass.
@@ -205,19 +206,21 @@
   evidence and do not authorize the exact semantics.
 - Approved ADRs 445, 446, 448, 451, 483, 484, and 501 constrain governance,
   snapshots, resumability, policy compilation, crate ownership, operator
-  surfaces, and native process execution preserved by this proposal.
+  surfaces, and native process execution preserved by this ADR.
 
 ## Follow-up
 
-- Obtain explicit operator selection or revision of the unresolved choices before
-  changing this ADR to `Accepted`.
+- Obtain separate explicit operator selection or revision of the unresolved
+  choices before production activation.
 - Build a representative measurement and listening packet for each proposed
   preset without enabling production behavior or pushing an unapproved prototype.
-- If approved, define the typed contract and normalized persistence/API surface
-  first, then implement command generation, measured processing, verification,
-  operator controls, and audit evidence against that contract.
+- Define the typed contract and normalized persistence/API surface in fail-closed
+  form first. After exact values are approved, implement command generation,
+  measured processing, verification, operator controls, and audit evidence
+  against that contract.
 - Reconcile `MEDIA_TRANSCODING.md`, generated API contracts, user documentation,
-  and status claims only in the later approved implementation change.
+  and status claims only in the implementation change that activates approved
+  exact values.
 
 ## Task Record
 
@@ -226,20 +229,20 @@
     architecture audit into an explicit operator decision instead of silently
     inheriting replayed constants.
 - Design notes:
-  - This proposal recommends semantic versioning and one compiled contract while
+  - This ADR adopts semantic versioning and one compiled contract while
     deliberately preserving every unresolved product and measurement choice.
   - The hold distinguishes required baseline capabilities from unapproved exact
     behavior and prevents passing tests from being treated as architecture
     approval.
 - Test coverage summary:
   - No runtime, schema, API, UI, process, or media-conversion test was added or
-    run by this proposal.
-  - Proposal checks are `git diff --check`, `just instruction-drift`, and
+    run by the ADR-only change.
+  - ADR checks are `git diff --check`, `just instruction-drift`, and
     `just docs-link-check`.
   - The validation matrix and full repository gates remain mandatory after any
-    approval and implementation.
+    exact-value approval and implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation must expose bounded preset-version, analysis-stage,
     and acceptance-result dimensions without paths, job ids, stream ids, or raw
     measurements as metric labels.
@@ -248,17 +251,17 @@
     approved ADRs 445, 446, 448, 451, 483, 484, and 501.
   - `README.md`, runtime status, API contracts, operator guides, workflows, and
     the specification remain unchanged. Only the ADR index and documentation
-    summary expose this pending proposal.
+    summary expose this accepted architecture and unresolved exact-value hold.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    removing this ADR and its two catalogue entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must preserve readable preset and measurement
     evidence and must fail closed for jobs whose contract an older runtime cannot
     interpret exactly.
 - Dependency rationale:
-  - No dependency is proposed. Existing typed policy, FFmpeg-compatible tooling,
-    process supervision, normalized persistence, and verification boundaries are
-    sufficient for the recommended design.
+  - No new dependency is required. Existing typed policy, FFmpeg-compatible
+    tooling, process supervision, normalized persistence, and verification
+    boundaries are sufficient for the recommended design.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,
     `.github/instructions/revaer-data.instructions.md`,
@@ -266,5 +269,5 @@
     `.github/instructions/devops.instructions.md` as prospective implementation
     constraints.
   - No policy drift was found. Exact behavior remains held, no criteria are
-    relaxed, and all implementation remains blocked pending decision-specific
-    approval and measured preset selection.
+    relaxed, and production activation of held behavior remains blocked pending
+    separate decision-specific approval and measured preset selection.

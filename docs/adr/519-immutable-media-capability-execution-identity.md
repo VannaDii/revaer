@@ -1,8 +1,9 @@
 # Immutable media capability execution identity
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -76,7 +77,7 @@
   the binding if absent, and returns the complete binding. A concurrent caller
   receives the same row or a stale-claim error; it cannot create a second row.
 - Retry and resume read the existing binding by job and plan generation. They do
-  not query the latest run. Proposed ADR 520 is the only path that may create a
+  not query the latest run. Accepted ADR 520 is the only path that may create a
   later plan generation with a different binding.
 - A run-id reader returns the complete immutable environment, tool, codec,
   encoder, decoder, muxer, demuxer, subtitle, hardware, filesystem, and utility
@@ -100,8 +101,8 @@
   evidence. The operator either restores the exact closure or invokes the
   explicit re-plan contract in ADR 520.
 - Capability refresh failure does not fabricate a run and does not erase the
-  last completed run. Proposed ADR 514 may expose subsystem degradation if it is
-  separately approved; this ADR does not approve its lifecycle model.
+  last completed run. Accepted ADR 514 defines subsystem degradation; this ADR
+  does not redefine its lifecycle model.
 
 ### Stable Errors
 
@@ -129,24 +130,24 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only identity fields, closure hashing, immutable
+- This accepted ADR authorizes only identity fields, closure hashing, immutable
   run completeness, `(job, plan generation)` binding, first-claim atomicity,
   complete run reads, pre-use validation, host-upgrade failure, and stable errors
   described above.
 - Accepted ADRs 449 and 501 remain authoritative for binding time and process
   supervision. ADR 520 separately owns re-plan authorization and evidence.
-- Acceptance would not authorize a new native tool, encoder fallback, capability
+- This ADR does not authorize a new native tool, encoder fallback, capability
   fabrication, raw command logging, mutable completed runs, automatic re-plan,
-  or any pending behavior from proposed ADRs 507-516.
-- Any later persistence change belongs in the pre-v1 `init.sql` under ADR 522 if
-  that transition is approved. No schema, runtime, package, API, workflow, or
-  generated-contract change may occur before decision-specific approval.
+  or unrelated behavior from ADRs 507-516. It preserves the exact-value holds in
+  ADRs 515 and 516.
+- Persistence changes belong in the pre-v1 `init.sql` under accepted ADR 522.
+  Schema, runtime, package, API, workflow, and generated-contract changes must
+  remain limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only.
-- After approval, add known-answer closure manifests for packaged and supported
+- Decision validation to date is documentation-only.
+- During implementation, add known-answer closure manifests for packaged and supported
   host execution, including scripted tools, dynamic libraries, plugins, and
   hardware identities.
 - Test concurrent first claims, incomplete runs, duplicate children, path
@@ -161,10 +162,9 @@
 
 ## Follow-up
 
-- Obtain explicit operator approval before implementation or status change.
 - Define the supported packaged and bare-metal attestation mechanisms in the
   ADR 501 supervisor implementation plan before enabling destructive readiness.
-- Decide ADR 520 with this record so plan-generation storage and re-plan evidence
+- Implement accepted ADR 520 with this record so plan-generation storage and re-plan evidence
   use one schema.
 
 ## Task Record
@@ -176,18 +176,19 @@
   - Capability claims and process execution consume one execution-closure value;
     version text is evidence, not identity.
 - Test coverage summary:
-  - Proposal only; no capability, process, package, or database tests were added.
+  - The ADR-only change added no capability, process, package, or database tests.
 - Observability updates:
   - Future bounded metrics may use tool role and mismatch category only. Paths,
     digests, devices, jobs, and capability-run ids must not be labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, accepted ADRs 449, 484, 500, and 501, and
-    proposed ADRs 507-516. No pending lifecycle or re-plan behavior is approved.
+    accepted ADRs 507-516. Accepted lifecycle and re-plan behavior remains outside
+    this ADR, and unresolved exact values remain held.
 - Risk & rollback plan:
-  - This proposal can be removed with its catalogue entries. A later rollback
-    must preserve old closure and binding evidence and fail closed when unreadable.
+  - Any reversal requires a superseding ADR. A later rollback must preserve old
+    closure and binding evidence and fail closed when unreadable.
 - Dependency rationale:
-  - No dependency is proposed. Existing SHA-256, process supervision, package
+  - No new dependency is required. Existing SHA-256, process supervision, package
     manifests, and platform inspection boundaries are sufficient to begin.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`,

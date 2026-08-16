@@ -1,8 +1,9 @@
 # Exact chapter timeline state
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -77,8 +78,7 @@
 
 ## Implementation Boundary
 
-- This proposal authorizes no implementation while its status is `Proposed`.
-- Acceptance would authorize only the policy values, defaults, complete-state
+- This accepted ADR authorizes only the policy values, defaults, complete-state
   semantics, timeline and metadata bounds, normalized desired-target and
   immutable snapshot rows, managed FFmetadata materialization, muxer rejection,
   cleanup, and exact two-stage verification described above.
@@ -88,19 +88,19 @@
 - Before v1, accepted persistence changes must modify
   `crates/revaer-data/init.sql`; historical migrations 0172 and 0174 are
   provenance only and must not be restored.
-- Acceptance would not authorize chapter merge or patch operations, stable
+- This ADR does not authorize chapter merge or patch operations, stable
   source-chapter identifiers, sub-millisecond authoring, chapters as ordinary
   stream targets, arbitrary external artifact paths, or relaxed verification.
-- It would not alter the approved capability, immutable snapshot, sidecar
+- It does not alter the approved capability, immutable snapshot, sidecar
   discovery, or effective-policy compilation decisions.
-- No schema, runtime, API, YAML, generated-contract, or UI behavior may change
-  until this ADR receives explicit decision-specific operator approval.
+- Schema, runtime, API, YAML, generated-contract, and UI changes must remain
+  limited to the accepted contract above.
 
 ## Validation
 
-- Proposal validation is documentation-only; this record changes no chapter or
+- Decision validation to date is documentation-only; this record changes no chapter or
   workspace behavior.
-- After approval, add policy and shape tests covering empty preservation, strip,
+- During implementation, add policy and shape tests covering empty preservation, strip,
   nonempty replacement, normalization, sorting, allowed gaps, overlap, invalid
   ranges, duplicate metadata keys, and every chapter and metadata resource bound.
 - Exercise the same failures through API, YAML, core compilation, immutable
@@ -124,13 +124,11 @@
   describe the implemented source-stack behavior. Their `Accepted` labels are
   not treated as operator approval.
 - Approved ADRs 442, 446, and 451 continue to govern planning, worker snapshot
-  access, and pure compilation. This proposal does not reopen them.
+  access, and pure compilation. This ADR does not reopen them.
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before implementation or
-  before changing this ADR to `Accepted`.
-- If approved, implement the contract outside-in and keep chapter state,
+- Implement the contract outside-in and keep chapter state,
   artifact ownership, cleanup, and verification in one reviewed change.
 - Reconcile `MEDIA_TRANSCODING.md`, OpenAPI, YAML examples, generated clients,
   and operator UI labels with the accepted semantics.
@@ -146,30 +144,31 @@
   - Canonical millisecond ranges and normalized metadata are compiled once for
     materialization and verification.
 - Test coverage summary:
-  - This proposal adds no runtime, API, schema, workspace, or UI tests.
+  - The ADR-only change added no runtime, API, schema, workspace, or UI tests.
   - `git diff --check`, `just instruction-drift`, and
-    `just docs-link-check` passed for this proposal-only change.
+    `just docs-link-check` passed for this ADR-only change.
   - The focused and full validation listed above remains mandatory after any
-    approval and implementation.
+    implementation.
 - Observability updates:
-  - No telemetry changes are made by this proposal.
+  - No telemetry changes are made by this ADR.
   - A future implementation should persist stable bounded mismatch and cleanup
     outcomes without logging chapter titles, metadata values, source paths, or
     job identifiers as metric labels.
 - Status-doc validation:
   - Reviewed `MEDIA_TRANSCODING.md`, the historical replay ADRs and commits, and
-    approved planning and snapshot records. This proposal does not claim that
-    exact chapter replacement is approved or implemented.
+    approved planning and snapshot records. This ADR is accepted but does not
+    claim exact chapter replacement is implemented.
   - `README.md`, roadmap/status documents, and operator guides are unchanged;
-    only the ADR index and documentation summary expose this pending proposal.
+    the ADR index and documentation summary expose this accepted but unimplemented
+    decision.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be rolled back by
-    reverting this ADR and its two index entries.
+  - Acceptance alone changes no production behavior. Any reversal requires a
+    superseding ADR.
   - After implementation, rollback must preserve immutable queued-job meaning
     and clean every managed FFmetadata artifact; queued replacement jobs must
     drain or fail explicitly rather than be reinterpreted.
 - Dependency rationale:
-  - No dependency is proposed. Existing deterministic text rendering, path,
+  - No new dependency is required. Existing deterministic text rendering, path,
     workspace, and normalization primitives are sufficient.
 - Stale-policy check:
   - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and
