@@ -6,7 +6,7 @@ version: 0.0.0
 appVersion: v0.0.0
 kubeVersion: ">=1.27.0-0"
 home: https://revaer.com
-icon: https://raw.githubusercontent.com/VannaDii/Revaer/main/revaer-logo.png
+icon: https://raw.githubusercontent.com/VannaDii/Revaer/main/revaer-logo.svg
 sources:
   - https://github.com/VannaDii/Revaer
 keywords:
