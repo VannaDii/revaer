@@ -76,6 +76,7 @@ const EXPECTED_PROCS: &[&str] = &[
     "media_job_retention_policy_get_v2",
     "media_job_retention_policy_update_v2",
     "media_job_retention_run_v1",
+    "media_workspace_retention_snapshot_v1",
     "media_retention_mode_age_v1",
     "media_retention_mode_count_v1",
     "media_desired_target_create_v1",

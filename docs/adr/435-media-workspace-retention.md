@@ -1,0 +1,52 @@
+# Media Workspace Retention Runtime
+
+- Status: Accepted
+- Date: 2026-08-12
+- Context:
+  - Managed media workspaces already supported bounded, partial-failure-tolerant filesystem cleanup, but production application wiring never invoked it.
+  - Startup interruption, failed or cancelled jobs, and transient removal errors can leave workspace or diagnostics directories behind.
+  - Cleanup must preserve queued, running, and verifying jobs and must use persisted policy through the stored-procedure boundary.
+- Decision:
+  - Add migration `0188` after the descendant-owned `0187` migration. It persists full-workspace age, diagnostics-only age, and per-tick entry bounds on the existing media job retention policy.
+  - Add `media_workspace_retention_snapshot_v1()` to return one transactionally coherent policy and active-job snapshot. Active keys include queued, running, and verifying jobs.
+  - Use the immutable media job public UUID as the workspace fence. Retries retain the same job UUID, so a separate attempt directory identity would weaken restart recovery without improving active-job protection.
+  - Inject `MediaWorkspaceRetentionService` into `MediaRetentionRuntime`. Tokio's immediate first interval tick provides startup cleanup and subsequent hourly bounded cleanup.
+  - Run filesystem retention before database retention. Any per-entry filesystem failure is observable and defers database pruning until a later successful retry, preserving diagnostic context.
+  - Apply the persisted full-workspace age to inactive complete directory trees and the persisted diagnostic age to diagnostics-only failed or cancelled trees.
+  - Alternatives considered: an independent unmanaged timer, inline SQL from the application, deleting database diagnostics before filesystem cleanup, and attempt-specific workspace keys. These violate dependency injection, stored-procedure, recovery, or coordination requirements.
+- Consequences:
+  - Startup and scheduled cleanup reclaim inactive workspace storage without deleting active job directories.
+  - Partial failures do not block unrelated directory cleanup, and failed paths remain available for later retry.
+  - Database retention is conservatively delayed when filesystem cleanup is incomplete.
+  - Migration `0188` depends on the stack descendant providing migration `0187` before merge.
+- Follow-up:
+  - Preserve migration ordering when this child is stacked after the PR82 layer that owns `0187`.
+  - Validate the stored-procedure integration test in managed PostgreSQL CI.
+
+## Task Record
+
+- Motivation:
+  - Close PR75 review thread `PRRT_kwDOQJiaF86WPlUw` by wiring the existing bounded workspace janitor into production with durable policy and active-job preservation.
+- Design notes:
+  - The retention repository, filesystem cleaner, and clock are injected behind narrow traits for deterministic tests.
+  - The stored procedure emits one row with a null job UUID when no job is active, ensuring policy absence fails closed rather than silently disabling cleanup.
+  - Newly claimed workspaces are younger than the minimum persisted retention window, while queued/running/verifying UUIDs are explicitly preserved from the coherent snapshot.
+  - No panic paths, lint suppressions, raw runtime SQL, or new dependencies were introduced.
+- Test coverage summary:
+  - Added focused tests for startup cleanup, active-job preservation, failed/cancelled diagnostics quarantine expiry, invalid persisted policy, partial removal failure with database-retention deferral, and restart recovery.
+  - Added a stored-procedure integration test for persisted defaults, queued and claimed job inclusion, and terminal-job exclusion. It compiles locally and requires the managed PostgreSQL test environment to execute.
+- Observability updates:
+  - Reused `media_workspace_cleanup_total` with `success` and `partial_failure` outcomes.
+  - Added removed workspace directory counts to `media_retention_rows_total` under `workspace_directories`.
+  - Partial failures log stable operation, path, and error-kind fields; database-retention deferral increments the existing retention-run metric with `deferred`.
+- Status-doc validation:
+  - Rechecked `MEDIA_TRANSCODING.md`; its startup/scheduled janitor and bounded diagnostics requirements now match production behavior.
+  - No README, roadmap, or operator-guide wording required a change.
+- Risk & rollback plan:
+  - Primary risks are over-retention after repeated filesystem failures and incorrect active-set classification. Failures are observable and fail toward preservation.
+  - Roll back by removing the runtime injection and reverting migration `0188`; existing terminal workspace cleanup remains intact.
+- Dependency rationale:
+  - No dependencies were added. Existing Tokio, SQLx, telemetry, and media-runtime workspace APIs provide the required behavior.
+- Stale-policy check:
+  - Reviewed `AGENTS.md`, `.github/instructions/rust.instructions.md`, and `.github/instructions/revaer-data.instructions.md`.
+  - No policy drift or contradictions were found. The change keeps application database access behind stored procedures and runtime collaborators injected.
