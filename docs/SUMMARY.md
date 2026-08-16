@@ -414,3 +414,4 @@
     -   [496: PR 168 API service review remediation](adr/496-pr168-api-service-review.md)
     -   [500: Attempt-scoped replacement reconciliation](adr/500-attempt-scoped-replacement-reconciliation.md)
     -   [501: Bounded native media process envelope](adr/501-bounded-native-media-process-envelope.md)
+    -   [530: Cataloged task-record restoration](adr/530-cataloged-task-record-restoration.md)
