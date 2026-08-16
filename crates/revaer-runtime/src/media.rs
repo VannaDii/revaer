@@ -26,11 +26,10 @@ use revaer_data::media::jobs::{
     MediaJobOperationRow, MediaJobPlanReasonRow, MediaJobRetentionRunRow, MediaJobRow,
     MediaJobTerminalOutboxRow, MediaJobVerificationCheckRow, MediaJobViolationRow,
     MediaRecentJobRow, MediaWorkspaceRetentionSnapshotRow, append_media_job_artifact,
-    append_media_job_compact_audit,
-    append_media_job_operation, append_media_job_phase, append_media_job_plan_reason,
-    append_media_job_verification_check, append_media_job_violation, cancel_media_job,
-    create_media_job, enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
-    list_media_job_compact_audits, list_media_job_desired_target_streams,
+    append_media_job_compact_audit, append_media_job_operation, append_media_job_phase,
+    append_media_job_plan_reason, append_media_job_verification_check, append_media_job_violation,
+    cancel_media_job, create_media_job, enqueue_discovered_media_job, get_media_job,
+    list_media_job_artifacts, list_media_job_compact_audits, list_media_job_desired_target_streams,
     list_media_job_operations, list_media_job_plan_reasons,
     list_media_job_terminal_outbox_unpublished, list_media_job_verification_checks,
     list_media_job_violations, list_media_jobs, list_recent_media_jobs,
@@ -675,16 +674,20 @@ mod tests {
     use super::MediaStore;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::{
-        RecordCapabilitySnapshotInput, complete_capability_snapshot_run_with_executor,
-        record_capability_snapshot_with_executor, start_capability_snapshot_run_with_executor,
+        RecordCapabilityEncoderInput, RecordCapabilityFeatureInput, RecordCapabilitySnapshotInput,
+        complete_capability_snapshot_run_with_executor, record_capability_snapshot_with_executor,
+        start_capability_snapshot_run_with_executor,
     };
-    use revaer_data::media::configuration::UpdateMediaJobRetentionPolicyInput;
+    use revaer_data::media::configuration::{
+        MediaVerificationToggle, UpdateMediaJobRetentionPolicyInput,
+        UpsertMediaCompatibilityTargetInput, UpsertMediaPolicyProfileInput,
+    };
     use revaer_data::media::jobs::{
         AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput, AppendMediaJobOperationInput,
         AppendMediaJobPlanReasonInput, AppendMediaJobVerificationCheckInput, CreateMediaJobInput,
         EnqueueDiscoveredMediaJobInput,
     };
-    use revaer_data::media::profiles::UpsertMediaProfileInput;
+    use revaer_data::media::profiles::{UpdateMediaProfileInput, UpsertMediaProfileInput};
     use revaer_test_support::postgres::TestDatabase;
     use revaer_test_support::postgres::start_postgres;
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
