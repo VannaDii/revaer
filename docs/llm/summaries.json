@@ -4518,6 +4518,15 @@
     "href": "/adr/542-playwright-html-report-path/"
   },
   {
+    "id": "adr/543-exact-cargo-tool-path",
+    "title": "Exact Cargo-installed tool path resolution",
+    "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: scripts/ensure-exact-cargo-tool.sh discovered tools through PATH, while Cargo installs them under ${CARGO_HOME:-$HOME/.cargo}/bin and canonical documentation recipes execute that exact location. A Homebrew mdbook 0.5.4 earlier on PATH therefore caused the helper to replace an already-correct Cargo-home mdbook 0.5.0. Cargo external subcommands require the subcommand name in their executable argument shape, so probing a cargo-* executable directly still must model Cargo's invocation contract. Ambient CARGO_INSTALL_ROOT or Cargo configuration could otherwise direct an install away from the executable the helper verifies. Cargo can successfully install the exact binary while emitting a",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/543-exact-cargo-tool-path/"
+  },
+  {
     "id": "adr/544-pre-v1-init-assembly-slice-01",
     "title": "Pre-v1 init assembly slice 01",
     "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: bounded implementation of accepted ADR 522 Context: ADR 522 requires the complete final-state init candidate to be assembled in statement-aligned pull requests that remain below the 8,500 changed-line assembly limit. ADR 528 froze the 167-file migration corpus and proved a complete candidate with SHA-256 fb0d371f1afe365a72bbe34e9c8fe628e318be6de0e1f43b6f73c37897c95858 and 1,624 SQL statements. Existing migrations remain the sole bootstrap authority until the later parity and cutover step accepted by ADR 522. Decision: Begin tracked assembly of crates/revaer-data/init.sql with the exact first 237,760 bytes of the pinned candidate. End this slice at candidate statement 185 and line",

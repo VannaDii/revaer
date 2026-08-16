@@ -24,13 +24,18 @@ while true; do
   fi
   status="${PIPESTATUS[0]}"
   set -e
+  warning_status="0"
   if [[ "${status}" -eq 0 ]] && grep -nEi '(^|[[:space:]])warning:' "${install_log}" >&2; then
     echo "cargo install completed with warning output" >&2
     status=65
+    warning_status="1"
   fi
   rm -f "${install_log}"
   if [[ "${status}" -eq 0 ]]; then
     exit 0
+  fi
+  if [[ "${warning_status}" -eq 1 ]]; then
+    exit "${status}"
   fi
   if [[ "${attempt}" -ge "${max_attempts}" ]]; then
     exit "${status}"

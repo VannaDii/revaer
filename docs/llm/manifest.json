@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T18:08:58.819529+00:00",
+  "generated": "2026-08-16T18:13:32.452520+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4519,6 +4519,15 @@
         "task-record"
       ],
       "href": "/adr/542-playwright-html-report-path/"
+    },
+    {
+      "id": "adr/543-exact-cargo-tool-path",
+      "title": "Exact Cargo-installed tool path resolution",
+      "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: scripts/ensure-exact-cargo-tool.sh discovered tools through PATH, while Cargo installs them under ${CARGO_HOME:-$HOME/.cargo}/bin and canonical documentation recipes execute that exact location. A Homebrew mdbook 0.5.4 earlier on PATH therefore caused the helper to replace an already-correct Cargo-home mdbook 0.5.0. Cargo external subcommands require the subcommand name in their executable argument shape, so probing a cargo-* executable directly still must model Cargo's invocation contract. Ambient CARGO_INSTALL_ROOT or Cargo configuration could otherwise direct an install away from the executable the helper verifies. Cargo can successfully install the exact binary while emitting a",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/543-exact-cargo-tool-path/"
     },
     {
       "id": "adr/544-pre-v1-init-assembly-slice-01",
