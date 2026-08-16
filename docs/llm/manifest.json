@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T15:32:39.640156+00:00",
+  "generated": "2026-08-16T15:46:11.638151+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -3288,6 +3288,96 @@
       "href": "/adr/354-media-direct-job-source-fingerprint/"
     },
     {
+      "id": "adr/355-media-compatibility-target-admission",
+      "title": "Media compatibility target admission",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: Non-dry-run media discovery and direct job creation checked only for a globally valid capability snapshot before queueing work. Profiles can also pin a compatibility target that names required output video and audio codecs. A globally valid snapshot is insufficient when the pinned compatibility target requires an encoder that the current runtime cannot provide. Decision: Add a profile execution readiness gate in the app service before non-dry-run discovery or direct job admission. Keep the existing global snapshot validity checks, then verify that the latest persisted compatibility-target version has encode support for both configured codecs. Treat copy",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/355-media-compatibility-target-admission/"
+    },
+    {
+      "id": "adr/356-media-profile-readiness-api",
+      "title": "Media profile readiness API",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: Compatibility-target support is now enforced when callers create non-dry-run media jobs through the app service, but operators still cannot ask whether a specific profile is executable before queueing work. The background discovery runtime queues jobs through MediaStore, so scheduled and watcher paths must share the same readiness decision instead of relying on the service-only admission guard. The global capability readiness endpoint only proves that a worker has a valid snapshot. It does not prove that a profile's selected compatibility target can be encoded by that worker. Decision: Add GET /v1/media/profiles/{media_profile_public_id}/readiness with the evaluated profile, latest",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/356-media-profile-readiness-api/"
+    },
+    {
+      "id": "adr/357-media-desired-target-readiness",
+      "title": "Media desired-target readiness",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: ADR 356 exposed profile readiness and reused that decision before non-dry-run job admission, but the first evaluator slice only checked capability snapshot health and compatibility-target codec support. Profiles can also pin immutable desired targets that declare an output container and ordered stream codecs. A profile pinned to an unsupported desired target could still appear executable until runtime preflight failed after a job was queued. Decision: Extend the shared profile execution-readiness decision to evaluate pinned desired targets before reporting ready=true or admitting a non-dry-run job. Reuse runtime capability helpers for source-independent desired-target validation so the app",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/357-media-desired-target-readiness/"
+    },
+    {
+      "id": "adr/358-media-contextual-stream-rewrites",
+      "title": "Media Contextual Stream Rewrites",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: Desired stream title, language, disposition, and ordering changes are only safe when command construction has the complete desired graph. The legacy single-operation FFmpeg builder accepted LabelRewrite, DispositionRewrite, and StreamReorder without desired-state context. That path could clear stream titles or dispositions, or apply a generic family ordering, without proving the requested target state. Decision: Add a first-class ContextlessStreamRewrite build error for stream rewrite operations that reach the legacy builder without the complete desired graph. Keep the desired-graph execution builder as the supported materialization path for stream labels, languages, dispositions, and stream order. Surface the failure through",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/358-media-contextual-stream-rewrites/"
+    },
+    {
+      "id": "adr/359-media-worker-owned-phase-history",
+      "title": "Media Worker-Owned Phase History",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: Media jobs persist ordered lifecycle phases for operators and API readers. The public API also exposed POST /v1/media/jobs/{media_job_public_id}/phases, which let API clients append or overwrite worker-owned phase records. The underlying stored procedure upserts on (media_job_id, phase_index), so a public client could reuse a phase index and replace a runtime phase row. Decision: Remove the public phase append route, handler, request model, OpenAPI operation, and API-facing facade method. Keep GET /v1/media/jobs/{media_job_public_id}/phases as the read model for persisted worker phase history. Keep the internal store/runtime phase append path intact so the media worker remains responsible for writing",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/359-media-worker-owned-phase-history/"
+    },
+    {
+      "id": "adr/360-ci-cargo-install-retry",
+      "title": "CI Cargo Install Retry",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: PR E2E coverage jobs failed before tests could run when cargo install hit transient crates.io HTTP/2 transport failures while installing exact, locked Rust CLI tools. Required gates must still run through the Justfile, keep reviewed tool versions, keep --locked, and fail closed when installation genuinely cannot complete. Decision: Add scripts/cargo-install-retry.sh as the shared wrapper for required-recipe Cargo tool installs. Keep each tool version pinned in the Justfile and keep published lockfile installs. The wrapper retries the same install command and disables Cargo HTTP multiplexing only after the first transport failure. Update Rust and DevOps instructions",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/360-ci-cargo-install-retry/"
+    },
+    {
+      "id": "adr/361-media-worker-owned-job-records",
+      "title": "Media worker-owned job records",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: Media job phases were already made read-only through the public API so clients cannot forge worker lifecycle evidence. The related operation, violation, plan-reason, verification-check, artifact, and compact-audit append DTOs and facade methods still advertised mutation-shaped API contracts even though the HTTP router only exposes read endpoints. Runtime workers and data-layer tests still need internal stored-procedure append paths for durable execution evidence. Decision: Remove public API model request types and facade append methods for media job record rows. Keep data-store append functions and stored procedures as worker-owned internal persistence paths. Keep public OpenAPI paths for job",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/361-media-worker-owned-job-records/"
+    },
+    {
+      "id": "adr/362-media-worker-owned-job-creation",
+      "title": "Media worker-owned job creation",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: The media API already made job evidence records read-only, but /v1/media/jobs still accepted direct caller-created job records. Direct job creation lets API callers bypass the discovery ownership model that fingerprints stable files and atomically queues inherited dry-run work. Public contracts should expose job reads, cancellation, retry, discovery preview, and discovery runs while keeping job creation worker/discovery-owned. Decision: Remove POST /v1/media/jobs from the router, handler layer, facade boundary, API models, generated OpenAPI documents, and generated test client contract. Keep stored-procedure-backed job creation primitives in the data/runtime layers for discovery, tests, retry, and worker-owned persistence. Update the",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/362-media-worker-owned-job-creation/"
+    },
+    {
+      "id": "adr/363-media-data-target-boundary-evidence",
+      "title": "Media data target boundary evidence",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: Full media inspection retains opaque data streams so generic graph and preservation logic can account for them. ADR 336 made explicit desired data rows fail closed in the core compiler, but the outer API and stored-procedure regression evidence still named only chapter and attachment rows. A production media service must prove the unsupported data-row contract at every authored configuration boundary, not only in the inner planner. Decision: Extend desired-target API validation coverage so data rows are rejected with the same unsupported stream-kind path as attachment and chapter. Extend stored-procedure-backed data-layer coverage so explicit desired data",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/363-media-data-target-boundary-evidence/"
+    },
+    {
+      "id": "adr/364-media-container-metadata-preservation",
+      "title": "Media Container Metadata Preservation",
+      "summary": "Status: Accepted Date: 2026-07-30 Context: Full inspection already retains source container metadata, but primary media output construction only explicitly preserved chapters. A graph-compatible candidate could therefore drop source container tags and still pass the existing graph, stream-constraint, and chapter checks. Arbitrary authored metadata rewrite remains unsupported, so this change must preserve discovered source metadata without creating a new edit contract. Decision: Capture the inspected source container metadata during worker preflight and carry it through the candidate and final verification context. Emit -map_metadata 0 for primary media FFmpeg outputs beside the existing chapter-preservation arguments. Add fail-closed source, candidate, and final container-metadata",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/364-media-container-metadata-preservation/"
+    },
+    {
       "id": "adr/378-ui-vendor-image-input-pruning",
       "title": "UI vendor image input pruning",
       "summary": "Status: Recorded Date: 2026-07-31 Operator approval: Not applicable: nonarchitectural task record. Context: The PR Sonar scan reported invalid UTF-8 warnings for committed raster image assets. Revaer policy treats scanner warnings as required fixes and forbids hiding committed assets through Sonar exclusions without explicit operator consent. Nexus public/images was not an input to the runtime asset-sync pipeline. Decision: Remove unused tracked files under crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images. Keep runtime asset inputs required by asset_sync unchanged. Do not relax Sonar analysis scope, suffix handling, source encoding, or test classification. Consequences: The committed vendor surface and invalid-encoding warning sources shrink without changing runtime assets. Future work",
@@ -3412,6 +3502,15 @@
       "href": "/adr/420-media-text-input-contract/"
     },
     {
+      "id": "adr/422-exact-documentation-tools",
+      "title": "Exact Documentation Tools",
+      "summary": "Status: Accepted Date: 2026-08-11 Context: The documentation recipes selected the newest available mdBook and Lychee releases and reused arbitrary installed versions. Locked dependency resolution does not select an exact crate release without an explicit version. The link checker also suppressed failures, so broken documentation links could not fail the recipe. Decision: Pin the warning-free compatible pair mdBook 0.5.0 and mdbook-mermaid 0.17.0, plus Lychee 0.24.2. Provision all three through scripts/ensure-exact-cargo-tool.sh, which verifies the installed version and uses locked, bounded-retry installation on mismatch. Normalize the conventional leading v in version output and put Cargo's install directory first for documentation recipes so an",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/422-exact-documentation-tools/"
+    },
+    {
       "id": "adr/423-media-source-identity-fence",
       "title": "Media source identity fence",
       "summary": "Status: Accepted Date: 2026-08-12 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: Media discovery previously read metadata by pathname before and after opening the source. A rename, symlink swap, or same-size and same-mtime replacement could therefore make the persisted fingerprint describe different filesystem objects. Claimed jobs did not carry the discovery fingerprint, so the worker could not prove that the source selected for inspection, transcoding, and replacement was the source approved at enqueue time. Decision: Open the canonical configured source root, traverse every source-path component",
@@ -3520,6 +3619,96 @@
       "href": "/adr/436-app-openapi-media-contract/"
     },
     {
+      "id": "adr/442-capability-derived-media-planning",
+      "title": "Capability-derived media planning",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: Production media preflight loaded an immutable capability snapshot but gave the core planner PlanningConstraints::all_supported(), allowing candidate ranking to assume operations that the loaded toolchain could not execute. The later command builder validated codecs and muxers, but that boundary could only reject an already selected plan instead of excluding impossible candidates during planning. Planning must use the same inspected source, compiled desired graph, video policy, and persisted capability snapshot that execution receives. Decision:",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/442-capability-derived-media-planning/"
+    },
+    {
+      "id": "adr/443-managed-postgres-worktree-storage",
+      "title": "Managed PostgreSQL Worktree Storage",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: Linked worktrees shared the default revaer-db container while deriving its bind-mounted data directory from the invoking worktree. Removing a completed worktree could therefore delete the live PostgreSQL data directory and crash unrelated validation with missing relation and global control files. Decision: Derive the default managed data directory from Git's stable common repository directory so every linked worktree selects the same non-temporary storage root. Inspect an existing managed container's PostgreSQL data mount before",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/443-managed-postgres-worktree-storage/"
+    },
+    {
+      "id": "adr/444-dry-run-workspace-isolation",
+      "title": "Dry-run workspace isolation",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: The media worker created and populated a managed workspace before production preflight, even when the claimed job was an effective dry run. Dry runs must inspect, plan, estimate disk impact, and persist audit state without creating candidate files, backups, quarantine artifacts, sidecars, replacement files, or managed workspace directories. Planning still needs deterministic future workspace paths and capacity data for the configured workspace filesystem. Decision: Project deterministic workspace paths without touching the filesystem",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/444-dry-run-workspace-isolation/"
+    },
+    {
+      "id": "adr/446-worker-policy-snapshot-boundary",
+      "title": "Worker policy snapshot boundary",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: The v1 contract requires relational runtime configuration and immutable job snapshots for runtime limits, output behavior, workspace behavior, backup, verification, maintenance windows, operation costs, retention rules, and subtitle discovery. Job creation persists these values in normalized snapshot tables. The worker claim procedure returns only source identity, target fields, unmatched actions, and verification fields. No authored Rust reader exposes the remaining behavior or child snapshots to the worker. The runtime therefore uses process",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/446-worker-policy-snapshot-boundary/"
+    },
+    {
+      "id": "adr/447-media-managed-root-ownership",
+      "title": "Media managed-root ownership",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: The v1 contract requires validated source, output, workspace, backup, and quarantine roots, with local path mappings kept outside portable YAML. The normalized root table accepts all five root kinds, but authored profile APIs currently create and return only source and output roots. Production bootstrap injects one process-wide workspace root from REVAER_MEDIA_WORKSPACE_ROOT; runtime backup is disabled with backup_root: None, and quarantine is projected inside workspace diagnostics. Root ownership determines isolation, deployment configuration, portable",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/447-media-managed-root-ownership/"
+    },
+    {
+      "id": "adr/448-resumable-media-execution",
+      "title": "Resumable media execution",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: The v1 contract calls for deterministic DAG execution, retry support, resumability, intermediate reuse, failure isolation, and policy-controlled maximum parallel jobs. Current operation rows record the selected plan but have no queued, running, completed, failed, or invalidated state and no checkpoint artifact identity. The runtime claims one job per tick and executes all pre-replacement steps as one in-memory sequence. Retry creates a new whole-job attempt. Replacement preparation, commit, final verification, rollback, and recovery",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/448-resumable-media-execution/"
+    },
+    {
+      "id": "adr/449-media-capability-snapshot-binding",
+      "title": "Media capability snapshot binding",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: Deterministic planning requires the same input, target, policy, and runtime capabilities to produce the same plan. Capability discovery persists immutable completed runs, but jobs and attempts do not record which run governs planning or execution. Production currently loads the latest completed capability run when a worker begins processing. A retry can therefore use different capability evidence without an explicit transition or invalidation record. Binding time determines queue behavior across upgrades, retry determinism,",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/449-media-capability-snapshot-binding/"
+    },
+    {
+      "id": "adr/450-media-sidecar-discovery-policy",
+      "title": "Media sidecar discovery policy",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: Profiles persist ordered subtitle-discovery patterns and jobs snapshot those rules immutably. The worker has no reader for the snapshot rows. Production inspection instead constructs a filesystem discoverer with three fixed filename forms and a fixed supported-extension set. The persisted pattern text has length and ordering constraints but no defined grammar, compiler, escaping rules, complexity bound, or invalid-pattern behavior. Pattern semantics affect filesystem traversal, resource use, matching determinism, security, and operator-visible configuration. Decision:",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/450-media-sidecar-discovery-policy/"
+    },
+    {
+      "id": "adr/451-effective-media-policy-compilation",
+      "title": "Effective media policy compilation",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: ADR 446 addresses how normalized immutable policy snapshot rows reach a claimed worker. The runtime still needs one validated effective policy model before discovery, planning, scheduling, execution, verification, retention, and audit behavior can consume those rows consistently. Today, policy interpretation is split across stored procedures, data rows, application constants, planner inputs, and runtime branch logic. The ownership boundary for precedence, defaults, cross-field validation, and compilation is an architectural decision because it determines",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/451-effective-media-policy-compilation/"
+    },
+    {
+      "id": "adr/452-bootstrap-media-runtime-dependencies",
+      "title": "Bootstrap media runtime dependencies",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Approved as written by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: Root policy and the media v1 specification already require runtime logic to receive collaborators from callers and reserve concrete infrastructure construction for bootstrap and wiring code. MediaJobRuntime::new constructed the production inspector, command runner, capacity probe, replacement committer, verification executor, audio analyzer, and attachment digest adapter inside the runtime module. The runtime already had an internal collaborator bundle used by tests, so correcting the production wiring does not require a new ownership model.",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/452-bootstrap-media-runtime-dependencies/"
+    },
+    {
       "id": "adr/458-media-data-module-boundary",
       "title": "Media data module boundary integration correction",
       "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Not required; this moves an existing module rename to its first required integration boundary and makes no architecture choice. Context: The durable job invariant change introduced crates/revaer-data/src/media.rs. The next data-access deliverable introduced crates/revaer-data/src/media/mod.rs while leaving the flat module in place. Rust rejects a crate containing both module paths, so every intermediate deliverable from data access through job runtime was uncompilable. The job-runtime deliverable later renamed the flat module to media/identity.rs and exported its public types. Decision: Move that existing rename and export into the data-access deliverable where the directory module first appears. Keep the",
@@ -3559,7 +3748,7 @@
     {
       "id": "adr/463-pr-78-sonar-complexity-correction",
       "title": "ADR 463: PR 78 Sonar Complexity Correction",
-      "summary": "Status: Proposed Date: 2026-08-13 Operator approval: Pending. Context: Sonar reports cognitive complexity 18 for verify_plan, above the enforced limit of 15. The validator's category-first error precedence and exact diagnostics are observable behavior and must remain unchanged. This is a nonarchitectural corrective task record. Its final status semantics await the operator's decision on proposed ADR461; the code correction itself makes no architectural choice. Decision: Extract the existing operation-scope predicates into private pure functions. Preserve validation order, accepted inputs, and exact error strings. Add focused public-behavior tests for scope categories that lacked direct coverage. Consequences: verify_plan remains a linear validation sequence below",
+      "summary": "Status: Recorded Date: 2026-08-13 Operator approval: Not applicable: nonarchitectural task record Context: Sonar reports cognitive complexity 18 for verify_plan, above the enforced limit of 15. The validator's category-first error precedence and exact diagnostics are observable behavior and must remain unchanged. This is a nonarchitectural corrective task record; the code correction makes no architectural choice. Decision: Extract the existing operation-scope predicates into private pure functions. Preserve validation order, accepted inputs, and exact error strings. Add focused public-behavior tests for scope categories that lacked direct coverage. Consequences: verify_plan remains a linear validation sequence below the cognitive-complexity limit. The helper predicates expose no",
       "tags": [
         "task-record"
       ],
@@ -3568,7 +3757,7 @@
     {
       "id": "adr/464-pr171-media-identity-error-coverage",
       "title": "ADR 464: PR 171 Media Identity Error Coverage",
-      "summary": "Status: Proposed Date: 2026-08-13 Operator approval: Pending Context: PR 171's Sonar analysis measured 61.5% new-code coverage: 32 of the 52 executable lines in crates/revaer-data/src/media.rs were covered. The 20 uncovered lines were the Display, std::error::Error::source, and From<std::io::Error> paths for MediaRootIdentityError. Coverage must be raised with executed behavior, without changing Sonar scope, exclusions, thresholds, or analyzer configuration. Decision: Exercise every MediaRootIdentityError reporting variant through its public error contract, including preservation of the wrapped I/O source. Keep production code, stored procedures, migrations, runtime database access, and Sonar configuration unchanged. This is a nonarchitectural test-coverage correction; it introduces no new system boundary or architectural",
+      "summary": "Status: Recorded Date: 2026-08-13 Operator approval: Not applicable: nonarchitectural task record Context: PR 171's Sonar analysis measured 61.5% new-code coverage: 32 of the 52 executable lines in crates/revaer-data/src/media.rs were covered. The 20 uncovered lines were the Display, std::error::Error::source, and From<std::io::Error> paths for MediaRootIdentityError. Coverage must be raised with executed behavior, without changing Sonar scope, exclusions, thresholds, or analyzer configuration. Decision: Exercise every MediaRootIdentityError reporting variant through its public error contract, including preservation of the wrapped I/O source. Keep production code, stored procedures, migrations, runtime database access, and Sonar configuration unchanged. This is a nonarchitectural test-coverage correction; it introduces no new",
       "tags": [
         "task-record"
       ],
@@ -3577,7 +3766,7 @@
     {
       "id": "adr/467-pr99-openapi-lint-boundary",
       "title": "ADR 467: PR 99 OpenAPI Lint Boundary Correction",
-      "summary": "Status: Proposed Date: 2026-08-13 Operator approval: Pending; this is a nonarchitectural corrective task record awaiting ADR 461 status semantics. Context: PR 99 first increases the OpenAPI media schema inventory enough for the existing test function to exceed the repository's 100-line Clippy limit. A later stack commit extracts the same inventory into a module-level constant, leaving PR 99 independently red even though the integrated leaf passes. Decision: Move the existing behavior-preserving schema-name extraction to PR 99, the first affected integration boundary. Keep the schema inventory and assertions unchanged. Remove the redundant extraction from the later descendant while replaying the stack. Consequences:",
+      "summary": "Status: Recorded Date: 2026-08-13 Operator approval: Not applicable: nonarchitectural task record Context: PR 99 first increases the OpenAPI media schema inventory enough for the existing test function to exceed the repository's 100-line Clippy limit. A later stack commit extracts the same inventory into a module-level constant, leaving PR 99 independently red even though the integrated leaf passes. Decision: Move the existing behavior-preserving schema-name extraction to PR 99, the first affected integration boundary. Keep the schema inventory and assertions unchanged. Remove the redundant extraction from the later descendant while replaying the stack. Consequences: PR 99 and its descendants satisfy the same",
       "tags": [
         "task-record"
       ],
@@ -3586,7 +3775,7 @@
     {
       "id": "adr/468-pr99-native-watcher-test-stability",
       "title": "ADR 468: PR 99 Native Watcher Test Stability",
-      "summary": "Status: Proposed Date: 2026-08-13 Operator approval: Pending; this is a nonarchitectural corrective task record awaiting ADR 461 status semantics. Context: The native watcher integration test depends on the host operating system delivering an event from a temporary directory after registration. The backend can register successfully without delivering such events in constrained local and hosted environments, so the test can time out without identifying a production-code defect. Decision: Extract the existing native callback body into a private function without changing its behavior. Test native recursive registration as a host-backend smoke boundary. Test the exact callback-to-buffer path deterministically with a recursive media",
+      "summary": "Status: Recorded Date: 2026-08-13 Operator approval: Not applicable: nonarchitectural task record Context: The native watcher integration test depends on the host operating system delivering an event from a temporary directory after registration. The backend can register successfully without delivering such events in constrained local and hosted environments, so the test can time out without identifying a production-code defect. Decision: Extract the existing native callback body into a private function without changing its behavior. Test native recursive registration as a host-backend smoke boundary. Test the exact callback-to-buffer path deterministically with a recursive media path and profile identity. Consequences: Registration failures and",
       "tags": [
         "task-record"
       ],
@@ -3595,7 +3784,7 @@
     {
       "id": "adr/470-pr85-media-runtime-fixtures",
       "title": "ADR 470: PR 85 Media Runtime Fixture Correction",
-      "summary": "Status: Proposed Operator approval: Pending Date: 2026-08-13 Context: PR 85 retained test fixtures for older stream-constraint and inspection field names. The stale fixtures prevented the intermediate stack boundary from compiling even though later commits happened to repair the same construction sites. Decision: Update the fixtures to initialize max_bitrate_bps and max_bit_rate exactly as the current types require. Treat this as a nonarchitectural integration correction; no runtime behavior, public contract, or architectural boundary changes. Consequences: PR 85 compiles and tests independently instead of relying on a descendant commit. The fixtures remain explicit when fields are absent. Follow-up: Keep PR 85 check, lint,",
+      "summary": "Status: Recorded Operator approval: Not applicable: nonarchitectural task record Date: 2026-08-13 Context: PR 85 retained test fixtures for older stream-constraint and inspection field names. The stale fixtures prevented the intermediate stack boundary from compiling even though later commits happened to repair the same construction sites. Decision: Update the fixtures to initialize max_bitrate_bps and max_bit_rate exactly as the current types require. Treat this as a nonarchitectural integration correction; no runtime behavior, public contract, or architectural boundary changes. Consequences: PR 85 compiles and tests independently instead of relying on a descendant commit. The fixtures remain explicit when fields are absent. Follow-up: Keep",
       "tags": [
         "task-record"
       ],
@@ -3768,6 +3957,419 @@
       "href": "/adr/501-bounded-native-media-process-envelope/"
     },
     {
+      "id": "adr/502-ci-node-path-fallback",
+      "title": "Exact CI Node PATH fallback",
+      "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: GitHub-hosted runners expose an ambient NVM installation even after the pinned actions/setup-node step installs Node 24.19.0 on PATH. The exact-version wrapper rejected that valid CI installation whenever the ambient NVM catalogue did not also contain the version. Decision: Keep NVM authoritative for local runs. In CI only, allow the wrapper to continue after nvm use misses and require the existing exact node --version check to validate the manifest-pinned PATH installation before any Node command runs. Consequences: CI consumes the exact Node installed by the pinned setup action instead",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/502-ci-node-path-fallback/"
+    },
+    {
+      "id": "adr/504-attempt-aware-media-job-phase-reads",
+      "title": "Attempt-aware media job phase reads",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "context",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "recommendation",
+        "task-record"
+      ],
+      "href": "/adr/504-attempt-aware-media-job-phase-reads/"
+    },
+    {
+      "id": "adr/505-profile-readiness-and-source-bound-planning",
+      "title": "Profile readiness and source-bound planning",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "context",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "recommendation",
+        "task-record"
+      ],
+      "href": "/adr/505-profile-readiness-and-source-bound-planning/"
+    },
+    {
+      "id": "adr/506-explicit-manual-media-execution-command",
+      "title": "Explicit manual media execution command",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "context",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "recommendation",
+        "task-record"
+      ],
+      "href": "/adr/506-explicit-manual-media-execution-command/"
+    },
+    {
+      "id": "adr/507-exact-container-metadata-state",
+      "title": "Exact container metadata state",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/507-exact-container-metadata-state/"
+    },
+    {
+      "id": "adr/508-exact-chapter-timeline-state",
+      "title": "Exact chapter timeline state",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/508-exact-chapter-timeline-state/"
+    },
+    {
+      "id": "adr/509-opaque-stream-identity-and-unmatched-precedence",
+      "title": "Opaque stream identity and unmatched precedence",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/509-opaque-stream-identity-and-unmatched-precedence/"
+    },
+    {
+      "id": "adr/510-canonical-exact-hdr10-color-volume",
+      "title": "Canonical exact HDR10 color volume",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/510-canonical-exact-hdr10-color-volume/"
+    },
+    {
+      "id": "adr/511-exact-video-technical-constraints",
+      "title": "Exact video technical constraints",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/511-exact-video-technical-constraints/"
+    },
+    {
+      "id": "adr/512-fenced-resumable-worker-ownership-and-recovery",
+      "title": "Fenced resumable worker ownership and recovery",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/512-fenced-resumable-worker-ownership-and-recovery/"
+    },
+    {
+      "id": "adr/513-attempt-scoped-workspace-retention-transaction",
+      "title": "Attempt-scoped workspace retention transaction",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/513-attempt-scoped-workspace-retention-transaction/"
+    },
+    {
+      "id": "adr/514-packaged-media-subsystem-lifecycle-and-health-contract",
+      "title": "Packaged media subsystem lifecycle and health contract",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/514-packaged-media-subsystem-lifecycle-and-health-contract/"
+    },
+    {
+      "id": "adr/515-versioned-audio-transformation-and-acceptance-contract",
+      "title": "Versioned audio transformation and acceptance contract",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "baseline-and-held-existing-choices",
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "unresolved-operator-choices",
+        "validation"
+      ],
+      "href": "/adr/515-versioned-audio-transformation-and-acceptance-contract/"
+    },
+    {
+      "id": "adr/516-durable-discovery-scheduling-and-versioned-aggregate-identity",
+      "title": "Durable discovery scheduling and versioned aggregate identity",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "baseline-and-held-existing-choices",
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "provenance",
+        "recommendation",
+        "task-record",
+        "unresolved-operator-choices",
+        "validation"
+      ],
+      "href": "/adr/516-durable-discovery-scheduling-and-versioned-aggregate-identity/"
+    },
+    {
+      "id": "adr/517-generation-fenced-media-job-snapshot-reader-contract",
+      "title": "Generation-fenced media job snapshot reader contract",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/517-generation-fenced-media-job-snapshot-reader-contract/"
+    },
+    {
+      "id": "adr/518-effective-media-policy-version-and-precedence-contract",
+      "title": "Effective media policy version and precedence contract",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/518-effective-media-policy-version-and-precedence-contract/"
+    },
+    {
+      "id": "adr/519-immutable-media-capability-execution-identity",
+      "title": "Immutable media capability execution identity",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/519-immutable-media-capability-execution-identity/"
+    },
+    {
+      "id": "adr/520-explicit-media-job-replan-contract",
+      "title": "Explicit media job re-plan contract",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/520-explicit-media-job-replan-contract/"
+    },
+    {
+      "id": "adr/521-normalized-media-operator-resource-contract",
+      "title": "Normalized media operator resource contract",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/521-normalized-media-operator-resource-contract/"
+    },
+    {
+      "id": "adr/522-pre-v1-single-init-script-transition",
+      "title": "Pre-v1 single init-script transition",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/522-pre-v1-single-init-script-transition/"
+    },
+    {
+      "id": "adr/523-managed-root-catalog-and-job-binding-contract",
+      "title": "Managed-root catalog and job binding contract",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/523-managed-root-catalog-and-job-binding-contract/"
+    },
+    {
+      "id": "adr/524-versioned-sidecar-token-grammar-and-bounds",
+      "title": "Versioned sidecar token grammar and bounds",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/524-versioned-sidecar-token-grammar-and-bounds/"
+    },
+    {
+      "id": "adr/525-attempt-scoped-backup-and-rollback-layout",
+      "title": "Attempt-scoped backup and rollback layout",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/525-attempt-scoped-backup-and-rollback-layout/"
+    },
+    {
+      "id": "adr/526-descriptor-bound-media-inspection-inputs",
+      "title": "Descriptor-bound media inspection inputs",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/526-descriptor-bound-media-inspection-inputs/"
+    },
+    {
+      "id": "adr/527-fail-closed-native-media-inspection-confinement",
+      "title": "Fail-closed native media inspection confinement",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/527-fail-closed-native-media-inspection-confinement/"
+    },
+    {
+      "id": "adr/529-kcov-inline-shell-source",
+      "title": "Fail-closed kcov Bash tracing",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record Context: Kcov instruments authored Bash with a PS4 trace expression that reads BASH_SOURCE. Policy tests invoke selected just recipes whose inline bash -c bodies enable nounset. Those inline shells have no source file, so trace expansion failed before the database and exact-tool assertions ran. The same missing identity affects temporary Bash command doubles, while assigning one fixed source through the complete process would corrupt child-script path discovery and coverage identity. Bash before 4.2 has no BASH_XTRACEFD, so kcov multiplexes trace records with ordinary standard error and can report parser",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/529-kcov-inline-shell-source/"
+    },
+    {
       "id": "adr/530-cataloged-task-record-restoration",
       "title": "Cataloged task-record restoration",
       "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural task record. Context: PR 97 catalogs ADRs 378, 379, 500, and 501, but the branch does not contain those files. Every descendant therefore fails the documentation link gate before its own deliverable can be evaluated. ADRs 379, 500, and 501 record the operator's explicit 2026-08-16 approval. ADR 378 is a nonarchitectural task record. Decision: Restore the four cataloged records immediately above PR 98 without changing their approved boundaries or any production behavior. Keep this correction as one small prerequisite PR so each descendant has a self-contained, link-valid base. Consequences: Documentation validation",
@@ -3784,6 +4386,54 @@
         "task-record"
       ],
       "href": "/adr/532-admitted-media-source-intent-preservation/"
+    },
+    {
+      "id": "adr/533-descriptor-bound-source-material-lifecycle",
+      "title": "Descriptor-bound source material lifecycle",
+      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/533-descriptor-bound-source-material-lifecycle/"
+    },
+    {
+      "id": "adr/534-atomic-source-identity-checked-replacement",
+      "title": "Atomic source-identity-checked replacement",
+      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/534-atomic-source-identity-checked-replacement/"
+    },
+    {
+      "id": "adr/535-bounded-cancellation-aware-fingerprint-admission",
+      "title": "Bounded cancellation-aware fingerprint admission",
+      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "tags": [
+        "consequences",
+        "follow-up",
+        "implementation-boundary",
+        "options",
+        "problem",
+        "recommendation",
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/535-bounded-cancellation-aware-fingerprint-admission/"
     },
     {
       "id": "adr/index",

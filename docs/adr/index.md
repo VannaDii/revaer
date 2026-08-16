@@ -463,3 +463,6 @@
 -   [529](529-kcov-inline-shell-source.md) – Fail-closed kcov Bash tracing
 -   [530](530-cataloged-task-record-restoration.md) – Cataloged task-record restoration
 -   [532](532-admitted-media-source-intent-preservation.md) – Admitted media source intent preservation
+-   [533](533-descriptor-bound-source-material-lifecycle.md) – Descriptor-bound source material lifecycle
+-   [534](534-atomic-source-identity-checked-replacement.md) – Atomic source-identity-checked replacement
+-   [535](535-bounded-cancellation-aware-fingerprint-admission.md) – Bounded cancellation-aware fingerprint admission
