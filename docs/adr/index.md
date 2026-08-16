@@ -487,6 +487,7 @@
 -   [553](553-native-inspection-error-arbitration.md) – Native inspection error arbitration
 -   [554](554-preemptible-native-process-broker-contract.md) – Preemptible native process broker contract
 -   [555](555-pre-v1-init-assembly-slice-06.md) – Pre-v1 init assembly slice 06
+-   [556](556-root-catalog-source.md) – Root catalog source implementation
 -   [557](557-root-persistence-contract.md) – Root persistence, binding, and administration contract (Accepted)
 -   [558](558-rvb1-native-process-broker-wire-contract.md) – RVB1 native process broker wire and lifecycle contract (Accepted; E1 held)
 -   [559](559-media-approval-delta.md) – Media decision review and approval delta (Accepted)

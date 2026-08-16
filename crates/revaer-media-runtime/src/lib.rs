@@ -26,6 +26,7 @@ pub mod inspect;
 pub mod jobs;
 pub mod process;
 pub mod replacement;
+pub mod root_catalog;
 pub mod sidecar;
 pub mod verification;
 pub mod workspace;

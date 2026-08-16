@@ -4670,6 +4670,15 @@
     "href": "/adr/555-pre-v1-init-assembly-slice-06/"
   },
   {
+    "id": "adr/556-root-catalog-source",
+    "title": "Root catalog source implementation",
+    "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Implementation of accepted ADR 550 was explicitly directed by the operator on 2026-08-16. Context: Accepted ADRs 523 and 550 make an injected startup source the sole authority that may introduce absolute media-root path bytes. The approved first slice is limited to the version-1 typed model, exact JSON validation, canonical semantic digest, source trait, and trusted local file source in revaer-media-runtime. Database persistence, API and UI surfaces, profile binding, root evidence attestation, package manifests, and destructive readiness remain separate implementation slices. Decision: Parse only the exact version-1 top-level and slot field sets, reject unknown and",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/556-root-catalog-source/"
+  },
+  {
     "id": "adr/557-root-persistence-contract",
     "title": "Root persistence, binding, and administration contract",
     "summary": "Status: Accepted Date: 2026-08-16 Operator approval: 2026-09-09: \"ADRs 557-559 are approved according to the resolution\" Review revision: 2026-09-09; accepted as reconciled in ADR 559",

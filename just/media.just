@@ -14,6 +14,10 @@ verify-test-fixtures:
 
 test-media-conversion: verify-test-fixtures
 
+test-media-root-catalog:
+    cargo --config 'build.rustflags=["-Dwarnings"]' test \
+        -p revaer-media-runtime --all-features root_catalog
+
 update-test-fixture-probes:
     bash scripts/test-fixtures/update-probe-snapshots.sh
 
