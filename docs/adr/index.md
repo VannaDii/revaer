@@ -357,6 +357,7 @@
 -   [346](346-media-inspect-probe-timeout-boundary.md) – Media inspect probe timeout boundary
 -   [347](347-media-stale-worker-recovery.md) – Media stale worker recovery
 -   [348](348-media-execution-timeout-boundary.md) – Media execution timeout boundary
+-   [349](349-media-finalized-completion-boundary.md) – Media finalized replacement terminal invariant
 -   [378](378-ui-vendor-image-input-pruning.md) – UI vendor image input pruning
 -   [379](379-ui-runtime-image-canonicalization.md) – UI runtime image canonicalization
 -   [404](404-doc-indexer-fixture-isolation.md) – Doc indexer fixture isolation

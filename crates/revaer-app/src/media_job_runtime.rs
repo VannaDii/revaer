@@ -4380,10 +4380,11 @@ mod tests {
         RuntimeReplacementCommitter, RuntimeSourceFingerprintProbe, RuntimeVerificationExecutor,
         SystemFfmpegAudioAnalysisAdapter, SystemSourceFingerprintProbe, VideoStreamConstraints,
         audio_measurement_mismatch, desired_target_from_job, expected_audio_constraints,
-        parse_ebur128_summary, read_bounded_audio_analysis_stderr, run_audio_analysis_process,
-        run_audio_analysis_process_with_timeout, validate_claimed_source_fingerprint,
-        verification_policy_from_job, video_constraint_stream_mismatch,
-        video_policy_from_policy_intent, video_policy_from_target_snapshot,
+        parse_ebur128_summary, read_bounded_audio_analysis_stderr, replacement_job_key,
+        run_audio_analysis_process, run_audio_analysis_process_with_timeout,
+        validate_claimed_source_fingerprint, verification_policy_from_job,
+        video_constraint_stream_mismatch, video_policy_from_policy_intent,
+        video_policy_from_target_snapshot,
     };
     use crate::media_discovery_fingerprint::MediaAggregateFingerprint;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
@@ -5246,6 +5247,63 @@ mod tests {
             _terminal_job_keys: &BTreeSet<String>,
         ) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
             Ok(vec![self.recovered.clone()])
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct PostFinalizeCancellationCommitter {
+        inner: SystemReplacementCommitter,
+        finalized: AtomicBool,
+        release_finalize: AtomicBool,
+    }
+
+    impl ReplacementCommitter for PostFinalizeCancellationCommitter {
+        fn prepare(
+            &self,
+            request: ReplacementRequest<'_>,
+        ) -> Result<PreparedReplacement, ReplacementError> {
+            self.inner.prepare(request)
+        }
+
+        fn commit(
+            &self,
+            prepared: PreparedReplacement,
+        ) -> Result<CommittedReplacement, ReplacementError> {
+            self.inner.commit(prepared)
+        }
+
+        fn discard_prepared(&self, prepared: PreparedReplacement) -> Result<(), ReplacementError> {
+            self.inner.discard_prepared(prepared)
+        }
+
+        fn rollback(&self, committed: CommittedReplacement) -> Result<(), ReplacementError> {
+            self.inner.rollback(committed)
+        }
+
+        fn finalize(&self, committed: CommittedReplacement) -> Result<(), ReplacementError> {
+            self.inner.finalize(committed)?;
+            self.finalized.store(true, Ordering::Release);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !self.release_finalize.load(Ordering::Acquire) && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Ok(())
+        }
+
+        fn recover(
+            &self,
+            source_root: &Path,
+        ) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
+            self.inner.recover(source_root)
+        }
+
+        fn recover_with_terminal_jobs(
+            &self,
+            source_root: &Path,
+            terminal_job_keys: &BTreeSet<String>,
+        ) -> Result<Vec<RecoveredReplacement>, ReplacementError> {
+            self.inner
+                .recover_with_terminal_jobs(source_root, terminal_job_keys)
         }
     }
 
@@ -6529,6 +6587,61 @@ Integrated loudness:
                     check.check_kind == "output_replacement" && check.check_status == "passed"
                 })
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn media_job_runtime_rejects_cancel_after_terminal_replacement_commit()
+    -> anyhow::Result<()> {
+        let Some(mut fixture) = setup_runtime(false, true, RuntimeJobTarget::Hevc).await? else {
+            return Ok(());
+        };
+        fixture.runtime.inspector = Arc::new(SuccessfulTranscodeInspector) as Arc<RuntimeInspector>;
+        let committer = Arc::new(PostFinalizeCancellationCommitter::default());
+        fixture.runtime.replacement_committer =
+            Arc::clone(&committer) as Arc<RuntimeReplacementCommitter>;
+        let source_path = PathBuf::from(
+            fixture
+                .store
+                .get_job(fixture.job_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("media job missing"))?
+                .source_path,
+        );
+        let mut stream = fixture.events.subscribe(None);
+        let store = fixture.store.clone();
+        let job_id = fixture.job_id;
+        let runtime = fixture.runtime;
+        let tick = tokio::spawn(async move { runtime.run_tick().await });
+
+        wait_for_flag(&committer.finalized, "replacement finalization").await?;
+        assert_eq!(fs::read(&source_path)?, b"output");
+        let cancel_result = store.cancel_job(job_id).await;
+        committer.release_finalize.store(true, Ordering::Release);
+        let tick_result = tokio::time::timeout(Duration::from_secs(5), tick).await??;
+        tick_result?;
+
+        assert!(cancel_result.is_err());
+        let job = store
+            .get_job(job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("completed media job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+
+        loop {
+            let envelope = tokio::time::timeout(Duration::from_secs(1), stream.next())
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("event stream closed"))??;
+            if matches!(
+                envelope.event,
+                CoreEvent::MediaJobCompleted {
+                    media_job_public_id
+                } if media_job_public_id == job_id
+            ) {
+                break;
+            }
+        }
         Ok(())
     }
 

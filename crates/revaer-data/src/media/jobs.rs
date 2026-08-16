@@ -2146,6 +2146,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replacement_terminal_commit_rejects_late_cancel_and_remains_completed()
+    -> anyhow::Result<()> {
+        let Some(db) = setup_media_db("replacement_terminal_late_cancel").await? else {
+            return Ok(());
+        };
+        let profile_id = upsert_media_profile(
+            db.pool(),
+            &UpsertMediaProfileInput {
+                actor_public_id: db.system_user_public_id,
+                profile_key: "replacement-terminal-late-cancel",
+                source_root: "/input/replacement-terminal-late-cancel",
+                output_root: "/output/replacement-terminal-late-cancel",
+                dry_run_only: false,
+                retention_days: 30,
+                compatibility_target_key: None,
+                policy_key: "safe_dry_run",
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
+            },
+        )
+        .await?;
+        let job_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/replacement-terminal-late-cancel/movie.mkv",
+                output_path: Some("/output/replacement-terminal-late-cancel/movie.mkv"),
+                dry_run: false,
+            },
+        )
+        .await?;
+        let claimed = media_job_worker_claim_next(db.pool())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("replacement job was not claimable"))?;
+        assert_eq!(claimed.media_job_public_id, job_id);
+
+        assert!(
+            !media_job_worker_commit_replacement_terminal(
+                db.pool(),
+                job_id,
+                claimed.claim_generation,
+                claimed.cancel_generation,
+            )
+            .await?
+        );
+        assert!(cancel_media_job(db.pool(), job_id).await.is_err());
+        assert!(
+            !media_job_worker_commit_replacement_terminal(
+                db.pool(),
+                job_id,
+                claimed.claim_generation,
+                claimed.cancel_generation,
+            )
+            .await?
+        );
+
+        let job = get_media_job(db.pool(), job_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("completed replacement job missing"))?;
+        assert_eq!(job.status_text, "completed");
+        assert_eq!(job.last_error, None);
+        let unpublished = list_media_job_terminal_outbox_unpublished(db.pool()).await?;
+        assert_eq!(unpublished.len(), 1);
+        assert_eq!(unpublished[0].media_job_public_id, job_id);
+        assert_eq!(unpublished[0].claim_generation, claimed.claim_generation);
+        assert_eq!(unpublished[0].event_kind, "completed");
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn stale_worker_recovery_marks_abandoned_jobs_terminal() -> anyhow::Result<()> {
         let Some(db) =
             setup_media_db("stale_worker_recovery_marks_abandoned_jobs_terminal").await?
