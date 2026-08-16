@@ -4,6 +4,18 @@ applyTo:
   - ".github/actions/**"
   - "Dockerfile"
   - "release/**"
+  - "justfile"
+  - "just/**"
+  - "scripts/cargo-install-retry.sh"
+  - "scripts/ensure-exact-cargo-tool.sh"
+  - "scripts/image-release.sh"
+  - "scripts/install-sonar-scanner.sh"
+  - "scripts/prepare-sonar-scm.sh"
+  - "scripts/sonar-*.sh"
+  - "scripts/verify-sonar-inputs.sh"
+  - "scripts/with-node.sh"
+  - "scripts/workflow-guardrails.sh"
+  - "scripts/workflow_guardrails/**"
   - "sonar-project.properties"
 ---
 
@@ -20,24 +32,17 @@ applyTo:
 - Helm OCI publication defaults must target the owner-qualified GHCR namespace derived from the active GitHub repository. If a non-GitHub registry layout is needed, override it explicitly with `HELM_REGISTRY_NAMESPACE` rather than relying on an incomplete default path.
 - Revaer's default public Helm OCI repository is `oci://ghcr.io/<owner>/charts/revaer`. Keep workflow defaults, install docs, and Artifact Hub registration aligned to that owner-scoped path.
 - The shipped `charts/revaer/artifacthub-repo.yml` template is the source of truth for the Artifact Hub repository ID. Release packaging may append ownership data, but it must not duplicate an existing `repositoryID`.
-- Trivy SARIF uploads from the reusable image workflow must set an explicit `upload-sarif` category when workflow refactors would otherwise rename the analysis identity. Keep that category aligned with the legacy `ci.yml` build-image matrix key so GitHub code scanning can compare PR scans against `main`.
+- Trivy SARIF uploads from the reusable image workflow must set an explicit `upload-sarif` category when workflow refactors would otherwise rename the analysis identity. Keep that category aligned with the legacy `ci.yml` build-image matrix key so GitHub code scanning can compare PR scans against `main`. The exact two-entry amd64/arm64 matrix must run with fail-fast disabled, each scan must produce SARIF, and high or critical findings must fail the job with Trivy exit code 1; never neutralize PR findings to manufacture a passing context.
 - Release packaging must preserve Artifact Hub ownership metadata when `ARTIFACTHUB_OWNER_NAME` and `ARTIFACTHUB_OWNER_EMAIL` are provided, even for unsigned packaging paths, because Artifact Hub ownership claim and verified-publisher flows depend on that published owner identity.
 - Release packaging should publish an explicit `artifacthub.io/images` chart annotation for the Revaer image so Artifact Hub can index the runtime image and generate package security scans reliably.
 - Helm release annotations must be rendered from a file through the portable renderer and covered by `just helm-annotation-test`. Do not pass multiline YAML through `awk -v` or interpolate annotation bodies into command text.
 - Workflows that install Rust toolchains must use the repository's configured toolchain source of truth rather than hard-coded ad hoc channels unless a documented exception is required.
-- Workflow build, lint, test, coverage, and release gates must call `just` recipes. Do not reintroduce raw `cargo` pipelines into CI jobs.
-- Media fixture acquisition must use `test-fixtures/lock.json` as the immutable
-  source, revision, SHA-256, and byte-bound record. Cache keys must include that
-  lock. Normal verification must create canonical probes in a private temporary
-  tree and diff them against reviewed snapshots without modifying the worktree;
-  snapshot replacement is allowed only through the explicit
-  `just update-test-fixture-probes` operator recipe.
-- Justfile recipes must run under non-login Bash so caller-selected Rust and NVM tool paths remain active inside every recipe.
-- Generated Playwright API schema output must remain ignored and untracked. Regenerate it from the committed OpenAPI document at test time through `just api-test-client`, using `npm ci` so `tests/package-lock.json` is the complete dependency-resolution source of truth; keep the generated-source guardrail and its fixture tests in `just policy`.
+- Workflow build, lint, test, coverage, security, image, signing, manifest, and release gates must call canonical `just` recipes. Workflows may install tools, authenticate, or upload artifacts, but must not execute raw Cargo gates, Docker builds or manifest publication, Trivy scans, Cosign signing, or Helm packaging/publication directly.
+- Media fixture acquisition must use `test-fixtures/lock.json` as the immutable source, revision, SHA-256, and byte-bound record. Cache keys must include that lock. Normal verification must create canonical probes in a private temporary tree and diff them against reviewed snapshots without modifying the worktree; snapshot replacement is allowed only through the explicit `just update-test-fixture-probes` operator recipe.
+- Generated Playwright API schema output must remain ignored and untracked. Regenerate it from the committed OpenAPI document at test time through `just api-test-client`, using `npm ci --ignore-scripts` so `tests/package-lock.json` is the complete dependency-resolution source of truth; keep the generated-source guardrail and its fixture tests in `just policy`.
 - Asset verification must run through `just check-assets`, which regenerates and compares `crates/revaer-ui/static/nexus`; release validation must also confirm that referenced `/static/...` icon, logo, and DataTables URLs exist in the Trunk release output.
-- `pr.yml` is the sole pull-request validation workflow. Keep formatting, lint, test, audit, deny, coverage, E2E, and other verification gates there so pull requests are validated exactly once before merge.
+- `pr.yml` is the sole pull-request validation workflow. Its `pull_request` trigger must not narrow branches, paths, or activity types. Keep formatting, lint, test, audit, deny, coverage, E2E, media conversion, supply-chain aggregation, image, Helm, and release verification there so every same-repository stack pull request can emit all 21 contexts in `config/required-pr-checks.txt`.
 - `pr.yml` must run its release-build validation job on pull requests. Keep post-merge and tag publication in `ci.yml`, but do not hide PR release-build validation behind main/tag-only guards.
-- Required CI recipes must install Rust CLI tools at exact reviewed versions with `--locked`; do not let floating registry resolution decide the tool version at check time. Route cargo-audit, cargo-deny, cargo-llvm-cov, cargo-udeps, SQLx CLI, and Trunk through `scripts/ensure-exact-cargo-tool.sh`, which must replace missing, older, and newer versions while retaining an exact match, and through the bounded retry installer. `just sqlx-install` must install SQLx CLI `0.8.6` because newer CLI releases can outrun the configured Rust toolchain, and `just trunk-install` must install Trunk `0.21.14` because newer transitive CSS tooling can outrun the configured Rust toolchain. `just udeps` must pair cargo-udeps `0.1.57` with `nightly-2026-06-13`, run `--workspace --all-targets`, and emit compiler, tool, and command evidence; keep both pins in the PR cache key and update them only through an explicit reviewed change with a successful smoke run.
 - The canonical UI E2E gate must install the exact `tests/package-lock.json` graph with lifecycle scripts disabled and run `npm audit --audit-level=info` before generating clients or starting browsers. Every reported npm severity is blocking; refresh the lock or dependency graph instead of adding an audit exception.
 - Documentation builds must pin mdBook `0.5.0` to the protocol version used by pinned `mdbook-mermaid 0.17.0`. Browser validation must not pass conflicting `NO_COLOR` and `FORCE_COLOR` settings into Playwright; remove the inherited `NO_COLOR` setting at that process boundary instead of discarding warning output.
 - Every pull request must emit `Supply Chain Checks` as a fail-closed aggregate of the independent audit, deny, and unused-dependency jobs. The aggregate must run under `if: always()` and reject every upstream result except `success` through the canonical `just` verifier.
@@ -48,13 +53,15 @@ applyTo:
 - Manual workflows that publish PR-scoped dev Helm artifacts should encode the PR number into the default prerelease version so registry output is traceable back to the reviewed change.
 - `workflow_dispatch` string inputs that flow into shell or release commands must be validated and normalized before use. Reject unsafe or malformed values instead of passing them through to `just`, Helm, or release scripts.
 - Reusable image workflows may publish PR-scoped dev Helm charts only as an optional post-manifest job. Keep that publish step downstream of the multi-arch manifest job, drive it through `just helm-package` and `just helm-publish`, and derive the default prerelease chart version from the caller-provided PR number.
+- PR image verification and any explicitly authorized publication must wait for all UI shards, feature, native, media-conversion, Sonar/coverage, supply-chain, and matrix-loading jobs. Ordinary pull requests build and scan verification images without pushing or signing them. The same-repository caller must set `publish_dev_helm: true` before an eligible post-manifest dev chart publication; a failed prerequisite must prevent image, manifest, signature, and Helm publication.
+- Every UI shard coverage upload must use `if-no-files-found: error`. The aggregate must download all three exact named artifacts, prove nonempty API and UI records for each shard through `just ui-e2e-shard-coverage`, and only then evaluate combined route coverage.
 - Release-tag image publication in `ci.yml` must not depend on `release-dev` or any other `main`-only job. Split dev and tag image publishing into separate jobs when their prerequisites differ.
 - Stable tag activity in `ci.yml` must exclude prerelease tags consistently at the job boundary, not only in downstream publish jobs. Do not let prerelease tags build stable release artifacts that the later jobs refuse to publish.
 - Reusable-workflow caller jobs must not use `secrets: inherit` unless the callee truly requires repository secrets. Prefer the default GitHub token plus explicit job permissions, and pass named secrets only when the callee consumes them.
 - Helm chart validation and publication must flow through `just helm-lint`, `just helm-package`, and `just helm-publish`. Do not add ad hoc packaging or registry-push shell blocks to workflows.
 - Helm packaging must render multiline annotations without passing embedded newlines through `awk -v`; keep the renderer portable across the BSD and GNU userlands used by local and hosted gates.
 - Every workflow job that invokes `just` must install it first through `./.github/actions/setup-revaer`; do not assume any hosted or self-hosted runner image already provides it. This includes each architecture job in the reusable image workflow before the Trivy verifier runs.
-- `just lint` runs `scripts/workflow-guardrails.sh`, which rejects unpinned external action refs, direct `${{ inputs.* }}` interpolation inside `run:` blocks, and nonempty Sonar coverage exclusions.
+- `just lint` runs `scripts/workflow-guardrails.sh`, which rejects unpinned external action refs, direct `${{ inputs.* }}` interpolation inside `run:` blocks, direct workflow release/security gates, and nonempty Sonar coverage exclusions.
 - Workflow guardrails must parse YAML structure rather than search whole files for policy strings. Validate real jobs, steps, conditions, permissions, action references, and `just` invocations, and retain adversarial fixtures proving comments, environment values, descriptions, and unrelated keys cannot satisfy or trigger a rule.
 - Sonar property guardrails must parse Java-properties logical keys before applying the exact allowlist. Leading-whitespace forms, escaped keys, continuations, duplicate logical keys, and unknown properties are fail-closed errors; do not return to line-oriented `awk` or `grep` parsing.
 - Treat `sonar-project.properties` as the versioned source of truth for Sonar analysis scope. Coverage exclusions must remain explicitly empty so Sonar imports the Rust LCOV, native LLVM coverage, JavaScript LCOV, and generic authored shell/Ruby coverage generated by the canonical coverage recipes instead of publishing zero coverage.
@@ -63,6 +70,13 @@ applyTo:
 - Trivy must emit SARIF with `exit-code: 0` only so the report survives for `if: always()` upload; a separate mandatory verifier must fail on every HIGH or CRITICAL result. Keep deterministic vulnerable-image SARIF regression coverage for this control.
 - Sonar-running jobs must prove the checkout is non-shallow and explicitly fetch the reviewed base ref before analysis so pull-request new-code attribution and SCM blame cannot silently degrade.
 - `just sonar-compile-db` must clean the isolated native package build before compilation and fail unless it emits a nonempty `coverage/compile_commands.json`; repeated local or CI invocations must never reuse a cached build-script result after deleting the prior database.
+- External `docker://` actions require an exact `sha256` digest in addition to the exact-SHA rule for repository actions.
+- Every direct checked-in workflow job requires a positive `timeout-minutes` no greater than 180. Every `setup-revaer` step requires `timeout-minutes: 20`. Required jobs and steps must not use `continue-on-error: true` or expressions that can conceal failure; literal boolean or string `false` is permitted.
+- The root `justfile` is an import-only index using non-login `bash -c` and exactly the seven ADR 482 modules under `just/`. Each recipe has one module owner. Node commands run through `scripts/with-node.sh`, which selects and verifies exact Node 24.19.0 from `.nvmrc` so the NVM-managed version remains active.
+- Cargo analysis tools are exact: cargo-udeps 0.1.57 on `nightly-2026-06-13`, cargo-audit 0.22.0, cargo-deny 0.18.9, cargo-llvm-cov 0.8.7, sqlx-cli 0.8.6, and trunk 0.21.14. Install them through `scripts/ensure-exact-cargo-tool.sh`; do not accept newer, older, floating-nightly, yanked-lock warning, or minimum-version substitutes. Preserve cargo-udeps cache and toolchain evidence in PR CI.
+- `scripts/workflow-guardrails.sh` composes the five ADR 482 Ruby owners for input loading, GitHub Actions, Sonar properties, required checks, and diagnostics. Do not merge them back into an unstructured parser or add a sixth policy owner without a separately approved decision.
+- Treat `sonar-project.properties` as the only versioned source of truth for Sonar scanner criteria. The exact scanner is installed only by `setup-revaer`, and `just sonar-scan` is the sole invocation in PR and main workflows. Version updates require exact per-platform SHA-256 pins, the committed fingerprint-verified SonarSource key, detached-signature verification, fixtures, and a task record.
+- Sonar criteria and server settings are fail-closed under the root policy. Do not relax any property, source scope, analyzer, coverage input, quality-gate condition, issue or hotspot state, new-code definition, or required check without exact operator consent naming the change, scope, reason, and expiry.
 - Release-tooling dependency changes under `release/**`, including JavaScript lockfiles such as `release/package-lock.json`, must stay manifest-scoped, avoid unrelated workflow churn, and update this instruction file in the same change so instruction-drift remains explicit.
 - Prerelease Helm assets must be produced during the semantic-release prepare phase so the packaged chart version matches the dev release version exactly. OCI publication must consume those already-packaged assets after the GitHub release assets exist.
 - Stable tag releases must package the Helm chart once, attach the `.tgz`, `.prov`, and public key to the GitHub release, and publish that exact packaged chart to the OCI registry. Avoid repackaging between release-asset upload and OCI publication.
@@ -102,4 +116,4 @@ applyTo:
 - Drift coverage for actions and release assets is recursive. Changes under `.github/actions/**`, `.github/workflows/**`, and `release/**` must keep matching the devops instruction update rule.
 - Reusable workflows that publish images must preserve `packages: write` on the caller job because the callee cannot elevate a more restrictive token.
 - Reusable-workflow caller jobs must define one merged `permissions` map. Do not duplicate the `permissions` key in a job to append scopes later; GitHub Actions rejects the workflow before execution.
-- Keep the Sonar PR gate blocking and decoration-based. Do not add `sonar.qualitygate.wait=true` to PR scans unless the branch-protection model cannot consume Sonar’s status directly.
+- Keep the Sonar PR and main gates blocking. Scanner-side waiting, retained report/task evidence, and API verification must all evaluate the same single analysis; branch decoration alone is not sufficient proof.

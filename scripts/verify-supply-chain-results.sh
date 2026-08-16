@@ -21,4 +21,4 @@ if [[ "${failures}" -ne 0 ]]; then
   exit 1
 fi
 
-printf 'supply-chain-results: audit, deny, and unused-dependency checks passed\n'
+printf '%s\n' "supply-chain-results: audit, deny, and unused-dependency checks passed"

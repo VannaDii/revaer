@@ -77,8 +77,9 @@
   - Retain one complete scanner log, one SCM evidence file, one report task, and
     one submitted-report archive per run.
 - Status-doc validation:
-  - The ADR index and documentation summary expose the proposal. No scanner
-    implementation has been changed by this record.
+  - The ADR index and documentation summary expose the accepted decision. ADR 487
+    records the implementation and validation without introducing another
+    scanner-ownership decision.
 - Risk & rollback plan:
   - If the canonical invocation cannot produce or retain complete evidence, stop
     the rollout. Do not roll back to duplicate scans or accept missing warnings;

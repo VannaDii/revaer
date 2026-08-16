@@ -47,7 +47,10 @@ export default defineConfig({
   expect: {
     timeout: expectTimeout,
   },
-  reporter: [['list'], ['html', { open: 'never', outputFolder: path.join(envDir, 'playwright-report') }]],
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: path.join(envDir, 'playwright-report') }],
+  ],
   use: {
     baseURL,
     headless,

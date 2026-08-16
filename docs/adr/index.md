@@ -351,4 +351,5 @@
 -   [484](484-media-operator-surface-boundary.md) – Media operator surface boundary
 -   [485](485-native-ffi-exception-boundary.md) – Native FFI exception boundary
 -   [486](486-tracker-credential-transport.md) – Tracker credential transport
+-   [487](487-strict-sonar-analysis-foundation.md) – Strict Sonar analysis foundation implementation
 -   [488](488-single-sonar-scanner-execution.md) – Single authoritative Sonar scanner execution

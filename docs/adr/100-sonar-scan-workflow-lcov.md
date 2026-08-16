@@ -2,6 +2,12 @@
 
 - Status: Accepted
 - Date: 2026-03-22
+- Invocation supersession:
+  - ADR 488 supersedes only this record's choice to execute the scanner through
+    `SonarSource/sonarqube-scan-action`. The accepted Rust LCOV, native C-family
+    compilation-database, source-scope, and workflow-trigger decisions remain in
+    force. The exact signature-verified scanner is now installed by the setup
+    action and invoked exactly once through `just sonar-scan`.
 - Context:
   - Motivation:
     - Add automated SonarQube analysis for every pull request and every push to `main`.
@@ -16,7 +22,7 @@
   - Use `just cov` to build a combined workspace LCOV report at `coverage/lcov.info`.
   - Add `just sonar-compile-db` to build `revaer-torrent-libt` with `REVAER_NATIVE_COMPILE_COMMANDS_PATH` set so `build.rs` emits `coverage/compile_commands.json`.
   - Add `.github/workflows/sonar.yml` to trigger on `pull_request` and `push` to `main`.
-  - In the Sonar workflow, run migrations, generate the LCOV file via `just cov`, generate the native compile database via `just sonar-compile-db`, and run `SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9` (`v7`) with:
+  - Historical implementation: the Sonar workflow ran migrations, generated the LCOV file via `just cov`, generated the native compile database via `just sonar-compile-db`, and executed `SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9` (`v7`). ADR 488 supersedes that executor with one exact scanner invocation through `just sonar-scan`; the accepted analysis inputs remain:
     - `sonar.projectKey=VannaDii_Revaer`
     - `sonar.organization=vannadii`
     - `sonar.rust.lcov.reportPaths=coverage/lcov.info`
@@ -45,4 +51,7 @@
     - Roll back by removing `just sonar-compile-db`, the `build.rs` compile database emission, and the workflow scan property if SonarQube compilation-database support causes instability.
   - Dependency rationale:
     - No Rust dependencies added.
-    - GitHub Action dependency remains `SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9` (`v7`, official maintained scanner wrapper). Alternative was raw scanner CLI install steps, rejected for higher maintenance.
+    - Historical decision: this record originally retained
+      `SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9`
+      (`v7`). ADR 488 supersedes that invocation dependency with the repository's
+      exact signature-verified scanner installer and canonical `just` recipe.
