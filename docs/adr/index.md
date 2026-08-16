@@ -429,5 +429,13 @@
 -   [504](504-attempt-aware-media-job-phase-reads.md) – Attempt-aware media job phase reads
 -   [505](505-profile-readiness-and-source-bound-planning.md) – Profile readiness and source-bound planning
 -   [506](506-explicit-manual-media-execution-command.md) – Explicit manual media execution command
+-   [507](507-exact-container-metadata-state.md) – Exact container metadata state
+-   [508](508-exact-chapter-timeline-state.md) – Exact chapter timeline state
+-   [509](509-opaque-stream-identity-and-unmatched-precedence.md) – Opaque stream identity and unmatched precedence
+-   [510](510-canonical-exact-hdr10-color-volume.md) – Canonical exact HDR10 color volume
+-   [511](511-exact-video-technical-constraints.md) – Exact video technical constraints
+-   [512](512-fenced-resumable-worker-ownership-and-recovery.md) – Fenced resumable worker ownership and recovery
+-   [513](513-attempt-scoped-workspace-retention-transaction.md) – Attempt-scoped workspace retention transaction
+-   [514](514-packaged-media-subsystem-lifecycle-and-health-contract.md) – Packaged media subsystem lifecycle and health contract
 -   [530](530-cataloged-task-record-restoration.md) – Cataloged task-record restoration
 -   [532](532-admitted-media-source-intent-preservation.md) – Admitted media source intent preservation
