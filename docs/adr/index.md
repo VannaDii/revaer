@@ -448,5 +448,7 @@
 -   [523](523-managed-root-catalog-and-job-binding-contract.md) – Managed-root catalog and job binding contract
 -   [524](524-versioned-sidecar-token-grammar-and-bounds.md) – Versioned sidecar token grammar and bounds
 -   [525](525-attempt-scoped-backup-and-rollback-layout.md) – Attempt-scoped backup and rollback layout
+-   [526](526-descriptor-bound-media-inspection-inputs.md) – Descriptor-bound media inspection inputs
+-   [527](527-fail-closed-native-media-inspection-confinement.md) – Fail-closed native media inspection confinement
 -   [530](530-cataloged-task-record-restoration.md) – Cataloged task-record restoration
 -   [532](532-admitted-media-source-intent-preservation.md) – Admitted media source intent preservation
