@@ -177,6 +177,22 @@ fn adapters_cannot_construct_or_bypass_the_shared_supervisor() {
     }
 }
 
+#[test]
+fn unix_only_supervisor_imports_are_cfg_scoped() {
+    let source = include_str!("system.rs");
+    assert!(source.contains(
+        "#[cfg(unix)]\nuse super::{NATIVE_PROCESS_TERMINATION_GRACE, NativeProcessSecondaryEvidence};"
+    ));
+    let unconditional_import = source
+        .split("#[cfg(not(unix))]")
+        .next()
+        .unwrap_or(source)
+        .split("#[cfg(unix)]")
+        .next()
+        .unwrap_or(source);
+    assert!(!unconditional_import.contains("NativeProcessSecondaryEvidence"));
+}
+
 #[cfg(unix)]
 fn shell_request(script: &str, timeout: Duration, maximum_bytes: usize) -> NativeProcessRequest {
     NativeProcessRequest::inspection(

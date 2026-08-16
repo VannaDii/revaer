@@ -1,8 +1,8 @@
 #[cfg(unix)]
-use super::NATIVE_PROCESS_TERMINATION_GRACE;
+use super::{NATIVE_PROCESS_TERMINATION_GRACE, NativeProcessSecondaryEvidence};
 use super::{
     NativeProcessControl, NativeProcessError, NativeProcessOutput, NativeProcessRequest,
-    NativeProcessSecondaryEvidence, NativeProcessSupervisor,
+    NativeProcessSupervisor,
 };
 
 /// Unix process-group implementation of [`NativeProcessSupervisor`].

@@ -12,6 +12,84 @@ use super::{
 
 const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
+trait CleanupOperations {
+    type Child;
+
+    fn signal_process_group(&mut self, process_group: Pid, signal: Signal) -> Result<(), String>;
+    fn signal_process_leader(&mut self, child: &Self::Child, signal: Signal) -> Result<(), String>;
+    fn force_kill_process_leader(&mut self, child: &mut Self::Child) -> Result<(), String>;
+    fn probe_process_leader_reaped(&mut self, child: &mut Self::Child) -> Result<bool, String>;
+    fn process_group_exists(&mut self, process_group: Pid) -> Result<bool, String>;
+}
+
+struct SystemCleanupOperations;
+
+impl CleanupOperations for SystemCleanupOperations {
+    type Child = Child;
+
+    fn signal_process_group(&mut self, process_group: Pid, signal: Signal) -> Result<(), String> {
+        send_process_group_signal(process_group, signal)
+    }
+
+    fn signal_process_leader(&mut self, child: &Self::Child, signal: Signal) -> Result<(), String> {
+        send_process_signal(Pid::from_child(child), signal)
+    }
+
+    fn force_kill_process_leader(&mut self, child: &mut Self::Child) -> Result<(), String> {
+        match child.kill() {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::InvalidInput => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+
+    fn probe_process_leader_reaped(&mut self, child: &mut Self::Child) -> Result<bool, String> {
+        child
+            .try_wait()
+            .map(|status| status.is_some())
+            .map_err(|error| error.to_string())
+    }
+
+    fn process_group_exists(&mut self, process_group: Pid) -> Result<bool, String> {
+        probe_process_group_exists(process_group)
+    }
+}
+
+struct CleanupTarget<'a, O>
+where
+    O: CleanupOperations,
+{
+    child: &'a mut O::Child,
+    process_group: Pid,
+    operations: &'a mut O,
+}
+
+impl<O> CleanupTarget<'_, O>
+where
+    O: CleanupOperations,
+{
+    fn signal_process_group(&mut self, signal: Signal) -> Result<(), String> {
+        self.operations
+            .signal_process_group(self.process_group, signal)
+    }
+
+    fn signal_process_leader(&mut self, signal: Signal) -> Result<(), String> {
+        self.operations.signal_process_leader(self.child, signal)
+    }
+
+    fn force_kill_process_leader(&mut self) -> Result<(), String> {
+        self.operations.force_kill_process_leader(self.child)
+    }
+
+    fn probe_process_leader_reaped(&mut self) -> Result<bool, String> {
+        self.operations.probe_process_leader_reaped(self.child)
+    }
+
+    fn process_group_exists(&mut self) -> Result<bool, String> {
+        self.operations.process_group_exists(self.process_group)
+    }
+}
+
 pub(super) struct CleanupOutcome {
     pub(super) evidence: NativeProcessSecondaryEvidence,
     pub(super) boundary: Option<NativeProcessError>,
@@ -28,13 +106,41 @@ pub(super) fn terminate_and_verify<F>(
 where
     F: FnMut(Option<&ProcessStreams>) -> Option<NativeProcessError>,
 {
+    terminate_and_verify_with(
+        child,
+        process_group,
+        leader_reaped,
+        streams,
+        grace,
+        &mut SystemCleanupOperations,
+        monitor,
+    )
+}
+
+fn terminate_and_verify_with<O, F>(
+    child: &mut O::Child,
+    process_group: Pid,
+    leader_reaped: bool,
+    streams: Option<&mut ProcessStreams>,
+    grace: Duration,
+    operations: &mut O,
+    monitor: F,
+) -> CleanupOutcome
+where
+    O: CleanupOperations,
+    F: FnMut(Option<&ProcessStreams>) -> Option<NativeProcessError>,
+{
     let mut evidence = NativeProcessSecondaryEvidence::default();
     let mut monitor = CleanupMonitor::new(monitor);
     let mut streams = streams;
-    monitor.capture(streams.as_deref());
-    let initial = observe(
+    let mut target = CleanupTarget {
         child,
         process_group,
+        operations,
+    };
+    monitor.capture(streams.as_deref());
+    let initial = observe(
+        &mut target,
         leader_reaped,
         streams.as_deref_mut(),
         &mut evidence,
@@ -45,21 +151,20 @@ where
     }
 
     record_signal(
-        signal_process_group(process_group, Signal::TERM),
+        target.signal_process_group(Signal::TERM),
         "process-group termination failed",
         &mut evidence,
     );
     if !initial.leader_reaped {
         record_signal(
-            signal_process(Pid::from_child(child), Signal::TERM),
+            target.signal_process_leader(Signal::TERM),
             "process-leader termination failed",
             &mut evidence,
         );
     }
 
     let graceful = wait_for_state(
-        child,
-        process_group,
+        &mut target,
         initial.leader_reaped,
         streams.as_deref_mut(),
         &mut evidence,
@@ -72,25 +177,21 @@ where
 
     if graceful.group_present {
         record_signal(
-            signal_process_group(process_group, Signal::KILL),
+            target.signal_process_group(Signal::KILL),
             "process-group force kill failed",
             &mut evidence,
         );
     }
     if !graceful.leader_reaped {
-        match child.kill() {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::InvalidInput => {}
-            Err(error) => push_unique(
-                &mut evidence,
-                format!("process-leader force kill failed: {error}"),
-            ),
-        }
+        record_signal(
+            target.force_kill_process_leader(),
+            "process-leader force kill failed",
+            &mut evidence,
+        );
     }
 
     let forced = wait_for_state(
-        child,
-        process_group,
+        &mut target,
         graceful.leader_reaped,
         streams,
         &mut evidence,
@@ -124,9 +225,8 @@ impl CleanupState {
     }
 }
 
-fn wait_for_state<F>(
-    child: &mut Child,
-    process_group: Pid,
+fn wait_for_state<O, F>(
+    target: &mut CleanupTarget<'_, O>,
     leader_reaped: bool,
     mut streams: Option<&mut ProcessStreams>,
     evidence: &mut NativeProcessSecondaryEvidence,
@@ -134,19 +234,14 @@ fn wait_for_state<F>(
     policy: WaitPolicy,
 ) -> CleanupState
 where
+    O: CleanupOperations,
     F: FnMut(Option<&ProcessStreams>) -> Option<NativeProcessError>,
 {
     let started = Instant::now();
     let mut leader_reaped = leader_reaped;
     loop {
         monitor.capture(streams.as_deref());
-        let state = observe(
-            child,
-            process_group,
-            leader_reaped,
-            streams.as_deref_mut(),
-            evidence,
-        );
+        let state = observe(target, leader_reaped, streams.as_deref_mut(), evidence);
         leader_reaped = state.leader_reaped;
         monitor.capture(streams.as_deref());
         if state.complete()
@@ -241,22 +336,23 @@ impl WaitPolicy {
     }
 }
 
-fn observe(
-    child: &mut Child,
-    process_group: Pid,
+fn observe<O>(
+    target: &mut CleanupTarget<'_, O>,
     leader_reaped: bool,
     streams: Option<&mut ProcessStreams>,
     evidence: &mut NativeProcessSecondaryEvidence,
-) -> CleanupState {
+) -> CleanupState
+where
+    O: CleanupOperations,
+{
     if let Some(streams) = streams {
         streams.drain();
     }
     let leader_reaped = if leader_reaped {
         true
     } else {
-        match child.try_wait() {
-            Ok(Some(_status)) => true,
-            Ok(None) => false,
+        match target.probe_process_leader_reaped() {
+            Ok(reaped) => reaped,
             Err(error) => {
                 push_unique(
                     evidence,
@@ -266,7 +362,7 @@ fn observe(
             }
         }
     };
-    let group_present = match process_group_exists(process_group) {
+    let group_present = match target.process_group_exists() {
         Ok(present) => present,
         Err(error) => {
             push_unique(evidence, error);
@@ -279,7 +375,7 @@ fn observe(
     }
 }
 
-fn process_group_exists(process_group: Pid) -> Result<bool, String> {
+fn probe_process_group_exists(process_group: Pid) -> Result<bool, String> {
     match rustix::process::test_kill_process_group(process_group) {
         Ok(()) | Err(rustix::io::Errno::PERM) => Ok(true),
         Err(rustix::io::Errno::SRCH) => Ok(false),
@@ -287,14 +383,14 @@ fn process_group_exists(process_group: Pid) -> Result<bool, String> {
     }
 }
 
-fn signal_process_group(process_group: Pid, signal: Signal) -> Result<(), String> {
+fn send_process_group_signal(process_group: Pid, signal: Signal) -> Result<(), String> {
     match rustix::process::kill_process_group(process_group, signal) {
         Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
         Err(error) => Err(error.to_string()),
     }
 }
 
-fn signal_process(process: Pid, signal: Signal) -> Result<(), String> {
+fn send_process_signal(process: Pid, signal: Signal) -> Result<(), String> {
     match rustix::process::kill_process(process, signal) {
         Ok(()) | Err(rustix::io::Errno::SRCH) => Ok(()),
         Err(error) => Err(error.to_string()),
@@ -313,4 +409,201 @@ fn record_signal(
 
 fn push_unique(evidence: &mut NativeProcessSecondaryEvidence, message: String) {
     evidence.push(message);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+
+    use super::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum CleanupCall {
+        ProbeLeaderReaped,
+        ProbeGroupExists,
+        GroupTerm,
+        LeaderTerm,
+        GroupKill,
+        LeaderKill,
+    }
+
+    struct FakeChild;
+
+    struct FakeCleanupOperations {
+        calls: Vec<CleanupCall>,
+        leader_reaped: VecDeque<Result<bool, String>>,
+        group_exists: VecDeque<Result<bool, String>>,
+        group_term: VecDeque<Result<(), String>>,
+        leader_term: VecDeque<Result<(), String>>,
+        group_kill: VecDeque<Result<(), String>>,
+        leader_kill: VecDeque<Result<(), String>>,
+    }
+
+    impl FakeCleanupOperations {
+        fn successful_escalation() -> Self {
+            Self {
+                calls: Vec::new(),
+                leader_reaped: VecDeque::from([Ok(false), Ok(false), Ok(true)]),
+                group_exists: VecDeque::from([Ok(true), Ok(true), Ok(false)]),
+                group_term: VecDeque::from([Ok(())]),
+                leader_term: VecDeque::from([Ok(())]),
+                group_kill: VecDeque::from([Ok(())]),
+                leader_kill: VecDeque::from([Ok(())]),
+            }
+        }
+
+        fn failing_survivor() -> Self {
+            Self {
+                calls: Vec::new(),
+                leader_reaped: VecDeque::from([
+                    Err("injected reap failure".to_string()),
+                    Ok(false),
+                    Ok(false),
+                ]),
+                group_exists: VecDeque::from([
+                    Err("process-group existence probe failed: injected".to_string()),
+                    Ok(true),
+                    Ok(true),
+                ]),
+                group_term: VecDeque::from([Err("injected TERM failure".to_string())]),
+                leader_term: VecDeque::from([Err("injected leader TERM failure".to_string())]),
+                group_kill: VecDeque::from([Err("injected KILL failure".to_string())]),
+                leader_kill: VecDeque::from([Err("injected leader kill failure".to_string())]),
+            }
+        }
+    }
+
+    impl CleanupOperations for FakeCleanupOperations {
+        type Child = FakeChild;
+
+        fn signal_process_group(
+            &mut self,
+            _process_group: Pid,
+            signal: Signal,
+        ) -> Result<(), String> {
+            match signal {
+                Signal::TERM => {
+                    self.calls.push(CleanupCall::GroupTerm);
+                    next_result(&mut self.group_term, "group TERM")
+                }
+                Signal::KILL => {
+                    self.calls.push(CleanupCall::GroupKill);
+                    next_result(&mut self.group_kill, "group KILL")
+                }
+                other => Err(format!("unexpected injected group signal: {other:?}")),
+            }
+        }
+
+        fn signal_process_leader(
+            &mut self,
+            _child: &Self::Child,
+            signal: Signal,
+        ) -> Result<(), String> {
+            if signal != Signal::TERM {
+                return Err(format!("unexpected injected leader signal: {signal:?}"));
+            }
+            self.calls.push(CleanupCall::LeaderTerm);
+            next_result(&mut self.leader_term, "leader TERM")
+        }
+
+        fn force_kill_process_leader(&mut self, _child: &mut Self::Child) -> Result<(), String> {
+            self.calls.push(CleanupCall::LeaderKill);
+            next_result(&mut self.leader_kill, "leader kill")
+        }
+
+        fn probe_process_leader_reaped(
+            &mut self,
+            _child: &mut Self::Child,
+        ) -> Result<bool, String> {
+            self.calls.push(CleanupCall::ProbeLeaderReaped);
+            next_result(&mut self.leader_reaped, "leader reap probe")
+        }
+
+        fn process_group_exists(&mut self, _process_group: Pid) -> Result<bool, String> {
+            self.calls.push(CleanupCall::ProbeGroupExists);
+            next_result(&mut self.group_exists, "group existence probe")
+        }
+    }
+
+    fn next_result<T>(
+        results: &mut VecDeque<Result<T, String>>,
+        operation: &str,
+    ) -> Result<T, String> {
+        results
+            .pop_front()
+            .ok_or_else(|| format!("missing injected result for {operation}"))?
+    }
+
+    fn test_process_group() -> Result<Pid, String> {
+        Pid::from_raw(42).ok_or_else(|| "test process-group id must be nonzero".to_string())
+    }
+
+    #[test]
+    fn cleanup_operations_deterministically_escalate_and_verify_absence() -> Result<(), String> {
+        let mut operations = FakeCleanupOperations::successful_escalation();
+        let outcome = terminate_and_verify_with(
+            &mut FakeChild,
+            test_process_group()?,
+            false,
+            None,
+            Duration::ZERO,
+            &mut operations,
+            |_| None,
+        );
+
+        assert!(outcome.boundary.is_none());
+        assert!(outcome.evidence.is_empty());
+        assert_eq!(
+            operations.calls,
+            [
+                CleanupCall::ProbeLeaderReaped,
+                CleanupCall::ProbeGroupExists,
+                CleanupCall::GroupTerm,
+                CleanupCall::LeaderTerm,
+                CleanupCall::ProbeLeaderReaped,
+                CleanupCall::ProbeGroupExists,
+                CleanupCall::GroupKill,
+                CleanupCall::LeaderKill,
+                CleanupCall::ProbeLeaderReaped,
+                CleanupCall::ProbeGroupExists,
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn cleanup_operations_preserve_failures_and_surviving_group_evidence() -> Result<(), String> {
+        let mut operations = FakeCleanupOperations::failing_survivor();
+        let outcome = terminate_and_verify_with(
+            &mut FakeChild,
+            test_process_group()?,
+            false,
+            None,
+            Duration::ZERO,
+            &mut operations,
+            |_| None,
+        );
+
+        for expected in [
+            "process-leader reap probe failed: injected reap failure",
+            "process-group existence probe failed: injected",
+            "process-group termination failed: injected TERM failure",
+            "process-leader termination failed: injected leader TERM failure",
+            "process-group force kill failed: injected KILL failure",
+            "process-leader force kill failed: injected leader kill failure",
+            "process group remained present after force kill",
+            "process leader was not reaped after force kill",
+        ] {
+            assert!(
+                outcome
+                    .evidence
+                    .messages()
+                    .iter()
+                    .any(|message| message == expected),
+                "missing cleanup evidence: {expected}"
+            );
+        }
+        assert_eq!(operations.calls.len(), 10);
+        Ok(())
+    }
 }

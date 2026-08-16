@@ -480,6 +480,7 @@
 -   [546](546-pre-v1-init-assembly-slice-03.md) – Pre-v1 init assembly slice 03
 -   [547](547-pre-v1-init-assembly-slice-04.md) – Pre-v1 init assembly slice 04
 -   [548](548-retired-media-write-route-contract.md) – Retired media write route contract coverage
+-   [549](549-preemptible-native-process-startup-boundary.md) – Preemptible native process startup boundary
 -   [550](550-packaged-root-catalog-source-contract.md) – Packaged root-catalog source and evidence contract
 -   [551](551-packaged-database-baseline-contract.md) – Packaged database baseline contract
 -   [552](552-pre-v1-init-assembly-slice-05.md) – Pre-v1 init assembly slice 05

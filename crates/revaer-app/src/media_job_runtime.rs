@@ -1837,10 +1837,7 @@ impl MediaJobRuntime {
             .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
         let inspection =
             inspection.map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
-        if cancellation_requested || matches!(inspection, Err(InspectError::Cancelled { .. })) {
-            return Err(MediaJobRuntimeError::Cancelled);
-        }
-        inspection.map_err(|error| MediaJobRuntimeError::Inspect(error.to_string()))
+        resolve_inspection_outcome(inspection, cancellation_requested)
     }
 
     async fn load_capability_snapshot(&self) -> Result<CapabilitySnapshot, MediaJobRuntimeError> {
@@ -2405,6 +2402,22 @@ async fn monitor_job_control(
 async fn monitor_runtime_shutdown(shutdown: &mut Option<RuntimeShutdownReceiver>) {
     if let Some(receiver) = shutdown.as_mut() {
         runtime_shutdown::changed(receiver).await;
+    }
+}
+
+fn resolve_inspection_outcome(
+    inspection: Result<MediaInspection, InspectError>,
+    cancellation_requested: bool,
+) -> Result<MediaInspection, MediaJobRuntimeError> {
+    match inspection {
+        Err(InspectError::Cancelled { secondary_evidence }) if secondary_evidence.is_empty() => {
+            Err(MediaJobRuntimeError::Cancelled)
+        }
+        Err(error) => Err(MediaJobRuntimeError::Inspect(error.to_string())),
+        Ok(_) if cancellation_requested => Err(MediaJobRuntimeError::Inspect(
+            "media inspection completed after cancellation was requested".to_string(),
+        )),
+        Ok(inspection) => Ok(inspection),
     }
 }
 
@@ -4609,10 +4622,10 @@ mod tests {
         SystemFfmpegAudioAnalysisAdapter, SystemSourceFingerprintProbe, VideoStreamConstraints,
         audio_measurement_mismatch, desired_target_from_job, expected_audio_constraints,
         parse_ebur128_summary, read_bounded_audio_analysis_stderr, replacement_job_key,
-        run_audio_analysis_process, run_audio_analysis_process_with_timeout,
-        validate_claimed_source_fingerprint, verification_policy_from_job,
-        video_constraint_stream_mismatch, video_policy_from_policy_intent,
-        video_policy_from_target_snapshot,
+        resolve_inspection_outcome, run_audio_analysis_process,
+        run_audio_analysis_process_with_timeout, validate_claimed_source_fingerprint,
+        verification_policy_from_job, video_constraint_stream_mismatch,
+        video_policy_from_policy_intent, video_policy_from_target_snapshot,
     };
     use crate::media_discovery_fingerprint::MediaAggregateFingerprint;
     use crate::runtime_shutdown;
@@ -4682,6 +4695,62 @@ mod tests {
     use tempfile::TempDir;
     use tokio_stream::StreamExt;
     use uuid::Uuid;
+
+    #[test]
+    fn inspection_cancellation_is_clean_only_without_secondary_evidence() {
+        let clean = resolve_inspection_outcome(
+            Err(InspectError::Cancelled {
+                secondary_evidence: NativeProcessSecondaryEvidence::default(),
+            }),
+            true,
+        );
+        assert!(matches!(clean, Err(super::MediaJobRuntimeError::Cancelled)));
+
+        let dirty = resolve_inspection_outcome(
+            Err(InspectError::Cancelled {
+                secondary_evidence: NativeProcessSecondaryEvidence::from_message(
+                    "process group remained present after force kill".to_string(),
+                ),
+            }),
+            true,
+        );
+        assert!(matches!(
+            dirty,
+            Err(super::MediaJobRuntimeError::Inspect(message))
+                if message.contains("process group remained present after force kill")
+        ));
+    }
+
+    #[test]
+    fn cancellation_request_does_not_hide_non_cancellation_inspection_failure() {
+        let failure = resolve_inspection_outcome(
+            Err(InspectError::ProbeFailed {
+                message: "probe wait failed".to_string(),
+                secondary_evidence: NativeProcessSecondaryEvidence::from_message(
+                    "stderr read failed".to_string(),
+                ),
+            }),
+            true,
+        );
+
+        assert!(matches!(
+            failure,
+            Err(super::MediaJobRuntimeError::Inspect(message))
+                if message.contains("probe wait failed") && message.contains("stderr read failed")
+        ));
+    }
+
+    #[test]
+    fn cancellation_request_without_inspector_acknowledgement_fails_closed() {
+        let inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "h264"));
+        let outcome = resolve_inspection_outcome(Ok(inspection), true);
+
+        assert!(matches!(
+            outcome,
+            Err(super::MediaJobRuntimeError::Inspect(message))
+                if message == "media inspection completed after cancellation was requested"
+        ));
+    }
 
     #[derive(Clone)]
     struct StaticInspector;
