@@ -637,6 +637,10 @@ const fn build_error_metadata(error: &BuildArgsError) -> PreflightErrorMetadata 
             code: "preflight_build_unsupported_metadata_rewrite",
             detail: "metadata rewrite requires a verified desired metadata contract",
         },
+        BuildArgsError::UnsupportedDesiredStreamKind { .. } => PreflightErrorMetadata {
+            code: "preflight_build_unsupported_desired_stream_kind",
+            detail: "desired graph stream kind requires an unsupported materialization contract",
+        },
         BuildArgsError::EmptyOperations => PreflightErrorMetadata {
             code: "preflight_build_empty_operations",
             detail: "at least one operation is required",
@@ -2884,6 +2888,21 @@ mod tests {
         assert_eq!(
             preflight_error_detail(&err),
             "metadata rewrite requires a verified desired metadata contract"
+        );
+        assert_eq!(preflight_failed_stage(&err), "build_steps");
+    }
+
+    #[test]
+    fn unsupported_desired_stream_kind_preflight_classification_is_stable() {
+        let err =
+            JobPreflightError::Build(BuildArgsError::UnsupportedDesiredStreamKind { stream_id: 4 });
+        assert_eq!(
+            preflight_error_code(&err),
+            "preflight_build_unsupported_desired_stream_kind"
+        );
+        assert_eq!(
+            preflight_error_detail(&err),
+            "desired graph stream kind requires an unsupported materialization contract"
         );
         assert_eq!(preflight_failed_stage(&err), "build_steps");
     }
