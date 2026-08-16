@@ -361,6 +361,7 @@
     -   [418: CI Postgres credential coherence](adr/418-ci-postgres-credential-coherence.md)
     -   [461: ADR and task-record status semantics](adr/461-adr-task-record-status-semantics.md)
     -   [462: PR 88 shell return correction](adr/462-pr88-shell-return.md)
+    -   [463: PR 78 Sonar complexity correction](adr/463-pr-78-sonar-complexity-correction.md)
     -   [477: Uniform stacked-PR check emission](adr/477-stacked-pr-check-emission.md)
     -   [478: Validation foundation advisory refresh](adr/478-validation-foundation-advisory-refresh.md)
     -   [479: Platform-safe test dependencies](adr/479-platform-safe-test-dependencies.md)

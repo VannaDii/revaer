@@ -30,54 +30,70 @@ pub fn verify_plan(operations: &[PlannedOperation]) -> Result<(), &'static str> 
         return Err("plan must contain at least one operation");
     }
 
-    if operations.iter().any(|item| {
-        matches!(
-            item.kind,
-            OperationKind::AudioTranscode
-                | OperationKind::VideoTranscode
-                | OperationKind::DispositionRewrite
-                | OperationKind::LabelRewrite
-                | OperationKind::ExtractSubtitle
-                | OperationKind::SubtitleTranscode
-        ) && (item.stream_id.is_none() || item.output_stream_id.is_none())
-    }) {
+    if operations.iter().any(missing_stream_scope) {
         return Err("stream-scoped operation is missing source or output stream id");
     }
 
-    if operations
-        .iter()
-        .any(|item| item.kind == OperationKind::EmbedSubtitle && item.output_stream_id.is_none())
-    {
+    if operations.iter().any(missing_subtitle_embed_output) {
         return Err("subtitle embed operation is missing output stream id");
     }
 
-    if operations.iter().any(|item| {
-        item.kind == OperationKind::NoOp
-            && (item.stream_id.is_some() || item.output_stream_id.is_some())
-    }) {
+    if operations.iter().any(invalid_subtitle_extract_scope) {
+        return Err("subtitle extract operation must target only a source stream");
+    }
+
+    if operations.iter().any(scoped_no_op) {
         return Err("no-op operation must not target a stream");
     }
 
-    if operations.iter().any(|item| {
-        (item.kind == OperationKind::Remux
-            || item.kind == OperationKind::MetadataRewrite
-            || item.kind == OperationKind::StreamReorder
-            || item.kind == OperationKind::CopySidecarSubtitle
-            || item.kind == OperationKind::RemoveSidecarSubtitle)
-            && (item.stream_id.is_some() || item.output_stream_id.is_some())
-    }) {
+    if operations.iter().any(scoped_container_operation) {
         return Err("non-stream-scoped operation must not target a stream");
     }
 
-    if operations.len() > 1
-        && operations
-            .iter()
-            .any(|item| item.kind == OperationKind::NoOp)
-    {
+    if operations.len() > 1 && operations.iter().any(is_no_op) {
         return Err("no-op operation must not be combined with mutating operations");
     }
 
     Ok(())
+}
+
+const fn missing_stream_scope(operation: &PlannedOperation) -> bool {
+    matches!(
+        operation.kind,
+        OperationKind::AudioTranscode
+            | OperationKind::VideoTranscode
+            | OperationKind::DispositionRewrite
+            | OperationKind::LabelRewrite
+            | OperationKind::SubtitleTranscode
+    ) && (operation.stream_id.is_none() || operation.output_stream_id.is_none())
+}
+
+fn missing_subtitle_embed_output(operation: &PlannedOperation) -> bool {
+    operation.kind == OperationKind::EmbedSubtitle && operation.output_stream_id.is_none()
+}
+
+fn invalid_subtitle_extract_scope(operation: &PlannedOperation) -> bool {
+    operation.kind == OperationKind::ExtractSubtitle
+        && (operation.stream_id.is_none() || operation.output_stream_id.is_some())
+}
+
+fn scoped_no_op(operation: &PlannedOperation) -> bool {
+    is_no_op(operation) && (operation.stream_id.is_some() || operation.output_stream_id.is_some())
+}
+
+const fn scoped_container_operation(operation: &PlannedOperation) -> bool {
+    matches!(
+        operation.kind,
+        OperationKind::Remux
+            | OperationKind::MetadataRewrite
+            | OperationKind::StreamReorder
+            | OperationKind::CopySidecarSubtitle
+            | OperationKind::RemoveSidecarSubtitle
+    ) && (operation.stream_id.is_some() || operation.output_stream_id.is_some())
+}
+
+fn is_no_op(operation: &PlannedOperation) -> bool {
+    operation.kind == OperationKind::NoOp
 }
 
 /// Verify stream-scoped operations target existing streams with compatible kinds.
@@ -289,6 +305,69 @@ mod tests {
     }
 
     #[test]
+    fn reject_each_invalid_operation_scope() {
+        let cases = [
+            (
+                PlannedOperation {
+                    kind: OperationKind::EmbedSubtitle,
+                    stream_id: None,
+                    output_stream_id: None,
+                },
+                "subtitle embed operation is missing output stream id",
+            ),
+            (
+                PlannedOperation {
+                    kind: OperationKind::ExtractSubtitle,
+                    stream_id: None,
+                    output_stream_id: None,
+                },
+                "subtitle extract operation must target only a source stream",
+            ),
+            (
+                PlannedOperation {
+                    kind: OperationKind::NoOp,
+                    stream_id: Some(0),
+                    output_stream_id: None,
+                },
+                "no-op operation must not target a stream",
+            ),
+            (
+                PlannedOperation {
+                    kind: OperationKind::MetadataRewrite,
+                    stream_id: None,
+                    output_stream_id: Some(0),
+                },
+                "non-stream-scoped operation must not target a stream",
+            ),
+        ];
+
+        for (operation, expected) in cases {
+            assert_eq!(verify_plan(&[operation]), Err(expected));
+        }
+    }
+
+    #[test]
+    fn reject_no_op_combined_with_mutation() {
+        let operations = [
+            PlannedOperation {
+                kind: OperationKind::NoOp,
+                stream_id: None,
+                output_stream_id: None,
+            },
+            PlannedOperation {
+                kind: OperationKind::Remux,
+                stream_id: None,
+                output_stream_id: None,
+            },
+        ];
+
+        assert_eq!(
+            verify_plan(&operations),
+            Err("no-op operation must not be combined with mutating operations")
+        );
+    }
+
+    #[test]
     fn reject_container_scoped_operation_targeting_stream() {
         let operations = vec![PlannedOperation {
             kind: OperationKind::Remux,
@@ -298,6 +377,31 @@ mod tests {
         assert_eq!(
             verify_plan(&operations),
             Err("non-stream-scoped operation must not target a stream")
+        );
+    }
+
+    #[test]
+    fn accept_source_scoped_subtitle_extraction() {
+        let operations = vec![PlannedOperation {
+            kind: OperationKind::ExtractSubtitle,
+            stream_id: Some(3),
+            output_stream_id: None,
+        }];
+
+        assert_eq!(verify_plan(&operations), Ok(()));
+    }
+
+    #[test]
+    fn reject_subtitle_extraction_with_container_output_identity() {
+        let operations = vec![PlannedOperation {
+            kind: OperationKind::ExtractSubtitle,
+            stream_id: Some(3),
+            output_stream_id: Some(4),
+        }];
+
+        assert_eq!(
+            verify_plan(&operations),
+            Err("subtitle extract operation must target only a source stream")
         );
     }
 
