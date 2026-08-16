@@ -503,3 +503,4 @@
     -   [551: Packaged database baseline contract](adr/551-packaged-database-baseline-contract.md)
     -   [552: Pre-v1 init assembly slice 05](adr/552-pre-v1-init-assembly-slice-05.md)
     -   [553: Native inspection error arbitration](adr/553-native-inspection-error-arbitration.md)
+    -   [554: Preemptible native process broker contract](adr/554-preemptible-native-process-broker-contract.md)

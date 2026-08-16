@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T19:18:40.585888+00:00",
+  "generated": "2026-08-16T19:19:43.531661+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4645,6 +4645,23 @@
         "task-record"
       ],
       "href": "/adr/553-native-inspection-error-arbitration/"
+    },
+    {
+      "id": "adr/554-preemptible-native-process-broker-contract",
+      "title": "Preemptible native process broker contract",
+      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+      "tags": [
+        "consequences",
+        "context",
+        "exact-validation",
+        "follow-up",
+        "implementation-boundary",
+        "operator-questions",
+        "options",
+        "recommendation",
+        "task-record"
+      ],
+      "href": "/adr/554-preemptible-native-process-broker-contract/"
     },
     {
       "id": "adr/index",
