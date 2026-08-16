@@ -1,0 +1,5 @@
+permissions: {}
+jobs:
+  test:
+    steps:
+      - run: just ci

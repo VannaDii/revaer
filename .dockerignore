@@ -1,5 +1,8 @@
 /target
 /.git
 /.github
+!/.github
+/.github/*
+!/.github/build-inputs.env
 /.vscode
 *.env

@@ -27,6 +27,7 @@ load_rust_files() {
   rust_files=()
 
   while IFS= read -r file; do
+    [[ -f "${file}" ]] || continue
     case "${file}" in
       crates/revaer-ui/ui_vendor/** | \
       crates/revaer-ui/dist/** | \
@@ -34,6 +35,8 @@ load_rust_files() {
       crates/revaer-ui/static/nexus/** | \
       tests/node_modules/**)
         continue
+        ;;
+      *)
         ;;
     esac
     rust_files+=("${file}")
@@ -62,6 +65,8 @@ search_rust_matches() {
           excluded=true
           break
           ;;
+        *)
+          ;;
       esac
     done
     if ! ${excluded}; then
@@ -69,17 +74,17 @@ search_rust_matches() {
     fi
   done
 
-  if [ "${#files[@]}" -eq 0 ]; then
+  if [[ "${#files[@]}" -eq 0 ]]; then
     return 0
   fi
 
   if command -v rg >/dev/null 2>&1; then
-    if [ "${grep_flag}" = "-i" ]; then
+    if [[ "${grep_flag}" = "-i" ]]; then
       rg -n -i -- "${regex}" "${files[@]}" || true
     else
       rg -n -- "${regex}" "${files[@]}" || true
     fi
-  elif [ "${grep_flag}" = "-i" ]; then
+  elif [[ "${grep_flag}" = "-i" ]]; then
     grep -nEi -- "${regex}" "${files[@]}" || true
   else
     grep -nE -- "${regex}" "${files[@]}" || true
@@ -92,7 +97,7 @@ report_matches() {
   local title="$1"
   local matches="$2"
 
-  if [ -n "${matches}" ]; then
+  if [[ -n "${matches}" ]]; then
     printf 'Policy guardrail failed: %s\n' "${title}" >&2
     printf '%s\n' "${matches}" >&2
     printf '\n' >&2
@@ -105,6 +110,52 @@ matches="$(
 )"
 report_matches "source-level lint suppressions are forbidden in authored Rust" "${matches}"
 
+authored_files=()
+while IFS= read -r file; do
+  [[ -f "${file}" ]] || continue
+  case "${file}" in
+    crates/revaer-ui/ui_vendor/** | \
+    crates/revaer-ui/dist/** | \
+    crates/revaer-ui/dist-serve/** | \
+    crates/revaer-ui/static/nexus/** | \
+    tests/node_modules/** | \
+    tests/logs/** | \
+    tests/test-results/** | \
+    tests/playwright-report/** | \
+    tests/.runtime/** | \
+      coverage/** | \
+      artifacts/**)
+      continue
+      ;;
+    *)
+      ;;
+  esac
+  authored_files+=("${file}")
+done < <(
+  git ls-files -- \
+    ':(glob)crates/**' \
+    ':(glob)tests/**' \
+    ':(glob)scripts/**' \
+    ':(glob)release/**' \
+    ':(glob).github/actions/**' \
+    ':(glob).github/workflows/**' \
+    Dockerfile \
+    Cargo.toml \
+    justfile \
+    sonar-project.properties
+)
+
+if [[ "${#authored_files[@]}" -gt 0 ]]; then
+  if command -v rg >/dev/null 2>&1; then
+    matches="$(rg -n 'NO[S]ONAR' "${authored_files[@]}" || true)"
+  else
+    matches="$(grep -nE 'NO[S]ONAR' "${authored_files[@]}" || true)"
+  fi
+else
+  matches=""
+fi
+report_matches "Sonar suppression comments are forbidden in authored files" "${matches}"
+
 matches="$(
   search_rust_matches 'todo!|unimplemented!' ''
 )"
@@ -112,7 +163,9 @@ report_matches "todo!/unimplemented! stubs are forbidden in authored Rust" "${ma
 
 matches="$(
   search_rust_matches 'sqlx::query(_as|_scalar)?|query!|query_as!|query_scalar!' '' \
-    'crates/revaer-data/src/**'
+    'crates/revaer-data/src/**' \
+    'crates/revaer-test-support/src/postgres.rs' \
+    'crates/revaer-test-support/tests/integration.rs'
 )"
 report_matches "sqlx runtime queries are confined to crates/revaer-data/src" "${matches}"
 
@@ -136,6 +189,6 @@ matches="$(
 )"
 report_matches "unsafe Rust is only allowed inside the documented FFI boundary" "${matches}"
 
-if [ "${failures}" -ne 0 ]; then
+if [[ "${failures}" -ne 0 ]]; then
   exit 1
 fi
