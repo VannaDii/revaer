@@ -1832,12 +1832,12 @@ impl MediaJobRuntime {
         })
         .await;
         drop(stop_tx);
-        let cancellation_requested = monitor
+        let monitor = monitor
             .await
-            .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))??;
+            .map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
         let inspection =
             inspection.map_err(|error| MediaJobRuntimeError::Join(error.to_string()))?;
-        resolve_inspection_outcome(inspection, cancellation_requested)
+        resolve_monitored_inspection_outcome(inspection, monitor)
     }
 
     async fn load_capability_snapshot(&self) -> Result<CapabilitySnapshot, MediaJobRuntimeError> {
@@ -2421,6 +2421,24 @@ fn resolve_inspection_outcome(
     }
 }
 
+fn resolve_monitored_inspection_outcome(
+    inspection: Result<MediaInspection, InspectError>,
+    monitor: Result<bool, DataError>,
+) -> Result<MediaInspection, MediaJobRuntimeError> {
+    match monitor {
+        Ok(cancellation_requested) => {
+            resolve_inspection_outcome(inspection, cancellation_requested)
+        }
+        Err(control) => match inspection {
+            Ok(_) => Err(MediaJobRuntimeError::Data(control)),
+            Err(inspection) => Err(MediaJobRuntimeError::InspectionControl {
+                control,
+                inspection: Box::new(inspection),
+            }),
+        },
+    }
+}
+
 #[derive(Debug, Error)]
 enum MediaJobRuntimeError {
     #[error("media job runtime data error: {0}")]
@@ -2431,6 +2449,12 @@ enum MediaJobRuntimeError {
     Join(String),
     #[error("media job runtime inspect error: {0}")]
     Inspect(String),
+    #[error("media inspection control failed: {control}; inspection also failed: {inspection}")]
+    InspectionControl {
+        #[source]
+        control: DataError,
+        inspection: Box<InspectError>,
+    },
     #[error("media job runtime source metadata failed for {path}: {source}")]
     SourceMetadata {
         path: String,
@@ -2475,7 +2499,7 @@ enum MediaJobRuntimeError {
 impl MediaJobRuntimeError {
     const fn code(&self) -> &'static str {
         match self {
-            Self::Data(_) => "media_job_runtime_storage_failed",
+            Self::Data(_) | Self::InspectionControl { .. } => "media_job_runtime_storage_failed",
             Self::Cancelled => "media_job_cancelled_by_operator",
             Self::Join(_) => "media_job_runtime_join_failed",
             Self::Inspect(_) => "media_job_runtime_inspect_failed",
@@ -2501,7 +2525,7 @@ impl MediaJobRuntimeError {
 
     const fn category(&self) -> &'static str {
         match self {
-            Self::Data(_) => "storage",
+            Self::Data(_) | Self::InspectionControl { .. } => "storage",
             Self::Cancelled => "cancellation",
             Self::Join(_) => "join",
             Self::Inspect(_)
@@ -4622,13 +4646,15 @@ mod tests {
         SystemFfmpegAudioAnalysisAdapter, SystemSourceFingerprintProbe, VideoStreamConstraints,
         audio_measurement_mismatch, desired_target_from_job, expected_audio_constraints,
         parse_ebur128_summary, read_bounded_audio_analysis_stderr, replacement_job_key,
-        resolve_inspection_outcome, run_audio_analysis_process,
-        run_audio_analysis_process_with_timeout, validate_claimed_source_fingerprint,
-        verification_policy_from_job, video_constraint_stream_mismatch,
-        video_policy_from_policy_intent, video_policy_from_target_snapshot,
+        resolve_inspection_outcome, resolve_monitored_inspection_outcome,
+        run_audio_analysis_process, run_audio_analysis_process_with_timeout,
+        validate_claimed_source_fingerprint, verification_policy_from_job,
+        video_constraint_stream_mismatch, video_policy_from_policy_intent,
+        video_policy_from_target_snapshot,
     };
     use crate::media_discovery_fingerprint::MediaAggregateFingerprint;
     use crate::runtime_shutdown;
+    use revaer_data::DataError;
     use revaer_data::indexers::app_users::{app_user_create, app_user_verify_email};
     use revaer_data::media::capabilities::{
         RecordCapabilityEncoderInput, RecordCapabilityFeatureInput, RecordCapabilitySnapshotInput,
@@ -4749,6 +4775,56 @@ mod tests {
             outcome,
             Err(super::MediaJobRuntimeError::Inspect(message))
                 if message == "media inspection completed after cancellation was requested"
+        ));
+    }
+
+    #[test]
+    fn job_control_failure_preserves_inspection_cleanup_evidence() {
+        let outcome = resolve_monitored_inspection_outcome(
+            Err(InspectError::ProbeFailed {
+                message: "probe wait failed".to_string(),
+                secondary_evidence: NativeProcessSecondaryEvidence::from_message(
+                    "process group remained present after force kill".to_string(),
+                ),
+            }),
+            Err(DataError::QueryFailed {
+                operation: "poll media job control",
+                source: sqlx::Error::RowNotFound,
+            }),
+        );
+
+        assert!(matches!(
+            outcome,
+            Err(super::MediaJobRuntimeError::InspectionControl {
+                control: DataError::QueryFailed {
+                    operation: "poll media job control",
+                    ..
+                },
+                inspection,
+            }) if inspection.to_string().contains("probe wait failed")
+                && inspection
+                    .to_string()
+                    .contains("process group remained present after force kill")
+        ));
+    }
+
+    #[test]
+    fn job_control_failure_remains_primary_after_successful_inspection() {
+        let inspection = complete_test_inspection(video_graph("/tmp/source.mkv", "h264"));
+        let outcome = resolve_monitored_inspection_outcome(
+            Ok(inspection),
+            Err(DataError::QueryFailed {
+                operation: "poll media job control",
+                source: sqlx::Error::RowNotFound,
+            }),
+        );
+
+        assert!(matches!(
+            outcome,
+            Err(super::MediaJobRuntimeError::Data(DataError::QueryFailed {
+                operation: "poll media job control",
+                ..
+            }))
         ));
     }
 

@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-08-16T19:17:29.116806+00:00",
+  "generated": "2026-08-16T19:17:59.306760+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4636,6 +4636,15 @@
         "task-record"
       ],
       "href": "/adr/552-pre-v1-init-assembly-slice-05/"
+    },
+    {
+      "id": "adr/553-native-inspection-error-arbitration",
+      "title": "Native inspection error arbitration",
+      "summary": "Status: Recorded Date: 2026-08-16 Operator approval: Not applicable: nonarchitectural security remediation Context: The injected native-process supervisor returns bounded secondary evidence when cancellation or failure leaves a process group, leader, or inherited output pipe in an unexpected state. Media inspection runs concurrently with a database-backed job-control monitor. The runtime previously propagated a monitor storage error before examining the already-completed inspection result. Independent security diff scan 2fb8e96a-9aba-4d34-9b99-9287eb20c181 validated that ordering as finding csf_e518f81356798bf4a0709ed4: simultaneous monitor and inspection failures could omit the native cleanup evidence from the selected runtime error. Decision: Resolve the monitor task and inspection task joins independently, then arbitrate their",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/553-native-inspection-error-arbitration/"
     },
     {
       "id": "adr/index",

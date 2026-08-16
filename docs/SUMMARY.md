@@ -502,3 +502,4 @@
     -   [550: Packaged root-catalog source and evidence contract](adr/550-packaged-root-catalog-source-contract.md)
     -   [551: Packaged database baseline contract](adr/551-packaged-database-baseline-contract.md)
     -   [552: Pre-v1 init assembly slice 05](adr/552-pre-v1-init-assembly-slice-05.md)
+    -   [553: Native inspection error arbitration](adr/553-native-inspection-error-arbitration.md)
