@@ -1,8 +1,9 @@
 # Capability-proven chapter muxer support
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -33,7 +34,7 @@
 
 ## Recommendation
 
-- Recommend option 3, subject to operator approval.
+- Adopt option 3.
 - Represent chapter muxer capability as normalized, versioned state keyed by
   the immutable ADR 519 executable-closure identity, canonical muxer identity,
   output container family, probe-contract version, and command-materialization
@@ -83,28 +84,23 @@
 
 ## Implementation Boundary
 
-- This record is a proposal only. It authorizes no schema, API, runtime,
-  command, probe, fixture, readiness, or generated-contract implementation.
-- If explicitly accepted, its implementation boundary would be limited to the
+- This ADR authorizes only the
   closed chapter capability representation, production-path probe evidence,
   immutable capability and job binding, fail-closed readiness and command
   materialization, and focused validation described here.
-- Any persistence implementation would update `crates/revaer-data/init.sql`
+- Any persistence implementation updates `crates/revaer-data/init.sql`
   under ADR 522 and use normalized relational state plus stored procedures. It
-  would not restore historical migrations or use JSONB.
-- This proposal does not reopen ADR 508 chapter semantics, ADR 501 process
+  does not restore historical migrations or use JSONB.
+- This ADR does not reopen ADR 508 chapter semantics, ADR 501 process
   limits, ADR 507 metadata bounds, ADR 519 execution identity, or ADR 520
   re-planning. It does not authorize new containers, inferred support, mutable
   capability reads, arbitrary FFmpeg arguments, or a command-wide size limit.
-- Implementation must remain stopped until the operator explicitly approves
-  this ADR. Approval of another ADR, a passing check, or this recommendation is
-  not authorization.
 
 ## Validation
 
 - This docs-only proposal changes no production behavior and adds no runtime
   test.
-- If accepted, add a complete muxer-by-policy matrix covering supported,
+- Add a complete muxer-by-policy matrix covering supported,
   unsupported, missing, malformed, stale, and version-mismatched evidence.
 - Prove probes use production planning, materialization, process supervision,
   inspection, and verification boundaries and reject handcrafted or
@@ -119,9 +115,7 @@
 
 ## Follow-up
 
-- Present this proposal to the operator for a decision before implementing any
-  chapter capability schema, probe, binding, or command gate.
-- If accepted, record the exact implementation and validation evidence in a
+- Record the exact implementation and validation evidence in a
   separate task ADR without broadening the decision.
 
 ## Task Record
@@ -132,12 +126,13 @@
 - Design notes:
   - The recommendation separates muxer registration from policy-specific exact
     capability and makes immutable probe evidence part of job identity.
-  - No implementation is authorized while this record remains Proposed.
+  - Implementation is limited to this accepted decision and requires separate
+    task records with exact validation evidence.
 - Test coverage summary:
   - This change is documentation-only; no runtime, schema, API, probe, or media
     tests are added.
   - Documentation index, policy, instruction-drift, link, and diff checks are
-    the only validation appropriate to this proposal.
+    the only validation appropriate to this acceptance-only change.
 - Observability updates:
   - No telemetry changes are made.
   - A future accepted implementation should expose bounded capability-evidence
@@ -148,11 +143,11 @@
     implementation or product-completion claim.
   - `README.md`, `MEDIA_TRANSCODING.md`, roadmap/status documents, and operator
     guides are unchanged; the ADR index and documentation summary expose the
-    pending decision.
+    accepted decision.
 - Risk & rollback plan:
-  - The proposal changes no production behavior. It can be withdrawn without a
-    runtime rollback while its status remains Proposed.
-  - If later accepted and implemented, rollback must fail chapter readiness and
+  - Acceptance alone changes no production behavior and needs no runtime
+    rollback.
+  - Once implemented, rollback must fail chapter readiness and
     admission rather than infer support or bypass immutable evidence.
 - Dependency rationale:
   - No dependency is added. A future implementation must first evaluate the

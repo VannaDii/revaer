@@ -1,8 +1,9 @@
 # Atomic source-identity-checked replacement
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -104,17 +105,15 @@
 
 ## Implementation Boundary
 
-- While this ADR remains Proposed, it authorizes no filesystem, FFI, schema,
-  runtime, API, UI, workflow, or deployment implementation.
-- If explicitly accepted, it would authorize only the typed atomic-exchange
+- This ADR authorizes only the typed atomic-exchange
   capability, expected/displaced/candidate identity proof, replacement-manifest
   states, reverse exchange, uncertain quarantine, readiness gating, bounded
   reason codes, and validation described here.
-- It would not authorize an unconditional rename fallback, unlinking unexpected
+- It does not authorize an unconditional rename fallback, unlinking unexpected
   bytes, cross-device commit, pathname-only checks, a weaker ADR 500 lease,
   versioned public source names, pointer indirection, filesystem-specific
   activation without capability proof, or unrelated replacement policy.
-- Persistence, if accepted, belongs only in the approved pre-v1 `init.sql`
+- Persistence belongs only in the approved pre-v1 `init.sql`
   transition under ADR 522. Any unsafe or FFI implementation needs its own
   repository-compliant boundary and rationale.
 
@@ -143,8 +142,7 @@
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before implementation.
-- If approved, reconcile the transaction with ADRs 447, 448, 500, 512, 513, 517,
+- Reconcile the transaction with ADRs 447, 448, 500, 512, 513, 517,
   522, 523, 525, and 533 without changing their ownership or retention rules.
 - Prove the exact atomic primitive, filesystem support matrix, crash durability,
   and recovery behavior in the implementation task record before enabling

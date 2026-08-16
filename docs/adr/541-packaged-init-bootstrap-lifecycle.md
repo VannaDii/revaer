@@ -1,8 +1,9 @@
 # Packaged init-script bootstrap lifecycle
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -76,7 +77,7 @@
 
 ## Recommendation
 
-- Recommend option 2, subject to operator approval.
+- Adopt option 2.
 - Add exactly three top-level executable modes to `revaer-app`:
   - default server mode, which requires `DATABASE_URL`, verifies the packaged
     baseline, and never executes DDL;
@@ -248,10 +249,7 @@
 
 ## Implementation Boundary
 
-- This record is a proposal only. It authorizes no Rust, SQL, Docker, Helm,
-  workflow, recipe, test, release, policy, privilege, or runtime change while
-  its status remains Proposed.
-- If explicitly accepted, implementation is limited to:
+- Implementation is limited to:
   - same-binary `database init` and `database verify` routing;
   - exact-byte init embedding and SHA-256 baseline identity;
   - the normalized singleton baseline record and bounded read procedure;
@@ -263,18 +261,15 @@
     contract, canonical `just` bootstrap, and aligned CI/E2E paths; and
   - focused runbook, instruction, generated-documentation, and release evidence
     needed to describe and verify those exact behaviors.
-- This proposal does not authorize remote database creation, role or password
+- This ADR does not authorize remote database creation, role or password
   creation, automatic reset, nonempty database adoption, in-place schema
   upgrade, down migration, post-v1 migration design, a separate initializer
   image, raw operator SQL as a supported path, or long-lived bootstrap
   credentials.
-- This proposal does not approve or implement ADRs 533-537, fill any held
+- This ADR does not itself implement ADRs 533-537, fill any held
   numeric media limit, alter the final schema beyond baseline lifecycle state
   and grants, relax a required check or Sonar criterion, or exceed the stacked
   review-size limits.
-- Implementation remains stopped until the operator explicitly approves this
-  ADR. Approval of ADR 522, another ADR, this recommendation, or a passing check
-  is not approval of this lifecycle.
 
 ## Exact Validation
 
@@ -335,13 +330,11 @@
 
 ## Follow-up
 
-- Present this proposal to the operator for a decision before changing the
-  database cutover, application entrypoint, Docker image, Helm chart, or CI.
-- If accepted, implement it in bounded outside-in stack slices: executable and
+- Implement it in bounded outside-in stack slices: executable and
   package contract tests, baseline persistence and command modes, Docker/Helm
   lifecycle, local/CI/E2E convergence, then ADR 522 migration retirement.
 - Record implementation evidence in separate Recorded task ADRs. Do not change
-  this record to Accepted without the operator's decision-specific approval.
+  this accepted boundary without another decision-specific operator approval.
 
 ## Task Record
 
@@ -353,12 +346,12 @@
     executor while separating init and runtime credentials and process modes.
   - It treats Helm scheduling as orchestration only; PostgreSQL locking,
     classification, transactionality, and digest identity remain authoritative.
-  - No implementation is authorized while this record remains Proposed.
+  - Implementation is authorized only within this accepted boundary.
 - Test coverage summary:
   - This change is documentation-only and adds no Rust, SQL, container, Helm,
     CI, E2E, or database test.
   - Documentation generation, link, policy, instruction-drift, and diff checks
-    are the applicable validation for this proposal.
+    are the applicable validation for this acceptance-only change.
 - Observability updates:
   - No telemetry changes are made.
   - A future accepted implementation may emit only bounded mode, baseline
@@ -367,13 +360,13 @@
 - Status-doc validation:
   - Reviewed ADRs 030, 059, 482, 522, and the current application, Docker, Helm,
     release, local database, workflow, Sonar, and Playwright bootstrap paths.
-  - Product and operator documentation remains unchanged because no lifecycle
-    has been approved or implemented. The ADR index and documentation summary
-    expose the pending decision.
+  - Product and operator documentation remains unchanged because the lifecycle
+    is not implemented. The ADR index and documentation summary expose the
+    accepted decision.
 - Risk & rollback plan:
-  - This proposal changes no production behavior and can be withdrawn without
-    runtime rollback while Proposed.
-  - If accepted, transaction rollback handles uncommitted initialization;
+  - Acceptance alone changes no production behavior and needs no runtime
+    rollback.
+  - Transaction rollback handles uncommitted initialization;
     committed v0 rollback remains verified restore or disposable recreation,
     never an automatic downgrade.
 - Dependency rationale:

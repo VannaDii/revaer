@@ -1,8 +1,9 @@
 # Bounded cancellation-aware fingerprint admission
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -111,20 +112,18 @@
 
 ## Implementation Boundary
 
-- While this ADR remains Proposed, it authorizes no process, schema, runtime,
-  API, UI, workflow, deployment, or policy implementation.
-- If explicitly accepted, it would authorize only the typed admission controller,
+- This ADR authorizes only the typed admission controller,
   finite policy fields, durable principal reservations, local worker and queue
   bounds, supervised killable executor, cancellation ordering, exact accounting,
   readiness hold, bounded reasons, and validation described here.
-- Acceptance would not authorize any exact numeric production value or activate
+- Acceptance does not authorize any exact numeric production value or activate
   fingerprint admission. Those values require separate decision-specific
   operator approval supported by representative measurements.
-- It would not authorize partial hashing, path-based child access, unlimited
+- It does not authorize partial hashing, path-based child access, unlimited
   internal principals, detached blocking tasks, best-effort cancellation,
   unbounded queues, quota bypass, weaker source identity, automatic discovery
   activation, or changes to ADR 516's unresolved scheduler values.
-- Persistence, if accepted, belongs only in the approved pre-v1 `init.sql`
+- Persistence belongs only in the approved pre-v1 `init.sql`
   transition under ADR 522. The worker protocol must be bounded, canonical, and
   private; it is not a public media API.
 
@@ -157,13 +156,13 @@
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before implementation.
 - Collect representative throughput, latency, queueing, cancellation, sparse-
   file, slow-storage, and multi-principal evidence, then propose exact worker,
   byte, time, request, principal, and grace values for operator approval.
-- If the architecture and values are accepted, reconcile implementation with
+- Reconcile architectural implementation with
   ADRs 501, 512, 516, 518, 522, 523, 526, 527, and 533 without enabling automatic
-  discovery or destructive execution through this admission change.
+  discovery or destructive execution through this admission change. Activation
+  remains held until the exact numeric values receive separate approval.
 
 ## Task Record
 

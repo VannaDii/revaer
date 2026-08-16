@@ -4396,7 +4396,7 @@
   {
     "id": "adr/533-descriptor-bound-source-material-lifecycle",
     "title": "Descriptor-bound source material lifecycle",
-    "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+    "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
     "tags": [
       "consequences",
       "follow-up",
@@ -4412,7 +4412,7 @@
   {
     "id": "adr/534-atomic-source-identity-checked-replacement",
     "title": "Atomic source-identity-checked replacement",
-    "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+    "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
     "tags": [
       "consequences",
       "follow-up",
@@ -4428,7 +4428,7 @@
   {
     "id": "adr/535-bounded-cancellation-aware-fingerprint-admission",
     "title": "Bounded cancellation-aware fingerprint admission",
-    "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+    "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
     "tags": [
       "consequences",
       "follow-up",
@@ -4444,7 +4444,7 @@
   {
     "id": "adr/536-capability-proven-chapter-muxer-support",
     "title": "Capability-proven chapter muxer support",
-    "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+    "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
     "tags": [
       "consequences",
       "follow-up",
@@ -4460,7 +4460,7 @@
   {
     "id": "adr/537-normalized-opaque-state-and-attachment-payload-evidence",
     "title": "Normalized opaque state and attachment payload evidence",
-    "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+    "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
     "tags": [
       "consequences",
       "follow-up",
@@ -4494,7 +4494,7 @@
   {
     "id": "adr/541-packaged-init-bootstrap-lifecycle",
     "title": "Packaged init-script bootstrap lifecycle",
-    "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending",
+    "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
     "tags": [
       "consequences",
       "current-state",

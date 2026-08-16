@@ -1,8 +1,9 @@
 # Normalized opaque state and attachment payload evidence
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -36,7 +37,7 @@
 
 ## Recommendation
 
-- Recommend option 3, subject to operator approval.
+- Adopt option 3.
 - Define a versioned normalized opaque-stream snapshot keyed by the immutable
   source aggregate, source stream binding, stream kind, inspection contract,
   and capability/executable identities required by ADRs 449 and 519.
@@ -102,30 +103,27 @@
 
 ## Implementation Boundary
 
-- This record is a proposal only. It authorizes no schema, extractor, native
-  command, API, planner, verifier, fixture, limit, or readiness implementation.
-- If explicitly accepted, its implementation boundary would be limited to the
+- This ADR authorizes only the
   normalized metadata and side-data representation, immutable binding-based
   comparison, injected attachment payload extractor, approved-limit snapshot,
   exact digest evidence, cleanup, and focused validation described here.
-- Any persistence implementation would update `crates/revaer-data/init.sql`
+- Any persistence implementation updates `crates/revaer-data/init.sql`
   under ADR 522 and use normalized relational tables plus stored procedures. It
-  would not restore historical migrations or store raw probe documents.
-- This proposal does not authorize attachment or data target selectors,
+  does not restore historical migrations or store raw probe documents.
+- This ADR does not authorize attachment or data target selectors,
   replacement or transcoding, data payload hashing, arbitrary side-data fields,
   caller-authored bindings, invented numeric limits, weaker cancellation or
   confinement, raw FFmpeg arguments, or an independent command-size ceiling.
 - ADR 507's accepted bounds and ADR 509's stream policy, precedence, and
   attachment-only payload guarantee remain authoritative and unchanged.
-- Implementation must remain stopped until the operator explicitly approves
-  this ADR and separately approves any numeric policy still held. Approval of
-  another ADR, a passing check, or this recommendation is not authorization.
+- Attachment preservation activation remains stopped until the operator
+  separately approves every numeric policy still held.
 
 ## Validation
 
 - This docs-only proposal changes no production behavior and adds no runtime
   test.
-- If accepted, add complete source/candidate/final round trips for every
+- Add complete source/candidate/final round trips for every
   supported metadata and side-data kind, including empty sets, ordering,
   duplicate keys, unknown kinds and fields, malformed units, omitted rows,
   added rows, parser-version drift, and output-index reordering.
@@ -146,11 +144,9 @@
 
 ## Follow-up
 
-- Present this proposal to the operator for a decision before implementing any
-  normalized opaque-state schema or payload extractor.
 - Present every still-held numeric extraction and workspace policy in a separate
   Proposed ADR, or an explicit amendment, before enabling attachment preserve.
-- If accepted, record the exact implementation and validation evidence in a
+- Record the exact implementation and validation evidence in a
   separate task ADR without broadening this decision.
 
 ## Task Record
@@ -162,13 +158,13 @@
   - The recommendation uses normalized relational state, immutable source
     bindings, and an injected extractor whose limits are policy inputs rather
     than implementation constants.
-  - No implementation or numeric limit is authorized while this record remains
-    Proposed.
+  - Architectural implementation is authorized, but no numeric limit or
+    attachment-preservation activation is authorized by this decision.
 - Test coverage summary:
   - This change is documentation-only; no runtime, schema, API, extractor, or
     media tests are added.
   - Documentation index, policy, instruction-drift, link, and diff checks are
-    the only validation appropriate to this proposal.
+    the only validation appropriate to this acceptance-only change.
 - Observability updates:
   - No telemetry changes are made.
   - A future accepted implementation should expose bounded normalization,
@@ -180,11 +176,11 @@
     changes no implementation or product-completion claim.
   - `README.md`, `MEDIA_TRANSCODING.md`, roadmap/status documents, and operator
     guides are unchanged; the ADR index and documentation summary expose the
-    pending decision.
+    accepted decision.
 - Risk & rollback plan:
-  - The proposal changes no production behavior. It can be withdrawn without a
-    runtime rollback while its status remains Proposed.
-  - If later accepted and implemented, rollback must disable attachment
+  - Acceptance alone changes no production behavior and needs no runtime
+    rollback.
+  - Once implemented, rollback must disable attachment
     preservation when exact normalized or payload evidence is unavailable; it
     must not silently narrow the retained-state comparison.
 - Dependency rationale:

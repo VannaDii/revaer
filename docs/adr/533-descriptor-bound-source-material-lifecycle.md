@@ -1,8 +1,9 @@
 # Descriptor-bound source material lifecycle
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
+- Operator approval: Explicitly approved by the operator on 2026-08-16:
+  "I approve the ADRs as they are now and I'm resuming your goal."
 
 ## Problem
 
@@ -109,17 +110,15 @@
 
 ## Implementation Boundary
 
-- While this ADR remains Proposed, it authorizes no schema, runtime, filesystem,
-  API, UI, workflow, or deployment implementation.
-- If explicitly accepted, it would authorize only the typed source-material
+- This ADR authorizes only the typed source-material
   lifecycle, exact ADR 526 aggregate staging, canonical material identity,
   retained read-only handles across planning/transcoding/verification, fail-
   closed restart validation, bounded reason codes, and tests described here.
-- It would not authorize a broader ADR 526 input set, remote inputs, new media or
+- It does not authorize a broader ADR 526 input set, remote inputs, new media or
   sidecar formats, arbitrary descriptor inheritance, ambient host paths,
   hard-link staging, unproven reflink semantics, source mutation, weaker ADR 527
   confinement, or destructive work without ADR 500's cooperative lease.
-- Persistence, if accepted, belongs only in the approved pre-v1 `init.sql`
+- Persistence belongs only in the approved pre-v1 `init.sql`
   transition under ADR 522. No historical migration is authorized.
 
 ## Validation
@@ -148,8 +147,7 @@
 
 ## Follow-up
 
-- Obtain explicit decision-specific operator approval before implementation.
-- If approved, reconcile the implementation with ADRs 500, 501, 513, 516, 517,
+- Reconcile the implementation with ADRs 500, 501, 513, 516, 517,
   519, 522, 523, 526, and 527 in one outside-in contract and fault matrix.
 - Measure representative copy, hash, fsync, storage, restart, and cleanup costs
   before proposing production capacity and retention values. Those exact values
