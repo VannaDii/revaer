@@ -1312,7 +1312,9 @@ fn is_unknown_dynamic_range(value: &str) -> bool {
     )
 }
 
-fn is_known_video_level(codec: &str, level: &str) -> bool {
+/// Return whether a codec/level pair is supported by the target compiler.
+#[must_use]
+pub fn is_known_video_level(codec: &str, level: &str) -> bool {
     let Some(level) = normalized_video_level(level) else {
         return false;
     };
@@ -1388,9 +1390,12 @@ fn normalized_video_codec(codec: &str) -> String {
     }
 }
 
-fn is_known_color_primaries(value: &str) -> bool {
+/// Return whether a video color-primaries label is supported by the target compiler.
+#[must_use]
+pub fn is_known_color_primaries(value: &str) -> bool {
+    let value = value.trim().to_ascii_lowercase();
     matches!(
-        value,
+        value.as_str(),
         "bt709"
             | "bt470m"
             | "bt470bg"
@@ -1405,9 +1410,12 @@ fn is_known_color_primaries(value: &str) -> bool {
     )
 }
 
-fn is_known_color_transfer(value: &str) -> bool {
+/// Return whether a video transfer-characteristic label is supported by the target compiler.
+#[must_use]
+pub fn is_known_color_transfer(value: &str) -> bool {
+    let value = value.trim().to_ascii_lowercase();
     matches!(
-        value,
+        value.as_str(),
         "bt709"
             | "bt470m"
             | "bt470bg"
@@ -1427,9 +1435,12 @@ fn is_known_color_transfer(value: &str) -> bool {
     )
 }
 
-fn is_known_color_space(value: &str) -> bool {
+/// Return whether a video color-space label is supported by the target compiler.
+#[must_use]
+pub fn is_known_color_space(value: &str) -> bool {
+    let value = value.trim().to_ascii_lowercase();
     matches!(
-        value,
+        value.as_str(),
         "gbr"
             | "bt709"
             | "fcc"

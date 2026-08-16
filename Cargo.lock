@@ -2758,6 +2758,7 @@ dependencies = [
  "revaer-api-models",
  "revaer-config",
  "revaer-events",
+ "revaer-media-core",
  "revaer-telemetry",
  "revaer-torrent-core",
  "serde",
@@ -2854,6 +2855,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "rand 0.10.1",
+ "rand_core 0.10.1",
  "revaer-data",
  "revaer-test-support",
  "serde",
@@ -3290,6 +3292,7 @@ version = "1.0.145"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "402a6f66d8c709116cf22f558eab210f5a50187f702eb4d7e5ef38d9a7f1c79c"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "ryu",

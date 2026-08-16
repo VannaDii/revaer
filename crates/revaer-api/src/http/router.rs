@@ -1128,15 +1128,14 @@ impl ApiServer {
             )
     }
 
+    #[cfg(feature = "compat-qb")]
     fn mount_optional_compat(router: Router<Arc<ApiState>>) -> Router<Arc<ApiState>> {
-        #[cfg(feature = "compat-qb")]
-        {
-            compat_qb::mount(router)
-        }
-        #[cfg(not(feature = "compat-qb"))]
-        {
-            router
-        }
+        compat_qb::mount(router)
+    }
+
+    #[cfg(not(feature = "compat-qb"))]
+    const fn mount_optional_compat(router: Router<Arc<ApiState>>) -> Router<Arc<ApiState>> {
+        router
     }
 
     /// Serve the API using the configured router on the supplied address.
