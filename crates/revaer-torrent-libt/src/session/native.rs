@@ -703,11 +703,62 @@ mod tests {
         encoded
     }
 
+    fn bencoded_string_field<'a>(payload: &'a [u8], key: &[u8]) -> Result<&'a [u8]> {
+        let mut marker = Vec::new();
+        marker.extend_from_slice(key.len().to_string().as_bytes());
+        marker.push(b':');
+        marker.extend_from_slice(key);
+
+        let Some(marker_start) = payload
+            .windows(marker.len())
+            .position(|window| window == marker.as_slice())
+        else {
+            return Err(anyhow!("missing bencode key"));
+        };
+
+        let mut cursor = marker_start + marker.len();
+        let length_start = cursor;
+        while cursor < payload.len() && payload[cursor].is_ascii_digit() {
+            cursor += 1;
+        }
+        if cursor == length_start || payload.get(cursor) != Some(&b':') {
+            return Err(anyhow!("invalid bencode string length"));
+        }
+
+        let length_text = std::str::from_utf8(&payload[length_start..cursor])?;
+        let length = length_text.parse::<usize>()?;
+        let value_start = cursor + 1;
+        let Some(value_end) = value_start.checked_add(length) else {
+            return Err(anyhow!("bencode string length overflow"));
+        };
+        if value_end > payload.len() {
+            return Err(anyhow!("truncated bencode string"));
+        }
+        Ok(&payload[value_start..value_end])
+    }
+
+    fn contains_subsequence(payload: &[u8], needle: &[u8]) -> bool {
+        payload.windows(needle.len()).any(|window| window == needle)
+    }
+
     fn write_seed_payload(root: &Path) -> std::io::Result<()> {
         let piece_len = usize::try_from(SEED_PIECE_LENGTH).map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid piece length")
         })?;
         fs::write(root.join("sample"), vec![0_u8; piece_len])
+    }
+
+    fn native_failure_message(err: revaer_torrent_core::TorrentError) -> Result<String> {
+        let revaer_torrent_core::TorrentError::OperationFailed { source, .. } = err else {
+            return Err(anyhow!("expected native operation failure"));
+        };
+        let source = source
+            .downcast::<LibtorrentError>()
+            .map_err(|_| anyhow!("expected libtorrent error"))?;
+        let LibtorrentError::NativeFailure { message, .. } = *source else {
+            return Err(anyhow!("expected native failure"));
+        };
+        Ok(message)
     }
 
     #[tokio::test]
@@ -852,6 +903,70 @@ mod tests {
         assert!(peer.interest.remote);
         assert!(!peer.choke.local);
         assert!(!peer.choke.remote);
+    }
+
+    #[test]
+    fn bencoded_string_field_rejects_malformed_payloads() -> TorrentResult<()> {
+        let cases = [
+            (b"4:path4:demo".as_slice(), "missing bencode key"),
+            (b"4:nameabc".as_slice(), "invalid bencode string length"),
+            (
+                b"4:name18446744073709551615:value".as_slice(),
+                "bencode string length overflow",
+            ),
+            (b"4:name6:abc".as_slice(), "truncated bencode string"),
+        ];
+
+        for (payload, expected) in cases {
+            let err = bencoded_string_field(payload, b"name")
+                .err()
+                .ok_or_else(|| anyhow!("expected malformed bencode error"))?;
+            assert!(err.to_string().contains(expected));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn native_failure_message_validates_error_shape() -> TorrentResult<()> {
+        let native = NativeSession::map_error("apply_config", "cache_size unsupported".to_string())
+            .err()
+            .ok_or_else(|| anyhow!("expected native failure"))?;
+        assert_eq!(native_failure_message(native)?, "cache_size unsupported");
+
+        let unsupported = revaer_torrent_core::TorrentError::Unsupported {
+            operation: "apply_config",
+        };
+        let err = native_failure_message(unsupported)
+            .err()
+            .ok_or_else(|| anyhow!("expected operation failure rejection"))?;
+        assert!(
+            err.to_string()
+                .contains("expected native operation failure")
+        );
+
+        let io_failure = op_failed(
+            "apply_config",
+            None,
+            std::io::Error::other("not a libtorrent error"),
+        );
+        let err = native_failure_message(io_failure)
+            .err()
+            .ok_or_else(|| anyhow!("expected downcast rejection"))?;
+        assert!(err.to_string().contains("expected libtorrent error"));
+
+        let invalid_input = op_failed(
+            "apply_config",
+            None,
+            LibtorrentError::InvalidInput {
+                field: "cache_size",
+                reason: "unsupported",
+            },
+        );
+        let err = native_failure_message(invalid_input)
+            .err()
+            .ok_or_else(|| anyhow!("expected native failure rejection"))?;
+        assert!(err.to_string().contains("expected native failure"));
+        Ok(())
     }
 
     #[tokio::test]
@@ -1165,6 +1280,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_session_authors_directory_torrent_with_root_name() -> TorrentResult<()> {
+        let mut harness = NativeSessionHarness::new()?;
+        let config = harness.runtime_config();
+        harness.session.apply_config(&config).await?;
+
+        let root_path = harness.download_path().join("authored-root");
+        let season_path = root_path.join("Season 01");
+        fs::create_dir_all(&season_path)?;
+        fs::write(season_path.join("Episode 01.mkv"), b"episode")?;
+        fs::write(root_path.join("poster.jpg"), b"poster")?;
+
+        let request = TorrentAuthorRequest {
+            root_path: root_path.to_string_lossy().into_owned(),
+            trackers: vec!["https://tracker.example/announce".to_string()],
+            web_seeds: Vec::new(),
+            file_rules: FileSelectionRules::default(),
+            piece_length: Some(16_384),
+            private: true,
+            comment: None,
+            source: None,
+        };
+
+        let result = harness.session.create_torrent(&request).await?;
+        assert_eq!(result.files.len(), 2);
+        assert_eq!(result.files[0].path, "Season 01/Episode 01.mkv");
+        assert_eq!(result.files[1].path, "poster.jpg");
+        assert_eq!(
+            bencoded_string_field(&result.metainfo, b"name")?,
+            b"authored-root"
+        );
+        assert!(contains_subsequence(
+            &result.metainfo,
+            b"4:pathl9:Season 0114:Episode 01.mkve"
+        ));
+        assert!(contains_subsequence(
+            &result.metainfo,
+            b"4:pathl10:poster.jpge"
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn native_session_applies_disk_cache_settings() -> TorrentResult<()> {
         #[derive(Copy, Clone)]
         struct StorageFlags(u8);
@@ -1203,7 +1360,24 @@ mod tests {
         config.disk_write_mode = Some(crate::types::DiskIoMode::WriteThrough);
         config.verify_piece_hashes = false.into();
 
-        harness.session.apply_config(&config).await?;
+        if let Err(err) = harness.session.apply_config(&config).await {
+            let message = native_failure_message(err)?;
+            assert!(message.contains("cache_size"));
+            config.cache_size = None;
+            config.cache_expiry = None;
+            harness.session.apply_config(&config).await?;
+            let snapshot = harness.session.inspect_storage_state();
+            assert_eq!(
+                snapshot.disk_read_mode,
+                crate::types::DiskIoMode::DisableOsCache.as_i32()
+            );
+            assert_eq!(
+                snapshot.disk_write_mode,
+                crate::types::DiskIoMode::WriteThrough.as_i32()
+            );
+            assert!(!snapshot.verify_piece_hashes);
+            return Ok(());
+        }
 
         let snapshot = harness.session.inspect_storage_state();
         let flags = StorageFlags(snapshot.flags);

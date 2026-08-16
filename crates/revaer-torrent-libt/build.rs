@@ -4,9 +4,17 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+mod build_support;
+
+use build_support::{
+    first_complete_prefix, lipo_output_contains_architecture, macos_lipo_arch, ordered_defines,
+    version_is_supported,
+};
 
 const MIN_VERSION: &str = "2.0.10";
-const MAX_EXCLUSIVE_VERSION: (u32, u32, u32) = (2, 1, 0);
+const MAX_EXCLUSIVE_VERSION: &str = "2.2.0";
 const CXXBRIDGE_RUST_HEADER: &str = "rust/cxx.h";
 const CXXBRIDGE_CRATE_HEADER: &str = "revaer-torrent-libt/src/ffi/bridge.rs.h";
 
@@ -23,7 +31,9 @@ fn try_main() -> Result<(), BuildError> {
     println!("cargo:rerun-if-env-changed=LIBTORRENT_BUNDLE_DIR");
     println!("cargo:rerun-if-env-changed=REVAER_NATIVE_IT");
     println!("cargo:rerun-if-env-changed=REVAER_NATIVE_COMPILE_COMMANDS_PATH");
+    println!("cargo:rerun-if-env-changed=PATH");
     println!("cargo:rustc-check-cfg=cfg(libtorrent_native)");
+    emit_pkg_config_reruns();
 
     if env::var_os("CARGO_FEATURE_LIBTORRENT").is_none() {
         return Ok(());
@@ -43,6 +53,10 @@ fn try_main() -> Result<(), BuildError> {
     let libs_result = (|| {
         if let Some((include, lib)) = bundled_paths() {
             ensure_header_version(&include)?;
+            ensure_macos_link_architecture(
+                std::slice::from_ref(&lib),
+                &["torrent-rasterbar".to_string()],
+            )?;
             bridge.include(&include);
             println!("cargo:rustc-link-search=native={}", lib.display());
             return Ok(vec!["torrent-rasterbar".to_string()]);
@@ -50,27 +64,30 @@ fn try_main() -> Result<(), BuildError> {
 
         let include_override = env::var_os("LIBTORRENT_INCLUDE_DIR").map(PathBuf::from);
         let lib_dir_override = env::var_os("LIBTORRENT_LIB_DIR").map(PathBuf::from);
-        if let Some(include_dir) = include_override.as_ref() {
-            ensure_header_version(include_dir)?;
-            bridge.include(include_dir);
-            if let Some(lib_dir) = lib_dir_override.as_ref() {
-                println!("cargo:rustc-link-search=native={}", lib_dir.display());
-            }
+        if include_override.is_some() || lib_dir_override.is_some() {
+            let include = include_override
+                .as_ref()
+                .ok_or(BuildError::MissingIncludeDir)?;
+            let lib = lib_dir_override.as_ref().ok_or(BuildError::MissingLibDir)?;
+            ensure_header_version(include)?;
+            ensure_macos_link_architecture(
+                std::slice::from_ref(lib),
+                &["torrent-rasterbar".to_string()],
+            )?;
+            bridge.include(include);
+            println!("cargo:rustc-link-search=native={}", lib.display());
             return Ok(vec!["torrent-rasterbar".to_string()]);
         }
-        if lib_dir_override.is_some() {
-            return Err(BuildError::MissingIncludeDir);
-        }
 
-        match pkg_config::Config::new()
+        let pkg_config_result = pkg_config::Config::new()
+            .cargo_metadata(false)
             .atleast_version(MIN_VERSION)
-            .probe("libtorrent-rasterbar")
-        {
+            .probe("libtorrent-rasterbar");
+        match pkg_config_result {
             Ok(libtorrent) => {
                 ensure_probe_header_version(&libtorrent.include_paths)?;
-                let mut defines: Vec<_> = libtorrent.defines.into_iter().collect();
-                defines.sort_by(|left, right| left.0.cmp(&right.0));
-                for (name, value) in defines {
+                ensure_macos_link_architecture(&libtorrent.link_paths, &libtorrent.libs)?;
+                for (name, value) in ordered_defines(libtorrent.defines) {
                     bridge.define(&name, value.as_deref());
                 }
                 for path in libtorrent.include_paths {
@@ -86,6 +103,10 @@ fn try_main() -> Result<(), BuildError> {
                     return Err(BuildError::PkgConfig(source));
                 };
                 ensure_header_version(&include)?;
+                ensure_macos_link_architecture(
+                    std::slice::from_ref(&lib),
+                    &["torrent-rasterbar".to_string()],
+                )?;
                 bridge.include(include);
                 println!("cargo:rustc-link-search=native={}", lib.display());
                 Ok(vec!["torrent-rasterbar".to_string()])
@@ -286,24 +307,52 @@ fn bundled_paths() -> Option<(PathBuf, PathBuf)> {
 }
 
 fn prefix_paths() -> Option<(PathBuf, PathBuf)> {
-    ["/opt/homebrew", "/usr/local"]
-        .into_iter()
-        .map(PathBuf::from)
-        .map(|root| (root.join("include"), root.join("lib")))
-        .find(|(include, lib)| {
-            include.join("libtorrent").exists()
-                && (lib.join("libtorrent-rasterbar.dylib").exists()
-                    || lib.join("libtorrent-rasterbar.a").exists())
-        })
+    first_complete_prefix(
+        ["/opt/homebrew", "/usr/local"]
+            .into_iter()
+            .map(PathBuf::from),
+        |include| include.join("libtorrent/version.hpp").is_file(),
+        |lib| {
+            lib.join("libtorrent-rasterbar.dylib").is_file()
+                || lib.join("libtorrent-rasterbar.a").is_file()
+        },
+    )
 }
 
 fn ensure_probe_header_version(include_paths: &[PathBuf]) -> Result<(), BuildError> {
     for include_dir in include_paths {
-        if include_dir.join("libtorrent").join("version.hpp").is_file() {
+        if include_dir.join("libtorrent/version.hpp").is_file() {
             return ensure_header_version(include_dir);
         }
     }
     Err(BuildError::MissingIncludeDir)
+}
+
+fn emit_pkg_config_reruns() {
+    for variable in [
+        "PKG_CONFIG",
+        "PKG_CONFIG_PATH",
+        "PKG_CONFIG_LIBDIR",
+        "PKG_CONFIG_SYSROOT_DIR",
+        "PKG_CONFIG_ALLOW_CROSS",
+        "PKG_CONFIG_ALLOW_SYSTEM_CFLAGS",
+        "PKG_CONFIG_ALLOW_SYSTEM_LIBS",
+    ] {
+        println!("cargo:rerun-if-env-changed={variable}");
+    }
+
+    if let Some(target) = env::var_os("TARGET").and_then(|value| value.into_string().ok()) {
+        let normalized_target = target.replace('-', "_");
+        for prefix in [
+            "PKG_CONFIG",
+            "PKG_CONFIG_PATH",
+            "PKG_CONFIG_LIBDIR",
+            "PKG_CONFIG_SYSROOT_DIR",
+        ] {
+            println!("cargo:rerun-if-env-changed={prefix}_{target}");
+            println!("cargo:rerun-if-env-changed={prefix}_{normalized_target}");
+        }
+    }
 }
 
 fn emit_link_libs(libs: Vec<String>) {
@@ -314,6 +363,7 @@ fn emit_link_libs(libs: Vec<String>) {
 
 fn emit_reruns() {
     // Re-run if the bridge or C++ sources change.
+    println!("cargo:rerun-if-changed=build_support.rs");
     println!("cargo:rerun-if-changed=src/ffi/bridge.rs");
     println!("cargo:rerun-if-changed=src/ffi/include/revaer/session.hpp");
     println!("cargo:rerun-if-changed=src/ffi/session.cpp");
@@ -321,6 +371,7 @@ fn emit_reruns() {
 
 fn ensure_header_version(include_dir: &Path) -> Result<(), BuildError> {
     let header = include_dir.join("libtorrent").join("version.hpp");
+    println!("cargo:rerun-if-changed={}", header.display());
     let contents =
         fs::read_to_string(&header).map_err(|source| BuildError::ReadHeader { source })?;
 
@@ -331,12 +382,15 @@ fn ensure_header_version(include_dir: &Path) -> Result<(), BuildError> {
     let patch =
         parse_define(&contents, "LIBTORRENT_VERSION_TINY").ok_or(BuildError::MissingDefine)?;
 
-    let required = parse_min_version()?;
-    if (major, minor, patch) < required {
-        return Err(BuildError::VersionTooOld);
-    }
-    if (major, minor, patch) >= MAX_EXCLUSIVE_VERSION {
-        return Err(BuildError::VersionTooNew);
+    let version = (major, minor, patch);
+    let required = parse_version(MIN_VERSION)?;
+    let unsupported = parse_version(MAX_EXCLUSIVE_VERSION)?;
+    if !version_is_supported(version, required, unsupported) {
+        return Err(if version < required {
+            BuildError::VersionTooOld
+        } else {
+            BuildError::VersionTooNew
+        });
     }
     Ok(())
 }
@@ -359,12 +413,92 @@ fn parse_define(contents: &str, name: &str) -> Option<u32> {
     })
 }
 
-fn parse_min_version() -> Result<(u32, u32, u32), BuildError> {
-    let mut parts = MIN_VERSION.split('.');
+fn parse_version(value: &str) -> Result<(u32, u32, u32), BuildError> {
+    let mut parts = value.split('.');
     let major = parse_version_part(parts.next()).ok_or(BuildError::InvalidMinVersion)?;
     let minor = parse_version_part(parts.next()).ok_or(BuildError::InvalidMinVersion)?;
     let patch = parse_version_part(parts.next()).ok_or(BuildError::InvalidMinVersion)?;
     Ok((major, minor, patch))
+}
+
+fn ensure_macos_link_architecture(
+    link_paths: &[PathBuf],
+    libs: &[String],
+) -> Result<(), BuildError> {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
+        return Ok(());
+    }
+
+    let rust_arch = env::var("CARGO_CFG_TARGET_ARCH").map_err(|_| BuildError::MissingTargetArch)?;
+    let expected_arch =
+        macos_lipo_arch(&rust_arch).ok_or(BuildError::UnsupportedTargetArch { arch: rust_arch })?;
+    let library_path =
+        find_link_library(link_paths, "torrent-rasterbar").ok_or(BuildError::MissingLinkLibrary)?;
+    println!("cargo:rerun-if-changed={}", library_path.display());
+    ensure_macos_library_contains_architecture(&library_path, expected_arch)?;
+
+    for lib in libs
+        .iter()
+        .filter(|lib| lib.as_str() != "torrent-rasterbar")
+    {
+        if let Some(path) = find_link_library(link_paths, lib) {
+            println!("cargo:rerun-if-changed={}", path.display());
+            ensure_macos_library_contains_architecture(&path, expected_arch)?;
+        }
+    }
+    Ok(())
+}
+
+fn find_link_library(link_paths: &[PathBuf], lib: &str) -> Option<PathBuf> {
+    let candidates = [
+        format!("lib{lib}.dylib"),
+        format!("lib{lib}.a"),
+        format!("{lib}.framework/{lib}"),
+    ];
+    link_paths
+        .iter()
+        .flat_map(|link_path| {
+            candidates
+                .iter()
+                .map(move |candidate| link_path.join(candidate))
+        })
+        .find(|candidate| candidate.is_file())
+}
+
+fn ensure_macos_library_contains_architecture(
+    library_path: &Path,
+    expected_arch: &str,
+) -> Result<(), BuildError> {
+    let output = Command::new("lipo")
+        .arg("-info")
+        .arg(library_path)
+        .output()
+        .map_err(|source| BuildError::InspectLibraryArchitecture {
+            path: library_path.to_path_buf(),
+            source,
+        })?;
+    let probe_output = lipo_probe_output(&output.stdout, &output.stderr);
+    if !output.status.success() {
+        return Err(BuildError::LibraryArchitectureProbeFailed {
+            path: library_path.to_path_buf(),
+            output: probe_output,
+        });
+    }
+    if !lipo_output_contains_architecture(&probe_output, expected_arch) {
+        return Err(BuildError::LibraryArchitectureMismatch {
+            path: library_path.to_path_buf(),
+            expected_arch: expected_arch.to_string(),
+            output: probe_output,
+        });
+    }
+    Ok(())
+}
+
+fn lipo_probe_output(stdout: &[u8], stderr: &[u8]) -> String {
+    let mut output = String::new();
+    output.push_str(&String::from_utf8_lossy(stdout));
+    output.push_str(&String::from_utf8_lossy(stderr));
+    output
 }
 
 fn parse_version_part(value: Option<&str>) -> Option<u32> {
@@ -377,14 +511,47 @@ enum BuildError {
     MissingWorkspaceRoot,
     MissingCompileCommandsDir,
     MissingIncludeDir,
-    MissingCxxbridgeHeader { relative_header: &'static str },
+    MissingCxxbridgeHeader {
+        relative_header: &'static str,
+    },
+    MissingLibDir,
+    MissingLinkLibrary,
+    MissingTargetArch,
+    UnsupportedTargetArch {
+        arch: String,
+    },
     PkgConfig(pkg_config::Error),
-    ReadHeader { source: std::io::Error },
-    ResolveCompileCommandsPath { source: std::io::Error },
-    CreateCompileCommandsDir { source: std::io::Error },
-    CreateCxxbridgeHeaderDir { source: std::io::Error },
-    CopyCxxbridgeHeader { source: std::io::Error },
-    WriteCompileCommands { source: std::io::Error },
+    ReadHeader {
+        source: std::io::Error,
+    },
+    InspectLibraryArchitecture {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    LibraryArchitectureProbeFailed {
+        path: PathBuf,
+        output: String,
+    },
+    LibraryArchitectureMismatch {
+        path: PathBuf,
+        expected_arch: String,
+        output: String,
+    },
+    ResolveCompileCommandsPath {
+        source: std::io::Error,
+    },
+    CreateCompileCommandsDir {
+        source: std::io::Error,
+    },
+    CreateCxxbridgeHeaderDir {
+        source: std::io::Error,
+    },
+    CopyCxxbridgeHeader {
+        source: std::io::Error,
+    },
+    WriteCompileCommands {
+        source: std::io::Error,
+    },
     MissingDefine,
     InvalidMinVersion,
     VersionTooOld,
@@ -401,8 +568,36 @@ impl fmt::Display for BuildError {
             Self::MissingCxxbridgeHeader { relative_header } => {
                 write!(f, "generated CXX bridge header missing: {relative_header}")
             }
+            Self::MissingLibDir => write!(f, "libtorrent library directory missing"),
+            Self::MissingLinkLibrary => write!(f, "libtorrent link library missing"),
+            Self::MissingTargetArch => write!(f, "cargo target architecture missing"),
+            Self::UnsupportedTargetArch { arch } => {
+                write!(f, "unsupported macOS target architecture: {arch}")
+            }
             Self::PkgConfig(_) => write!(f, "libtorrent pkg-config probe failed"),
             Self::ReadHeader { .. } => write!(f, "libtorrent version header read failed"),
+            Self::InspectLibraryArchitecture { path, .. } => write!(
+                f,
+                "library architecture probe failed for {}",
+                path.display()
+            ),
+            Self::LibraryArchitectureProbeFailed { path, output } => write!(
+                f,
+                "library architecture probe failed for {}: {}",
+                path.display(),
+                output.trim()
+            ),
+            Self::LibraryArchitectureMismatch {
+                path,
+                expected_arch,
+                output,
+            } => write!(
+                f,
+                "library architecture mismatch for {}: expected {}, found {}",
+                path.display(),
+                expected_arch,
+                output.trim()
+            ),
             Self::ResolveCompileCommandsPath { .. } => {
                 write!(f, "compile commands path resolution failed")
             }
@@ -431,6 +626,7 @@ impl Error for BuildError {
         match self {
             Self::PkgConfig(err) => Some(err),
             Self::ReadHeader { source, .. } => Some(source),
+            Self::InspectLibraryArchitecture { source, .. } => Some(source),
             Self::ResolveCompileCommandsPath { source, .. } => Some(source),
             Self::CreateCompileCommandsDir { source, .. } => Some(source),
             Self::CreateCxxbridgeHeaderDir { source, .. } => Some(source),
