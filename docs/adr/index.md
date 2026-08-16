@@ -481,3 +481,4 @@
 -   [548](548-retired-media-write-route-contract.md) – Retired media write route contract coverage
 -   [550](550-packaged-root-catalog-source-contract.md) – Packaged root-catalog source and evidence contract
 -   [551](551-packaged-database-baseline-contract.md) – Packaged database baseline contract
+-   [552](552-pre-v1-init-assembly-slice-05.md) – Pre-v1 init assembly slice 05
