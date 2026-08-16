@@ -378,3 +378,4 @@
     -   [486: Tracker credential transport](adr/486-tracker-credential-transport.md)
     -   [487: Strict Sonar analysis foundation implementation](adr/487-strict-sonar-analysis-foundation.md)
     -   [488: Single authoritative Sonar scanner execution](adr/488-single-sonar-scanner-execution.md)
+    -   [495: PR 77 attempt-fencing integration](adr/495-pr77-attempt-fencing-integration.md)

@@ -7,18 +7,18 @@ use uuid::Uuid;
 use super::configuration::MediaVerificationToggle;
 
 const MEDIA_JOB_CREATE_V1: &str = "SELECT media_job_create_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, dry_run_input => $5)";
-const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1(media_job_public_id_input => $1, phase_index_input => $2, phase_name_input => $3, phase_status_input => $4, details_text_input => $5)";
-const MEDIA_JOB_OPERATION_APPEND_V1: &str = "SELECT media_job_operation_append_v1(media_job_public_id_input => $1, operation_index_input => $2, operation_kind_input => $3, stream_id_input => $4, command_bin_input => $5, arg_1_input => $6, arg_2_input => $7, arg_3_input => $8, arg_4_input => $9, arg_5_input => $10)";
+const MEDIA_JOB_PHASE_APPEND_V1: &str = "SELECT media_job_phase_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, phase_index_input => $3, phase_name_input => $4, phase_status_input => $5, details_text_input => $6)";
+const MEDIA_JOB_OPERATION_APPEND_V1: &str = "SELECT media_job_operation_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, operation_index_input => $3, operation_kind_input => $4, stream_id_input => $5, command_bin_input => $6, arg_1_input => $7, arg_2_input => $8, arg_3_input => $9, arg_4_input => $10, arg_5_input => $11)";
 const MEDIA_JOB_OPERATION_LIST_V1: &str = "SELECT operation_index, operation_kind, stream_id, command_bin, arg_1, arg_2, arg_3, arg_4, arg_5, created_at FROM media_job_operation_list_v1(media_job_public_id_input => $1)";
-const MEDIA_JOB_VIOLATION_APPEND_V1: &str = "SELECT media_job_violation_append_v1(media_job_public_id_input => $1, violation_index_input => $2, violation_kind_input => $3, severity_input => $4, stream_id_input => $5)";
+const MEDIA_JOB_VIOLATION_APPEND_V1: &str = "SELECT media_job_violation_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, violation_index_input => $3, violation_kind_input => $4, severity_input => $5, stream_id_input => $6)";
 const MEDIA_JOB_VIOLATION_LIST_V1: &str = "SELECT violation_index, violation_kind, severity, stream_id, created_at FROM media_job_violation_list_v1(media_job_public_id_input => $1)";
-const MEDIA_JOB_PLAN_REASON_APPEND_V1: &str = "SELECT media_job_plan_reason_append_v1(media_job_public_id_input => $1, reason_index_input => $2, candidate_index_input => $3, selected_input => $4, reason_code_input => $5, reason_text_input => $6)";
+const MEDIA_JOB_PLAN_REASON_APPEND_V1: &str = "SELECT media_job_plan_reason_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, reason_index_input => $3, candidate_index_input => $4, selected_input => $5, reason_code_input => $6, reason_text_input => $7)";
 const MEDIA_JOB_PLAN_REASON_LIST_V1: &str = "SELECT reason_index, candidate_index, selected, reason_code, reason_text, created_at FROM media_job_plan_reason_list_v1(media_job_public_id_input => $1)";
-const MEDIA_JOB_VERIFICATION_CHECK_APPEND_V1: &str = "SELECT media_job_verification_check_append_v1(media_job_public_id_input => $1, check_index_input => $2, check_kind_input => $3, check_status_input => $4, expected_value_input => $5, actual_value_input => $6, details_text_input => $7)";
+const MEDIA_JOB_VERIFICATION_CHECK_APPEND_V1: &str = "SELECT media_job_verification_check_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, check_index_input => $3, check_kind_input => $4, check_status_input => $5, expected_value_input => $6, actual_value_input => $7, details_text_input => $8)";
 const MEDIA_JOB_VERIFICATION_CHECK_LIST_V1: &str = "SELECT check_index, check_kind, check_status, expected_value, actual_value, details_text, created_at FROM media_job_verification_check_list_v1(media_job_public_id_input => $1)";
-const MEDIA_JOB_ARTIFACT_APPEND_V1: &str = "SELECT media_job_artifact_append_v1(media_job_public_id_input => $1, artifact_index_input => $2, artifact_kind_input => $3, artifact_path_input => $4, size_bytes_input => $5, content_type_input => $6)";
+const MEDIA_JOB_ARTIFACT_APPEND_V1: &str = "SELECT media_job_artifact_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, artifact_index_input => $3, artifact_kind_input => $4, artifact_path_input => $5, size_bytes_input => $6, content_type_input => $7)";
 const MEDIA_JOB_ARTIFACT_LIST_V1: &str = "SELECT artifact_index, artifact_kind, artifact_path, size_bytes, content_type, created_at FROM media_job_artifact_list_v1(media_job_public_id_input => $1)";
-const MEDIA_JOB_COMPACT_AUDIT_APPEND_V1: &str = "SELECT media_job_compact_audit_append_v1(media_job_public_id_input => $1, audit_index_input => $2, fact_kind_input => $3, fact_text_input => $4)";
+const MEDIA_JOB_COMPACT_AUDIT_APPEND_V1: &str = "SELECT media_job_compact_audit_append_v1(media_job_public_id_input => $1, claim_generation_input => $2, audit_index_input => $3, fact_kind_input => $4, fact_text_input => $5)";
 const MEDIA_JOB_COMPACT_AUDIT_LIST_V1: &str = "SELECT audit_index, fact_kind, fact_text, created_at FROM media_job_compact_audit_list_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_LIST_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_list_v1(media_profile_public_id_input => $1, status_input => $2::media_job_status)";
 const MEDIA_JOB_GET_V1: &str = "SELECT media_job_public_id, source_path, output_path, status::text AS status_text, dry_run, queued_at, started_at, completed_at, last_error FROM media_job_get_v1(media_job_public_id_input => $1)";
@@ -27,13 +27,12 @@ const MEDIA_JOB_RETRY_V1: &str = "SELECT media_job_retry_v1(media_job_public_id_
 const MEDIA_JOB_MARK_COMPLETED_V1: &str =
     "SELECT media_job_mark_completed_v1(media_job_public_id_input => $1)";
 const MEDIA_JOB_RETENTION_RUN_V1: &str = "SELECT completed_jobs_deleted, failed_jobs_pruned, failed_detail_rows_deleted FROM media_job_retention_run_v1(as_of_input => $1)";
-const MEDIA_JOB_WORKER_CLAIM_NEXT_V2: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, cancel_generation FROM media_job_worker_claim_next_v2()";
-const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str =
-    "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1)";
-const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, status_input => $2::media_job_status, last_error_input => $3)";
-const MEDIA_JOB_WORKER_POLL_CONTROL_V1: &str = "SELECT cancel_requested, cancel_generation FROM media_job_worker_poll_control_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
-const MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1: &str = "SELECT media_job_worker_acknowledge_cancel_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
-const MEDIA_JOB_WORKER_COMPLETE_V1: &str = "SELECT media_job_worker_complete_v1(media_job_public_id_input => $1, observed_cancel_generation_input => $2)";
+const MEDIA_JOB_WORKER_CLAIM_NEXT_V2: &str = "SELECT media_job_public_id, media_profile_public_id, source_path, output_path, dry_run, source_root, output_root, compatibility_target_key, policy_key, target_video_codec, target_audio_codec, target_audio_channels, target_audio_channel_layout, target_subtitle_policy, policy_video_intent, desired_target_key, desired_target_version, desired_container_format, unmatched_stream_policy, verification_strictness, verification_duration_tolerance_millis, verification_mux_validation, verification_decode_all_streams, verification_keyframe_seek, verification_playback_probe, attempt_number, claim_generation, cancel_generation FROM media_job_worker_claim_next_v2()";
+const MEDIA_JOB_WORKER_HEARTBEAT_V1: &str = "SELECT media_job_worker_heartbeat_v1(media_job_public_id_input => $1, claim_generation_input => $2)";
+const MEDIA_JOB_WORKER_MARK_STATUS_V1: &str = "SELECT media_job_worker_mark_status_v1(media_job_public_id_input => $1, claim_generation_input => $2, status_input => $3::media_job_status, last_error_input => $4)";
+const MEDIA_JOB_WORKER_POLL_CONTROL_V1: &str = "SELECT cancel_requested, cancel_generation FROM media_job_worker_poll_control_v1(media_job_public_id_input => $1, claim_generation_input => $2, observed_cancel_generation_input => $3)";
+const MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1: &str = "SELECT media_job_worker_acknowledge_cancel_v1(media_job_public_id_input => $1, claim_generation_input => $2, observed_cancel_generation_input => $3)";
+const MEDIA_JOB_WORKER_COMPLETE_V1: &str = "SELECT media_job_worker_complete_v1(media_job_public_id_input => $1, claim_generation_input => $2, observed_cancel_generation_input => $3)";
 const MEDIA_JOB_DESIRED_TARGET_STREAM_LIST_V5: &str = "SELECT stream_key, stream_kind, semantic_role, language_code, optional, sort_order, codec, channel_count, channel_layout, audio_bitrate_bps, audio_sample_rate_hz, audio_loudness_profile, audio_dynamic_range, video_profile, video_level, video_bitrate_bps, color_primaries, color_transfer, color_space, hdr_format, title, default_disposition, forced_disposition, subtitle_placement, image_subtitle_action FROM media_job_desired_target_stream_list_v5(media_job_public_id_input => $1)";
 const MEDIA_DISCOVERY_JOB_ENQUEUE_V1: &str = "SELECT media_discovery_job_enqueue_v1(actor_public_id_input => $1, media_profile_public_id_input => $2, source_path_input => $3, output_path_input => $4, source_size_bytes_input => $5, source_modified_ns_input => $6, source_sha256_input => $7)";
 
@@ -69,6 +68,40 @@ pub struct EnqueueDiscoveredMediaJobInput<'a> {
     pub source_modified_ns: i64,
     /// Lowercase SHA-256 content fingerprint.
     pub source_sha256: &'a str,
+}
+
+/// Append media job operation payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppendMediaJobOperationInput<'a> {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+    /// Operation ordering index.
+    pub operation_index: i32,
+    /// Stable operation kind.
+    pub operation_kind: &'a str,
+    /// Optional stream id for stream-scoped operations.
+    pub stream_id: Option<i32>,
+    /// Command binary.
+    pub command_bin: &'a str,
+    /// Bounded command arguments.
+    pub args: [Option<&'a str>; 5],
+}
+
+/// Append media job plan reason payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppendMediaJobPlanReasonInput<'a> {
+    /// Job public id.
+    pub media_job_public_id: Uuid,
+    /// Reason ordering index.
+    pub reason_index: i32,
+    /// Optional candidate index.
+    pub candidate_index: Option<i32>,
+    /// Whether the reason describes the selected plan.
+    pub selected: bool,
+    /// Stable reason code.
+    pub reason_code: &'a str,
+    /// Human-readable reason text.
+    pub reason_text: &'a str,
 }
 
 /// Append media job verification check payload.
@@ -313,6 +346,10 @@ pub struct ClaimedMediaJobRow {
     pub verification_keyframe_seek: MediaVerificationToggle,
     /// Whether noninteractive playback smoke verification was selected.
     pub verification_playback_probe: MediaVerificationToggle,
+    /// Monotonic attempt number for this job.
+    pub attempt_number: i32,
+    /// Fencing generation that must accompany worker-owned mutations.
+    pub claim_generation: i64,
     /// Durable cancellation generation observed when the worker claimed the job.
     pub cancel_generation: i64,
 }
@@ -447,6 +484,7 @@ pub async fn list_media_job_desired_target_streams(
 pub async fn append_media_job_phase(
     pool: &PgPool,
     media_job_public_id: Uuid,
+    claim_generation: i64,
     phase_index: i32,
     phase_name: &str,
     phase_status_text: &str,
@@ -454,6 +492,7 @@ pub async fn append_media_job_phase(
 ) -> Result<()> {
     sqlx::query(MEDIA_JOB_PHASE_APPEND_V1)
         .bind(media_job_public_id)
+        .bind(claim_generation)
         .bind(phase_index)
         .bind(phase_name)
         .bind(phase_status_text)
@@ -472,24 +511,21 @@ pub async fn append_media_job_phase(
 /// Returns an error when stored-procedure execution fails.
 pub async fn append_media_job_operation(
     pool: &PgPool,
-    media_job_public_id: Uuid,
-    operation_index: i32,
-    operation_kind: &str,
-    stream_id: Option<i32>,
-    command_bin: &str,
-    args: [Option<&str>; 5],
+    claim_generation: i64,
+    input: &AppendMediaJobOperationInput<'_>,
 ) -> Result<()> {
     sqlx::query(MEDIA_JOB_OPERATION_APPEND_V1)
-        .bind(media_job_public_id)
-        .bind(operation_index)
-        .bind(operation_kind)
-        .bind(stream_id)
-        .bind(command_bin)
-        .bind(args[0].unwrap_or_default())
-        .bind(args[1].unwrap_or_default())
-        .bind(args[2].unwrap_or_default())
-        .bind(args[3].unwrap_or_default())
-        .bind(args[4].unwrap_or_default())
+        .bind(input.media_job_public_id)
+        .bind(claim_generation)
+        .bind(input.operation_index)
+        .bind(input.operation_kind)
+        .bind(input.stream_id)
+        .bind(input.command_bin)
+        .bind(input.args[0].unwrap_or_default())
+        .bind(input.args[1].unwrap_or_default())
+        .bind(input.args[2].unwrap_or_default())
+        .bind(input.args[3].unwrap_or_default())
+        .bind(input.args[4].unwrap_or_default())
         .execute(pool)
         .await
         .map_err(try_op("media job operation append"))?;
@@ -504,6 +540,7 @@ pub async fn append_media_job_operation(
 pub async fn append_media_job_violation(
     pool: &PgPool,
     media_job_public_id: Uuid,
+    claim_generation: i64,
     violation_index: i32,
     violation_kind: &str,
     severity: &str,
@@ -511,6 +548,7 @@ pub async fn append_media_job_violation(
 ) -> Result<()> {
     sqlx::query(MEDIA_JOB_VIOLATION_APPEND_V1)
         .bind(media_job_public_id)
+        .bind(claim_generation)
         .bind(violation_index)
         .bind(violation_kind)
         .bind(severity)
@@ -528,20 +566,17 @@ pub async fn append_media_job_violation(
 /// Returns an error when stored-procedure execution fails.
 pub async fn append_media_job_plan_reason(
     pool: &PgPool,
-    media_job_public_id: Uuid,
-    reason_index: i32,
-    candidate_index: Option<i32>,
-    selected: bool,
-    reason_code: &str,
-    reason_text: &str,
+    claim_generation: i64,
+    input: &AppendMediaJobPlanReasonInput<'_>,
 ) -> Result<()> {
     sqlx::query(MEDIA_JOB_PLAN_REASON_APPEND_V1)
-        .bind(media_job_public_id)
-        .bind(reason_index)
-        .bind(candidate_index)
-        .bind(selected)
-        .bind(reason_code)
-        .bind(reason_text)
+        .bind(input.media_job_public_id)
+        .bind(claim_generation)
+        .bind(input.reason_index)
+        .bind(input.candidate_index)
+        .bind(input.selected)
+        .bind(input.reason_code)
+        .bind(input.reason_text)
         .execute(pool)
         .await
         .map_err(try_op("media job plan reason append"))?;
@@ -555,10 +590,12 @@ pub async fn append_media_job_plan_reason(
 /// Returns an error when stored-procedure execution fails.
 pub async fn append_media_job_verification_check(
     pool: &PgPool,
+    claim_generation: i64,
     input: &AppendMediaJobVerificationCheckInput<'_>,
 ) -> Result<()> {
     sqlx::query(MEDIA_JOB_VERIFICATION_CHECK_APPEND_V1)
         .bind(input.media_job_public_id)
+        .bind(claim_generation)
         .bind(input.check_index)
         .bind(input.check_kind)
         .bind(input.check_status)
@@ -578,10 +615,12 @@ pub async fn append_media_job_verification_check(
 /// Returns an error when stored-procedure execution fails.
 pub async fn append_media_job_artifact(
     pool: &PgPool,
+    claim_generation: i64,
     input: &AppendMediaJobArtifactInput<'_>,
 ) -> Result<()> {
     sqlx::query(MEDIA_JOB_ARTIFACT_APPEND_V1)
         .bind(input.media_job_public_id)
+        .bind(claim_generation)
         .bind(input.artifact_index)
         .bind(input.artifact_kind)
         .bind(input.artifact_path)
@@ -600,10 +639,12 @@ pub async fn append_media_job_artifact(
 /// Returns an error when stored-procedure execution fails.
 pub async fn append_media_job_compact_audit(
     pool: &PgPool,
+    claim_generation: i64,
     input: &AppendMediaJobCompactAuditInput<'_>,
 ) -> Result<()> {
     sqlx::query(MEDIA_JOB_COMPACT_AUDIT_APPEND_V1)
         .bind(input.media_job_public_id)
+        .bind(claim_generation)
         .bind(input.audit_index)
         .bind(input.fact_kind)
         .bind(input.fact_text)
@@ -820,10 +861,12 @@ pub async fn media_job_worker_claim_next(pool: &PgPool) -> Result<Option<Claimed
 pub async fn media_job_worker_poll_control(
     pool: &PgPool,
     media_job_public_id: Uuid,
+    claim_generation: i64,
     observed_cancel_generation: i64,
 ) -> Result<MediaJobControlRow> {
     sqlx::query_as::<_, MediaJobControlRow>(MEDIA_JOB_WORKER_POLL_CONTROL_V1)
         .bind(media_job_public_id)
+        .bind(claim_generation)
         .bind(observed_cancel_generation)
         .fetch_one(pool)
         .await
@@ -838,10 +881,12 @@ pub async fn media_job_worker_poll_control(
 pub async fn media_job_worker_acknowledge_cancel(
     pool: &PgPool,
     media_job_public_id: Uuid,
+    claim_generation: i64,
     observed_cancel_generation: i64,
 ) -> Result<i64> {
     sqlx::query_scalar::<_, i64>(MEDIA_JOB_WORKER_ACKNOWLEDGE_CANCEL_V1)
         .bind(media_job_public_id)
+        .bind(claim_generation)
         .bind(observed_cancel_generation)
         .fetch_one(pool)
         .await
@@ -858,10 +903,12 @@ pub async fn media_job_worker_acknowledge_cancel(
 pub async fn media_job_worker_complete(
     pool: &PgPool,
     media_job_public_id: Uuid,
+    claim_generation: i64,
     observed_cancel_generation: i64,
 ) -> Result<bool> {
     sqlx::query_scalar::<_, bool>(MEDIA_JOB_WORKER_COMPLETE_V1)
         .bind(media_job_public_id)
+        .bind(claim_generation)
         .bind(observed_cancel_generation)
         .fetch_one(pool)
         .await
@@ -873,9 +920,14 @@ pub async fn media_job_worker_complete(
 /// # Errors
 ///
 /// Returns an error when stored-procedure execution fails.
-pub async fn media_job_worker_heartbeat(pool: &PgPool, media_job_public_id: Uuid) -> Result<()> {
+pub async fn media_job_worker_heartbeat(
+    pool: &PgPool,
+    media_job_public_id: Uuid,
+    claim_generation: i64,
+) -> Result<()> {
     sqlx::query(MEDIA_JOB_WORKER_HEARTBEAT_V1)
         .bind(media_job_public_id)
+        .bind(claim_generation)
         .execute(pool)
         .await
         .map_err(try_op("media job worker heartbeat"))?;
@@ -890,11 +942,13 @@ pub async fn media_job_worker_heartbeat(pool: &PgPool, media_job_public_id: Uuid
 pub async fn media_job_worker_mark_status(
     pool: &PgPool,
     media_job_public_id: Uuid,
+    claim_generation: i64,
     status_text: &str,
     last_error: Option<&str>,
 ) -> Result<()> {
     sqlx::query(MEDIA_JOB_WORKER_MARK_STATUS_V1)
         .bind(media_job_public_id)
+        .bind(claim_generation)
         .bind(status_text)
         .bind(last_error.unwrap_or_default())
         .execute(pool)
@@ -906,10 +960,11 @@ pub async fn media_job_worker_mark_status(
 #[cfg(test)]
 mod tests {
     use super::{
-        AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput,
-        AppendMediaJobVerificationCheckInput, CreateMediaJobInput, EnqueueDiscoveredMediaJobInput,
-        append_media_job_artifact, append_media_job_compact_audit, append_media_job_operation,
-        append_media_job_phase, append_media_job_plan_reason, append_media_job_verification_check,
+        AppendMediaJobArtifactInput, AppendMediaJobCompactAuditInput, AppendMediaJobOperationInput,
+        AppendMediaJobPlanReasonInput, AppendMediaJobVerificationCheckInput, ClaimedMediaJobRow,
+        CreateMediaJobInput, EnqueueDiscoveredMediaJobInput, append_media_job_artifact,
+        append_media_job_compact_audit, append_media_job_operation, append_media_job_phase,
+        append_media_job_plan_reason, append_media_job_verification_check,
         append_media_job_violation, cancel_media_job, create_media_job,
         enqueue_discovered_media_job, get_media_job, list_media_job_artifacts,
         list_media_job_compact_audits, list_media_job_operations, list_media_job_plan_reasons,
@@ -957,15 +1012,34 @@ mod tests {
         pool
     }
 
-    async fn append_and_assert_plan_reason(pool: &PgPool, job_id: Uuid) -> anyhow::Result<()> {
+    async fn claim_job(pool: &PgPool, expected_job_id: Uuid) -> anyhow::Result<ClaimedMediaJobRow> {
+        let claimed = media_job_worker_claim_next(pool)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("test media job was not claimable"))?;
+        if claimed.media_job_public_id != expected_job_id {
+            return Err(anyhow::anyhow!(
+                "worker claimed an unexpected test media job"
+            ));
+        }
+        Ok(claimed)
+    }
+
+    async fn append_and_assert_plan_reason(
+        pool: &PgPool,
+        job_id: Uuid,
+        claim_generation: i64,
+    ) -> anyhow::Result<()> {
         append_media_job_plan_reason(
             pool,
-            job_id,
-            0,
-            Some(0),
-            true,
-            "least_cost_selected",
-            "Selected the least-cost compliant candidate.",
+            claim_generation,
+            &AppendMediaJobPlanReasonInput {
+                media_job_public_id: job_id,
+                reason_index: 0,
+                candidate_index: Some(0),
+                selected: true,
+                reason_code: "least_cost_selected",
+                reason_text: "Selected the least-cost compliant candidate.",
+            },
         )
         .await?;
         let plan_reasons = list_media_job_plan_reasons(pool, job_id).await?;
@@ -984,9 +1058,11 @@ mod tests {
     async fn append_and_assert_verification_check(
         pool: &PgPool,
         job_id: Uuid,
+        claim_generation: i64,
     ) -> anyhow::Result<()> {
         append_media_job_verification_check(
             pool,
+            claim_generation,
             &AppendMediaJobVerificationCheckInput {
                 media_job_public_id: job_id,
                 check_index: 0,
@@ -1021,9 +1097,11 @@ mod tests {
     async fn append_and_assert_artifact_and_audit(
         pool: &PgPool,
         job_id: Uuid,
+        claim_generation: i64,
     ) -> anyhow::Result<()> {
         append_media_job_artifact(
             pool,
+            claim_generation,
             &AppendMediaJobArtifactInput {
                 media_job_public_id: job_id,
                 artifact_index: 0,
@@ -1041,6 +1119,7 @@ mod tests {
         let oversized_artifact_path = format!("jobs/{}", "x".repeat(1020));
         let oversized_artifact = append_media_job_artifact(
             pool,
+            claim_generation,
             &AppendMediaJobArtifactInput {
                 media_job_public_id: job_id,
                 artifact_index: 1,
@@ -1054,6 +1133,7 @@ mod tests {
         assert!(oversized_artifact.is_err());
         let unmanaged_artifact = append_media_job_artifact(
             pool,
+            claim_generation,
             &AppendMediaJobArtifactInput {
                 media_job_public_id: job_id,
                 artifact_index: 2,
@@ -1068,6 +1148,7 @@ mod tests {
 
         append_media_job_compact_audit(
             pool,
+            claim_generation,
             &AppendMediaJobCompactAuditInput {
                 media_job_public_id: job_id,
                 audit_index: 0,
@@ -1083,6 +1164,7 @@ mod tests {
         let oversized_fact_text = "x".repeat(1025);
         let oversized_audit = append_media_job_compact_audit(
             pool,
+            claim_generation,
             &AppendMediaJobCompactAuditInput {
                 media_job_public_id: job_id,
                 audit_index: 1,
@@ -1141,8 +1223,96 @@ mod tests {
             },
         )
         .await?;
-        append_and_assert_artifact_and_audit(db.pool(), job_id).await?;
+        let claimed = claim_job(db.pool(), job_id).await?;
+        append_and_assert_artifact_and_audit(db.pool(), job_id, claimed.claim_generation).await?;
         cancel_media_job(db.pool(), job_id).await?;
+        media_job_worker_acknowledge_cancel(
+            db.pool(),
+            job_id,
+            claimed.claim_generation,
+            claimed.cancel_generation,
+        )
+        .await?;
+        Ok(job_id)
+    }
+
+    async fn create_retention_job(
+        db: &MediaTestDb,
+        profile_id: Uuid,
+        name: &str,
+    ) -> anyhow::Result<Uuid> {
+        Ok(create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: &format!("/input/count/{name}.mkv"),
+                output_path: Some(&format!("/output/count/{name}.mkv")),
+                dry_run: true,
+            },
+        )
+        .await?)
+    }
+
+    async fn create_cancelled_diagnostic_job(
+        db: &MediaTestDb,
+        profile_id: Uuid,
+    ) -> anyhow::Result<Uuid> {
+        let job_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/diagnostics/cancelled.mkv",
+                output_path: Some("/output/diagnostics/cancelled.mkv"),
+                dry_run: true,
+            },
+        )
+        .await?;
+        let claim = claim_job(db.pool(), job_id).await?;
+        append_media_job_violation(
+            db.pool(),
+            job_id,
+            claim.claim_generation,
+            0,
+            "video_codec_mismatch",
+            "high",
+            Some(0),
+        )
+        .await?;
+        append_and_assert_plan_reason(db.pool(), job_id, claim.claim_generation).await?;
+        append_and_assert_verification_check(db.pool(), job_id, claim.claim_generation).await?;
+        append_and_assert_artifact_and_audit(db.pool(), job_id, claim.claim_generation).await?;
+        cancel_media_job(db.pool(), job_id).await?;
+        media_job_worker_acknowledge_cancel(
+            db.pool(),
+            job_id,
+            claim.claim_generation,
+            claim.cancel_generation,
+        )
+        .await?;
+        Ok(job_id)
+    }
+
+    async fn create_completed_diagnostic_job(
+        db: &MediaTestDb,
+        profile_id: Uuid,
+    ) -> anyhow::Result<Uuid> {
+        let job_id = create_media_job(
+            db.pool(),
+            &CreateMediaJobInput {
+                actor_public_id: db.system_user_public_id,
+                media_profile_public_id: profile_id,
+                source_path: "/input/diagnostics/completed.mkv",
+                output_path: Some("/output/diagnostics/completed.mkv"),
+                dry_run: true,
+            },
+        )
+        .await?;
+        let claim = claim_job(db.pool(), job_id).await?;
+        append_and_assert_artifact_and_audit(db.pool(), job_id, claim.claim_generation).await?;
+        media_job_worker_mark_status(db.pool(), job_id, claim.claim_generation, "completed", None)
+            .await?;
         Ok(job_id)
     }
 
@@ -1332,37 +1502,43 @@ mod tests {
             },
         )
         .await?;
+        let claimed = claim_job(db.pool(), job_id).await?;
 
         append_media_job_phase(
             db.pool(),
             job_id,
+            claimed.claim_generation,
             0,
             "planning",
-            "queued",
+            "running",
             Some("scheduled"),
         )
         .await?;
 
         append_media_job_operation(
             db.pool(),
-            job_id,
-            0,
-            "remux",
-            None,
-            "ffmpeg",
-            [
-                Some("-i"),
-                Some("/input/tv/show.mkv"),
-                Some("-c"),
-                Some("copy"),
-                None,
-            ],
+            claimed.claim_generation,
+            &AppendMediaJobOperationInput {
+                media_job_public_id: job_id,
+                operation_index: 0,
+                operation_kind: "remux",
+                stream_id: None,
+                command_bin: "ffmpeg",
+                args: [
+                    Some("-i"),
+                    Some("/input/tv/show.mkv"),
+                    Some("-c"),
+                    Some("copy"),
+                    None,
+                ],
+            },
         )
         .await?;
 
         append_media_job_violation(
             db.pool(),
             job_id,
+            claimed.claim_generation,
             0,
             "video_codec_mismatch",
             "high",
@@ -1370,7 +1546,7 @@ mod tests {
         )
         .await?;
 
-        let rows = list_media_jobs(db.pool(), profile_id, Some("queued")).await?;
+        let rows = list_media_jobs(db.pool(), profile_id, Some("running")).await?;
         assert!(rows.iter().any(|item| item.media_job_public_id == job_id));
 
         let job = get_media_job(db.pool(), job_id).await?;
@@ -1393,10 +1569,10 @@ mod tests {
         assert_eq!(violations[0].severity, "high");
         assert_eq!(violations[0].stream_id, Some(0));
 
-        append_and_assert_plan_reason(db.pool(), job_id).await?;
+        append_and_assert_plan_reason(db.pool(), job_id, claimed.claim_generation).await?;
 
-        append_and_assert_verification_check(db.pool(), job_id).await?;
-        append_and_assert_artifact_and_audit(db.pool(), job_id).await?;
+        append_and_assert_verification_check(db.pool(), job_id, claimed.claim_generation).await?;
+        append_and_assert_artifact_and_audit(db.pool(), job_id, claimed.claim_generation).await?;
         Ok(())
     }
 
@@ -1450,19 +1626,34 @@ mod tests {
 
         let requested_generation = cancel_media_job(db.pool(), job_id).await?;
         assert_eq!(requested_generation, 1);
-        let control =
-            media_job_worker_poll_control(db.pool(), job_id, claimed.cancel_generation).await?;
+        let control = media_job_worker_poll_control(
+            db.pool(),
+            job_id,
+            claimed.claim_generation,
+            claimed.cancel_generation,
+        )
+        .await?;
         assert!(control.cancel_requested);
         assert_eq!(control.cancel_generation, requested_generation);
         assert!(
-            media_job_worker_mark_status(db.pool(), job_id, "completed", None)
-                .await
-                .is_err(),
+            media_job_worker_mark_status(
+                db.pool(),
+                job_id,
+                claimed.claim_generation,
+                "completed",
+                None,
+            )
+            .await
+            .is_err(),
             "a pending cancellation must fence successful completion"
         );
-        let acknowledged_generation =
-            media_job_worker_acknowledge_cancel(db.pool(), job_id, claimed.cancel_generation)
-                .await?;
+        let acknowledged_generation = media_job_worker_acknowledge_cancel(
+            db.pool(),
+            job_id,
+            claimed.claim_generation,
+            claimed.cancel_generation,
+        )
+        .await?;
         assert_eq!(acknowledged_generation, requested_generation);
         let job = get_media_job(db.pool(), job_id).await?;
         let Some(job) = job else {
@@ -1480,7 +1671,7 @@ mod tests {
             pool,
             UpsertMediaPolicyProfileInput {
                 actor_public_id,
-                policy_key: "safe_dry_run",
+                policy_key: "snapshot-policy",
                 version: 1,
                 display_name: "Snapshot strict",
                 video_intent: "general",
@@ -1504,8 +1695,8 @@ mod tests {
             pool,
             UpsertMediaPolicyProfileInput {
                 actor_public_id,
-                policy_key: "safe_dry_run",
-                version: 1,
+                policy_key: "snapshot-policy",
+                version: 2,
                 display_name: "Catalog changed after enqueue",
                 video_intent: "general",
                 verification_strictness: "fast",
@@ -1555,7 +1746,7 @@ mod tests {
                 dry_run_only: true,
                 retention_days: 30,
                 compatibility_target_key: Some("intent-stereo"),
-                policy_key: "safe_dry_run",
+                policy_key: "snapshot-policy",
                 watcher_enabled: false,
                 schedule_enabled: false,
                 schedule_interval_minutes: None,
@@ -1581,8 +1772,8 @@ mod tests {
             &UpdateMediaProfileInput {
                 actor_public_id: db.system_user_public_id,
                 media_profile_public_id: profile_id,
-                source_root: Some("/input/changed"),
-                output_root: Some("/output/changed"),
+                source_root: None,
+                output_root: None,
                 dry_run_only: None,
                 retention_days: None,
                 compatibility_target_key: Some("plex-general-hevc-aac"),
@@ -1605,7 +1796,7 @@ mod tests {
             claimed.compatibility_target_key.as_deref(),
             Some("intent-stereo")
         );
-        assert_eq!(claimed.policy_key, "safe_dry_run");
+        assert_eq!(claimed.policy_key, "snapshot-policy");
         assert_eq!(claimed.target_video_codec.as_deref(), Some("hevc"));
         assert_eq!(claimed.target_audio_codec.as_deref(), Some("aac"));
         assert_eq!(claimed.target_audio_channels, Some(2));
@@ -1648,44 +1839,14 @@ mod tests {
             },
         )
         .await?;
-        let expired_job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/count/older.mkv",
-                output_path: Some("/output/count/older.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-        let retained_completed_job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/count/newer.mkv",
-                output_path: Some("/output/count/newer.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-        let queued_job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/count/queued.mkv",
-                output_path: Some("/output/count/queued.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
+        let expired_job_id = create_retention_job(&db, profile_id, "older").await?;
+        let retained_completed_job_id = create_retention_job(&db, profile_id, "newer").await?;
+        let queued_job_id = create_retention_job(&db, profile_id, "queued").await?;
 
-        mark_media_job_completed(db.pool(), expired_job_id).await?;
-        mark_media_job_completed(db.pool(), retained_completed_job_id).await?;
+        let expired_claim = claim_job(db.pool(), expired_job_id).await?;
         append_media_job_compact_audit(
             db.pool(),
+            expired_claim.claim_generation,
             &AppendMediaJobCompactAuditInput {
                 media_job_public_id: expired_job_id,
                 audit_index: 0,
@@ -1694,6 +1855,15 @@ mod tests {
             },
         )
         .await?;
+        media_job_worker_mark_status(
+            db.pool(),
+            expired_job_id,
+            expired_claim.claim_generation,
+            "completed",
+            None,
+        )
+        .await?;
+        mark_media_job_completed(db.pool(), retained_completed_job_id).await?;
         update_media_job_retention_policy(
             db.pool(),
             UpdateMediaJobRetentionPolicyInput {
@@ -1736,44 +1906,8 @@ mod tests {
         };
         let profile_id =
             upsert_retention_profile(&db, "diagnostic-retention", "diagnostics").await?;
-        let cancelled_job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/diagnostics/cancelled.mkv",
-                output_path: Some("/output/diagnostics/cancelled.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-        append_media_job_violation(
-            db.pool(),
-            cancelled_job_id,
-            0,
-            "video_codec_mismatch",
-            "high",
-            Some(0),
-        )
-        .await?;
-        append_and_assert_plan_reason(db.pool(), cancelled_job_id).await?;
-        append_and_assert_verification_check(db.pool(), cancelled_job_id).await?;
-        append_and_assert_artifact_and_audit(db.pool(), cancelled_job_id).await?;
-        cancel_media_job(db.pool(), cancelled_job_id).await?;
-
-        let completed_job_id = create_media_job(
-            db.pool(),
-            &CreateMediaJobInput {
-                actor_public_id: db.system_user_public_id,
-                media_profile_public_id: profile_id,
-                source_path: "/input/diagnostics/completed.mkv",
-                output_path: Some("/output/diagnostics/completed.mkv"),
-                dry_run: true,
-            },
-        )
-        .await?;
-        append_and_assert_artifact_and_audit(db.pool(), completed_job_id).await?;
-        mark_media_job_completed(db.pool(), completed_job_id).await?;
+        let cancelled_job_id = create_cancelled_diagnostic_job(&db, profile_id).await?;
+        let completed_job_id = create_completed_diagnostic_job(&db, profile_id).await?;
 
         update_media_job_retention_policy(
             db.pool(),
@@ -1941,7 +2075,7 @@ mod tests {
         .await;
         assert!(create.is_err());
 
-        let append = append_media_job_phase(&pool, job_id, 0, "plan", "queued", None).await;
+        let append = append_media_job_phase(&pool, job_id, 0, 0, "plan", "queued", None).await;
         assert!(append.is_err());
 
         let list = list_media_jobs(&pool, profile_id, Some("queued")).await;
@@ -1954,7 +2088,8 @@ mod tests {
         assert!(operations.is_err());
 
         let append_violation =
-            append_media_job_violation(&pool, job_id, 0, "codec_mismatch", "high", Some(0)).await;
+            append_media_job_violation(&pool, job_id, 0, 0, "codec_mismatch", "high", Some(0))
+                .await;
         assert!(append_violation.is_err());
 
         let violations = list_media_job_violations(&pool, job_id).await;
@@ -1962,12 +2097,15 @@ mod tests {
 
         let append_reason = append_media_job_plan_reason(
             &pool,
-            job_id,
             0,
-            Some(0),
-            true,
-            "least_cost_selected",
-            "Selected candidate.",
+            &AppendMediaJobPlanReasonInput {
+                media_job_public_id: job_id,
+                reason_index: 0,
+                candidate_index: Some(0),
+                selected: true,
+                reason_code: "least_cost_selected",
+                reason_text: "Selected candidate.",
+            },
         )
         .await;
         assert!(append_reason.is_err());
@@ -1977,6 +2115,7 @@ mod tests {
 
         let append_check = append_media_job_verification_check(
             &pool,
+            0,
             &AppendMediaJobVerificationCheckInput {
                 media_job_public_id: job_id,
                 check_index: 0,
@@ -1995,6 +2134,7 @@ mod tests {
 
         let append_artifact = append_media_job_artifact(
             &pool,
+            0,
             &AppendMediaJobArtifactInput {
                 media_job_public_id: job_id,
                 artifact_index: 0,
@@ -2010,6 +2150,7 @@ mod tests {
 
         let append_audit = append_media_job_compact_audit(
             &pool,
+            0,
             &AppendMediaJobCompactAuditInput {
                 media_job_public_id: job_id,
                 audit_index: 0,
@@ -2039,9 +2180,9 @@ mod tests {
                 retention_days: 30,
                 compatibility_target_key: None,
                 policy_key: "safe_dry_run",
-                watcher_enabled: true,
-                schedule_enabled: true,
-                schedule_interval_minutes: Some(60),
+                watcher_enabled: false,
+                schedule_enabled: false,
+                schedule_interval_minutes: None,
             },
         )
         .await?;

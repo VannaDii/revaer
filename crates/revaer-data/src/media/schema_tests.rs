@@ -13,6 +13,7 @@ const EXPECTED_TABLES: &[&str] = &[
     "media_job_verification_check",
     "media_job_artifact",
     "media_job_compact_audit",
+    "media_job_compact_audit_archive",
     "media_capability_snapshot",
     "media_capability_snapshot_encoder",
     "media_capability_snapshot_feature",

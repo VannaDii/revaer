@@ -360,3 +360,4 @@
 -   [486](486-tracker-credential-transport.md) – Tracker credential transport
 -   [487](487-strict-sonar-analysis-foundation.md) – Strict Sonar analysis foundation implementation
 -   [488](488-single-sonar-scanner-execution.md) – Single authoritative Sonar scanner execution
+-   [495](495-pr77-attempt-fencing-integration.md) – PR 77 attempt-fencing integration
