@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T08:39:43.940051+00:00",
+  "generated": "2026-09-10T08:40:32.792015+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4877,6 +4877,20 @@
         "validation-boundaries"
       ],
       "href": "/adr/570-single-file-directory-authoring-regression/"
+    },
+    {
+      "id": "adr/572-broker-env-local-image-evidence",
+      "title": "Broker environment local image evidence",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: ADR 558 approves B1-B3 and shared G1 while holding E1 exact environment values, paths, bytes, digest, and package changes for evidence and separate operator approval. This record supplies bounded historical observations only. The authorized sidecar owns ADR 572, its index/SUMMARY entries, and generated documentation in work/broker-env-evidence-20260910. The parent owns ADR 571 and the wire parser; the parallel vector task owns ADR 573. Decision: Record existing-image observations without selecting or enforcing new environment values, changing build inputs or permissions, or building an unapproved prototype. E1 remains pending; no architectural",
+      "tags": [
+        "candidate-filesystem-findings",
+        "gaps-and-proposed-next-probe",
+        "isolated-probe-boundary",
+        "package-and-version-observations",
+        "scope-and-provenance",
+        "task-record"
+      ],
+      "href": "/adr/572-broker-env-local-image-evidence/"
     },
     {
       "id": "adr/573-rvb1-canonical-golden-vectors",

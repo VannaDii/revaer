@@ -4876,6 +4876,20 @@
     "href": "/adr/570-single-file-directory-authoring-regression/"
   },
   {
+    "id": "adr/572-broker-env-local-image-evidence",
+    "title": "Broker environment local image evidence",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: ADR 558 approves B1-B3 and shared G1 while holding E1 exact environment values, paths, bytes, digest, and package changes for evidence and separate operator approval. This record supplies bounded historical observations only. The authorized sidecar owns ADR 572, its index/SUMMARY entries, and generated documentation in work/broker-env-evidence-20260910. The parent owns ADR 571 and the wire parser; the parallel vector task owns ADR 573. Decision: Record existing-image observations without selecting or enforcing new environment values, changing build inputs or permissions, or building an unapproved prototype. E1 remains pending; no architectural",
+    "tags": [
+      "candidate-filesystem-findings",
+      "gaps-and-proposed-next-probe",
+      "isolated-probe-boundary",
+      "package-and-version-observations",
+      "scope-and-provenance",
+      "task-record"
+    ],
+    "href": "/adr/572-broker-env-local-image-evidence/"
+  },
+  {
     "id": "adr/573-rvb1-canonical-golden-vectors",
     "title": "RVB1 canonical golden vectors",
     "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The parent owns the pure bounded RVB1 codec and its consuming tests. This independent deliverable fixes literal expected frames directly from [ADR 558 Annex A](558-rvb1-native-process-broker-wire-contract.md#annex-a-exact-codec-draft-for-review), without reading, importing, or executing the parent codec. The parent agent assigned this worktree, branch, fixture path, and ADR 573 under the operator's authorization to parallelize approved work. ADR 558's resolution records approval of B1-B3 and ADR 559 G1; this record neither grants nor expands that approval. E1 remains held. No environment values or package policy are selected. Decision: Record 25 canonical positive",

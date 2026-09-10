@@ -502,4 +502,5 @@
 -   [568](568-root-attestation-identity-encoding.md) - Root attestation identity encoding
 -   [569](569-init-privilege-and-timeout-resolution.md) - Init privilege and timeout resolution (Proposed)
 -   [570](570-single-file-directory-authoring-regression.md) - Single-file directory authoring regression
+-   [572](572-broker-env-local-image-evidence.md) - Broker environment local image evidence (Recorded; E1 held)
 -   [573](573-rvb1-canonical-golden-vectors.md) - RVB1 canonical golden vectors
