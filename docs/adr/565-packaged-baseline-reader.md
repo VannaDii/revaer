@@ -71,3 +71,15 @@
   analyzers; this is secrets guidance, not semantic or published gate proof.
 - SQL shape/security proof, successful real sealed-row transport, full packaged
   verification, and runtime cutover are not established by this initial slice.
+
+### Integrated Review
+
+- The first full workspace test run exposed a captured-event assertion that
+  passed in the focused run but observed zero events under concurrent testing.
+  The test subscriber now declares per-event interest and an explicit maximum
+  level so shared callsite filtering cannot stand in for its thread-local
+  decision. Both the zero-event cancellation and one-event failure assertions
+  remain intact; this changes no production behavior or criterion.
+- The integrated full-gate rerun is required before claiming that regression
+  resolved. The separate media-profile and torrent-authoring E2E failures are
+  not addressed by this test-only change.

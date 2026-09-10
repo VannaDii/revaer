@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tracing::span::{Attributes, Id, Record};
+use tracing::subscriber::Interest;
 use tracing::{Event, Metadata, Subscriber};
 
 use super::{BaselineReadError, BaselineReadReason};
@@ -10,6 +11,16 @@ use super::{BaselineReadError, BaselineReadReason};
 struct EventCounter(Arc<AtomicUsize>);
 
 impl Subscriber for EventCounter {
+    fn register_callsite(&self, _: &'static Metadata<'static>) -> Interest {
+        // The workspace runs other tests at this callsite without this local
+        // subscriber. Re-evaluate the thread-local dispatch for every event.
+        Interest::sometimes()
+    }
+
+    fn max_level_hint(&self) -> Option<tracing::metadata::LevelFilter> {
+        Some(tracing::metadata::LevelFilter::TRACE)
+    }
+
     fn enabled(&self, _: &Metadata<'_>) -> bool {
         true
     }
