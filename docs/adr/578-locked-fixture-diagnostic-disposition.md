@@ -4,21 +4,23 @@
 - Date: 2026-09-10
 - Operator approval: 2026-09-10: "Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound."
 - Context:
-  - ADRs 575-576 establish that strict preparation rejects one locked upstream
-    fixture before real Rust conversion execution. Host FFprobe 9.0.1 and the
-    historical Linux arm64 image's 8.0.1 emit the same element-ID error.
+  - ADRs 575-576 established that preapproval strict preparation rejected one
+    locked upstream fixture before real Rust conversion execution. Host FFprobe
+    9.0.1 and the historical Linux arm64 image's 8.0.1 emit the same element-ID
+    error.
   - ADR 559 G1 reserves every quality-criterion change for explicit consent.
     Accepting this known error would change preparation admission, even with
     stronger assertions around it. It is not an internal implementation detail.
 - Decision: F1 accepted only within the exact test-only identity, diagnostic,
   tool-profile, evidence-retention and expiry conditions below.
 - Consequences:
-  - F1 would admit this particular recoverable probe observation into subsequent
+  - F1 admits this particular recoverable probe observation into subsequent
     validation without declaring the whole input valid or harmless.
   - Additional diagnostics, failed decode/conversion, missing evidence, or other
-    fixtures would remain failures. F1 alone cannot establish a conversion pass.
-- Follow-up: Implement only F1's exact scope and rerun real
-  preparation/conversion and the complete quality gates.
+    fixtures remain failures. F1 alone cannot establish a conversion pass.
+- Follow-up: Integrate the F1 implementation checkpoint below and rerun the
+  complete quality gates. Outstanding Linux conversion/package evidence remains
+  separate from the completed host conversion and Linux preparation checks.
 
 ## Approval Resolution
 
@@ -47,9 +49,11 @@ observations are not complete decode, playback, current-package, or amd64 proof.
 
 ## F1: Exact Test-Only Diagnostic Contract
 
-Recommendation, not authorization: preserve this locked input as a recovery
+Historical proposal wording, before the approval recorded above:
+"Recommendation, not authorization: preserve this locked input as a recovery
 fixture and permit only the observed single diagnostic during fixture
-preparation, with all of the following conditions:
+preparation, with all of the following conditions."
+The following conditions are now the approved F1 contract:
 
 1. Run the existing immutable acquisition checks first. Require the exact
    fixture ID, path, revision, SHA-256 and byte count above, and the unchanged
@@ -119,7 +123,9 @@ or overlong pointer text, extra lines, missing final LF, embedded NUL/CR, nonzer
 exit, malformed JSON, stream drift, lost raw evidence, and excess bytes. Verify
 that every other fixture still rejects unapproved stderr. Then rerun real
 source acquisition, preparation and conversion with each approved tool scope.
-This proposal contains no new test or runtime implementation.
+The original proposal contained no new test or runtime implementation. The
+approved implementation and its bounded proof are recorded in the checkpoint
+below; the remaining validation requirements are not waived.
 
 The current PR fixture job installs distribution `ffmpeg` on `ubuntu-latest`
 and records versions in its cache key. Its live runner version was not obtained
@@ -127,10 +133,10 @@ for this proposal. F1 does not assume that job uses either evidenced build or
 promise that it will pass. A different emitting tool version remains held;
 changing CI's tool provisioning needs its own reviewed scope and evidence.
 
-## Alternatives
+## Historical Alternatives
 
 - Keep the current zero-unapproved-diagnostic rule and remain blocked on this
-  source. This preserves criteria and is the default pending a decision.
+  source. This preserved criteria and was the default before F1 approval.
 - Replace or derive a clean positive live-stream sample and retain this locked
   source as a separately asserted negative/recovery case. This may separate
   conformance from recovery more clearly, but changes fixture semantics and
@@ -140,32 +146,41 @@ changing CI's tool provisioning needs its own reviewed scope and evidence.
 
 ## Task Record
 
-- Motivation: Give the operator the exact scope, retained guarantees, expiry
-  and remaining uncertainty for the observed conversion-preparation blocker.
-- Design notes: F1 is a proposal to change one test admission criterion. It is
-  deliberately not implemented, generalized, or represented as prior consent.
-- Test coverage summary: Reuses ADR 576's retained observations; no source was
-  reacquired for F1 and no F1-enabled test was executed. Restored-tree validation
-  is recorded separately in ADR 577 and does not validate this proposal.
-  New regression and full-gate requirements are listed above, not claimed met.
-- Observability updates: None activated. Proposed acceptance must retain native
-  stderr and explicit classification rather than manufacture quiet output.
-- Status-doc validation: Update ADR index, SUMMARY, catalog and completion
-  ledger with the hold. No public capability or production-readiness change.
+- Motivation: Implement the operator-approved narrow exception for the observed
+  conversion-preparation blocker, preserving its exact guarantees and expiry.
+- Design notes: The closed, identity-bound F1 contract is implemented in commit
+  `64bfa5394f4284d5db381e34d64763173279bb7f`. The
+  [implementation checkpoint](#f1-implementation-evidence-2026-09-10) records
+  its scope and remaining proof; it does not generalize the operator's consent.
+- Test coverage summary: The checkpoint records 70 F1 adversarial cases, fresh
+  acquisition of 22 locked sources, passing host conversion and historical
+  Linux preparation. Integrated CI/UI, Sonar and package validation remain with
+  the parent. ADR 576 remains preimplementation evidence, not a substitute for
+  the new checkpoint's test results.
+- Observability updates: F1 admission now retains and prints original native
+  stderr, the full tool report and explicit classification/count. Missing or
+  corrupted retained evidence fails admission, as exercised in the checkpoint.
+- Status-doc validation: This ADR records accepted scope and implemented local
+  evidence. The parent owns index, SUMMARY, catalog and completion-ledger
+  integration. No public capability or production-readiness claim follows.
 - Risk & rollback plan: An exception could normalize an unexpected error or
   conceal a regression. Pin identity/text/tool scope, fail closed on drift,
-  retain raw evidence and require new approval when it changes. Default remains
-  the existing failing rule; no runtime rollback is needed for this proposal.
-- Dependency rationale: No dependency or implementation added or approved.
+  retain raw evidence and require new approval when it changes. Reverting the
+  fixture-only implementation restores the previous strict preparation failure;
+  no production runtime rollback is needed.
+- Dependency rationale: No new dependency. The approved implementation uses
+  existing shell, jq, SHA-256 and filesystem tooling as detailed below.
 - Stale-policy check: Reviewed root/devops instructions, ADR 559 G1, ADRs
   575-576, fixture lock/manifest, strict probe verifier and its regressions,
-  the Rust suite, and PR fixture provisioning. No existing criterion, lock,
-  snapshot, test selection, runtime policy or GitHub rule was changed.
+  the Rust suite, and PR fixture provisioning. The only changed admission
+  criterion is the explicitly approved F1 exception. The dedicated devops rule
+  and fixture documentation describe it; lock, snapshots, test selection,
+  runtime policy, Sonar criteria and GitHub rules remain unchanged.
 
 ## F1 Implementation Evidence (2026-09-10)
 
-This section supersedes the preapproval task record's statements that F1 is
-unimplemented. It records only the explicitly approved F1 exception, implemented
+This is the implementation checkpoint referenced by the current task record.
+It records only the explicitly approved F1 exception, implemented
 from integration base `826a8f8e8668a3e6a91e99ef84c12b0e31df5ac2` in the assigned
 `work/media3-approved-fixture-diagnostic-20260910` branch. It grants no additional
 approval and does not satisfy the remaining integrated handoff requirements.
@@ -231,6 +246,13 @@ approval and does not satisfy the remaining integrated handoff requirements.
   Sonar and stack/package validation. No changed-file Sonar upload was made;
   source-upload consent is held by the parent. No GitHub mutation, push, current
   amd64/arm64 package pass, or all-service completion is claimed here.
+- Documentation follow-up: The current task record now references this
+  checkpoint and marks preapproval proposal language as historical.
+  `bash scripts/with-node.sh just docs-build` exits 0 but reports
+  `WARN search index is very large`; this is not warning-free documentation
+  validation. No search setting, indexing scope or warning criterion was
+  changed. The build log is retained as `adr578-record-docs-build.log` in the
+  evidence directory above; instruction-drift and whitespace checks pass.
 - Risk and rollback: The approved expiry conditions above are unchanged. A
   different emitting build, source, snapshot or diagnostic must fail and return
   for operator review. Reverting this bounded fixture-only patch restores the
