@@ -351,4 +351,144 @@ expect_failure "a stale PNG Sonar source after asset integration" "${case_root}"
 case_root="$(new_case integrated-asset-source)"
 run_guardrail "${case_root}" >/dev/null
 
+conversion_recipe="$(just --justfile "${baseline}/justfile" --show test-media-conversion)"
+
+case_root="$(new_case media-fixture-only)"
+replace_once "${case_root}/just/media.just" "$conversion_recipe" \
+  'test-media-conversion: verify-test-fixtures'
+expect_failure "fixture preparation without Rust conversion" "$case_root"
+
+case_root="$(new_case media-command-decoy)"
+replace_once "${case_root}/just/media.just" "$conversion_recipe" \
+  $'test-media-conversion: verify-test-fixtures\n\nunused-conversion-decoy:\n    # cargo test --test media_fixtures -- --include-ignored'
+expect_failure "a conversion command outside the real recipe" "$case_root"
+
+case_root="$(new_case media-named-test-filter)"
+replace_once "${case_root}/just/media.just" \
+  '--test media_fixtures -- --include-ignored' \
+  '--test media_fixtures missing_prepared_fixture_suite -- --include-ignored'
+expect_failure "a named filter capable of selecting zero tests" "$case_root"
+
+case_root="$(new_case media-ignored-suite-omitted)"
+replace_once "${case_root}/just/media.just" '-- --include-ignored' ''
+expect_failure "omitted ignored-test execution" "$case_root"
+
+case_root="$(new_case media-filtered-ignored-only)"
+replace_once "${case_root}/just/media.just" '--include-ignored' '--ignored'
+expect_failure "excluding the regular conversion binary tests" "$case_root"
+
+case_root="$(new_case media-feature-selection)"
+replace_once "${case_root}/just/media.just" '--all-features --test media_fixtures' \
+  '--test media_fixtures'
+expect_failure "reduced media feature selection" "$case_root"
+
+case_root="$(new_case media-warnings-allowed)"
+replace_once "${case_root}/just/media.just" '-Dwarnings' '-Awarnings'
+expect_failure "allowed conversion compiler warnings" "$case_root"
+
+case_root="$(new_case media-swallowed-rust-failure)"
+replace_once "${case_root}/just/media.just" '-- --include-ignored' \
+  '-- --include-ignored || true'
+expect_failure "a swallowed Rust conversion failure" "$case_root"
+
+case_root="$(new_case media-errexit-disabled)"
+replace_once "${case_root}/just/media.just" 'set -euo pipefail' 'set -uo pipefail'
+expect_failure "disabled conversion failure propagation" "$case_root"
+
+case_root="$(new_case media-preparation-report-reused)"
+replace_once "${case_root}/just/media.just" \
+  'REVAER_MEDIA_CONVERSION_REPORT="${report_path}.preparation"' \
+  'REVAER_MEDIA_CONVERSION_REPORT="${report_path}"'
+expect_failure "preparation written as the conversion report" "$case_root"
+
+case_root="$(new_case media-stale-report)"
+replace_once "${case_root}/just/media.just" 'rm -f -- "${report_path}"' \
+  '# stale reports were not removed'
+expect_failure "stale conversion evidence" "$case_root"
+
+case_root="$(new_case media-report-proof-removed)"
+replace_once "${case_root}/just/media.just" \
+  'grep -Eq -- '"'"'^- Video transcodes: [1-9][0-9]*$'"'"' "${report_path}"' \
+  'true'
+expect_failure "missing video-transcode evidence" "$case_root"
+
+case_root="$(new_case media-integrity-noop)"
+replace_once "${case_root}/just/media.just" \
+  'bash scripts/test-fixtures/verify-fixtures.sh' 'true'
+expect_failure "a no-op integrity prerequisite" "$case_root"
+
+recipe_root="$(new_case media-recipe-execution)"
+mkdir -p "$recipe_root/scripts/test-fixtures" "$recipe_root/stub-bin"
+cat >"$recipe_root/scripts/test-fixtures/verify-fixtures.sh" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'verify\n' >>"$REVAER_RECIPE_TRACE"
+test ! -e "$REVAER_GATE_REPORT"
+test "$REVAER_MEDIA_CONVERSION_REPORT" = "${REVAER_GATE_REPORT}.preparation"
+if [[ "$REVAER_RECIPE_CASE" == integrity-failure ]]; then exit 23; fi
+printf '%s\n' '- Outcome: passed' >"$REVAER_MEDIA_CONVERSION_REPORT"
+STUB
+cat >"$recipe_root/stub-bin/cargo" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'cargo\n' >>"$REVAER_RECIPE_TRACE"
+case "$REVAER_RECIPE_CASE" in
+  rust-failure) exit 41 ;;
+  missing-tool) exit 127 ;;
+  stale-success|zero-executed) exit 0 ;;
+  preparation-only)
+    cp "${REVAER_GATE_REPORT}.preparation" "$REVAER_MEDIA_CONVERSION_REPORT"
+    exit 0
+    ;;
+esac
+outcome=passed
+video_count=1
+audio_count=1
+if [[ "$REVAER_RECIPE_CASE" == failed-outcome ]]; then outcome=failed; fi
+if [[ "$REVAER_RECIPE_CASE" == zero-video ]]; then video_count=0; fi
+if [[ "$REVAER_RECIPE_CASE" == zero-audio ]]; then audio_count=0; fi
+printf '%s\n' \
+  "- Outcome: $outcome" \
+  '- Pipeline actions: 1' \
+  "- Video transcodes: $video_count" \
+  "- Audio transcodes: $audio_count" \
+  '- Pipeline failures: 0' \
+  '- Suite failures: 0' >"$REVAER_MEDIA_CONVERSION_REPORT"
+STUB
+chmod +x "$recipe_root/stub-bin/cargo"
+
+for recipe_case in success integrity-failure rust-failure missing-tool stale-success \
+  zero-executed preparation-only failed-outcome zero-video zero-audio; do
+  report="$recipe_root/$recipe_case.md"
+  trace="$recipe_root/$recipe_case.trace"
+  if [[ "$recipe_case" == stale-success || "$recipe_case" == integrity-failure ]]; then
+    printf '%s\n' '- Outcome: passed' '- Pipeline actions: 9' '- Video transcodes: 9' \
+      '- Audio transcodes: 9' '- Pipeline failures: 0' '- Suite failures: 0' >"$report"
+  fi
+  if PATH="$recipe_root/stub-bin:$PATH" \
+    REVAER_RECIPE_CASE="$recipe_case" REVAER_RECIPE_TRACE="$trace" \
+    REVAER_GATE_REPORT="$report" REVAER_MEDIA_CONVERSION_REPORT="$report" \
+    just --justfile "$recipe_root/justfile" test-media-conversion \
+      >"$recipe_root/$recipe_case.log" 2>&1; then
+    recipe_status=0
+  else
+    recipe_status=$?
+  fi
+  if [[ "$recipe_case" == success ]]; then
+    if [[ "$recipe_status" -ne 0 ]]; then
+      printf 'conversion recipe rejected fresh success evidence\n' >&2
+      exit 1
+    fi
+  elif [[ "$recipe_status" -eq 0 ]]; then
+    printf 'conversion recipe accepted failure case: %s\n' "$recipe_case" >&2
+    exit 1
+  fi
+  expected_trace=$'verify\ncargo'
+  if [[ "$recipe_case" == integrity-failure ]]; then expected_trace=verify; fi
+  if [[ "$(tr -d '\r' <"$trace")" != "$expected_trace" ]]; then
+    printf 'conversion recipe ordering changed: %s\n' "$recipe_case" >&2
+    exit 1
+  fi
+done
+
 printf '%s\n' "Workflow guardrail regression tests passed"

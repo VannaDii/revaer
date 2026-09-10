@@ -104,19 +104,21 @@ module WorkflowGuardrails
       @documents = {}
       @recipes = Set.new
       @recipe_owners = {}
+      @recipe_definitions = {}
       @sonar_entries = []
       @required_contexts = []
       @image_matrix = {}
       @source_inventory = []
     end
 
-    attr_reader :action_root, :documents, :image_matrix, :recipe_owners, :recipes,
+    attr_reader :action_root, :documents, :image_matrix, :recipe_definitions, :recipe_owners, :recipes,
                 :required_contexts, :root, :sonar_entries, :source_inventory,
                 :workflow_root
 
     def load
       validate_just_index
       load_recipes(File.join(@root, "justfile"), Set.new)
+      load_recipe_definitions
       load_yaml_documents
       load_sonar_properties
       load_required_contexts
@@ -189,6 +191,24 @@ module WorkflowGuardrails
         end
       end
       visited.delete(expanded)
+    end
+
+    def load_recipe_definitions
+      output, _stderr, status = Open3.capture3(
+        "just", "--justfile", path("justfile"), "--dump", "--dump-format", "json"
+      )
+      unless status.success?
+        @diagnostics.add("Just recipe metadata could not be parsed")
+        return
+      end
+      definitions = JSON.parse(output).fetch("recipes")
+      unless definitions.is_a?(Hash)
+        @diagnostics.add("Just recipe metadata must contain a recipe map")
+        return
+      end
+      @recipe_definitions = definitions
+    rescue Errno::ENOENT, JSON::ParserError, KeyError => e
+      @diagnostics.add("Just recipe metadata unavailable: #{e.class}")
     end
 
     def load_yaml_documents

@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T09:29:47.132072+00:00",
+  "generated": "2026-09-10T09:55:13.463431+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4925,6 +4925,18 @@
         "validation-evidence"
       ],
       "href": "/adr/574-root-input-contract/"
+    },
+    {
+      "id": "adr/575-media-conversion-gate",
+      "title": "Media conversion gate restoration",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The parent assigned a bounded independent validation restoration at 32a49c4b353bd5ebf2077929e0ecf2417382b517. ADR 574, the completion ledger, runtime code, fixture assertions, and remote settings are outside this task. The PR workflow already calls just test-media-conversion, but that recipe only depended on verify-test-fixtures and had no Rust command. The preparation script checked locked media and probes, then wrote a passed preparation report to the same path used for runtime conversion evidence. [ADR 477](477-stacked-pr-check-emission.md) explicitly requires strengthening the canonical gate with production-adapter tests when the runtime exists. The existing ignored verify_prepared_fixture_suite calls",
+      "tags": [
+        "execution-and-evidence",
+        "failing-fixture-provenance",
+        "task-record",
+        "validation-record"
+      ],
+      "href": "/adr/575-media-conversion-gate/"
     },
     {
       "id": "adr/index",

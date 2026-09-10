@@ -46,6 +46,7 @@ module WorkflowGuardrails
       validate_required_pr_job_conditions
       validate_udeps_contract
       validate_database_rebaseline_contract
+      validate_media_conversion_recipes
       validate_supply_chain_aggregate
       validate_ui_coverage_aggregate
       validate_image_workflow_contract
@@ -217,6 +218,41 @@ module WorkflowGuardrails
       verification = named_step(aggregate, "Verify all UI E2E shard coverage inputs")
       unless verification&.dig("run") == "just ui-e2e-shard-coverage"
         error("UI E2E Coverage must prove nonempty records from all three shards through just")
+      end
+    end
+
+    def validate_media_conversion_recipes
+      conversion_body = <<~'RECIPE'.lines(chomp: true).map { |line| [line] }
+        #!/usr/bin/env bash
+        set -euo pipefail
+        report_path="${REVAER_MEDIA_CONVERSION_REPORT:-target/media-conversion-report.md}"
+        rm -f -- "${report_path}"
+        REVAER_MEDIA_CONVERSION_REPORT="${report_path}.preparation" just verify-test-fixtures
+        cargo --config 'build.rustflags=["-Dwarnings"]' test \
+            -p revaer-media-runtime --all-features --test media_fixtures -- --include-ignored
+        test -s "${report_path}"
+        grep -Fxq -- '- Outcome: passed' "${report_path}"
+        grep -Eq -- '^- Pipeline actions: [1-9][0-9]*$' "${report_path}"
+        grep -Eq -- '^- Video transcodes: [1-9][0-9]*$' "${report_path}"
+        grep -Eq -- '^- Audio transcodes: [1-9][0-9]*$' "${report_path}"
+        grep -Fxq -- '- Pipeline failures: 0' "${report_path}"
+        grep -Fxq -- '- Suite failures: 0' "${report_path}"
+      RECIPE
+      contracts = {
+        "test-media-conversion" => {"body" => conversion_body, "shebang" => true},
+        "verify-test-fixtures" => {
+          "body" => [["bash scripts/test-fixtures/verify-fixtures.sh"]],
+          "shebang" => false
+        }
+      }
+      contracts.each do |name, contract|
+        expected = contract.merge("attributes" => [], "parameters" => [], "dependencies" => [], "priors" => 0)
+        recipe = @inputs.recipe_definitions[name]
+        next if @inputs.recipe_owners[name] == "just/media.just" &&
+          recipe.is_a?(Hash) && expected.all? { |field, value| recipe[field] == value }
+
+        error("#{name} must preserve ordered integrity/Rust execution, unfiltered all-feature " \
+          "media_fixtures --include-ignored, denied warnings, fresh conversion evidence, and failures")
       end
     end
 
