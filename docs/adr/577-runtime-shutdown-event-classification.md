@@ -173,3 +173,75 @@ is active, tested as approved, pushed, or part of a release claim.
   boundary, current bootstrap, PR 194's diff and ADR 576 evidence. Corrected this
   task's Recorded/nonarchitectural assertion to Proposed/Pending, and removed
   active instructions/recipe entries for the unapproved runtime change.
+
+## S1 Implementation Evidence (2026-09-10)
+
+This fresh implementation starts from approval-record commit `826a8f8e` on
+`work/media3-approved-shutdown-events-20260910`. It does not cherry-pick the
+earlier combined prototype. The historical checkpoints above remain historical;
+the following evidence applies only to the approved S1 change.
+
+- Motivation and design: the immediate stop helper records whether it requested
+  abort; the graceful helper marks only its existing post-timeout abort path as
+  locally requested. The shared join-error logger requires both that request
+  and a real cancelled `JoinError` before emitting INFO. Panics and cancellations
+  without the local request retain WARN. Grace expiry retains its separate WARN.
+- Observable contract: join errors retain the complete displayed `error` and
+  structured `task` fields. Requested cancellation uses
+  `runtime task cancelled after shutdown abort request`; other join failures use
+  `runtime task join failed`. Filesystem joins use the existing immediate stop
+  helper with task `fsops`; already-finished configuration joins use task
+  `config_watcher` with the request flag false.
+- S2 remains held. The unfinished configuration watcher still executes its
+  original `abort()` and WARN, then drops the handle without awaiting it. No
+  deadline, retry, native-process, broker, recovery, fixture, database, Sonar or
+  GitHub criterion changes. A source-contract regression supplements the real
+  join tests by asserting this exact held path remains unchanged.
+- Test coverage: `bootstrap/shutdown_tests.rs` and its scoped support module
+  exercise actual Tokio tasks, real cancellation and panic `JoinError`s, and
+  drop witnesses. Eleven asynchronous cases cover requested abort, completed
+  success, completed external cancellation, completed panic, graceful success,
+  external cancellation and panic during grace, grace expiry and observed abort
+  completion, panic during locally requested abort, panic after grace expiry,
+  and completed configuration joins. Assertions compare exact event levels,
+  messages, task/error fields, ordering, counts and cleanup completion. The
+  additional source-contract case protects the held S2 path.
+- Event isolation: a future-scoped event subscriber rechecks callsite interest
+  per subscriber. It neither installs a global subscriber nor changes production
+  filters or the panic hook. `--show-output` retains captured event records and
+  deliberate panic-hook output as failure-path evidence.
+- `just test-runtime-shutdown lint-runtime-shutdown` passed: 12 tests in each
+  app feature configuration, zero failures or ignored tests, plus all-target and
+  production panic-free Clippy passes in both configurations. Warnings are
+  denied. The final log is
+  `/private/tmp/revaer-s1-shutdown-final-gates-20260910.log`.
+- `just policy` passed with a disposable `GNUPGHOME`, removed on exit. The first
+  attempt was blocked when GPG tried to open the sandbox-protected personal
+  trust database; isolation preserved the same committed-key fingerprint check
+  without modifying the personal keyring or verification criteria. Logs are
+  `/private/tmp/revaer-s1-shutdown-guardrails-20260910.log` and
+  `/private/tmp/revaer-s1-shutdown-guardrails-isolated-20260910.log`.
+- The first focused Clippy run rejected an explicit conditional panic in the
+  test drop witness. Replacing it with the equivalent assertion resolved the
+  finding without suppression; its diagnostic remains in
+  `/private/tmp/revaer-s1-shutdown-lint-20260910.log`.
+- Dependency rationale: no new dependency, manifest or lockfile change. Tests
+  use existing Tokio, tracing, anyhow and standard-library facilities.
+- Risk and rollback: consumers matching the old filesystem/configuration
+  join-failure strings must account for the approved common message and task
+  field. A local abort request still does not prove exclusive cancellation
+  causality. Reverting this S1-only patch restores prior classification without
+  changing shutdown lifecycle. No bounded-shutdown claim follows.
+- Stale-policy check: reviewed root, Rust, devops and Sonar scoped instructions
+  and the full ADR. The new focused Just recipes and corresponding devops rule
+  explicitly preserve S2's hold and the integrated gates. No policy relaxation,
+  unrelated historical-record rewrite, catalog or index change is included.
+- Integration limits: full `just ci`, `just ui-e2e`, workspace feature-unification
+  validation, strict Sonar and applicable GitHub checks remain parent-owned and
+  are not claimed by these focused results. The unfinished-watcher WARN is
+  intentionally still present; S1 is not a claim of warning-free full CI.
+- Final local hygiene: `just fmt instruction-drift clean-test-fixtures` and
+  `git diff --check` passed. No media, database, server or container was needed
+  for the Tokio tests. The worktree-owned 5.1 GiB build directory was removed,
+  all ignored fixture directories are absent, and raw logs remain outside the
+  worktree. No Sonar source upload, push or PR operation was performed.

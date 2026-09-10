@@ -70,6 +70,16 @@ lint: policy
 check:
     cargo --config 'build.rustflags=["-Dwarnings"]' check --workspace --all-targets --all-features
 
+test-runtime-shutdown:
+    cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --all-features --lib bootstrap::shutdown_tests -- --show-output
+    cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --no-default-features --lib bootstrap::shutdown_tests -- --show-output
+
+lint-runtime-shutdown:
+    cargo clippy -p revaer-app --all-targets --all-features -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate
+    cargo clippy -p revaer-app --all-targets --no-default-features -- -D warnings -W clippy::cargo -W clippy::nursery -A clippy::multiple_crate_versions -A clippy::redundant_pub_crate
+    cargo clippy -p revaer-app --lib --bins --examples --all-features -- -D warnings -W clippy::expect_used -W clippy::panic -W clippy::todo -W clippy::unimplemented -W clippy::unreachable -W clippy::unwrap_used
+    cargo clippy -p revaer-app --lib --bins --examples --no-default-features -- -D warnings -W clippy::expect_used -W clippy::panic -W clippy::todo -W clippy::unimplemented -W clippy::unreachable -W clippy::unwrap_used
+
 test:
     REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \

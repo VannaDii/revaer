@@ -370,16 +370,11 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
 
     #[cfg(feature = "libtorrent")]
     {
-        if !fsops_worker.is_finished() {
-            fsops_worker.abort();
-        }
-        if let Err(err) = fsops_worker.await {
-            warn!(error = %err, "fsops worker join failed");
-        }
+        stop_runtime_task(fsops_worker, "fsops").await;
 
         if config_task.is_finished() {
             if let Err(err) = config_task.await {
-                warn!(error = %err, "config watcher task join failed");
+                log_runtime_task_join_error(&err, "config_watcher", false);
             }
         } else {
             config_task.abort();
@@ -456,11 +451,12 @@ async fn stop_media_runtime_tasks(tasks: MediaRuntimeTasks) {
 }
 
 async fn stop_runtime_task<T>(task: tokio::task::JoinHandle<T>, task_name: &'static str) {
-    if !task.is_finished() {
+    let abort_requested = !task.is_finished();
+    if abort_requested {
         task.abort();
     }
     if let Err(err) = task.await {
-        warn!(error = %err, task = task_name, "runtime task join failed");
+        log_runtime_task_join_error(&err, task_name, abort_requested);
     }
 }
 
@@ -471,14 +467,14 @@ async fn stop_runtime_task_gracefully<T>(
 ) {
     if task.is_finished() {
         if let Err(err) = task.await {
-            warn!(error = %err, task = task_name, "runtime task join failed");
+            log_runtime_task_join_error(&err, task_name, false);
         }
         return;
     }
 
     if let Ok(result) = tokio::time::timeout(grace, &mut task).await {
         if let Err(err) = result {
-            warn!(error = %err, task = task_name, "runtime task join failed");
+            log_runtime_task_join_error(&err, task_name, false);
         }
     } else {
         task.abort();
@@ -487,8 +483,20 @@ async fn stop_runtime_task_gracefully<T>(
             "runtime task aborted after graceful shutdown timeout"
         );
         if let Err(err) = task.await {
-            warn!(error = %err, task = task_name, "runtime task join failed");
+            log_runtime_task_join_error(&err, task_name, true);
         }
+    }
+}
+
+fn log_runtime_task_join_error(
+    error: &tokio::task::JoinError,
+    task_name: &'static str,
+    abort_requested: bool,
+) {
+    if abort_requested && error.is_cancelled() {
+        info!(error = %error, task = task_name, "runtime task cancelled after shutdown abort request");
+    } else {
+        warn!(error = %error, task = task_name, "runtime task join failed");
     }
 }
 
@@ -822,3 +830,7 @@ fn publish_event(events: &EventBus, event: revaer_events::Event) {
 #[cfg(test)]
 #[path = "bootstrap/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bootstrap/shutdown_tests.rs"]
+mod shutdown_tests;
