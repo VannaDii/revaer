@@ -1,16 +1,28 @@
 # Media decision review and approval delta
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-09
-- Operator approval: Pending
+- Operator approval: 2026-09-09: "ADRs 557-559 are approved according to the resolution"
+
+## Approval Resolution
+
+The operator accepted ADRs 557-559 as reconciled in commit `e8be2459`, including
+R1-R4, B1-B3, and the narrow G1 boundary below. E1 remains an evidence and
+exact-value approval hold; the other remaining holds are not waived. This
+approval permits implementation within those boundaries, not a declaration of
+readiness or a change to any quality criterion. The operator separately adopted
+and activated the full first-release completion goal in this conversation.
+
+The tables preserve the review delta. Historical conditional and proposal
+wording records what was reviewed; it does not leave the accepted decisions
+pending or imply that the retained holds have been released.
 
 ## Context
 
-The operator requested reconciliation of ADRs 557 and 558, an exact approval
-delta, and a replacement goal statement. That request approves preparation of
-these documents, not their recommendations, production implementation, changes
-to quality criteria, or activation of a new goal. The existing goal is paused
-and is not changed by this record.
+The operator first requested reconciliation of ADRs 557 and 558, an exact
+approval delta, and a replacement goal statement. That preparation request
+alone was not consent. The later explicit approval and goal activation are
+recorded above without relaxing retained evidence or decision gates.
 
 The comparison baseline is ADR 557 at `bfb68bf` and ADR 558 at `fb0f6eb`.
 The review branch starts from integration commit `7fd5df30`, including accepted
@@ -45,7 +57,7 @@ source scope: the proposed advisory lock is keyed by source attestation rather
 than one profile version. API and YAML binding mutations now share one
 catalog/source/parent lock order rather than invert source and parent locks.
 These corrections and their cross-profile/concurrent tests remain
-part of R1's pending persistence contract. No runtime race was reproduced or
+part of R1's accepted persistence contract. No runtime race was reproduced or
 fixed by this documentation change.
 
 ## G1: Architecture Versus Implementation Detail
@@ -60,7 +72,7 @@ fixed by this documentation change.
 3. Give agents general architectural discretion. Reject this: it conflicts with
    the operator's explicit rule and is not requested.
 
-### Proposed Boundary
+### Approved Boundary
 
 - Examples of internal detail: private Rust symbol names, helper decomposition
   within existing ownership boundaries, and numeric tags for a private unshipped
@@ -87,12 +99,12 @@ fixed by this documentation change.
 - Ambiguous changes remain on the architectural side of the boundary. The agent
   writes and presents a Proposed ADR and pauses only the affected work; unrelated
   already-authorized work can continue.
-- G1 is pending. Until accepted, existing approval requirements apply without
-  modification. Agreement to prepare this reconciliation is not approval of G1.
+- G1 is accepted only within this narrow boundary. Architectural and exact
+  accepted-contract changes still need decision-specific approval.
 
 ## Remaining Holds
 
-Approving these revisions would permit work within their accepted boundaries,
+Approval of these revisions permits work within their accepted boundaries,
 not release all previously held behavior. At minimum, the saved accepted
 contracts still identify these dependencies:
 
@@ -105,11 +117,11 @@ contracts still identify these dependencies:
 | Database baseline | 522, 541, 551 | Final init lifecycle/role grants, pristine-schema and baseline verification, and coordinated retirement of migration authority. The assembled candidate alone is not a cutover. |
 
 This is a known-hold list, not a claim to have exhaustively re-audited all
-accepted ADRs. Before activating the replacement goal, complete the decision and
+accepted ADRs. At the start of the activated goal, complete the decision and
 requirement ledger against the chosen repository revision. Do not turn a held
 included capability into an excluded capability to declare success.
 
-## Proposed Replacement Goal
+## Adopted Completion Goal
 
 Complete and merge Revaer's full first-release media transcoding feature as a
 production-usable v0 service, implementing the included scope in
@@ -183,9 +195,9 @@ and delete acquired/generated test media after every turn.
 - Revalidate after restacking or changes to the reviewed revision. Diagnose
   repeated failures from evidence; stop retrying an unchanged failing condition
   without a concrete new action.
-- This is a proposed statement for the next goal, not an activation command or
-  approval of pending ADRs. Record the operator's decisions and remaining holds
-  first, then set the agreed objective when the operator asks to pursue it.
+- The operator separately activated the full first-release objective and then
+  approved this resolution. Goal activation alone does not approve a held
+  decision, and approval alone does not provide completion evidence.
 
 ## Consequences
 

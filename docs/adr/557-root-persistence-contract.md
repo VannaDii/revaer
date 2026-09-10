@@ -1,13 +1,21 @@
 # Root persistence, binding, and administration contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
-- Operator approval: Pending
-- Review revision: 2026-09-09; revision requested, decisions not yet approved
+- Operator approval: 2026-09-09: "ADRs 557-559 are approved according to the resolution"
+- Review revision: 2026-09-09; accepted as reconciled in ADR 559
+
+## Approval Resolution
+
+The operator approved the reconciled R1-R4 contract, including the full appendix,
+and the shared G1 boundary in ADR 559. This records architectural authority, not
+implemented behavior or passing validation. The unresolved holds below remain
+in force. Historical proposal and approval-request wording describes the review
+leading to this decision; this resolution controls its approval status.
 
 ## Decision Review
 
-This is a proposal, not a new implementation or a record of acceptance. ADRs
+This is an accepted contract, not a new implementation. ADRs
 523 and 550 already select deployment-owned path authority, verified roots,
 logical bindings, and immutable job evidence. The remaining decisions are
 listed here so approving those principles is not confused with accepting every
@@ -35,17 +43,16 @@ constraints, not new capabilities offered by this revision.
 
 ### Approval Boundary
 
-- The current operator request authorizes revising and reviewing these documents
-  only. R1-R4 remain pending; neither code nor architecture is approved by this
-  task record.
-- The proposed G1 distinction in [the approval delta](559-media-approval-delta.md)
+- The operator approved R1-R4 according to the reconciled resolution. Implement
+  within this contract; do not claim working behavior from approval alone.
+- The accepted G1 distinction in [the approval delta](559-media-approval-delta.md)
   separates private internal naming/layout choices from authority, persistence
   semantics, public interfaces, limits, compatibility, and quality criteria.
-  Until G1 is explicitly approved, the existing exact-contract approval rules
-  remain in force. No change to an accepted predecessor ADR is implied.
+  Existing exact accepted-contract constraints remain fixed under G1. No change
+  to an accepted predecessor ADR is implied beyond the named resolution.
 - The appendix below remains the concrete implementation baseline. Its relational
   invariants, transaction/fencing semantics, public contracts, visibility rules,
-  and bounds are substantive parts of this proposal. G1 would permit only
+  and bounds are substantive parts of this contract. G1 permits only
   semantics-preserving internal refinements through normal reviewed changes,
   with the appendix and tests kept synchronized.
 - ADR 516 still withholds automatic discovery and destructive aggregate use.
@@ -140,7 +147,7 @@ constraints, not new capabilities offered by this revision.
 
 - Adopt option 3 with the authority, immutable lifecycle, transaction, API,
   bound, and cutover semantics below. Internal names and layouts remain the
-  proposed implementation baseline subject only to the pending G1 distinction.
+  accepted implementation baseline subject only to the narrow G1 distinction.
 - Place every relation, helper, trigger, and procedure named by this proposal in
   schema `public`, matching the accepted media procedure surface and using the
   ADR 551 owner/grant model. Names below omit `public.` only for readability;
@@ -1476,15 +1483,15 @@ constraints, not new capabilities offered by this revision.
   reads, normalized operator resources and bounds, backup-root ownership,
   packaged init lifecycle, and the owner/runtime privilege model.
 
-### Approval requested by this proposal
+### Approved Scope
 
-- Approval would authorize only the normalized relational contract and fields,
+- Approval authorizes only the normalized relational contract and fields,
   normalized allowed-kind rows, attestation and generation framing, immutable
   lifecycle, atomic reconciliation ABI, logical version bindings, exact job
   root row shape, staleness behavior, procedure grants, HTTP/YAML/UI contracts,
   limits, whole-root prefix semantics, and later init-only legacy retirement
-  specified here. Internal refinements require the separate pending G1 decision;
-  no operator delegation is assumed.
+  specified here. Internal refinements follow only the accepted G1 boundary;
+  no broader operator delegation is assumed.
 - The newly requested choices include `public` schema placement; the exact
   root-key and relative-path validators; latest/active version heads and draft
   semantics; separate source and attestation state; repeated semantic
@@ -1493,7 +1500,7 @@ constraints, not new capabilities offered by this revision.
   change; binding-versus-destructive readiness; the 128 active-association bound;
   the procedure ABI/grants; and use of the current API-key boundary for the only
   path-bearing HTTP response.
-- Approval would not authorize an implementation outside these semantics and bounds,
+- Approval does not authorize an implementation outside these semantics and bounds,
   raw path mutation, automatic rebinding, catalog reload, database-authored
   slots, JSON/array persistence, distinct output, cross-slot replacement,
   automatic discovery activation, unsupported platforms, table grants, a new
@@ -1549,8 +1556,8 @@ constraints, not new capabilities offered by this revision.
 4. R4: Do you approve 128 active discovery associations per profile version as
    a hard capacity limit, not a demonstrated throughput claim?
 
-The pending G1 question is recorded once in the approval delta. Accepting R1-R4
-without G1 keeps the existing exact-implementation approval boundary intact.
+R1-R4 and the shared G1 boundary were accepted according to ADR 559's resolution.
+The questions above are retained as the decision's review history.
 
 ## Unresolved Gaps
 
@@ -1568,10 +1575,8 @@ without G1 keeps the existing exact-implementation approval boundary intact.
 
 ## Follow-Up
 
-- Present R1-R4 and the separate G1 question for decision-specific approval. Do not
-  implement or push SQL, Rust, API, YAML, UI, or package behavior before that
-  approval.
-- If accepted, implement outside in: authenticated API/OpenAPI contract tests;
+- Implement only within the accepted R1-R4/G1 resolution and retained holds.
+- Implement outside in: authenticated API/OpenAPI contract tests;
   UI root/profile/association workflows; typed API and application services;
   stored-procedure ABI and normalized final-init relations; bootstrap source and
   descriptor proof; profile/association persistence; five-row job admission and

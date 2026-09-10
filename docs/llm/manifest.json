@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T05:40:42.417842+00:00",
+  "generated": "2026-09-10T06:02:14.992012+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4675,8 +4675,9 @@
     {
       "id": "adr/557-root-persistence-contract",
       "title": "Root persistence, binding, and administration contract",
-      "summary": "Status: Proposed Date: 2026-08-16 Operator approval: Pending Review revision: 2026-09-09; revision requested, decisions not yet approved",
+      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: 2026-09-09: \"ADRs 557-559 are approved according to the resolution\" Review revision: 2026-09-09; accepted as reconciled in ADR 559",
       "tags": [
+        "approval-resolution",
         "atomic-bootstrap-reconciliation",
         "authorization-boundary",
         "consequences",
@@ -4713,9 +4714,10 @@
     {
       "id": "adr/558-rvb1-native-process-broker-wire-contract",
       "title": "RVB1 native process broker wire and lifecycle contract",
-      "summary": "Status: Proposed Date: 2026-08-16 Decision-review revision: 2026-09-09 Operator approval: Pending",
+      "summary": "Status: Accepted Date: 2026-08-16 Decision-review revision: 2026-09-09 Operator approval: 2026-09-09: \"ADRs 557-559 are approved according to the resolution\"",
       "tags": [
         "annex-a-exact-codec-draft-for-review",
+        "approval-resolution",
         "consequences",
         "context",
         "decision-summary-and-approval-delta",
@@ -4732,13 +4734,14 @@
     {
       "id": "adr/559-media-approval-delta",
       "title": "Media decision review and approval delta",
-      "summary": "Status: Proposed Date: 2026-09-09 Operator approval: Pending",
+      "summary": "Status: Accepted Date: 2026-09-09 Operator approval: 2026-09-09: \"ADRs 557-559 are approved according to the resolution\"",
       "tags": [
+        "adopted-completion-goal",
+        "approval-resolution",
         "consequences",
         "context",
         "decision-delta",
         "g1-architecture-versus-implementation-detail",
-        "proposed-replacement-goal",
         "remaining-holds",
         "task-record",
         "validation-record"

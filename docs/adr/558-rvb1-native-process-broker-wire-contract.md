@@ -1,15 +1,24 @@
 # RVB1 native process broker wire and lifecycle contract
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
 - Decision-review revision: 2026-09-09
-- Operator approval: Pending
+- Operator approval: 2026-09-09: "ADRs 557-559 are approved according to the resolution"
+
+## Approval Resolution
+
+The operator approved reconciled B1-B3 and ADR 559's shared G1 boundary. E1's
+exact environment path, values, bytes, digest, and package changes remain held
+for Linux package evidence and separate exact-value approval, as the resolution
+requires. Approval does not prove implementation or containment. Historical
+proposal and approval-request wording describes the review leading to this
+decision; this resolution controls its approval status.
 
 ## Decision Summary And Approval Delta
 
-This is a revised proposal, not acceptance or implementation authority. Accepted
+This is an accepted revised contract, not implementation evidence. Accepted
 ADRs 514, 549, and 554 remain binding. Relative to the draft at `fb0f6eba`, the
-operator is being asked to decide these separately:
+operator accepted B1-B3 and G1 while retaining the separate E1 hold:
 
 | Decision | Recommendation and delta |
 | --- | --- |
@@ -120,17 +129,16 @@ activating it remains separate from revising these proposals.
 
 ## Recommendation
 
-Approve or reject B1-B3 individually, with E1 explicitly held pending evidence
-and separate exact-value approval. The lifecycle and authority sections propose
-semantics; Annex A retains the exact encoding draft for review. Nothing here
-records operator acceptance.
+B1-B3 are approved according to the reconciled resolution. E1 remains explicitly
+held pending evidence and separate exact-value approval. The lifecycle and
+authority sections define the approved semantics; Annex A retains the concrete
+encoding contract. Approval does not establish implementation readiness.
 
 ### Shared Governance Reference (G1)
 
-ADR 559 owns G1, the proposed delegation for semantics-preserving private
-internal names and unshipped codec assignments. This ADR proposes no competing
-delegation. G1 itself requires explicit approval. Before that approval, all
-existing approval obligations apply; approving B1-B3 does not approve G1 or E1.
+ADR 559 owns accepted G1, the narrow delegation for semantics-preserving private
+internal names and unshipped codec assignments. This ADR creates no competing
+delegation. The operator approved G1 with B1-B3; none of them resolves E1.
 
 Annex A separates exact codec detail for review, not exemption. Values, layouts,
 bounds, and every other obligation fixed in accepted ADR 554 or another accepted
@@ -389,7 +397,7 @@ aggregate application-shutdown deadline truncates graceful waiting. Failure to
 prove absence skips replacement and is fatal failed recovery, even if a later
 observation might become clean.
 
-The proposed B3 budget interpretation starts the 30-second recovery-incident
+The accepted B3 budget interpretation starts the 30-second recovery-incident
 clock when loss is detected. Cleanup and the single replacement must fit inside
 it; they cannot consume 30 seconds each. The replacement's own outer clock is
 recorded before fresh-thread creation, includes validation/spawn, and cannot
@@ -401,11 +409,12 @@ explicit without increasing it or silently assigning an extra cleanup budget.
 The requested B3 reconciliation is specific: ADR 554's Process And Containment
 Model requires outer recovery termination after 30 seconds, while its Startup,
 Recovery, And Readiness section grants a replacement the same 30-second outer
-deadline after cleanup. B3 proposes one incident ceiling, with each replacement
+deadline after cleanup. B3 selects one incident ceiling, with each replacement
 limited to the remaining time rather than guaranteed a fresh 30 seconds. This
-interpretation is not inferred from the August approval or delegated by G1; it
-requires the operator's explicit B3 decision. No accepted predecessor text is
-modified by this proposal revision.
+interpretation is authorized by the operator's explicit reconciled B3 approval,
+not inferred from the August approval or delegated by G1. This named resolution
+controls the predecessor's conflicting fresh-replacement-deadline wording;
+all other accepted bounds remain unchanged.
 
 After successful absence proof the manager makes exactly one replacement attempt
 on a fresh thread with a new nonce and request ID reset to 1 after handshake.
@@ -526,16 +535,16 @@ environment, protocol bytes, native output, or secondary evidence.
 
 ## Implementation Boundary
 
-- This revision records no approval. An eventual decision must name B1, B2, and
-  B3 separately and state any amendment. E1 requires package evidence plus
+- This revision records approval of B1-B3 according to the reconciled resolution.
+  E1 requires package evidence plus
   separate approval of the exact manifest path, values, bytes, digest, and any
   package changes. Approval of lifecycle behavior does not resolve E1.
-- G1 is solely the shared proposed governance item in ADR 559. Unless explicitly
-  approved, accepted ADR 554's existing exact-value approval obligations remain
-  in force. Even an approved G1 does not change an accepted constant, layout,
+- G1 is solely the shared accepted governance item in ADR 559. ADR 554's existing
+  exact-value constraints remain in force except for the named reconciled B1-B3
+  decisions. G1 does not change an accepted constant, layout,
   bound, or semantic requirement. A superseding change must be separately named
   and approved; nothing in this record implicitly supersedes ADR 514, 519, 549,
-  or 554.
+  or any other part of ADR 554.
 - Neither these decisions nor G1 authorize a socket, sidecar, additional lane,
   configurable pool, second recovery attempt for one incident, direct-spawn fallback,
   request-provided environment, path-only production identity, new dependency,
@@ -649,10 +658,8 @@ environment, protocol bytes, native output, or secondary evidence.
 
 ## Follow-Up
 
-- Present this Proposed ADR for decision-specific operator approval.
-- Record the operator's actual B1-B3/G1 decisions and E1 hold in the consolidated
-  ADR 559 review before adopting its proposed goal. Preparing that draft does
-  not activate it and cannot record consent on the operator's behalf.
+- Preserve the recorded B1-B3/G1 approvals and E1 hold in ADR 559. Continue
+  independent approved work without claiming E1-dependent production readiness.
 - After the applicable approvals and E1 evidence/approval, implement outside in:
   package containment and lifecycle tests, known-answer protocol tests, codec,
   internal mode, environment and executable authority, manager lifecycle,
