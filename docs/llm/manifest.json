@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T18:56:18.447783+00:00",
+  "generated": "2026-09-10T19:28:46.614440+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4805,6 +4805,7 @@
         "approved-work-integration-checkpoint",
         "critical-path-and-decision-queue",
         "evidence-boundary",
+        "helper-compilation-and-sonar-follow-through",
         "integrated-gate-checkpoint-for-the-approved-decisions",
         "ledger-validation",
         "outside-in-ledger",
@@ -5003,6 +5004,16 @@
         "task-record"
       ],
       "href": "/adr/579-ingestion-policy-temporary-table-lifetime/"
+    },
+    {
+      "id": "adr/580-ingestion-helper-compilation-evidence",
+      "title": "Ingestion helper compilation evidence",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Conditional D3 in ADR 569 requires independent compilation-context evidence, not just equality against a rewritten reference. The existing six cold cases did not call helpers before ingestion. Decision: Extend the disposable proof within the already-approved D3 investigation. Preserve the frozen reference, candidate digest, constrained direct runtime connection, caller settings and required successful second committed call. Do not modify production routines, grant privileges, activate the init candidate or implement Proposed D4 in ADR 579. Consequences: Six cases now execute after nine pure helpers have been called directly in the",
+      "tags": [
+        "integrated-validation",
+        "task-record"
+      ],
+      "href": "/adr/580-ingestion-helper-compilation-evidence/"
     },
     {
       "id": "adr/index",

@@ -11,8 +11,16 @@ module RevaerDatabaseRebaseline
     def run_tests!
       @assertions = 0
       @runtime = "ingestion_test_runtime"
+      @ingestion_inventory = {
+        "reference_proof" => { "routines" => [{
+          "name" => "search_result_ingest_v1", "signature" => "search_result_ingest_v1(uuid)",
+          "source" => "fixture line\n" * 140
+        }] }
+      }
       argument_tests!
       framing_tests!
+      diagnostic_tests!
+      helper_first_tests!
       session_control_tests!
       normalization_tests!
       cleanup_tests!
@@ -57,7 +65,9 @@ module RevaerDatabaseRebaseline
     end
 
     def sample_stderr
-      "ERROR:  P0001: Failed to ingest search result\nDETAIL:  search_request_missing\n"
+      "ERROR:  P0001: Failed to ingest search result\nDETAIL:  search_request_missing\n" \
+        "CONTEXT:  PL/pgSQL function search_result_ingest_v1(uuid) line 131 at RAISE\n" \
+        "LOCATION:  exec_stmt_raise, pl_exec.c:3897\n"
     end
 
     def framing_tests!
@@ -75,8 +85,37 @@ module RevaerDatabaseRebaseline
       rejected("framing is incomplete") { ingestion_parse(sample_stdout, "", role: @runtime) }
       changed = ingestion_parse(sample_stdout, sample_stderr.sub("search_request_missing", "different_detail"), role: @runtime)
       assert(actual != changed, "error details must affect parity")
-      hint = ingestion_parse(sample_stdout, sample_stderr + "HINT:  retained hint\n", role: @runtime)
+      hint = ingestion_parse(sample_stdout, sample_stderr.sub("CONTEXT:", "HINT:  retained hint\nCONTEXT:"), role: @runtime)
       assert(actual != hint, "error hints must affect parity")
+    end
+
+    def diagnostic_tests!
+      expected = ingestion_diagnostics(sample_stderr, role: @runtime)
+      assert(expected.first.fetch("line") == 130, "only the exact D3 line offset may normalize")
+      assert(expected == ingestion_diagnostics(sample_stderr.sub("line 131", "line 130"), role: "postgres"), "D3 reference/final stack locations must align")
+      assert(expected != ingestion_diagnostics(sample_stderr.sub("line 131", "line 132"), role: @runtime), "other stack locations must affect parity")
+      assert(expected != ingestion_diagnostics(sample_stderr.sub("pl_exec.c:3897", "pl_exec.c:3898"), role: @runtime), "native diagnostic location must affect parity")
+      ["state: BROKEN\n", "state: 00000 trailing\n", "state: \n"].each do |record|
+        rejected("unrecognized record") { ingestion_parse(sample_stdout + record, sample_stderr, role: @runtime) }
+      end
+      ["NOTICE: extra\n", "WARNING: extra\n", "arbitrary stderr\n", "DETAIL: extra\n"].each do |record|
+        rejected("unrecognized record") { ingestion_parse(sample_stdout, sample_stderr + record, role: @runtime) }
+        rejected("unrecognized record") { ingestion_parse(sample_stdout, record + sample_stderr, role: @runtime) }
+      end
+      rejected("unrecognized record") { ingestion_diagnostics(sample_stderr.sub("CONTEXT:", "CONTEXT: extra\n"), role: @runtime) }
+      rejected("unrecognized record") { ingestion_diagnostics(sample_stderr.delete_suffix("\n"), role: @runtime) }
+      rejected("outside the frozen routine") { ingestion_diagnostics(sample_stderr.sub("line 131", "line 1"), role: @runtime) }
+      rejected("outside the frozen routine") { ingestion_diagnostics(sample_stderr.sub("line 131", "line 999999"), role: @runtime) }
+      rejected("signature differs") { ingestion_diagnostics(sample_stderr.sub("ingest_v1(uuid)", "ingest_v1(text)"), role: @runtime) }
+      statement = "SELECT proof\n  FROM frozen_fixture"
+      @ingestion_inventory.fetch("reference_proof").fetch("routines").first["source"] += statement
+      multiline = sample_stderr.sub("CONTEXT:  ", "CONTEXT:  SQL statement \"#{statement}\"\n")
+      assert(ingestion_diagnostics(multiline, role: @runtime).first.fetch("statement").include?(statement), "multiline diagnostic SQL must be retained")
+      rejected("outside the frozen routine") { ingestion_diagnostics(multiline.sub("frozen_fixture", "changed_fixture"), role: @runtime) }
+      rejected("outside the frozen routine") { ingestion_diagnostics(multiline.sub("FROM frozen_fixture", "NOTICE: concealed"), role: @runtime) }
+      ["", "\n"].each do |empty|
+        rejected("outside the frozen routine") { ingestion_diagnostics(multiline.sub(statement, empty), role: @runtime) }
+      end
     end
 
     def sample_value
@@ -91,6 +130,39 @@ module RevaerDatabaseRebaseline
           "canonical_torrent_source" => [{ "canonical_torrent_source_id" => 2, "canonical_torrent_source_public_id" => source, "canonical_torrent_id" => 1 }]
         }
       }
+    end
+
+    def helper_first_tests!
+      cases = ingestion_cases
+      assert(cases.length == 13, "retain six cold cases, six helper-first cases and the warm counterexample")
+      assert(cases.count { |entry| entry[3] } == 6, "all cold cases must repeat after helper compilation")
+      expected = ingestion_helper_expectations
+      assert(expected.keys.sort == INGESTION_HELPERS.reject { |name| %w[search_result_ingest_v1 log_source_metadata_conflict_v1].include?(name) }.sort, "pure helper inventory changed")
+      warm = ingestion_session({}, helpers_first: true)
+      assert(warm.index("SELECT 'helpers:'") < warm.index("SAVEPOINT ingestion_call;"), "helpers must compile before ingestion")
+      assert(!ingestion_session({}).include?("SELECT 'helpers:'"), "cold cases must retain uncompiled helpers")
+      assert(!warm.include?("SET plpgsql.variable_conflict") && !warm.include?("SET ROLE") && !warm.include?("DISCARD"), "helper-first proof must not change session authority")
+      expected.each_key do |name|
+        assert(warm.include?("public.#{name}("), "missing direct helper call: #{name}")
+      end
+      record = "helpers:#{JSON.generate(expected)}\n"
+      stdout = sample_stdout.sub("state:", "#{record}state:")
+      actual = ingestion_parse(stdout, sample_stderr, role: @runtime, helpers_first: true)
+      assert(actual.fetch("helpers") == [expected], "exact helper outputs must be retained")
+      rejected("known answers") { ingestion_parse(sample_stdout, sample_stderr, role: @runtime, helpers_first: true) }
+      rejected("known answers") { ingestion_parse(stdout, sample_stderr, role: @runtime) }
+      rejected("known answers") { ingestion_parse(stdout + record, sample_stderr, role: @runtime, helpers_first: true) }
+      expected.each_key do |name|
+        changed = JSON.parse(JSON.generate(expected))
+        changed.fetch(name)[0] = "unexpected"
+        changed_record = "helpers:#{JSON.generate(changed)}\n"
+        rejected("known answers") { ingestion_parse(stdout.sub(record, changed_record), sample_stderr, role: @runtime, helpers_first: true) }
+      end
+      rejected("not observed before") { ingestion_parse(sample_stdout + record, sample_stderr, role: @runtime, helpers_first: true) }
+      rejected("not observed before") { ingestion_parse(record + sample_stdout, sample_stderr, role: @runtime, helpers_first: true) }
+      result = JSON.generate(sample_value.fetch("results").first) + "\n"
+      late = sample_stdout.sub("state: P0001", "#{result}#{record}state: 00000")
+      rejected("not observed before") { ingestion_parse(late, "", role: @runtime, helpers_first: true) }
     end
 
     def session_control_tests!

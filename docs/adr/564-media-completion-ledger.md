@@ -445,6 +445,26 @@ The user checkout is unchanged. Logs, failed database proof and non-media
 coverage inputs are retained under the private temporary evidence directory;
 the real F1 conversion evidence remains in its separate private directory.
 
+## Helper Compilation And Sonar Follow-Through
+
+[ADR 580](580-ingestion-helper-compilation-evidence.md) records six added
+helper-first cases within conditional D3. Forty-two exact answers across nine
+pure helpers are checked before ingestion in each case, under unchanged caller
+settings. The full proof still fails the required successful warm second call;
+no complete helper/trigger closure or certified final baseline follows.
+Independent review also tightened malformed-record rejection and diagnostic
+identity/ordering checks. Frozen migrations and final-init bytes are unchanged.
+
+The operator subsequently granted the source-upload permission requested above:
+"This command is approved and permission to upload to the service is granted"
+(2026-09-10). The exact `sonar verify` command for
+`scripts/database_rebaseline/final_sql.rb` then ran and returned HTTP 403:
+Agentic Analysis is unavailable for the organization. A complete-file Ruby MAIN
+analysis through the Sonar MCP tool for `VannaDii_Revaer` returned zero issues.
+This is only that file's result, not coverage publication or a full quality-gate
+pass. The authoritative local scanner also lacks its required `SONAR_TOKEN`.
+No scanner criteria or architectural approval hold changed.
+
 ## Task Record
 
 - Motivation: Provide a bounded completion ledger while the integrating agent

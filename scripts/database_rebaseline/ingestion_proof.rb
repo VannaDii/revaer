@@ -23,7 +23,7 @@ module RevaerDatabaseRebaseline
     INGESTION_UUID = /\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/
     INGESTION_PENDING = [
       "complete ingestion branch and helper execution matrix",
-      "helper-first compilation outside ingestion before warm calls",
+      "mutating helper-first compilation and complete warm-cache call paths",
       "in-call setting observations and reachable native/trigger/dynamic-call closure"
     ].freeze
     INGESTION_ARGUMENTS = {
@@ -55,14 +55,15 @@ module RevaerDatabaseRebaseline
       @ingestion_stop = "proof interrupted before acceptance"
       ingestion_inventory!
       verify_ingestion_session_controls!
-      ingestion_cases.each do |name, changes, expected|
-        query = ingestion_session(changes, repeat: name == "warm-committed")
+      ingestion_cases.each do |name, changes, expected, helpers_first|
+        helpers_first = helpers_first == true
+        query = ingestion_session(changes, repeat: name == "warm-committed", helpers_first:)
         File.binwrite(File.join(@ingestion_evidence, "#{name}.sql"), query)
-        reference = ingestion_isolated(name, query, source: "reference_proof", role: "postgres", variant: "reference")
-        final = ingestion_isolated(name, query, source: @database, role: @runtime, variant: "final")
+        reference = ingestion_isolated(name, query, source: "reference_proof", role: "postgres", variant: "reference", helpers_first:)
+        final = ingestion_isolated(name, query, source: @database, role: @runtime, variant: "final", helpers_first:)
         equivalent = reference == final
         accepted = equivalent && reference.fetch("states") == expected
-        @ingestion_results << { name:, expected:, reference:, final:, equivalent:, accepted: }
+        @ingestion_results << { name:, expected:, helpers_first:, reference:, final:, equivalent:, accepted: }
         check("ingestion #{name} observed application parity", equivalent)
         check("ingestion #{name} required outcome", accepted)
         next if accepted
@@ -126,15 +127,16 @@ module RevaerDatabaseRebaseline
     end
 
     def ingestion_cases
-      [
+      cold = [
         ["request-missing", { search_request_public_id_input: "NULL::uuid" }, ["P0001"]],
         ["instance-missing", { indexer_instance_public_id_input: "NULL::uuid" }, ["P0001"]],
         ["new-v1", {}, ["00000"]],
         ["new-v2", { infohash_v2_input: "repeat('b', 64)::char(64)" }, ["00000"]],
         ["new-magnet", { infohash_v1_input: "NULL::char(40)", magnet_uri_input: "'magnet:?dn=Proof&xt=opaque'::varchar" }, ["00000"]],
-        ["new-title-size", { infohash_v1_input: "NULL::char(40)" }, ["00000"]],
-        ["warm-committed", {}, ["00000", "00000"]]
+        ["new-title-size", { infohash_v1_input: "NULL::char(40)" }, ["00000"]]
       ]
+      cold + cold.map { |name, changes, expected| ["helpers-first-#{name}", changes, expected, true] } +
+        [["warm-committed", {}, ["00000", "00000"]]]
     end
 
     def ingestion_call(changes)
@@ -145,7 +147,7 @@ module RevaerDatabaseRebaseline
       "SELECT row_to_json(r) FROM public.search_result_ingest_v1(#{arguments}) r;"
     end
 
-    def ingestion_session(changes, repeat: false)
+    def ingestion_session(changes, repeat: false, helpers_first: false)
       second = if repeat
                  <<~SQL
                    COMMIT;
@@ -173,6 +175,7 @@ module RevaerDatabaseRebaseline
           'superuser', r.rolsuper, 'create_role', r.rolcreaterole, 'bypass_rls', r.rolbypassrls)::text
           FROM pg_roles r WHERE r.rolname = current_user;
         SELECT 'before:' || COALESCE(current_setting('plpgsql.variable_conflict', true), '<unloaded>');
+        #{helpers_first ? File.binread(File.expand_path('../tests/database-ingestion-helper-first.sql', __dir__)) : ''}
         SAVEPOINT ingestion_call;
         \\set ON_ERROR_STOP off
         #{ingestion_call(changes)}
@@ -229,7 +232,7 @@ module RevaerDatabaseRebaseline
       lines.select { |line| line.start_with?("writes:") }
     end
 
-    def ingestion_isolated(name, query, source:, role:, variant:)
+    def ingestion_isolated(name, query, source:, role:, variant:, helpers_first: false)
       database = "ingestion_#{variant}_proof"
       created = false
       begin
@@ -239,7 +242,7 @@ module RevaerDatabaseRebaseline
         seed = File.binread(File.expand_path("../tests/database-ingestion-proof-seed.sql", __dir__))
         sql(seed, role: "postgres", database:)
         before = ingestion_snapshot(database)
-        value = ingestion_execute(name, query, role:, database:, variant:)
+        value = ingestion_execute(name, query, role:, database:, variant:, helpers_first:)
         after = ingestion_snapshot(database)
         snapshots = { "before" => before, "after" => after }
         File.write(File.join(@ingestion_evidence, "#{name}-#{variant}-tables.json"), JSON.pretty_generate(snapshots) + "\n")
@@ -256,18 +259,18 @@ module RevaerDatabaseRebaseline
       JSON.parse(sql("SELECT json_build_object(#{pairs.join(',')});", role: "postgres", database:))
     end
 
-    def ingestion_execute(name, query, role:, database:, variant:)
+    def ingestion_execute(name, query, role:, database:, variant:, helpers_first: false)
       outcome = result(query, role:, database:)
       File.binwrite(File.join(@ingestion_evidence, "#{name}-#{variant}.stdout"), outcome.stdout)
       File.binwrite(File.join(@ingestion_evidence, "#{name}-#{variant}.stderr"), outcome.stderr)
       raise Failure, "ingestion proof transport failed" unless outcome.success && !outcome.stderr.match?(/\bWARNING\b/)
 
-      ingestion_parse(outcome.stdout, outcome.stderr, role:)
+      ingestion_parse(outcome.stdout, outcome.stderr, role:, helpers_first:)
     end
 
-    def ingestion_parse(stdout, stderr, role:)
+    def ingestion_parse(stdout, stderr, role:, helpers_first: false)
       lines = stdout.lines.map(&:strip)
-      unless lines.all? { |line| line.match?(/\A(?:clock:|role:|before:|after:|state: |\{)/) }
+      unless lines.all? { |line| line.match?(/\A(?:(?:clock:|role:|before:|helpers:|after:|\{).*|state: [0-9A-Z]{5})\z/) }
         raise Failure, "ingestion stdout contains an unrecognized record"
       end
       states = lines.filter_map { |line| line[/\Astate: ([0-9A-Z]{5})\z/, 1] }
@@ -279,9 +282,10 @@ module RevaerDatabaseRebaseline
       if role == @runtime && roles.first.values_at("superuser", "create_role", "bypass_rls") != [false, false, false]
         raise Failure, "ingestion final runtime gained a forbidden capability"
       end
-      errors = stderr.lines.filter_map { |line| line[/\AERROR:  ([0-9A-Z]{5}: .*?)\s*\z/, 1] }
-      details = stderr.lines.filter_map { |line| line[/\ADETAIL:  (.*?)\s*\z/, 1] }
-      hints = stderr.lines.filter_map { |line| line[/\AHINT:  (.*?)\s*\z/, 1] }
+      diagnostics = ingestion_diagnostics(stderr, role:)
+      errors = diagnostics.map { |entry| entry.fetch("error") }
+      details = diagnostics.filter_map { |entry| entry.fetch("detail") }
+      hints = diagnostics.filter_map { |entry| entry.fetch("hint") }
       unless !states.empty? && results.length == states.count("00000") && errors.map { |value| value[0, 5] } == states.reject { |state| state == "00000" }
         raise Failure, "ingestion result/error framing is incomplete"
       end
@@ -292,8 +296,63 @@ module RevaerDatabaseRebaseline
       clocks = lines.grep(/\Aclock:/).map { |line| JSON.parse(line.delete_prefix("clock:")) }
       raise Failure, "ingestion transaction clock evidence missing" unless clocks.length == states.length
 
-      { "states" => states, "results" => results, "errors" => errors, "details" => details, "hints" => hints,
-        "clocks" => clocks, "caller_settings" => { "before" => before, "after" => after } }
+      helpers = lines.grep(/\Ahelpers:/).map { |line| JSON.parse(line.delete_prefix("helpers:")) }
+      expected_helpers = helpers_first ? [ingestion_helper_expectations] : []
+      raise Failure, "ingestion helper-first known answers changed or missing" unless helpers == expected_helpers
+      if helpers_first
+        helper_position = lines.index { |line| line.start_with?("helpers:") }
+        before_position = lines.index { |line| line.start_with?("before:") }
+        result_position = lines.index { |line| line.start_with?("state:", "{") }
+        unless before_position < helper_position && helper_position < result_position
+          raise Failure, "ingestion helpers were not observed before ingestion"
+        end
+      end
+
+      { "states" => states, "results" => results, "errors" => errors, "details" => details, "hints" => hints, "diagnostics" => diagnostics,
+        "clocks" => clocks, "helpers" => helpers, "caller_settings" => { "before" => before, "after" => after } }
+    end
+
+    def ingestion_diagnostics(stderr, role:)
+      stderr.split(/(?=^ERROR:  )/).map do |record|
+        frame = record.match(/\AERROR:  (?<error>[0-9A-Z]{5}: [^\n]+)\n(?:DETAIL:  (?<detail>[^\n]+)\n)?(?:HINT:  (?<hint>[^\n]+)\n)?CONTEXT:  (?:(?<statement>SQL statement "[^"]*")\n)?(?<routine>PL\/pgSQL function search_result_ingest_v1\([^\n]+\)) line (?<line>[1-9][0-9]*) at (?<operation>RAISE|SQL statement)\nLOCATION:  (?<location>[A-Za-z0-9_]+, [A-Za-z0-9_]+\.c:[1-9][0-9]*)\n\z/)
+        raise Failure, "ingestion diagnostic contains an unrecognized record" unless frame
+
+        entry = frame.named_captures
+        routine = @ingestion_inventory.fetch("reference_proof").fetch("routines").find { |value| value.fetch("name") == "search_result_ingest_v1" }
+        unless routine && entry.fetch("routine") == "PL/pgSQL function #{routine.fetch('signature')}"
+          raise Failure, "ingestion diagnostic signature differs from the frozen routine"
+        end
+        source = routine.fetch("source")
+        if entry.fetch("statement")
+          statement = entry.fetch("statement").delete_prefix('SQL statement "').delete_suffix('"')
+          unless !statement.strip.empty? && source.include?(statement)
+            raise Failure, "ingestion diagnostic SQL is outside the frozen routine"
+          end
+        end
+        # The independently checked D3 directive adds exactly one source line.
+        line = Integer(entry.fetch("line")) - (role == @runtime ? 1 : 0)
+        unless line.positive? && line <= source.lines.length
+          raise Failure, "ingestion diagnostic line is outside the frozen routine"
+        end
+
+        entry.merge("line" => line)
+      end
+    end
+
+    def ingestion_helper_expectations
+      {
+        "normalize_title_v1" => [nil, "proof"],
+        "normalize_magnet_uri_v1" => [nil, nil, "https://example.invalid/proof", "magnet:?", "magnet:?dn=Proof&xt=opaque"],
+        "derive_magnet_hash_v1" => [nil, Digest::SHA256.hexdigest(["b" * 64].pack("H*")),
+                                    Digest::SHA256.hexdigest(["a" * 40].pack("H*")),
+                                    Digest::SHA256.hexdigest("magnet:?dn=Proof&xt=opaque")],
+        "compute_title_size_hash_v1" => [nil, nil, Digest::SHA256.hexdigest("proof|1024")],
+        "policy_text_match_v1" => [false, true, true, true, true, true, false, true, false, false, false],
+        "policy_uuid_match_v1" => [false, true, false, false],
+        "policy_int_match_v1" => [false, true, false, false],
+        "policy_release_group_match_v1" => [true, false, false],
+        "policy_action_to_decision_type" => %w[drop_canonical drop_source downrank flag flag flag]
+      }
     end
 
     def ingestion_comparable(value)
