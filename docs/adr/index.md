@@ -493,3 +493,4 @@
 -   [559](559-media-approval-delta.md) – Media decision review and approval delta (Accepted)
 -   [560](560-dependency-audit-refresh.md) – Dependency audit refresh and policy precedence
 -   [561](561-root-source-contract-corrections.md) – Root source contract corrections
+-   [563](563-missing-init-candidate-diagnostic.md) – Missing init candidate diagnostic

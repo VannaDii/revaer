@@ -150,8 +150,8 @@ module RevaerDatabaseRebaseline
     def verify_candidate!(path = candidate_path)
       source = File.binread(path)
       verify_candidate_source!(source)
-    rescue Errno::ENOENT => error
-      raise Failure, "candidate is missing: #{error.path}"
+    rescue Errno::ENOENT
+      raise Failure, "candidate is missing: #{relative(path)}"
     end
 
     def verify_candidate_source!(source)

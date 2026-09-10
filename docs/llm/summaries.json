@@ -4774,6 +4774,15 @@
     "href": "/adr/561-root-source-contract-corrections/"
   },
   {
+    "id": "adr/563-missing-init-candidate-diagnostic",
+    "title": "Missing init candidate diagnostic",
+    "summary": "Status: Recorded Date: 2026-09-09 Operator approval: Not applicable: nonarchitectural task record Context: Running just db-init-prefix-check in a clean worktree before generating candidate evidence raised NoMethodError: Errno::ENOENT does not provide the path method used by the error handler. Decision: Report the existing candidate-missing failure using the method's known path, rendered relative to the repository. Preserve failure status and all digest, statement-count, frozen-corpus, and prefix checks. Consequences: Missing evidence now produces a useful operational diagnostic, not an exception while reporting the original failure. It never counts as a pass. Follow-up: Generate candidate evidence through just db-rebaseline-candidate before checking the assembly prefix. This",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/563-missing-init-candidate-diagnostic/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",

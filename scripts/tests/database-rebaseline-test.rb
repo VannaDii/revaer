@@ -372,6 +372,20 @@ module DatabaseRebaselineTest
     end
 
     with_fixture do |fixture|
+      assertions.failure(
+        /\Acandidate is missing: target\/database-rebaseline\/init-candidate\.sql\z/,
+        "missing candidate reports the bounded operational diagnostic"
+      ) do
+        fixture.contract.verify_candidate!
+      end
+      assertions.failure(
+        /\Acandidate is missing: target\/database-rebaseline\/alternate\.sql\z/,
+        "missing explicit candidate reports the supplied relative path"
+      ) do
+        fixture.contract.verify_candidate!(
+          File.join(fixture.contract.output_path, "alternate.sql")
+        )
+      end
       candidate = "-- candidate\nSELECT 1;\nSELECT $$a;b$$;\n"
       fixture.pin_candidate(candidate)
       File.binwrite(fixture.init_path, "-- candidate\nSELECT 1;\n")

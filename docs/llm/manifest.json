@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T06:10:34.867827+00:00",
+  "generated": "2026-09-10T06:21:18.576543+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4775,6 +4775,15 @@
         "task-record"
       ],
       "href": "/adr/561-root-source-contract-corrections/"
+    },
+    {
+      "id": "adr/563-missing-init-candidate-diagnostic",
+      "title": "Missing init candidate diagnostic",
+      "summary": "Status: Recorded Date: 2026-09-09 Operator approval: Not applicable: nonarchitectural task record Context: Running just db-init-prefix-check in a clean worktree before generating candidate evidence raised NoMethodError: Errno::ENOENT does not provide the path method used by the error handler. Decision: Report the existing candidate-missing failure using the method's known path, rendered relative to the repository. Preserve failure status and all digest, statement-count, frozen-corpus, and prefix checks. Consequences: Missing evidence now produces a useful operational diagnostic, not an exception while reporting the original failure. It never counts as a pass. Follow-up: Generate candidate evidence through just db-rebaseline-candidate before checking the assembly prefix. This",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/563-missing-init-candidate-diagnostic/"
     },
     {
       "id": "adr/index",
