@@ -1,4 +1,4 @@
--- Revaer pre-v1 init candidate. Assembly-only until ADR 522 cutover.
+-- Revaer pre-v1 packaged database baseline.
 -- Frozen migration corpus SHA-256: 966d3a286c7fb6f221987fd4906e9fc25cd19fe4729afd70405dee6b72a6bbac
 -- Generated with PostgreSQL 16.14 from docker.io/library/postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
 
@@ -10,9 +10,6 @@
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
 
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -25851,8 +25848,8 @@ $$;
 
 CREATE FUNCTION public.search_result_ingest_v1(search_request_public_id_input uuid, indexer_instance_public_id_input uuid, source_guid_input character varying, details_url_input character varying, download_url_input character varying, magnet_uri_input character varying, title_raw_input character varying, size_bytes_input bigint, infohash_v1_input character, infohash_v2_input character, magnet_hash_input character, seeders_input integer, leechers_input integer, published_at_input timestamp with time zone, uploader_input character varying, observed_at_input timestamp with time zone, attr_keys_input public.observation_attr_key[], attr_types_input public.attr_value_type[], attr_value_text_input character varying[], attr_value_int_input integer[], attr_value_bigint_input bigint[], attr_value_numeric_input numeric[], attr_value_bool_input boolean[], attr_value_uuid_input uuid[]) RETURNS TABLE(canonical_torrent_public_id uuid, canonical_torrent_source_public_id uuid, observation_created boolean, durable_source_created boolean, canonical_changed boolean)
     LANGUAGE plpgsql
-    SET "plpgsql.variable_conflict" TO 'use_column'
     AS $_$
+#variable_conflict use_column
 DECLARE
     base_message CONSTANT text := 'Failed to ingest search result';
     errcode CONSTANT text := 'P0001';
@@ -44628,3 +44625,1240 @@ ALTER TABLE ONLY revaer_runtime.torrent_files
 SET search_path = public, revaer_config, revaer_runtime;
 SELECT revaer_config.factory_reset();
 RESET search_path;
+
+-- ADR 551 finalization: lifecycle and explicit authored routine privileges.
+CREATE SCHEMA revaer_system;
+ALTER SCHEMA public OWNER TO CURRENT_USER;
+
+CREATE TABLE revaer_system.database_baseline (
+    baseline_id smallint NOT NULL,
+    contract_version smallint NOT NULL,
+    init_sha256 bytea NOT NULL,
+    postgres_version_num integer NOT NULL,
+    schema_owner_role name NOT NULL,
+    runtime_role name NOT NULL,
+    sealed_at timestamptz NOT NULL,
+    CONSTRAINT database_baseline_pkey PRIMARY KEY (baseline_id),
+    CONSTRAINT database_baseline_singleton CHECK (baseline_id = 1),
+    CONSTRAINT database_baseline_contract_v1 CHECK (contract_version = 1),
+    CONSTRAINT database_baseline_sha256_length CHECK (octet_length(init_sha256) = 32),
+    CONSTRAINT database_baseline_postgres_16_14 CHECK (postgres_version_num = 160014),
+    CONSTRAINT database_baseline_owner_nonempty CHECK (length(schema_owner_role::text) BETWEEN 1 AND 63),
+    CONSTRAINT database_baseline_runtime_nonempty CHECK (length(runtime_role::text) BETWEEN 1 AND 63),
+    CONSTRAINT database_baseline_distinct_roles CHECK (schema_owner_role <> runtime_role)
+);
+
+-- Generated authored routine security begins.
+ALTER FUNCTION public.policy_action_to_decision_type(public.policy_action) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_create(character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_create_v1(character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_update(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_update_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_verify_email(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.app_user_verify_email_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_disambiguation_rule_create(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_disambiguation_rule_create_v1(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_merge_by_infohash(character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_merge_by_infohash_v1(character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_prune_low_confidence() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_prune_low_confidence_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_recompute_best_source(uuid, public.scoring_context) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.canonical_recompute_best_source_v1(uuid, public.scoring_context) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.compute_title_size_hash(text, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.compute_title_size_hash_v1(text, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.deployment_init(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.deployment_init_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.derive_magnet_hash(text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.derive_magnet_hash_v1(text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_create(uuid, public.import_source, boolean, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_create_v1(uuid, public.import_source, boolean, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_get_status(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_get_status_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_list_results(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_list_results_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_run_prowlarr_api(uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_run_prowlarr_api_v1(uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_run_prowlarr_backup(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_run_prowlarr_backup_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_claim_next() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_claim_next_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_mark_terminal(uuid, public.import_job_status, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_mark_terminal_v1(uuid, public.import_job_status, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_record_result(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.import_job_worker_record_result_v1(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_assert_actor_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_indexer_instance_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_indexer_instance_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_rate_limit_policy_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_rate_limit_policy_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_routing_policy_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_routing_policy_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_tag_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_backup_export_tag_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_cf_state_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_cf_state_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_cf_state_reset(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_cf_state_reset_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_connectivity_profile_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_connectivity_profile_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_begin(uuid, character varying, character varying, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_begin_v1(uuid, character varying, character varying, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_complete(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_complete_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_field(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_import_cardigann_field_v1(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_definition_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_event_list(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_event_list_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_create(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_create_v1(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_delete(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_delete_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_update(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_health_notification_hook_update_v1(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_create(uuid, character varying, character varying, integer, public.trust_tier_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_create_v1(uuid, character varying, character varying, integer, public.trust_tier_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_field_bind_secret(uuid, uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_field_bind_secret_v1(uuid, uuid, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_field_set_value(uuid, uuid, character varying, character varying, integer, numeric, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_field_set_value_v1(uuid, uuid, character varying, character varying, integer, numeric, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_media_domains(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_media_domains_v1(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_rate_limit_policy(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_rate_limit_policy_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_tags(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_set_tags_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_test_finalize(uuid, uuid, boolean, public.error_class, character varying, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_test_finalize_v1(uuid, uuid, boolean, public.error_class, character varying, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_test_prepare(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_test_prepare_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_update(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_instance_update_v1(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_policy_set_rule_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_policy_set_rule_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_item_seen_list(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_item_seen_list_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_item_seen_mark(uuid, uuid, character varying, character, character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_item_seen_mark_v1(uuid, uuid, character varying, character, character, character) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_disable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_disable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_set(uuid, uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_rss_subscription_set_v1(uuid, uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_search_profile_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_search_profile_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_source_reputation_list(uuid, uuid, public.reputation_window, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_source_reputation_list_v1(uuid, uuid, public.reputation_window, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_torznab_instance_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.indexer_torznab_instance_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_claim_lease_seconds(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_claim_lease_seconds_v1(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.job_claim_next(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_claim_next_v1(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_base_score_refresh_recent() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_base_score_refresh_recent_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_base_score_refresh_recent_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_backfill_best_source() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_backfill_best_source_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_backfill_best_source_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_prune_low_confidence() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_canonical_prune_low_confidence_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_connectivity_profile_refresh() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_connectivity_profile_refresh_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_connectivity_profile_refresh_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_gc() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_gc_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_gc_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_refcount_repair() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_refcount_repair_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_policy_snapshot_refcount_repair_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rate_limit_state_purge() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rate_limit_state_purge_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rate_limit_state_purge_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_reputation_rollup(public.reputation_window) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_reputation_rollup_v1(public.reputation_window) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_reputation_rollup_v2(public.reputation_window) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_retention_purge() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_retention_purge_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_retention_purge_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rss_subscription_backfill() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rss_subscription_backfill_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_run_rss_subscription_backfill_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_schedule_mark_completed(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.job_schedule_mark_completed_v1(public.job_key) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.log_source_metadata_conflict(bigint, bigint, public.conflict_type, text, text, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.log_source_metadata_conflict_v1(bigint, bigint, public.conflict_type, text, text, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_actor_id_for_public_id_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_app_error_code_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_audio_channel_layout_count_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_capability_run_status_completed_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_capability_run_status_failed_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_capability_run_status_running_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_capability_snapshot_encoder_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_encoder_record_v1(uuid, uuid, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_feature_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_feature_record_v1(uuid, uuid, text, text, boolean, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_latest_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_latest_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_record_v1(uuid, text, text, text, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_record_v2(uuid, uuid, text, text, text, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_run_complete_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_capability_snapshot_run_start_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_compatibility_target_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_compatibility_target_upsert_v1(uuid, text, integer, text, text, text, integer, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_create_v1(uuid, text, integer, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_graph_page_v1(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v1(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v2(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v3(uuid, text, text, text, text, boolean, integer, text, integer, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v4(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, integer, text, text, text, text, text, boolean, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_append_v5(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_count_bounded_v1(bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_insert_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_limit_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_desired_target_stream_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_list_v2(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_list_v3(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_list_v4(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_stream_list_v5(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_desired_target_validate_and_activate_v1(bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_job_enqueue_v1(uuid, uuid, text, text, bigint, bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_job_enqueue_v2(uuid, uuid, text, text, text, bigint, bigint, bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_job_enqueue_v3(uuid, uuid, text, text, boolean, text, bigint, bigint, bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_root_assert_current_v1(uuid, text, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_schedule_claim_v1(uuid, text, bigint, bigint, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_schedule_create_v1(uuid, uuid, integer, text, integer, boolean, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_watcher_create_v1(uuid, uuid, integer, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_discovery_watcher_start_v1(uuid, text, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_display_valid_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_domain_seed_defaults() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_domain_to_torznab_category_delete(uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_domain_to_torznab_category_delete_v1(uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_domain_to_torznab_category_upsert(uuid, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_domain_to_torznab_category_upsert_v1(uuid, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_artifact_append_v1(uuid, bigint, integer, text, text, bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_artifact_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_artifact_path_is_managed_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_attempt_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_attempt_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_cancel_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_cancel_v2(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_capture_configuration_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_cleanup_completed_v1(timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_cleanup_failed_terminal_diagnostics_v1(timestamp with time zone, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_compact_audit_append_v1(uuid, bigint, integer, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_compact_audit_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_configuration_immutable_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_create_v1(uuid, uuid, text, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_current_attempt_required_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_current_attempt_v1(uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_audio_constraints_snapshot_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_snapshot_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_stream_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_stream_list_v2(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_stream_list_v3(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_stream_list_v4(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_desired_target_stream_list_v5(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_get_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_initial_attempt_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_list_v1(uuid, public.media_job_status, integer, timestamp with time zone, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_mark_completed_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_normalized_absolute_path_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_operation_append_v1(uuid, bigint, integer, text, integer, text, text, text, text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_operation_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_phase_append_v1(uuid, bigint, integer, text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_phase_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_plan_reason_append_v1(uuid, bigint, integer, integer, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_plan_reason_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_recent_page_v1(integer, timestamp with time zone, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_batch_limit_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_retention_policy_get_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_policy_get_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_policy_update_v1(uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_policy_update_v2(uuid, boolean, text, integer, boolean, text, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retention_run_v1(timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_retry_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_snapshot_source_fingerprint_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_snapshot_update_rejected_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_status_cancelled_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_completed_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_failed_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_queued_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_running_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_status_verifying_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_job_terminal_outbox_list_unpublished_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_terminal_outbox_mark_published_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_validate_path_within_root_v1(text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_verification_check_append_v1(uuid, bigint, integer, text, text, text, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_verification_check_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_violation_append_v1(uuid, bigint, integer, text, text, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_violation_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_acknowledge_cancel_v1(uuid, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_claim_next_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_claim_next_v4() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_commit_replacement_terminal_v1(uuid, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_complete_v1(uuid, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_heartbeat_v1(uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_mark_status_v1(uuid, bigint, public.media_job_status, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_poll_control_v1(uuid, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_recover_stale_v1(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_job_worker_recover_stale_v1(uuid, bigint, timestamp with time zone, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_key_valid_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_anime_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_archival_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_behavior_set_v1(uuid, text, integer, text, text, text, text, text, text, boolean, boolean, text, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_compatibility_target_append_v1(uuid, text, integer, text, integer, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_component_version_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_general_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_maintenance_window_append_v1(uuid, text, integer, smallint, time without time zone, time without time zone, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_operation_cost_append_v1(uuid, text, integer, text, integer, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_profile_id_v1(uuid, text, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_profile_immutable_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_profile_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_retention_rule_append_v1(uuid, text, integer, text, text, text, text, text, text, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_runtime_limit_set_v1(uuid, text, integer, integer, integer, integer, integer, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_runtime_limit_set_v2(uuid, text, integer, integer, integer, integer, integer, bigint, boolean, integer, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_safe_dry_run_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_policy_seed_bounded_defaults_trigger_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_seed_bounded_defaults_v1(bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_policy_workspace_set_v1(uuid, text, integer, integer, boolean, integer, bigint, boolean, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_create_v3(uuid, text, text, text, bigint, bigint, text, text, bigint, bigint, integer, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_desired_target_activation_guard_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_desired_target_set_v1(uuid, uuid, text, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_file_rule_append_v1(uuid, text, text, text, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_file_rule_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_filter_get_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_filter_set_v1(uuid, bigint, bigint, bigint, bigint, boolean, boolean, boolean, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_get_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_get_v2(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_get_v3(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_import_draft_delete_v1(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_import_draft_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_import_draft_upsert_v1(uuid, text, text, text, boolean, boolean, integer, text, text, integer, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_list_v2() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_list_v3() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_normalized_root_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_profile_root_add_v1(uuid, text, text, text, bigint, bigint, text, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_root_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_root_revalidate_v1(uuid, text, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_roots_overlap_v1(text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_update_v1(uuid, uuid, text, text, boolean, integer, text, text, boolean, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_upsert_v1(uuid, text, text, text, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_upsert_v2(uuid, text, text, text, boolean, integer, text, text, boolean, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_all_root_overlap_trigger_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_all_root_overlap_v1(bigint, text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_catalog_refs_v1(text, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_discovery_root_overlap_v1(bigint, text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_profile_validate_root_identity_v1(bigint, text, bigint, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_retention_mode_age_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_retention_mode_count_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_retention_policy_default_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_stream_classification_rule_append_v1(uuid, text, integer, text, text, text, text, smallint, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_subtitle_discovery_rule_append_v1(uuid, text, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.media_subtitle_policy_all_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_subtitle_policy_none_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_subtitle_policy_selected_v1() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_video_color_value_known_v1(text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_video_level_known_v1(text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.media_workspace_retention_snapshot_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.normalize_magnet_uri(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.normalize_magnet_uri_v1(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION public.normalize_title(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.normalize_title_v1(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.outbound_request_log_write(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.outbound_request_log_write_v1(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_int_match(integer, public.policy_match_operator, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_int_match_v1(integer, public.policy_match_operator, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_release_group_match(bigint, text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_release_group_match_v1(bigint, text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_create(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_create_v1(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_disable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_disable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_enable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_enable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_reorder(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_rule_reorder_v1(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_create(uuid, character varying, public.policy_scope, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_create_v1(uuid, character varying, public.policy_scope, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_disable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_disable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_enable(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_enable_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_reorder(uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_reorder_v1(uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_update(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_set_update_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_text_match(text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_text_match_v1(text, public.policy_match_operator, text, bigint, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_uuid_match(uuid, public.policy_match_operator, uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.policy_uuid_match_v1(uuid, public.policy_match_operator, uuid, bigint) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.random_jitter_seconds(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_create(uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_create_v1(uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_soft_delete(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_soft_delete_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_update(uuid, uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_policy_update_v1(uuid, uuid, character varying, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_try_consume(public.rate_limit_scope, bigint, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rate_limit_try_consume_v1(public.rate_limit_scope, bigint, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.revaer_bump_revision() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.revaer_touch_updated_at() SET search_path TO pg_catalog;
+ALTER FUNCTION public.routing_policy_bind_secret(uuid, uuid, public.routing_param_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_bind_secret_v1(uuid, uuid, public.routing_param_key, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_create(uuid, character varying, public.routing_policy_mode) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_create_v1(uuid, character varying, public.routing_policy_mode) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_get(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_get_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_set_param_v1(uuid, uuid, public.routing_param_key, character varying, integer, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.routing_policy_set_rate_limit_policy_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_apply_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_claim(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.rss_poll_claim_v1(integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_enqueue(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_enqueue_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_canceled(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_canceled_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_failed_v1(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_finished(uuid, uuid, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_finished_v1(uuid, uuid, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_started(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_indexer_run_mark_started_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_page_fetch(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_page_fetch_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_page_list(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_page_list_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_add_policy_set(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_add_policy_set_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_create(uuid, character varying, boolean, integer, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_create_v1(uuid, character varying, boolean, integer, character varying, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_indexer_allow(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_indexer_allow_v1(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_indexer_block(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_indexer_block_v1(uuid, uuid, uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_remove_policy_set(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_remove_policy_set_v1(uuid, uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_default(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_default_domain(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_default_domain_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_default_v1(uuid, uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_domain_allowlist(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_set_domain_allowlist_v1(uuid, uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_allow(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_allow_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_block(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_block_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_prefer(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_tag_prefer_v1(uuid, uuid, uuid[], text[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_update(uuid, uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_profile_update_v1(uuid, uuid, character varying, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_cancel(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_cancel_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_create(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_create_v1(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_explainability(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_explainability_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_request_finalize_on_runs_terminal_v1() SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_result_ingest(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.search_result_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[]) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_create(uuid, public.secret_type, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_create_v1(uuid, public.secret_type, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_metadata_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_metadata_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_read(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_read_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_revoke(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_revoke_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_rotate(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_rotate_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_session_configure(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.secret_session_configure_v1(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_list(uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_list_v1(uuid, boolean, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_reopen(uuid, bigint, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_reopen_v1(uuid, bigint, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_resolve(uuid, bigint, public.conflict_resolution, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.source_metadata_conflict_resolve_v1(uuid, bigint, public.conflict_resolution, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_create(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_create_v1(uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_list(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_list_v1(uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_soft_delete(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_soft_delete_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_update(uuid, uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tag_update_v1(uuid, uuid, character varying, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_category_list() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_category_list_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_download_prepare(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_download_prepare_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_authenticate(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_authenticate_v1(uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_create(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_create_v1(uuid, uuid, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_enable_disable(uuid, uuid, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_enable_disable_v1(uuid, uuid, boolean) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_rotate_key(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_rotate_key_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_soft_delete(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.torznab_instance_soft_delete_v1(uuid, uuid) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_delete(uuid, character varying, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_delete(uuid, uuid, character varying, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_delete_v1(uuid, character varying, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_delete_v1(uuid, uuid, character varying, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_resolve_feed(uuid, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_resolve_feed_v1(uuid, uuid, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_upsert(uuid, character varying, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_upsert(uuid, uuid, character varying, uuid, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_upsert_v1(uuid, character varying, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.tracker_category_mapping_upsert_v1(uuid, uuid, character varying, uuid, integer, integer, integer, character varying) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION public.trust_tier_seed_defaults() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION revaer_config.bump_app_profile_version(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.bump_revision(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.cleanup_expired_setup_tokens() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.consume_setup_token(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.delete_api_key(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.delete_secret(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.factory_reset() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.factory_reset_without_media_defaults_v1() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION revaer_config.fetch_active_setup_token() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_api_key_auth(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_api_key_hash(text) SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION revaer_config.fetch_api_keys() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_app_profile_row(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_engine_profile_row(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_fs_policy_row(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_revision() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.fetch_secret_by_name(text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.insert_api_key(text, text, text, boolean, integer, bigint, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.insert_setup_token(text, timestamp with time zone, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.invalidate_active_setup_tokens() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.list_app_label_policies(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.replace_app_label_policies(uuid, text[], text[], text[], bigint[], bigint[], integer[], boolean[], double precision[], bigint[], double precision[], bigint[], boolean[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.seed_media_configuration_defaults() SECURITY DEFINER SET search_path TO pg_catalog, public;
+ALTER FUNCTION revaer_config.set_engine_alt_speed(uuid, bigint, bigint, integer, integer, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_engine_ip_filter(uuid, text, text, timestamp with time zone, text, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_engine_list_values(uuid, text, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_fs_list(uuid, text, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_peer_classes(uuid, smallint[], text[], smallint[], smallint[], smallint[], boolean[], smallint[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.set_tracker_config(uuid, text, text, text, integer, boolean, boolean, text, integer, text, text, text, boolean, text, text, text, boolean, text, text, text, text[], text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_enabled(text, boolean) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_expires_at(text, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_hash(text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_label(text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_api_key_rate_limit(text, integer, bigint) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_auth_mode(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_bind_addr(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_http_port(uuid, integer) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_immutable_keys(uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_instance_name(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_local_networks(uuid, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_mode(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_app_telemetry(uuid, text, text, boolean, text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_engine_profile(uuid, text, integer, boolean, text, integer, bigint, bigint, double precision, bigint, boolean, boolean, boolean, boolean, boolean, text, text, boolean, integer, bigint, text, text, text, boolean, integer, integer, boolean, boolean, boolean, text, text, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean, boolean, boolean, boolean, integer, integer, integer, integer, integer, integer, integer, integer) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_fs_array_field(uuid, text, text[]) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_fs_boolean_field(uuid, text, boolean) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_fs_optional_string_field(uuid, text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.update_fs_string_field(uuid, text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_config.upsert_secret(text, bytea, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.delete_torrent(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.fs_job_state(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.list_torrent_files(uuid) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.list_torrents() SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.mark_fs_job_completed(uuid, text, text, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.mark_fs_job_failed(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.mark_fs_job_started(uuid, text) SECURITY DEFINER SET search_path TO pg_catalog;
+ALTER FUNCTION revaer_runtime.upsert_torrent(uuid, text, text, text, bigint, bigint, bigint, bigint, bigint, double precision, boolean, text, text, text, text, boolean, integer[], text[], bigint[], bigint[], text[], boolean[], timestamp with time zone, timestamp with time zone, timestamp with time zone) SECURITY DEFINER SET search_path TO pg_catalog;
+-- Generated authored routine security ends.
+
+CREATE FUNCTION revaer_system.read_database_baseline_v1()
+RETURNS TABLE (
+    contract_version smallint,
+    init_sha256 bytea,
+    postgres_version_num integer,
+    schema_owner_role name,
+    runtime_role name,
+    sealed_at timestamptz
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path TO pg_catalog, revaer_system
+AS $baseline_read$
+DECLARE
+    baseline record;
+BEGIN
+    BEGIN
+        SELECT * INTO STRICT baseline FROM revaer_system.database_baseline;
+    EXCEPTION WHEN no_data_found OR too_many_rows THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+    END;
+    IF baseline.baseline_id IS DISTINCT FROM 1
+       OR baseline.contract_version IS DISTINCT FROM 1
+       OR octet_length(baseline.init_sha256) IS DISTINCT FROM 32
+       OR baseline.postgres_version_num IS DISTINCT FROM 160014
+       OR baseline.schema_owner_role IS DISTINCT FROM current_user
+       OR baseline.runtime_role IS NULL
+       OR length(baseline.schema_owner_role::text) NOT BETWEEN 1 AND 63
+       OR length(baseline.runtime_role::text) NOT BETWEEN 1 AND 63
+       OR baseline.runtime_role = baseline.schema_owner_role
+       OR baseline.sealed_at IS NULL THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+    END IF;
+    IF session_user <> baseline.schema_owner_role AND session_user <> baseline.runtime_role THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_read_denied', DETAIL = 'baseline_read_denied', ERRCODE = '42501';
+    END IF;
+    RETURN QUERY SELECT baseline.contract_version, baseline.init_sha256,
+        baseline.postgres_version_num, baseline.schema_owner_role,
+        baseline.runtime_role, baseline.sealed_at;
+EXCEPTION WHEN undefined_table OR undefined_column OR datatype_mismatch OR undefined_function THEN
+    RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+END;
+$baseline_read$;
+
+CREATE FUNCTION revaer_system.seal_database_baseline_v1(
+    contract_version_input smallint,
+    init_sha256_input bytea,
+    runtime_role_input text
+)
+RETURNS TABLE (
+    contract_version smallint,
+    init_sha256 bytea,
+    postgres_version_num integer,
+    schema_owner_role name,
+    runtime_role name,
+    sealed_at timestamptz
+)
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER
+SET search_path TO pg_catalog, revaer_system
+AS $baseline_seal$
+DECLARE
+    owner_record pg_catalog.pg_roles%ROWTYPE;
+    runtime_record pg_catalog.pg_roles%ROWTYPE;
+    routine_identity text;
+    type_identity text;
+BEGIN
+    SELECT * INTO STRICT owner_record FROM pg_catalog.pg_roles WHERE rolname = current_user;
+    IF session_user <> current_user
+       OR owner_record.oid IS DISTINCT FROM (
+           SELECT datdba FROM pg_catalog.pg_database WHERE datname = current_database()
+       )
+       OR owner_record.oid IS DISTINCT FROM (
+           SELECT nspowner FROM pg_catalog.pg_namespace WHERE nspname = 'revaer_system'
+       ) THEN
+        RAISE EXCEPTION USING MESSAGE = 'bootstrap_identity_invalid', DETAIL = 'bootstrap_identity_invalid', ERRCODE = '42501';
+    END IF;
+    IF NOT owner_record.rolcanlogin OR owner_record.rolsuper OR owner_record.rolcreatedb
+       OR owner_record.rolcreaterole OR owner_record.rolreplication OR owner_record.rolbypassrls THEN
+        RAISE EXCEPTION USING MESSAGE = 'bootstrap_privilege_invalid', DETAIL = 'bootstrap_privilege_invalid', ERRCODE = '42501';
+    END IF;
+    IF contract_version_input IS DISTINCT FROM 1 THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_contract_unsupported', DETAIL = 'baseline_contract_unsupported', ERRCODE = 'P0001';
+    END IF;
+    IF octet_length(init_sha256_input) IS DISTINCT FROM 32 THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+    END IF;
+    IF current_setting('server_version_num')::integer <> 160014 THEN
+        RAISE EXCEPTION USING MESSAGE = 'postgres_identity_unsupported', DETAIL = 'postgres_identity_unsupported', ERRCODE = 'P0001';
+    END IF;
+    IF runtime_role_input IS NULL OR octet_length(runtime_role_input) NOT BETWEEN 1 AND 63 THEN
+        RAISE EXCEPTION USING MESSAGE = 'runtime_role_invalid', DETAIL = 'runtime_role_invalid', ERRCODE = 'P0001';
+    END IF;
+    SELECT * INTO runtime_record FROM pg_catalog.pg_roles WHERE rolname::text = runtime_role_input;
+    IF NOT FOUND OR runtime_record.oid = owner_record.oid OR NOT runtime_record.rolcanlogin
+       OR runtime_record.rolsuper OR runtime_record.rolcreatedb OR runtime_record.rolcreaterole
+       OR runtime_record.rolreplication OR runtime_record.rolbypassrls
+       OR pg_has_role(runtime_record.oid, owner_record.oid, 'MEMBER') THEN
+        RAISE EXCEPTION USING MESSAGE = 'runtime_role_invalid', DETAIL = 'runtime_role_invalid', ERRCODE = 'P0001';
+    END IF;
+    IF EXISTS (SELECT 1 FROM revaer_system.database_baseline) THEN
+        RAISE EXCEPTION USING MESSAGE = 'baseline_shape_invalid', DETAIL = 'baseline_shape_invalid', ERRCODE = 'P0001';
+    END IF;
+
+    EXECUTE format('REVOKE ALL ON DATABASE %I FROM PUBLIC, %I', current_database(), runtime_record.rolname);
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), runtime_record.rolname);
+    REVOKE ALL ON SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM PUBLIC;
+    EXECUTE format('REVOKE ALL ON SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM %I', runtime_record.rolname);
+    EXECUTE format('GRANT USAGE ON SCHEMA public, revaer_config, revaer_runtime, revaer_system TO %I', runtime_record.rolname);
+    REVOKE ALL ON ALL TABLES IN SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM PUBLIC;
+    REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM PUBLIC;
+    EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM %I', runtime_record.rolname);
+    EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public, revaer_config, revaer_runtime, revaer_system FROM %I', runtime_record.rolname);
+
+    -- Only authored objects owned by this bootstrap principal are modified.
+    -- Extension routines are neither converted nor explicitly granted.
+    FOR routine_identity IN
+        SELECT p.oid::regprocedure::text
+        FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname IN ('public', 'revaer_config', 'revaer_runtime', 'revaer_system')
+          AND p.proowner = owner_record.oid
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_catalog.pg_depend d
+              WHERE d.classid = 'pg_catalog.pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e'
+          )
+    LOOP
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, %I', routine_identity, runtime_record.rolname);
+    END LOOP;
+    FOR type_identity IN
+        SELECT format('%I.%I', n.nspname, t.typname)
+        FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname IN ('public', 'revaer_config', 'revaer_runtime', 'revaer_system')
+          AND t.typowner = owner_record.oid AND t.typelem = 0
+          AND NOT EXISTS (
+              SELECT 1 FROM pg_catalog.pg_depend d
+              WHERE d.classid = 'pg_catalog.pg_type'::regclass AND d.objid = t.oid AND d.deptype = 'e'
+          )
+    LOOP
+        EXECUTE format('REVOKE ALL ON TYPE %s FROM PUBLIC, %I', type_identity, runtime_record.rolname);
+        EXECUTE format('GRANT USAGE ON TYPE %s TO %I', type_identity, runtime_record.rolname);
+    END LOOP;
+    ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+    ALTER DEFAULT PRIVILEGES REVOKE USAGE ON TYPES FROM PUBLIC;
+    ALTER DEFAULT PRIVILEGES REVOKE ALL ON TABLES FROM PUBLIC;
+    ALTER DEFAULT PRIVILEGES REVOKE ALL ON SEQUENCES FROM PUBLIC;
+    ALTER DEFAULT PRIVILEGES REVOKE ALL ON SCHEMAS FROM PUBLIC;
+
+    FOREACH routine_identity IN ARRAY ARRAY[
+        -- Generated authored routine grants begin.
+            'public.policy_action_to_decision_type(public.policy_action)',
+            'public.app_user_create(character varying, character varying)',
+            'public.app_user_create_v1(character varying, character varying)',
+            'public.app_user_update(uuid, character varying)',
+            'public.app_user_update_v1(uuid, character varying)',
+            'public.app_user_verify_email(uuid)',
+            'public.app_user_verify_email_v1(uuid)',
+            'public.canonical_disambiguation_rule_create(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying)',
+            'public.canonical_disambiguation_rule_create_v1(uuid, public.disambiguation_rule_type, public.disambiguation_identity_type, character varying, uuid, public.disambiguation_identity_type, character varying, uuid, character varying)',
+            'public.canonical_merge_by_infohash(character, character)',
+            'public.canonical_merge_by_infohash_v1(character, character)',
+            'public.canonical_prune_low_confidence()',
+            'public.canonical_prune_low_confidence_v1()',
+            'public.canonical_recompute_best_source(uuid, public.scoring_context)',
+            'public.canonical_recompute_best_source_v1(uuid, public.scoring_context)',
+            'public.compute_title_size_hash(text, bigint)',
+            'public.compute_title_size_hash_v1(text, bigint)',
+            'public.deployment_init(uuid)',
+            'public.deployment_init_v1(uuid)',
+            'public.derive_magnet_hash(text, text, text)',
+            'public.derive_magnet_hash_v1(text, text, text)',
+            'public.import_job_create(uuid, public.import_source, boolean, uuid, uuid)',
+            'public.import_job_create_v1(uuid, public.import_source, boolean, uuid, uuid)',
+            'public.import_job_get_status(uuid)',
+            'public.import_job_get_status_v1(uuid)',
+            'public.import_job_list_results(uuid)',
+            'public.import_job_list_results_v1(uuid)',
+            'public.import_job_run_prowlarr_api(uuid, character varying, uuid)',
+            'public.import_job_run_prowlarr_api_v1(uuid, character varying, uuid)',
+            'public.import_job_run_prowlarr_backup(uuid, character varying)',
+            'public.import_job_run_prowlarr_backup_v1(uuid, character varying)',
+            'public.import_job_worker_claim_next()',
+            'public.import_job_worker_claim_next_v1()',
+            'public.import_job_worker_mark_terminal(uuid, public.import_job_status, character varying)',
+            'public.import_job_worker_mark_terminal_v1(uuid, public.import_job_status, character varying)',
+            'public.import_job_worker_record_result(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer)',
+            'public.import_job_worker_record_result_v1(uuid, character varying, public.import_indexer_result_status, character varying, boolean, integer, integer)',
+            'public.indexer_backup_assert_actor_v1(uuid)',
+            'public.indexer_backup_export_indexer_instance_list(uuid)',
+            'public.indexer_backup_export_indexer_instance_list_v1(uuid)',
+            'public.indexer_backup_export_rate_limit_policy_list(uuid)',
+            'public.indexer_backup_export_rate_limit_policy_list_v1(uuid)',
+            'public.indexer_backup_export_routing_policy_list(uuid)',
+            'public.indexer_backup_export_routing_policy_list_v1(uuid)',
+            'public.indexer_backup_export_tag_list(uuid)',
+            'public.indexer_backup_export_tag_list_v1(uuid)',
+            'public.indexer_cf_state_get(uuid, uuid)',
+            'public.indexer_cf_state_get_v1(uuid, uuid)',
+            'public.indexer_cf_state_reset(uuid, uuid, character varying)',
+            'public.indexer_cf_state_reset_v1(uuid, uuid, character varying)',
+            'public.indexer_connectivity_profile_get(uuid, uuid)',
+            'public.indexer_connectivity_profile_get_v1(uuid, uuid)',
+            'public.indexer_definition_import_cardigann_begin(uuid, character varying, character varying, text, boolean)',
+            'public.indexer_definition_import_cardigann_begin_v1(uuid, character varying, character varying, text, boolean)',
+            'public.indexer_definition_import_cardigann_complete(uuid, character varying)',
+            'public.indexer_definition_import_cardigann_complete_v1(uuid, character varying)',
+            'public.indexer_definition_import_cardigann_field(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[])',
+            'public.indexer_definition_import_cardigann_field_v1(uuid, character varying, character varying, character varying, public.field_type, boolean, boolean, integer, character varying, integer, character varying, boolean, character varying[], character varying[])',
+            'public.indexer_definition_list(uuid)',
+            'public.indexer_definition_list_v1(uuid)',
+            'public.indexer_health_event_list(uuid, uuid, integer)',
+            'public.indexer_health_event_list_v1(uuid, uuid, integer)',
+            'public.indexer_health_notification_hook_create(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying)',
+            'public.indexer_health_notification_hook_create_v1(uuid, public.indexer_health_notification_channel, character varying, public.indexer_health_notification_threshold, character varying, character varying)',
+            'public.indexer_health_notification_hook_delete(uuid, uuid)',
+            'public.indexer_health_notification_hook_delete_v1(uuid, uuid)',
+            'public.indexer_health_notification_hook_get(uuid, uuid)',
+            'public.indexer_health_notification_hook_get_v1(uuid, uuid)',
+            'public.indexer_health_notification_hook_list(uuid)',
+            'public.indexer_health_notification_hook_list_v1(uuid)',
+            'public.indexer_health_notification_hook_update(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean)',
+            'public.indexer_health_notification_hook_update_v1(uuid, uuid, character varying, public.indexer_health_notification_threshold, character varying, character varying, boolean)',
+            'public.indexer_instance_create(uuid, character varying, character varying, integer, public.trust_tier_key, uuid)',
+            'public.indexer_instance_create_v1(uuid, character varying, character varying, integer, public.trust_tier_key, uuid)',
+            'public.indexer_instance_field_bind_secret(uuid, uuid, character varying, uuid)',
+            'public.indexer_instance_field_bind_secret_v1(uuid, uuid, character varying, uuid)',
+            'public.indexer_instance_field_set_value(uuid, uuid, character varying, character varying, integer, numeric, boolean)',
+            'public.indexer_instance_field_set_value_v1(uuid, uuid, character varying, character varying, integer, numeric, boolean)',
+            'public.indexer_instance_set_media_domains(uuid, uuid, text[])',
+            'public.indexer_instance_set_media_domains_v1(uuid, uuid, text[])',
+            'public.indexer_instance_set_rate_limit_policy(uuid, uuid, uuid)',
+            'public.indexer_instance_set_rate_limit_policy_v1(uuid, uuid, uuid)',
+            'public.indexer_instance_set_tags(uuid, uuid, uuid[], text[])',
+            'public.indexer_instance_set_tags_v1(uuid, uuid, uuid[], text[])',
+            'public.indexer_instance_test_finalize(uuid, uuid, boolean, public.error_class, character varying, character varying, integer)',
+            'public.indexer_instance_test_finalize_v1(uuid, uuid, boolean, public.error_class, character varying, character varying, integer)',
+            'public.indexer_instance_test_prepare(uuid, uuid)',
+            'public.indexer_instance_test_prepare_v1(uuid, uuid)',
+            'public.indexer_instance_update(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean)',
+            'public.indexer_instance_update_v1(uuid, uuid, character varying, integer, public.trust_tier_key, uuid, boolean, boolean, boolean, boolean)',
+            'public.indexer_policy_set_rule_list(uuid)',
+            'public.indexer_policy_set_rule_list_v1(uuid)',
+            'public.indexer_rss_item_seen_list(uuid, uuid, integer)',
+            'public.indexer_rss_item_seen_list_v1(uuid, uuid, integer)',
+            'public.indexer_rss_item_seen_mark(uuid, uuid, character varying, character, character, character)',
+            'public.indexer_rss_item_seen_mark_v1(uuid, uuid, character varying, character, character, character)',
+            'public.indexer_rss_subscription_disable(uuid, uuid)',
+            'public.indexer_rss_subscription_disable_v1(uuid, uuid)',
+            'public.indexer_rss_subscription_get(uuid, uuid)',
+            'public.indexer_rss_subscription_get_v1(uuid, uuid)',
+            'public.indexer_rss_subscription_set(uuid, uuid, boolean, integer)',
+            'public.indexer_rss_subscription_set_v1(uuid, uuid, boolean, integer)',
+            'public.indexer_search_profile_list(uuid)',
+            'public.indexer_search_profile_list_v1(uuid)',
+            'public.indexer_source_reputation_list(uuid, uuid, public.reputation_window, integer)',
+            'public.indexer_source_reputation_list_v1(uuid, uuid, public.reputation_window, integer)',
+            'public.indexer_torznab_instance_list(uuid)',
+            'public.indexer_torznab_instance_list_v1(uuid)',
+            'public.job_claim_lease_seconds(public.job_key)',
+            'public.job_claim_lease_seconds_v1(public.job_key)',
+            'public.job_claim_next(public.job_key)',
+            'public.job_claim_next_v1(public.job_key)',
+            'public.job_run_base_score_refresh_recent()',
+            'public.job_run_base_score_refresh_recent_v1()',
+            'public.job_run_base_score_refresh_recent_v2()',
+            'public.job_run_canonical_backfill_best_source()',
+            'public.job_run_canonical_backfill_best_source_v1()',
+            'public.job_run_canonical_backfill_best_source_v2()',
+            'public.job_run_canonical_prune_low_confidence()',
+            'public.job_run_canonical_prune_low_confidence_v2()',
+            'public.job_run_connectivity_profile_refresh()',
+            'public.job_run_connectivity_profile_refresh_v1()',
+            'public.job_run_connectivity_profile_refresh_v2()',
+            'public.job_run_policy_snapshot_gc()',
+            'public.job_run_policy_snapshot_gc_v1()',
+            'public.job_run_policy_snapshot_gc_v2()',
+            'public.job_run_policy_snapshot_refcount_repair()',
+            'public.job_run_policy_snapshot_refcount_repair_v1()',
+            'public.job_run_policy_snapshot_refcount_repair_v2()',
+            'public.job_run_rate_limit_state_purge()',
+            'public.job_run_rate_limit_state_purge_v1()',
+            'public.job_run_rate_limit_state_purge_v2()',
+            'public.job_run_reputation_rollup(public.reputation_window)',
+            'public.job_run_reputation_rollup_v1(public.reputation_window)',
+            'public.job_run_reputation_rollup_v2(public.reputation_window)',
+            'public.job_run_retention_purge()',
+            'public.job_run_retention_purge_v1()',
+            'public.job_run_retention_purge_v2()',
+            'public.job_run_rss_subscription_backfill()',
+            'public.job_run_rss_subscription_backfill_v1()',
+            'public.job_run_rss_subscription_backfill_v2()',
+            'public.job_schedule_mark_completed(public.job_key)',
+            'public.job_schedule_mark_completed_v1(public.job_key)',
+            'public.log_source_metadata_conflict(bigint, bigint, public.conflict_type, text, text, timestamp with time zone)',
+            'public.log_source_metadata_conflict_v1(bigint, bigint, public.conflict_type, text, text, timestamp with time zone)',
+            'public.media_actor_id_for_public_id_v1(uuid)',
+            'public.media_app_error_code_v1()',
+            'public.media_audio_channel_layout_count_v1(text)',
+            'public.media_capability_run_status_completed_v1()',
+            'public.media_capability_run_status_failed_v1()',
+            'public.media_capability_run_status_running_v1()',
+            'public.media_capability_snapshot_encoder_list_v1(uuid)',
+            'public.media_capability_snapshot_encoder_record_v1(uuid, uuid, text)',
+            'public.media_capability_snapshot_feature_list_v1(uuid)',
+            'public.media_capability_snapshot_feature_record_v1(uuid, uuid, text, text, boolean, text)',
+            'public.media_capability_snapshot_latest_v1()',
+            'public.media_capability_snapshot_latest_v2()',
+            'public.media_capability_snapshot_record_v1(uuid, text, text, text, boolean, boolean)',
+            'public.media_capability_snapshot_record_v2(uuid, uuid, text, text, text, boolean, boolean)',
+            'public.media_capability_snapshot_run_complete_v1(uuid)',
+            'public.media_capability_snapshot_run_start_v1(uuid, uuid)',
+            'public.media_compatibility_target_list_v1()',
+            'public.media_compatibility_target_upsert_v1(uuid, text, integer, text, text, text, integer, text, text)',
+            'public.media_desired_target_create_v1(uuid, text, integer, text, text)',
+            'public.media_desired_target_graph_page_v1(integer)',
+            'public.media_desired_target_list_v1()',
+            'public.media_desired_target_stream_append_v1(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean)',
+            'public.media_desired_target_stream_append_v2(uuid, text, text, text, text, boolean, integer, text, integer, text, text, boolean, boolean, text, text)',
+            'public.media_desired_target_stream_append_v3(uuid, text, text, text, text, boolean, integer, text, integer, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text)',
+            'public.media_desired_target_stream_append_v4(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, integer, text, text, text, text, text, boolean, boolean, text, text)',
+            'public.media_desired_target_stream_append_v5(uuid, text, text, text, text, boolean, integer, text, integer, text, integer, integer, text, text, text, text, integer, text, text, text, text, text, boolean, boolean, text, text)',
+            'public.media_desired_target_stream_count_bounded_v1(bigint)',
+            'public.media_desired_target_stream_limit_v1()',
+            'public.media_desired_target_stream_list_v1(uuid)',
+            'public.media_desired_target_stream_list_v2(uuid)',
+            'public.media_desired_target_stream_list_v3(uuid)',
+            'public.media_desired_target_stream_list_v4(uuid)',
+            'public.media_desired_target_stream_list_v5(uuid)',
+            'public.media_desired_target_validate_and_activate_v1(bigint)',
+            'public.media_discovery_job_enqueue_v1(uuid, uuid, text, text, bigint, bigint, text)',
+            'public.media_discovery_job_enqueue_v2(uuid, uuid, text, text, text, bigint, bigint, bigint, text)',
+            'public.media_discovery_job_enqueue_v3(uuid, uuid, text, text, boolean, text, bigint, bigint, bigint, text)',
+            'public.media_discovery_root_assert_current_v1(uuid, text, bigint, bigint)',
+            'public.media_discovery_schedule_claim_v1(uuid, text, bigint, bigint, timestamp with time zone)',
+            'public.media_discovery_schedule_create_v1(uuid, uuid, integer, text, integer, boolean, timestamp with time zone)',
+            'public.media_discovery_watcher_create_v1(uuid, uuid, integer, integer, boolean)',
+            'public.media_discovery_watcher_start_v1(uuid, text, bigint, bigint)',
+            'public.media_display_valid_v1(text)',
+            'public.media_domain_seed_defaults()',
+            'public.media_domain_to_torznab_category_delete(uuid, character varying, integer)',
+            'public.media_domain_to_torznab_category_delete_v1(uuid, character varying, integer)',
+            'public.media_domain_to_torznab_category_upsert(uuid, character varying, integer, boolean)',
+            'public.media_domain_to_torznab_category_upsert_v1(uuid, character varying, integer, boolean)',
+            'public.media_job_artifact_append_v1(uuid, bigint, integer, text, text, bigint, text)',
+            'public.media_job_artifact_list_v1(uuid)',
+            'public.media_job_artifact_path_is_managed_v1(text)',
+            'public.media_job_attempt_list_v1(uuid)',
+            'public.media_job_cancel_v1(uuid)',
+            'public.media_job_cancel_v2(uuid)',
+            'public.media_job_cleanup_completed_v1(timestamp with time zone)',
+            'public.media_job_cleanup_failed_terminal_diagnostics_v1(timestamp with time zone, integer)',
+            'public.media_job_compact_audit_append_v1(uuid, bigint, integer, text, text)',
+            'public.media_job_compact_audit_list_v1(uuid)',
+            'public.media_job_create_v1(uuid, uuid, text, text, boolean)',
+            'public.media_job_current_attempt_v1(uuid, bigint)',
+            'public.media_job_desired_target_stream_list_v1(uuid)',
+            'public.media_job_desired_target_stream_list_v2(uuid)',
+            'public.media_job_desired_target_stream_list_v3(uuid)',
+            'public.media_job_desired_target_stream_list_v4(uuid)',
+            'public.media_job_desired_target_stream_list_v5(uuid)',
+            'public.media_job_get_v1(uuid)',
+            'public.media_job_list_v1(uuid, public.media_job_status, integer, timestamp with time zone, uuid)',
+            'public.media_job_mark_completed_v1(uuid)',
+            'public.media_job_normalized_absolute_path_v1(text)',
+            'public.media_job_operation_append_v1(uuid, bigint, integer, text, integer, text, text, text, text, text, text)',
+            'public.media_job_operation_list_v1(uuid)',
+            'public.media_job_phase_append_v1(uuid, bigint, integer, text, text, text)',
+            'public.media_job_phase_list_v1(uuid)',
+            'public.media_job_plan_reason_append_v1(uuid, bigint, integer, integer, boolean, text, text)',
+            'public.media_job_plan_reason_list_v1(uuid)',
+            'public.media_job_recent_page_v1(integer, timestamp with time zone, uuid, uuid)',
+            'public.media_job_retention_batch_limit_v1()',
+            'public.media_job_retention_policy_get_v1()',
+            'public.media_job_retention_policy_get_v2()',
+            'public.media_job_retention_policy_update_v1(uuid, integer, integer)',
+            'public.media_job_retention_policy_update_v2(uuid, boolean, text, integer, boolean, text, integer)',
+            'public.media_job_retention_run_v1(timestamp with time zone)',
+            'public.media_job_retry_v1(uuid)',
+            'public.media_job_status_cancelled_v1()',
+            'public.media_job_status_completed_v1()',
+            'public.media_job_status_failed_v1()',
+            'public.media_job_status_queued_v1()',
+            'public.media_job_status_running_v1()',
+            'public.media_job_status_verifying_v1()',
+            'public.media_job_terminal_outbox_list_unpublished_v1()',
+            'public.media_job_terminal_outbox_mark_published_v1(uuid)',
+            'public.media_job_validate_path_within_root_v1(text, text, text)',
+            'public.media_job_verification_check_append_v1(uuid, bigint, integer, text, text, text, text, text)',
+            'public.media_job_verification_check_list_v1(uuid)',
+            'public.media_job_violation_append_v1(uuid, bigint, integer, text, text, integer)',
+            'public.media_job_violation_list_v1(uuid)',
+            'public.media_job_worker_acknowledge_cancel_v1(uuid, bigint, bigint)',
+            'public.media_job_worker_claim_next_v2()',
+            'public.media_job_worker_claim_next_v4()',
+            'public.media_job_worker_commit_replacement_terminal_v1(uuid, bigint, bigint)',
+            'public.media_job_worker_complete_v1(uuid, bigint, bigint)',
+            'public.media_job_worker_heartbeat_v1(uuid, bigint)',
+            'public.media_job_worker_mark_status_v1(uuid, bigint, public.media_job_status, text)',
+            'public.media_job_worker_poll_control_v1(uuid, bigint, bigint)',
+            'public.media_job_worker_recover_stale_v1(integer)',
+            'public.media_job_worker_recover_stale_v1(uuid, bigint, timestamp with time zone, timestamp with time zone)',
+            'public.media_key_valid_v1(text)',
+            'public.media_policy_anime_v1()',
+            'public.media_policy_archival_v1()',
+            'public.media_policy_behavior_set_v1(uuid, text, integer, text, text, text, text, text, text, boolean, boolean, text, boolean, boolean, boolean)',
+            'public.media_policy_compatibility_target_append_v1(uuid, text, integer, text, integer, integer, boolean)',
+            'public.media_policy_general_v1()',
+            'public.media_policy_maintenance_window_append_v1(uuid, text, integer, smallint, time without time zone, time without time zone, integer, boolean)',
+            'public.media_policy_operation_cost_append_v1(uuid, text, integer, text, integer, integer, boolean)',
+            'public.media_policy_profile_id_v1(uuid, text, integer)',
+            'public.media_policy_profile_list_v1()',
+            'public.media_policy_profile_upsert_v1(uuid, text, integer, text, text, text, bigint, boolean, boolean, boolean, boolean)',
+            'public.media_policy_retention_rule_append_v1(uuid, text, integer, text, text, text, text, text, text, integer, boolean)',
+            'public.media_policy_runtime_limit_set_v1(uuid, text, integer, integer, integer, integer, integer, bigint, boolean)',
+            'public.media_policy_runtime_limit_set_v2(uuid, text, integer, integer, integer, integer, integer, bigint, boolean, integer, text, boolean)',
+            'public.media_policy_safe_dry_run_v1()',
+            'public.media_policy_seed_bounded_defaults_v1(bigint)',
+            'public.media_policy_workspace_set_v1(uuid, text, integer, integer, boolean, integer, bigint, boolean, integer, bigint)',
+            'public.media_profile_create_v3(uuid, text, text, text, bigint, bigint, text, text, bigint, bigint, integer, text, text)',
+            'public.media_profile_desired_target_set_v1(uuid, uuid, text, integer)',
+            'public.media_profile_file_rule_append_v1(uuid, text, text, text, integer, boolean)',
+            'public.media_profile_file_rule_list_v1(uuid)',
+            'public.media_profile_filter_get_v1(uuid)',
+            'public.media_profile_filter_set_v1(uuid, bigint, bigint, bigint, bigint, boolean, boolean, boolean, boolean)',
+            'public.media_profile_get_v1(uuid)',
+            'public.media_profile_get_v2(uuid)',
+            'public.media_profile_get_v3(uuid)',
+            'public.media_profile_import_draft_delete_v1(text)',
+            'public.media_profile_import_draft_list_v1()',
+            'public.media_profile_import_draft_upsert_v1(uuid, text, text, text, boolean, boolean, integer, text, text, integer, text)',
+            'public.media_profile_list_v1()',
+            'public.media_profile_list_v2()',
+            'public.media_profile_list_v3()',
+            'public.media_profile_normalized_root_v1(text)',
+            'public.media_profile_root_add_v1(uuid, text, text, text, bigint, bigint, text, integer, boolean)',
+            'public.media_profile_root_list_v1(uuid)',
+            'public.media_profile_root_revalidate_v1(uuid, text, bigint, bigint)',
+            'public.media_profile_roots_overlap_v1(text, text)',
+            'public.media_profile_update_v1(uuid, uuid, text, text, boolean, integer, text, text, boolean, boolean, integer)',
+            'public.media_profile_upsert_v1(uuid, text, text, text, boolean, integer)',
+            'public.media_profile_upsert_v2(uuid, text, text, text, boolean, integer, text, text, boolean, boolean, integer)',
+            'public.media_profile_validate_all_root_overlap_v1(bigint, text, text)',
+            'public.media_profile_validate_catalog_refs_v1(text, text)',
+            'public.media_profile_validate_discovery_root_overlap_v1(bigint, text)',
+            'public.media_profile_validate_root_identity_v1(bigint, text, bigint, bigint)',
+            'public.media_retention_mode_age_v1()',
+            'public.media_retention_mode_count_v1()',
+            'public.media_retention_policy_default_v1()',
+            'public.media_stream_classification_rule_append_v1(uuid, text, integer, text, text, text, text, smallint, integer, boolean)',
+            'public.media_subtitle_discovery_rule_append_v1(uuid, text, integer, boolean)',
+            'public.media_subtitle_policy_all_v1()',
+            'public.media_subtitle_policy_none_v1()',
+            'public.media_subtitle_policy_selected_v1()',
+            'public.media_video_color_value_known_v1(text, text)',
+            'public.media_video_level_known_v1(text, text)',
+            'public.media_workspace_retention_snapshot_v1()',
+            'public.normalize_magnet_uri(text)',
+            'public.normalize_magnet_uri_v1(text)',
+            'public.normalize_title(text)',
+            'public.normalize_title_v1(text)',
+            'public.outbound_request_log_write(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying)',
+            'public.outbound_request_log_write_v1(uuid, uuid, uuid, public.outbound_request_type, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.outbound_via_mitigation, public.rate_limit_scope, public.error_class, integer, integer, boolean, integer, boolean, integer, character varying)',
+            'public.policy_int_match(integer, public.policy_match_operator, integer, bigint)',
+            'public.policy_int_match_v1(integer, public.policy_match_operator, integer, bigint)',
+            'public.policy_release_group_match(bigint, text, public.policy_match_operator, text, bigint, boolean)',
+            'public.policy_release_group_match_v1(bigint, text, public.policy_match_operator, text, bigint, boolean)',
+            'public.policy_rule_create(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone)',
+            'public.policy_rule_create_v1(uuid, uuid, public.policy_rule_type, public.policy_match_field, public.policy_match_operator, integer, character varying, integer, uuid, public.policy_rule_value_item[], public.policy_action, public.policy_severity, boolean, character varying, timestamp with time zone)',
+            'public.policy_rule_disable(uuid, uuid)',
+            'public.policy_rule_disable_v1(uuid, uuid)',
+            'public.policy_rule_enable(uuid, uuid)',
+            'public.policy_rule_enable_v1(uuid, uuid)',
+            'public.policy_rule_reorder(uuid, uuid, uuid[])',
+            'public.policy_rule_reorder_v1(uuid, uuid, uuid[])',
+            'public.policy_set_create(uuid, character varying, public.policy_scope, boolean)',
+            'public.policy_set_create_v1(uuid, character varying, public.policy_scope, boolean)',
+            'public.policy_set_disable(uuid, uuid)',
+            'public.policy_set_disable_v1(uuid, uuid)',
+            'public.policy_set_enable(uuid, uuid)',
+            'public.policy_set_enable_v1(uuid, uuid)',
+            'public.policy_set_reorder(uuid, uuid[])',
+            'public.policy_set_reorder_v1(uuid, uuid[])',
+            'public.policy_set_update(uuid, uuid, character varying)',
+            'public.policy_set_update_v1(uuid, uuid, character varying)',
+            'public.policy_text_match(text, public.policy_match_operator, text, bigint, boolean)',
+            'public.policy_text_match_v1(text, public.policy_match_operator, text, bigint, boolean)',
+            'public.policy_uuid_match(uuid, public.policy_match_operator, uuid, bigint)',
+            'public.policy_uuid_match_v1(uuid, public.policy_match_operator, uuid, bigint)',
+            'public.random_jitter_seconds(integer)',
+            'public.rate_limit_policy_create(uuid, character varying, integer, integer, integer)',
+            'public.rate_limit_policy_create_v1(uuid, character varying, integer, integer, integer)',
+            'public.rate_limit_policy_soft_delete(uuid, uuid)',
+            'public.rate_limit_policy_soft_delete_v1(uuid, uuid)',
+            'public.rate_limit_policy_update(uuid, uuid, character varying, integer, integer, integer)',
+            'public.rate_limit_policy_update_v1(uuid, uuid, character varying, integer, integer, integer)',
+            'public.rate_limit_try_consume(public.rate_limit_scope, bigint, integer, integer)',
+            'public.rate_limit_try_consume_v1(public.rate_limit_scope, bigint, integer, integer)',
+            'public.routing_policy_bind_secret(uuid, uuid, public.routing_param_key, uuid)',
+            'public.routing_policy_bind_secret_v1(uuid, uuid, public.routing_param_key, uuid)',
+            'public.routing_policy_create(uuid, character varying, public.routing_policy_mode)',
+            'public.routing_policy_create_v1(uuid, character varying, public.routing_policy_mode)',
+            'public.routing_policy_get(uuid, uuid)',
+            'public.routing_policy_get_v1(uuid, uuid)',
+            'public.routing_policy_set_param(uuid, uuid, public.routing_param_key, character varying, integer, boolean)',
+            'public.routing_policy_set_param_v1(uuid, uuid, public.routing_param_key, character varying, integer, boolean)',
+            'public.routing_policy_set_rate_limit_policy(uuid, uuid, uuid)',
+            'public.routing_policy_set_rate_limit_policy_v1(uuid, uuid, uuid)',
+            'public.rss_poll_apply(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[])',
+            'public.rss_poll_apply_v1(bigint, uuid, smallint, timestamp with time zone, timestamp with time zone, public.outbound_request_outcome, public.error_class, integer, integer, boolean, integer, public.outbound_via_mitigation, public.rate_limit_scope, boolean, boolean, character varying[], character[], character[], character[])',
+            'public.rss_poll_claim(integer)',
+            'public.rss_poll_claim_v1(integer)',
+            'public.search_indexer_run_enqueue(uuid, uuid)',
+            'public.search_indexer_run_enqueue_v1(uuid, uuid)',
+            'public.search_indexer_run_mark_canceled(uuid, uuid)',
+            'public.search_indexer_run_mark_canceled_v1(uuid, uuid)',
+            'public.search_indexer_run_mark_failed(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope)',
+            'public.search_indexer_run_mark_failed_v1(uuid, uuid, public.error_class, character varying, integer, smallint, public.rate_limit_scope)',
+            'public.search_indexer_run_mark_finished(uuid, uuid, integer, integer, integer)',
+            'public.search_indexer_run_mark_finished_v1(uuid, uuid, integer, integer, integer)',
+            'public.search_indexer_run_mark_started(uuid, uuid)',
+            'public.search_indexer_run_mark_started_v1(uuid, uuid)',
+            'public.search_page_fetch(uuid, uuid, integer)',
+            'public.search_page_fetch_v1(uuid, uuid, integer)',
+            'public.search_page_list(uuid, uuid)',
+            'public.search_page_list_v1(uuid, uuid)',
+            'public.search_profile_add_policy_set(uuid, uuid, uuid)',
+            'public.search_profile_add_policy_set_v1(uuid, uuid, uuid)',
+            'public.search_profile_create(uuid, character varying, boolean, integer, character varying, uuid)',
+            'public.search_profile_create_v1(uuid, character varying, boolean, integer, character varying, uuid)',
+            'public.search_profile_indexer_allow(uuid, uuid, uuid[])',
+            'public.search_profile_indexer_allow_v1(uuid, uuid, uuid[])',
+            'public.search_profile_indexer_block(uuid, uuid, uuid[])',
+            'public.search_profile_indexer_block_v1(uuid, uuid, uuid[])',
+            'public.search_profile_remove_policy_set(uuid, uuid, uuid)',
+            'public.search_profile_remove_policy_set_v1(uuid, uuid, uuid)',
+            'public.search_profile_set_default(uuid, uuid, integer)',
+            'public.search_profile_set_default_domain(uuid, uuid, character varying)',
+            'public.search_profile_set_default_domain_v1(uuid, uuid, character varying)',
+            'public.search_profile_set_default_v1(uuid, uuid, integer)',
+            'public.search_profile_set_domain_allowlist(uuid, uuid, text[])',
+            'public.search_profile_set_domain_allowlist_v1(uuid, uuid, text[])',
+            'public.search_profile_tag_allow(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_allow_v1(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_block(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_block_v1(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_prefer(uuid, uuid, uuid[], text[])',
+            'public.search_profile_tag_prefer_v1(uuid, uuid, uuid[], text[])',
+            'public.search_profile_update(uuid, uuid, character varying, integer)',
+            'public.search_profile_update_v1(uuid, uuid, character varying, integer)',
+            'public.search_request_cancel(uuid, uuid)',
+            'public.search_request_cancel_v1(uuid, uuid)',
+            'public.search_request_create(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[])',
+            'public.search_request_create_v1(uuid, character varying, public.query_type, public.torznab_mode, character varying, integer, uuid, uuid, integer, integer, public.identifier_type[], text[], integer[])',
+            'public.search_request_explainability(uuid, uuid)',
+            'public.search_request_explainability_v1(uuid, uuid)',
+            'public.search_result_ingest(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[])',
+            'public.search_result_ingest_v1(uuid, uuid, character varying, character varying, character varying, character varying, character varying, bigint, character, character, character, integer, integer, timestamp with time zone, character varying, timestamp with time zone, public.observation_attr_key[], public.attr_value_type[], character varying[], integer[], bigint[], numeric[], boolean[], uuid[])',
+            'public.secret_create(uuid, public.secret_type, character varying)',
+            'public.secret_create_v1(uuid, public.secret_type, character varying)',
+            'public.secret_metadata_list(uuid)',
+            'public.secret_metadata_list_v1(uuid)',
+            'public.secret_read(uuid, uuid)',
+            'public.secret_read_v1(uuid, uuid)',
+            'public.secret_revoke(uuid, uuid)',
+            'public.secret_revoke_v1(uuid, uuid)',
+            'public.secret_rotate(uuid, uuid, character varying)',
+            'public.secret_rotate_v1(uuid, uuid, character varying)',
+            'public.secret_session_configure(uuid, character varying, character varying)',
+            'public.secret_session_configure_v1(uuid, character varying, character varying)',
+            'public.source_metadata_conflict_list(uuid, boolean, integer)',
+            'public.source_metadata_conflict_list_v1(uuid, boolean, integer)',
+            'public.source_metadata_conflict_reopen(uuid, bigint, character varying)',
+            'public.source_metadata_conflict_reopen_v1(uuid, bigint, character varying)',
+            'public.source_metadata_conflict_resolve(uuid, bigint, public.conflict_resolution, character varying)',
+            'public.source_metadata_conflict_resolve_v1(uuid, bigint, public.conflict_resolution, character varying)',
+            'public.tag_create(uuid, character varying, character varying)',
+            'public.tag_create_v1(uuid, character varying, character varying)',
+            'public.tag_list(uuid)',
+            'public.tag_list_v1(uuid)',
+            'public.tag_soft_delete(uuid, uuid, character varying)',
+            'public.tag_soft_delete_v1(uuid, uuid, character varying)',
+            'public.tag_update(uuid, uuid, character varying, character varying)',
+            'public.tag_update_v1(uuid, uuid, character varying, character varying)',
+            'public.torznab_category_list()',
+            'public.torznab_category_list_v1()',
+            'public.torznab_download_prepare(uuid, uuid)',
+            'public.torznab_download_prepare_v1(uuid, uuid)',
+            'public.torznab_instance_authenticate(uuid, character varying)',
+            'public.torznab_instance_authenticate_v1(uuid, character varying)',
+            'public.torznab_instance_create(uuid, uuid, character varying)',
+            'public.torznab_instance_create_v1(uuid, uuid, character varying)',
+            'public.torznab_instance_enable_disable(uuid, uuid, boolean)',
+            'public.torznab_instance_enable_disable_v1(uuid, uuid, boolean)',
+            'public.torznab_instance_rotate_key(uuid, uuid)',
+            'public.torznab_instance_rotate_key_v1(uuid, uuid)',
+            'public.torznab_instance_soft_delete(uuid, uuid)',
+            'public.torznab_instance_soft_delete_v1(uuid, uuid)',
+            'public.tracker_category_mapping_delete(uuid, character varying, integer, integer)',
+            'public.tracker_category_mapping_delete(uuid, uuid, character varying, uuid, integer, integer)',
+            'public.tracker_category_mapping_delete_v1(uuid, character varying, integer, integer)',
+            'public.tracker_category_mapping_delete_v1(uuid, uuid, character varying, uuid, integer, integer)',
+            'public.tracker_category_mapping_resolve_feed(uuid, uuid, integer, integer)',
+            'public.tracker_category_mapping_resolve_feed_v1(uuid, uuid, integer, integer)',
+            'public.tracker_category_mapping_upsert(uuid, character varying, integer, integer, integer, character varying)',
+            'public.tracker_category_mapping_upsert(uuid, uuid, character varying, uuid, integer, integer, integer, character varying)',
+            'public.tracker_category_mapping_upsert_v1(uuid, character varying, integer, integer, integer, character varying)',
+            'public.tracker_category_mapping_upsert_v1(uuid, uuid, character varying, uuid, integer, integer, integer, character varying)',
+            'public.trust_tier_seed_defaults()',
+            'revaer_config.bump_app_profile_version(uuid)',
+            'revaer_config.bump_revision(text)',
+            'revaer_config.cleanup_expired_setup_tokens()',
+            'revaer_config.consume_setup_token(uuid)',
+            'revaer_config.delete_api_key(text)',
+            'revaer_config.delete_secret(text)',
+            'revaer_config.factory_reset()',
+            'revaer_config.factory_reset_without_media_defaults_v1()',
+            'revaer_config.fetch_active_setup_token()',
+            'revaer_config.fetch_api_key_auth(text)',
+            'revaer_config.fetch_api_key_hash(text)',
+            'revaer_config.fetch_api_keys()',
+            'revaer_config.fetch_app_profile_row(uuid)',
+            'revaer_config.fetch_engine_profile_row(uuid)',
+            'revaer_config.fetch_fs_policy_row(uuid)',
+            'revaer_config.fetch_revision()',
+            'revaer_config.fetch_secret_by_name(text)',
+            'revaer_config.insert_api_key(text, text, text, boolean, integer, bigint, timestamp with time zone)',
+            'revaer_config.insert_setup_token(text, timestamp with time zone, text)',
+            'revaer_config.invalidate_active_setup_tokens()',
+            'revaer_config.list_app_label_policies(uuid)',
+            'revaer_config.replace_app_label_policies(uuid, text[], text[], text[], bigint[], bigint[], integer[], boolean[], double precision[], bigint[], double precision[], bigint[], boolean[])',
+            'revaer_config.seed_media_configuration_defaults()',
+            'revaer_config.set_engine_alt_speed(uuid, bigint, bigint, integer, integer, text[])',
+            'revaer_config.set_engine_ip_filter(uuid, text, text, timestamp with time zone, text, text[])',
+            'revaer_config.set_engine_list_values(uuid, text, text[])',
+            'revaer_config.set_fs_list(uuid, text, text[])',
+            'revaer_config.set_peer_classes(uuid, smallint[], text[], smallint[], smallint[], smallint[], boolean[], smallint[])',
+            'revaer_config.set_tracker_config(uuid, text, text, text, integer, boolean, boolean, text, integer, text, text, text, boolean, text, text, text, boolean, text, text, text, text[], text[])',
+            'revaer_config.update_api_key_enabled(text, boolean)',
+            'revaer_config.update_api_key_expires_at(text, timestamp with time zone)',
+            'revaer_config.update_api_key_hash(text, text)',
+            'revaer_config.update_api_key_label(text, text)',
+            'revaer_config.update_api_key_rate_limit(text, integer, bigint)',
+            'revaer_config.update_app_auth_mode(uuid, text)',
+            'revaer_config.update_app_bind_addr(uuid, text)',
+            'revaer_config.update_app_http_port(uuid, integer)',
+            'revaer_config.update_app_immutable_keys(uuid, text[])',
+            'revaer_config.update_app_instance_name(uuid, text)',
+            'revaer_config.update_app_local_networks(uuid, text[])',
+            'revaer_config.update_app_mode(uuid, text)',
+            'revaer_config.update_app_telemetry(uuid, text, text, boolean, text, text)',
+            'revaer_config.update_engine_profile(uuid, text, integer, boolean, text, integer, bigint, bigint, double precision, bigint, boolean, boolean, boolean, boolean, boolean, text, text, boolean, integer, bigint, text, text, text, boolean, integer, integer, boolean, boolean, boolean, text, text, boolean, boolean, boolean, boolean, boolean, text, boolean, boolean, boolean, boolean, boolean, boolean, integer, integer, integer, integer, integer, integer, integer, integer)',
+            'revaer_config.update_fs_array_field(uuid, text, text[])',
+            'revaer_config.update_fs_boolean_field(uuid, text, boolean)',
+            'revaer_config.update_fs_optional_string_field(uuid, text, text)',
+            'revaer_config.update_fs_string_field(uuid, text, text)',
+            'revaer_config.upsert_secret(text, bytea, text)',
+            'revaer_runtime.delete_torrent(uuid)',
+            'revaer_runtime.fs_job_state(uuid)',
+            'revaer_runtime.list_torrent_files(uuid)',
+            'revaer_runtime.list_torrents()',
+            'revaer_runtime.mark_fs_job_completed(uuid, text, text, text)',
+            'revaer_runtime.mark_fs_job_failed(uuid, text)',
+            'revaer_runtime.mark_fs_job_started(uuid, text)',
+            'revaer_runtime.upsert_torrent(uuid, text, text, text, bigint, bigint, bigint, bigint, bigint, double precision, boolean, text, text, text, text, boolean, integer[], text[], bigint[], bigint[], text[], boolean[], timestamp with time zone, timestamp with time zone, timestamp with time zone)'
+        -- Generated authored routine grants end.
+    ]::text[] LOOP
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %I', routine_identity, runtime_record.rolname);
+    END LOOP;
+    EXECUTE format('GRANT EXECUTE ON FUNCTION revaer_system.read_database_baseline_v1() TO %I', runtime_record.rolname);
+    INSERT INTO revaer_system.database_baseline
+        (baseline_id, contract_version, init_sha256, postgres_version_num, schema_owner_role, runtime_role, sealed_at)
+    VALUES (1, contract_version_input, init_sha256_input, current_setting('server_version_num')::integer,
+        session_user, runtime_record.rolname, transaction_timestamp());
+    RETURN QUERY SELECT b.contract_version, b.init_sha256, b.postgres_version_num,
+        b.schema_owner_role, b.runtime_role, b.sealed_at FROM revaer_system.database_baseline b;
+END;
+$baseline_seal$;
+
+REVOKE ALL ON SCHEMA revaer_system FROM PUBLIC;
+REVOKE ALL ON TABLE revaer_system.database_baseline FROM PUBLIC;
+REVOKE ALL ON FUNCTION revaer_system.read_database_baseline_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION revaer_system.seal_database_baseline_v1(smallint, bytea, text) FROM PUBLIC;

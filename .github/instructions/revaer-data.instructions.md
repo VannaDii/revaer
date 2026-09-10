@@ -28,6 +28,13 @@ applyTo:
 - Run the canonical database rebaseline guard before schema handoff. Candidate
   output belongs only under the ignored `target/database-rebaseline/` evidence
   directory and must match the pinned digest and statement count.
+- ADR 551 finalization retains the exact frozen 1,624-statement candidate as
+  transition evidence. Final SQL may differ only by its approved header,
+  three dump timeout-reset removals, and reviewed lifecycle/security/grant
+  sections. `just db-init-final-proof` must compare the exact legacy bytes and
+  independently pinned final bytes, then test constrained owner/runtime roles
+  in disposable PostgreSQL. Finalization is not runtime cutover: ordinary
+  application and test bootstrap must still use the frozen migrations.
 - Before the ADR 522 cutover, persisted-state behavior changes are blocked from
   the frozen corpus. Complete them before candidate freeze or defer them to a
   direct pre-v1 `init.sql` edit after cutover; do not create another migration.

@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T07:35:15.335384+00:00",
+  "generated": "2026-09-10T07:35:42.444896+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4818,6 +4818,17 @@
         "validation"
       ],
       "href": "/adr/565-packaged-baseline-reader/"
+    },
+    {
+      "id": "adr/566-single-init-final-sql-proof",
+      "title": "Single-init final SQL and constrained-role proof",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Implements the SQL/proof portion of accepted ADRs 522, 541, and 551. It does not authorize a runtime cutover, change the approved privilege matrix, or resolve the two failing contract checks below. Decision: Keep finalization inert and fail closed pending full conformance. The frozen 167 migrations remain byte-identical and authoritative.",
+      "tags": [
+        "evidence-and-holds",
+        "implementation",
+        "task-record"
+      ],
+      "href": "/adr/566-single-init-final-sql-proof/"
     },
     {
       "id": "adr/567-postgres-pristine-catalog-evidence",

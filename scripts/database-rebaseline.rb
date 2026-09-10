@@ -5,6 +5,7 @@ require_relative "database_rebaseline/support"
 require_relative "database_rebaseline/sql_statements"
 require_relative "database_rebaseline/contract"
 require_relative "database_rebaseline/candidate_builder"
+require_relative "database_rebaseline/final_sql"
 
 module RevaerDatabaseRebaseline
   class Cli
@@ -32,11 +33,19 @@ module RevaerDatabaseRebaseline
         )
       when "prefix"
         ensure_argument_count!(0)
-        prefix = contract.verify_prefix!
+        prefix = if contract.transition_phase == "finalization"
+                   FinalSql.new(contract).verify!
+                 else
+                   contract.verify_prefix!
+                 end
         @output.puts(
-          "database-rebaseline: #{contract.relative(contract.init_path)} is a complete " \
-          "#{prefix.bytesize}-byte candidate prefix"
+          "database-rebaseline: #{contract.relative(contract.init_path)} verified " \
+          "(#{contract.transition_phase}, #{prefix.bytesize} bytes)"
         )
+      when "finalize"
+        ensure_argument_count!(0)
+        FinalSql.new(contract).generate!
+        @output.puts("database-rebaseline: generated final SQL; independently review and pin the resulting bytes")
       when "changed-lines"
         ensure_argument_count!(3)
         scope, base_ref, head_ref = @arguments
@@ -66,7 +75,7 @@ module RevaerDatabaseRebaseline
 
     def usage
       "usage: database-rebaseline.rb " \
-        "{freeze|generate|prefix|changed-lines <stack|init-assembly> <base> <head>}"
+        "{freeze|generate|prefix|finalize|changed-lines <stack|init-assembly> <base> <head>}"
     end
   end
 end

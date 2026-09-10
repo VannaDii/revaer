@@ -290,6 +290,10 @@ module RevaerDatabaseRebaseline
     end
 
     def verify_optional_prefix!(container)
+      if @contract.transition_phase == "finalization"
+        FinalSql.new(@contract).verify!
+        return
+      end
       return unless @contract.transition_phase == "assembly"
 
       prefix = @contract.verify_prefix!

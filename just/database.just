@@ -30,6 +30,13 @@ db-pristine-catalog-validate:
 db-pristine-catalog-test:
     ruby --disable-gems scripts/tests/postgres-pristine-test.rb
 
+# Transition-only generation; never selects init.sql for application bootstrap.
+db-init-finalize:
+    ruby --disable-gems scripts/database-rebaseline.rb finalize
+
+db-init-final-proof: db-rebaseline-candidate
+    ruby --disable-gems scripts/database_rebaseline/final_proof.rb
+
 stack-changed-lines base_ref head_ref:
     ruby --disable-gems scripts/database-rebaseline.rb changed-lines stack "{{base_ref}}" "{{head_ref}}"
 

@@ -4817,6 +4817,17 @@
     "href": "/adr/565-packaged-baseline-reader/"
   },
   {
+    "id": "adr/566-single-init-final-sql-proof",
+    "title": "Single-init final SQL and constrained-role proof",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Implements the SQL/proof portion of accepted ADRs 522, 541, and 551. It does not authorize a runtime cutover, change the approved privilege matrix, or resolve the two failing contract checks below. Decision: Keep finalization inert and fail closed pending full conformance. The frozen 167 migrations remain byte-identical and authoritative.",
+    "tags": [
+      "evidence-and-holds",
+      "implementation",
+      "task-record"
+    ],
+    "href": "/adr/566-single-init-final-sql-proof/"
+  },
+  {
     "id": "adr/567-postgres-pristine-catalog-evidence",
     "title": "PostgreSQL pristine catalog evidence",
     "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record. Implements the accepted [551](551-packaged-database-baseline-contract.md) catalog contract, within [541](541-packaged-init-bootstrap-lifecycle.md). The parent agent coordinated this isolated slice and reserved this record; that assignment is not operator approval. Runtime classification and init finalization are outside this slice.",
