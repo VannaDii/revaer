@@ -114,6 +114,11 @@ satisfy that contract. Parser failure is an error, not an empty successful scan.
   both recipe failure messages; `final-status.txt` records `1`.
 - Full `just ci` and `just ui-e2e` were not run here; they are parent-owned
   on the combined tree. This record does not assert repository completion.
+- Parent integration `4b073661` passed `just workflow-guardrails-test
+  stack-check-contract-test test-fixture-scripts instruction-drift` again.
+  The Sonar Ruby snippet analyzer returned zero issues for the full contents of
+  both changed Ruby guardrail files in MAIN scope. This does not replace the
+  authoritative scanner, coverage publication, or combined CI/UI gates.
 
 ## Failing Fixture Provenance
 

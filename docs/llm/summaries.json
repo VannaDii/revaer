@@ -4803,6 +4803,7 @@
       "ledger-validation",
       "outside-in-ledger",
       "parent-validation-checkpoint",
+      "root-input-and-conversion-gate-checkpoint",
       "rvb1-and-github-checkpoint",
       "task-record"
     ],

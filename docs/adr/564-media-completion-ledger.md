@@ -250,6 +250,50 @@ local secrets scan is distinct from the authoritative scanner, which fails
 closed without a local token, and Agentic Analysis, which returned an
 organization-entitlement 403. Neither is a published full-Sonar result.
 
+## Root Input And Conversion Gate Checkpoint
+
+The approved outside-in root-input helpers are implemented in
+[ADR 574](574-root-input-contract.md), executable commit `32a49c4b`. Its 22
+focused tests pass, including five independent cursor vectors. Full `just ci`
+passed with all 18 package coverage gates; the helper has 103/104 covered lines.
+`just ui-e2e` still failed at profile creation (expected 201, received 400):
+46 passed, one failed, and 61 did not run. No new HTTP route, root persistence,
+filesystem authority, or production provider is activated by these helpers.
+
+[ADR 575](575-media-conversion-gate.md), integrated as `4b073661`, corrects an
+additional validation gap: `test-media-conversion` previously validated only
+fixture integrity/probes. It now also invokes the complete Rust fixture binary
+with ignored tests included and requires fresh positive runtime evidence.
+Preparation and execution reports are separated so stale or preparation-only
+reports cannot establish a pass. Structural and controlled execution tests
+exercise skipped/zero-test, error-propagation, and report-provenance failures.
+These controlled tests are not real conversion proof.
+
+The real fixture attempt downloaded all 22 locked sources and generated the
+derived fixtures, but strict probe verification rejected an unapproved EBML
+diagnostic for the locked upstream `mkv-theora-vorbis-live-style` source. The
+Rust suite therefore did not run. The local probe tools were 9.0.1; the runtime
+manifest pins Alpine FFmpeg 8.0.1-r1. No supported-package comparison or exact
+compatibility cause has been established. No diagnostic allowance, lock,
+snapshot, or assertion was changed. All acquired/generated test media and
+completed worker worktrees were removed; ADR 575 retains exact provenance.
+
+Fresh local Sonar inputs were verified for `32a49c4b`, but the authoritative
+scanner still lacks local `SONAR_TOKEN` and Agentic Analysis returns the
+organization-entitlement 403. The available Ruby snippet analyzer returned
+zero issues for both changed guardrail files with full-file MAIN scope; it
+does not support Rust. Remote PR 194's Sonar snapshot reports positive coverage
+and an OK gate, but does not bind its response to this unpublished revision or
+prove no ignored conditions. It is not the required new analysis.
+
+Read-only GitHub refresh confirms the same three remote heads and VannaDii
+assignments recorded above. PR 98 remains conflicting and 131,057 changed lines.
+PR 194 still lacks `Supply Chain Checks`: 20 reported passing checks are not
+the 21 required contexts. No Copilot request is present in its complete current
+request list. These are unresolved stack/review obligations, not a remote pass.
+The primary checkout and all unapproved init deltas remain untouched. ADR 569
+and E1 remain held; approval of 557-559 does not authorize either delta.
+
 ## Task Record
 
 - Motivation: Provide a bounded completion ledger while the integrating agent

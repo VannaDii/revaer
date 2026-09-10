@@ -63,19 +63,60 @@
 - The independently authored tests from worker commit `74eab718` pass on the
   combined implementation: 21 tests, including five literal Ruby-derived cursor
   vectors. A parent-added cursor-debug check extends the focused suite to 22
-  tests. This suite does not use the encoder to derive its known-answer values.
+  passing tests. This suite does not use the encoder to derive its known-answer
+  values.
 - A separate scoped source review found no actionable issue in the helper
   implementation. It specifically retained HTTP extraction, SQL membership,
   resource separation, and descriptor confinement as unproven integration work.
   This is not a completed repository security scan or a Copilot review.
-- `just fmt` and the full two-pass `just lint` passed on the production module;
-  Clippy's missing-const finding was corrected without a suppression. Both
-  required full gates will run on the combined committed revision. Their
-  pending results are not passes.
+- Final executable `32a49c4b353bd5ebf2077929e0ecf2417382b517` passed `just ci`,
+  including both Clippy passes, workspace and minimal-feature tests, all 18
+  package coverage gates, shell/Ruby coverage, and the release build. Corrected
+  Clippy's missing-const finding and a test fixture's manual empty-string
+  construction without suppressions. The earlier `d8ac9560` CI attempt failed
+  on the latter finding; its failure log remains retained.
+- The same final executable failed `just ui-e2e`: 46 passed, one failed, and
+  61 did not run. `tests/specs/api/media.spec.ts:130` expected profile creation
+  HTTP 201 and received 400. Teardown also reported the unexercised job-phases
+  and profile-readiness routes. No assertion, route requirement, or readiness
+  condition was relaxed. The full operator workflow is not validated.
+- Rust LCOV contains 237 sources, 101,312 line records, and 94,218 covered
+  records. This helper has 103/104 covered lines; line coverage is not exhaustive
+  branch or security proof. JavaScript LCOV contains 60 sources, 5,276 lines,
+  and 3,916 covered lines from the actual partial API run and release smoke
+  execution, not a completed UI suite. `just sonar-compile-db
+  js-release-coverage js-coverage-merge sonar-verify-inputs` passed with the fresh
+  Rust, native, JavaScript, and shell/Ruby inputs.
 - `just docs-index docs-link-check instruction-drift` passed with 1,089 links
   checked and zero link errors before the final validation-result update.
 - `just --command sonar verify --file
   crates/revaer-api-models/src/media_root_contract.rs --project VannaDii_Revaer`
   returned the organization-entitlement HTTP 403 for Agentic Analysis. It did
-  not analyze the code. The authoritative scanner and published-coverage
-  requirements remain separate, mandatory gates.
+  not analyze the code. The available Sonar snippet tool does not support Rust;
+  no file was mislabeled as another language to obtain a result.
+- `just sonar-scan` failed closed before analysis because local `SONAR_TOKEN`
+  is unavailable. The authoritative scanner and published-coverage requirements
+  remain separate, mandatory gates. A local secrets scan of every changed file
+  completed with no findings; this is not semantic Rust or authoritative Sonar
+  analysis. Its exact command was:
+
+  ```sh
+  just --command sonar analyze secrets \
+    .github/instructions/devops.instructions.md \
+    crates/revaer-api-models/src/lib.rs \
+    crates/revaer-api-models/src/media_root_contract.rs \
+    crates/revaer-api-models/src/media_root_contract/tests.rs \
+    just/media.just docs/adr/574-root-input-contract.md docs/adr/index.md \
+    docs/SUMMARY.md docs/llm/manifest.json docs/llm/summaries.json
+  ```
+
+- Read-only Sonar queries for remote PR 194 report an OK gate, 87.5% new-code
+  coverage, 90.7% overall coverage, 90.9% line coverage, and 121,601 lines to
+  cover. Those responses do not identify an analysis commit or prove
+  `ignoredConditions=false`; they do not certify this unpublished local change.
+- The exact-revision CI/UI logs, coverage copies, command logs, and remote
+  snapshots are retained outside Git in `revaer-reviews/2026-09-10`, under the
+  `root-contract-*`, `ci-root-contract-*`, `ui-e2e-root-contract-*`, and
+  `32a49c4b-coverage` names. The two test-run PostgreSQL containers were removed.
+  Both completed root-contract worker worktrees were removed. No remote state
+  was changed, and the conflicted primary checkout was preserved.
