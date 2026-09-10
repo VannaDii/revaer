@@ -1,3 +1,4 @@
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -43,7 +44,28 @@ impl Subscriber for EventCounter {
 }
 
 #[test]
-fn baseline_read_leaves_cancelled_query_diagnostics_to_the_lifecycle() {
+fn baseline_read_leaves_cancelled_query_diagnostics_to_the_lifecycle() -> anyhow::Result<()> {
+    const CHILD_MARKER: &str = "REVAER_BASELINE_LOG_CAPTURE_CHILD";
+    if std::env::var_os(CHILD_MARKER).is_none() {
+        // Other tests register the same tracing callsite. Keep capture isolated
+        // without serializing the workspace or changing its production logging.
+        let status = Command::new(std::env::current_exe()?)
+            .env(CHILD_MARKER, "1")
+            .arg("--exact")
+            .arg(
+                concat!(
+                    module_path!(),
+                    "::baseline_read_leaves_cancelled_query_diagnostics_to_the_lifecycle"
+                )
+                .strip_prefix("revaer_data::")
+                .ok_or_else(|| anyhow::anyhow!("unexpected baseline test module"))?,
+            )
+            .arg("--nocapture")
+            .status()?;
+        assert!(status.success(), "isolated baseline log capture failed");
+        return Ok(());
+    }
+
     let events = EventCounter::default();
     tracing::subscriber::with_default(events.clone(), || {
         let error = BaselineReadError::from_database(Some("57014"), None);
@@ -55,4 +77,5 @@ fn baseline_read_leaves_cancelled_query_diagnostics_to_the_lifecycle() {
         assert_eq!(error.reason(), BaselineReadReason::BaselineShapeInvalid);
         assert_eq!(events.0.load(Ordering::SeqCst), 1);
     });
+    Ok(())
 }

@@ -19,7 +19,7 @@ db-init-prefix-check:
 
 test-database-baseline-read:
     cargo --config 'build.rustflags=["-Dwarnings"]' test \
-        -p revaer-data --all-features baseline::
+        --workspace --all-features baseline::
 
 db-pristine-catalog-generate:
     ruby --disable-gems scripts/postgres-pristine.rb generate

@@ -4819,7 +4819,7 @@
   {
     "id": "adr/566-single-init-final-sql-proof",
     "title": "Single-init final SQL and constrained-role proof",
-    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Implements the SQL/proof portion of accepted ADRs 522, 541, and 551. It does not authorize a runtime cutover, change the approved privilege matrix, or resolve the two failing contract checks below. Decision: Keep finalization inert and fail closed pending full conformance. The frozen 167 migrations remain byte-identical and authoritative.",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Implements the SQL/proof portion of accepted ADRs 522, 541, and 551. It does not authorize a runtime cutover, change the approved privilege matrix, or resolve the two failing proof assertions below. Decision: Keep finalization inert and fail closed pending full conformance. The frozen 167 migrations remain byte-identical and authoritative.",
     "tags": [
       "evidence-and-holds",
       "implementation",
@@ -4852,10 +4852,10 @@
   {
     "id": "adr/569-init-privilege-and-timeout-resolution",
     "title": "Init privilege and timeout resolution",
-    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. Approval of ADRs 557-559 does not approve this delta. Context: ADR 566's real PostgreSQL 16.14 proof found two incompatibilities between the frozen candidate and ADR 551's exact finalization requirements. Decision: None made. Present D1 and D2 below for separate operator approval. Keep the finalization proof failing and the runtime cutover disabled meanwhile. Consequences: These proposals preserve a constrained bootstrap principal and stored-procedure-only runtime access, but alter exact accepted schema/parity and timeout-scope constraints. They are not G1 internal refinements. Follow-up: Obtain an explicit decision, then implement only the accepted delta, regenerate its exact init",
+    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. Approval of ADRs 557-559 does not approve this delta. Context: ADR 566's real PostgreSQL 16.14 proof found an extension-privilege ambiguity in ADR 551 and a confirmed timeout-scope incompatibility. Decision: None made. Present D1 and D2 below for separate operator approval. Keep the finalization proof failing and the runtime cutover disabled meanwhile. Consequences: D1 explicitly chooses the authored-versus-extension privilege boundary; D2 changes exact legacy parity and timeout-scope constraints. These are operator decisions, not G1 internal refinements. Follow-up: Obtain an explicit decision, then implement only the accepted delta, regenerate its exact init digest, and repeat",
     "tags": [
       "acceptance-evidence-required-after-approval",
-      "d1-private-extension-schema",
+      "d1-clarify-the-extension-privilege-boundary",
       "d2-function-scoped-reset-lock-bound",
       "observed-conflicts",
       "task-record"

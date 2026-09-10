@@ -5,7 +5,7 @@
 - Operator approval: Not applicable: nonarchitectural task record
 - Context: Implements the SQL/proof portion of accepted ADRs 522, 541, and 551.
   It does not authorize a runtime cutover, change the approved privilege matrix,
-  or resolve the two failing contract checks below.
+  or resolve the two failing proof assertions below.
 - Decision: Keep finalization inert and fail closed pending full conformance.
   The frozen 167 migrations remain byte-identical and authoritative.
 
@@ -59,12 +59,16 @@
   UUIDv4 `rate_limit_policy_public_id` values by their stable policy identity;
   it rejects missing, duplicate, or invalid generated UUIDs and compares every
   remaining row value in both directions. This is not literal clock/UUID equality.
-- **Unresolved extension privilege conflict:** installing trusted `pgcrypto`
+- **Unresolved extension privilege interpretation:** installing trusted `pgcrypto`
   and `unaccent` creates 40 extension routines owned by the image superuser,
-  with inherited PUBLIC execution. They are effectively runtime-executable
-  despite being excluded from authored grants. The constrained owner cannot
+  with inherited PUBLIC EXECUTE ACLs despite exclusion from authored grants.
+  This catalog observation is not proof of direct invocation for every member;
+  two entries have internal-only callback signatures. The constrained owner cannot
   revoke those privileges. No elevated owner grant, extension replacement,
   server mutation, or criteria exception is introduced to conceal this result.
+  Peer review found that the proof's zero-extension-EXECUTE interpretation is
+  stricter than ADR 551 unambiguously states. ADR 569 requests operator
+  clarification without changing or concealing this failed assertion.
 - **Unresolved timeout conflict:** the frozen canonical seed function
   `factory_reset_without_media_defaults_v1` sets transaction-local `lock_timeout`
   to `5s`. With initializer settings `120s / 120s / 30s`, the final script leaves

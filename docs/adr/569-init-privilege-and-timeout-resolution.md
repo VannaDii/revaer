@@ -3,13 +3,13 @@
 - Status: Proposed
 - Date: 2026-09-10
 - Operator approval: Pending. Approval of ADRs 557-559 does not approve this delta.
-- Context: ADR 566's real PostgreSQL 16.14 proof found two incompatibilities
-  between the frozen candidate and ADR 551's exact finalization requirements.
+- Context: ADR 566's real PostgreSQL 16.14 proof found an extension-privilege
+  ambiguity in ADR 551 and a confirmed timeout-scope incompatibility.
 - Decision: None made. Present D1 and D2 below for separate operator approval.
   Keep the finalization proof failing and the runtime cutover disabled meanwhile.
-- Consequences: These proposals preserve a constrained bootstrap principal and
-  stored-procedure-only runtime access, but alter exact accepted schema/parity
-  and timeout-scope constraints. They are not G1 internal refinements.
+- Consequences: D1 explicitly chooses the authored-versus-extension privilege
+  boundary; D2 changes exact legacy parity and timeout-scope constraints. These
+  are operator decisions, not G1 internal refinements.
 - Follow-up: Obtain an explicit decision, then implement only the accepted
   delta, regenerate its exact init digest, and repeat all conformance gates.
 
@@ -21,14 +21,19 @@ The source for this review is the inert finalization in commit `b74d6b1a`
 The proof completed 64 checks: 62 passed and these two failed. This digest is
 not a release certification and has not been embedded or deployed.
 
-1. **Extension execution.** The constrained owner installs trusted `pgcrypto`
-   and `unaccent`, but 40 extension routines belong to PostgreSQL's bootstrap
-   superuser. They retain PUBLIC execution in `public`, which the runtime must
+1. **Extension execution ambiguity.** The constrained owner installs trusted
+   `pgcrypto` and `unaccent`, but 40 extension routines belong to PostgreSQL's
+   bootstrap superuser. They retain PUBLIC EXECUTE ACLs in `public`, which the runtime must
    be able to use for application procedures. Omitting explicit runtime grants
-   does not remove that effective permission. The constrained owner cannot
+   does not remove those ACLs. This catalog result does not prove every routine
+   can be invoked directly: two have internal-only callback signatures. The constrained owner cannot
    revoke privileges on those superuser-owned routines. This is PostgreSQL's
    documented [trusted-extension ownership behavior](https://www.postgresql.org/docs/16/sql-createextension.html),
-   not evidence that Revaer needs an unrestricted bootstrap account.
+   not evidence that Revaer needs an unrestricted bootstrap account. ADR 551
+   explicitly restricts authored routines; its extension-capability and broader
+   default-privilege wording do not unambiguously decide inherited extension
+   execution. The new proof selected the stricter interpretation. It must not
+   be presented as an already-approved zero-extension-execution requirement.
 2. **Timeout leakage.** The seed path calls
    `revaer_config.factory_reset_without_media_defaults_v1`, whose existing body
    executes `set_config('lock_timeout', '5s', true)`. It leaves the encompassing
@@ -41,46 +46,64 @@ extension ACL, timeout value, migration, workflow, or remote setting was changed
 to conceal them. The independently passing pristine catalog and baseline-reader
 tests do not resolve either conflict.
 
-## D1: Private Extension Schema
+## D1: Clarify The Extension Privilege Boundary
 
-**Recommendation, not authorization:** add exactly one private schema,
-`revaer_extensions`, owned by the constrained schema owner. Install both trusted
-extensions there inside the same authoritative init transaction. Revoke schema
-USAGE and CREATE from PUBLIC and the runtime; grant neither to runtime. Keep
-the extension member objects owned as PostgreSQL installs them, without granting
-superuser or role-administration privileges to Revaer.
+**Recommendation, not authorization:** retain the pinned, stock `pgcrypto` and
+`unaccent` objects in `public`, including their inherited PUBLIC EXECUTE ACLs,
+as PostgreSQL extension primitives. Require owner-owned SECURITY DEFINER and
+explicit-only runtime grants for every **authored Revaer routine granted to
+runtime**. Keep trigger routines and the baseline seal ungranted. Runtime
+still receives no application table/sequence access, DDL, extension management,
+role administration, or baseline-seal permission. This does not promise that
+runtime SQL cannot invoke hashing, cryptography, randomness, or text-search
+primitives supplied by PostgreSQL and these two extensions.
 
-- Qualify every authored extension reference as `revaer_extensions.<object>`.
-  Include extension functions, dictionaries, and any dependency discovered by
-  catalog/definition inspection, not just currently exercised function calls.
-  Keep application routine search paths within ADR 551's existing fixed set;
-  do not add the private schema to runtime or application search paths.
-- Only owner-executed application SECURITY DEFINER routines may reach these
-  private dependencies. Runtime direct extension calls and all extension DDL
-  must fail, including attempted name, cast, prepared-statement, indirect-role,
-  and object-identity access paths available to the constrained runtime.
-- This changes ADR 551's literal extension-schema parity and its effective
-  routine-admission test. Extension function ACLs can still contain PUBLIC
-  EXECUTE, but schema access must deny direct runtime invocation. A bare
-  `has_function_privilege(..., 'EXECUTE')` result is not sufficient evidence of
-  invocation permission or denial. This distinction requires explicit approval;
-  it is not an already-approved reinterpretation of the failing check.
-- Keep exact extension versions, member definitions, and dependency identity
-  parity, with only the approved schema/reference relocation delta. Record and
-  validate every changed object, including seed behavior. No dynamic schema
-  rewriting, provider allowlist, second SQL authority, or new dependency.
+The exact clarification and proof replacement requested are:
 
-This is a proposed permanent v0 architecture change, not a temporary Sonar,
-security-advisory, required-check, or coverage exception. It does not authorize
-changing any such criterion. If the operator requires literal revocation of
-PUBLIC EXECUTE on every extension member, D1 does not satisfy that requirement;
-the operator must reject D1 or approve a separately designed administrative
-provisioning model. Do not silently swap those guarantees.
+- Narrow ADR 551's "every runtime-executable routine" acceptance clause to
+  authored, directly granted non-trigger routines, with the stock extension
+  members independently constrained below. Its authored PUBLIC-revocation and
+  explicit application-grant rules remain unchanged. This is the exact broader
+  wording D1 supersedes, not an assertion that ADR 551 already made this choice.
+- Replace only the new `no effective extension routine grants` assertion with
+  an exact pinned-extension inventory/definition/ownership/ACL proof. The
+  observed inventory has 40 routine identities, all SECURITY INVOKER; distinguish
+  ordinary callable functions from internal callbacks. Derive and compare the
+  complete inventory from the pinned clean fixture, not a permissive name glob.
+- Preserve every authored-routine grant, search-path, relation-access, owner,
+  role-substitution, baseline, and extension-DDL denial assertion. No additional
+  PUBLIC grant or SECURITY DEFINER extension member is permitted.
+- Approval covers only these stock extension objects under ADR 551's exact
+  PostgreSQL image/version. It expires for any image, PostgreSQL minor version,
+  extension version, member definition, owner, ACL, or extension-set change;
+  renewed explicit review and proof are then mandatory. It authorizes no Sonar,
+  advisory, coverage, GitHub-check, or other quality-criterion relaxation.
+
+If the operator instead requires zero inherited extension EXECUTE ACLs or zero
+extension-mediated computation, reject D1. A separately approved provisioning
+or dependency design is then necessary; neither a private schema nor omission
+from an explicit grant list establishes that stronger guarantee.
+
+### Withdrawn Private-Schema Recommendation
+
+The first local draft recommended `revaer_extensions` with no runtime schema
+USAGE. Peer review found that this was not sufficient for its promised owner-only
+dependency access. Numeric `regdictionary` input avoids name lookup, and
+`ts_lexize` dispatches the dictionary callback by OID. This conclusion is derived
+from the pinned 16.14 [OID conversion](https://raw.githubusercontent.com/postgres/postgres/REL_16_14/src/backend/utils/adt/regproc.c),
+[dictionary dispatch](https://raw.githubusercontent.com/postgres/postgres/REL_16_14/src/backend/tsearch/dict.c),
+and [callback initialization](https://raw.githubusercontent.com/postgres/postgres/REL_16_14/src/backend/utils/cache/ts_cache.c)
+sources; it is not a live reproduction. Fastpath function calls themselves do
+check both namespace USAGE and function EXECUTE in the pinned
+[fastpath implementation](https://raw.githubusercontent.com/postgres/postgres/REL_16_14/src/backend/tcop/fastpath.c).
+Existing prepared lookups are another limitation of post-hoc schema revocation,
+as documented under [schema USAGE](https://www.postgresql.org/docs/16/ddl-priv.html).
+No private schema was implemented. It is no longer the recommendation.
 
 Alternatives considered:
 
-- Keep extensions in `public` and accept their direct runtime execution:
-  smaller change, but relaxes the intended runtime boundary; not recommended.
+- Retain stock extension primitives while strictly protecting authored Revaer
+  state and procedures: recommended above, with its explicit capability limit.
 - Give bootstrap superuser or ownership of extension member objects: materially
   widens authority and may violate extension safety assumptions; not recommended.
 - Add a privileged pre-provisioning or ACL-management step: could enforce literal
@@ -114,16 +137,16 @@ migration corpus remains unchanged under every option.
 
 - Fresh init under the pinned constrained owner; direct owner/runtime/outsider
   sessions; no role substitution; no added role or server capability.
-- For D1, no runtime/PUBLIC schema access or direct extension call, including
-  after owner NOLOGIN. Execute every affected application procedure path through
-  the runtime role, compare normalized objects/seeds, and prove transaction
-  rollback leaves no private schema or partial extension installation.
+- For D1, prove the exact stock extension inventory and permissions, no broader
+  extension or authored capability, all existing application-state/DDL denials,
+  and successful application paths before and after owner NOLOGIN. Retain
+  schema/seed parity and complete transaction rollback proof.
 - For D2, prove exact before/inside/after values for successful reset, lock
   contention, SQL failure, cancellation, transaction rollback, and nested calls.
   Preserve the fixed whole-operation deadline and final cancellation reason.
-- Mutation tests must reject runtime USAGE, public relocation, unqualified
-  extension references, broadened search paths, timeout leakage, and removal or
-  increase of the scoped bound. Existing failing proof assertions remain until
+- Mutation tests must reject changed extension membership/definitions/ACLs,
+  authored PUBLIC execution, broadened search paths, timeout leakage, and removal
+  or increase of the scoped bound. Existing failing proof assertions remain until
   the operator accepts the exact replacement contract and tests.
 - Run full application parity, `just ci`, `just ui-e2e`, positive published
   Sonar coverage and applicable GitHub checks on the resulting stack revisions.
@@ -143,8 +166,8 @@ migration corpus remains unchanged under every option.
   no runtime telemetry, error contract, or credential handling changes.
 - Status-doc validation: Reviewed the completion goal and ADRs 522, 541, 551,
   and 559. Single-init remains inert; E1 and other retained holds remain held.
-- Risk & rollback plan: D1 can break extension references or admit unexpected
-  indirect access; D2 can change nested reset timing. Both remain unapplied
+- Risk & rollback plan: D1 explicitly permits stock extension computation and
+  requires exact inventory proof; D2 changes nested reset timing. Both remain unapplied
   pending approval and proof. Rejecting this ADR leaves current runtime and
   GitHub unchanged; never repair a sealed baseline in place.
 - Dependency rationale: No new dependency proposed. Keep the existing pinned

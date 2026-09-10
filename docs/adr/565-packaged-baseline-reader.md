@@ -75,11 +75,20 @@
 ### Integrated Review
 
 - The first full workspace test run exposed a captured-event assertion that
-  passed in the focused run but observed zero events under concurrent testing.
-  The test subscriber now declares per-event interest and an explicit maximum
-  level so shared callsite filtering cannot stand in for its thread-local
-  decision. Both the zero-event cancellation and one-event failure assertions
-  remain intact; this changes no production behavior or criterion.
-- The integrated full-gate rerun is required before claiming that regression
-  resolved. The separate media-profile and torrent-authoring E2E failures are
-  not addressed by this test-only change.
+  passed in the package-focused run but observed zero events in full CI. An
+  explicit-interest/maximum-level change did not resolve it. Matching CI's
+  workspace-wide feature selection while filtering baseline tests still passed
+  all 14, so package feature selection did not explain the failure.
+- The captured-event assertion now runs in an exact child test of the same
+  binary, following the existing bootstrap-test isolation pattern. The child
+  inherits coverage instrumentation and keeps both the zero-event cancellation
+  and one-event failure assertions. No workspace test is disabled or serialized,
+  and production logging and quality criteria are unchanged. The focused recipe
+  retains workspace-wide feature selection to avoid future evidence drift.
+- `just test-database-baseline-read` and the full workspace tests within the
+  integrated CI rerun passed, including the isolated child. Full-file Sonar MCP
+  secrets analysis of the changed logging test returned zero issues; Rust
+  semantic analysis remains unavailable through that MCP. Full CI coverage and
+  release validation remain in progress at this record update.
+- The separate media-profile and torrent-authoring E2E failures are not
+  addressed by this test-only change.
