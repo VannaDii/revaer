@@ -4,6 +4,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${repo_root}"
 
+source scripts/test-fixtures/probe-diagnostic-contract.sh
+fixture_probe_policy_validate test-fixtures/manifest.json
+fixture_f1_identity_validate test-fixtures/manifest.json test-fixtures/lock.json
+
 jq -s -e '
   .[0] as $lock |
   .[1] as $manifest |

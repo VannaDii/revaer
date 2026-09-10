@@ -91,6 +91,25 @@ just update-test-fixture-probes
 diagnostic counts in the Markdown report. Any mismatch exits non-zero with the
 fixture id and field name.
 
+ADR 578 F1 is the only exact recovery-diagnostic contract. It is bound to the
+unchanged `mkv-theora-vorbis-live-style` source, reviewed snapshot, single native
+error line, and two approved full FFprobe version-report hashes. Unknown or
+conflicting contracts fail closed; `allowProbeDiagnostics` is forbidden for
+this fixture. Empty stderr retains normal strict acceptance. Neither the
+contract nor the explicit snapshot-update recipe can replace its snapshot.
+
+For each F1 admission, the verifier prints the original native error, full tool
+report and an explicit classification/count. It retains byte-identical `probe.stderr`,
+`ffprobe-version.txt`, and hash-bound `classification.json` in a private unique
+directory beneath `${REVAER_MEDIA_CONVERSION_REPORT}.probe-evidence` (default
+`target/media-conversion-report.md.probe-evidence`). Conversion preparation uses
+the recipe's `.preparation` report suffix. Preserve that evidence alongside the
+run log; failure to retain it is fatal. This is test-only preparation evidence,
+not executable attestation, a conversion pass, or production error suppression.
+Any identity, snapshot, message/framing, build-report or scope change expires F1
+and requires renewed operator approval. Existing Just conversion selection and
+positive video/audio/failure-count checks remain mandatory and unchanged.
+
 Fixture preparation tries primary upstream URLs first. Some Test-Videos entries
 also declare exact Internet Archive captures of the same URLs as fallbacks in
 `lock.json`; preparation fails rather than skipping media coverage when all

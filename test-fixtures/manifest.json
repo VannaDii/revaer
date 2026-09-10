@@ -191,10 +191,11 @@
       "expectedAudioStreamCount": 1,
       "expectedSubtitleStreamCount": 0,
       "purpose": "Theora/Vorbis live-style Matroska behavior.",
+      "probeDiagnosticContract": "adr578-f1",
       "generated": false,
       "shouldDownload": true,
       "shouldGenerate": false,
-      "notes": "Some ffprobe builds print a Matroska EBML warning while still probing streams successfully."
+      "notes": "ADR 578 F1 permits only the exact locked recovery diagnostic and evidenced tool-report profiles; native error bytes and classification are retained."
     },
     {
       "id": "mkv-multi-audio-multi-subtitles",

@@ -116,3 +116,4 @@ fi
 scripts/test-fixtures/probe-fixtures.sh --update
 scripts/test-fixtures/probe-fixtures.sh --check
 printf 'test-probe-verification: read-only check, strict diagnostics, drift failure, and explicit update passed\n'
+bash scripts/test-fixtures/test-probe-diagnostic-contract.sh

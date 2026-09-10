@@ -161,3 +161,83 @@ changing CI's tool provisioning needs its own reviewed scope and evidence.
   575-576, fixture lock/manifest, strict probe verifier and its regressions,
   the Rust suite, and PR fixture provisioning. No existing criterion, lock,
   snapshot, test selection, runtime policy or GitHub rule was changed.
+
+## F1 Implementation Evidence (2026-09-10)
+
+This section supersedes the preapproval task record's statements that F1 is
+unimplemented. It records only the explicitly approved F1 exception, implemented
+from integration base `826a8f8e8668a3e6a91e99ef84c12b0e31df5ac2` in the assigned
+`work/media3-approved-fixture-diagnostic-20260910` branch. It grants no additional
+approval and does not satisfy the remaining integrated handoff requirements.
+
+- Design: `probeDiagnosticContract: "adr578-f1"` selects a closed shell helper.
+  It checks the exact manifest/lock source identity and actual source bytes,
+  pinned reviewed-snapshot digest, exact diagnostic framing and pointer bounds,
+  and the two full tool-report hashes above. Unknown/null/conflicting policies
+  fail; even deleting the contract cannot enable the broad allowance on this
+  fixture. The snapshot-update path also refuses to replace the F1 snapshot.
+- Observability: Successful F1 use retains byte-compared raw stderr and the
+  entire version report with hash-bound classification/count JSON in a private
+  unique evidence directory. Both original stderr and the full version report
+  are also printed to the retained run log. Lost, empty, changed or unwritable
+  evidence fails admission. Existing broad Chromium diagnostic handling is
+  unchanged and its count remains separate from the F1 count.
+- Dependencies: No new dependency. The implementation uses the existing Bash,
+  jq, hash and core filesystem tools. Regression doubles support either of the
+  existing SHA-256 command variants; they are not native executable attestation.
+- Focused proof: `bash scripts/with-node.sh just test-fixture-scripts` passes
+  70 F1 adversarial/acceptance cases plus existing acquisition/probe tests.
+  Both complete reviewed tool-report profiles and minimum/maximum pointer
+  lengths are exercised. Rejections cover identity/source/snapshot drift,
+  unknown/conflicting policies, malformed/non-ASCII/NUL/CR/multiline/no-LF
+  diagnostics, global byte limits, failed process status, invalid/empty JSON,
+  stream drift, unapproved tool reports, and missing/corrupted raw evidence.
+  These isolated plumbing cases use an explicitly synthetic source/hash and
+  FFprobe double; they are not the real-media proof below.
+- Real acquisition/generation: `bash scripts/with-node.sh just
+  download-test-fixtures` acquired and verified all 22 immutable sources;
+  `bash scripts/with-node.sh just generate-test-fixtures` passed. No source,
+  lock, or reviewed snapshot was replaced. The initial sandbox-only acquisition
+  failed DNS resolution; the authorized network-enabled retry passed.
+- Real host conversion: The final unchanged-code command was
+  `GNUPGHOME=<private-test-keyring> bash scripts/with-node.sh just policy
+  test-media-conversion`, exit 0. Preparation matched all 30 snapshots and
+  retained exactly one F1 diagnostic under the exact Homebrew 9.0.1 profile.
+  The unfiltered all-feature Rust binary ran with `--include-ignored`:
+  6 passed, 0 failed, 0 ignored, 0 filtered out. Its fresh report passed the
+  unchanged recipe assertions: 30 pipeline actions, 8 video transcodes,
+  6 audio transcodes, 0 pipeline failures and 0 suite failures. This includes
+  the Theora/Vorbis-to-H.264/AAC conversion case.
+- Real Linux preparation: `just verify-test-fixtures`, through `with-node` and
+  a test-only FFprobe wrapper, passed all 30 snapshots using historical arm64
+  image `sha256:da350429de6619c4172e0d3a7be5173fb9a0ee904028b0d9f1408924749631a7`.
+  Temporary containers had no network, read-only root/media mounts and no
+  capabilities, and were automatically removed. Its exact Alpine 8.0.1-r1
+  report hash matched and one original F1 diagnostic was retained. This was
+  Linux probe preparation, not Linux Rust conversion or current-package proof.
+- Intermediate failures: The initial policy invocation could not access the
+  host GPG trust database under the sandbox. An isolated test keyring resolved
+  that access issue without changing policy. A preliminary retry overlapped
+  with a regression-script edit and failed parsing; it is not passing evidence.
+  The final unchanged-source policy and conversion rerun passed.
+- Evidence: Non-media logs, host conversion/preparation reports and raw
+  per-admission evidence are retained under
+  `/private/tmp/revaer-approved-fixture-diagnostic-evidence-20260910`.
+  `approved-f1-final-gates.log` records the final combined local gates;
+  `linux-preparation.log` and `linux-preparation.md.probe-evidence` record the
+  historical Linux preparation. Downloaded/generated media and task build
+  output are removed after copying the non-media evidence.
+- Remaining proof: The parent owns integrated `just ci`, `just ui-e2e`, strict
+  Sonar and stack/package validation. No changed-file Sonar upload was made;
+  source-upload consent is held by the parent. No GitHub mutation, push, current
+  amd64/arm64 package pass, or all-service completion is claimed here.
+- Risk and rollback: The approved expiry conditions above are unchanged. A
+  different emitting build, source, snapshot or diagnostic must fail and return
+  for operator review. Reverting this bounded fixture-only patch restores the
+  previous strict preparation failure; it changes no production behavior.
+- Stale-policy check: Reviewed root and devops instructions, this ADR, fixture
+  acquisition/probe tooling and Rust-suite/Just boundaries. Added only the
+  coordinated F1 devops bullet and fixture documentation. No shared Just recipe,
+  frozen source/snapshot, production, Sonar, workflow, ADR 569/564, index or
+  catalog file was changed. Parent-owned D1/D2 instruction changes remain a
+  separate integration responsibility.
