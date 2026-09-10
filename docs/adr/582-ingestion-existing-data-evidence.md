@@ -133,3 +133,15 @@
   compiler settings and native/trigger/dynamic closure remain unproved. No full
   CI, UI, Sonar upload, package validation or test-media acquisition was run by
   this worker. No production-readiness or merge claim is made.
+
+## Parent Integration
+
+The parent reviewed and integrated `4c16d775` at checkpoint `f0a17970`, added
+the matching instruction/index/catalogue updates, and independently reran the
+165-assertion harness. Full integration CI passes with the retained shutdown
+warnings; full UI E2E remains failed at the unchanged profile-creation boundary.
+Exact results and cleanup are recorded in ADR 581. The worker's database
+evidence, final logs and separate Ruby execution records were copied to the
+private `revaer-stack-audit-evidence-20260910` directory before its clean
+worktree was removed. Proposed D5 in ADR 583 remains unimplemented; D4 and all
+other existing holds are unchanged.

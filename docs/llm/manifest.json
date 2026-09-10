@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T20:24:10.738279+00:00",
+  "generated": "2026-09-10T20:52:28.348569+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5022,6 +5022,7 @@
       "title": "Stack boundary reconciliation",
       "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: GitHub's displayed PR sizes and branch names do not prove a linear, reviewable stack. ADR 564 identified an unverified PR 99 transition. Decision: Audit all current media PR boundaries and correct the isolated PR 99 reconstruction. Preserve original refs and remote metadata pending full descendant reconciliation. Do not change review or quality criteria. Consequences: The local PR 99 schema regression is corrected, but no remote repair, complete stack validation, source push or merge is claimed. Follow-up: Propagate the existing dependency/security and instruction corrections at their earliest owning boundaries,",
       "tags": [
+        "integrated-validation-and-cleanup",
         "pr-99-correction",
         "task-record",
         "verified-boundaries"
@@ -5033,6 +5034,7 @@
       "title": "Ingestion existing-data evidence",
       "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Conditional D3 in ADR 569 requires independent semantic evidence. ADR 580 covers initial cold calls and pure helper-first compilation, but not cold calls against data previously created by real ingestion. Decision: Add bounded existing-data proof cases only. Do not modify the frozen migrations, final init, production routines, privileges, caller compilation settings or the existing warm-committed test. D4 remains unapproved. Consequences: The proof now observes real fixture ingestion on one recorded backend and the tested call on a distinct fresh backend. These cases do not demonstrate warm-cache safety or",
       "tags": [
+        "parent-integration",
         "task-record",
         "validation-checkpoint"
       ],

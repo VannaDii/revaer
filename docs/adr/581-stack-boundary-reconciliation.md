@@ -99,3 +99,33 @@ every intermediate PR passes.
     precedence drift is already corrected in the integration and remains a
     restack propagation requirement. No consent or clean-gate claim is inferred
     from the historical task records.
+
+## Integrated Validation And Cleanup
+
+- At `f0a17970`, full `just ci` exits zero in the retained integration worktree.
+  All-feature/minimal tests, strict lint, dependency audits, package coverage,
+  script coverage and release build complete. Eight existing held-S2 watcher
+  WARN events remain; this is not warning-free acceptance.
+- Full `just ui-e2e` exits one: 46 pass, one fails, 61 do not run. The unchanged
+  media profile creation assertion receives 400 instead of 201 at
+  `tests/specs/api/media.spec.ts:130`; teardown also rejects missing job-phase
+  and profile-readiness route coverage. No assertion or feature was removed.
+- Fresh CI Rust LCOV contains 238 source records, 101,422 line records and
+  94,332 covered lines. CI-only generic coverage retains 116/163 executable
+  existing-data-helper lines and 123/206 ingestion-proof lines. ADR 582's
+  separate live-run coverage is retained as separate evidence, not silently
+  merged with these counts. No authoritative Sonar scan or published metrics
+  were obtained; the previously recorded service/credential limitations remain.
+- The first temporary-worktree integration attempt encountered an asset helper
+  cached with a removed worktree path. Only workspace-package build artifacts
+  were cleared; the authoritative successful run rebuilt them at the stable
+  integration path. This did not change source, tool pins or criteria.
+- Documentation links pass: 1,126 OK, zero errors. The book builds with the
+  existing 11,722,153-byte search-index WARN. The closeout-only record is
+  reindexed and checked after this checkpoint.
+- Both completed worker/reconstruction worktrees are removed, their committed
+  refs retained, and evidence copied to the private stack-audit evidence
+  directory. Both dedicated validation databases and their bind-mounted
+  storage were removed. Canonical fixture cleanup passes, and no application
+  or UI development server remains. The primary checkout's staged changes and
+  conflicts are unchanged. No remote source or formal-stack mutation occurred.
