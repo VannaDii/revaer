@@ -16,6 +16,8 @@ module RevaerPostgresPristine
       SQL
     end
 
+    # Zero memberships is a fixture provisioning invariant, not ADR 551 runtime admission.
+    # The approved runtime membership check concerns the runtime role's membership in the owner.
     def identity_sql
       <<~SQL
         SELECT json_build_object('kind', 'identity', 'database', '<database>', 'owner', '<database_owner>',

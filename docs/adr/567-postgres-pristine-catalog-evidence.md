@@ -4,9 +4,10 @@
 - Date: 2026-09-10
 - Operator approval: Not applicable: nonarchitectural task record. Implements
   the accepted [551](551-packaged-database-baseline-contract.md) catalog
-  contract, within [541](541-packaged-init-bootstrap-lifecycle.md). The operator
-  explicitly assigned this isolated implementation on 2026-09-10, reserved
-  this record, and deferred runtime classification and init finalization.
+  contract, within [541](541-packaged-init-bootstrap-lifecycle.md). The parent
+  agent coordinated this isolated slice and reserved this record; that assignment
+  is not operator approval. Runtime classification and init finalization are
+  outside this slice.
 
 ## Context And Scope
 
@@ -44,6 +45,13 @@ approval, schema definitions, or provenance.
   non-superuser database owner. No `SET ROLE`, elevated catalog grants, or
   superuser extraction is used. Fixed `pg_catalog` search path and one
   repeatable-read, read-only transaction cover identity and all catalog rows.
+- The identity query additionally verifies that this deliberately isolated
+  fixture owner has no direct memberships. That is a fixture provisioning
+  invariant, not an approved runtime admissibility rule. ADR 551 does not ban
+  every benign owner membership; its membership restriction concerns the
+  runtime role's direct or indirect membership in the schema-owner role.
+  Runtime admission must implement the approved contract, not copy this
+  fixture-only restriction.
 - PostgreSQL restricts `pg_user_mapping` and subscription connection options.
   Emptiness is proven using the built-in unfiltered `pg_user_mappings` identity
   view and readable subscription OIDs in that same snapshot. A populated
