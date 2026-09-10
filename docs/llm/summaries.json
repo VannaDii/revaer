@@ -4802,6 +4802,7 @@
       "approved-work-integration-checkpoint",
       "critical-path-and-decision-queue",
       "evidence-boundary",
+      "integrated-gate-checkpoint-for-the-approved-decisions",
       "ledger-validation",
       "outside-in-ledger",
       "parent-validation-checkpoint",

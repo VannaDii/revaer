@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T18:37:21.383133+00:00",
+  "generated": "2026-09-10T18:56:18.447783+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4805,6 +4805,7 @@
         "approved-work-integration-checkpoint",
         "critical-path-and-decision-queue",
         "evidence-boundary",
+        "integrated-gate-checkpoint-for-the-approved-decisions",
         "ledger-validation",
         "outside-in-ledger",
         "parent-validation-checkpoint",

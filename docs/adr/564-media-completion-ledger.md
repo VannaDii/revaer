@@ -399,11 +399,51 @@ check is evidence for these new source revisions.
   diagnostic validation after independent review. ADR 579 proposes exact D4
   transaction-lifetime correction; no such SQL delta is authorized or applied.
 
-Integrated CI/UI validation is being rerun. Sonar source upload was blocked by
-the execution approval system; explicit upload consent was requested rather
-than bypassing that denial through another analyzer. No new Sonar result or
-published coverage is claimed. Full package checks, remote check completeness,
-review resolution and the remaining approval holds are still outstanding.
+## Integrated Gate Checkpoint For The Approved Decisions
+
+The executable/proof checkpoint is `4c9912b9`. Full `just ci` exited zero,
+including all-feature and minimal-feature tests, Clippy, policy, audits, all
+18 package coverage gates, script coverage and the release build. The corrected
+44-assertion ingestion harness ran in the final script-coverage phase after
+its review fixes; focused final/rebaseline tests also pass 18/45 assertions.
+Eight configuration-watcher shutdown WARN events remain under held S2. This
+is not warning-free output or permission to change its completion contract.
+
+Full `just ui-e2e` exited one: 46 passed, one failed and 61 did not run. Media
+profile creation still returned 400 instead of 201 at API spec line 130.
+Teardown rejects missing job-phase and profile-readiness GET coverage. The API
+log also retains a missing local final-image compliance bundle error, a slow
+recovery-query warning and a missing library mount warning. No assertion,
+dependency-project gate, route-coverage requirement or production criterion was
+changed to conceal those outcomes; no full operator-path pass is established.
+
+`just sonar-compile-db` passed after CI; after E2E,
+`just js-release-coverage js-coverage-merge sonar-verify-inputs` passed.
+Rust LCOV has 238 sources,
+106,833 lines and 98,336 covered lines. JavaScript LCOV has 60 sources,
+5,276 lines and 3,924 covered lines from executed paths, not the 61 unrun cases.
+The final live database proof and 44/18/45-assertion harnesses were separately
+instrumented with Ruby coverage and merged through the existing generic
+converter. Extension and timeout proof modules report 28/28 and 70/70
+executable Ruby lines; ingestion reports 165/171. These line counts do not
+replace SQL semantic proof or establish complete branch coverage.
+
+Sonar verification was blocked before execution by source-upload authorization:
+`just --command sonar verify --file scripts/database_rebaseline/final_sql.rb
+--project VannaDii_Revaer`. Explicit consent to upload changed source was
+requested rather than bypassing the denial through another analyzer. No changed
+file has a new server analysis, published coverage or quality-gate result from
+this turn. Local input validity is not a substitute for that required result.
+
+Documentation indexing and instruction checks pass with 521 entries; link
+checking reports 1,114 OK and zero errors. The book build exits zero but retains
+the large-search-index WARN. The complete local range from `1d62d087` through
+`4c9912b9` has 2,649 changed lines under the 9,999-line guard; no current GitHub
+PR-size or all-checks claim follows. Full package checks, remote stack/check
+completeness, review resolution and the remaining approval holds are outstanding.
+The user checkout is unchanged. Logs, failed database proof and non-media
+coverage inputs are retained under the private temporary evidence directory;
+the real F1 conversion evidence remains in its separate private directory.
 
 ## Task Record
 
