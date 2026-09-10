@@ -60,8 +60,9 @@
     violation; `just test-media-broker-codec` passed 20 tests including 25
     independent vectors. That is codec evidence, not lifecycle or containment
     validation.
-  - Full repository gates and independent proof review are recorded below when
-    their current executions complete; no earlier green result is substituted.
+  - Final independent review found no remaining issue within this bounded
+    change, reparsed all 26 saved transcripts and retained the 13 matching
+    reference/final comparisons, including the required warm failure.
 - Observability updates:
   - Proof JSON records whether helpers compiled first and retains all helper
     answers, complete parsed error context and native error location. Raw
@@ -87,6 +88,51 @@
 
 ## Integrated Validation
 
-Pending the current repository gate executions. This record does not claim
-handoff completion while `just ci`, `just ui-e2e` or required remote gates lack
-successful current evidence.
+- Code checkpoint: `0eb38ecf`. `just ci` exited zero with all-feature and minimal
+  tests, Clippy, policy, audits, all 18 package coverage gates and release build.
+  Rust source did not change during the run. The proof review fixes were in
+  place before CI's final script-coverage phase, which ran all 100 assertions;
+  a separate full `just policy` rerun on the committed checkpoint also passed.
+  Eight held-S2 configuration-watcher WARN events remain, so the output is not
+  warning-free.
+- `just ui-e2e` exited one: 46 passed, one failed, 61 not run. Profile creation
+  at `tests/specs/api/media.spec.ts:130` still returns 400 rather than 201.
+  Teardown still rejects missing job-phases and profile-readiness GET coverage.
+  The API log retains the missing final-image compliance bundle, slow queries,
+  missing library mount and synthetic tracker/session degradation diagnostics.
+  No assertion or included automatic-discovery feature was removed or disabled.
+- `just sonar-compile-db` and
+  `just js-release-coverage js-coverage-merge sonar-verify-inputs` passed. Rust
+  LCOV contains 238 source records, 101,422 line records and 94,365 covered
+  lines. JavaScript LCOV contains 60 sources, 5,276 lines and 3,924 covered lines.
+  Merging the final live PostgreSQL run and rejection tests through the existing
+  generic converter retains 197/203 executable ingestion-proof lines covered.
+  No uncovered line was removed; these are local inputs, not published metrics.
+- No new source analysis or authoritative Sonar scan was completed for this
+  patch. The preceding approved `sonar verify` attempt for `final_sql.rb` received
+  the organization entitlement 403; its successful MCP file analysis does not
+  cover these changed scripts. The full local scanner lacks `SONAR_TOKEN`.
+- Documentation indexing and instruction checks pass. The initial link check
+  passed 1,116 links; the book build exits zero with the existing large-index
+  WARN. Final closeout-only documentation is reindexed and checked separately.
+- The local code change is 380 added-plus-deleted lines against `2fb206a7`.
+  This is not a verified remote PR-size or stack-completion claim.
+
+## GitHub Metadata Follow-Through
+
+CLI/API inspection found 104 open PRs whose heads start with `stack/media3-`;
+all 104 were already assigned to VannaDii. The parent requested Copilot review
+on PR 194 and the independent worker requested it on the other 103, once each.
+All commands exited zero, but read-back showed no pending Copilot request or
+submitted Copilot review. PR 194's direct REST requested-reviewers list was
+also empty. These are submitted requests, not confirmed review fulfillment;
+do not repeat them indefinitely or claim review completion.
+
+The live API identifies the authenticated account as VannaDii while the local
+CLI retains the old GioCirque label. No account switch or credential change
+occurred. Current ruleset 12202805 remains active for `refs/heads/stack/**/*`
+and requires all 21 recorded checks. PR 194 remains at `cfed91f8`; its workflow
+does not define Supply Chain Checks. An unchanged rerun cannot emit that missing
+context. No PR content, head/base/title, stack topology or criteria was changed,
+and no source commit was pushed or merged. Stack repair and exact-revision
+checks remain required.

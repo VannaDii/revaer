@@ -5007,6 +5007,7 @@
     "title": "Ingestion helper compilation evidence",
     "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Conditional D3 in ADR 569 requires independent compilation-context evidence, not just equality against a rewritten reference. The existing six cold cases did not call helpers before ingestion. Decision: Extend the disposable proof within the already-approved D3 investigation. Preserve the frozen reference, candidate digest, constrained direct runtime connection, caller settings and required successful second committed call. Do not modify production routines, grant privileges, activate the init candidate or implement Proposed D4 in ADR 579. Consequences: Six cases now execute after nine pure helpers have been called directly in the",
     "tags": [
+      "github-metadata-follow-through",
       "integrated-validation",
       "task-record"
     ],

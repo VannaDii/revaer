@@ -465,6 +465,20 @@ This is only that file's result, not coverage publication or a full quality-gate
 pass. The authoritative local scanner also lacks its required `SONAR_TOKEN`.
 No scanner criteria or architectural approval hold changed.
 
+The helper-proof checkpoint `0eb38ecf` has a fresh zero-exit `just ci` with all
+18 package coverage gates, but eight held-S2 shutdown WARNs remain. Full E2E
+again reports 46 passed, one failed and 61 not run at the unchanged profile
+creation/route-coverage blockers. Local Sonar inputs validate; no current full
+scanner or published coverage pass is established. See ADR 580 for exact counts,
+proof-review provenance and the unchanged 134/135 database proof outcome.
+
+The same follow-through verified VannaDii assignment on all 104 open
+`stack/media3-*` PRs and submitted one Copilot request per PR. None was visible
+as pending or submitted review in the final read-back, so fulfillment remains
+unconfirmed. The live stack ruleset still requires 21 checks, while PR 194's
+unchanged head does not define Supply Chain Checks. No source, stack or criteria
+mutation was used to conceal the missing result.
+
 ## Task Record
 
 - Motivation: Provide a bounded completion ledger while the integrating agent
