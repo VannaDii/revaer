@@ -490,3 +490,4 @@
 -   [557](557-root-persistence-contract.md) – Root persistence, binding, and administration contract (Accepted)
 -   [558](558-rvb1-native-process-broker-wire-contract.md) – RVB1 native process broker wire and lifecycle contract (Accepted; E1 held)
 -   [559](559-media-approval-delta.md) – Media decision review and approval delta (Accepted)
+-   [560](560-dependency-audit-refresh.md) – Dependency audit refresh and policy precedence

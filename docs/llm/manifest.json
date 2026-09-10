@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T06:02:14.992012+00:00",
+  "generated": "2026-09-10T06:06:09.370925+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4747,6 +4747,15 @@
         "validation-record"
       ],
       "href": "/adr/559-media-approval-delta/"
+    },
+    {
+      "id": "adr/560-dependency-audit-refresh",
+      "title": "Dependency audit refresh and policy precedence",
+      "summary": "Status: Recorded Date: 2026-09-09 Operator approval: Not applicable: nonarchitectural task record Context: The fresh validation recorded in ADR 559 stopped at Rust and JavaScript dependency audits. Those failures prevented the later tests and coverage from establishing current feature evidence. The scoped Rust instruction incorrectly claimed precedence over the root contract, contradicting AGENTS.md section 0. Decision: Update only existing dependency versions needed to remove reported audit findings. Preserve all security severities, empty exception lists, exact analysis-tool versions, coverage requirements, and release gates. Make the scoped Rust precedence sentence agree with the existing root rule. This corrects contradictory guidance; it grants no",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/560-dependency-audit-refresh/"
     },
     {
       "id": "adr/index",

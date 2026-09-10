@@ -14,7 +14,7 @@ applyTo:
 ---
 
 `AGENTS.md` is the root contract. This file tightens Rust-specific guidance for the paths in `applyTo`.
-If any Rust-path rule in this file conflicts with `AGENTS.md`, this file wins for those Rust paths.
+If any Rust-path rule in this file conflicts with `AGENTS.md`, the root contract wins.
 
 # Rust Quality Rules
 
