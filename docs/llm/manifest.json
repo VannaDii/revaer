@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T07:33:50.968489+00:00",
+  "generated": "2026-09-10T07:34:21.440307+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4818,6 +4818,15 @@
         "validation"
       ],
       "href": "/adr/565-packaged-baseline-reader/"
+    },
+    {
+      "id": "adr/568-root-attestation-identity-encoding",
+      "title": "Root attestation identity encoding",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Accepted ADR 557 needs exact identity bytes before normalized root binding can be implemented. Its approval does not establish descriptor evidence. Decision: Implement the accepted ADR 557 slot, aggregate attestation, and generation framing with ADR 517 primitives and ADR 550's existing typed enums/SHA-256. This record introduces no architectural choice or changed contract byte. An injected loaded catalog is mandatory. Explicit RootSlotIdentityClaims are validated against its complete declarations; the only output is RootCatalogIdentityEncoding, never an attestation or a readiness token. Consequences: Pure encoding and normalized-field coherence are exercised independently",
+      "tags": [
+        "task-record"
+      ],
+      "href": "/adr/568-root-attestation-identity-encoding/"
     },
     {
       "id": "adr/index",

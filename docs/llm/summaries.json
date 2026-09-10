@@ -4817,6 +4817,15 @@
     "href": "/adr/565-packaged-baseline-reader/"
   },
   {
+    "id": "adr/568-root-attestation-identity-encoding",
+    "title": "Root attestation identity encoding",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Accepted ADR 557 needs exact identity bytes before normalized root binding can be implemented. Its approval does not establish descriptor evidence. Decision: Implement the accepted ADR 557 slot, aggregate attestation, and generation framing with ADR 517 primitives and ADR 550's existing typed enums/SHA-256. This record introduces no architectural choice or changed contract byte. An injected loaded catalog is mandatory. Explicit RootSlotIdentityClaims are validated against its complete declarations; the only output is RootCatalogIdentityEncoding, never an attestation or a readiness token. Consequences: Pure encoding and normalized-field coherence are exercised independently",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/568-root-attestation-identity-encoding/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",

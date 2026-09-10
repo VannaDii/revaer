@@ -5,12 +5,17 @@
 //! readiness. Callers must inject a [`RootCatalogSource`] during bootstrap and
 //! pass the resulting typed catalog to the separately reviewed root resolver.
 
+mod identity;
 mod local_file;
 mod model;
 mod parse;
 mod source;
 mod strict_json;
 
+pub use identity::{
+    RootCatalogIdentityEncoding, RootIdentityEncodingError, RootSlotIdentityClaims,
+    RootSlotIdentityEncoding, encode_root_catalog_identity_v1,
+};
 pub use local_file::{PACKAGED_ROOT_CATALOG_PATH, TrustedLocalRootCatalogSource};
 pub use model::{
     DurabilityClass, DurabilityEvidence, RootCatalog, RootCatalogSlot, RootKind, SoleWriterClass,

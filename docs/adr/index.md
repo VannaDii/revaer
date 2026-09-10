@@ -497,3 +497,4 @@
 -   [563](563-missing-init-candidate-diagnostic.md) – Missing init candidate diagnostic
 -   [564](564-media-completion-ledger.md) - Media completion evidence ledger
 -   [565](565-packaged-baseline-reader.md) - Packaged baseline reader
+-   [568](568-root-attestation-identity-encoding.md) - Root attestation identity encoding
