@@ -2,8 +2,9 @@
 
 - Status: Recorded
 - Date: 2026-09-10
-- Operator approval: Not applicable: nonarchitectural task record
-- Context: Implements the SQL/proof portion of accepted ADRs 522, 541, and 551.
+- Operator approval: Accepted predecessor contracts apply except for the local
+  variable-conflict substitution, which requires ADR 569 D3 approval and proof.
+- Context: Assembles the SQL/proof portion of accepted ADRs 522, 541, and 551.
   It does not authorize a runtime cutover, change the approved privilege matrix,
   or resolve the two failing proof assertions below.
 - Decision: Keep finalization inert and fail closed pending full conformance.
@@ -20,13 +21,17 @@
   SHA-256 `fb0d371f1afe365a72bbe34e9c8fe628e318be6de0e1f43b6f73c37897c95858`.
   Candidate generation, fresh apply, normalized re-dump, and statement map are
   retained before verifying finalization. No frozen gate is bypassed.
-- Only the three dump-generated zero timeout resets are removed. The legacy
-  `search_result_ingest_v1` superuser-only function configuration is moved to
-  its equivalent `#variable_conflict use_column` compiler directive, preserving
-  the routine's resolution semantics without granting parameter privileges.
-  This one exact routine-security delta is independently checked alongside
-  byte-identical remaining legacy SQL. PostgreSQL documents the equivalent
-  function-local directive in its [PL/pgSQL implementation reference](https://www.postgresql.org/docs/16/plpgsql-implementation.html).
+- Only the three dump-generated zero timeout resets are removed. The local
+  `search_result_ingest_v1` substitution from a superuser-only function setting
+  to `#variable_conflict use_column` was initially misclassified as an approved,
+  equivalent routine-security refinement. It is an unapproved parity exception
+  held under ADR 569 D3. Comparison normalizes the reference with that same
+  substitution: it proves byte equality after the exception, not semantic
+  equivalence or operator consent. PostgreSQL's
+  [PL/pgSQL reference](https://www.postgresql.org/docs/16/plpgsql-implementation.html)
+  distinguishes a setting affecting subsequent compilations from a directive
+  limited to its containing function. Nested helper/trigger behavior has not
+  been proved. The current bytes remain a local, unpushed prototype.
 - Finalization-review SHA-256 is
   `d27d2d99a0957b2502d0461b27c29ed1f2a53e486d1a140e7aff8e5429d7f069`.
   This is **not a released/embedded baseline certification**: package identity,
@@ -75,7 +80,9 @@
   `2min / 5s / 30s`. Its body is preserved, and timeout-preservation proof fails.
 - The complete proof recipe remains nonzero for both conflicts. Finalization
   is not approved for cutover until they are reconciled with the operator's
-  existing exact contract. The seal/read SQL is testable, but successful sealing
+  existing exact contract and the separate D3 exception is approved and proved.
+  The 62 passing assertions do not approve the normalized reference delta.
+  The seal/read SQL is testable, but successful sealing
   alone must not be represented as proof of the complete privilege contract.
 - The coordinating operator directed that both failures remain visible and that
   parent prepare Proposed ADR 569 for review. No SQLx transport hook, elevated

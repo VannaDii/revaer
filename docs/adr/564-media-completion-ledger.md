@@ -155,6 +155,57 @@ worktree** and do not change the source-inspection baseline above:
 - No GitHub, package, Sonar server/coverage, or overall completion result follows
   from this local checkpoint. Parent owns integrated CI/UI follow-through.
 
+## Approved-Work Integration Checkpoint
+
+Local integration `fe227810` adds the following bounded prerequisites to the
+earlier checkpoint. They are not pushed, packaged, or a completed operator flow:
+
+- [ADR 565](565-packaged-baseline-reader.md): read-only baseline projection and
+  verification, with 14 focused tests and real malformed-projection refusal.
+  It does not initialize, adopt, or authorize a database. An isolated child test
+  fixes the captured-event regression without changing production logging.
+- [ADR 568](568-root-attestation-identity-encoding.md): pure root identity framing
+  and validation within the accepted root contract. The worker's 55 root-catalog
+  tests passed. No filesystem attestation, persisted root binding, or write
+  authority follows from an encoded identity.
+- [ADR 567](567-postgres-pristine-catalog-evidence.md): the exact PostgreSQL 16.14
+  pristine snapshot is reproducible; integrated validation and all 131 catalog
+  assertions passed. Its SHA-256 is
+  `0ba173f3caa88da40a4391e9bd34ac88416a2f7c41f19be47043bfa54a2cbf05`.
+  This is catalog evidence, not runtime pristine admission.
+- [ADR 566](566-single-init-final-sql-proof.md): finalization is now assembled
+  but remains inert. Real SQL proof passed 62 of 64 assertions. Extension
+  execution policy and reset-timeout leakage are presented for explicit approval
+  in [ADR 569](569-init-privilege-and-timeout-resolution.md), which is still
+  Proposed. Final approval review also identified the existing local
+  variable-conflict substitution as an unapproved parity exception (D3), not
+  demonstrated semantic equivalence. Neither failed assertion has been removed;
+  the prototype must not be published, embedded, or activated before approval
+  and the independent proof required by D3.
+- `just ci` exited zero on this executable revision, including full workspace
+  and minimal-feature tests, all 18 package coverage gates, shell/Ruby coverage,
+  and the release build. Rust LCOV contains 232 source records, 100,731 line
+  records, and 93,644 covered lines. The retained log is
+  `ci-capture-isolated.log`; documentation-only checkpoint edits followed.
+  These local coverage records are not published Sonar metrics.
+
+The native torrent singleton-directory regression is retained separately in
+commit `b6db6667`, pending integration and fresh full-gate validation. Its native
+tests passed twice (95 library, seven build-guardrail, and three integration
+tests), with no production/C++ change. Its task-owned worktree was removed after
+the commit and evidence were preserved. Earlier E2E runs used a fixture root
+outside the seeded authoring allowlist. The corrected full `just ui-e2e` run
+used `$PWD/.server_root/library` without changing code, permissions, or
+assertions: torrent authoring and its dependent tests passed. Overall, 46
+passed, one failed, and 61 did not run. Media profile creation still expected
+201 and received 400, and teardown reported unexercised job phases/profile
+readiness routes. The retained log is `ui-e2e-allowed-root.log`.
+
+The full E2E gate, published Sonar, package validation, and remote stack/review
+checks remain open. Task-owned PostgreSQL containers and completed worker
+worktrees were removed; `just clean-test-fixtures` passed and retained E2E
+artifact roots contained no acquired/generated media files.
+
 ## Task Record
 
 - Motivation: Provide a bounded completion ledger while the integrating agent

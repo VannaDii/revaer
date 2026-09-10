@@ -88,7 +88,11 @@
 - `just test-database-baseline-read` and the full workspace tests within the
   integrated CI rerun passed, including the isolated child. Full-file Sonar MCP
   secrets analysis of the changed logging test returned zero issues; Rust
-  semantic analysis remains unavailable through that MCP. Full CI coverage and
-  release validation remain in progress at this record update.
+  semantic analysis remains unavailable through that MCP. `just ci` subsequently
+  exited zero for executable revision `fe227810`, including all 18 package
+  coverage gates, script coverage, and the release build. Rust LCOV has 232
+  source records, 100,731 line records, and 93,644 covered lines. The native
+  singleton-directory regression on a separate worker branch was not included
+  in this run; later documentation-only updates do not change the tested code.
 - The separate media-profile and torrent-authoring E2E failures are not
   addressed by this test-only change.

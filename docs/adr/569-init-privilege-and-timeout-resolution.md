@@ -4,11 +4,12 @@
 - Date: 2026-09-10
 - Operator approval: Pending. Approval of ADRs 557-559 does not approve this delta.
 - Context: ADR 566's real PostgreSQL 16.14 proof found an extension-privilege
-  ambiguity in ADR 551 and a confirmed timeout-scope incompatibility.
-- Decision: None made. Present D1 and D2 below for separate operator approval.
+  ambiguity in ADR 551 and a confirmed timeout-scope incompatibility. Final
+  approval review also found an unapproved compiler-setting parity exception.
+- Decision: None made. Present D1, D2, and D3 below for separate operator approval.
   Keep the finalization proof failing and the runtime cutover disabled meanwhile.
 - Consequences: D1 explicitly chooses the authored-versus-extension privilege
-  boundary; D2 changes exact legacy parity and timeout-scope constraints. These
+  boundary; D2 and D3 change exact legacy parity and setting-scope constraints. These
   are operator decisions, not G1 internal refinements.
 - Follow-up: Obtain an explicit decision, then implement only the accepted
   delta, regenerate its exact init digest, and repeat all conformance gates.
@@ -41,10 +42,12 @@ not a release certification and has not been embedded or deployed.
    `idle_in_transaction_session_timeout=30s`, instead of `2min/2min/30s`.
    Preserving that body unchanged conflicts with the caller-owned timeout rule.
 
-The proof already rejects both outcomes. No success predicate, role privilege,
-extension ACL, timeout value, migration, workflow, or remote setting was changed
-to conceal them. The independently passing pristine catalog and baseline-reader
-tests do not resolve either conflict.
+The proof rejects both outcomes. Separately, its reference normalization already
+contains D3's unapproved substitution. That is a local prototype mistake, not
+consent or a semantic proof; it has not been pushed, embedded, or used by runtime.
+No role privilege, extension ACL, timeout value, frozen migration, workflow, or
+remote setting was changed to conceal the two failures. Independently passing
+pristine-catalog and baseline-reader tests resolve none of these approval gaps.
 
 ## D1: Clarify The Extension Privilege Boundary
 
@@ -133,6 +136,42 @@ restoring 120 seconds with a later top-level statement would conceal leakage
 and violate caller ownership. Neither alternative is included. The frozen
 migration corpus remains unchanged under every option.
 
+## D3: Function-Local Variable Resolution
+
+**Recommendation, not authorization:** permit only the exact
+`public.search_result_ingest_v1` substitution from function configuration
+`SET "plpgsql.variable_conflict" TO 'use_column'` to an initial
+`#variable_conflict use_column` compiler directive, conditional on proving the
+complete search-ingestion call paths under the constrained roles. Grant no
+superuser or parameter-setting privilege. Change no frozen migration, other
+routine body, or ambient/session setting.
+
+This expressly requests an additional exception to ADR 551's legacy-definition
+parity constraint. It is not one of its specified SECURITY DEFINER, ownership,
+or search-path changes, and G1 cannot supply consent. ADR 566 originally claimed
+equivalence; that claim is withdrawn. `final_sql.rb` performs the substitution
+and `final_proof.rb` applies it to the comparison reference. That equality check
+cannot independently prove either authorization or behavioral equivalence.
+
+PostgreSQL's [PL/pgSQL compilation documentation](https://www.postgresql.org/docs/16/plpgsql-implementation.html)
+distinguishes a GUC affecting subsequent compilations from a directive affecting
+only its containing function. A helper or trigger first compiled inside the
+old function can therefore have a different ambient setting. This is a
+source-supported risk, not a reproduced application regression. The current
+focused application-path proof does not exercise search ingestion.
+
+Approval must be followed by pinned 16.14 cold-session and warm-cache evidence
+for the actual ingestion branches and every reachable helper/trigger, including
+ambiguous names and dynamic calls. Compare results, mutations, errors, and
+before/during/after setting scope against the frozen reference. If equivalence
+cannot be established for application behavior, stop and present the exact
+additional semantic delta; do not silently annotate other routines or broaden
+privileges. Rejecting D3 leaves the local candidate uncertified and unpublishable.
+The exception covers only this routine under the pinned PostgreSQL image and
+validated helper/trigger closure; it expires if their definitions, compilation
+context, or pinned PostgreSQL identity change. Renewed review is required then.
+No further implementation or activation of this substitution is authorized now.
+
 ## Acceptance Evidence Required After Approval
 
 - Fresh init under the pinned constrained owner; direct owner/runtime/outsider
@@ -144,6 +183,9 @@ migration corpus remains unchanged under every option.
 - For D2, prove exact before/inside/after values for successful reset, lock
   contention, SQL failure, cancellation, transaction rollback, and nested calls.
   Preserve the fixed whole-operation deadline and final cancellation reason.
+- For D3, independently establish the complete cold/warm ingestion call-path
+  evidence above. A normalized-reference comparison alone is insufficient;
+  restrict any parity exception to the single exact approved substitution.
 - Mutation tests must reject changed extension membership/definitions/ACLs,
   authored PUBLIC execution, broadened search paths, timeout leakage, and removal
   or increase of the scoped bound. Existing failing proof assertions remain until
@@ -154,24 +196,29 @@ migration corpus remains unchanged under every option.
 
 ## Task Record
 
-- Motivation: Present one evidence-backed approval delta for the two real
-  single-init conflicts instead of inventing architectural consent or relaxing
-  a failing gate.
+- Motivation: Present the two live single-init conflicts and the subsequently
+  identified unapproved parity exception without inventing architectural
+  consent or treating a normalized-reference comparison as behavioral proof.
 - Design notes: Recommendations above identify exact predecessor constraints,
   changes, alternatives, and retained boundaries. No prototype or production
-  implementation of D1 or D2 is part of this record.
+  implementation of D1 or D2 is part of this record. D3 documents an existing
+  local-only prototype exception that must not be published or activated.
 - Test coverage summary: Source evidence is ADR 566's completed 62/64 live
-  proof, not a test of either proposal. Proposed acceptance cases are not passes.
+  proof, not acceptance of these proposals. D3 was found by approval/source
+  review, not a failing live assertion. Proposed acceptance cases are not passes.
 - Observability updates: Retain the two named failures and bounded evidence;
   no runtime telemetry, error contract, or credential handling changes.
 - Status-doc validation: Reviewed the completion goal and ADRs 522, 541, 551,
   and 559. Single-init remains inert; E1 and other retained holds remain held.
 - Risk & rollback plan: D1 explicitly permits stock extension computation and
-  requires exact inventory proof; D2 changes nested reset timing. Both remain unapplied
-  pending approval and proof. Rejecting this ADR leaves current runtime and
+  requires exact inventory proof; D2 changes nested reset timing. Both remain
+  unapplied. D3's existing local prototype is held pending approval and proof.
+  Rejecting this ADR leaves current runtime and
   GitHub unchanged; never repair a sealed baseline in place.
 - Dependency rationale: No new dependency proposed. Keep the existing pinned
   PostgreSQL tools, extensions, SQLx transport, and canonical recipe surface.
 - Stale-policy check: Reviewed root, data, Rust, devops, and Sonar instructions.
-  No instruction, accepted ADR, required check, quality criterion, or frozen
-  migration is changed by this proposal. Indexes and generated docs are updated.
+  Tightened data instructions to prohibit publication or activation of the
+  unapproved D3 candidate and to distinguish reference normalization from proof.
+  No accepted ADR, required check, quality threshold, or frozen migration is
+  changed by this proposal. Indexes and generated docs are updated.

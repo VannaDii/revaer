@@ -4797,6 +4797,7 @@
     "title": "Media completion evidence ledger",
     "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The full first-release goal is active; implementation, accepted contracts, local checks, and remote PRs must not be conflated. Decision: Record a bounded outside-in work breakdown with evidence and dependencies. This document selects no architecture, values, or exceptions. Consequences: No row below establishes release readiness. Missing evidence remains work, not an exclusion from the release. Follow-up: The integrating agent reviews this record, attaches exact-revision validation, and assigns reviewed PRs after stack reconciliation.",
     "tags": [
+      "approved-work-integration-checkpoint",
       "critical-path-and-decision-queue",
       "evidence-boundary",
       "ledger-validation",
@@ -4819,7 +4820,7 @@
   {
     "id": "adr/566-single-init-final-sql-proof",
     "title": "Single-init final SQL and constrained-role proof",
-    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Implements the SQL/proof portion of accepted ADRs 522, 541, and 551. It does not authorize a runtime cutover, change the approved privilege matrix, or resolve the two failing proof assertions below. Decision: Keep finalization inert and fail closed pending full conformance. The frozen 167 migrations remain byte-identical and authoritative.",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Accepted predecessor contracts apply except for the local variable-conflict substitution, which requires ADR 569 D3 approval and proof. Context: Assembles the SQL/proof portion of accepted ADRs 522, 541, and 551. It does not authorize a runtime cutover, change the approved privilege matrix, or resolve the two failing proof assertions below. Decision: Keep finalization inert and fail closed pending full conformance. The frozen 167 migrations remain byte-identical and authoritative.",
     "tags": [
       "evidence-and-holds",
       "implementation",
@@ -4852,11 +4853,12 @@
   {
     "id": "adr/569-init-privilege-and-timeout-resolution",
     "title": "Init privilege and timeout resolution",
-    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. Approval of ADRs 557-559 does not approve this delta. Context: ADR 566's real PostgreSQL 16.14 proof found an extension-privilege ambiguity in ADR 551 and a confirmed timeout-scope incompatibility. Decision: None made. Present D1 and D2 below for separate operator approval. Keep the finalization proof failing and the runtime cutover disabled meanwhile. Consequences: D1 explicitly chooses the authored-versus-extension privilege boundary; D2 changes exact legacy parity and timeout-scope constraints. These are operator decisions, not G1 internal refinements. Follow-up: Obtain an explicit decision, then implement only the accepted delta, regenerate its exact init digest, and repeat",
+    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. Approval of ADRs 557-559 does not approve this delta. Context: ADR 566's real PostgreSQL 16.14 proof found an extension-privilege ambiguity in ADR 551 and a confirmed timeout-scope incompatibility. Final approval review also found an unapproved compiler-setting parity exception. Decision: None made. Present D1, D2, and D3 below for separate operator approval. Keep the finalization proof failing and the runtime cutover disabled meanwhile. Consequences: D1 explicitly chooses the authored-versus-extension privilege boundary; D2 and D3 change exact legacy parity and setting-scope constraints. These are operator decisions, not G1 internal refinements. Follow-up: Obtain an explicit decision,",
     "tags": [
       "acceptance-evidence-required-after-approval",
       "d1-clarify-the-extension-privilege-boundary",
       "d2-function-scoped-reset-lock-bound",
+      "d3-function-local-variable-resolution",
       "observed-conflicts",
       "task-record"
     ],

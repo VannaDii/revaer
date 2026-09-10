@@ -35,6 +35,12 @@ applyTo:
   independently pinned final bytes, then test constrained owner/runtime roles
   in disposable PostgreSQL. Finalization is not runtime cutover: ordinary
   application and test bootstrap must still use the frozen migrations.
+- Finalization proof must distinguish authorized parity exceptions from local
+  prototypes. The `plpgsql.variable_conflict` substitution recorded in ADR 569
+  D3 is not covered by G1 or a normalized-reference comparison. Do not publish,
+  embed, or activate that candidate before decision-specific operator approval
+  and the required independent semantic proof are recorded. Passing CI does
+  not authorize an unapproved baseline delta.
 - Before the ADR 522 cutover, persisted-state behavior changes are blocked from
   the frozen corpus. Complete them before candidate freeze or defer them to a
   direct pre-v1 `init.sql` edit after cutover; do not create another migration.
