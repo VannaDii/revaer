@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T07:34:21.440307+00:00",
+  "generated": "2026-09-10T07:34:41.220947+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4818,6 +4818,19 @@
         "validation"
       ],
       "href": "/adr/565-packaged-baseline-reader/"
+    },
+    {
+      "id": "adr/567-postgres-pristine-catalog-evidence",
+      "title": "PostgreSQL pristine catalog evidence",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record. Implements the accepted [551](551-packaged-database-baseline-contract.md) catalog contract, within [541](541-packaged-init-bootstrap-lifecycle.md). The operator explicitly assigned this isolated implementation on 2026-09-10, reserved this record, and deferred runtime classification and init finalization.",
+      "tags": [
+        "context-and-scope",
+        "design-notes",
+        "provenance-and-commands",
+        "task-record",
+        "validation-and-remaining-work"
+      ],
+      "href": "/adr/567-postgres-pristine-catalog-evidence/"
     },
     {
       "id": "adr/568-root-attestation-identity-encoding",
