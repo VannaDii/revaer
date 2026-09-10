@@ -119,6 +119,50 @@ satisfy that contract. Parser failure is an error, not an empty successful scan.
   The Sonar Ruby snippet analyzer returned zero issues for the full contents of
   both changed Ruby guardrail files in MAIN scope. This does not replace the
   authoritative scanner, coverage publication, or combined CI/UI gates.
+- Combined executable `79ae7ffa4ee1e156ca6b00f483091da4bd93d3fb` subsequently
+  passed `just ci`, including all 18 package coverage gates, workspace and
+  minimal-feature tests, both Clippy passes, updated script coverage, and the
+  release build. The same executable failed `just ui-e2e`: profile creation
+  still expected 201 and received 400; 46 tests passed, one failed, and 61 did
+  not run. Teardown still reported missing phases/readiness route coverage.
+  No assertions were changed. Later changes are instruction/task-record
+  documentation only, with unchanged executable and gate code.
+- Combined Rust LCOV has 237 sources, 101,312 lines and 94,279 covered lines;
+  the root-input helper remains 103/104 covered. Fresh
+  `just sonar-compile-db js-release-coverage js-coverage-merge
+  sonar-verify-inputs` passed. `just sonar-scan` still failed closed before
+  analysis because local `SONAR_TOKEN` is unavailable. No full analysis,
+  published coverage, or GitHub pass for this revision is claimed.
+- Full-file secrets scanning covered the combined changed files with the
+  command below. Ruby snippet checks and secrets results remain distinct from
+  the authoritative scan and from the unavailable Rust Agentic analysis.
+
+  ```sh
+  just --command sonar analyze secrets \
+    .github/instructions/devops.instructions.md \
+    .github/instructions/rust.instructions.md \
+    crates/revaer-api-models/src/lib.rs \
+    crates/revaer-api-models/src/media_root_contract.rs \
+    crates/revaer-api-models/src/media_root_contract/tests.rs \
+    just/media.just scripts/workflow_guardrails/input_loader.rb \
+    scripts/workflow_guardrails/required_checks.rb \
+    scripts/tests/workflow-guardrails-test.sh \
+    docs/adr/564-media-completion-ledger.md docs/adr/574-root-input-contract.md \
+    docs/adr/575-media-conversion-gate.md docs/adr/index.md docs/SUMMARY.md \
+    docs/llm/manifest.json docs/llm/summaries.json
+  ```
+
+- Parent cleanup removed the final owned PostgreSQL container and passed
+  `just clean-test-fixtures`. All four ignored fixture directories are absent,
+  `.server_root/library` is empty, and direct TCP probes confirm ports 5441,
+  7070 and 18080 are closed. The completed fixture-gate worktree was removed.
+  The active integration worktree and primary user changes remain preserved.
+- Combined CI/UI logs are named `ci-root-contract-79ae7ffa*.log` and
+  `ui-e2e-root-contract-79ae7ffa*.log` under the external 2026-09-10 evidence
+  directory, with coverage copies under `79ae7ffa-coverage`, final Sonar command
+  logs under `root-conversion-sonar-*`, and snippet results in
+  `fixture-gate-sonar-ruby.json`. No PR was pushed or merged. The integration
+  still contains held init work; it must not be published wholesale.
 
 ## Failing Fixture Provenance
 
@@ -143,6 +187,14 @@ replacement or diagnostic-policy changes require separate operator approval.
 The selected lock/manifest entries are retained as `failing-fixture-lock.json`
 and `failing-fixture-manifest.json` alongside the stderr log. All acquired and
 generated media was deleted after the failed run.
+
+The pinned upstream [README](https://github.com/ietf-wg-cellar/matroska-test-files/blob/e6965e5ca666322ed93e2748a10a4f132309e005/readme.md#4-live-stream-recording)
+describes test4 as a live-stream recording with unknown-size master elements,
+nonzero starting timecode, and omitted duration. It says validation requires
+mkvalidator's live mode, and identifies a different sample, test7, as damaged.
+This is upstream documentation, not a new local validator result, proof of the
+FFprobe diagnostic's cause, or approval to accept that diagnostic. Compare the
+supported pinned toolchain before reclassifying or replacing the fixture.
 
 ## Task Record
 
@@ -182,3 +234,8 @@ generated media was deleted after the failed run.
     and the fixture-only recipe. Restored executable checks and clarified
     report provenance. No instruction conflict, accepted architectural value,
     fixture lock/probe, workflow, Sonar setting, or quality criterion was relaxed.
+  - Parent validation also corrected stale Rust instruction wording that said
+    `test-features-min` did not invoke rustdoc. The existing recipe and retained
+    output include minimal-feature doctests; full-workspace doctests also run.
+    This is documentation alignment, not a test-selection change. ADR 574's
+    root-input rustdoc example passed in the full workspace test run.

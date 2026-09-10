@@ -294,6 +294,15 @@ request list. These are unresolved stack/review obligations, not a remote pass.
 The primary checkout and all unapproved init deltas remain untouched. ADR 569
 and E1 remain held; approval of 557-559 does not authorize either delta.
 
+The combined executable `79ae7ffa` passed full `just ci` with all 18 coverage
+gates, but failed `just ui-e2e` with the same 46/1/61 passed/failed/not-run
+counts. Rust coverage records 237 sources, 101,312 lines and 94,279 covered
+lines. Final Sonar inputs passed verification; the authoritative scanner still
+fails closed without its token. The restored conversion gate is separately
+blocked at strict fixture verification, so no whole-feature or all-checks pass
+is established. ADR 575 records the final evidence, documentation-only
+follow-up, and cleanup. No local integration history was pushed wholesale.
+
 ## Task Record
 
 - Motivation: Provide a bounded completion ledger while the integrating agent
