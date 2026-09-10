@@ -21,6 +21,15 @@ test-database-baseline-read:
     cargo --config 'build.rustflags=["-Dwarnings"]' test \
         -p revaer-data --all-features baseline::
 
+db-pristine-catalog-generate:
+    ruby --disable-gems scripts/postgres-pristine.rb generate
+
+db-pristine-catalog-validate:
+    ruby --disable-gems scripts/postgres-pristine.rb validate
+
+db-pristine-catalog-test:
+    ruby --disable-gems scripts/tests/postgres-pristine-test.rb
+
 stack-changed-lines base_ref head_ref:
     ruby --disable-gems scripts/database-rebaseline.rb changed-lines stack "{{base_ref}}" "{{head_ref}}"
 
