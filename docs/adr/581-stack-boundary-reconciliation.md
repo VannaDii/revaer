@@ -62,6 +62,38 @@ every intermediate PR passes.
 
 ## Task Record
 
+### Phase Boundary Replay Checkpoint
+
+The corrected PR 99 boundary now has 20 reconstructed descendants through
+`ef84c954` on retained local ref `work/media3-phase-boundary-20260910`.
+The first nine patches replay byte-for-byte. At PR 110, `f99fec1b` retains the
+single schema catalogue and the absence assertion, and moves the already
+existing phase-schema correction from `1a0b63e7` to its first read-only owner.
+Both generated API artifacts were regenerated and compared structurally.
+An independent review confirmed exact preservation of PR 110's other 28 files
+before this deliberate regeneration and task-record update.
+
+All ten remaining descendants replayed. The readiness artifact conflict
+preserves both schema additions; the later worker-owned-phase artifacts match
+their original commit exactly. Comparing reconstructed tip `ef84c954` against
+original `eb31c3f5` yields only the absence assertion and ADR 467/475 updates.
+All 20 canonical changed-line guards pass, as does range whitespace validation.
+
+At PR 110, all eight OpenAPI tests pass under both minimal and all features;
+strict API Clippy, workspace formatting, API export and artifact checks pass.
+Both eight-test OpenAPI configurations also pass at the reconstructed tip.
+Full `just ci` at that tip reaches audit and fails on `h2` 0.4.12
+(`RUSTSEC-2026-0258`) and yanked `chacha20` 0.10.0. Full `just ui-e2e` stops
+before browsers at four high-severity npm dependency findings. Initial sandbox
+Docker/network failures were retried with explicit isolated database ownership
+and the required network access. No passing full-gate claim is made.
+
+The existing dependency correction `1ee5f2ba` still needs propagation at its
+earliest owning stack boundary. Original refs remain intact; no remote branch,
+formal stack, review state or required check was changed. D4, D5 and S2 remain
+held. The private phase-boundary evidence directory retains complete gate logs,
+range comparison and final tree delta; temporary media is cleaned.
+
 - Motivation:
   - Make stack reconstruction evidence-based and preserve each reviewable
     deliverable without forcing an oversized integration history onto GitHub.
