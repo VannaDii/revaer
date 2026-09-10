@@ -370,21 +370,8 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
 
     #[cfg(feature = "libtorrent")]
     {
-        if !fsops_worker.is_finished() {
-            fsops_worker.abort();
-        }
-        if let Err(err) = fsops_worker.await {
-            warn!(error = %err, "fsops worker join failed");
-        }
-
-        if config_task.is_finished() {
-            if let Err(err) = config_task.await {
-                warn!(error = %err, "config watcher task join failed");
-            }
-        } else {
-            config_task.abort();
-            warn!("config watcher task aborted during bootstrap shutdown");
-        }
+        stop_runtime_task(fsops_worker, "fsops").await;
+        stop_runtime_task(config_task, "config_watcher").await;
     }
 
     serve_result.map_err(|err| AppError::api_server("api_server.serve", err))?;
@@ -456,11 +443,24 @@ async fn stop_media_runtime_tasks(tasks: MediaRuntimeTasks) {
 }
 
 async fn stop_runtime_task<T>(task: tokio::task::JoinHandle<T>, task_name: &'static str) {
-    if !task.is_finished() {
+    let cancellation_requested = !task.is_finished();
+    if cancellation_requested {
         task.abort();
     }
     if let Err(err) = task.await {
-        warn!(error = %err, task = task_name, "runtime task join failed");
+        log_runtime_join_error(&err, task_name, cancellation_requested);
+    }
+}
+
+fn log_runtime_join_error(
+    error: &tokio::task::JoinError,
+    task_name: &'static str,
+    cancellation_requested: bool,
+) {
+    if cancellation_requested && error.is_cancelled() {
+        info!(task = task_name, "runtime task cancelled during shutdown");
+    } else {
+        warn!(error = %error, task = task_name, "runtime task join failed");
     }
 }
 
@@ -471,14 +471,14 @@ async fn stop_runtime_task_gracefully<T>(
 ) {
     if task.is_finished() {
         if let Err(err) = task.await {
-            warn!(error = %err, task = task_name, "runtime task join failed");
+            log_runtime_join_error(&err, task_name, false);
         }
         return;
     }
 
     if let Ok(result) = tokio::time::timeout(grace, &mut task).await {
         if let Err(err) = result {
-            warn!(error = %err, task = task_name, "runtime task join failed");
+            log_runtime_join_error(&err, task_name, false);
         }
     } else {
         task.abort();
@@ -487,7 +487,7 @@ async fn stop_runtime_task_gracefully<T>(
             "runtime task aborted after graceful shutdown timeout"
         );
         if let Err(err) = task.await {
-            warn!(error = %err, task = task_name, "runtime task join failed");
+            log_runtime_join_error(&err, task_name, true);
         }
     }
 }

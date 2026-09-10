@@ -526,3 +526,4 @@
     -   [574: Root input contract validation](adr/574-root-input-contract.md)
     -   [575: Media conversion gate restoration](adr/575-media-conversion-gate.md)
     -   [576: Pinned FFprobe fixture diagnostic](adr/576-pinned-ffprobe-fixture-diagnostic.md)
+    -   [577: Runtime shutdown event classification](adr/577-runtime-shutdown-event-classification.md)
