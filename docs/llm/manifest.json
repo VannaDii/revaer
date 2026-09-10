@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T22:16:19.003872+00:00",
+  "generated": "2026-09-10T22:38:13.718783+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5057,6 +5057,7 @@
       "title": "Canonical root identity paths",
       "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The accepted root identity encoder promises normalized scalar validation and rejection of overlaps visible in canonical paths. Its lexical overlap comparison previously admitted empty, current-directory and parent-directory components, including //same/child beside /same with distinct claimed device/inode pairs. These are unproved caller claims, not actual descriptor evidence. The defect does not establish a demonstrated filesystem escape or a working root-authority implementation. Decision: Reject empty, . and .. slash-separated components in the canonical claim before overlap comparison and identity framing. Retain the existing absolute, non-root, UTF-8 byte and NUL bounds.",
       "tags": [
+        "evidence-and-delivery-boundary",
         "task-record"
       ],
       "href": "/adr/584-canonical-root-identity-paths/"

@@ -46,8 +46,22 @@
     Unicode. A separate test preserves noncanonical requested-path bytes.
   - All 59 root-catalog tests pass with warnings treated as errors. Independent
     review confirmed the contract boundary and prompted the stronger cases.
-    Full CI and
-    UI E2E remain required and are recorded separately when observed.
+  - At `e70ae058`, full `just ci` exits zero in the retained integration
+    worktree: all-feature/minimal tests, strict lint, audits, all package
+    coverage thresholds, script coverage and release build complete. Eight
+    existing S2 configuration-watcher shutdown WARN events remain; this is not
+    warning-free acceptance or approval of a shutdown bound.
+  - Full `just ui-e2e` exits one: 46 pass, one fails and 61 do not run.
+    `tests/specs/api/media.spec.ts:130` still receives 400 instead of 201 for
+    profile creation with automation enabled before trusted root binding.
+    Teardown rejects absent job-phase and profile-readiness route coverage.
+    No assertion, automatic behavior or coverage criterion was removed.
+  - Fresh Rust LCOV retains 238 source records, 101,426 line records and
+    94,333 covered lines, alongside native and script coverage. No
+    authoritative Sonar scan or published coverage metric was obtained.
+  - Strict package Clippy, formatting, instruction drift, whitespace and
+    documentation links pass (1,128 OK, zero errors). The correction is
+    202/9,999 changed lines under the canonical no-rename guard.
 - Observability updates:
   - Reuse `InvalidCanonicalPath`. No new log, metric, secret or path exposure.
 - Status-doc validation:
@@ -63,3 +77,13 @@
   - Reviewed root AGENTS, Rust scoped instructions, ADRs 523/550/557/559 and the
     root identity encoder contract. No rule change or new architecture approval
     is inferred; D4, D5, S2 and the package evidence holds remain unchanged.
+
+## Evidence And Delivery Boundary
+
+- Private red/green, full-gate and coverage evidence is retained under
+  `/private/tmp/revaer-root-canonical-evidence-20260910`.
+- This correction remains local pending reconciled stack delivery. No GitHub
+  source, PR metadata, required check, merge or server-side criterion changed.
+- The primary checkout's changes and conflicts are preserved. Completed
+  temporary worktrees, the dedicated test database/storage and test media are
+  removed after validation; committed refs and non-media evidence remain.
