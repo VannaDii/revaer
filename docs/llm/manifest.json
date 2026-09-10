@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T10:45:12.345284+00:00",
+  "generated": "2026-09-10T10:59:17.235332+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4952,6 +4952,19 @@
         "validation-and-delivery-boundary"
       ],
       "href": "/adr/576-pinned-ffprobe-fixture-diagnostic/"
+    },
+    {
+      "id": "adr/577-runtime-shutdown-event-classification",
+      "title": "Runtime shutdown event classification",
+      "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. ADR 557-559 approval does not approve this delta. Context: ADR 576's CI run emitted warnings for bootstrap-requested task aborts. PR 194 contains related changes absent from local integration. ADR 559's G1 boundary explicitly reserves observable behavior and failure classification for decision-specific approval. Historical ADR 454's claim that approval was unnecessary is not authorization. Decision: None made. Present S1 and S2 below; preserve current runtime behavior and warnings until the operator approves a specific delta. Consequences: S1 would change event severity for requested cancellation. S2 would observe a task termination that currently is not",
+      "tags": [
+        "approval-boundary-correction",
+        "required-validation-after-approval",
+        "s1-requested-cancellation-classification",
+        "s2-await-configuration-watcher-termination",
+        "task-record"
+      ],
+      "href": "/adr/577-runtime-shutdown-event-classification/"
     },
     {
       "id": "adr/index",

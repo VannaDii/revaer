@@ -4951,6 +4951,19 @@
     "href": "/adr/576-pinned-ffprobe-fixture-diagnostic/"
   },
   {
+    "id": "adr/577-runtime-shutdown-event-classification",
+    "title": "Runtime shutdown event classification",
+    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. ADR 557-559 approval does not approve this delta. Context: ADR 576's CI run emitted warnings for bootstrap-requested task aborts. PR 194 contains related changes absent from local integration. ADR 559's G1 boundary explicitly reserves observable behavior and failure classification for decision-specific approval. Historical ADR 454's claim that approval was unnecessary is not authorization. Decision: None made. Present S1 and S2 below; preserve current runtime behavior and warnings until the operator approves a specific delta. Consequences: S1 would change event severity for requested cancellation. S2 would observe a task termination that currently is not",
+    "tags": [
+      "approval-boundary-correction",
+      "required-validation-after-approval",
+      "s1-requested-cancellation-classification",
+      "s2-await-configuration-watcher-termination",
+      "task-record"
+    ],
+    "href": "/adr/577-runtime-shutdown-event-classification/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",
