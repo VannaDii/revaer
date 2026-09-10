@@ -513,3 +513,4 @@
     -   [561: Root source contract corrections](adr/561-root-source-contract-corrections.md)
     -   [562: Asset sync failure-path coverage](adr/562-asset-sync-failure-coverage.md)
     -   [563: Missing init candidate diagnostic](adr/563-missing-init-candidate-diagnostic.md)
+    -   [564: Media completion evidence ledger](adr/564-media-completion-ledger.md)

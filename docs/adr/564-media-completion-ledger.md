@@ -1,0 +1,203 @@
+# Media completion evidence ledger
+
+- Status: Recorded
+- Date: 2026-09-10
+- Operator approval: Not applicable: nonarchitectural task record
+- Context: The full first-release goal is active; implementation, accepted
+  contracts, local checks, and remote PRs must not be conflated.
+- Decision: Record a bounded outside-in work breakdown with evidence and
+  dependencies. This document selects no architecture, values, or exceptions.
+- Consequences: No row below establishes release readiness. Missing evidence
+  remains work, not an exclusion from the release.
+- Follow-up: The integrating agent reviews this record, attaches exact-revision
+  validation, and assigns reviewed PRs after stack reconciliation.
+
+## Evidence Boundary
+
+Source inspection is pinned to local integration
+`78cec0c0d8b7759847a29cb11402924a24bf432c`, the base of this documentation branch.
+Links below refer to that tree unless explicitly marked as a parent checkpoint.
+Names, modeled operations, test presence, and accepted ADRs are not execution
+proof. This is a bounded completion ledger, not an exhaustive code audit or the
+final per-requirement acceptance report required by ADR 559.
+
+The [specification](../../MEDIA_TRANSCODING.md#first-release-scope) remains the
+scope authority, as amended by approved ADRs. Its historical "no unresolved
+operator decisions" sentence does not cancel later explicit holds. The
+[accepted resolution](559-media-approval-delta.md#approval-resolution) approves
+R1-R4, B1-B3, and narrow G1 genuinely; E1 and the enumerated remaining holds stay
+open. No older proposal, replayed constant, or green check supplies consent.
+
+### Local Is Not Remote
+
+Read-only GitHub CLI queries on 2026-09-10 establish:
+
+- [PR 98](https://github.com/VannaDii/revaer/pull/98),
+  `fix(media): bound verifier diagnostics`, has base `54157ef8` and head
+  `7ed723d5`: 110,059 additions plus 20,998 deletions, **131,057 changed lines**.
+  It needs stack/diff repair before review or merge; its title cannot establish
+  ownership of everything in that diff.
+- [PR 194](https://github.com/VannaDii/revaer/pull/194),
+  `fix(runtime): classify requested shutdown cancellation`, has head
+  `cfed91f82a07a909ac1b96d9129e9eabeaddbf1c`, not this integration revision.
+  Local `git rev-list --left-right --count 78cec0c0...cfed91f8` reports
+  116 local-only and 107 remote-only commits. Preserve and reconcile both sides;
+  replacing the remote tip with the local integration is not a proven restack.
+
+No feature row is assigned a remote owning PR: this task did not prove an exact
+reviewed diff carrying each complete deliverable. PR 98 is directly identified
+only as a delivery blocker, and PR 194 only as a divergent remote checkpoint.
+No GitHub check, review, stack metadata, or package result is inferred here.
+
+### Verified First Repair Boundary
+
+The parent checked the existing clean chain
+`54157ef8 -> 4207a08a -> f87bea0b`. Its total diff is 519 changed lines: a
+364-line documentation prerequisite followed by the 155-line verifier change.
+The context-free stable patch ID of `f87bea0b` matches remote `7ed723d5` exactly:
+`09366ee35d93a058cace1358c3ddf85c1da3d753`. Verifier source, both regression
+tests, and ADR 341 are byte-identical; this candidate does not omit the verifier
+deliverable. The documentation prerequisite is separate from that equivalence
+proof and does not independently authenticate historical approval quotations.
+
+PR 99 currently advances `7ed723d5` to `8c985b4b`; local `ccf8b3ef` advances
+`f87bea0b` with the corresponding target-stream change. Its range-diff has
+base-dependent import, prior API-boundary, and documentation-index differences,
+so it is not a claim of identical full patch IDs. Reconcile and validate this
+transition and the remaining descendants before publishing the repaired
+boundary. No branch was pushed, no formal-stack metadata was changed, and no
+exact-restacked-revision CI/UI result is established by these comparisons.
+
+## Outside-In Ledger
+
+Every row remains open. "Source" means inspected implementation, not a passing
+test. "Required" names acceptance work, not a new architectural decision. Owning
+PR for each row is **unassigned pending verified stack mapping**.
+
+| ID / Operator Capability | Current Source Evidence | Remaining Work And Required Verification |
+| --- | --- | --- |
+| L1: Install and initialize | [Rebaseline configuration](../../config/database-rebaseline.env) is `assembly`, with 167 frozen migrations and a 1,624-statement candidate. [Data bootstrap](../../crates/revaer-data/src/config.rs) still invokes `sqlx::migrate!`; the assembled [init script](../../crates/revaer-data/init.sql) is inert. | Finish accepted [522](522-pre-v1-single-init-script-transition.md), [541](541-packaged-init-bootstrap-lifecycle.md), and [551](551-packaged-database-baseline-contract.md) finalization, grants, baseline seal/verification, packaged init/verify modes, and coordinated authority cutover. Prove pristine install, repeat verification, partial/wrong baseline rejection, least-privilege runtime, and migration retirement. Do not add a migration or claim assembly is cutover. |
+| L2: Bind trusted roots and configure profiles | [Root source](../../crates/revaer-media-runtime/src/root_catalog/mod.rs) parses/loads a trusted deployment catalog; its contract explicitly grants no root attestation or write authority. Searches found no catalog caller in app/data/API. [Profile UI](../../crates/revaer-ui/src/features/media/view.rs) still holds raw source/output strings. | Implement accepted [550](550-packaged-root-catalog-source-contract.md) attestation/writer evidence and [557](557-root-persistence-contract.md) normalized persistence, bootstrap reconciliation, logical binding, API/UI, and immutable five-root job snapshot in the coordinated init flow. Prove empty whole-root prefix, overlap races, stale generations/rebinding, authorization, conditional updates, and rejected remote path authority. Parser tests alone cannot close this row. |
+| L3: Configure targets/policies and exchange portable YAML | [Media facade](../../crates/revaer-app/src/media.rs) implements profile/catalog operations and YAML validation/apply/export; [target compilation](../../crates/revaer-media-core/src/target.rs) resolves ordered streams. | Complete the spec's video/audio/subtitle, compatibility, matching, retention, runtime/output, and verification controls across normalized storage, API/OpenAPI, UI, and YAML. Reconcile with L2 and immutable version contracts. Exercise round-trip portability, unresolved mappings kept disabled, invalid/conflicting policy rejection, imports forced to dry-run, and no import/preview filesystem effects. Existing simplified forms are not full configuration coverage. |
+| L4: Discover manually and enable automation explicitly | [Discovery service](../../crates/revaer-app/src/media_discovery_runtime.rs) has native watcher events, scan cursors, and an in-memory `last_scheduled` map. [Frozen procedure](../../crates/revaer-data/migrations/0182_media_normalized_configuration_identity.sql) rejects legacy automation writes with `media_profile_filesystem_identity_required`. | Finish L2, durable discovery/aggregate state under [516](516-durable-discovery-scheduling-and-versioned-aggregate-identity.md), and bounded fingerprint admission under [535](535-bounded-cancellation-aware-fingerprint-admission.md). Obtain held measured values/semantics before activation. Prove default-off behavior, manual plan/audit-only discovery, enabled watcher/schedule enqueueing, restart/overflow/missed-event recovery, deduplication, and cancellation/quota accounting. Enabled automation is included, not expendable to make UI tests pass. |
+| L5: Inspect media and refresh trustworthy capabilities | [Capability probes](../../crates/revaer-media-runtime/src/capabilities/detect.rs) use an injected supervisor; [inspection adapter](../../crates/revaer-media-runtime/src/inspect/adapter.rs) composes probing and inspection. [Bootstrap](../../crates/revaer-app/src/bootstrap.rs) constructs the current system supervisor. | Complete [519](519-immutable-media-capability-execution-identity.md) full native dependency closure and immutable job binding, plus [554](554-preemptible-native-process-broker-contract.md)/[558](558-rvb1-native-process-broker-wire-contract.md) broker routing and containment. No RVB1 app/data/API implementation was found. Prove stale/mutated tool rejection, both-lane readiness, bounded probing, secret-free environment, and all advertised tool/filesystem capabilities on both Linux architectures. E1 blocks production environment selection. |
+| L6: Inspect explanations, compare state, preview a safe plan | [Core pipeline](../../crates/revaer-media-core/src/pipeline.rs) compiles targets, diffs graphs, prunes candidates, and returns selected/rejected explanations. [Job runtime](../../crates/revaer-app/src/media_job_runtime.rs) persists planning evidence and has an explicit dry-run completion branch. | Verify immutable source/target/policy/capability inputs, deterministic selection, compliance/scoring, cost/disk estimates, DAG dependencies, and cache invalidation across the complete configured graph. Prove every declared operation is executable and verifiable, rejected plans remain explainable, and dry-run produces no source-adjacent artifacts. Core enum coverage is not operator workflow coverage. |
+| L7: Execute the requested media transformations | [Execution builders](../../crates/revaer-media-runtime/src/execute/mod.rs) construct desired-graph, subtitle and transcode arguments. They explicitly reject arbitrary `MetadataRewrite` without a verified desired-metadata contract. The same file still has direct `Command::new` execution; audio analysis and verification have separate direct runners. | Finish broker/closure routing, then validate copy/remux, labels/dispositions/order, subtitle copy/embed/extract/conversion without OCR, audio/video transforms, multi-video, metadata, HDR/color, chapters, attachments, unmatched-family policies, and configured quality safeguards. Hold audio preset/bitrate interpretation under [515](515-versioned-audio-transformation-and-acceptance-contract.md). Real fixtures must assert planned operations and independently inspected output; existing literals or hand-built fixture capabilities are not approved production behavior. |
+| L8: Verify output, replace safely, recover and retain evidence | [Job orchestration](../../crates/revaer-app/src/media_job_runtime.rs) performs candidate/final verification, replacement commit, rollback/finalization, and startup recovery. [Replacement](../../crates/revaer-media-runtime/src/replacement.rs), [verification](../../crates/revaer-media-runtime/src/verification/mod.rs), and [workspace retention](../../crates/revaer-app/src/media_workspace_retention.rs) contain implementations, not a packaged safety proof. | Complete [512](512-fenced-resumable-worker-ownership-and-recovery.md)/[513](513-attempt-scoped-workspace-retention-transaction.md)/[514](514-packaged-media-subsystem-lifecycle-and-health-contract.md) ownership, resumability, per-root barriers, and cleanup transactions with held values resolved. Prove source/root races, disk refusal, verification failure, backup/quarantine, concurrent stale owners, crashes at filesystem/database/outbox boundaries, rollback, cancellation/shutdown, retention and compact audits. The replay's one-hour stale threshold is not approved resumable recovery. |
+| L9: Operate through API/UI and diagnose failures | [Handlers](../../crates/revaer-api/src/http/handlers/media.rs), [UI](../../crates/revaer-ui/src/features/media/view.rs), and [API](../../tests/specs/api/media.spec.ts)/[UI tests](../../tests/specs/ui/media.spec.ts) expose configuration, capabilities, previews and job diagnostics. The UI test includes a surface-rendering check, not full service acceptance. | Deliver L2-L8 through the real authenticated workflow, including explicit manual `replace` override without changing saved dry-run, cancel/retry/re-plan, timelines, SSE, health and bounded metrics/logs. Reconcile OpenAPI/client/teardown routes and retention controls. Run the full UI suite against the same installed service and database, not route mocks or softened assertions. Parent checkpoint below is currently failing. |
+| L10: Ship supported packages and merge reviewable deliverables | [Dockerfile](../../Dockerfile), [media recipes](../../just/media.just), [PR workflow](../../.github/workflows/pr.yml), and [Sonar criteria](../../sonar-project.properties) provide build/validation surfaces. [Fixture source](../../crates/revaer-media-runtime/tests/media_fixtures.rs) includes real generated audio fanout with a hand-built capability snapshot; this does not exercise the full packaged operator lifecycle. | Validate clean Linux amd64/arm64 installs, complete spec fixture matrix, tool inventories/redistribution evidence, ExifTool boundary, immutable closure, containment and E1 values. Retain per-image digests/reports. Reconcile one linear stack and recheck every exact diff against the canonical 9,999-line limit; require all applicable checks, positive strict Sonar coverage/evidence, Vanna assignment, requested Copilot review and addressed actionable feedback. No package or remote pass is established here. |
+
+## Critical Path And Decision Queue
+
+1. **First runnable operator slice: L1-L3, then L4 manual discovery/L6 dry-run.**
+   Finish the approved normalized root/profile workflow and coordinated init
+   lifecycle. Use the reproduced API/UI failure as an acceptance boundary, not
+   a reason to disable an included control. Keep root generation, whole-root
+   prefix, overlap locking and the approved 128-association bound unchanged.
+2. **In parallel: L5/L10 package and native identity evidence.** Implement only
+   approved broker/closure mechanics. Present E1's exact environment and HOME
+   ownership proof for amd64/arm64 for separate approval; do not install the
+   candidate table as policy. B1's proven-clean degradation is not permission
+   for unsafe startup or failed recovery to continue.
+3. **Batch measured held choices for approval, then enable affected behavior.**
+   L4 needs ADR 516 scheduler/traversal/hash budgets, aggregate encoding and
+   limit semantics, and ADR 535 admission values. L8 needs ADR 512 lease,
+   heartbeat/stale recovery values, ADR 513 cleaner takeover/expiry, and ADR 514
+   retry/backoff values. L7 needs ADR 515 preset/order/bitrate acceptance
+   evidence. Preserve already fixed values; approval of 557-559 supplies none
+   of these missing choices. Gather evidence independently where safe.
+4. **Complete explicit execution and failure recovery: L7-L9.** Once prerequisites
+   are proved, exercise one real configured job through verification and safe
+   replacement/recovery, then expand to the complete included operation matrix.
+   A successful remux or dry-run alone does not complete the release.
+5. **Close delivery evidence: L10.** Parent reconciles the stack and maps exact
+   reviewed diffs to these deliverables. Rerun applicable gates after code or
+   base changes; merge in dependency order only with actual checks/review proof.
+
+These are execution priorities, not new architecture or permission to omit
+anything in the specification. Other accepted exact contracts remain binding;
+newly discovered decision gaps return to operator review, not invented defaults.
+
+## Parent Validation Checkpoint
+
+The integrating agent supplied these results in the task conversation on
+2026-09-10 for local checkpoint `b4645d7b`; they were **not rerun in this ledger
+worktree** and do not change the source-inspection baseline above:
+
+- `just ui-e2e`: 46 passed, one failed, 61 not run. Profile creation at
+  `tests/specs/api/media.spec.ts:130` expected 201 and received 400. Parent source
+  inspection ties the line-96 fixture's raw roots plus `schedule_enabled: true`
+  to the legacy `media_profile_upsert_v1` identity gate. API logs did not expose
+  the error code; this is not a claim about an observed response body.
+- Teardown also reports missing executed coverage for the job `phases` and
+  profile `readiness` GET routes. This does not establish that the routes are
+  absent from the service. Assertions were not softened.
+- An earlier `just ci` exited zero with all 18 package coverage gates at least
+  90%, full tests, Clippy, audit, deny and release build passing. Nine new asset
+  tests landed after the coverage binary was compiled, so it is not exact-final
+  CI proof. The rerun started on `b4645d7b`, including all root/source/assets/
+  candidate diagnostic changes, and **exited zero**. All 18 package coverage
+  gates, script coverage, full/minimal-feature tests, Clippy, audits, and release
+  build passed. This ledger's documentation-only integration happened during
+  that run; no executable source changed. The retained log is
+  `ci-b4645d7b.log`. `CARGO_BUILD_JOBS=8` changed parallelism only, not criteria.
+  Final Rust LCOV has 226 source records and 100,374 line records, of which
+  93,292 are covered. Those are local coverage records, not published Sonar
+  metrics or proof for a future restacked revision.
+- `just docs-build` succeeded with a **10,416,429-byte search-index WARN**; it
+  was not warning-free. `just docs-link-check`: 996 OK, zero errors.
+- After ledger integration, `just instruction-drift`, `git diff --check`, and
+  `just docs-link-check` passed; the latter checked 1,044 links without errors.
+- Full-file Sonar MCP analysis of `scripts/database_rebaseline/contract.rb` and
+  `scripts/tests/database-rebaseline-test.rb`, both Ruby in MAIN scope for
+  `VannaDii_Revaer`, returned zero issues. This is not a repository/PR scanner
+  run, Rust analysis, a published coverage result, or a quality-gate result.
+- No GitHub, package, Sonar server/coverage, or overall completion result follows
+  from this local checkpoint. Parent owns integrated CI/UI follow-through.
+
+## Task Record
+
+- Motivation: Provide a bounded completion ledger while the integrating agent
+  runs integrated validation, without restarting architecture review or treating
+  partial implementation as a finished service.
+- Design notes: Keep the ledger in this one task ADR rather than introducing a
+  second status document. Scope edits to ADR 564, its two indexes and generated
+  catalog; preserve all other documents and checkouts. Remote queries are
+  read-only CLI calls. No pushes, PR mutations, or implementation changes.
+- Test coverage summary: No runtime tests or fixtures added. Documentation
+  validation results are recorded below. Full `just ci`/`just ui-e2e` remain
+  parent-owned integration requirements; their omission here is not a pass or
+  a change to the repository completion rule.
+- Observability updates: No runtime changes; the ledger distinguishes source,
+  parent-reported validation, held decisions and unassigned PR ownership.
+- Status-doc validation: Reviewed the specification and accepted resolutions;
+  existing README/operator guides are not changed. This record makes no claim
+  that those broader guides have been exhaustively reconciled.
+- Risk & rollback plan: A status ledger can become stale or overstate proof.
+  Keep revisions and evidence classes attached; re-audit on integration. Revert
+  this docs-only commit and regenerate indexes/catalog if rejected. No runtime
+  state or architecture requires rollback.
+- Dependency rationale: No dependencies added or changed.
+- Stale-policy check: Reviewed `AGENTS.md`, the ADR template, data/UI/devops
+  scoped instructions, and relevant accepted root, broker, lifecycle, audio,
+  discovery, fingerprint and baseline contracts. The spec's old open-question
+  wording and historical migration-retirement prose must be read with the
+  later accepted resolution and current assembly guard. These are recorded
+  provenance caveats, not edits to excluded files. No contradiction is resolved
+  by inventing approval, changing frozen migrations, relaxing criteria or
+  removing an included feature.
+
+## Ledger Validation
+
+- `just docs-index`: passed; generated 505 catalog entries. Only this ADR's
+  entry and generator metadata changed in the two generated catalog files.
+- `just instruction-drift` and `git diff --check`: passed.
+- `just docs-build`: exited zero with the existing large-search-index WARN;
+  this is not a warning-free documentation result.
+- `just docs-link-check`: 1,042 OK, zero errors.
+- `just clean-test-fixtures`: passed; the four ignored binary fixture
+  directories are absent. No media was acquired/generated or runtime process
+  started by this documentation task. Committed probe metadata is preserved.
+- No runtime tests, full CI/UI, package validation or Sonar scan ran here.
+- This is a completed documentation subtask only, not feature completion.
+  Parent will review/cherry-pick the commit and remove its completed worktree.

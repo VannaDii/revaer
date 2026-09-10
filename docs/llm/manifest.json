@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T06:32:13.969095+00:00",
+  "generated": "2026-09-10T06:54:27.368720+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4794,6 +4794,20 @@
         "task-record"
       ],
       "href": "/adr/563-missing-init-candidate-diagnostic/"
+    },
+    {
+      "id": "adr/564-media-completion-ledger",
+      "title": "Media completion evidence ledger",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The full first-release goal is active; implementation, accepted contracts, local checks, and remote PRs must not be conflated. Decision: Record a bounded outside-in work breakdown with evidence and dependencies. This document selects no architecture, values, or exceptions. Consequences: No row below establishes release readiness. Missing evidence remains work, not an exclusion from the release. Follow-up: The integrating agent reviews this record, attaches exact-revision validation, and assigns reviewed PRs after stack reconciliation.",
+      "tags": [
+        "critical-path-and-decision-queue",
+        "evidence-boundary",
+        "ledger-validation",
+        "outside-in-ledger",
+        "parent-validation-checkpoint",
+        "task-record"
+      ],
+      "href": "/adr/564-media-completion-ledger/"
     },
     {
       "id": "adr/index",
