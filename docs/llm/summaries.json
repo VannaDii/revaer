@@ -5022,6 +5022,7 @@
       "dependency-and-ui-checkpoint",
       "exact-foundation-validation-and-immediate-replay",
       "integrated-validation-and-cleanup",
+      "linux-foundation-and-eight-commit-replay",
       "phase-boundary-replay-checkpoint",
       "pr-99-correction",
       "task-record",

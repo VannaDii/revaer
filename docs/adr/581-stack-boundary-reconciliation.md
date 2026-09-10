@@ -199,6 +199,60 @@ PR, formal-stack, release, criteria or architectural-approval mutation was
 performed. D4, D5 and S2 remain held. The first foundation still needs its
 own passing gates before publication; later-tip success is not a substitute.
 
+## Linux Foundation And Eight-Commit Replay
+
+Exact first-PR candidate `15e47d6e` now has Linux arm64 evidence from an
+isolated Ubuntu 24.04 environment with Rust 1.91.0, NVM Node 24.19.0 and
+libtorrent 2.0.10. The source tree remains unchanged. The first attempt lacked
+jq in the tool image; installing that prerequisite and rerunning the unchanged
+gate resolved the infrastructure failure without a repository or criteria edit.
+
+- Full `just ci` exits zero, including all-feature/minimal tests, strict lint,
+  audits, all 16 package coverage gates and the release build. Its 40 runtime
+  shutdown WARN records remain defects, not warning-free acceptance.
+- Explicit `just test-native` exits zero: 90 unit tests and three native
+  integration tests pass with `REVAER_NATIVE_IT` enabled. A mounted real Docker
+  socket and successful `docker info` preflight prevent environment-based
+  native-test skipping. No native implementation or ABI criterion was changed.
+- Full `just ui-e2e` exits zero: all 101 tests pass, including API and UI
+  coverage teardown. Container-local ports avoid the unrelated host service
+  on 8080. No assertions, browser projects or coverage checks were disabled.
+- Local LCOV retains 168 source records, 57,985 executable lines and 54,144
+  covered lines. This is neither published Sonar coverage nor validation of
+  the complete later media feature, Linux amd64, or either release package.
+
+Eight more existing descendants replay from `79f23836` through `27130e90`.
+The replay preserves the patched real semantic-release npm plugin and its
+installed dependency graph instead of importing the incoming no-op replacement.
+Root-over-scoped instruction precedence, the security fixes and the consolidated
+task-record pointers remain intact. Incoming API-generator graph changes are
+retained with patched js-yaml; no new production behavior is invented.
+
+Both installed npm graphs, zero-finding audits, workflow regression/live
+guardrails, instruction drift and whitespace checks pass. Seven individual
+changed-line gates pass; the asset-conversion boundary still rejects its 213
+binary deletions, exactly as original PR 130 does. This is the existing PR 130
+blocker, not an additional distinct PR. Full compiler/UI gates were not run
+for these eight descendants. Known intermediate asset URL defects still need
+their existing later correction moved to the first responsible boundary.
+
+ADR 585 inventories that fixed binary deletion set and proposes an explicit,
+one-deliverable exception; it remains Proposed and changes no executable rule.
+D4/D5 approval was requested but not received, and S2 remains held. The frozen
+database policy prevents persisting the new root catalog before its approved
+single-init cutover; disabling media automation assertions is not a repair.
+
+Complete nonmedia logs and coverage are retained in the dated Linux-foundation,
+foundation-descendants and binary-deletion evidence directories under
+`/private/tmp`. No remote source, formal-stack, review, required-check or approval
+state was changed. The primary checkout's staged changes and conflicts remain
+untouched. These are exact-revision checkpoints, not completion of the goal.
+All Linux validation processes have terminated; their run containers, dedicated
+database and completed validation/replay worktrees are removed. Canonical media
+fixture cleanup passes. Committed refs, the reusable tool-only image and nonmedia
+evidence remain. The documentation checkpoint passes link, drift and whitespace
+checks; no full-gate result is attributed to this documentation-only revision.
+
 ## Task Record
 
 - Motivation:
