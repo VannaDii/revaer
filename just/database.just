@@ -17,6 +17,10 @@ db-rebaseline-candidate: sqlx-install
 db-init-prefix-check:
     ruby --disable-gems scripts/database-rebaseline.rb prefix
 
+test-database-baseline-read:
+    cargo --config 'build.rustflags=["-Dwarnings"]' test \
+        -p revaer-data --all-features baseline::
+
 stack-changed-lines base_ref head_ref:
     ruby --disable-gems scripts/database-rebaseline.rb changed-lines stack "{{base_ref}}" "{{head_ref}}"
 

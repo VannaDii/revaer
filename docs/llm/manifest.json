@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T06:54:27.368720+00:00",
+  "generated": "2026-09-10T07:33:50.968489+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4808,6 +4808,16 @@
         "task-record"
       ],
       "href": "/adr/564-media-completion-ledger/"
+    },
+    {
+      "id": "adr/565-packaged-baseline-reader",
+      "title": "Packaged baseline reader",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Accepted ADR 551 requires a bounded stored-procedure baseline read before the packaged runtime can replace migration-based startup. Decision: Implement the read projection and exact value verification without changing startup, creating a pool, executing init, or adopting a database. Consequences: A verified row proves only its checked contract, digest and runtime identity. The owning lifecycle still must prove connection identity, server settings, privileges, structural integrity, deadlines and cleanup. Follow-up: Integrate this reader with the approved lifecycle after the final SQL, pristine classifier and coordinated cutover are validated.",
+      "tags": [
+        "task-record",
+        "validation"
+      ],
+      "href": "/adr/565-packaged-baseline-reader/"
     },
     {
       "id": "adr/index",

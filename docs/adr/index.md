@@ -496,3 +496,4 @@
 -   [562](562-asset-sync-failure-coverage.md) - Asset sync failure-path coverage
 -   [563](563-missing-init-candidate-diagnostic.md) – Missing init candidate diagnostic
 -   [564](564-media-completion-ledger.md) - Media completion evidence ledger
+-   [565](565-packaged-baseline-reader.md) - Packaged baseline reader

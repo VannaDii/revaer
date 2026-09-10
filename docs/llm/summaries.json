@@ -4807,6 +4807,16 @@
     "href": "/adr/564-media-completion-ledger/"
   },
   {
+    "id": "adr/565-packaged-baseline-reader",
+    "title": "Packaged baseline reader",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Accepted ADR 551 requires a bounded stored-procedure baseline read before the packaged runtime can replace migration-based startup. Decision: Implement the read projection and exact value verification without changing startup, creating a pool, executing init, or adopting a database. Consequences: A verified row proves only its checked contract, digest and runtime identity. The owning lifecycle still must prove connection identity, server settings, privileges, structural integrity, deadlines and cleanup. Follow-up: Integrate this reader with the approved lifecycle after the final SQL, pristine classifier and coordinated cutover are validated.",
+    "tags": [
+      "task-record",
+      "validation"
+    ],
+    "href": "/adr/565-packaged-baseline-reader/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",

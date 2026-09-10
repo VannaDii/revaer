@@ -15,6 +15,7 @@
 
 //! Shared data access layer for Revaer: migrations, stored procedures, and repositories.
 
+pub mod baseline;
 pub mod config;
 pub mod error;
 pub mod indexers;
