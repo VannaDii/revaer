@@ -1,18 +1,30 @@
 # Init privilege and timeout resolution
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
-- Operator approval: Pending. Approval of ADRs 557-559 does not approve this delta.
+- Operator approval: 2026-09-10: "Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound."
 - Context: ADR 566's real PostgreSQL 16.14 proof found an extension-privilege
   ambiguity in ADR 551 and a confirmed timeout-scope incompatibility. Final
   approval review also found an unapproved compiler-setting parity exception.
-- Decision: None made. Present D1, D2, and D3 below for separate operator approval.
-  Keep the finalization proof failing and the runtime cutover disabled meanwhile.
+- Decision: D1 and D2 accepted; D3 accepted conditional on the independent
+  semantic proof specified below. Runtime cutover remains disabled pending all
+  required conformance and application evidence.
 - Consequences: D1 explicitly chooses the authored-versus-extension privilege
   boundary; D2 and D3 change exact legacy parity and setting-scope constraints. These
   are operator decisions, not G1 internal refinements.
-- Follow-up: Obtain an explicit decision, then implement only the accepted
+- Follow-up: Implement only the accepted
   delta, regenerate its exact init digest, and repeat all conformance gates.
+
+## Approval Resolution
+
+The operator accepted D1, D2 and conditional D3 exactly as reviewed at commit
+`1d62d087`. D1's pinned extension boundary and expiry remain mandatory; D2
+changes only reset timeout scope; D3 requires independent cold/warm ingestion
+evidence and a renewed decision if any further semantic delta is necessary.
+The proposal wording below preserves the reviewed recommendations and prior
+hold history; it does not leave these decisions awaiting approval. Approval
+does not establish behavioral equivalence, certify a final digest, activate
+the single-init cutover, or release any unrelated hold.
 
 ## Observed Conflicts
 

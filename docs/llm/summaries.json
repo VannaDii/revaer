@@ -4797,6 +4797,7 @@
     "title": "Media completion evidence ledger",
     "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The full first-release goal is active; implementation, accepted contracts, local checks, and remote PRs must not be conflated. Decision: Record a bounded outside-in work breakdown with evidence and dependencies. This document selects no architecture, values, or exceptions. Consequences: No row below establishes release readiness. Missing evidence remains work, not an exclusion from the release. Follow-up: The integrating agent reviews this record, attaches exact-revision validation, and assigns reviewed PRs after stack reconciliation.",
     "tags": [
+      "2026-09-10-decision-specific-approval",
       "approved-work-integration-checkpoint",
       "critical-path-and-decision-queue",
       "evidence-boundary",
@@ -4806,7 +4807,7 @@
       "pinned-fixture-diagnostic-checkpoint",
       "root-input-and-conversion-gate-checkpoint",
       "rvb1-and-github-checkpoint",
-      "shutdown-and-fixture-decision-queue",
+      "shutdown-and-fixture-decision-queue-before-approval",
       "task-record"
     ],
     "href": "/adr/564-media-completion-ledger/"
@@ -4857,9 +4858,10 @@
   {
     "id": "adr/569-init-privilege-and-timeout-resolution",
     "title": "Init privilege and timeout resolution",
-    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. Approval of ADRs 557-559 does not approve this delta. Context: ADR 566's real PostgreSQL 16.14 proof found an extension-privilege ambiguity in ADR 551 and a confirmed timeout-scope incompatibility. Final approval review also found an unapproved compiler-setting parity exception. Decision: None made. Present D1, D2, and D3 below for separate operator approval. Keep the finalization proof failing and the runtime cutover disabled meanwhile. Consequences: D1 explicitly chooses the authored-versus-extension privilege boundary; D2 and D3 change exact legacy parity and setting-scope constraints. These are operator decisions, not G1 internal refinements. Follow-up: Obtain an explicit decision,",
+    "summary": "Status: Accepted Date: 2026-09-10 Operator approval: 2026-09-10: \"Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound.\" Context: ADR 566's real PostgreSQL 16.14 proof found an extension-privilege ambiguity in ADR 551 and a confirmed timeout-scope incompatibility. Final approval review also found an unapproved compiler-setting parity exception. Decision: D1 and D2 accepted; D3 accepted conditional on the independent semantic proof specified below. Runtime cutover remains disabled pending all required conformance and application evidence. Consequences: D1 explicitly chooses the authored-versus-extension privilege boundary; D2 and D3 change exact legacy parity and setting-scope constraints. These are",
     "tags": [
       "acceptance-evidence-required-after-approval",
+      "approval-resolution",
       "d1-clarify-the-extension-privilege-boundary",
       "d2-function-scoped-reset-lock-bound",
       "d3-function-local-variable-resolution",
@@ -4954,9 +4956,10 @@
   {
     "id": "adr/577-runtime-shutdown-event-classification",
     "title": "Runtime shutdown event classification",
-    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. ADR 557-559 approval does not approve this delta. Context: ADR 576's CI run emitted warnings for bootstrap-requested task aborts. PR 194 contains related changes absent from local integration. ADR 559's G1 boundary explicitly reserves observable behavior and failure classification for decision-specific approval. Historical ADR 454's claim that approval was unnecessary is not authorization. Decision: None made. Present S1 and S2 below; preserve current runtime behavior and warnings until the operator approves a specific delta. Consequences: S1 would change event severity for requested cancellation. S2 would observe a task termination that currently is not",
+    "summary": "Status: Accepted Date: 2026-09-10 Operator approval: 2026-09-10: \"Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound.\" Context: ADR 576's CI run emitted warnings for bootstrap-requested task aborts. PR 194 contains related changes absent from local integration. ADR 559's G1 boundary explicitly reserves observable behavior and failure classification for decision-specific approval. Historical ADR 454's claim that approval was unnecessary is not authorization. Decision: S1 accepted within its exact predicate, task scope and message contract. S2 remains held pending a defensible shutdown bound. Consequences: S1 would change event severity for requested cancellation. S2",
     "tags": [
       "approval-boundary-correction",
+      "approval-resolution",
       "required-validation-after-approval",
       "restored-tree-checkpoint",
       "s1-requested-cancellation-classification",
@@ -4968,9 +4971,10 @@
   {
     "id": "adr/578-locked-fixture-diagnostic-disposition",
     "title": "Locked fixture diagnostic disposition",
-    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. No diagnostic acceptance or fixture replacement is authorized by ADR 557-559 or by this proposal. Context: ADRs 575-576 establish that strict preparation rejects one locked upstream fixture before real Rust conversion execution. Host FFprobe 9.0.1 and the historical Linux arm64 image's 8.0.1 emit the same element-ID error. ADR 559 G1 reserves every quality-criterion change for explicit consent. Accepting this known error would change preparation admission, even with stronger assertions around it. It is not an internal implementation detail. Decision: None made. Present F1's bounded test-only exception for approval. Keep the current diagnostic gate",
+    "summary": "Status: Accepted Date: 2026-09-10 Operator approval: 2026-09-10: \"Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound.\" Context: ADRs 575-576 establish that strict preparation rejects one locked upstream fixture before real Rust conversion execution. Host FFprobe 9.0.1 and the historical Linux arm64 image's 8.0.1 emit the same element-ID error. ADR 559 G1 reserves every quality-criterion change for explicit consent. Accepting this known error would change preparation admission, even with stronger assertions around it. It is not an internal implementation detail. Decision: F1 accepted only within the exact test-only identity, diagnostic, tool-profile, evidence-retention",
     "tags": [
       "alternatives",
+      "approval-resolution",
       "evidence-and-requested-scope",
       "f1-exact-test-only-diagnostic-contract",
       "task-record"

@@ -1,23 +1,33 @@
 # Runtime shutdown event classification
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
-- Operator approval: Pending. ADR 557-559 approval does not approve this delta.
+- Operator approval: 2026-09-10: "Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound."
 - Context:
   - ADR 576's CI run emitted warnings for bootstrap-requested task aborts.
     PR 194 contains related changes absent from local integration.
   - ADR 559's G1 boundary explicitly reserves observable behavior and failure
     classification for decision-specific approval. Historical ADR 454's claim
     that approval was unnecessary is not authorization.
-- Decision: None made. Present S1 and S2 below; preserve current runtime
-  behavior and warnings until the operator approves a specific delta.
+- Decision: S1 accepted within its exact predicate, task scope and message
+  contract. S2 remains held pending a defensible shutdown bound.
 - Consequences:
   - S1 would change event severity for requested cancellation. S2 would observe
     a task termination that currently is not awaited after an abort request.
   - Neither change is evidence of bounded native containment or complete
     recovery, and neither may be inferred from a desire for clean CI output.
-- Follow-up: Obtain operator decisions, then implement only approved changes
+- Follow-up: Implement only S1
   and retain independent event, cancellation, panic, timeout and cleanup proof.
+
+## Approval Resolution
+
+The operator accepted only S1 from the proposal at commit `1d62d087`. S2 is
+explicitly held: do not start awaiting an unfinished configuration watcher
+after abort, add a deadline, or select a shutdown fallback under this approval.
+The reviewed S1 recommendation and historical correction below remain the
+scope record; approval now permits a fresh S1 implementation, not adoption of
+the earlier combined S1/S2 prototype or a claim that validation passed. No
+native-process, broker, recovery, fixture or Sonar criterion is changed by S1.
 
 ## S1: Requested Cancellation Classification
 

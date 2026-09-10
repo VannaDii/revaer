@@ -500,7 +500,7 @@
 -   [566](566-single-init-final-sql-proof.md) - Single-init final SQL and constrained-role proof
 -   [567](567-postgres-pristine-catalog-evidence.md) - PostgreSQL pristine catalog evidence
 -   [568](568-root-attestation-identity-encoding.md) - Root attestation identity encoding
--   [569](569-init-privilege-and-timeout-resolution.md) - Init privilege and timeout resolution (Proposed)
+-   [569](569-init-privilege-and-timeout-resolution.md) - Init privilege and timeout resolution (Accepted; D3 conditional)
 -   [570](570-single-file-directory-authoring-regression.md) - Single-file directory authoring regression
 -   [571](571-rvb1-bounded-wire-codec.md) - RVB1 bounded wire codec
 -   [572](572-broker-env-local-image-evidence.md) - Broker environment local image evidence (Recorded; E1 held)
@@ -508,5 +508,5 @@
 -   [574](574-root-input-contract.md) - Root input contract validation
 -   [575](575-media-conversion-gate.md) - Media conversion gate restoration
 -   [576](576-pinned-ffprobe-fixture-diagnostic.md) - Pinned FFprobe fixture diagnostic
--   [577](577-runtime-shutdown-event-classification.md) - Runtime shutdown event classification
--   [578](578-locked-fixture-diagnostic-disposition.md) - Locked fixture diagnostic disposition
+-   [577](577-runtime-shutdown-event-classification.md) - Runtime shutdown event classification (S1 accepted; S2 held)
+-   [578](578-locked-fixture-diagnostic-disposition.md) - Locked fixture diagnostic disposition (Accepted; exact F1 only)

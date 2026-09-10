@@ -1,9 +1,8 @@
 # Locked fixture diagnostic disposition
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
-- Operator approval: Pending. No diagnostic acceptance or fixture replacement
-  is authorized by ADR 557-559 or by this proposal.
+- Operator approval: 2026-09-10: "Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound."
 - Context:
   - ADRs 575-576 establish that strict preparation rejects one locked upstream
     fixture before real Rust conversion execution. Host FFprobe 9.0.1 and the
@@ -11,15 +10,25 @@
   - ADR 559 G1 reserves every quality-criterion change for explicit consent.
     Accepting this known error would change preparation admission, even with
     stronger assertions around it. It is not an internal implementation detail.
-- Decision: None made. Present F1's bounded test-only exception for approval.
-  Keep the current diagnostic gate failing until the operator decides.
+- Decision: F1 accepted only within the exact test-only identity, diagnostic,
+  tool-profile, evidence-retention and expiry conditions below.
 - Consequences:
   - F1 would admit this particular recoverable probe observation into subsequent
     validation without declaring the whole input valid or harmless.
   - Additional diagnostics, failed decode/conversion, missing evidence, or other
     fixtures would remain failures. F1 alone cannot establish a conversion pass.
-- Follow-up: Obtain an explicit F1 decision, implement only its exact scope if
-  accepted, and rerun real preparation/conversion and the complete quality gates.
+- Follow-up: Implement only F1's exact scope and rerun real
+  preparation/conversion and the complete quality gates.
+
+## Approval Resolution
+
+The operator accepted the narrowly scoped F1 proposal at commit `1d62d087`.
+This explicitly authorizes the one preparation-criterion exception, not broad
+diagnostic allowance, a changed fixture, omitted evidence, a new tool profile,
+production error suppression or any Sonar/GitHub relaxation. The reviewed
+proposal wording below records the scope and prior hold; it does not leave F1
+pending. Tool/source drift still expires the exception. No preparation,
+conversion, current-package or remote-check pass follows from approval.
 
 ## Evidence And Requested Scope
 

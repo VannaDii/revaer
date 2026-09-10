@@ -326,7 +326,7 @@ one failed and 61 not run. Fresh local Sonar inputs verified positive coverage,
 but the authoritative scanner still failed before analysis without its token.
 No package certification, remote all-checks pass, or feature completion follows.
 
-## Shutdown And Fixture Decision Queue
+## Shutdown And Fixture Decision Queue Before Approval
 
 [ADR 577](577-runtime-shutdown-event-classification.md) is Proposed, not a
 completed runtime correction. The parent prematurely changed shutdown event
@@ -351,6 +351,20 @@ shutdown WARN events, then failed `just ui-e2e` with 46/1/61 passed/failed/not-r
 counts. Fresh Sonar inputs verified positive coverage; the authoritative scan
 still failed without local credentials. ADR 577 retains exact results and
 cleanup. No runtime change or diagnostic exception is active from these tasks.
+
+## 2026-09-10 Decision-Specific Approval
+
+The operator explicitly approved "D1, D2, conditional D3, S1, and narrowly scoped
+F1" and directed "Keep S2 held pending a defensible shutdown bound." This
+accepts ADR 569 D1/D2 and conditional D3, ADR 577 S1 only, and ADR 578's exact
+F1 exception as reviewed at `1d62d087`. Earlier pending statements in this
+ledger are historical checkpoints, not the current approval state.
+
+Implementation and independent evidence are still outstanding. In particular,
+D3 equivalence is not established, the final init is not activated, S2 remains
+held, E1 exact package values remain held, and no CI/UI/Sonar/package or remote
+pass is implied. Preserve every expiry and renewed-review requirement in the
+accepted decisions. The primary conflicted user checkout remains untouched.
 
 ## Task Record
 
