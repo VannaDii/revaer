@@ -518,3 +518,4 @@
     -   [566: Single-init final SQL and constrained-role proof](adr/566-single-init-final-sql-proof.md)
     -   [567: PostgreSQL pristine catalog evidence](adr/567-postgres-pristine-catalog-evidence.md)
     -   [568: Root attestation identity encoding](adr/568-root-attestation-identity-encoding.md)
+    -   [569: Init privilege and timeout resolution](adr/569-init-privilege-and-timeout-resolution.md)

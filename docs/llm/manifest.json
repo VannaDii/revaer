@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T07:35:42.444896+00:00",
+  "generated": "2026-09-10T07:37:31.078973+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4851,6 +4851,19 @@
         "task-record"
       ],
       "href": "/adr/568-root-attestation-identity-encoding/"
+    },
+    {
+      "id": "adr/569-init-privilege-and-timeout-resolution",
+      "title": "Init privilege and timeout resolution",
+      "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. Approval of ADRs 557-559 does not approve this delta. Context: ADR 566's real PostgreSQL 16.14 proof found two incompatibilities between the frozen candidate and ADR 551's exact finalization requirements. Decision: None made. Present D1 and D2 below for separate operator approval. Keep the finalization proof failing and the runtime cutover disabled meanwhile. Consequences: These proposals preserve a constrained bootstrap principal and stored-procedure-only runtime access, but alter exact accepted schema/parity and timeout-scope constraints. They are not G1 internal refinements. Follow-up: Obtain an explicit decision, then implement only the accepted delta, regenerate its exact init",
+      "tags": [
+        "acceptance-evidence-required-after-approval",
+        "d1-private-extension-schema",
+        "d2-function-scoped-reset-lock-bound",
+        "observed-conflicts",
+        "task-record"
+      ],
+      "href": "/adr/569-init-privilege-and-timeout-resolution/"
     },
     {
       "id": "adr/index",
