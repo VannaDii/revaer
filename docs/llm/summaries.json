@@ -4876,6 +4876,18 @@
     "href": "/adr/570-single-file-directory-authoring-regression/"
   },
   {
+    "id": "adr/573-rvb1-canonical-golden-vectors",
+    "title": "RVB1 canonical golden vectors",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The parent owns the pure bounded RVB1 codec and its consuming tests. This independent deliverable fixes literal expected frames directly from [ADR 558 Annex A](558-rvb1-native-process-broker-wire-contract.md#annex-a-exact-codec-draft-for-review), without reading, importing, or executing the parent codec. The parent agent assigned this worktree, branch, fixture path, and ADR 573 under the operator's authorization to parallelize approved work. ADR 558's resolution records approval of B1-B3 and ADR 559 G1; this record neither grants nor expands that approval. E1 remains held. No environment values or package policy are selected. Decision: Record 25 canonical positive",
+    "tags": [
+      "fixture-schema-and-cases",
+      "independent-layout-math",
+      "task-record",
+      "validation-record"
+    ],
+    "href": "/adr/573-rvb1-canonical-golden-vectors/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",

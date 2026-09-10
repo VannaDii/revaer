@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T08:25:54.942710+00:00",
+  "generated": "2026-09-10T08:39:43.940051+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4877,6 +4877,18 @@
         "validation-boundaries"
       ],
       "href": "/adr/570-single-file-directory-authoring-regression/"
+    },
+    {
+      "id": "adr/573-rvb1-canonical-golden-vectors",
+      "title": "RVB1 canonical golden vectors",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The parent owns the pure bounded RVB1 codec and its consuming tests. This independent deliverable fixes literal expected frames directly from [ADR 558 Annex A](558-rvb1-native-process-broker-wire-contract.md#annex-a-exact-codec-draft-for-review), without reading, importing, or executing the parent codec. The parent agent assigned this worktree, branch, fixture path, and ADR 573 under the operator's authorization to parallelize approved work. ADR 558's resolution records approval of B1-B3 and ADR 559 G1; this record neither grants nor expands that approval. E1 remains held. No environment values or package policy are selected. Decision: Record 25 canonical positive",
+      "tags": [
+        "fixture-schema-and-cases",
+        "independent-layout-math",
+        "task-record",
+        "validation-record"
+      ],
+      "href": "/adr/573-rvb1-canonical-golden-vectors/"
     },
     {
       "id": "adr/index",
