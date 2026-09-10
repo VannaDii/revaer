@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T17:53:33.575736+00:00",
+  "generated": "2026-09-10T18:06:38.736496+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4865,6 +4865,7 @@
       "tags": [
         "acceptance-evidence-required-after-approval",
         "approval-resolution",
+        "approved-d1-d2-implementation-checkpoint",
         "d1-clarify-the-extension-privilege-boundary",
         "d2-function-scoped-reset-lock-bound",
         "d3-function-local-variable-resolution",

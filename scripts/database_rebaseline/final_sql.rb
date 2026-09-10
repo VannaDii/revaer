@@ -13,6 +13,9 @@ module RevaerDatabaseRebaseline
     TIMEOUTS = %w[statement_timeout lock_timeout idle_in_transaction_session_timeout].freeze
     CONFLICT_SETTING = "    SET \"plpgsql.variable_conflict\" TO 'use_column'\n    AS $_$\n"
     CONFLICT_DIRECTIVE = "    AS $_$\n#variable_conflict use_column\n"
+    RESET_HEADER = "CREATE FUNCTION revaer_config.factory_reset_without_media_defaults_v1() RETURNS void\n    LANGUAGE plpgsql\n"
+    RESET_SCOPED_HEADER = "#{RESET_HEADER}    SET lock_timeout TO '5s'\n"
+    RESET_LOCAL_CALL = "    PERFORM set_config('lock_timeout', '5s', true);\n\n"
     Routine = Data.define(:identity, :schema, :name, :trigger, :path)
 
     def initialize(contract)
@@ -31,10 +34,13 @@ module RevaerDatabaseRebaseline
 
         source = source.sub(reset, "")
       end
-      unless source.scan(CONFLICT_SETTING).length == 1
-        raise Failure, "expected exactly one legacy variable-conflict setting"
-      end
-      source.sub(CONFLICT_SETTING, CONFLICT_DIRECTIVE)
+      approved_legacy_deltas(source)
+    end
+
+    def approved_legacy_deltas(source)
+      source = replace_routine_delta(source, "public.search_result_ingest_v1", CONFLICT_SETTING, CONFLICT_DIRECTIVE)
+      source = replace_routine_delta(source, "revaer_config.factory_reset_without_media_defaults_v1", RESET_HEADER, RESET_SCOPED_HEADER)
+      replace_routine_delta(source, "revaer_config.factory_reset_without_media_defaults_v1", RESET_LOCAL_CALL, "")
     end
 
     def routines(candidate)
@@ -121,6 +127,24 @@ module RevaerDatabaseRebaseline
     end
 
     private
+
+    def replace_routine_delta(source, identity, original, replacement)
+      offset = 0
+      matches = []
+      SqlStatements.new(source).boundaries.each do |boundary|
+        statement = source.byteslice(offset, boundary.byte_count - offset)
+        if statement.match?(/^CREATE FUNCTION #{Regexp.escape(identity)}\(/)
+          raise Failure, "approved #{identity} delta does not match exactly once" unless statement.scan(original).length == 1
+
+          matches << [offset, statement.bytesize, statement.sub(original, replacement)]
+        end
+        offset = boundary.byte_count
+      end
+      raise Failure, "approved #{identity} routine does not occur exactly once" unless matches.length == 1
+
+      start, length, changed = matches.fetch(0)
+      source.byteslice(0, start) + changed + source.byteslice(start + length..)
+    end
 
     def replace_section(source, opening, closing, replacement)
       unless source.scan(opening).length == 1 && source.scan(closing).length == 1

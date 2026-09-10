@@ -4862,6 +4862,7 @@
     "tags": [
       "acceptance-evidence-required-after-approval",
       "approval-resolution",
+      "approved-d1-d2-implementation-checkpoint",
       "d1-clarify-the-extension-privilege-boundary",
       "d2-function-scoped-reset-lock-bound",
       "d3-function-local-variable-resolution",

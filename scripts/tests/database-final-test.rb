@@ -14,6 +14,9 @@ module DatabaseFinalTest
     resets = RevaerDatabaseRebaseline::FinalSql::TIMEOUTS.map { |name| "SET #{name} = 0;\n" }.join
     candidate = candidate.sub("SET client_encoding", "#{resets}SET client_encoding")
     candidate = candidate.sub(RevaerDatabaseRebaseline::FinalSql::CONFLICT_DIRECTIVE, RevaerDatabaseRebaseline::FinalSql::CONFLICT_SETTING)
+    candidate = candidate.sub(RevaerDatabaseRebaseline::FinalSql::RESET_SCOPED_HEADER, RevaerDatabaseRebaseline::FinalSql::RESET_HEADER)
+    reset_start = "    base_rate_limit_message CONSTANT text := 'Failed to seed rate limit policies';\n    errcode CONSTANT text := 'P0001';\n    rec RECORD;\nBEGIN\n"
+    candidate = candidate.sub(reset_start, reset_start + RevaerDatabaseRebaseline::FinalSql::RESET_LOCAL_CALL)
     contract.verify_candidate_source!(candidate)
     count = 1
     Dir.mktmpdir("revaer-final-policy.") do |directory|
@@ -29,6 +32,9 @@ module DatabaseFinalTest
         final.sub("-- Revaer pre-v1 packaged database baseline.", "-- unapproved header"),
         final.sub("SET client_encoding", "SET lock_timeout = 0;\nSET client_encoding"),
         final.sub("#variable_conflict use_column\nDECLARE\n    base_message CONSTANT text := 'Failed to ingest search result'", "#variable_conflict use_variable\nDECLARE\n    base_message CONSTANT text := 'Failed to ingest search result'"),
+        final.sub("    SET lock_timeout TO '5s'\n", ""),
+        final.sub("    SET lock_timeout TO '5s'\n", "    SET lock_timeout TO '6s'\n"),
+        final.sub(reset_start, reset_start + RevaerDatabaseRebaseline::FinalSql::RESET_LOCAL_CALL),
         final.sub("SECURITY DEFINER SET search_path TO pg_catalog", "SECURITY INVOKER SET search_path TO pg_catalog"),
         final.sub("SECURITY DEFINER SET search_path TO pg_catalog", "SECURITY DEFINER SET search_path TO pg_catalog, pg_temp"),
         final.sub("'public.app_user_create(character varying, character varying)'", "'public.revaer_touch_updated_at()'"),

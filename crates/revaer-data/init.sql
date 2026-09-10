@@ -32068,14 +32068,13 @@ $$;
 
 CREATE FUNCTION revaer_config.factory_reset_without_media_defaults_v1() RETURNS void
     LANGUAGE plpgsql
+    SET lock_timeout TO '5s'
     AS $$
 DECLARE
     base_rate_limit_message CONSTANT text := 'Failed to seed rate limit policies';
     errcode CONSTANT text := 'P0001';
     rec RECORD;
 BEGIN
-    PERFORM set_config('lock_timeout', '5s', true);
-
     FOR rec IN
         SELECT schemaname, tablename
         FROM pg_tables

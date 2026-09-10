@@ -30,17 +30,21 @@ applyTo:
   directory and must match the pinned digest and statement count.
 - ADR 551 finalization retains the exact frozen 1,624-statement candidate as
   transition evidence. Final SQL may differ only by its approved header,
-  three dump timeout-reset removals, and reviewed lifecycle/security/grant
+  three dump timeout-reset removals, ADR 569's exact approved D2/D3 routine
+  substitutions, and reviewed lifecycle/security/grant
   sections. `just db-init-final-proof` must compare the exact legacy bytes and
   independently pinned final bytes, then test constrained owner/runtime roles
   in disposable PostgreSQL. Finalization is not runtime cutover: ordinary
   application and test bootstrap must still use the frozen migrations.
 - Finalization proof must distinguish authorized parity exceptions from local
   prototypes. The `plpgsql.variable_conflict` substitution recorded in ADR 569
-  D3 is not covered by G1 or a normalized-reference comparison. Do not publish,
-  embed, or activate that candidate before decision-specific operator approval
-  and the required independent semantic proof are recorded. Passing CI does
-  not authorize an unapproved baseline delta.
+  D3 was conditionally approved on 2026-09-10, not certified by G1 or a
+  normalized-reference comparison. Do not publish, embed, or activate that
+  candidate before the required independent cold/warm semantic proof is
+  recorded. ADR 569 D1's exact pinned stock-extension inventory/definition/ACL
+  boundary and D2's function-scoped five-second reset bound are also approved;
+  no additional extension grant, timeout increase or frozen-migration edit is
+  authorized. Preserve their mutation, failure-path and expiry requirements.
 - Before the ADR 522 cutover, persisted-state behavior changes are blocked from
   the frozen corpus. Complete them before candidate freeze or defer them to a
   direct pre-v1 `init.sql` edit after cutover; do not create another migration.

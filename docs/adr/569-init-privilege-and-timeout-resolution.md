@@ -206,6 +206,42 @@ No further implementation or activation of this substitution is authorized now.
   Sonar coverage and applicable GitHub checks on the resulting stack revisions.
   Freeze/embed no final digest and enable no cutover before all required proof.
 
+## Approved D1/D2 Implementation Checkpoint
+
+The approved final SQL changes only D2's exact function-scoped reset timeout:
+one `SET lock_timeout TO '5s'` function option replaces the transaction-local
+body call. The regenerated local candidate digest is
+`1a9f0f2e9b4ca04ee880baa1babc4f105d2726ee5b4a4fe627f04fcc1a06beb9`.
+This is an evidence identity, not a certified or activated baseline. The
+167-file frozen migration corpus and runtime bootstrap remain unchanged.
+
+The finalizer now applies D2/D3 transformations only inside the exact named
+SQL statement, and rejects missing, repeated or unexpected routine envelopes.
+The privilege proof compares the pinned clean extension fixture with the
+candidate, including all extension memberships, the 40 routine definitions,
+owners, effective ACLs, the two internal callback signatures, and dictionary
+and template definitions. Eleven deliberately changed extension states must
+be detected, and each mutation must roll back to the exact prior inventory.
+All previous authored-privilege and application-state denial checks remain.
+
+`just db-init-final-proof` passed 105 live checks on PostgreSQL 16.14, including
+real owner/runtime resets, exact before/inside/after timeout values, nested
+reset scope, SQL failure, externally delivered cancellation, independently
+held-lock contention, transaction rollback, and application calls after the
+bootstrap owner is NOLOGIN. The first harness run exposed its SQLSTATE-only
+notice formatter and an invalid self-cancellation assumption across the
+SECURITY DEFINER boundary; corrected test observation uses full retained
+notices and an exact-backend signal from the disposable test administrator.
+No production role was elevated. A no-op dictionary mutation was replaced by
+an actual dictionary-definition mutation before the successful rerun.
+
+`just --command bash scripts/tests/database-final-test.sh` passed 18 exact-byte
+assertions, including rejection of removed/increased reset bounds and restored
+timeout leakage. `just instruction-drift` passed. The current 105-check result
+does not include or discharge D3's independent ingestion closure proof, which
+is being implemented separately. Full integrated CI/UI, published Sonar and
+GitHub checks are not established by this checkpoint.
+
 ## Task Record
 
 - Motivation: Present the two live single-init conflicts and the subsequently

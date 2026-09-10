@@ -2,10 +2,14 @@
 
 require "json"
 require_relative "../database-rebaseline"
+require_relative "extension_proof"
+require_relative "reset_timeout_proof"
 
 module RevaerDatabaseRebaseline
   # Disposable transition proof only, not an operator or application initializer.
   class FinalProof
+    include ExtensionProof
+    include ResetTimeoutProof
     def initialize(contract = Contract.new, runner: CommandRunner.new)
       @contract = contract
       @runner = runner
@@ -48,11 +52,15 @@ module RevaerDatabaseRebaseline
         verify_baseline!
         verify_read_failures!
         verify_privileges!
+        verify_extension_boundary!
         verify_call_paths!
+        verify_reset_timeout_scope!
         verify_atomicity!(final)
         verify_timeout_preservation!(final)
         sql("ALTER ROLE #{identifier(@owner)} NOLOGIN", role: "postgres", database: "postgres")
         check("runtime read after bootstrap disabled", sql("SELECT count(*) FROM revaer_system.read_database_baseline_v1()", role: @runtime) == "1")
+        verify_runtime_extension_primitives!
+        verify_call_paths!
         @completed = true
       ensure
         begin
@@ -122,7 +130,7 @@ module RevaerDatabaseRebaseline
       [@owner, @runtime, @outsider].each do |role|
         sql("CREATE ROLE #{identifier(role)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS", role: "postgres", database: "postgres")
       end
-      [@database, "reference_proof", "rollback_proof", "timeout_proof"].each do |database|
+      [@database, "reference_proof", "extension_proof", "rollback_proof", "timeout_proof"].each do |database|
         sql("CREATE DATABASE #{identifier(database)} OWNER #{identifier(@owner)} TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C' ENCODING 'UTF8'", role: "postgres", database: "postgres")
       end
     end
@@ -152,7 +160,7 @@ module RevaerDatabaseRebaseline
     end
 
     def verify_parity!
-      legacy = normalized_routine_security(schema("reference_proof")).sub(FinalSql::CONFLICT_SETTING, FinalSql::CONFLICT_DIRECTIVE)
+      legacy = FinalSql.new(@contract).approved_legacy_deltas(normalized_routine_security(schema("reference_proof")))
       final = normalized_routine_security(schema(@database))
       File.binwrite(File.join(@contract.output_path, "final-reference-schema.sql"), legacy)
       File.binwrite(File.join(@contract.output_path, "final-observed-schema.sql"), final)
@@ -285,6 +293,7 @@ module RevaerDatabaseRebaseline
       check("exact authored runtime grant count", authored.length == @routines.count { |routine| !routine.trigger } + 1)
       paths = @routines.reject(&:trigger).to_h { |routine| [routine.identity.gsub(', ', ','), ["search_path=#{routine.path}"]] }
       paths["revaer_system.read_database_baseline_v1()"] = ["search_path=pg_catalog, revaer_system"]
+      paths["revaer_config.factory_reset_without_media_defaults_v1()"].unshift("lock_timeout=5s")
       check("exact per-routine search paths", authored.all? { |row| row.fetch("proconfig") == paths[row.fetch("identity")] })
       check("no authored PUBLIC routine execution", sql(<<~SQL) == "0")
         SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace,
@@ -299,7 +308,6 @@ module RevaerDatabaseRebaseline
             (c.relkind = 'S' AND has_sequence_privilege(#{literal(@runtime)}, c.oid, 'USAGE,SELECT,UPDATE')));
       SQL
       check("exact runtime database privilege matrix", sql("SELECT has_database_privilege(#{literal(@runtime)}, current_database(), 'CONNECT') AND NOT has_database_privilege(#{literal(@runtime)}, current_database(), 'CREATE,TEMPORARY')") == "t")
-      check("no effective extension routine grants", rows.none? { |row| row.fetch("extension") })
     end
 
     def verify_call_paths!

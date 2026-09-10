@@ -25,6 +25,13 @@ applyTo:
 
 # Workflow And Release Rules
 
+- ADR 569 D1/D2 and conditional D3 were explicitly approved on 2026-09-10.
+  `just db-init-final-proof` must retain the exact stock-extension inventory,
+  definition/ACL mutation rejection, reset timeout scope/failure evidence, and
+  independent cold/warm ingestion semantics. Reference normalization is not
+  semantic proof. The final init remains inert until all cutover gates pass;
+  no unrelated role, deadline, package or quality criterion is released.
+
 - `just test-database-baseline-read` exercises the ADR 551 read-only stored-procedure boundary against a caller-provided disposable Postgres service with the same workspace-wide all-feature selection as CI, filtering only the test names. Package-only feature resolution is not equivalent evidence for tracing behavior. It must fail when the service is missing, reject unmanaged databases without initializing them, and retain the frozen migration authority until the coordinated cutover. Baseline errors must never retain raw database messages, role names, or credentials.
 
 - Use minimal GitHub token permissions at the workflow or job level. Only grant elevated scopes to the job that needs them.
