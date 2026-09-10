@@ -4914,6 +4914,16 @@
     "href": "/adr/573-rvb1-canonical-golden-vectors/"
   },
   {
+    "id": "adr/574-root-input-contract",
+    "title": "Root input contract validation",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: ADR 557 is accepted, and its outside-in sequence starts with API contracts before the coordinated root-persistence cutover. The legacy media key grammar allows underscores and different limits; reusing it would violate the accepted root-key contract. Decision: Implement the exact accepted key, candidate-path, association-prefix, page-limit, and catalog-cursor grammar in the existing API-models crate. This record makes no new architectural choice or change to a public JSON shape. Consequences: Callers can validate these inputs without silently normalizing them. No new route, persisted state, filesystem authority, or production provider is installed.",
+    "tags": [
+      "task-record",
+      "validation-evidence"
+    ],
+    "href": "/adr/574-root-input-contract/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",

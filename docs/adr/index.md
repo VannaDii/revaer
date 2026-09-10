@@ -505,3 +505,4 @@
 -   [571](571-rvb1-bounded-wire-codec.md) - RVB1 bounded wire codec
 -   [572](572-broker-env-local-image-evidence.md) - Broker environment local image evidence (Recorded; E1 held)
 -   [573](573-rvb1-canonical-golden-vectors.md) - RVB1 canonical golden vectors
+-   [574](574-root-input-contract.md) - Root input contract validation

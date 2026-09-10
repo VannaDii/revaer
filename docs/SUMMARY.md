@@ -523,3 +523,4 @@
     -   [571: RVB1 bounded wire codec](adr/571-rvb1-bounded-wire-codec.md)
     -   [572: Broker environment local image evidence](adr/572-broker-env-local-image-evidence.md)
     -   [573: RVB1 canonical golden vectors](adr/573-rvb1-canonical-golden-vectors.md)
+    -   [574: Root input contract validation](adr/574-root-input-contract.md)

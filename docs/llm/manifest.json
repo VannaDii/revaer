@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T09:07:58.911638+00:00",
+  "generated": "2026-09-10T09:29:47.132072+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4915,6 +4915,16 @@
         "validation-record"
       ],
       "href": "/adr/573-rvb1-canonical-golden-vectors/"
+    },
+    {
+      "id": "adr/574-root-input-contract",
+      "title": "Root input contract validation",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: ADR 557 is accepted, and its outside-in sequence starts with API contracts before the coordinated root-persistence cutover. The legacy media key grammar allows underscores and different limits; reusing it would violate the accepted root-key contract. Decision: Implement the exact accepted key, candidate-path, association-prefix, page-limit, and catalog-cursor grammar in the existing API-models crate. This record makes no new architectural choice or change to a public JSON shape. Consequences: Callers can validate these inputs without silently normalizing them. No new route, persisted state, filesystem authority, or production provider is installed.",
+      "tags": [
+        "task-record",
+        "validation-evidence"
+      ],
+      "href": "/adr/574-root-input-contract/"
     },
     {
       "id": "adr/index",

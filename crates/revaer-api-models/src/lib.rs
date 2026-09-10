@@ -18,6 +18,8 @@
 //! contract deterministic. The conversions live close to the server so the
 //! mapping from domain objects (`TorrentStatus`, `FileSelectionUpdate`, etc.)
 //! remains a single source of truth.
+pub mod media_root_contract;
+
 use base64::{Engine as _, engine::general_purpose};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
