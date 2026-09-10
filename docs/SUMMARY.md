@@ -519,3 +519,4 @@
     -   [567: PostgreSQL pristine catalog evidence](adr/567-postgres-pristine-catalog-evidence.md)
     -   [568: Root attestation identity encoding](adr/568-root-attestation-identity-encoding.md)
     -   [569: Init privilege and timeout resolution](adr/569-init-privilege-and-timeout-resolution.md)
+    -   [570: Single-file directory authoring regression](adr/570-single-file-directory-authoring-regression.md)

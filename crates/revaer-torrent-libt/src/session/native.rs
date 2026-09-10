@@ -1376,6 +1376,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn native_session_authors_single_file_directory_with_default_piece_length()
+    -> TorrentResult<()> {
+        let mut harness = NativeSessionHarness::new()?;
+        let config = harness.runtime_config();
+        harness.session.apply_config(&config).await?;
+
+        let root_path = harness.download_path().join("e2e-author-single-file");
+        fs::create_dir(&root_path)?;
+        fs::write(root_path.join("seed.txt"), b"revaer e2e")?;
+
+        let request = TorrentAuthorRequest {
+            root_path: root_path.to_string_lossy().into_owned(),
+            ..TorrentAuthorRequest::default()
+        };
+        let result = harness.session.create_torrent(&request).await?;
+        assert!(!result.metainfo.is_empty());
+        assert!(result.magnet_uri.starts_with("magnet:?"));
+        assert_eq!(result.total_size, 10);
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].path, "seed.txt");
+        assert_eq!(result.files[0].size_bytes, 10);
+        assert!(result.piece_length >= 16_384);
+        assert!(result.warnings.is_empty());
+        assert_eq!(
+            bencoded_string_field(&result.metainfo, b"name")?,
+            b"e2e-author-single-file"
+        );
+        assert!(contains_subsequence(
+            &result.metainfo,
+            b"4:pathl8:seed.txte"
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn native_session_authors_directory_torrent_with_root_name() -> TorrentResult<()> {
         let mut harness = NativeSessionHarness::new()?;
         let config = harness.runtime_config();

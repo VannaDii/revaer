@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T08:18:51.236856+00:00",
+  "generated": "2026-09-10T08:25:54.942710+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4866,6 +4866,17 @@
         "task-record"
       ],
       "href": "/adr/569-init-privilege-and-timeout-resolution/"
+    },
+    {
+      "id": "adr/570-single-file-directory-authoring-regression",
+      "title": "Single-file directory authoring regression",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Integrated torrent-authoring E2E returned HTTP 400 for a fresh directory containing only the ten-byte seed.txt payload revaer e2e. Native tests previously covered a direct file and a two-file directory, not this shape. Decision: Add the missing native regression with the default author request: no piece-length override, trackers, private flag, or filters. Preserve all existing assertions and native authoring behavior. Stop the bounded hash-path investigation after the exact case succeeds on the local native backend. Do not change C++ on the basis of the hypothesis. Consequences: The one-file directory",
+      "tags": [
+        "harness-hypothesis",
+        "task-record",
+        "validation-boundaries"
+      ],
+      "href": "/adr/570-single-file-directory-authoring-regression/"
     },
     {
       "id": "adr/index",
