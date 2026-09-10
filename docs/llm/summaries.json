@@ -4803,6 +4803,7 @@
       "ledger-validation",
       "outside-in-ledger",
       "parent-validation-checkpoint",
+      "rvb1-and-github-checkpoint",
       "task-record"
     ],
     "href": "/adr/564-media-completion-ledger/"

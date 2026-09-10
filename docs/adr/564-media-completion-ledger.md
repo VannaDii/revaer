@@ -206,6 +206,50 @@ checks remain open. Task-owned PostgreSQL containers and completed worker
 worktrees were removed; `just clean-test-fixtures` passed and retained E2E
 artifact roots contained no acquired/generated media files.
 
+## RVB1 And GitHub Checkpoint
+
+Local executable `787b69be` integrates the native singleton-directory regression
+as `cf0bf982`, the 25 independent [RVB1 vectors](573-rvb1-canonical-golden-vectors.md),
+and the [bounded pure wire codec](571-rvb1-bounded-wire-codec.md). Twenty focused
+codec tests pass, including the peer-reviewed allocation-order correction.
+Neither lifecycle/containment, trusted-root persistence, single-init cutover nor
+the full operator workflow is complete. Fresh `just ci` passed on this executable
+checkpoint, including all 18 package coverage gates. Rust LCOV records 236
+sources, 101,208 lines and 94,115 covered lines. `just ui-e2e` still failed with
+46 passed, one failed and 61 not run: profile creation expected 201 and received
+400, plus unexercised phases/readiness routes in teardown. ADR 571 records the
+exact-revision evidence, limits and retained logs. No assertion was relaxed.
+
+[ADR 572](572-broker-env-local-image-evidence.md) records twenty isolated probes
+of two historical arm64 images. Both have service-owned HOME and a missing
+candidate PATH directory. No relevant amd64 image was found and neither image
+has immutable current-source provenance. These facts inform E1; they do not
+approve values, authorize package changes or validate a current release.
+
+Read-only GitHub CLI/API refresh on 2026-09-10 still finds PR 98 at `7ed723d5`
+with 131,057 changed lines, and PR 194 at `cfed91f8`, behind its base. Both are
+assigned to VannaDii; PR 194 has no review requests, reviews or review threads in
+the complete fetched pages. That is not evidence of a completed Copilot review.
+PR 195 is clean against `main`, with 9,964 changed lines and VannaDii assigned;
+this bounded metadata read does not establish its merge readiness.
+
+PR 194's applicable stack ruleset 12202805 requires 21 status contexts. The
+reported check list, including `gh pr checks --required`, contains only 20 of
+them, all passing. **Supply Chain Checks is missing**, so the PR does not meet
+all current requirements. Its successful run 31782414466 is from 2026-08-14 on
+that exact remote SHA; the workflow there has separate Audit/Deny jobs but no
+Supply Chain Checks job. The local integration already includes the required
+aggregator and dependency edges. Re-running the old workflow cannot create an
+absent job; validated stack reconciliation must carry the current workflow.
+Do not remove the required context or infer an all-checks pass from the CLI's
+filtered list. No ruleset or GitHub state was mutated during this audit.
+
+The remote checks/rules/state JSON is retained as `rvb1-pr194-*.json` and
+`rvb1-pr98-state.json` under the external 2026-09-10 review directory. Sonar's
+local secrets scan is distinct from the authoritative scanner, which fails
+closed without a local token, and Agentic Analysis, which returned an
+organization-entitlement 403. Neither is a published full-Sonar result.
+
 ## Task Record
 
 - Motivation: Provide a bounded completion ledger while the integrating agent

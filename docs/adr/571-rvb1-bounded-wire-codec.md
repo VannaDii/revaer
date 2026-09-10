@@ -128,5 +128,140 @@ replace the parent's required OS group lookup or executable verification.
 
 ## Integrated Validation
 
-Pending the final executable revision's `just ci` and `just ui-e2e` runs.
-No current GitHub, full Sonar, package or overall completion result is claimed.
+Executable checkpoint: `787b69be14fa0a574a33b00060f9016d0d3d6dcd`. The following
+record-only edits do not change executable inputs.
+
+- `just test-media-broker-codec`: 20 passed, zero failures or ignored tests;
+  these include all 25 independent vectors. Retained log:
+  `broker-codec-reviewed.log` in the external evidence directory below.
+- Read-only peer review identified a P2 allocation-order defect: a legal
+  maximum evidence count could reserve approximately 51.2 MiB of references
+  before an invalid item length was rejected. The complete allocation-free
+  preflight and regressions above fix it. The reviewer re-read the exact delta
+  and confirmed the fix without finding another regression. This is a bounded
+  code review, not the outstanding formal security-diff acceptance scan.
+- `just lint` passed before that final preflight change. The checkpoint's full
+  `just ci` then passed both strict Clippy passes and the complete policy suite
+  again, including the final preflight change.
+- `just docs-link-check`: 1,084 OK, zero errors before this result-only update.
+  Final document generation and link validation remain required after it.
+- No GitHub mutation, push, merge, package build or deployment was performed.
+  Both completed worker worktrees were removed after integration and retained
+  evidence. The primary checkout's user changes/conflicts were not touched.
+
+Evidence directory:
+`/Users/vanna/Source/revaer-reviews/2026-09-10`.
+
+### Sonar Evidence And Limits
+
+The authoritative command `just sonar-scan` failed closed before analysis
+because `SONAR_TOKEN` is not available in the local environment. Its retained
+output is `broker-codec-sonar-authoritative.log`. No token was extracted from
+another application, settings were not changed, and no full-scan/quality-gate
+or published-coverage pass is claimed.
+
+The following exact quality command returned HTTP 403 because Vortex/Agentic
+Analysis is not entitled for this organization; it did not analyze the file:
+
+```sh
+just --command sonar verify --file crates/revaer-media-runtime/src/process/broker/decode.rs --project VannaDii_Revaer
+```
+
+Output is retained in `broker-codec-sonar-quality.log`. That limitation is
+separate from the normal scanner's missing local token. It does not imply the
+GitHub scanner lacks entitlement or permission to skip an available analyzer.
+
+The exact full-file secrets command below completed with no findings reported
+(`broker-codec-sonar-secrets.log`). It is secrets analysis only, not Rust,
+documentation or configuration semantic analysis and not the repository gate:
+
+```sh
+just --command sonar analyze secrets \
+  crates/revaer-media-runtime/src/process.rs \
+  crates/revaer-media-runtime/src/process/broker/mod.rs \
+  crates/revaer-media-runtime/src/process/broker/model.rs \
+  crates/revaer-media-runtime/src/process/broker/decode.rs \
+  crates/revaer-media-runtime/src/process/broker/encode.rs \
+  crates/revaer-media-runtime/src/process/broker/validate.rs \
+  crates/revaer-media-runtime/src/process/broker/tests.rs \
+  crates/revaer-media-runtime/src/process/broker/tests/bounds.rs \
+  crates/revaer-media-runtime/src/process/broker/tests/vectors.rs \
+  .github/instructions/devops.instructions.md just/media.just \
+  docs/adr/571-rvb1-bounded-wire-codec.md \
+  docs/adr/572-broker-env-local-image-evidence.md \
+  docs/adr/573-rvb1-canonical-golden-vectors.md \
+  docs/adr/index.md docs/SUMMARY.md \
+  docs/llm/manifest.json docs/llm/summaries.json
+```
+
+After the peer-review fix, the exact repeated command also completed with no
+findings reported (`broker-codec-sonar-secrets-reviewed.log`):
+
+```sh
+just --command sonar analyze secrets \
+  crates/revaer-media-runtime/src/process/broker/decode.rs \
+  crates/revaer-media-runtime/src/process/broker/validate.rs \
+  crates/revaer-media-runtime/src/process/broker/tests/bounds.rs \
+  docs/adr/571-rvb1-bounded-wire-codec.md \
+  docs/llm/manifest.json docs/llm/summaries.json
+```
+
+The independent fixture's full-file secrets result and its separate 403 are
+recorded in ADR 573. None of these local results supplies coverage to Sonar.
+
+After the full gates, the following canonical input-generation sequence exited
+zero on the same executable checkpoint:
+
+```sh
+just sonar-compile-db js-release-coverage js-coverage-merge sonar-verify-inputs
+```
+
+It supplies one real native translation-unit command and generated CXX bridge
+headers, plus fresh JavaScript LCOV with 60 source records, 5,276 line records
+and 3,916 covered lines. The JavaScript data combines executed release tests
+with the actual partial Playwright run; unexecuted lines remain uncovered.
+The verifier accepted Rust, JavaScript, script and native analyzer inputs.
+Output is retained in `sonar-inputs-rvb1-787b69be.log`, with input copies in
+`787b69be-coverage`. These are input-validity results, not a UI pass or an
+authoritative Sonar analysis/quality-gate result.
+
+### Full Gate Outcome
+
+`just ci` exited zero on `787b69be`, including full-workspace/all-feature and
+minimal-feature tests, both strict Clippy passes, policy checks, audits,
+dependency checks, all 18 package coverage gates at least 90%, real shell/Ruby
+coverage and the release build. `CARGO_BUILD_JOBS=8` changed compilation
+parallelism only. No executable source changed during this run.
+
+Rust LCOV contains 236 source records, 101,208 line records and 94,115 covered
+lines. The codec's decoder has 188/188 covered lines, encoder 59/60, wire models
+69/69 and validation 130/132. These line counts do not prove every branch,
+allocation-exhaustion case, lifecycle or security property. They are not
+published Sonar metrics. The retained copies are under `787b69be-coverage` in
+the external evidence directory, including Rust/native, generic script and
+executed Playwright harness coverage.
+
+`just ui-e2e` exited 1: **46 passed, one failed, 61 did not run**. Media profile
+creation at `tests/specs/api/media.spec.ts:130` expected 201 and received 400.
+Teardown also rejected missing executed API coverage for the job phases and
+profile readiness GET routes. No assertion, automation requirement or route
+coverage condition was disabled. The allowed fixture root was
+`$PWD/.server_root/library`; torrent authoring and its dependent API tests
+passed. The media profile/root-persistence operator flow remains unfinished.
+
+Both gates used a unique task-owned PostgreSQL 16.14 container from the pinned
+digest in `.github/build-inputs.env`, with checksums, C/UTF-8 initialization and
+one GiB shared memory. TCP readiness preceded the tests. The container and its
+volumes were removed after both gates, and its absence was verified.
+
+Logs: `ci-rvb1-787b69be.log` and `ui-e2e-rvb1-787b69be.log`. The full UI gate,
+exact-restacked GitHub checks/reviews, authoritative Sonar, supported Linux
+packages and overall feature completion remain open. The passing release
+build is a local build, not an image/package, push or deployment result.
+
+`just clean-test-fixtures`, `just instruction-drift`, `just docs-index`, and
+`just docs-link-check` passed after the record update (1,087 links OK, zero
+errors). The task's fixture directories are absent; the retained E2E result
+trees contain JSON only and the allowed library root is empty. No acquired or
+generated test media remains. TCP ports 5441, 7070 and 18080 are closed; no
+task-owned test service remains. Unrelated local database data is preserved.
