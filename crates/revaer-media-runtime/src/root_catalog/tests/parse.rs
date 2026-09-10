@@ -167,6 +167,10 @@ fn key_bounds_and_closed_ascii_grammar_are_exact() {
         "with/slash".to_owned(),
         "white space".to_owned(),
         "unicodé".to_owned(),
+        "-".to_owned(),
+        "-slot".to_owned(),
+        "slot-".to_owned(),
+        "0-a--9-".to_owned(),
     ] {
         assert_eq!(
             parse_slot(default_slot(&invalid, "/root")),
@@ -174,13 +178,15 @@ fn key_bounds_and_closed_ascii_grammar_are_exact() {
             "key {invalid:?}"
         );
     }
-    assert!(parse_slot(default_slot("0-a--9-", "/root")).is_ok());
+    for valid in ["0", "a0", "0-a--9"] {
+        assert!(parse_slot(default_slot(valid, "/root")).is_ok());
+    }
 }
 
 #[test]
 fn decoded_path_bounds_absolute_rule_and_nul_rejection_are_exact() {
     for path_len in [
-        1,
+        2,
         MAX_ROOT_CATALOG_PATH_BYTES - 1,
         MAX_ROOT_CATALOG_PATH_BYTES,
     ] {
@@ -192,6 +198,7 @@ fn decoded_path_bounds_absolute_rule_and_nul_rejection_are_exact() {
     }
     for invalid in [
         String::new(),
+        "/".to_owned(),
         "relative/path".to_owned(),
         format!("/{}", "a".repeat(MAX_ROOT_CATALOG_PATH_BYTES)),
         "/root\0child".to_owned(),
@@ -237,6 +244,50 @@ fn duplicate_slot_keys_and_kind_values_are_rejected() {
         parse_slot(empty),
         Err(RootCatalogParseError::EmptyKindSet { slot_index: 0 })
     );
+}
+
+#[test]
+fn version_one_containers_require_objects_and_enums_require_strings() -> anyhow::Result<()> {
+    assert_eq!(
+        parse_root_catalog_v1(b"[1,[]]"),
+        Err(RootCatalogParseError::MalformedDocument)
+    );
+    assert_eq!(
+        parse_slot(json!([
+            "slot",
+            ["source"],
+            "/root",
+            "disposable",
+            "none",
+            "uncontrolled",
+            "none"
+        ])),
+        Err(RootCatalogParseError::MalformedDocument)
+    );
+    for field in [
+        "durability_class",
+        "durability_evidence",
+        "sole_writer_class",
+        "sole_writer_evidence",
+    ] {
+        let mut slot = default_slot("slot", "/root");
+        let variant = slot[field]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("string enum"))?;
+        slot[field] = json!({variant: null});
+        assert_eq!(
+            parse_slot(slot),
+            Err(RootCatalogParseError::MalformedDocument),
+            "field {field}"
+        );
+    }
+    let mut slot = default_slot("slot", "/root");
+    slot["allowed_kinds"] = json!([{"source": null}]);
+    assert_eq!(
+        parse_slot(slot),
+        Err(RootCatalogParseError::MalformedDocument)
+    );
+    Ok(())
 }
 
 #[test]

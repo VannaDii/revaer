@@ -510,3 +510,4 @@
     -   [558: RVB1 native process broker wire and lifecycle contract](adr/558-rvb1-native-process-broker-wire-contract.md)
     -   [559: Media decision review and approval delta](adr/559-media-approval-delta.md)
     -   [560: Dependency audit refresh and policy precedence](adr/560-dependency-audit-refresh.md)
+    -   [561: Root source contract corrections](adr/561-root-source-contract-corrections.md)

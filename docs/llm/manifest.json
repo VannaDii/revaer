@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T06:07:00.742391+00:00",
+  "generated": "2026-09-10T06:10:34.867827+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4765,6 +4765,16 @@
         "task-record"
       ],
       "href": "/adr/560-dependency-audit-refresh/"
+    },
+    {
+      "id": "adr/561-root-source-contract-corrections",
+      "title": "Root source contract corrections",
+      "summary": "Status: Recorded Date: 2026-09-09 Operator approval: Not applicable: nonarchitectural task record Context: Integrate the existing ADR 556 source implementation commit b1311cc21e0d18d4390f08ac9f6c0dd3991d98a0 onto the assigned delivery branch. The mechanical integration is cdc5896b; ADRs 555 and 557-559 and their documentation entries are preserved. The parent records the reconciled ADR 557-559 approval in 6f2c6f90 and owns ADR 560 quality repairs. ADR 557 requires alphanumeric-ended root keys and non-root absolute paths. The prior parser admitted leading/trailing hyphens and /, and its tests incorrectly asserted those values were valid. Derived Serde structs admit positional arrays, and derived unit enums admit tagged objects. ADR 550 requires",
+      "tags": [
+        "fresh-validation",
+        "task-record"
+      ],
+      "href": "/adr/561-root-source-contract-corrections/"
     },
     {
       "id": "adr/index",

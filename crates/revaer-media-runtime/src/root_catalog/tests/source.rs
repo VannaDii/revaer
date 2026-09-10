@@ -21,7 +21,9 @@ fn operator_uid() -> u32 {
 }
 
 fn trusted_tempdir() -> TempDir {
-    let trusted_base = fs::canonicalize(std::env::temp_dir()).expect("canonical test temp root");
+    // Shared /tmp ancestry is intentionally untrusted, even with a private child.
+    let home = std::env::var_os("HOME").expect("operator home for trusted source fixtures");
+    let trusted_base = fs::canonicalize(home).expect("canonical operator home");
     Builder::new()
         .prefix("revaer-root-catalog.")
         .tempdir_in(trusted_base)
@@ -93,6 +95,24 @@ fn public_local_source_support_is_exactly_linux_amd64_and_arm64() {
             Err(RootCatalogSourceError::PlatformUnsupported)
         ));
     }
+}
+
+#[test]
+fn loaded_empty_source_is_distinct_from_missing_source() -> anyhow::Result<()> {
+    let directory = trusted_tempdir();
+    let path = directory.path().join("catalog.json");
+    fs::write(&path, br#"{"format_version":1,"slots":[]}"#)?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+    let loaded = source(&path).load_host()?;
+    let missing = source(&directory.path().join("missing.json")).load_host()?;
+    assert_eq!(loaded.state(), RootCatalogSourceState::Loaded);
+    assert_eq!(loaded.state().remediation_reason(), None);
+    assert!(loaded.file_evidence().is_some());
+    assert_eq!(missing.state(), RootCatalogSourceState::Missing);
+    assert!(missing.file_evidence().is_none());
+    assert!(loaded.catalog().is_empty());
+    assert_eq!(loaded.catalog(), missing.catalog());
+    Ok(())
 }
 
 #[test]
@@ -398,6 +418,7 @@ fn final_entry_rename_and_replacement_are_detected() {
         }
     });
     assert_untrusted(result);
+    assert!(mutated.get(), "source entry replacement hook ran");
 }
 
 #[test]
@@ -420,6 +441,7 @@ fn parent_rename_and_replacement_after_parse_are_detected() {
         }
     });
     assert_untrusted(result);
+    assert!(mutated.get(), "source parent replacement hook ran");
 }
 
 #[test]

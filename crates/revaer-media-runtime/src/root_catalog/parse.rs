@@ -7,6 +7,7 @@ use super::model::{
     DurabilityClass, DurabilityEvidence, RootCatalog, RootCatalogSlot, RootKind, SoleWriterClass,
     SoleWriterEvidence, ValidatedRootCatalogSlot,
 };
+use super::strict_json::{JsonObject, JsonString};
 
 /// Maximum accepted raw JSON document size.
 pub const MAX_ROOT_CATALOG_DOCUMENT_BYTES: usize = 8_388_608;
@@ -41,7 +42,7 @@ pub enum RootCatalogParseError {
         /// Reviewed maximum slot count.
         maximum_slots: usize,
     },
-    /// A key was empty, too long, or contained bytes outside the closed grammar.
+    /// A key was empty, too long, or violated the closed alphanumeric-ended grammar.
     #[error("root catalog slot {slot_index} has an invalid key")]
     InvalidKey {
         /// Zero-based slot position in the source document.
@@ -65,7 +66,7 @@ pub enum RootCatalogParseError {
         /// Zero-based slot position in the source document.
         slot_index: usize,
     },
-    /// A path was not absolute UTF-8 within the decoded bound or contained NUL.
+    /// A path was not absolute non-root UTF-8 within the decoded bound or contained NUL.
     #[error("root catalog slot {slot_index} has an invalid path")]
     InvalidPath {
         /// Zero-based slot position in the source document.
@@ -116,19 +117,19 @@ impl RootCatalogParseError {
 #[serde(deny_unknown_fields)]
 struct RawCatalog {
     format_version: u32,
-    slots: Vec<RawSlot>,
+    slots: Vec<JsonObject<RawSlot>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawSlot {
     key: String,
-    allowed_kinds: Vec<RawRootKind>,
+    allowed_kinds: Vec<JsonString<RawRootKind>>,
     path: String,
-    durability_class: RawDurabilityClass,
-    durability_evidence: RawDurabilityEvidence,
-    sole_writer_class: RawSoleWriterClass,
-    sole_writer_evidence: RawSoleWriterEvidence,
+    durability_class: JsonString<RawDurabilityClass>,
+    durability_evidence: JsonString<RawDurabilityEvidence>,
+    sole_writer_class: JsonString<RawSoleWriterClass>,
+    sole_writer_evidence: JsonString<RawSoleWriterEvidence>,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -240,7 +241,7 @@ pub fn parse_root_catalog_v1(document: &[u8]) -> Result<RootCatalog, RootCatalog
         });
     }
 
-    let raw: RawCatalog = serde_json::from_slice(document)
+    let JsonObject(raw): JsonObject<RawCatalog> = serde_json::from_slice(document)
         .map_err(|_error| RootCatalogParseError::MalformedDocument)?;
     if raw.format_version != 1 {
         return Err(RootCatalogParseError::UnsupportedVersion {
@@ -260,7 +261,7 @@ pub fn parse_root_catalog_v1(document: &[u8]) -> Result<RootCatalog, RootCatalog
     })?;
     let mut keys = BTreeSet::new();
     let mut slots = Vec::with_capacity(raw.slots.len());
-    for (slot_index, slot) in raw.slots.into_iter().enumerate() {
+    for (slot_index, JsonObject(slot)) in raw.slots.into_iter().enumerate() {
         slots.push(validate_slot(slot, slot_index, &mut keys)?);
     }
 
@@ -278,11 +279,11 @@ fn validate_slot(
     }
     let allowed_kinds = validate_kinds(&raw.allowed_kinds, slot_index)?;
     let path_byte_len = validate_path(&raw.path, slot_index)?;
-    let durability_class = raw.durability_class.into();
-    let durability_evidence = raw.durability_evidence.into();
+    let durability_class = raw.durability_class.0.into();
+    let durability_evidence = raw.durability_evidence.0.into();
     validate_durability(durability_class, durability_evidence, slot_index)?;
-    let sole_writer_class = raw.sole_writer_class.into();
-    let sole_writer_evidence = raw.sole_writer_evidence.into();
+    let sole_writer_class = raw.sole_writer_class.0.into();
+    let sole_writer_evidence = raw.sole_writer_evidence.0.into();
     validate_sole_writer(sole_writer_class, sole_writer_evidence, slot_index)?;
     validate_source_output(
         &allowed_kinds,
@@ -307,6 +308,8 @@ fn validate_slot(
 fn validate_key(key: &str, slot_index: usize) -> Result<u32, RootCatalogParseError> {
     let valid = !key.is_empty()
         && key.len() <= MAX_ROOT_CATALOG_KEY_BYTES
+        && !key.starts_with('-')
+        && !key.ends_with('-')
         && key
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
@@ -317,7 +320,7 @@ fn validate_key(key: &str, slot_index: usize) -> Result<u32, RootCatalogParseErr
 }
 
 fn validate_kinds(
-    raw_kinds: &[RawRootKind],
+    raw_kinds: &[JsonString<RawRootKind>],
     slot_index: usize,
 ) -> Result<Vec<RootKind>, RootCatalogParseError> {
     if raw_kinds.is_empty() {
@@ -325,7 +328,7 @@ fn validate_kinds(
     }
     let mut mask = 0_u8;
     for raw_kind in raw_kinds {
-        let kind = RootKind::from(*raw_kind);
+        let kind = RootKind::from(raw_kind.0);
         if mask & kind.mask() != 0 {
             return Err(RootCatalogParseError::DuplicateKind { slot_index });
         }
@@ -340,6 +343,7 @@ fn validate_kinds(
 
 fn validate_path(path: &str, slot_index: usize) -> Result<u32, RootCatalogParseError> {
     let valid = path.starts_with('/')
+        && path != "/"
         && path.len() <= MAX_ROOT_CATALOG_PATH_BYTES
         && !path.as_bytes().contains(&0);
     if !valid {
