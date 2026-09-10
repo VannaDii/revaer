@@ -507,3 +507,4 @@
 -   [573](573-rvb1-canonical-golden-vectors.md) - RVB1 canonical golden vectors
 -   [574](574-root-input-contract.md) - Root input contract validation
 -   [575](575-media-conversion-gate.md) - Media conversion gate restoration
+-   [576](576-pinned-ffprobe-fixture-diagnostic.md) - Pinned FFprobe fixture diagnostic

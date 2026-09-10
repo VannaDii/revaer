@@ -303,6 +303,29 @@ blocked at strict fixture verification, so no whole-feature or all-checks pass
 is established. ADR 575 records the final evidence, documentation-only
 follow-up, and cleanup. No local integration history was pushed wholesale.
 
+## Pinned Fixture Diagnostic Checkpoint
+
+[ADR 576](576-pinned-ffprobe-fixture-diagnostic.md) compares the same locked
+source with host FFprobe 9.0.1 and the existing historical Linux arm64 image's
+8.0.1. Both return zero and exactly match the committed Theora/Vorbis snapshot,
+but both emit the same element-ID error at byte 35. Official source inspection
+confirms this is `AV_LOG_ERROR` and that the implicated parser function is
+identical in the two versions. The strict diagnostic gate remains failed;
+neither a 9.0.1-only explanation nor a conversion pass is supported. All media,
+the disposable container, and both completed probe worktrees were removed.
+No fixture exception, replacement, or E1 environment choice was made.
+
+The fresh CI rerun also exposes shutdown `WARN` lines. Recipe exit status must
+not be confused with warning-free output. PR 194 still lacks the required
+`Supply Chain Checks` context. A Copilot API request returned no substantive
+acknowledgement and follow-up reads have not confirmed it; review remains open.
+Final integrated gates and documentation validation are retained in ADR 576.
+The unchanged executable checkpoint `02de8394` completed `just ci` with exit
+zero but the noted shutdown warnings; `just ui-e2e` again failed with 46 passed,
+one failed and 61 not run. Fresh local Sonar inputs verified positive coverage,
+but the authoritative scanner still failed before analysis without its token.
+No package certification, remote all-checks pass, or feature completion follows.
+
 ## Task Record
 
 - Motivation: Provide a bounded completion ledger while the integrating agent

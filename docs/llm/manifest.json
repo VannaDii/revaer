@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T10:19:03.416104+00:00",
+  "generated": "2026-09-10T10:45:12.345284+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4806,6 +4806,7 @@
         "ledger-validation",
         "outside-in-ledger",
         "parent-validation-checkpoint",
+        "pinned-fixture-diagnostic-checkpoint",
         "root-input-and-conversion-gate-checkpoint",
         "rvb1-and-github-checkpoint",
         "task-record"
@@ -4938,6 +4939,19 @@
         "validation-record"
       ],
       "href": "/adr/575-media-conversion-gate/"
+    },
+    {
+      "id": "adr/576-pinned-ffprobe-fixture-diagnostic",
+      "title": "Pinned FFprobe fixture diagnostic",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: ADR 575 restored real conversion execution, but strict fixture verification failed before Rust execution. The local probe was FFmpeg 9.0.1 while the runtime package manifest pins Alpine FFmpeg 8.0.1-r1. Decision: Record a same-byte diagnostic comparison with the existing historical Linux image and an independent upstream source trace. Select no new runtime environment, fixture disposition, diagnostic exception, or package version. Consequences: Both probes emit the same element-ID error. Using the pinned tool version does not resolve this observed failure. Stream discovery is not a clean probe, conversion pass, or",
+      "tags": [
+        "exact-evidence",
+        "final-checkpoint",
+        "source-interpretation",
+        "task-record",
+        "validation-and-delivery-boundary"
+      ],
+      "href": "/adr/576-pinned-ffprobe-fixture-diagnostic/"
     },
     {
       "id": "adr/index",
