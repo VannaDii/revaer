@@ -534,3 +534,4 @@
     -   [582: Ingestion existing-data evidence](adr/582-ingestion-existing-data-evidence.md)
     -   [583: Ingestion IMDb conflict inference (D5 proposed)](adr/583-ingestion-imdb-conflict-inference.md)
     -   [584: Canonical root identity paths](adr/584-canonical-root-identity-paths.md)
+    -   [585: Fixed binary deletion review (Proposed)](adr/585-fixed-binary-deletion-review.md)

@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T22:38:13.718783+00:00",
+  "generated": "2026-09-10T23:15:21.747789+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5061,6 +5061,21 @@
         "task-record"
       ],
       "href": "/adr/584-canonical-root-identity-paths/"
+    },
+    {
+      "id": "adr/585-fixed-binary-deletion-review",
+      "title": "Fixed binary deletion review",
+      "summary": "Proposes a one-deliverable, immutable-blob deletion exception to the changed-line guard; records no consent, implementation, asset acceptance, or merge authority.",
+      "tags": [
+        "asset-preservation-evidence-and-limits",
+        "exact-approval-question",
+        "exact-boundaries",
+        "options-and-recommendation",
+        "problem-and-existing-authority",
+        "proposed-exception-boundary",
+        "task-record"
+      ],
+      "href": "/adr/585-fixed-binary-deletion-review/"
     },
     {
       "id": "adr/index",
