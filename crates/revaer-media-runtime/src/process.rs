@@ -1,5 +1,7 @@
 //! Shared, injected supervision for native media processes.
 
+pub mod broker;
+
 mod model;
 mod system;
 

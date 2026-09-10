@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T08:40:32.792015+00:00",
+  "generated": "2026-09-10T08:49:15.004235+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4877,6 +4877,17 @@
         "validation-boundaries"
       ],
       "href": "/adr/570-single-file-directory-authoring-regression/"
+    },
+    {
+      "id": "adr/571-rvb1-bounded-wire-codec",
+      "title": "RVB1 bounded wire codec",
+      "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: ADR 558's accepted resolution approves B1-B3 and shared G1. Annex A fixes the RVB1 representation. This task implements its pure data codec without selecting held environment values or changing any accepted semantics. The parent integrates the independent ADR 573 vectors and ADR 572 package observations. Coordination of these subtasks is not operator approval. Decision: Implement checked encoding, fixed-header validation and borrowed decoding under revaer-media-runtime::process::broker, with no process operations. Use the existing standard library, thiserror, and test dependencies. Preserve explicit numeric mappings, big-endian integers, exact field and aggregate bounds,",
+      "tags": [
+        "integrated-validation",
+        "scope-and-invariants",
+        "task-record"
+      ],
+      "href": "/adr/571-rvb1-bounded-wire-codec/"
     },
     {
       "id": "adr/572-broker-env-local-image-evidence",

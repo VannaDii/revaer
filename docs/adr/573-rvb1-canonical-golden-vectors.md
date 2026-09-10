@@ -176,6 +176,6 @@ transcript are retained outside the worktree for the parent handoff.
 - `just clean-test-fixtures`: passed. No native tool or media conversion was
   run and no test media was acquired.
 - `git diff --check`: passed after catalog generation.
-- Full `just ci` and `just ui-e2e` are not run by this subtask. The operator
-  delegated subtask leaves those gates with the parent. This record is not repository
+- Full `just ci` and `just ui-e2e` are not run by this subtask. The parent-agent
+  assignment leaves those gates with the parent. This record is not repository
   completion or production-readiness evidence.

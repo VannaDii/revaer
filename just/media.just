@@ -18,6 +18,10 @@ test-media-root-catalog:
     cargo --config 'build.rustflags=["-Dwarnings"]' test \
         -p revaer-media-runtime --all-features root_catalog
 
+test-media-broker-codec:
+    cargo --config 'build.rustflags=["-Dwarnings"]' test \
+        -p revaer-media-runtime --all-features process::broker
+
 update-test-fixture-probes:
     bash scripts/test-fixtures/update-probe-snapshots.sh
 

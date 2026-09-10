@@ -4876,6 +4876,17 @@
     "href": "/adr/570-single-file-directory-authoring-regression/"
   },
   {
+    "id": "adr/571-rvb1-bounded-wire-codec",
+    "title": "RVB1 bounded wire codec",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: ADR 558's accepted resolution approves B1-B3 and shared G1. Annex A fixes the RVB1 representation. This task implements its pure data codec without selecting held environment values or changing any accepted semantics. The parent integrates the independent ADR 573 vectors and ADR 572 package observations. Coordination of these subtasks is not operator approval. Decision: Implement checked encoding, fixed-header validation and borrowed decoding under revaer-media-runtime::process::broker, with no process operations. Use the existing standard library, thiserror, and test dependencies. Preserve explicit numeric mappings, big-endian integers, exact field and aggregate bounds,",
+    "tags": [
+      "integrated-validation",
+      "scope-and-invariants",
+      "task-record"
+    ],
+    "href": "/adr/571-rvb1-bounded-wire-codec/"
+  },
+  {
     "id": "adr/572-broker-env-local-image-evidence",
     "title": "Broker environment local image evidence",
     "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: ADR 558 approves B1-B3 and shared G1 while holding E1 exact environment values, paths, bytes, digest, and package changes for evidence and separate operator approval. This record supplies bounded historical observations only. The authorized sidecar owns ADR 572, its index/SUMMARY entries, and generated documentation in work/broker-env-evidence-20260910. The parent owns ADR 571 and the wire parser; the parallel vector task owns ADR 573. Decision: Record existing-image observations without selecting or enforcing new environment values, changing build inputs or permissions, or building an unapproved prototype. E1 remains pending; no architectural",
