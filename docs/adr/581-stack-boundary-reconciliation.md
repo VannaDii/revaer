@@ -161,6 +161,44 @@ approval or criteria relaxation is claimed. Completed validation worktrees,
 owned database/container storage and generated test media are removed; refs
 and private evidence remain. The primary checkout's changes are preserved.
 
+## Exact Foundation Validation And Immediate Replay
+
+At first-PR candidate `15e47d6e`, both canonical gates were attempted in an
+isolated worktree using NVM Node 24.19.0 and a dedicated PostgreSQL container
+on port 5455. Neither passed. These results do not replace or invalidate the
+separately recorded reconstructed-tip results above.
+
+- `just ci` stops at native compilation during lint: pkg-config selects the
+  installed x86_64 libtorrent 2.0.11 while Rust targets arm64, and its Boost
+  headers are unavailable. The installed arm64 libtorrent is 2.1.1, outside
+  this historical boundary's supported range. Existing later commits
+  `294adb46` and `8ab54c8d` implement 2.1 compatibility and ABI coherence;
+  they were not copied into the foundation or bypassed with native skips.
+  Exact-boundary validation needs a compatible native environment. A bounded
+  check found no already-equipped local Linux validation image.
+- `just ui-e2e` installs the exact tests graph, passes its zero-finding audit,
+  generates the API client and reaches setup. The historical harness requires
+  port 8080, already owned by an unrelated application, so setup refuses to
+  proceed. Teardown correctly fails for absent API coverage. No tests ran;
+  the unrelated application was not stopped, and no port/coverage assertion
+  or quality criterion was relaxed.
+- The immediate two descendants replay cleanly apart from one manifest
+  conflict: `75cb6635` becomes `b7e29ef9`, preserving the incoming exact
+  brace-expansion scopes alongside patched fast-uri 3.1.6/js-yaml 4.3.2;
+  `ebddb420` becomes patch-identical `79f23836`. All other differences from
+  the original tip are inherited foundation corrections. Original refs,
+  accepted ADRs 461/477 and the consolidated task-record pointers remain.
+- Both descendant npm lock/manifest dry-runs and zero-finding audits pass,
+  as do instruction drift, whitespace and canonical changed-line guards:
+  627/9,999 for the two-commit replay and 657/9,999 for the inherited delta.
+  These are not full CI, installed-graph or lifecycle-validation claims.
+
+Private evidence is retained in the dated foundation-validation and
+foundation-descendants directories under `/private/tmp`. No remote source,
+PR, formal-stack, release, criteria or architectural-approval mutation was
+performed. D4, D5 and S2 remain held. The first foundation still needs its
+own passing gates before publication; later-tip success is not a substitute.
+
 ## Task Record
 
 - Motivation:
