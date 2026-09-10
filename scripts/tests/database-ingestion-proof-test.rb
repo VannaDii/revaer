@@ -3,10 +3,12 @@
 require "tmpdir"
 require_relative "../database_rebaseline/final_proof"
 require_relative "../database_rebaseline/ingestion_proof"
+require_relative "database-ingestion-existing-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
     include IngestionProof
+    include IngestionExistingTest
 
     def run_tests!
       @assertions = 0
@@ -23,6 +25,7 @@ module RevaerDatabaseRebaseline
       helper_first_tests!
       session_control_tests!
       normalization_tests!
+      existing_data_tests!
       cleanup_tests!
       puts "database-ingestion-proof-test: #{@assertions} assertions passed"
     end
@@ -234,6 +237,10 @@ module RevaerDatabaseRebaseline
           ingestion_isolated("cleanup-test", "SELECT 1", source: "reference_proof", role: "postgres", variant: "reference")
         end
         assert(commands.last == 'DROP DATABASE "ingestion_reference_proof" WITH (FORCE)', "failed fixture must drop its clone")
+        rejected("PostgreSQL proof query failed") do
+          ingestion_existing_isolated("cleanup-test", {}, {}, source: "reference_proof", role: "postgres", variant: "reference")
+        end
+        assert(commands.last == 'DROP DATABASE "ingestion_reference_proof" WITH (FORCE)', "failed existing-data fixture must drop its clone")
       end
     end
   end

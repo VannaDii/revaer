@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "ingestion_existing"
 
 module RevaerDatabaseRebaseline
   # Uses FinalProof's private transport and evidence owner, never runtime SQL.
   module IngestionProof
+    include IngestionExisting
     INGESTION_TABLES = %w[
       canonical_torrent canonical_torrent_source canonical_torrent_source_attr
       canonical_torrent_source_context_score canonical_torrent_best_source_context
@@ -55,6 +57,7 @@ module RevaerDatabaseRebaseline
       @ingestion_stop = "proof interrupted before acceptance"
       ingestion_inventory!
       verify_ingestion_session_controls!
+      verify_existing_ingestion_parity!
       ingestion_cases.each do |name, changes, expected, helpers_first|
         helpers_first = helpers_first == true
         query = ingestion_session(changes, repeat: name == "warm-committed", helpers_first:)
