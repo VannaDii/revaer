@@ -511,4 +511,5 @@
     -   [559: Media decision review and approval delta](adr/559-media-approval-delta.md)
     -   [560: Dependency audit refresh and policy precedence](adr/560-dependency-audit-refresh.md)
     -   [561: Root source contract corrections](adr/561-root-source-contract-corrections.md)
+    -   [562: Asset sync failure-path coverage](adr/562-asset-sync-failure-coverage.md)
     -   [563: Missing init candidate diagnostic](adr/563-missing-init-candidate-diagnostic.md)

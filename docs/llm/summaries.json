@@ -4774,6 +4774,16 @@
     "href": "/adr/561-root-source-contract-corrections/"
   },
   {
+    "id": "adr/562-asset-sync-failure-coverage",
+    "title": "Asset sync failure-path coverage",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The exact failed PR #131 coverage log identifies only asset_sync below the unchanged 90% per-package line threshold. The failure is at lines 4027-4045 of the parent-retained pr131-coverage.log; its timestamp is 2026-08-16. The assigned base is c487a899317c9ed70aa4a90e648a2342883d32f7. A local comparison confirms no asset_sync diff from PR head 4681b5c4. This is historical failure evidence, not a new GitHub check result. The parent owns active full-workspace CI. This task is limited to this crate's tests and this record, without database, browser, publishing, dependency, production-behavior, or gate-criteria changes. Decision: Add nine deterministic",
+    "tags": [
+      "fresh-validation",
+      "task-record"
+    ],
+    "href": "/adr/562-asset-sync-failure-coverage/"
+  },
+  {
     "id": "adr/563-missing-init-candidate-diagnostic",
     "title": "Missing init candidate diagnostic",
     "summary": "Status: Recorded Date: 2026-09-09 Operator approval: Not applicable: nonarchitectural task record Context: Running just db-init-prefix-check in a clean worktree before generating candidate evidence raised NoMethodError: Errno::ENOENT does not provide the path method used by the error handler. Decision: Report the existing candidate-missing failure using the method's known path, rendered relative to the repository. Preserve failure status and all digest, statement-count, frozen-corpus, and prefix checks. Consequences: Missing evidence now produces a useful operational diagnostic, not an exception while reporting the original failure. It never counts as a pass. Follow-up: Generate candidate evidence through just db-rebaseline-candidate before checking the assembly prefix. This",
