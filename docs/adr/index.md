@@ -509,3 +509,4 @@
 -   [575](575-media-conversion-gate.md) - Media conversion gate restoration
 -   [576](576-pinned-ffprobe-fixture-diagnostic.md) - Pinned FFprobe fixture diagnostic
 -   [577](577-runtime-shutdown-event-classification.md) - Runtime shutdown event classification
+-   [578](578-locked-fixture-diagnostic-disposition.md) - Locked fixture diagnostic disposition

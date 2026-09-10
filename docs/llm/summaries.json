@@ -4806,6 +4806,7 @@
       "pinned-fixture-diagnostic-checkpoint",
       "root-input-and-conversion-gate-checkpoint",
       "rvb1-and-github-checkpoint",
+      "shutdown-and-fixture-decision-queue",
       "task-record"
     ],
     "href": "/adr/564-media-completion-ledger/"
@@ -4957,11 +4958,24 @@
     "tags": [
       "approval-boundary-correction",
       "required-validation-after-approval",
+      "restored-tree-checkpoint",
       "s1-requested-cancellation-classification",
       "s2-await-configuration-watcher-termination",
       "task-record"
     ],
     "href": "/adr/577-runtime-shutdown-event-classification/"
+  },
+  {
+    "id": "adr/578-locked-fixture-diagnostic-disposition",
+    "title": "Locked fixture diagnostic disposition",
+    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. No diagnostic acceptance or fixture replacement is authorized by ADR 557-559 or by this proposal. Context: ADRs 575-576 establish that strict preparation rejects one locked upstream fixture before real Rust conversion execution. Host FFprobe 9.0.1 and the historical Linux arm64 image's 8.0.1 emit the same element-ID error. ADR 559 G1 reserves every quality-criterion change for explicit consent. Accepting this known error would change preparation admission, even with stronger assertions around it. It is not an internal implementation detail. Decision: None made. Present F1's bounded test-only exception for approval. Keep the current diagnostic gate",
+    "tags": [
+      "alternatives",
+      "evidence-and-requested-scope",
+      "f1-exact-test-only-diagnostic-contract",
+      "task-record"
+    ],
+    "href": "/adr/578-locked-fixture-diagnostic-disposition/"
   },
   {
     "id": "adr/index",

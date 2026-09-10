@@ -326,6 +326,32 @@ one failed and 61 not run. Fresh local Sonar inputs verified positive coverage,
 but the authoritative scanner still failed before analysis without its token.
 No package certification, remote all-checks pass, or feature completion follows.
 
+## Shutdown And Fixture Decision Queue
+
+[ADR 577](577-runtime-shutdown-event-classification.md) is Proposed, not a
+completed runtime correction. The parent prematurely changed shutdown event
+classification, then verified ADR 559 G1's explicit approval boundary, stopped
+the worker and restored all active executable/recipe/instruction changes.
+Commit `2ec8c8a1` has the same executable as `783e4f54`; the local prototype in
+`27770554` is audit history only and must not be published or extended without
+approval. S1 covers event severity/message shape, S2 the configuration watcher
+join and its potentially unbounded cooperative-shutdown completion. Neither
+technical review nor historical PR 194 supplies approval.
+
+[ADR 578](578-locked-fixture-diagnostic-disposition.md) presents the exact F1
+test-only diagnostic exception, identity/tool bounds, evidence retention,
+expiry and alternatives. No fixture allowance or replacement is implemented.
+These holds supplement, not replace or resolve, ADR 569 and E1.
+
+A CLI Copilot request for PR 194 exited zero, but immediate REST/GraphQL reads
+still showed no requested or completed review. Submission remains unconfirmed;
+the review requirement is not complete. No browser or push was used.
+Restored checkpoint `2ec8c8a1` completed `just ci` with exit zero and the retained
+shutdown WARN events, then failed `just ui-e2e` with 46/1/61 passed/failed/not-run
+counts. Fresh Sonar inputs verified positive coverage; the authoritative scan
+still failed without local credentials. ADR 577 retains exact results and
+cleanup. No runtime change or diagnostic exception is active from these tasks.
+
 ## Task Record
 
 - Motivation: Provide a bounded completion ledger while the integrating agent

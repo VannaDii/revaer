@@ -99,6 +99,47 @@ no completed test result. Its new test files, module declaration, local build
 output and worktree were removed. No implementation or behavioral pass follows
 from that stopped attempt.
 
+## Restored-Tree Checkpoint
+
+Commit `2ec8c8a18740b5d192ae1bea1ceb2f9f6cc0d9fc` restores every executable,
+recipe and instruction path changed by the prototype to `783e4f54` exactly.
+Subsequent changes are proposal/ledger documentation only. No prototype behavior
+is active, tested as approved, pushed, or part of a release claim.
+
+- `just ci` exited zero, including all 18 package coverage gates, full workspace
+  and minimal-feature tests, Clippy, policy, audits, script coverage and release
+  build. Existing requested-shutdown WARN lines remain; this is not warning-free
+  output or acceptance of S1/S2.
+- `just ui-e2e` exited one: 46 passed, one failed, 61 did not run. Media profile
+  creation still returned 400 instead of 201 at API spec line 130. Teardown
+  reported unexecuted job phases and profile readiness GET routes. No assertion
+  or route-coverage requirement was changed.
+- Logs are `ci-root-contract-2ec8c8a18740b5d192ae1bea1ceb2f9f6cc0d9fc.log`
+  and `ui-e2e-root-contract-2ec8c8a18740b5d192ae1bea1ceb2f9f6cc0d9fc.log`
+  under `/Users/vanna/Source/revaer-reviews/2026-09-10/`.
+- `just docs-index instruction-drift docs-link-check` passed with 520 entries,
+  1,110 checked links and zero link errors; `git diff --check` passed.
+- `just sonar-compile-db js-release-coverage js-coverage-merge
+  sonar-verify-inputs` passed after UI execution. Rust LCOV contains 237 sources,
+  101,312 lines and 94,254 covered lines. JavaScript LCOV has 60 sources,
+  5,276 lines and 3,916 covered lines, from executed API/release paths, not the
+  skipped UI cases. Reports, script coverage and native inputs are retained in
+  the external `runtime-fixture-proposals-coverage/` directory.
+- `just sonar-scan` failed before analysis because local `SONAR_TOKEN` is
+  unavailable. No new server analysis, published coverage or quality gate is
+  claimed. Full-file `just --command sonar analyze secrets` on SUMMARY,
+  ADR index, ADRs 564/577/578 and both generated catalogs completed without
+  findings. This is secrets-only analysis; no Sonar criterion changed.
+- Both stopped/completed worker worktrees were clean and removed. The owned
+  PostgreSQL container was removed; TCP 5441, 7070 and 18080 were closed.
+  `just clean-test-fixtures` passed; all four ignored fixture directories were
+  absent and `.server_root/library` was empty. Primary user changes and older
+  prunable worktree recovery metadata remain preserved.
+- `gh pr edit 194 --repo VannaDii/revaer --add-reviewer '@copilot'` returned
+  success, but follow-up REST/GraphQL reads still showed no request or review.
+  PR 194 remained open, nondraft and at `cfed91f8`. Review submission remains
+  unconfirmed; no new PR, push, merge or browser-based monitoring occurred.
+
 ## Task Record
 
 - Motivation: Present the demonstrated shutdown warning and unobserved-join
