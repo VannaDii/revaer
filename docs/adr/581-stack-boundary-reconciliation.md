@@ -60,9 +60,7 @@ read-only phases; reconcile that intermediate boundary rather than remove the
 new regression assertion. A later removal in `1a0b63e7` is not evidence that
 every intermediate PR passes.
 
-## Task Record
-
-### Phase Boundary Replay Checkpoint
+## Phase Boundary Replay Checkpoint
 
 The corrected PR 99 boundary now has 20 reconstructed descendants through
 `ef84c954` on retained local ref `work/media3-phase-boundary-20260910`.
@@ -93,6 +91,77 @@ earliest owning stack boundary. Original refs remain intact; no remote branch,
 formal stack, review state or required check was changed. D4, D5 and S2 remain
 held. The private phase-boundary evidence directory retains complete gate logs,
 range comparison and final tree delta; temporary media is cleaned.
+
+## Dependency And UI Checkpoint
+
+The unchanged dependency inputs at `ef84c954` match `1ee5f2ba`'s parent.
+Applying that existing correction yields `cf9d0456`: Rust audit and deny,
+tests npm audit/API-client generation, and release npm audit all pass. The
+lockfiles and test manifest exactly match the original correction's output.
+Only branch-specific task indexes/catalogues were reconciled. The resulting
+355-line boundary passes the canonical changed-line guard.
+
+Full UI validation exposed the existing undefined reporter `envDir` regression.
+Existing correction `654ed33b` was replayed as `d90b3c80`, with identical
+Playwright configuration and a 98-line boundary. A later full run reproduced
+the stale expectation that worker-owned POST routes should not return 405.
+Existing correction `91ea0f9d` was replayed as `bef72ac9`, preserving the exact
+test file and separately requiring 405 for those retired writes. Its boundary
+is 115 lines; supported-route assertions and coverage remain intact.
+
+Full `just ci` exits zero: all-feature/minimal tests, strict lint, dependency
+gates, all 18 package coverage gates, script coverage and release build pass.
+The run began at `cf9d0456`; only the two existing TypeScript test/configuration
+corrections and their documentation were added while it ran. No Rust, build,
+workflow, scanner or threshold input changed during validation. Rust LCOV has
+218 source records, 99,028 line records and 92,060 covered lines. Complete
+native, Rust and script coverage reports are retained privately. There are
+eight held-S2 watcher-abort warnings among 40 WARN records, so exit zero does
+not establish warning-free acceptance or published Sonar coverage.
+
+The final full UI run at `bef72ac9` has 46 passes, one failure and 61 not run.
+Media profile creation returns 400 instead of 201 at
+`tests/specs/api/media.spec.ts:130`; coverage teardown remains incomplete.
+Earlier runs retain distinct evidence for the undefined reporter, occupied
+UI port 8080, an agent configuration error using unsupported API
+port 17070, and the retired-route failure. The successful test-starting setup
+uses UI port 18080 and the historical harness's API port 7070. The unrelated
+service on port 8080 was untouched. No assertion, scheduling feature or
+coverage requirement was disabled to hide the remaining profile failure.
+
+The first-PR ownership audit identifies PR 195 as the earliest common owner,
+with later dependency overwrites in PRs 197, 203, 73 and 90 that must be
+reconciled. The initial bounded backport fits at 9,997 total changed lines,
+but its older release graph still has 11 findings including one critical;
+that was not an acceptable first-PR baseline. Compatible remediation in
+`6c229aa5` now clears every Rust, tests and release advisory, including an
+installed-release-graph audit and plugin-import smoke check. It retains the
+real release plugin, parent versions, manifest and configuration: published
+npm 11.19.1 clears its bundled findings, with compatible Undici 6.28.0/7.29.0
+updates for the two unbundled clients. No alias, stub, plugin replacement,
+force update or exception was used. The existing semver-diff 5.0.0 deprecation
+warning remains; no newer release satisfies the current parent's ^5.0.0
+constraint. This is not warning-free installation or complete validation.
+
+The complete backport initially raised PR 195 to 10,184 changed lines. The
+previously requested task-record consolidation is now committed as
+`15e47d6e`: routine records 404, 407, 462, 479, 480 and 481 point to their
+combined motivation, decisions, historical test evidence, risks and policy
+checks in ADR 478. Original paths and historical Git records remain available;
+architectural ADRs 461/477 and all non-documentation files are byte-unchanged
+from the dependency commit. Their accepted decisions are not reclassified or
+weakened. The canonical no-rename guard passes at 9,392 additions plus 585
+deletions, or 9,977/9,999 changed lines. Link validation reports 683 OK, zero
+errors and one unsupported pre-existing PostgreSQL example URI.
+
+Full CI/UI at this exact first-PR revision and propagation through subsequent
+overwrites remain required; reconstructed-tip results are not substituted for
+that evidence. No remote source or stack mutation, merge, new architectural
+approval or criteria relaxation is claimed. Completed validation worktrees,
+owned database/container storage and generated test media are removed; refs
+and private evidence remain. The primary checkout's changes are preserved.
+
+## Task Record
 
 - Motivation:
   - Make stack reconstruction evidence-based and preserve each reviewable
