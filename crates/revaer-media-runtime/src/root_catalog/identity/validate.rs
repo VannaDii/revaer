@@ -54,6 +54,10 @@ fn scalar_claims(claim: &RootSlotIdentityClaims<'_>) -> Result<(), RootIdentityE
         || path == "/"
         || path.len() > MAX_ROOT_CATALOG_PATH_BYTES
         || path.as_bytes().contains(&0)
+        || path
+            .split('/')
+            .skip(1)
+            .any(|component| matches!(component, "" | "." | ".."))
     {
         return Err(RootIdentityEncodingError::InvalidCanonicalPath);
     }

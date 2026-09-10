@@ -157,6 +157,111 @@ fn text_bounds_use_exact_utf8_bytes_without_normalizing() -> TestResult {
 }
 
 #[test]
+fn noncanonical_paths_cannot_bypass_overlap_validation() -> TestResult {
+    let source = source()?;
+    let baseline = golden_claims(&source);
+    for path in [
+        "//same/child",
+        "/same//child",
+        "/same/child/",
+        "/same/./child",
+        "/other/../same/child",
+        "/same/.",
+        "/same/..",
+        "/./same/child",
+        "/../same/child",
+    ] {
+        for invalid_index in 0..2 {
+            let mut claims = baseline;
+            claims[0].canonical_path = "/same";
+            claims[1].canonical_path = "/same";
+            claims[invalid_index].canonical_path = path;
+            assert_eq!(
+                encode_root_catalog_identity_v1(&source, &claims),
+                Err(Error::InvalidCanonicalPath),
+                "noncanonical claim {invalid_index}: {path}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn canonical_component_bytes_are_not_rewritten() -> TestResult {
+    let source = single()?;
+    let slot = &source.catalog().slots()[0];
+    let canonical_offset = 39 + 4 + slot.key().len() + 4 + slot.path().len();
+    let mut identities = std::collections::BTreeSet::new();
+    for path in [
+        "/same/.hidden",
+        "/same/..visible",
+        "/same/three...dots",
+        "/same/space name",
+        "/same/back\\slash",
+        "/same/\\..",
+        "/same/ ",
+        "/same/ leading",
+        "/same/trailing ",
+        "/same/\u{e9}",
+        "/same/e\u{301}",
+    ] {
+        let mut fields = claim(slot);
+        fields.canonical_path = path;
+        let encoded = encode_root_catalog_identity_v1(&source, &[fields])?;
+        let frame = encoded.slots()[0].frame();
+        assert_eq!(
+            &frame[canonical_offset..canonical_offset + 4],
+            &u32::try_from(path.len())?.to_be_bytes()
+        );
+        assert_eq!(
+            &frame[canonical_offset + 4..canonical_offset + 4 + path.len()],
+            path.as_bytes()
+        );
+        assert!(identities.insert(encoded.slots()[0].root_identity_sha256()));
+    }
+    Ok(())
+}
+
+#[test]
+fn single_slot_canonical_validation_does_not_depend_on_overlap() -> TestResult {
+    let source = single()?;
+    for path in ["//", "/.", "/..", "/a/", "/a//b", "/a/./b", "/a/../b"] {
+        let mut fields = claim(&source.catalog().slots()[0]);
+        fields.canonical_path = path;
+        assert_eq!(
+            encode_root_catalog_identity_v1(&source, &[fields]),
+            Err(Error::InvalidCanonicalPath),
+            "noncanonical single slot: {path}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn requested_path_bytes_are_preserved_separately_from_canonical_claim() -> TestResult {
+    let requested = "/source/../same";
+    let document =
+        crate::root_catalog::tests::valid_document().replace("/data/media-library", requested);
+    let source = loaded(parse_root_catalog_v1(document.as_bytes())?);
+    let slot = &source.catalog().slots()[0];
+    assert_eq!(slot.path(), requested);
+    let mut fields = claim(slot);
+    fields.canonical_path = "/same";
+    let encoded = encode_root_catalog_identity_v1(&source, &[fields])?;
+    let frame = encoded.slots()[0].frame();
+    let requested_offset = 39 + 4 + slot.key().len();
+    assert_eq!(
+        &frame[requested_offset..requested_offset + 4],
+        &u32::try_from(requested.len())?.to_be_bytes()
+    );
+    assert_eq!(
+        &frame[requested_offset + 4..requested_offset + 4 + requested.len()],
+        requested.as_bytes()
+    );
+    Ok(())
+}
+
+#[test]
 fn maximum_text_fields_have_exact_bounded_frame_and_utf8_lengths() -> TestResult {
     let key = "k".repeat(64);
     let path = format!("/{}x", "\u{e9}".repeat(2047));

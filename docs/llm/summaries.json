@@ -5019,7 +5019,10 @@
     "title": "Stack boundary reconciliation",
     "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: GitHub's displayed PR sizes and branch names do not prove a linear, reviewable stack. ADR 564 identified an unverified PR 99 transition. Decision: Audit all current media PR boundaries and correct the isolated PR 99 reconstruction. Preserve original refs and remote metadata pending full descendant reconciliation. Do not change review or quality criteria. Consequences: The local PR 99 schema regression is corrected, but no remote repair, complete stack validation, source push or merge is claimed. Follow-up: Propagate the existing dependency/security and instruction corrections at their earliest owning boundaries,",
     "tags": [
+      "dependency-and-ui-checkpoint",
+      "exact-foundation-validation-and-immediate-replay",
       "integrated-validation-and-cleanup",
+      "phase-boundary-replay-checkpoint",
       "pr-99-correction",
       "task-record",
       "verified-boundaries"
@@ -5045,6 +5048,15 @@
       "task-record"
     ],
     "href": "/adr/583-ingestion-imdb-conflict-inference/"
+  },
+  {
+    "id": "adr/584-canonical-root-identity-paths",
+    "title": "Canonical root identity paths",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The accepted root identity encoder promises normalized scalar validation and rejection of overlaps visible in canonical paths. Its lexical overlap comparison previously admitted empty, current-directory and parent-directory components, including //same/child beside /same with distinct claimed device/inode pairs. These are unproved caller claims, not actual descriptor evidence. The defect does not establish a demonstrated filesystem escape or a working root-authority implementation. Decision: Reject empty, . and .. slash-separated components in the canonical claim before overlap comparison and identity framing. Retain the existing absolute, non-root, UTF-8 byte and NUL bounds.",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/584-canonical-root-identity-paths/"
   },
   {
     "id": "adr/index",
