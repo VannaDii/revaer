@@ -360,11 +360,50 @@ accepts ADR 569 D1/D2 and conditional D3, ADR 577 S1 only, and ADR 578's exact
 F1 exception as reviewed at `1d62d087`. Earlier pending statements in this
 ledger are historical checkpoints, not the current approval state.
 
-Implementation and independent evidence are still outstanding. In particular,
-D3 equivalence is not established, the final init is not activated, S2 remains
+At approval, implementation and independent evidence were still outstanding.
+The subsequent checkpoint below records progress. D3 equivalence is not
+established, the final init is not activated, S2 remains
 held, E1 exact package values remain held, and no CI/UI/Sonar/package or remote
 pass is implied. Preserve every expiry and renewed-review requirement in the
 accepted decisions. The primary conflicted user checkout remains untouched.
+
+## Approved Implementation And Independent Counterexample
+
+The local approved-decision integration contains separate conventional commits
+for the exact approval record, D1/D2, S1, F1 and independent D3 evidence. These
+commits have not been pushed or merged into a GitHub PR. No existing remote
+check is evidence for these new source revisions.
+
+- D1/D2: the inert final init has the exact scoped reset delta and digest
+  `1a9f0f2e9b4ca04ee880baa1babc4f105d2726ee5b4a4fe627f04fcc1a06beb9`.
+  All 105 live extension, authored privilege, baseline and timeout assertions
+  pass, including eleven extension mutations, real cancellation and lock
+  contention. Eighteen exact-delta harness assertions pass. Independent source
+  review found no actionable D1/D2 defect; it is not a separate live rerun.
+- S1: expected cancellations requested by the local shutdown operation are INFO;
+  panic, unexpected cancellation and grace-expiry warnings remain. Twelve real
+  join/event/cleanup tests pass in each all-feature and minimal-feature build,
+  with focused Clippy and policy checks. S2's unfinished configuration watcher
+  still aborts and drops without joining; no shutdown bound is claimed.
+- F1: the exact approved source/snapshot/tool/diagnostic contract is implemented
+  with retained raw evidence and seventy adversarial cases. Real host conversion
+  passes all six unfiltered tests, including ignored tests: thirty pipeline
+  actions, eight video transcodes, six audio transcodes and zero failures.
+  Historical Linux arm64 tool preparation is not current package certification.
+- D3: the integrated proof now records 122/123 assertions passing. Both the
+  untouched frozen-reference function and final candidate fail the warm second
+  ingestion with `42P07: relation "tmp_policy_rules" already exists`. Six cold
+  scenarios match. The report remains failed and incomplete; full helper and
+  compiler-setting closure is not established. Three live harness controls and
+  44 unit assertions cover successful warm-write preservation and strict
+  diagnostic validation after independent review. ADR 579 proposes exact D4
+  transaction-lifetime correction; no such SQL delta is authorized or applied.
+
+Integrated CI/UI validation is being rerun. Sonar source upload was blocked by
+the execution approval system; explicit upload consent was requested rather
+than bypassing that denial through another analyzer. No new Sonar result or
+published coverage is claimed. Full package checks, remote check completeness,
+review resolution and the remaining approval holds are still outstanding.
 
 ## Task Record
 

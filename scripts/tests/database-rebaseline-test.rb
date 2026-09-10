@@ -176,7 +176,7 @@ module DatabaseRebaselineTest
 
     def capture(command, **_options)
       @commands << command
-      if command.include?("SELECT 1") || command[0, 3] == ["docker", "rm", "-f"]
+      if command.include?("SELECT 1") || command[0, 3] == ["docker", "rm", "-fv"]
         return result("1\n", "", true) if command.include?("SELECT 1")
 
         return result("", "", true)
@@ -208,7 +208,7 @@ module DatabaseRebaselineTest
         @applied_sql << stdin_data
         return ""
       end
-      if command[0, 3] == ["docker", "rm", "-f"]
+      if command[0, 3] == ["docker", "rm", "-fv"]
         if @cleanup_failure
           raise RevaerDatabaseRebaseline::Failure, "container cleanup failed"
         end
@@ -433,6 +433,9 @@ module DatabaseRebaselineTest
       ).generate!
       assertions.equal(parser.count, statements.count, "pinned candidate accepted")
       assertions.equal(2, runner.applied_sql.length, "normalization and candidate databases applied")
+      cleanup_commands = runner.commands.select { |command| command[0, 2] == ["docker", "rm"] }
+      assertions.equal(1, cleanup_commands.length, "owned database removed exactly once")
+      assertions.equal("-fv", cleanup_commands.first[2], "owned anonymous volume removed with database")
       assertions.truthy(
         runner.applied_sql.first.include?("SELECT revaer_config.factory_reset();"),
         "existing seed contract retained"

@@ -13,6 +13,7 @@ module RevaerDatabaseRebaseline
       @runtime = "ingestion_test_runtime"
       argument_tests!
       framing_tests!
+      session_control_tests!
       normalization_tests!
       cleanup_tests!
       puts "database-ingestion-proof-test: #{@assertions} assertions passed"
@@ -42,6 +43,7 @@ module RevaerDatabaseRebaseline
       warm = ingestion_session({}, repeat: true)
       assert(warm.scan("FROM public.search_result_ingest_v1(").length == 2, "warm proof must call real ingestion twice")
       assert(warm.include?("COMMIT;\nBEGIN;"), "warm proof must commit between calls")
+      assert(warm.include?("\\if :ERROR\nROLLBACK TO SAVEPOINT ingestion_second;\n\\endif"), "successful second writes must not be rolled back")
       assert(!warm.include?("DROP TABLE") && !warm.include?("DISCARD") && !warm.include?("\\connect"), "warm proof must not repair the backend")
       assert(!warm.include?("SET ROLE") && !warm.include?("SET plpgsql.variable_conflict"), "proof must not substitute roles or alter compilation settings")
       assert(ingestion_session({}).include?("\\if :ERROR"), "failed calls require explicit rollback")
@@ -89,6 +91,27 @@ module RevaerDatabaseRebaseline
           "canonical_torrent_source" => [{ "canonical_torrent_source_id" => 2, "canonical_torrent_source_public_id" => source, "canonical_torrent_id" => 1 }]
         }
       }
+    end
+
+    def session_control_tests!
+      success = CommandRunner::Result.new(stdout: "state: 00000\nstate: 00000\nwrites:1,2\n", stderr: "", success: true)
+      assert(ingestion_control_records(success, failure_expected: false) == ["writes:1,2"], "successful control writes retained")
+      failed_call = CommandRunner::Result.new(stdout: "state: 00000\nstate: 22012\nwrites:1\n", stderr: "ERROR:  22012: division by zero\nLOCATION:  int4div, int.c:870\n", success: true)
+      assert(ingestion_control_records(failed_call, failure_expected: true) == ["writes:1"], "division-by-zero control accepted")
+      rejected("SQLSTATE mismatch") { ingestion_control_records(failed_call, failure_expected: false) }
+      rejected("SQLSTATE mismatch") { ingestion_control_records(success, failure_expected: true) }
+      changed = failed_call.with(stdout: failed_call.stdout.sub("22012", "42501"))
+      rejected("SQLSTATE mismatch") { ingestion_control_records(changed, failure_expected: true) }
+      changed = failed_call.with(stderr: failed_call.stderr.sub("22012: division by zero", "42501: permission denied"))
+      rejected("unexpected diagnostic") { ingestion_control_records(changed, failure_expected: true) }
+      [success, failed_call].each do |outcome|
+        changed = outcome.with(stderr: outcome.stderr + "WARNING: unexpected warning\n")
+        rejected("unexpected diagnostic") { ingestion_control_records(changed, failure_expected: outcome == failed_call) }
+      end
+      changed = failed_call.with(stderr: failed_call.stderr + "ERROR:  22012: division by zero\nLOCATION:  int4div, int.c:870\n")
+      rejected("unexpected diagnostic") { ingestion_control_records(changed, failure_expected: true) }
+      changed = success.with(success: false)
+      rejected("control failed") { ingestion_control_records(changed, failure_expected: false) }
     end
 
     def normalization_tests!

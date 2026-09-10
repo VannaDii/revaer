@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T18:06:38.736496+00:00",
+  "generated": "2026-09-10T18:37:21.383133+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4801,6 +4801,7 @@
       "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The full first-release goal is active; implementation, accepted contracts, local checks, and remote PRs must not be conflated. Decision: Record a bounded outside-in work breakdown with evidence and dependencies. This document selects no architecture, values, or exceptions. Consequences: No row below establishes release readiness. Missing evidence remains work, not an exclusion from the release. Follow-up: The integrating agent reviews this record, attaches exact-revision validation, and assigns reviewed PRs after stack reconciliation.",
       "tags": [
         "2026-09-10-decision-specific-approval",
+        "approved-implementation-and-independent-counterexample",
         "approved-work-integration-checkpoint",
         "critical-path-and-decision-queue",
         "evidence-boundary",
@@ -4869,6 +4870,7 @@
         "d1-clarify-the-extension-privilege-boundary",
         "d2-function-scoped-reset-lock-bound",
         "d3-function-local-variable-resolution",
+        "independent-d3-counterexample",
         "observed-conflicts",
         "task-record"
       ],
@@ -4966,8 +4968,10 @@
         "approval-resolution",
         "required-validation-after-approval",
         "restored-tree-checkpoint",
+        "s1-implementation-evidence-2026-09-10",
         "s1-requested-cancellation-classification",
         "s2-await-configuration-watcher-termination",
+        "s2-bound-investigation-hold-retained",
         "task-record"
       ],
       "href": "/adr/577-runtime-shutdown-event-classification/"
@@ -4975,15 +4979,29 @@
     {
       "id": "adr/578-locked-fixture-diagnostic-disposition",
       "title": "Locked fixture diagnostic disposition",
-      "summary": "Status: Accepted Date: 2026-09-10 Operator approval: 2026-09-10: \"Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound.\" Context: ADRs 575-576 establish that strict preparation rejects one locked upstream fixture before real Rust conversion execution. Host FFprobe 9.0.1 and the historical Linux arm64 image's 8.0.1 emit the same element-ID error. ADR 559 G1 reserves every quality-criterion change for explicit consent. Accepting this known error would change preparation admission, even with stronger assertions around it. It is not an internal implementation detail. Decision: F1 accepted only within the exact test-only identity, diagnostic, tool-profile, evidence-retention",
+      "summary": "Status: Accepted Date: 2026-09-10 Operator approval: 2026-09-10: \"Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound.\" Context: ADRs 575-576 established that preapproval strict preparation rejected one locked upstream fixture before real Rust conversion execution. Host FFprobe 9.0.1 and the historical Linux arm64 image's 8.0.1 emit the same element-ID error. ADR 559 G1 reserves every quality-criterion change for explicit consent. Accepting this known error would change preparation admission, even with stronger assertions around it. It is not an internal implementation detail. Decision: F1 accepted only within the exact test-only identity, diagnostic, tool-profile,",
       "tags": [
-        "alternatives",
         "approval-resolution",
         "evidence-and-requested-scope",
         "f1-exact-test-only-diagnostic-contract",
+        "f1-implementation-evidence-2026-09-10",
+        "historical-alternatives",
         "task-record"
       ],
       "href": "/adr/578-locked-fixture-diagnostic-disposition/"
+    },
+    {
+      "id": "adr/579-ingestion-policy-temporary-table-lifetime",
+      "title": "Ingestion policy temporary table lifetime",
+      "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. Conditional D3 does not authorize this additional routine-body and observable-lifetime change. Context: Independent D3 testing reproduces the same warm-session ingestion failure in the unmodified frozen reference and the final candidate. Decision: None made. Request D4 below as one additional, exact final-init parity exception. Keep the warm proof failing and cutover disabled meanwhile. Consequences: The proposed change would make a transaction-scoped policy work table disappear at commit instead of obstructing the next transaction on the same pooled connection. This is a behavior correction, not proven equivalence to the legacy error. Follow-up: Obtain a decision,",
+      "tags": [
+        "alternatives",
+        "d4-exact-transaction-scoped-policy-work-table",
+        "evidence",
+        "required-evidence-after-approval",
+        "task-record"
+      ],
+      "href": "/adr/579-ingestion-policy-temporary-table-lifetime/"
     },
     {
       "id": "adr/index",

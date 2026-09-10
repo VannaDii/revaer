@@ -528,3 +528,4 @@
     -   [576: Pinned FFprobe fixture diagnostic](adr/576-pinned-ffprobe-fixture-diagnostic.md)
     -   [577: Runtime shutdown event classification (S1 accepted; S2 held)](adr/577-runtime-shutdown-event-classification.md)
     -   [578: Locked fixture diagnostic disposition (exact F1 accepted)](adr/578-locked-fixture-diagnostic-disposition.md)
+    -   [579: Ingestion policy temporary table lifetime (D4 proposed)](adr/579-ingestion-policy-temporary-table-lifetime.md)

@@ -302,7 +302,7 @@ module RevaerDatabaseRebaseline
     end
 
     def remove_container!(container)
-      @runner.run!(["docker", "rm", "-f", container])
+      @runner.run!(["docker", "rm", "-fv", container])
     end
   end
 end

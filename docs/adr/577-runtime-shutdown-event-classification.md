@@ -76,6 +76,30 @@ Before acceptance, review the watcher and its callees for this availability
 risk. S1 may be decided independently of S2; neither supplies missing broker
 or recovery timing approval.
 
+## S2 Bound Investigation: Hold Retained
+
+Read-only source review of `2842a5ee` does not establish a defensible termination
+bound. This is not measured shutdown evidence and selects no deadline or
+fallback. The two-second apply SLA in `bootstrap.rs` measures a completed
+configuration update; it does not time out or bound that work.
+
+The watcher reaches database snapshot loading, policy updates, blocklist
+fetch/parsing, persistence, secret reads and engine command enqueueing.
+`orchestrator.rs:573` reads the entire HTTP body and then synchronously parses
+it at line 659. The unique-rule limit does not bound response bytes, comments,
+invalid lines or duplicate lines, so it does not bound non-yielding work.
+`revaer-telemetry/src/log_stream.rs:135` also writes directly to stdout, whose
+consumer may block. No existing cancellation test supplies those missing bounds.
+
+Joining the watcher would not by itself establish downstream quiescence:
+`revaer-torrent-libt/src/adapter.rs:53` waits for queue admission, while
+`worker.rs:31` starts a separate worker without returning a join handle. SQLx
+0.9.0 listener destruction also schedules asynchronous cleanup. Pending async
+I/O alone is not evidence that Tokio abort hangs; the outstanding questions are
+non-yielding work, blocking output, scheduling/destruction and the intended
+downstream completion contract. S2 remains held. No arbitrary timeout, detached
+fallback or process-exit policy is approved or implemented by this investigation.
+
 ## Required Validation After Approval
 
 - Capture real events from actual stop helpers, including requested cancellation,
@@ -154,13 +178,13 @@ is active, tested as approved, pushed, or part of a release claim.
 
 - Motivation: Present the demonstrated shutdown warning and unobserved-join
   questions without treating a green-log goal as architectural consent.
-- Design notes: S1 and S2 distinguish event classification from lifecycle
-  completion. No architecture is selected; the prior runtime behavior remains.
-- Test coverage summary: Proposal only; no new implementation test result or
-  warning-free runtime result is claimed. Documentation and restored-tree gate
-  evidence must be attached separately.
-- Observability updates: None activated. S1's exact event delta is proposed;
-  current warning behavior is retained pending approval.
+- Design notes: S1 is accepted and locally implemented as recorded below;
+  S2's lifecycle change remains held. The historical restored-tree checkpoint
+  must not be confused with the later S1-only implementation.
+- Test coverage summary: Fresh S1 tests and focused gates are recorded below.
+  Full integrated gates and warning-free shutdown are not established by them.
+- Observability updates: S1's exact event delta is locally implemented. S2's
+  unfinished-watcher warning and abort/drop lifecycle remain unchanged.
 - Status-doc validation: Update ADR status, indexes and generated catalog to
   reflect the hold. Do not copy ADR 454's incorrect approval inference.
 - Risk & rollback plan: Severity changes can conceal failure; joining a

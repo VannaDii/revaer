@@ -4,12 +4,14 @@ require "json"
 require_relative "../database-rebaseline"
 require_relative "extension_proof"
 require_relative "reset_timeout_proof"
+require_relative "ingestion_proof"
 
 module RevaerDatabaseRebaseline
   # Disposable transition proof only, not an operator or application initializer.
   class FinalProof
     include ExtensionProof
     include ResetTimeoutProof
+    include IngestionProof
     def initialize(contract = Contract.new, runner: CommandRunner.new)
       @contract = contract
       @runner = runner
@@ -61,10 +63,11 @@ module RevaerDatabaseRebaseline
         check("runtime read after bootstrap disabled", sql("SELECT count(*) FROM revaer_system.read_database_baseline_v1()", role: @runtime) == "1")
         verify_runtime_extension_primitives!
         verify_call_paths!
+        verify_ingestion_parity!
         @completed = true
       ensure
         begin
-          @runner.run!(["docker", "rm", "-f", @container]) if started
+          @runner.run!(["docker", "rm", "-fv", @container]) if started
         rescue Failure
           @failures << "disposable container cleanup failed"
           raise

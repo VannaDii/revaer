@@ -54,6 +54,7 @@ module RevaerDatabaseRebaseline
       @ingestion_inventory = {}
       @ingestion_stop = "proof interrupted before acceptance"
       ingestion_inventory!
+      verify_ingestion_session_controls!
       ingestion_cases.each do |name, changes, expected|
         query = ingestion_session(changes, repeat: name == "warm-committed")
         File.binwrite(File.join(@ingestion_evidence, "#{name}.sql"), query)
@@ -155,7 +156,9 @@ module RevaerDatabaseRebaseline
                    #{ingestion_call(changes)}
                    \\echo state: :SQLSTATE
                    \\set ON_ERROR_STOP on
+                   \\if :ERROR
                    ROLLBACK TO SAVEPOINT ingestion_second;
+                   \\endif
                  SQL
                else
                  "\\if :ERROR\nROLLBACK TO SAVEPOINT ingestion_call;\n\\endif"
@@ -179,6 +182,51 @@ module RevaerDatabaseRebaseline
         SELECT 'after:' || COALESCE(current_setting('plpgsql.variable_conflict', true), '<unloaded>');
         COMMIT;
       SQL
+    end
+
+    def verify_ingestion_session_controls!
+      parts = ingestion_session({}, repeat: true).split(ingestion_call({}), -1)
+      raise Failure, "ingestion warm control must replace exactly two calls" unless parts.length == 3
+
+      observations = ["2", "3", "1/0"].map do |second_value|
+        query = <<~SQL
+          CREATE TEMP TABLE ingestion_harness_counter (value integer NOT NULL);
+          #{parts.fetch(0)}
+          INSERT INTO ingestion_harness_counter VALUES (1);
+          #{parts.fetch(1)}
+          INSERT INTO ingestion_harness_counter VALUES (#{second_value});
+          #{parts.fetch(2)}
+          SELECT 'writes:' || COALESCE(string_agg(value::text, ',' ORDER BY value), '')
+            FROM ingestion_harness_counter;
+        SQL
+        File.binwrite(File.join(@ingestion_evidence, "session-control-#{second_value.tr('/', '-')}.sql"), query)
+        outcome = result(query, role: "postgres", database: "reference_proof")
+        prefix = File.join(@ingestion_evidence, "session-control-#{second_value.tr('/', '-')}")
+        File.binwrite("#{prefix}.stdout", outcome.stdout)
+        File.binwrite("#{prefix}.stderr", outcome.stderr)
+        ingestion_control_records(outcome, failure_expected: second_value == "1/0")
+      end
+      check("ingestion warm control commits successful second writes", observations.fetch(0) == ["writes:1,2"])
+      check("ingestion warm control exposes different second writes", observations.fetch(1) == ["writes:1,3"] && observations.fetch(0) != observations.fetch(1))
+      check("ingestion warm control rolls back only failed second writes", observations.fetch(2) == ["writes:1"])
+    end
+
+    def ingestion_control_records(outcome, failure_expected:)
+      raise Failure, "ingestion session control failed" unless outcome.success
+
+      lines = outcome.stdout.lines.map(&:strip)
+      expected_states = ["state: 00000", failure_expected ? "state: 22012" : "state: 00000"]
+      unless lines.grep(/\Astate:/) == expected_states
+        raise Failure, "ingestion session control SQLSTATE mismatch"
+      end
+      diagnostics_match = if failure_expected
+                            outcome.stderr.match?(/\AERROR:\s+22012: division by zero\nLOCATION:\s+int4div, int\.c:[0-9]+\n\z/)
+                          else
+                            outcome.stderr.empty?
+                          end
+      raise Failure, "ingestion session control unexpected diagnostic" unless diagnostics_match
+
+      lines.select { |line| line.start_with?("writes:") }
     end
 
     def ingestion_isolated(name, query, source:, role:, variant:)

@@ -237,36 +237,63 @@ an actual dictionary-definition mutation before the successful rerun.
 
 `just --command bash scripts/tests/database-final-test.sh` passed 18 exact-byte
 assertions, including rejection of removed/increased reset bounds and restored
-timeout leakage. `just instruction-drift` passed. The current 105-check result
-does not include or discharge D3's independent ingestion closure proof, which
-is being implemented separately. Full integrated CI/UI, published Sonar and
-GitHub checks are not established by this checkpoint.
+timeout leakage. `just instruction-drift` passed. The 105-check result does not
+include or discharge D3's independent ingestion closure proof. Full integrated
+CI/UI, published Sonar and GitHub checks are not established by this checkpoint.
+
+## Independent D3 Counterexample
+
+The integrated proof on the same `1a9f0f2e...6beb9` final digest now executes
+123 assertions: 122 pass and `ingestion warm-committed required outcome` fails.
+All 105 preceding assertions pass again. The original frozen function retains
+its function GUC in the independent reference; it is not rewritten to D3's
+directive for these behavioral comparisons. Six cold cases match observed
+results, errors, eighteen-table state and caller settings. A second ingestion
+after commit on the same backend fails in both reference and candidate with
+`42P07: relation "tmp_policy_rules" already exists`.
+
+This shared legacy failure neither demonstrates a D3-only regression nor
+fulfills the required usable warm path. The proof retains raw observations and
+explicitly reports `complete=false` and `passed=false`. Its 44 harness assertions
+pass. Independent review found and corrected unconditional rollback of a
+successful second call and insufficient control-error validation. Three live
+transaction controls prove persistence of successful second writes, visibility
+of differing writes and rollback of the expected division-by-zero failure.
+Controls require exact SQLSTATE sequences and diagnostics, rejecting warnings.
+The final source re-review found no further issues in that correction; it is
+not a second independent live rerun.
+Complete branch/helper closure and in-call compiler-setting observations
+remain outstanding. [ADR 579](579-ingestion-policy-temporary-table-lifetime.md)
+presents D4's exact additional temporary-table lifetime delta for approval;
+conditional D3 does not authorize that change. No D4 SQL is implemented, no
+frozen migration is edited, and the final init remains inert and unpublishable.
 
 ## Task Record
 
 - Motivation: Present the two live single-init conflicts and the subsequently
   identified unapproved parity exception without inventing architectural
   consent or treating a normalized-reference comparison as behavioral proof.
-- Design notes: Recommendations above identify exact predecessor constraints,
-  changes, alternatives, and retained boundaries. No prototype or production
-  implementation of D1 or D2 is part of this record. D3 documents an existing
-  local-only prototype exception that must not be published or activated.
-- Test coverage summary: Source evidence is ADR 566's completed 62/64 live
-  proof, not acceptance of these proposals. D3 was found by approval/source
-  review, not a failing live assertion. Proposed acceptance cases are not passes.
+- Design notes: The original proposal identifies predecessor constraints,
+  alternatives and retained boundaries. The approved D1/D2 implementation is
+  recorded in the checkpoint above. D3 remains conditional on independent
+  semantic proof; its local candidate must not be published or activated yet.
+- Test coverage summary: ADR 566's original 62/64 result is historical. The
+  approved D1/D2 checkpoint and subsequent 122/123 integrated result are
+  recorded above; the new D3 warm failure is retained, not accepted as a pass.
 - Observability updates: Retain the two named failures and bounded evidence;
   no runtime telemetry, error contract, or credential handling changes.
 - Status-doc validation: Reviewed the completion goal and ADRs 522, 541, 551,
   and 559. Single-init remains inert; E1 and other retained holds remain held.
 - Risk & rollback plan: D1 explicitly permits stock extension computation and
-  requires exact inventory proof; D2 changes nested reset timing. Both remain
-  unapplied. D3's existing local prototype is held pending approval and proof.
-  Rejecting this ADR leaves current runtime and
-  GitHub unchanged; never repair a sealed baseline in place.
+  requires exact inventory proof; D2 changes nested reset timing. Both are
+  implemented in the inert local finalization only. D3 remains held pending
+  proof, not a second approval of the same conditional substitution. Reverting
+  this task's implementation restores the previous local candidate without
+  touching deployed state or GitHub; never repair a sealed baseline in place.
 - Dependency rationale: No new dependency proposed. Keep the existing pinned
   PostgreSQL tools, extensions, SQLx transport, and canonical recipe surface.
 - Stale-policy check: Reviewed root, data, Rust, devops, and Sonar instructions.
   Tightened data instructions to prohibit publication or activation of the
-  unapproved D3 candidate and to distinguish reference normalization from proof.
+  uncertified D3 candidate and to distinguish reference normalization from proof.
   No accepted ADR, required check, quality threshold, or frozen migration is
   changed by this proposal. Indexes and generated docs are updated.

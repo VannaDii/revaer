@@ -31,6 +31,10 @@ applyTo:
   independent cold/warm ingestion semantics. Reference normalization is not
   semantic proof. The final init remains inert until all cutover gates pass;
   no unrelated role, deadline, package or quality criterion is released.
+  The independent ingestion proof must fail on the retained warm-session
+  counterexample or incomplete scope; ADR 579's proposed correction is held.
+  Candidate/final disposable PostgreSQL cleanup must remove their anonymous
+  volumes as well as containers, never prune unrelated Docker resources.
 
 - `just test-database-baseline-read` exercises the ADR 551 read-only stored-procedure boundary against a caller-provided disposable Postgres service with the same workspace-wide all-feature selection as CI, filtering only the test names. Package-only feature resolution is not equivalent evidence for tracing behavior. It must fail when the service is missing, reject unmanaged databases without initializing them, and retain the frozen migration authority until the coordinated cutover. Baseline errors must never retain raw database messages, role names, or credentials.
 

@@ -510,3 +510,4 @@
 -   [576](576-pinned-ffprobe-fixture-diagnostic.md) - Pinned FFprobe fixture diagnostic
 -   [577](577-runtime-shutdown-event-classification.md) - Runtime shutdown event classification (S1 accepted; S2 held)
 -   [578](578-locked-fixture-diagnostic-disposition.md) - Locked fixture diagnostic disposition (Accepted; exact F1 only)
+-   [579](579-ingestion-policy-temporary-table-lifetime.md) - Ingestion policy temporary table lifetime (Proposed; D4 held)

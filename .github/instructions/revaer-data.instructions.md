@@ -45,6 +45,10 @@ applyTo:
   boundary and D2's function-scoped five-second reset bound are also approved;
   no additional extension grant, timeout increase or frozen-migration edit is
   authorized. Preserve their mutation, failure-path and expiry requirements.
+- ADR 579 D4 remains Proposed. The independently reproduced retained
+  `tmp_policy_rules` failure is not authorization to change its lifetime,
+  repair pooled sessions or accept the error. D3's conditional proof must stay
+  fail-closed, including the original frozen-reference counterexample.
 - Before the ADR 522 cutover, persisted-state behavior changes are blocked from
   the frozen corpus. Complete them before candidate freeze or defer them to a
   direct pre-v1 `init.sql` edit after cutover; do not create another migration.
