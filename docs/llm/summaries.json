@@ -4797,6 +4797,7 @@
     "title": "Media completion evidence ledger",
     "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: The full first-release goal is active; implementation, accepted contracts, local checks, and remote PRs must not be conflated. Decision: Record a bounded outside-in work breakdown with evidence and dependencies. This document selects no architecture, values, or exceptions. Consequences: No row below establishes release readiness. Missing evidence remains work, not an exclusion from the release. Follow-up: The integrating agent reviews this record, attaches exact-revision validation, and assigns reviewed PRs after stack reconciliation.",
     "tags": [
+      "2026-09-10-complete-boundary-audit-and-existing-data-proof",
       "2026-09-10-decision-specific-approval",
       "approved-implementation-and-independent-counterexample",
       "approved-work-integration-checkpoint",
@@ -5012,6 +5013,36 @@
       "task-record"
     ],
     "href": "/adr/580-ingestion-helper-compilation-evidence/"
+  },
+  {
+    "id": "adr/581-stack-boundary-reconciliation",
+    "title": "Stack boundary reconciliation",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: GitHub's displayed PR sizes and branch names do not prove a linear, reviewable stack. ADR 564 identified an unverified PR 99 transition. Decision: Audit all current media PR boundaries and correct the isolated PR 99 reconstruction. Preserve original refs and remote metadata pending full descendant reconciliation. Do not change review or quality criteria. Consequences: The local PR 99 schema regression is corrected, but no remote repair, complete stack validation, source push or merge is claimed. Follow-up: Propagate the existing dependency/security and instruction corrections at their earliest owning boundaries,",
+    "tags": [
+      "pr-99-correction",
+      "task-record",
+      "verified-boundaries"
+    ],
+    "href": "/adr/581-stack-boundary-reconciliation/"
+  },
+  {
+    "id": "adr/582-ingestion-existing-data-evidence",
+    "title": "Ingestion existing-data evidence",
+    "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: Conditional D3 in ADR 569 requires independent semantic evidence. ADR 580 covers initial cold calls and pure helper-first compilation, but not cold calls against data previously created by real ingestion. Decision: Add bounded existing-data proof cases only. Do not modify the frozen migrations, final init, production routines, privileges, caller compilation settings or the existing warm-committed test. D4 remains unapproved. Consequences: The proof now observes real fixture ingestion on one recorded backend and the tested call on a distinct fresh backend. These cases do not demonstrate warm-cache safety or",
+    "tags": [
+      "task-record",
+      "validation-checkpoint"
+    ],
+    "href": "/adr/582-ingestion-existing-data-evidence/"
+  },
+  {
+    "id": "adr/583-ingestion-imdb-conflict-inference",
+    "title": "Ingestion IMDb conflict inference",
+    "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending; D5 is not covered by conditional D3 or held D4 Context: ADR 582 reproduces SQLSTATE 42P10 for real IMDb ingestion on a fresh backend against both the frozen reference and the final candidate. The tested call rolls back rather than committing the external identifier. canonical_external_id_text_uq is a unique index over (canonical_torrent_id, id_type, id_value_text) with predicate id_value_text IS NOT NULL. The IMDb conflict target omits that predicate. Decision: Proposed D5: in the final candidate's public.search_result_ingest_v1 IMDb insert only, add WHERE id_value_text IS NOT NULL immediately after ON CONFLICT (canonical_torrent_id, id_type, id_value_text) and before DO",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/583-ingestion-imdb-conflict-inference/"
   },
   {
     "id": "adr/index",

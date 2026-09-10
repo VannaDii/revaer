@@ -530,3 +530,6 @@
     -   [578: Locked fixture diagnostic disposition (exact F1 accepted)](adr/578-locked-fixture-diagnostic-disposition.md)
     -   [579: Ingestion policy temporary table lifetime (D4 proposed)](adr/579-ingestion-policy-temporary-table-lifetime.md)
     -   [580: Ingestion helper compilation evidence](adr/580-ingestion-helper-compilation-evidence.md)
+    -   [581: Stack boundary reconciliation](adr/581-stack-boundary-reconciliation.md)
+    -   [582: Ingestion existing-data evidence](adr/582-ingestion-existing-data-evidence.md)
+    -   [583: Ingestion IMDb conflict inference (D5 proposed)](adr/583-ingestion-imdb-conflict-inference.md)

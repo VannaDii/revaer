@@ -525,3 +525,29 @@ mutation was used to conceal the missing result.
 - No runtime tests, full CI/UI, package validation or Sonar scan ran here.
 - This is a completed documentation subtask only, not feature completion.
   Parent will review/cherry-pick the commit and remove its completed worktree.
+
+## 2026-09-10 Complete Boundary Audit And Existing-Data Proof
+
+[ADR 581](581-stack-boundary-reconciliation.md) records all 104 current media
+PR boundaries. Base names form one linear chain, but formal membership is split
+into stacks 204 and 202. Only PR 98 fails ancestry. The canonical no-rename,
+binary-rejecting size guard also rejects PR 130's binary deletions and PR 186's
+97,202-line direct diff; GitHub's displayed totals are not sufficient. No remote
+source or stack metadata changed. Current PR 98/99 read-back has no unresolved
+review threads, which does not certify code or other PR feedback.
+
+The isolated PR 99 reconstruction is corrected at `377a082e` with 1,368 changed
+lines against `f87bea0b`. Focused schema tests and strict API lint pass, while
+full CI/UI stop at the old dependency security baseline. A descendant read-only
+phase schema reintroduction remains to reconcile. The original refs are intact;
+no oversized integration history was pushed.
+
+[ADR 582](582-ingestion-existing-data-evidence.md), commit `4c16d775`, extends
+D3 with eight existing-data cold-backend cases and 165 harness assertions.
+The pinned live proof has 149 passing checks out of 151. Both variants retain
+the existing warm `42P07` failure and a new IMDb conflict-inference `42P10`
+failure. [ADR 583](583-ingestion-imdb-conflict-inference.md) proposes narrow D5;
+it is not approved or implemented. D4, S2 and the other exact holds remain open.
+The final candidate digest and frozen migrations are unchanged, and init
+remains inert. Complete integration gates and all release acceptance remain
+required; none of these partial results certifies D3 or the service.
