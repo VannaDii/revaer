@@ -122,6 +122,32 @@ checks. Platform-specific icon support is also not proven by source inspection.
 The known intermediate URL defects and those acceptance obligations remain
 blocking; this task does not run a compiler, synchronizer, browser or media test.
 
+## Corrected Candidate Checkpoint
+
+The later local reconstruction `3892b126` combines the asset conversion with
+its existing hardening successor and brings forward the exact approved
+`1462d18e` release-logo correction. Its parent is `945e81d6`; its complete
+text subtotal is 3,123 lines across 317 changed paths. Independent blob checks
+prove the same 213 binary deletions and the same inventory digest above.
+The UI runtime tree matches `e978793b` exactly, while the repository-root logo
+matches the canonical runtime logo and the approved release correction.
+
+The candidate's Trunk output serves all 22 checked SVG URLs over HTTP with
+correct MIME type and exact source bytes; icon, manifest, tile and DataTables
+references pass. Full UI validation passes 101 tests. Follow-up `0d725dce` adds
+three malformed-asset regression tests without changing production code. Full
+CI then passes, including all 16 package coverage gates, but 40 shutdown WARN
+records remain. Mobile/platform-icon acceptance is not claimed. This improves
+the implementation evidence but does not authorize a
+binary exception or establish all visual/feature-preservation requirements.
+
+The original/replay identities in the proposal manifest remain historical and
+are not silently replaced. Neither `3892b126` nor `0d725dce` is covered by the
+proposed exception:
+its complete boundary must be added to a revised manifest and the exact consent
+request reviewed before any exception can apply. No approval has been received
+for any representation, and the unchanged guard still rejects this candidate.
+
 ## Options And Recommendation
 
 1. **Preserve the current block.** Make no policy change. Both exact asset

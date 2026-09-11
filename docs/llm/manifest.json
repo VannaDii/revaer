@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-10T23:22:48.146736+00:00",
+  "generated": "2026-09-11T00:10:44.432010+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5022,6 +5022,7 @@
       "title": "Stack boundary reconciliation",
       "summary": "Status: Recorded Date: 2026-09-10 Operator approval: Not applicable: nonarchitectural task record Context: GitHub's displayed PR sizes and branch names do not prove a linear, reviewable stack. ADR 564 identified an unverified PR 99 transition. Decision: Audit all current media PR boundaries and correct the isolated PR 99 reconstruction. Preserve original refs and remote metadata pending full descendant reconciliation. Do not change review or quality criteria. Consequences: The local PR 99 schema regression is corrected, but no remote repair, complete stack validation, source push or merge is claimed. Follow-up: Propagate the existing dependency/security and instruction corrections at their earliest owning boundaries,",
       "tags": [
+        "corrected-asset-owner-and-next-stack-segment",
         "dependency-and-ui-checkpoint",
         "exact-foundation-validation-and-immediate-replay",
         "integrated-validation-and-cleanup",
@@ -5069,6 +5070,7 @@
       "summary": "Proposes a one-deliverable, immutable-blob deletion exception to the changed-line guard; records no consent, implementation, asset acceptance, or merge authority.",
       "tags": [
         "asset-preservation-evidence-and-limits",
+        "corrected-candidate-checkpoint",
         "exact-approval-question",
         "exact-boundaries",
         "options-and-recommendation",

@@ -253,6 +253,66 @@ fixture cleanup passes. Committed refs, the reusable tool-only image and nonmedi
 evidence remain. The documentation checkpoint passes link, drift and whitespace
 checks; no full-gate result is attributed to this documentation-only revision.
 
+## Corrected Asset Owner And Next Stack Segment
+
+The local asset deliverable now spans `945e81d6..0d725dce`. Commit `3892b126`
+consolidates the existing conversion and hardening commits; `0d725dce` adds
+three regression tests and their task note. Runtime UI bytes match the existing
+hardening output, while the root logo and equality gate bring forward the exact
+approved `1462d18e` correction. No new runtime architecture, dependency, feature
+removal or scanner criterion is introduced.
+
+The unchanged canonical guard still rejects the exact 213 binary deletions.
+Their prior blobs, SHA-256 values and byte lengths match ADR 585's inventory;
+the full text subtotal is 3,191 changed lines. Neither historical nor corrected
+representation has an approved binary exception. ADR 585's original manifest
+is not silently extended to cover these new heads.
+
+Trunk release-output HTTP verification passes for 22 SVG URLs, exact source
+bytes/MIME types, icon/manifest/tile references, DataTables paths and root-logo
+equality. Full UI at `3892b126` passes 101 tests, including route-coverage
+teardown. Desktop dashboard inspection confirms rendering of the logo and queue
+images, not comprehensive visual, mobile or platform-icon acceptance.
+
+Initial CI found a dedicated database startup race, then an E0463 dependency
+artifact failure during coverage. The database became ready and a clean
+coverage rebuild completed all tests without that compiler error. It exposed
+asset-sync coverage below 90%; the new tests assert nine malformed SVG cases,
+both valid namespace quote styles and legacy/incomplete DataTables URL sets.
+All 36 library tests, the binary test and formatting pass. Full CI at
+`0d725dce` exits zero, including all 16 package coverage gates and release build.
+LCOV has 169 source records, 58,808 executable lines and 54,904 covered lines;
+the asset-sync library covers 951/1,030 lines. The 40 runtime shutdown WARN
+records remain; this is not warning-free or published-Sonar acceptance.
+Final exact-revision `just test-native` and `just ui-e2e` both exit zero:
+94 native-library unit tests, seven build-contract tests, three enabled native
+integration tests and all 101 end-to-end tests pass. Their nonmedia logs and
+route-coverage records are retained separately from the earlier revision.
+
+Twelve following commits are reconstructed through `cd39407f`: the two prior
+quality/database descendants and ten originals through managed-workspace
+lifecycle. The incoming Sonar refactor now preserves the already-established
+run-derived database bindings and one 1 GiB allocation per service. Original
+release-JavaScript coverage steps are restored against the retained real release
+configuration recipe; only rejected stub-specific instrumentation remains absent.
+The recipe produces positive LCOV for 71/71 lines (63 real configuration lines,
+eight smoke-script lines). This is local coverage, not a published Sonar result.
+
+All twelve individual size gates pass (largest 6,980/9,999), as do workflow
+regression/live policy, instruction drift, shell syntax and whitespace checks.
+The final rebase preserves every patch and adds only the parent's 64 test lines
+and four ADR lines. Installed npm graph/audit evidence remains applicable to
+byte-identical dependency inputs. Full compiler/UI gates for the descendants
+are not claimed. Original and intermediate refs and exact maps are retained.
+
+The completed agent, intermediate replay and asset validation worktrees are
+removed; all validation processes have terminated. Dedicated database/run
+containers, ignored database storage and test media are removed; canonical
+fixture cleanup passes. Private nonmedia evidence is under the dated asset-owner and
+next-stack directories in `/private/tmp`. D4/D5/S2 remain held, the frozen
+database authority is unchanged, and no GitHub source, review, stack or check
+state has been mutated. The primary checkout remains untouched.
+
 ## Task Record
 
 - Motivation:
