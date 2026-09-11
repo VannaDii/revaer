@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-11T08:44:38.150957+00:00",
+  "generated": "2026-09-11T08:53:17.008439+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5029,6 +5029,7 @@
         "execution-and-api-boundary-validation",
         "integrated-validation-and-cleanup",
         "linux-foundation-and-eight-commit-replay",
+        "live-stack-and-review-audit",
         "managed-workspace-validation-and-recipe-ownership",
         "phase-boundary-replay-checkpoint",
         "pr-99-correction",

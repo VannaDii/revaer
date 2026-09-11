@@ -649,6 +649,44 @@ instruction drift and whitespace checks pass; all 1,142 links pass. The book
 builds with the existing large-search-index WARN, not
 warning-free acceptance. The proposed decision remains local for review.
 
+## Live Stack And Review Audit
+
+The September 11 GitHub CLI/API snapshot contains 104 open `stack/media3-*`
+PRs in one branch-name chain, PR195 through PR194, with no cycles, forks or
+parent-head/base-ref SHA mismatches. All have conventional titles and VannaDii
+assigned. The separate single-PR `stack/validation-*` branch is not counted as
+another media chain. This is topology evidence, not Git ancestry or acceptance.
+
+The unchanged canonical `just stack-changed-lines` guard was run on every live
+base/head SHA: 101 pass; PR98 fails at 14,940 lines and its base is not an
+ancestor of its head; PR130 fails on a binary/uncountable favicon entry; PR186
+fails at 97,202 lines. These remain delivery blockers. No binary/counting
+exception, retargeting, force push or ruleset mutation was performed.
+
+Complete review-thread pagination for all 104 media PRs reports 58 threads,
+all resolved, and 69 submitted reviews. No Copilot-authored review or pending
+review request was returned. Resolved threads do not prove the unpublished
+reconstruction was reviewed or that full review quality is satisfied. PR195
+still targets the old `37062266` head; its green checks do not certify the new
+local branches. The live metadata and all canonical guard logs are retained
+under `/private/tmp/revaer-live-stack-evidence-20260911`.
+
+The documented Copilot bot login was requested on PR195 through the reviewer
+API. Independent readback showed no retained request or completed review.
+GitHub's introspection-confirmed `requestReviewsByLogin` mutation was then
+called with its dedicated bot field and union mode; it acknowledged the request,
+but readback again returned zero requests and no completed review. No request
+fulfillment is claimed. Do not fan out or repeat acknowledged-but-unretained
+requests without new evidence; repository/account availability needs checking.
+The official API usage reference is
+[GitHub's code-review guide](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review).
+PR monitoring used CLI/API only, not browser automation.
+
+C1 in ADR586 remains proposed and unapproved. This audit neither implements
+that policy nor supplies any other held architectural approval. The primary
+checkout is untouched; no test database, media, runtime server or build cache
+was created. Full service, package, Sonar and review acceptance remain open.
+
 ## Task Record
 
 - Motivation:
