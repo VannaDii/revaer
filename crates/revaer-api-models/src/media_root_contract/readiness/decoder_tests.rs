@@ -69,3 +69,35 @@ fn standalone_kind_rows_require_an_object_and_coherent_counts() -> Result<(), Bo
     }
     Ok(())
 }
+
+#[test]
+fn json_decoder_rejects_tagged_unit_kind_objects() -> Result<(), Box<dyn Error>> {
+    let mut accepted = Vec::new();
+    for (index, kind) in ["source", "output", "workspace", "backup", "quarantine"]
+        .into_iter()
+        .enumerate()
+    {
+        let mut input = serde_json::from_str::<serde_json::Value>(&document(ROW, ""))?;
+        input["kinds"][index]["kind"] = serde_json::json!({(kind): null});
+        match serde_json::from_str::<RootCatalogReadinessResponse>(&serde_json::to_string(&input)?)
+        {
+            Ok(response) => {
+                let serialized = serde_json::to_value(response)?;
+                accepted.push(format!(
+                    "{} -> {}",
+                    input["kinds"][index]["kind"], serialized["kinds"][index]["kind"]
+                ));
+            }
+            Err(error) => assert!(
+                error
+                    .to_string()
+                    .starts_with("media root readiness is invalid")
+            ),
+        }
+    }
+    assert!(
+        accepted.is_empty(),
+        "tagged unit kind objects were accepted: {accepted:?}"
+    );
+    Ok(())
+}

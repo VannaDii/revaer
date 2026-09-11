@@ -109,7 +109,7 @@ pub enum RootCatalogReadinessState {
     AttestationInvalid(RootAttestationFailure),
     /// Both stages are ready, including a valid catalog with zero slots.
     Ready {
-        /// Positive catalog-wide generation, bounded to PostgreSQL `bigint`.
+        /// Positive catalog-wide generation, bounded to `PostgreSQL` `bigint`.
         generation: NonZeroU64,
     },
 }

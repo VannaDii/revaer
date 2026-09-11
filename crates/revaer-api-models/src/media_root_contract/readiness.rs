@@ -10,7 +10,7 @@ mod state;
 pub use state::{RootAttestationFailure, RootCatalogReadinessState, RootSourceFailure};
 
 /// A root role in ADR 557's fixed source-to-quarantine order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RootKind {
     /// Descriptor-bound input media.
@@ -23,6 +23,35 @@ pub enum RootKind {
     Backup,
     /// Isolated failed output when required by policy.
     Quarantine,
+}
+
+impl<'de> Deserialize<'de> for RootKind {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer
+            .deserialize_str(RootKindVisitor)
+            .map_err(|_| de::Error::custom(RootReadinessError))
+    }
+}
+
+struct RootKindVisitor;
+
+impl de::Visitor<'_> for RootKindVisitor {
+    type Value = RootKind;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a root-kind string")
+    }
+
+    fn visit_str<E: de::Error>(self, value: &str) -> Result<RootKind, E> {
+        match value {
+            "source" => Ok(RootKind::Source),
+            "output" => Ok(RootKind::Output),
+            "workspace" => Ok(RootKind::Workspace),
+            "backup" => Ok(RootKind::Backup),
+            "quarantine" => Ok(RootKind::Quarantine),
+            _ => Err(E::custom(RootReadinessError)),
+        }
+    }
 }
 
 const ROOT_KIND_ORDER: [RootKind; 5] = [
@@ -142,7 +171,7 @@ impl RootCatalogReadinessResponse {
     /// Validate a complete source/attestation state and ordered count snapshot.
     ///
     /// # Errors
-    /// Rejects generations above PostgreSQL's positive `bigint` range, rows not
+    /// Rejects generations above `PostgreSQL`'s positive `bigint` range, rows not
     /// in the five-kind order, counts above 256, destructive counts exceeding
     /// binding counts, binding counts exceeding attested counts, and nonzero
     /// counts when no active generation exists.
