@@ -8,7 +8,8 @@
   [ADR 461](461-adr-task-record-status-semantics.md) to put every new routine
   task record in the ADR catalogue. Approval/status distinctions and historical
   records remain intact.
-- Implementation status: In progress; documentation implementation does not
+- Implementation status: Policy/documentation implemented in `d5662941`;
+  integration validation remains blocked. Acceptance of this decision does not
   establish completed verification or delivery of the media feature.
 
 ## Context And Decision
@@ -72,9 +73,16 @@ for documentation-only work and no historical pass certifies this change.
   link the approval register, verification matrix and existing ledger; preserve
   all historical records. Correct the spec's stale assertion that no operator
   decisions remain, without altering included scope.
-- Test coverage summary: Pending integrated documentation/index, policy and
-  required `just ci` / `just ui-e2e` results. No production code or criteria
-  changed. Exact results will be recorded before this task is handed back.
+- Test coverage summary: Documentation index, instruction drift, whitespace and
+  all 1,241 links passed. The book builds but retains its large search-index
+  WARN. Governance `d5662941` changes no production code or criteria. Its Linux
+  CI exposed three existing mode-conversion lint errors, corrected separately
+  in [the portability record](../tasks/2026-09-11-root-catalog-mode-portability.md).
+  On source `c8d83bf1`, full `just ci` exited zero with all 18 Rust package
+  coverage thresholds met, but eight config-watcher shutdown WARN lines remain.
+  Full `just ui-e2e` exited one: 46 passed, one failed, 61 not run, plus missing
+  phase/readiness route coverage in teardown. Do not claim a clean handoff,
+  package acceptance, published Sonar coverage or release completion.
 - Observability updates: No runtime telemetry change. The verification matrix
   records measurements needed before numerical targets can be proposed.
 - Status-doc validation: Reviewed the specification's open-question section,
@@ -90,5 +98,15 @@ for documentation-only work and no historical pass certifies this change.
   contradiction between routine records and architectural decisions; added the
   missing stale-policy section to the ADR template. Existing gate policies and
   operational source-of-truth files remain unchanged.
-- Cleanup: Work occurs in owned isolated worktrees; primary checkout conflicts
-  are preserved. Final resource and media cleanup remains to be recorded.
+- Cleanup: Both completed agent worktrees were removed. The canonical fixture
+  cleanup ran; owned validation containers and database volumes were removed.
+  Final integration-worktree cleanup follows the retained fast-forward. Primary
+  checkout conflicts and separately pending architecture remain untouched.
+
+### Retained Evidence
+
+Local reports and raw coverage are retained outside temporary worktrees at
+`artifacts/media-verification/2026-09-11-delivery-governance` in the primary
+checkout, including initial failures and successful retries. This ignored
+directory is local evidence, not a published CI artifact or Sonar acceptance.
+Final documentation-only result updates do not change the tested source.

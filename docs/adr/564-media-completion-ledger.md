@@ -27,7 +27,11 @@ not current completion claims. All L1-L10 capabilities remain open.
 - [Execution records](../tasks/index.md): bounded ongoing work without new ADRs
   for every implementation iteration.
 - [Root catalog mode portability](../tasks/2026-09-11-root-catalog-mode-portability.md):
-  bounded follow-through on Linux CI diagnostics; not root binding or cutover.
+  bounded follow-through on Linux CI diagnostics; 59 focused tests pass on each
+  of Linux/macOS arm64. Source `c8d83bf1` completes `just ci` with eight retained
+  watcher WARN lines, while full E2E still fails profile creation (201 expected,
+  400 received): 46 passed, one failed, 61 not run, plus teardown coverage error.
+  This is not root binding, cutover, published Sonar or package acceptance.
 - Latest retained integration before this documentation change: `f38e6a79`.
   [ADR 581](581-stack-boundary-reconciliation.md) records newer local boundaries
   and the 2026-09-11 remote audit. Older GitHub diff counts below used different
