@@ -505,6 +505,44 @@ The book builds with the existing large-search-index WARN (12,011,486 bytes).
 No source push, remote criteria mutation or change to the primary checkout is
 made by this checkpoint.
 
+## Exact Shared-Foundation Acceptance Evidence
+
+At `004974ec`, full isolated Linux arm64 `just ci` exits zero. This is new
+evidence on the exact 7,060-line reconstructed boundary, not inherited from the
+later wired candidate. Rust LCOV contains 208 sources, 79,537 line records and
+74,312 covered lines. The real fan-out fixture passes; the separately prepared
+fixture suite remains unexecuted by this ordinary invocation. Forty WARN lines
+remain, so full warning-free acceptance and published Sonar are still open.
+
+The same unchanged source passes explicit native tests (94 unit, seven
+build-contract and three integration tests) followed by full `just ui-e2e`:
+101 tests pass, process exit zero, no out-of-test or teardown failure. Actual
+JavaScript LCOV contains 54 sources, 4,382 lines and 3,866 covered lines. Source
+and both generated API artifacts remain clean. No media HTTP operation is
+introduced at this shared-library boundary; this result does not fix the
+later wired candidate's profile-creation failure or prove the full service.
+
+The first canonical database startup failed with an unexpected SSL response;
+the same owned container initialized successfully on retry without source or
+criteria changes. Both startup logs and the final CI/native/E2E logs are
+retained under `/private/tmp/revaer-service-foundation-evidence-20260911`, with
+coverage and application logs. The dedicated database container and storage
+are removed; canonical fixture cleanup passes and no test media remains.
+The completed validation worktree is removed with its branch retained. This
+checkpoint passes documentation indexing, instruction drift and whitespace;
+all 1,139 documentation links pass. The book builds with the existing large
+search-index WARN (12,023,869 bytes), not warning-free acceptance.
+
+S1 placement review found different lifecycle contexts in the earlier
+foundation and later wired candidate. Neither the configuration-watcher await
+nor absent graceful shutdown may be imported merely to copy donor tests.
+The approved immediate-stop classification can be staged at its existing wired
+owner, leaving unrelated lifecycle behavior intact. Its implementation remains
+separate from this tested foundation; S2 remains held. The next configuration
+schema group may now be reconstructed with both artifacts and source builders
+synchronized, without premature route registration. These preparations do not
+authorize a source push or claim package, Sonar, review or service completion.
+
 ## Task Record
 
 - Motivation:

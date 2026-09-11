@@ -5022,6 +5022,7 @@
       "corrected-asset-owner-and-next-stack-segment",
       "dependency-and-ui-checkpoint",
       "exact-foundation-validation-and-immediate-replay",
+      "exact-shared-foundation-acceptance-evidence",
       "execution-and-api-boundary-validation",
       "integrated-validation-and-cleanup",
       "linux-foundation-and-eight-commit-replay",
