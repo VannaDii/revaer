@@ -3,6 +3,13 @@
 - Status: {Proposed|Accepted|Recorded|Superseded}
 - Date: {YYYY-MM-DD}
 - Operator approval: {Pending|approval evidence and date|Not applicable: nonarchitectural task record}
+- Supersedes: {None|exact predecessor ADR and constraints replaced}
+- Implementation status: {Not started|In progress|Blocked|Verified; evidence below}
+
+New ADRs record architectural decisions. Use [the task template](../tasks/template.md)
+for routine execution records. `Recorded` remains valid for historical
+nonarchitectural ADRs; it is not architectural approval.
+
 - Context:
   - What problem are we solving?
   - What constraints or forces shape the decision?
@@ -32,3 +39,5 @@
   - Operational risks and the simplest rollback path if the change regresses.
 - Dependency rationale:
   - New dependencies added, why they were chosen, and alternatives considered.
+- Stale-policy check:
+  - Instruction files reviewed, drift found, and contradictions or stale references removed.

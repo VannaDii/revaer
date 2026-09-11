@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-13
 - Operator approval: Option B approved wholesale by the operator on 2026-08-15: "I approve the ADRs as they are now and I'm resuming your goal."
+- Partially superseded: [ADR 587](587-evidence-led-delivery-governance.md) replaces the requirement to create new routine task records in the ADR catalogue. This record's approval/status distinctions and historical paths remain valid.
 - Context:
   - `AGENTS.md` requires every task to persist a task record as an ADR.
   - Architectural decisions require explicit operator approval, while routine corrective tasks still need durable records without manufacturing an architectural approval event.

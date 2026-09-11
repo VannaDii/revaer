@@ -2747,6 +2747,10 @@ Additional media-specific gates:
 
 ## Open Questions
 
-No unresolved operator decisions remain in this plan. Future implementation may
-discover engineering tradeoffs, but those should be handled through ADRs rather
-than by reintroducing ambiguous behavior into this document.
+The included feature scope remains binding. Implementation has identified
+decision-specific holds recorded in the [approval register](docs/media-approval-register.md)
+and linked ADRs; their resolution must not be inferred from this specification,
+passing checks, or general approval to continue. Present newly discovered
+architectural choices through Proposed ADRs before affected implementation.
+The [completion ledger](docs/adr/564-media-completion-ledger.md) tracks delivery
+and evidence separately from approval.

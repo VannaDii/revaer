@@ -5,6 +5,10 @@
 -   [Phase One Remaining Spec](phase-one-remaining-spec.md)
 -   [Runbook](runbook.md)
 -   [Release Checklist](release-checklist.md)
+-   [Media Approval Register](media-approval-register.md)
+-   [Media Release Verification](media-release-verification.md)
+-   [Execution Records](tasks/index.md)
+    -   [Task Template](tasks/template.md)
 
 ## Web UI
 
@@ -536,3 +540,4 @@
     -   [584: Canonical root identity paths](adr/584-canonical-root-identity-paths.md)
     -   [585: Fixed binary deletion review (Proposed)](adr/585-fixed-binary-deletion-review.md)
     -   [586: Compliance manifest failure boundary (Proposed)](adr/586-compliance-manifest-failure-boundary.md)
+    -   [587: Evidence-led delivery governance](adr/587-evidence-led-delivery-governance.md)

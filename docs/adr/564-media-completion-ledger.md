@@ -14,6 +14,45 @@
 
 ## Evidence Boundary
 
+### Current Delivery Entry Point (2026-09-11)
+
+The operator approved the evidence-led delivery recommendations in
+[ADR 587](587-evidence-led-delivery-governance.md). This remains the single
+capability-to-evidence ledger; earlier checkpoints below are dated history,
+not current completion claims. All L1-L10 capabilities remain open.
+
+- [Approval register](../media-approval-register.md): decision scope and retained holds.
+- [Release verification matrix](../media-release-verification.md): journey,
+  preservation, package, maintenance, and operating-envelope evidence required.
+- [Execution records](../tasks/index.md): bounded ongoing work without new ADRs
+  for every implementation iteration.
+- Latest retained integration before this documentation change: `f38e6a79`.
+  [ADR 581](581-stack-boundary-reconciliation.md) records newer local boundaries
+  and the 2026-09-11 remote audit. Older GitHub diff counts below used different
+  comparison surfaces and must not replace canonical per-base/head checks.
+
+### Active Delivery Order
+
+| Priority / Scope | Next Concrete Result | Exit Evidence / Current Constraint |
+| --- | --- | --- |
+| First: L1-L3, then L4 manual discovery and L6 dry-run | Complete approved init/root/profile integration through the actual authenticated API/UI. | Pristine init, stored-procedure binding, profile creation, portable configuration and a real dry-run with unchanged originals. D3 evidence is incomplete; D4/D5 remain pending. Do not soften the reproduced profile-creation failure. |
+| Independent prerequisite: L5/L10 | Establish exact native/package identity and approved broker evidence. | Linux amd64 and arm64 image digests, native closure, containment and environment evidence. E1 exact values remain held; C1 remains a separate startup-policy decision. |
+| Next: L7-L9 | Run one configured transformation through verification, replacement and crash recovery, then close the full included operation matrix. | Real output inspection plus filesystem/database/audit assertions. Resolve affected ownership, discovery, audio and shutdown holds before activation. |
+| Merge closure: L10 | Publish verified deliverables in dependency order, retiring redundant unpublished candidates only after preservation is proved. | Exact diff/ancestry/size, full local gates, applicable remote checks, positive published Sonar coverage, actual review state, and resolved feedback. No current release or merge acceptance is established. |
+
+For each L row, attach requirement-level evidence progressively using the
+following fields; do not mark a whole row complete from a representative test:
+
+| Requirement / Spec Anchor | Owner / PR | Implemented At | Locally Verified At | Package Verified At | Merged At | Remaining Limitation |
+| --- | --- | --- | --- | --- | --- | --- |
+| Pending expansion for every included requirement | Unassigned until exact stack mapping | Source commit plus files, or not implemented | Source commit, dirty delta, Just command, full result and evidence path, or not run | Same source, platform, immutable image digest and report, or not run | Merge commit and remote gate/review readback, or unmerged | Explicit missing proof or decision |
+
+The field row is a required format, not fabricated evidence. The detailed
+acceptance mapping remains work; no percentage-complete claim follows from
+this documentation. The first operator slice does not exclude later features.
+
+### Historical Source Inspection
+
 Source inspection is pinned to local integration
 `78cec0c0d8b7759847a29cb11402924a24bf432c`, the base of this documentation branch.
 Links below refer to that tree unless explicitly marked as a parent checkpoint.

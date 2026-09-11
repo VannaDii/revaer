@@ -91,11 +91,14 @@
 
 ## 5) Task Record And ADR Rules
 
-- Every task persists a task record alongside the change as an ADR under [`docs/adr/`](./docs/adr/).
-- Start from [`docs/adr/template.md`](./docs/adr/template.md), number sequentially, and keep the file name concise and searchable.
+- Every task persists a concise execution record alongside the change under [`docs/tasks/`](./docs/tasks/index.md), using [`docs/tasks/template.md`](./docs/tasks/template.md) and a dated, searchable file name. Update an existing record for continued work on the same deliverable instead of creating a record for each iteration.
+- Architectural decisions belong under [`docs/adr/`](./docs/adr/). Start from [`docs/adr/template.md`](./docs/adr/template.md), number sequentially, and keep the file name concise and searchable. An ADR may contain its implementation record; do not duplicate the same evidence in a separate task record.
+- Agents MUST NOT make architectural decisions without explicit operator agreement and approval. Present the problem, options, recommendation, consequences, rollback, and exact requested scope in a Proposed ADR before affected implementation. The narrow internal-refinement boundary in [ADR 559](./docs/adr/559-media-approval-delta.md#g1-architecture-versus-implementation-detail) remains binding; ambiguous changes require approval.
 - Architectural decisions use `Proposed` until the operator gives explicit, decision-specific approval. Only then may the ADR use `Accepted`, and its operator-approval field must record the approval evidence and date.
-- Completed nonarchitectural task records use `Recorded` with `Operator approval: Not applicable: nonarchitectural task record`. `Recorded` documents completed corrective work; it does not imply an architectural decision or operator approval.
+- Nonarchitectural task records use `In progress` or `Blocked` while incomplete and `Recorded` only after the completion rule is satisfied, with `Operator approval: Not applicable: nonarchitectural task record`. Record implementation and validation separately; accepted architecture is not completed work.
+- Existing historical nonarchitectural ADRs retain their paths and `Recorded` status. Do not move, renumber, delete, or reinterpret historical approval evidence as part of this separation.
 - `Superseded` identifies a record replaced by a later ADR and must name the replacement. Do not use status changes to imply approval that was not given.
+- Keep decision status, dated operator evidence, exact scope, conditions/expiry, superseded constraints, and affected deliverables in the [media approval register](./docs/media-approval-register.md). It is a navigation register, not an independent approval source. Conversation silence, goal resumption, agent delegation, and passing checks never release a hold. Routine records cannot authorize architecture or criteria exceptions.
 - Every task record must include:
   - Motivation
   - Design notes
@@ -109,3 +112,16 @@
   - whether drift was found
   - which contradictions or stale references were removed
 - Update [`docs/adr/index.md`](./docs/adr/index.md) and [`docs/SUMMARY.md`](./docs/SUMMARY.md) in the same change that adds the ADR.
+- Add routine records to [`docs/tasks/index.md`](./docs/tasks/index.md) and `docs/SUMMARY.md`; keep generated documentation indexes current through the existing Just command surface.
+
+---
+
+## 6) Delivery And Release Evidence
+
+- Use the complete operator journey to order deliverables. The [media completion ledger](./docs/adr/564-media-completion-ledger.md) is the single requirement-to-evidence tracker; the specification and approved ADRs remain scope authority. A working vertical slice is a milestone, not permission to omit remaining included features.
+- Prioritize the next mergeable deliverable and limit active work to its prerequisites plus genuinely independent approved tasks. Delegate disjoint ownership in isolated worktrees; do not multiply speculative branches, competing architecture, or duplicate investigations.
+- Keep one linear, outside-in PR stack. Conventional commit-style titles are mandatory; never use `codex` or variants in branch names or PRs. Assign VannaDii, request Copilot review, read back actual review state, resolve actionable feedback, and run the canonical `just stack-changed-lines` gate against each actual base/head pair. The size limit is a ceiling, not a target; no binary or ancestry exception is implied.
+- Evidence must name the requirement, test/command, exact tested source commit, dirty-tree delta if any, environment/package digest, result including warnings/skips/teardown, and remaining limitations. Track implemented, locally verified, package verified, and merged separately. Revalidate after relevant source/base/package changes; historical passes do not certify a new revision.
+- Preserve originals and prove failure/recovery behavior with real media and persisted-state assertions. The [release verification matrix](./docs/media-release-verification.md) organizes required cases without replacing the specification or existing gates. Delete acquired/generated test media after every turn and remove completed owned worktrees without touching user work or unrelated resources.
+- Publish only evidence-backed support claims for codecs, containers, hardware, filesystems, resources, and Linux amd64/arm64 packages. Measure operator outcomes and present evidence-backed numerical reliability/resource targets for approval; do not invent limits or use error budgets to permit corruption or bypass acceptance criteria.
+- Before release, rehearse clean installation, backup/restore, package replacement, and recovery in disposable environments. Finish the approved single-init cutover without changing the current frozen migration authority prematurely. Keep pre-v1 init-only development; obtain approval for the stable-v1 migration contract before subsequent releases must preserve existing user data. No new migration system or reset is authorized by this delivery policy.

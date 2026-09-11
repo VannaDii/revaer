@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-11T08:53:17.008439+00:00",
+  "generated": "2026-09-11T16:25:40.422696+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -3729,7 +3729,7 @@
     {
       "id": "adr/461-adr-task-record-status-semantics",
       "title": "ADR and task-record status semantics",
-      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Option B approved wholesale by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: AGENTS.md requires every task to persist a task record as an ADR. Architectural decisions require explicit operator approval, while routine corrective tasks still need durable records without manufacturing an architectural approval event. Several completed nonarchitectural records used Accepted with Operator approval: Not required, making the status vocabulary ambiguous. Decision: Select Option B: introduce the nonarchitectural Recorded status. Reserve Accepted for architectural decisions with explicit, decision-specific operator approval and dated evidence. Permit",
+      "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Option B approved wholesale by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Partially superseded: [ADR 587](587-evidence-led-delivery-governance.md) replaces the requirement to create new routine task records in the ADR catalogue. This record's approval/status distinctions and historical paths remain valid. Context: AGENTS.md requires every task to persist a task record as an ADR. Architectural decisions require explicit operator approval, while routine corrective tasks still need durable records without manufacturing an architectural approval event. Several completed nonarchitectural records used Accepted with Operator approval: Not required, making the",
       "tags": [
         "implementation-boundary",
         "task-record"
@@ -5102,6 +5102,18 @@
       "href": "/adr/586-compliance-manifest-failure-boundary/"
     },
     {
+      "id": "adr/587-evidence-led-delivery-governance",
+      "title": "Evidence-Led Delivery Governance",
+      "summary": "Status: Accepted Date: 2026-09-11 Operator approval: \"Agreed, make it so\" in direct response to the eight long-term project recommendations, repeated after an interrupted turn. Supersedes: The requirement in root policy section 5 and [ADR 461](461-adr-task-record-status-semantics.md) to put every new routine task record in the ADR catalogue. Approval/status distinctions and historical records remain intact. Implementation status: In progress; documentation implementation does not establish completed verification or delivery of the media feature.",
+      "tags": [
+        "consequences-and-follow-up",
+        "context-and-decision",
+        "exact-approval-boundary",
+        "task-record"
+      ],
+      "href": "/adr/587-evidence-led-delivery-governance/"
+    },
+    {
       "id": "adr/index",
       "title": "ADRs",
       "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",
@@ -5114,7 +5126,7 @@
     {
       "id": "adr/template",
       "title": "{ADR Title}",
-      "summary": "Status: {Proposed|Accepted|Recorded|Superseded} Date: {YYYY-MM-DD} Operator approval: {Pending|approval evidence and date|Not applicable: nonarchitectural task record} Context: What problem are we solving? What constraints or forces shape the decision? Decision: Summary of the choice made. Alternatives considered. Consequences: Positive outcomes. Risks or trade-offs. Follow-up: Implementation tasks. Review checkpoints.",
+      "summary": "Status: {Proposed|Accepted|Recorded|Superseded} Date: {YYYY-MM-DD} Operator approval: {Pending|approval evidence and date|Not applicable: nonarchitectural task record} Supersedes: {None|exact predecessor ADR and constraints replaced} Implementation status: {Not started|In progress|Blocked|Verified; evidence below} New ADRs record architectural decisions. Use [the task template](../tasks/template.md) for routine execution records. Recorded remains valid for historical nonarchitectural ADRs; it is not architectural approval. Context: What problem are we solving? What constraints or forces shape the decision? Decision: Summary of the choice made. Alternatives considered. Consequences: Positive outcomes. Risks or trade-offs. Follow-up: Implementation tasks. Review checkpoints.",
       "tags": [
         "task-record"
       ],
@@ -5223,6 +5235,33 @@
       "href": "/index/"
     },
     {
+      "id": "media-approval-register",
+      "title": "Media Approval Register",
+      "summary": "Decision navigation as of 2026-09-11, based on retained integration f38e6a79 and the later operator approval recorded in ADR 587. Linked ADRs and their exact operator evidence remain authoritative. This register grants no consent and does not certify implementation. Read the complete linked contract before work; conditions and expiries are not discarded by a summary row.",
+      "tags": [
+        "decision-requests",
+        "pending-or-held",
+        "recorded-approvals"
+      ],
+      "href": "/media-approval-register/"
+    },
+    {
+      "id": "media-release-verification",
+      "title": "Media Release Verification Matrix",
+      "summary": "This is an acceptance-work map, not a release certificate or a second status ledger. Source review is pinned to f38e6a791f7a28c98fd7dfdc87155271f69bec9a (2026-09-11). No media, package, recovery, or operator measurement was run for this document. Record results, blockers, owners, and owning PRs in the existing [completion ledger, ADR 564](adr/564-media-completion-ledger.md). The [first-release scope](../MEDIA_TRANSCODING.md#first-release-scope) and [approved resolution, ADR 559](adr/559-media-approval-delta.md#approval-resolution) govern. Grouping below retains every included feature, required fixture case, and packaged-component entry; it does not authorize a dry-run-only release. The spec links retained approval holds; this matrix does not resolve them. Implementation, test presence, a parsed digest, a host conversion, and a green check",
+      "tags": [
+        "exact-package-and-maintenance-evidence",
+        "holds-and-completion",
+        "measurement-candidates",
+        "operating-support-envelope",
+        "operator-journey",
+        "purpose-and-evidence-boundary",
+        "real-media-and-failure-matrix",
+        "recording-and-sequencing"
+      ],
+      "href": "/media-release-verification/"
+    },
+    {
       "id": "phase-one-remaining-spec",
       "title": "Phase One Remaining Engineering Specification",
       "summary": "Deliver a production-ready public interface (HTTP API, SSE, CLI) for torrent orchestration. Ship FsOps-backed artefacts through API, CLI, telemetry, and documentation with demonstrable reliability. Produce release artefacts (containers, binaries, documentation) that satisfy existing security, observability, and quality gates.",
@@ -5326,6 +5365,26 @@
         "verification-artifacts"
       ],
       "href": "/runbook/"
+    },
+    {
+      "id": "tasks/index",
+      "title": "Execution Records",
+      "summary": "Routine execution records retain scope, verification and remaining work without creating architectural approval events. [Root policy](../../AGENTS.md#5-task-record-and-adr-rules) defines their requirements; decisions remain in the [ADR catalogue](../adr/index.md). Continue the same record for iterations on one deliverable. Historical task ADRs retain their paths and are not bulk-migrated here. [Task template](template.md) Current governance implementation and its validation are recorded once in [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record). Media priorities and evidence remain in the [completion ledger](../adr/564-media-completion-ledger.md).",
+      "tags": [],
+      "href": "/tasks/index/"
+    },
+    {
+      "id": "tasks/template",
+      "title": "{Deliverable And Task}",
+      "summary": "Status: {In progress|Blocked|Recorded} Date: {YYYY-MM-DD} Operator approval: Not applicable: nonarchitectural task record Scope / owner / PR: {bounded change, owner, actual reviewed PR or unpublished} Approved authority: {specification and exact approved ADRs; retained holds} Requirement ledger: {existing requirement IDs and links}",
+      "tags": [
+        "motivation-and-design-notes",
+        "observability-and-status-docs",
+        "risk-rollback-and-dependencies",
+        "stale-policy-check-and-cleanup",
+        "test-coverage-summary"
+      ],
+      "href": "/tasks/template/"
     },
     {
       "id": "ui/flows",
