@@ -5101,7 +5101,7 @@
   {
     "id": "adr/587-evidence-led-delivery-governance",
     "title": "Evidence-Led Delivery Governance",
-    "summary": "Status: Accepted Date: 2026-09-11 Operator approval: \"Agreed, make it so\" in direct response to the eight long-term project recommendations, repeated after an interrupted turn. Supersedes: The requirement in root policy section 5 and [ADR 461](461-adr-task-record-status-semantics.md) to put every new routine task record in the ADR catalogue. Approval/status distinctions and historical records remain intact. Implementation status: Policy/documentation implemented in d5662941; integration validation remains blocked. Acceptance of this decision does not establish completed verification or delivery of the media feature.",
+    "summary": "Status: Accepted Date: 2026-09-11 Operator approval: \"Agreed, make it so\" in direct response to the eight long-term project recommendations, repeated after an interrupted turn. Supersedes: The requirement in root policy section 5 and [ADR 461](461-adr-task-record-status-semantics.md) to put every new routine task record in the ADR catalogue. Approval/status distinctions and historical records remain intact. Implementation status: Policy/documentation implemented in d5662941, with the specification consistency correction at 1167f9a6. Integration validation remains blocked. Acceptance of this decision does not establish completed verification or delivery of the media feature.",
     "tags": [
       "consequences-and-follow-up",
       "context-and-decision",

@@ -8,9 +8,10 @@
   [ADR 461](461-adr-task-record-status-semantics.md) to put every new routine
   task record in the ADR catalogue. Approval/status distinctions and historical
   records remain intact.
-- Implementation status: Policy/documentation implemented in `d5662941`;
-  integration validation remains blocked. Acceptance of this decision does not
-  establish completed verification or delivery of the media feature.
+- Implementation status: Policy/documentation implemented in `d5662941`, with
+  the specification consistency correction at `1167f9a6`. Integration
+  validation remains blocked. Acceptance of this decision does not establish
+  completed verification or delivery of the media feature.
 
 ## Context And Decision
 
@@ -121,7 +122,43 @@ rationale, architectural approval, historical records and every quality gate
 remain unchanged. This corrects drift in the approved governance adoption;
 it does not release C1, D4, D5, E1, S2 or the binary-deletion exception.
 
-The correction is under validation in an isolated worktree based on
-`d3d663cd`. Independent review and exact-revision gate outcomes will be recorded
-here before integration. No runtime, database, workflow, scanner or package
-content changes with this follow-up.
+The correction is based on `d3d663cd`; both full gates ran at
+`1167f9a62875dd9e16c12c1561d8b544fa70e407`. Independent static review found no
+policy or approval-boundary regression. Instruction drift and whitespace
+checks passed; all 1,250 documentation links passed. A separate offline
+specification check passed five local link occurrences, including heading
+anchors; its 102 external links were outside that focused check. The book
+build passed with the existing 12,449,931-byte search-index WARN.
+
+Initial CI exited 101 when Docker's 78.2 GiB disk filled: five database tests
+failed with no-space errors. Host storage was not full. After retaining that
+log, only the owned test database was removed. The unchanged CI retry used
+real PostgreSQL on an isolated 8 GiB tmpfs volume and exited zero, including
+all 18 package coverage thresholds and the release build. All 262 data tests
+passed on the retry; eight held-S2 config-watcher WARN records remain. Rust
+LCOV contains 241 source records, 101,635 line records and 94,577 covered lines.
+Script and native coverage evidence is retained. RAM-backed validation is not
+disk-durability, power-loss, performance or release-package proof; unrelated
+Docker storage was not removed, and its capacity issue is not repaired here.
+
+Fresh-database `just ui-e2e` exited one: 46 passed, one failed and 61 did not
+run. Profile creation at `tests/specs/api/media.spec.ts:130` returned 400
+instead of 201; teardown reports unexecuted phase and profile-readiness GET
+routes. Its partial JavaScript LCOV has 56 sources, 5,185 lines and 3,864
+covered lines, not complete workflow coverage. Assertions, feature scope,
+fixture requirements and quality criteria are unchanged. The prepared media
+conversion fixture gate, published Sonar and package acceptance remain open.
+
+No Sonar upload was retried after the earlier permission denial. GitHub CLI
+readback still puts PR 195 at its old `37062266` head with no pending review
+request; those old successful checks do not certify this local source. No
+source push, merge, criteria change or architectural approval is claimed.
+The next provider and database integration remains held on C1 and D4/D5;
+S2 and the other exact holds remain intact.
+
+Logs and nonmedia coverage are retained in the primary checkout under
+`artifacts/media-verification/2026-09-11-governance-reconcile`. The owned test
+databases/volumes and media fixtures were removed; the reviewer is closed.
+Only this evidence record and its generated index change after the tested
+revision. Final source retention and worktree cleanup are recorded in the
+external report; primary user changes remain untouched.
