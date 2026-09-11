@@ -16,6 +16,7 @@ conditions and expiries are not discarded by a summary row.
 | S1 | Approved 2026-09-10, [577](adr/577-runtime-shutdown-event-classification.md#approval-resolution). | Only requested cancellation classification. Unexpected cancellation/panic warnings remain; no watcher termination policy supplied. | Runtime observability. |
 | F1 | Narrowly approved 2026-09-10, [578](adr/578-locked-fixture-diagnostic-disposition.md#approval-resolution). | Exact fixture identity, diagnostic and test-preparation contract. Drift expires it; original evidence remains. No production or Sonar exception. | L7/L10 fixture preparation. |
 | Evidence-led delivery and record separation | Approved 2026-09-11: "Agreed, make it so", [587](adr/587-evidence-led-delivery-governance.md). | Eight preceding delivery recommendations; new routine records separated from architectural ADRs. All existing quality gates and decision holds remain. | Delivery process and verification planning, not runtime policy. |
+| Isolated decision-evidence experiments | Authorized 2026-09-11 in the operator-activated revised goal; exact boundary in [588](adr/588-first-release-decision-package.md#research-authority-and-scope). | Bounded, disposable, unpublished, nonproduction experiments only. Resulting architecture and external uploads still require separate consent. | Consolidated resolution of known holds; no production activation. |
 
 Earlier accepted architectural authority remains linked from
 [559's retained dependencies](adr/559-media-approval-delta.md#remaining-holds)
@@ -29,6 +30,7 @@ retroactive reapproval or an exhaustive historical ADR re-audit.
 | C1 / [586](adr/586-compliance-manifest-failure-boundary.md) | Pending | Typed fatal startup failure for invalid/missing compliance metadata versus an explicitly designed degraded contract. The recommendation prevents the entire service from starting, including unrelated APIs; general delivery approval does not select it. Blocks affected provider/router production wiring. |
 | D4 / [579](adr/579-ingestion-policy-temporary-table-lifetime.md) | Pending | Exact final-init `ON COMMIT DROP` correction for the policy work table; changes legacy transaction behavior. Preserve the warm-session counterexample until approved and fixed. |
 | D5 / [583](adr/583-ingestion-imdb-conflict-inference.md) | Pending | Exact final-init IMDb conflict predicate correction. Shared reference/final failure is not successful parity. |
+| D5 ingestion-family extension / [588](adr/588-first-release-decision-package.md#exact-recommendation-for-review) | Proposed, not approved | Extend the same predicate correction to the independently reproduced TMDB/TVDB ingestion branches. No canonical-merge rewrite or frozen-reference change. |
 | E1 / [558](adr/558-rvb1-native-process-broker-wire-contract.md) | Held | Exact package environment values, paths, HOME ownership and digest with amd64/arm64 evidence. Nine-key isolation approval does not approve candidate bytes or packages. |
 | S2 / [577](adr/577-runtime-shutdown-event-classification.md#s2-bound-investigation-hold-retained) | Held | A defensible shutdown bound and cleanup contract. No arbitrary timeout, process-abort fallback or unproved watcher termination. |
 | Binary deletion exception / [585](adr/585-fixed-binary-deletion-review.md) | Proposed, not approved | Exact binary boundaries only if separately approved; current canonical size/ancestry/binary gates remain unchanged. |
@@ -37,6 +39,10 @@ retroactive reapproval or an exhaustive historical ADR re-audit.
 | Discovery/admission / [516](adr/516-durable-discovery-scheduling-and-versioned-aggregate-identity.md), [535](adr/535-bounded-cancellation-aware-fingerprint-admission.md) | Enumerated choices held | Scheduler/traversal/hash budgets, aggregate encoding/limit semantics and admission values before held behavior is activated. |
 
 ## Decision Requests
+
+The in-progress [consolidated decision package](adr/588-first-release-decision-package.md)
+retains experiment results and the remaining finite investigations. It is not
+yet ready for the consolidated approval request and grants no production consent.
 
 Present a bounded batch only when each choice is ready: problem and reproduced
 evidence, alternatives, recommendation, exact contract delta, blast radius,

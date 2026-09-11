@@ -519,3 +519,4 @@
 -   [585](585-fixed-binary-deletion-review.md) - Fixed binary deletion review (Proposed; no exception approved)
 -   [586](586-compliance-manifest-failure-boundary.md) - Compliance manifest failure boundary (Proposed; C1 pending)
 -   [587](587-evidence-led-delivery-governance.md) - Evidence-led delivery governance (Accepted; runtime holds retained)
+-   [588](588-first-release-decision-package.md) - First-release decision package (Proposed; evidence work in progress)

@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-11T19:37:14.547693+00:00",
+  "generated": "2026-09-11T20:45:32.032449+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5112,6 +5112,24 @@
         "task-record"
       ],
       "href": "/adr/587-evidence-led-delivery-governance/"
+    },
+    {
+      "id": "adr/588-first-release-decision-package",
+      "title": "First-Release Decision Package",
+      "summary": "Experimental candidate designs and values may be evaluated solely to produce evidence; they must remain clearly identified, unpublished, and outside production behavior.",
+      "tags": [
+        "corrected-asset-review-boundary",
+        "database-reproduced-defect-family",
+        "decision-completion-and-delivery-order",
+        "execution-prerequisites",
+        "investigation-completion-contract",
+        "other-decision-investigations",
+        "package-environment-and-compliance-startup",
+        "research-authority-and-scope",
+        "shutdown-reproduced-hazards-and-design-delta",
+        "task-record"
+      ],
+      "href": "/adr/588-first-release-decision-package/"
     },
     {
       "id": "adr/index",

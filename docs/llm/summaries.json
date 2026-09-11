@@ -5111,6 +5111,24 @@
     "href": "/adr/587-evidence-led-delivery-governance/"
   },
   {
+    "id": "adr/588-first-release-decision-package",
+    "title": "First-Release Decision Package",
+    "summary": "Experimental candidate designs and values may be evaluated solely to produce evidence; they must remain clearly identified, unpublished, and outside production behavior.",
+    "tags": [
+      "corrected-asset-review-boundary",
+      "database-reproduced-defect-family",
+      "decision-completion-and-delivery-order",
+      "execution-prerequisites",
+      "investigation-completion-contract",
+      "other-decision-investigations",
+      "package-environment-and-compliance-startup",
+      "research-authority-and-scope",
+      "shutdown-reproduced-hazards-and-design-delta",
+      "task-record"
+    ],
+    "href": "/adr/588-first-release-decision-package/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",

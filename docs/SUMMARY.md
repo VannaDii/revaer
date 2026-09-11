@@ -543,3 +543,4 @@
     -   [585: Fixed binary deletion review (Proposed)](adr/585-fixed-binary-deletion-review.md)
     -   [586: Compliance manifest failure boundary (Proposed)](adr/586-compliance-manifest-failure-boundary.md)
     -   [587: Evidence-led delivery governance](adr/587-evidence-led-delivery-governance.md)
+    -   [588: First-release decision package (Proposed)](adr/588-first-release-decision-package.md)

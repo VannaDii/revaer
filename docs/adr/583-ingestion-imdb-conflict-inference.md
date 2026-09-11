@@ -33,6 +33,18 @@
 
 ## Task Record
 
+### Later Isolated Evidence
+
+The operator's 2026-09-11 revised goal explicitly permits unpublished
+nonproduction decision experiments. The resulting
+[consolidated package](588-first-release-decision-package.md#database-reproduced-defect-family)
+reproduces the IMDb failure and the analogous TMDB/TVDB ingestion failures on
+both untouched reference and current final SQL. Its temporary candidate fixes
+all three with matching partial-index predicates. That package proposes an
+explicit scope extension for review; this original IMDb-only proposal is not
+silently broadened or approved. Canonical-merge changes remain outside it.
+The experiment is not complete D3 proof or production implementation.
+
 - Motivation:
   - Present the newly observed production-path defect before changing the
     approved finalization boundary.

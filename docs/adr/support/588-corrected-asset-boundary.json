@@ -1,0 +1,1065 @@
+{
+  "schemaVersion": 1,
+  "status": "Proposed corrected boundary; not approved; current guard fails",
+  "source": "059cca9d7af584c14fd78c1b920ac821fcb7762d",
+  "base": "945e81d610c320bdb62e3f3eb728e6f0a218e0da",
+  "head": "0d725dce044bea934ec36ca96dc7863bbed2526b",
+  "commits": [
+    "3892b126c8d82c3342ad1168ca4a74476e77c70c",
+    "0d725dce044bea934ec36ca96dc7863bbed2526b"
+  ],
+  "baseTree": "54c59d2829176dadf82ef33db4000ac26bb8b997",
+  "headTree": "a8dffc8a8aa90d9de849b708caa6157fe06b4e6e",
+  "canonicalTextMaximum": 9999,
+  "textChangedLines": 3191,
+  "changedPaths": 317,
+  "textPaths": 104,
+  "binaryPaths": 213,
+  "binaryDeletedBytes": 21064113,
+  "binaryInventorySha256": "3e1e4af169880c3aee57e967a01c58f9d4f368bb7ac9b72666622e7ce1918d7a",
+  "binaryManifest": "docs/adr/support/585-binary-deletions.json#binaryDeletions",
+  "binaryInventoryExactlyEqual": true,
+  "canonicalGuardExit": 1,
+  "textChanges": [
+    {
+      "path": ".github/instructions/devops.instructions.md",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "87aa750b138273e6db3c32054ad09ae430a10c9e",
+      "newOid": "5503151c7e9e470009626893b89cbf5c45e5964c",
+      "added": 2,
+      "deleted": 0
+    },
+    {
+      "path": ".github/instructions/revaer-ui.instructions.md",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "b0a91d6be802785450154888e1f31acd5e499b8e",
+      "newOid": "bf7ccedfa5e01e685f26bd28dcb1af93b3e4a57e",
+      "added": 4,
+      "deleted": 0
+    },
+    {
+      "path": ".github/instructions/sonarqube_mcp.instructions.md",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "fdf6c2383be1069c3a781e05fa66168a024a7228",
+      "newOid": "8537eca298dd70d2c42b92d35306ca1680547ae4",
+      "added": 2,
+      "deleted": 0
+    },
+    {
+      "path": "charts/revaer/Chart.yaml",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "9aa38d526fb4852646c333718bce6edab47b81af",
+      "newOid": "fde89e3a8bf75e7c9eefad1eedc1b7294560b8e6",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "charts/revaer/README.md",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "9137bc496ee3236683670204b885e214bbee4c9f",
+      "newOid": "b761b36a48ca048ead834cbf6f5ea5ec30e7461e",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/browserconfig.xml",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "c5541482230075d4b4800ebbb7ac42fad29e5133",
+      "newOid": "ab374c7ea7b66058a441542118b689749289f0b8",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/index.html",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "df0fada1ae30bf1faa34de59c5e82fa8f179ed7d",
+      "newOid": "5536bce9e979f50cdec36d92f26cfcac57803995",
+      "added": 3,
+      "deleted": 15
+    },
+    {
+      "path": "crates/revaer-ui/manifest.json",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "013d4a6a53334fae827a32824eaf51a889396514",
+      "newOid": "66c43655f4ebb9bcdaec732d860c68d9d0f1c716",
+      "added": 5,
+      "deleted": 35
+    },
+    {
+      "path": "crates/revaer-ui/src/components/shell.rs",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "1ee38dfaf87db79ee591f4f8de1f5857fad0e227",
+      "newOid": "2949277876af7f0cd77a6e5bd2dd8e3be6cc850a",
+      "added": 2,
+      "deleted": 2
+    },
+    {
+      "path": "crates/revaer-ui/src/features/dashboard/logic.rs",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "af0bec07e8d2746747c7663e3482942dab947439",
+      "newOid": "44a660de379881984f5bbdb338c850731e490b20",
+      "added": 4,
+      "deleted": 4
+    },
+    {
+      "path": "crates/revaer-ui/static/icons/app-icon.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "bde40ea39e164ea7bca3659deb0ca243f9e67bff",
+      "added": 27,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/ASSET_LOCK.txt",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "172f822f723cf8ff1d66485e477278fc68d7e814",
+      "newOid": "76c96cffb9c5b4a75d4ae6bedac40cd5991e4879",
+      "added": 3,
+      "deleted": 3
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/assets/app.css",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "3ee0a2fe714d3a9a8621b476e436373524641d0f",
+      "newOid": "8f7d3a8ed8d819da0767c16057aedbcc612fbef4",
+      "added": 9,
+      "deleted": 9
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/1.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "5b828cd51ed355c65b68927db25e4fd84e7e8c70",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/10.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "15ce2488510963fb2bcdcdcce12562759c93ab1b",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/2.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "57b663769970e2fb0d13df4f83e2e035d6f58cfd",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/3.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "11931cde1f66538c3268150ba75006b2bd92c14a",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/4.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "8d8e1dcc425c8a27469df80c6832aeff1348751f",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/5.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "338638f87f88806240d5c5d52f2b5038a21086d2",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/6.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "490752cd8d0a2d00f3009088b7610a4a729ee43a",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/7.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "7e668691aea448e99348c7862b82e14b57b41ddc",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/8.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "31f500fe61ec2557399dc44847a696498a036910",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/apps/ecommerce/products/9.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "70a4406431a98480f0f7637228c3d4058a20d0ca",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/1.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "1f7adc862e80e466305afe70b9891e03456d912a",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/10.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "6db845352db10061ea76000a1479dba25afed294",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/2.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "e9701126c27165387144b8157dec7a1e0bdf7dad",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/3.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "93b787025cc1a1baa46978c8483a28c9613fb118",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/4.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "1d6ecdaef7afd3a259ca714c39734b3bd4e23be0",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/5.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "a85731761bcde67f38b3046c6cf4727dfee8f9cc",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/6.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "bf41624e11c5655b6dcecf5914906fbca1dcb472",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/7.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "f0901875505a459509a9e33e0110c6c5ecda3e4a",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/8.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "c6e54dc7a04800a82594fc9544b82bc6bfb4450f",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/avatars/9.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "e81c146f5dc6684cbdbec1459c4c7159461ef610",
+      "added": 6,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/landing/footer-grainy.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "b63d2c7c3a6a31481786ad63e567ebecf0300a7f",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/landing/hero-bg-gradient.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "ade38d79a99621c03407954544321744e95b4e83",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/landing/showcase-bg-element.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "b6b1a739df99cb9c0d0147b68a0de6213ba2bf86",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/images/landing/showcase-bg-gradient.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "784aaacd55ab9487aabf98847f6ece895ea8cb3b",
+      "added": 7,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/static/nexus/js/components/datatables.js",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "0737e74143596fdbe6f0b5908b2095f8f7fe3a0c",
+      "newOid": "fe9e96a2aaaa5da0d01d14135e1c794794de1825",
+      "added": 50,
+      "deleted": 50
+    },
+    {
+      "path": "crates/revaer-ui/static/revaer-logo.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "981ddc0156ec152d131d2e3901f609be36ffd311",
+      "added": 27,
+      "deleted": 0
+    },
+    {
+      "path": "crates/revaer-ui/tools/asset_sync/src/lib.rs",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "9bffdd1bbb939a42a53fa8b4de7ab45069a64356",
+      "newOid": "ef191ed045cada4214985ec318932660d68a8d8f",
+      "added": 685,
+      "deleted": 19
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/assets/app.css",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "3ee0a2fe714d3a9a8621b476e436373524641d0f",
+      "newOid": "8f7d3a8ed8d819da0767c16057aedbcc612fbef4",
+      "added": 9,
+      "deleted": 9
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/apps/files/dropbox.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "4fe98cd6670156773b889d4f3e8ee88fd0aebe8f",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 11
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/apps/files/google-drive.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "1a67059de05c4954fa19e52d05f9cb64292a5a86",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 10
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/apps/files/mega.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "4e0243a851d6a18b648598aa3b2f39d212eae050",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 11
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/apps/files/one-drive.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "1ddc2829eb28e14bd0a51eb9baa6a37e13085ac6",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 17
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/brand-logo/asana.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "cef98b16e334ac0b9acfd0e9a933bce8f545ad7f",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 5
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/brand-logo/google-mini.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "993ff46ee5a0ddf6bfb745145a7ea94da5e85f2a",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 12
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/brand-logo/hubspot.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "370af0eaf488a3c0716f4be40593d006148969bb",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/brand-logo/notion.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "5db96d0f7f43d4a0bf7d0a67ba5815b7af906cd2",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 7
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/brand-logo/salesforce.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "a44a58cc72c9c799ca135e56309070cb4e79c014",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 8
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/brand-logo/slack.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "2ebfdd9e9c5bded0ec0e798d73bb1f0673844733",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 12
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/brand-logo/webflow.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "f79dcfb49245162d1953365a4f8379c37cd7a8ae",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 5
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/hero-text-underline.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "f6a391c62bdaa109ebf0a9143857bc8d80d53eab",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-alpinejs.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "fa3eeb3d675943e2026311238ccb7529c6d24114",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 4
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-daisyui.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "c202b30752bd78ea372741105b8a15bdc1aaaf7d",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 84
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-js.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "5ab4220116f109bd32dbcb821e190fa99bde3f04",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 6
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-next.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "e81f4c67f53f0584662761935ae57bfaa2cdcc68",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 4
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-nuxt.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "209a7f5cc944cb07dc53151ef020220a603c1e9c",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 10
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-react.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "f568bd42dc22be65b19b586016bd7bd703cdd474",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 6
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-svelte.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "42c9729c90d3a4f1ef5cf0e8a3faa16f3aee4470",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 8
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-tailwind.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "6a9ab499b345a96fdf20ddbb2232bd89016f21e9",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-ts.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "2dcff8fad2c1db764b52e70183b00520ca93a220",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 5
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/logo-vite.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "6b18f56fe8bcb1847db5912652b2acd5d723513a",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 19
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/scalo-logo-dark.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "01fa0250a7d1abf9f8cb3981877a5b3e8283ec4a",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 20
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/scalo-logo-light.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "ab581b89a6f6c25ddb6565b4d0b23c0078e5f11c",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 20
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landing/testimonial-background.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "44bd4695477c4ee055f92a8d42ca403502e43d35",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/landscape/error-404.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "28b2ef6da49fa9e6630ea0526892d29f4d4147e9",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 655
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/logo/logo-dark.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "649d93286f20adc10d1edc5d11b0667c2c70f5eb",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 23
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/html/images/logo/logo-light.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "6ce97eb89c689b52eaed42baf568d3469a21ca6b",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 23
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/apps/files/dropbox.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "4fe98cd6670156773b889d4f3e8ee88fd0aebe8f",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 11
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/apps/files/google-drive.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "1a67059de05c4954fa19e52d05f9cb64292a5a86",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 10
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/apps/files/mega.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "4e0243a851d6a18b648598aa3b2f39d212eae050",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 11
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/apps/files/one-drive.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "1ddc2829eb28e14bd0a51eb9baa6a37e13085ac6",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 17
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/brand-logo/asana.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "cef98b16e334ac0b9acfd0e9a933bce8f545ad7f",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 5
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/brand-logo/google-mini.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "993ff46ee5a0ddf6bfb745145a7ea94da5e85f2a",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 12
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/brand-logo/hubspot.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "370af0eaf488a3c0716f4be40593d006148969bb",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/brand-logo/notion.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "5db96d0f7f43d4a0bf7d0a67ba5815b7af906cd2",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 7
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/brand-logo/salesforce.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "a44a58cc72c9c799ca135e56309070cb4e79c014",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 8
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/brand-logo/slack.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "2ebfdd9e9c5bded0ec0e798d73bb1f0673844733",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 12
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/brand-logo/webflow.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "f79dcfb49245162d1953365a4f8379c37cd7a8ae",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 5
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/hero-text-underline.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "f6a391c62bdaa109ebf0a9143857bc8d80d53eab",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-alpinejs.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "fa3eeb3d675943e2026311238ccb7529c6d24114",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 4
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-daisyui.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "c202b30752bd78ea372741105b8a15bdc1aaaf7d",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 84
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-js.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "5ab4220116f109bd32dbcb821e190fa99bde3f04",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 6
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-next.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "e81f4c67f53f0584662761935ae57bfaa2cdcc68",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 4
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-nuxt.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "209a7f5cc944cb07dc53151ef020220a603c1e9c",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 10
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-react.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "f568bd42dc22be65b19b586016bd7bd703cdd474",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 6
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-svelte.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "42c9729c90d3a4f1ef5cf0e8a3faa16f3aee4470",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 8
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-tailwind.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "6a9ab499b345a96fdf20ddbb2232bd89016f21e9",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-ts.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "2dcff8fad2c1db764b52e70183b00520ca93a220",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 5
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/logo-vite.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "6b18f56fe8bcb1847db5912652b2acd5d723513a",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 19
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/scalo-logo-dark.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "01fa0250a7d1abf9f8cb3981877a5b3e8283ec4a",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 20
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/scalo-logo-light.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "ab581b89a6f6c25ddb6565b4d0b23c0078e5f11c",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 20
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landing/testimonial-background.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "44bd4695477c4ee055f92a8d42ca403502e43d35",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 1
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/landscape/error-404.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "28b2ef6da49fa9e6630ea0526892d29f4d4147e9",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 655
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/logo/logo-dark.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "649d93286f20adc10d1edc5d11b0667c2c70f5eb",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 23
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/public/images/logo/logo-light.svg",
+      "status": "D",
+      "oldMode": "100644",
+      "newMode": "000000",
+      "oldOid": "6ce97eb89c689b52eaed42baf568d3469a21ca6b",
+      "newOid": "0000000000000000000000000000000000000000",
+      "added": 0,
+      "deleted": 23
+    },
+    {
+      "path": "crates/revaer-ui/ui_vendor/nexus-html@3.1.0/src/styles/pages/landing.css",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "1751c0c43abe0d5239deb6f267ed9fd214774e9b",
+      "newOid": "b948e8c924d8d67f942c8418789f8c613e9fdb86",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "docs/adr/031-ui-asset-sync.md",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "ac653f6813fe44ca585566d5c9310e9aaf3976c0",
+      "newOid": "e3f570f14247634975540c6c9c3bf77bdc1576f7",
+      "added": 24,
+      "deleted": 6
+    },
+    {
+      "path": "docs/adr/260-pr-codeql-closeout.md",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "b6caa958725ce6df05da849d9d8a3e8b614ae809",
+      "newOid": "b7229b701b09c938d0aa3968a35ce845c7e70f14",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "docs/adr/296-helm-chart-release-publishing.md",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "269f1b77332a945d937d7e9ac33d63d51e216429",
+      "newOid": "4992fa4c7a08ce685bb6a17c5c75fab9ac558b38",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "docs/release-checklist.md",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "83f8bae9ffb9e9bd0e24d14b6061a7d3aa423db6",
+      "newOid": "857c53e72c3b8ca7f7223fafca9da57244736e1a",
+      "added": 1,
+      "deleted": 1
+    },
+    {
+      "path": "justfile",
+      "status": "M",
+      "oldMode": "100644",
+      "newMode": "100644",
+      "oldOid": "d3c88bc0fd498d61fc701e2b592e827e73a39f44",
+      "newOid": "31247b9766271f710842b20da2ddb28a9dccc2ab",
+      "added": 5,
+      "deleted": 1
+    },
+    {
+      "path": "revaer-logo.svg",
+      "status": "A",
+      "oldMode": "000000",
+      "newMode": "100644",
+      "oldOid": "0000000000000000000000000000000000000000",
+      "newOid": "981ddc0156ec152d131d2e3901f609be36ffd311",
+      "added": 27,
+      "deleted": 0
+    }
+  ]
+}
