@@ -543,6 +543,76 @@ schema group may now be reconstructed with both artifacts and source builders
 synchronized, without premature route registration. These preparations do not
 authorize a source push or claim package, Sonar, review or service completion.
 
+## Synchronized Component Boundaries
+
+The configuration schema child `72f894ae` is 2,855 changed lines over
+`004974ec`, including exactly 2,026 JSON lines across both artifacts. The next
+discovery/job schema child `3de017e0` is 2,678 changed lines, including 2,032
+JSON lines. Independent parsing proves their 30 and 39 added objects match the
+retained donor, preserve every prior object and operation, and resolve all
+internal references. Together they reproduce the donor's complete component
+map. Existing Rust builders and both artifacts remain synchronized; no route,
+provider, SQL, dependency, visibility or criteria change is introduced.
+Each child passes 11 focused OpenAPI tests, actual exporter equality, strict
+scoped compilation/lint, policy, formatting, drift and canonical size checks.
+
+Full isolated Linux arm64 `just ci` passes on each exact child. Each log still
+contains 40 WARN lines, so neither is warning-free acceptance. Configuration
+Rust LCOV has 208 sources, 80,265 lines and 75,040 covered lines; discovery/job
+LCOV has 208 sources, 80,793 lines and 75,568 covered lines. These are local
+executed coverage records, not published Sonar metrics or package validation.
+The configuration child also passes explicit native tests (94 unit, seven
+build-contract and three integration tests) and all 101 full E2E tests with no
+teardown error, exit zero and clean generated artifacts. Its JavaScript LCOV
+contains 54 sources, 4,382 lines and 3,866 covered lines.
+
+The exact discovery/job child subsequently passes the same native counts and
+all 101 full E2E tests, exit zero, with no teardown error or generated artifact
+drift. Its JavaScript LCOV independently has 54 sources, 4,382 lines and 3,866
+covered lines. Both complete logs and coverage streams remain separate under
+the dated private schema evidence directories. No media operation is exposed
+by either schema-only child, so these results do not close the later profile
+creation/root integration failure. The next executable boundary must inject
+the complete provider before exposing its first supported routes.
+
+The initial disposable schema database failed startup with a data-directory
+ownership error. Only its owned storage was repaired; canonical initialization
+then succeeded against the same container. No repository or database-security
+criterion changed. Parent and child validation reuse the same owned worktree
+and caches, with exact-parent evidence retained before advancing the clean
+checkout. The schema agent worktrees are removed and their refs retained.
+After both runs, canonical media cleanup passes, no test media remains, and
+the dedicated database container and storage are removed. The completed
+validation worktree is removed with both committed boundaries retained.
+
+## Staged S1 Classification
+
+The existing wired owner receives the applicable immediate-stop portion of
+operator-approved S1 in `e64df8f6` (333 changed lines). Exact donor predicate and
+message handling classify only locally requested cancelled joins as INFO;
+panics and completed external cancellations remain WARN. Discovery's warning,
+configuration abort/drop, all task ordering and absent graceful lifecycle are
+unchanged. Grace-only donor tests remain with their absent later owner rather
+than importing unused production helpers. This is an incomplete S1 staging,
+not complete shutdown or S2 acceptance.
+
+Follow-up `348a70fc` fixes the real minimal-feature API-router const lint by
+conditionally mounting compatibility routes at the existing call site and
+removing the disabled-feature identity wrapper. Enabled routing and layer
+order are preserved. Seven shutdown tests pass in each feature configuration,
+and all four canonical strict lint commands pass. Prior failed output remains
+retained without suppression. Source and evidence attribution now explicitly
+distinguish the operator's September 10 S1 approval from the parent agent's
+staging choice; delegation is not new architectural consent. The 34-line
+follow-up and original refs are retained; the completed worktree and isolated
+build outputs are removed. Full CI/E2E on this wired correction remains
+required and is not inferred from the independently tested schema branches.
+Checkpoint documentation indexing, instruction drift and whitespace pass;
+all 1,139 links pass. The book builds with its existing large-search-index
+WARN (12,046,152 bytes). No remote source, stack or quality setting is changed;
+the conflicted primary checkout is preserved. D4/D5/S2 and the other exact
+operator holds remain open, as do full-service, package and Sonar acceptance.
+
 ## Task Record
 
 - Motivation:

@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-11T03:25:46.597733+00:00",
+  "generated": "2026-09-11T08:30:42.985287+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5032,6 +5032,8 @@
         "managed-workspace-validation-and-recipe-ownership",
         "phase-boundary-replay-checkpoint",
         "pr-99-correction",
+        "staged-s1-classification",
+        "synchronized-component-boundaries",
         "task-record",
         "verified-boundaries",
         "wired-candidate-and-first-service-boundary"
