@@ -5024,6 +5024,7 @@
       "exact-foundation-validation-and-immediate-replay",
       "integrated-validation-and-cleanup",
       "linux-foundation-and-eight-commit-replay",
+      "managed-workspace-validation-and-recipe-ownership",
       "phase-boundary-replay-checkpoint",
       "pr-99-correction",
       "task-record",

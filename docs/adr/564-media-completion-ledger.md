@@ -551,3 +551,12 @@ it is not approved or implemented. D4, S2 and the other exact holds remain open.
 The final candidate digest and frozen migrations are unchanged, and init
 remains inert. Complete integration gates and all release acceptance remain
 required; none of these partial results certifies D3 or the service.
+
+The later managed-workspace checkpoint in ADR 581 records exact-tree Linux
+arm64 CI, native and 101-test E2E passes at `b5ab8eec` / rewritten `63d1e258`.
+All 18 package coverage gates pass with positive local Rust and script inputs.
+The 40 held shutdown WARN records and missing published Sonar evidence remain;
+these results neither close the integration E2E blocker above nor certify a
+supported release package. Reconstruction continues through `011da317`, with
+the recipe-test fix folded into its owner and every runtime patch preserved.
+No source push or merge is claimed, and all architectural holds are unchanged.

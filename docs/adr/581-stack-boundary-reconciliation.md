@@ -313,6 +313,55 @@ next-stack directories in `/private/tmp`. D4/D5/S2 remain held, the frozen
 database authority is unchanged, and no GitHub source, review, stack or check
 state has been mutated. The primary checkout remains untouched.
 
+## Managed-Workspace Validation And Recipe Ownership
+
+The managed-workspace test delta from original `ba74b3b2` is preserved at
+`00a1bac5`. Full policy exposed a retained exact-tool test reading the root
+Justfile after recipe modularization. Correction `b5ab8eec` reads the effective
+`just --show udeps` recipe, preserving all version, toolchain, invocation and
+rejection assertions. Its three-file delta is 23/9,999 lines; the DevOps clause
+and ADR 478 record accompany it. No criteria or production behavior changes.
+
+The correction is folded into its first owner, `e830333b`, and all 19 following
+commits are replayed through `011da317`. All rewritten per-commit size, drift,
+whitespace and changed-shell checks pass, together with workflow regression,
+live policy/workflow/stack guards and the exact-tool tests. The largest remains
+9,945/9,999. All twelve runtime patches remain exact. The rewritten workspace
+boundary `63d1e258` and tested `b5ab8eec` share tree
+`0813c6dac26a69cd34268795e6a5b32231a92ddd`; history-sensitive checks were run
+separately, not inferred from tree equality. Original refs remain preserved.
+
+Full isolated Linux arm64 `just ci` at `b5ab8eec` exits zero, including all
+18 package coverage gates and the release build. Rust LCOV contains 186 source
+records, 63,976 line records and 59,905 covered lines; generic script coverage
+is retained. The 40 held shutdown WARN records remain. Explicit native tests
+pass: 94 unit, seven build-contract and three enabled native integration tests.
+Full `just ui-e2e` passes all 101 tests and its JavaScript coverage assertions.
+The initial browser installation reported missing optional-browser libraries;
+the isolated tool image is corrected without changing source or test criteria.
+The final full rerun again passes all 101 tests with no missing-library warning.
+JavaScript LCOV contains 54 sources, 4,382 lines and 3,866 covered lines. These
+are the configured Chromium and two API projects, not an all-browser claim.
+
+PR 195 remains assigned to VannaDii, with 30 successful checks on its old
+published head `37062266`, not this local reconstruction. A Copilot request
+returns CLI success but subsequent API read-back has no pending or submitted
+review; fulfillment remains unconfirmed. This request is the only remote
+mutation in this checkpoint. No source, stack or required-check state changes.
+Published Sonar coverage, package acceptance, D4/D5/S2 and ADR 585 remain open.
+
+Private nonmedia evidence is retained in the dated workspace-owner and
+runtime-stack evidence directories under `/private/tmp`. Root and scoped
+DevOps instructions were reviewed; the stale root-only recipe assertion was
+corrected without relaxing it. No new architectural decision or approval is
+recorded. The completed replay agent and its clean worktree are removed.
+All validation processes have terminated; the dedicated database and its
+storage are removed, and canonical fixture cleanup passes. Nonmedia coverage
+and route evidence are retained before removing ignored test outputs. Document
+indexing, instruction drift and whitespace checks pass; link validation reports
+1,139 OK and zero errors. The book builds with its existing large-search-index
+WARN (11,961,608 bytes), not warning-free documentation acceptance.
+
 ## Task Record
 
 - Motivation:
