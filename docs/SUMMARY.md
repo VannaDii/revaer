@@ -10,6 +10,7 @@
 -   [Execution Records](tasks/index.md)
     -   [Task Template](tasks/template.md)
     -   [Root Catalog Mode Portability](tasks/2026-09-11-root-catalog-mode-portability.md)
+    -   [Root Readiness Response Contract](tasks/2026-09-11-root-readiness-contract.md)
 
 ## Web UI
 

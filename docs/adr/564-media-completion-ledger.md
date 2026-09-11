@@ -32,6 +32,10 @@ not current completion claims. All L1-L10 capabilities remain open.
   watcher WARN lines, while full E2E still fails profile creation (201 expected,
   400 received): 46 passed, one failed, 61 not run, plus teardown coverage error.
   This is not root binding, cutover, published Sonar or package acceptance.
+- [Root readiness response contract](../tasks/2026-09-11-root-readiness-contract.md):
+  current outside-in continuation from `bb302c03`; path-free response grammar
+  and independent wire tests are being implemented. No route, database,
+  filesystem, UI or package readiness follows from this transport model.
 - Latest retained integration before this documentation change: `f38e6a79`.
   [ADR 581](581-stack-boundary-reconciliation.md) records newer local boundaries
   and the 2026-09-11 remote audit. Older GitHub diff counts below used different

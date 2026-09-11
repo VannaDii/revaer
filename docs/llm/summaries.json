@@ -5377,9 +5377,22 @@
     "href": "/tasks/2026-09-11-root-catalog-mode-portability/"
   },
   {
+    "id": "tasks/2026-09-11-root-readiness-contract",
+    "title": "Root Readiness Response Contract",
+    "summary": "Status: In progress Date: 2026-09-11 Operator approval: Not applicable: nonarchitectural task record Scope / owner / PR: Shared API-model readiness representation and independent contract tests; local unpublished continuation from bb302c03. Approved authority: [ADR 557](../adr/557-root-persistence-contract.md#root-administration) R1-R4 and [ADR 559](../adr/559-media-approval-delta.md)'s narrow G1. The [approval register](../media-approval-register.md) retains every pending hold. Requirement ledger: [L2 and L9](../adr/564-media-completion-ledger.md#outside-in-ledger).",
+    "tags": [
+      "motivation-and-design-notes",
+      "observability-and-status-docs",
+      "risk-rollback-and-dependencies",
+      "stale-policy-check-and-cleanup",
+      "test-coverage-summary"
+    ],
+    "href": "/tasks/2026-09-11-root-readiness-contract/"
+  },
+  {
     "id": "tasks/index",
     "title": "Execution Records",
-    "summary": "Routine execution records retain scope, verification and remaining work without creating architectural approval events. [Root policy](../../AGENTS.md#5-task-record-and-adr-rules) defines their requirements; decisions remain in the [ADR catalogue](../adr/index.md). Continue the same record for iterations on one deliverable. Historical task ADRs retain their paths and are not bulk-migrated here. [Task template](template.md) [Root catalog mode portability](2026-09-11-root-catalog-mode-portability.md) Current governance implementation and its validation are recorded once in [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record). Media priorities and evidence remain in the [completion ledger](../adr/564-media-completion-ledger.md).",
+    "summary": "Routine execution records retain scope, verification and remaining work without creating architectural approval events. [Root policy](../../AGENTS.md#5-task-record-and-adr-rules) defines their requirements; decisions remain in the [ADR catalogue](../adr/index.md). Continue the same record for iterations on one deliverable. Historical task ADRs retain their paths and are not bulk-migrated here. [Task template](template.md) [Root catalog mode portability](2026-09-11-root-catalog-mode-portability.md) [Root readiness response contract](2026-09-11-root-readiness-contract.md) Current governance implementation and its validation are recorded once in [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record). Media priorities and evidence remain in the [completion ledger](../adr/564-media-completion-ledger.md).",
     "tags": [],
     "href": "/tasks/index/"
   },

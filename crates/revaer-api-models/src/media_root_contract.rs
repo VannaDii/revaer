@@ -1,9 +1,11 @@
-//! Input grammar for ADR 557's root-catalog and discovery HTTP contract.
+//! Input grammar and path-free readiness for ADR 557's root HTTP contract.
 //!
 //! Validation preserves exact bytes: it never trims, normalizes, resolves, or
 //! grants filesystem authority. A well-formed cursor still needs active-catalog
 //! membership validation by the stored procedure. These helpers do not expose
 //! routes or replace the legacy workflow before the coordinated init cutover.
+//! Readiness responses validate a path-free representation, not the truth of
+//! filesystem probes or the consistency of a stored-procedure snapshot.
 //!
 //! ```
 //! use revaer_api_models::media_root_contract::{
@@ -27,6 +29,13 @@ use std::{error::Error, fmt};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use uuid::Uuid;
+
+mod readiness;
+
+pub use readiness::{
+    RootAttestationFailure, RootCatalogReadinessResponse, RootCatalogReadinessState, RootKind,
+    RootKindReadiness, RootReadinessError, RootSourceFailure,
+};
 
 const LOGICAL_KEY_MAX_BYTES: usize = 64;
 const RELATIVE_PATH_MAX_BYTES: usize = 4_096;

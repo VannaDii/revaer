@@ -67,6 +67,7 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, the root contract
 
 - Keep files single-purpose and cohesive.
 - Root-catalog file evidence must normalize native Unix mode widths losslessly and retain file-type as well as permission bits. Keep the exact trust mask, ownership checks and supported-target boundary unchanged when fixing platform-specific compilation or lint failures; permission-only evidence is not equivalent.
+- ADR 557 root-readiness responses must remain path-free and validate coherent source/attestation reasons, a canonical positive decimal generation, and exactly five ordered bounded count rows. Transport validation is not database snapshot, filesystem, authentication, or destructive-readiness proof; do not activate the legacy workflow with these DTOs before the coordinated cutover.
 - Target roughly 300-400 non-test LOC per production file. Split large files instead of silencing `too_many_lines`.
 - `lib.rs` should stay limited to crate docs, module declarations, light re-exports, and tiny crate-boundary glue.
 - `main.rs` must remain a thin bootstrap entry point.
