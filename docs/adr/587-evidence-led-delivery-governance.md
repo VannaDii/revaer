@@ -110,3 +110,18 @@ Local reports and raw coverage are retained outside temporary worktrees at
 checkout, including initial failures and successful retries. This ignored
 directory is local evidence, not a published CI artifact or Sonar acceptance.
 Final documentation-only result updates do not change the tested source.
+
+### Specification Consistency Follow-Up
+
+The specification still required a new ADR for every slice in its opening
+workflow, repository-rule summary and implementation-slice introduction. Those
+three routine-record directives now link to root policy section 5 and require
+continuing the existing execution record for the same deliverable. Dependency
+rationale, architectural approval, historical records and every quality gate
+remain unchanged. This corrects drift in the approved governance adoption;
+it does not release C1, D4, D5, E1, S2 or the binary-deletion exception.
+
+The correction is under validation in an isolated worktree based on
+`d3d663cd`. Independent review and exact-revision gate outcomes will be recorded
+here before integration. No runtime, database, workflow, scanner or package
+content changes with this follow-up.

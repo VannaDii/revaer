@@ -3,8 +3,9 @@
 > For agentic workers: required implementation workflow is
 > `superpowers:subagent-driven-development` or
 > `superpowers:executing-plans`. Implement this plan task-by-task, keep the
-> root repository policy in `AGENTS.md` authoritative, add the required ADR for
-> each implementation slice, and run `just ci` plus `just ui-e2e` before
+> root repository policy in [AGENTS.md](AGENTS.md#5-task-record-and-adr-rules)
+> authoritative, maintain the required execution record or architectural ADR
+> for each implementation slice, and run `just ci` plus `just ui-e2e` before
 > handoff.
 
 Status: consolidated executable plan.
@@ -49,8 +50,10 @@ This subsystem must follow the root repository contract:
   constructs concrete adapters or reads environment.
 - All local and CI gates run through `just`.
 - Implementation handoff requires `just ci` and `just ui-e2e`.
-- Each implementation slice adds an ADR under `docs/adr/`, updates
-  `docs/adr/index.md`, and updates `docs/SUMMARY.md`.
+- Record each implementation slice according to
+  [root policy section 5](AGENTS.md#5-task-record-and-adr-rules): continue a
+  routine record under `docs/tasks/`, or use an ADR for an architectural
+  decision, with the required approval and documentation navigation updates.
 
 Existing repository patterns to reuse:
 
@@ -2512,7 +2515,9 @@ Responsibilities:
 
 ## Implementation Slices
 
-Every slice adds an ADR and keeps docs in sync.
+Every slice maintains its execution record or architectural ADR under
+[root policy section 5](AGENTS.md#5-task-record-and-adr-rules) and keeps docs in
+sync. Continued work on the same deliverable updates its existing record.
 
 1. Domain model and normalization
     - Add `revaer-media-core`.
