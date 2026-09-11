@@ -1,10 +1,33 @@
 # First-Release Approval Proposal
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-11
-- Operator approval: Pending
-- Supersedes: None. Existing approvals, conditions and holds remain binding.
-- Implementation status: Awaiting decisions; release qualification incomplete.
+- Operator approval: 2026-09-11: "Approved", in direct reply to the annotated
+  approval question for choices 1-6 and, separately, transfers in 7.
+- Supersedes: Only the pending decisions and exact contract deltas identified
+  below; unrelated approvals, conditions and holds remain binding.
+- Implementation status: Approved work may proceed; release qualification incomplete.
+
+## Approval Resolution
+
+The operator reviewed commit `9575c0770a86421857335da4ae36dc4cbbae4f6a`
+and explicitly approved both parts of the question: design choices 1-6 and the
+separate transfer scope in 7. The contracts and appendices at that commit are
+the approved boundary; the brief below preserves the reviewed recommendations.
+
+- Design: D4/D5 ingestion family; C1/C1-D and conditional E1; S2/LIFE-1;
+  DISC-1 through DISC-7; AUDIO-1; narrowly scoped ASSET-1.
+- Transfers: Reviewed implementation/evidence to GitHub `VannaDii/revaer`,
+  canonical and per-file analysis to Sonar `vannadii/VannaDii_Revaer`, and
+  gated release artifacts to existing Revaer `ghcr.io/vannadii` destinations,
+  through merge or earlier revocation. All stated exclusions still apply.
+- Conditions: D3 proof, native qualification, listening acceptance and all
+  release gates remain required. ASSET-1 may be used only with its exact
+  provider/content/expiry checks and coordinated consent, guard and instruction
+  implementation; this record alone does not change the size guard.
+
+This releases the named design holds, not validation failures. No deployment,
+broader criteria exception or assertion of readiness is authorized.
 
 ## Recommendation
 

@@ -1,11 +1,19 @@
 # Fixed binary deletion review
 
-> Proposes a one-deliverable, immutable-blob deletion exception to the changed-line
-> guard; records no consent, implementation, asset acceptance, or merge authority.
+> Historical proposal. The revised, content-bound ASSET-1 contract and explicit
+> approval in [ADR 588](588-first-release-decision-package.md#approval-resolution)
+> supersede this proposal's exception scope, not its retained evidence.
 
-- Status: Proposed
+- Status: Superseded
+- Superseded by: ADR 588 ASSET-1
 - Date: 2026-09-10
-- Operator approval: Not received. No consent is recorded by this proposal.
+- Operator approval: 2026-09-11 approval applies only to ADR 588's revised
+  ASSET-1 scope at reviewed commit `9575c077`, not this earlier proposal wholesale.
+- Implementation status: The exception guard is not yet enabled; exact provider,
+  content, expiry and coordinated consent/guard/instruction checks are required.
+
+The pre-approval investigation below remains historical. Approval alone neither
+changes the canonical guard nor establishes asset, review or merge acceptance.
 
 ## Problem And Existing Authority
 

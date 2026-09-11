@@ -1,5 +1,11 @@
 # S2 Lifecycle Control Proposal
 
+> Current approval: The operator accepted ADR 588's exact applicable choices
+> on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution)
+> releases only those named design holds. Earlier pending/candidate wording
+> below retains its historical context; implementation and qualification are
+> not certified, and all other conditions remain binding.
+
 Status: NEW ARCHITECTURAL DELTA, UNAPPROVED AND UNIMPLEMENTED. This is an exact
 candidate for ADR 588, not an extension of RVB1 and not a third broker lane.
 No new daemon, socket, upload, dependency, or production setting was introduced.

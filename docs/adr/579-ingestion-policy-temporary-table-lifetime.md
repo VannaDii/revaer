@@ -1,19 +1,26 @@
 # Ingestion policy temporary table lifetime
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
-- Operator approval: Pending. Conditional D3 does not authorize this additional
-  routine-body and observable-lifetime change.
+- Operator approval: 2026-09-11, explicit D4 approval through
+  [ADR 588](588-first-release-decision-package.md#approval-resolution).
 - Context: Independent D3 testing reproduces the same warm-session ingestion
   failure in the unmodified frozen reference and the final candidate.
-- Decision: None made. Request D4 below as one additional, exact final-init
-  parity exception. Keep the warm proof failing and cutover disabled meanwhile.
+- Decision: D4 is accepted as the exact final-init parity exception below.
+  Retain the frozen counterexample; do not activate cutover before full proof.
 - Consequences: The proposed change would make a transaction-scoped policy
   work table disappear at commit instead of obstructing the next transaction
   on the same pooled connection. This is a behavior correction, not proven
   equivalence to the legacy error.
-- Follow-up: Obtain a decision, then implement only the accepted delta and
+- Follow-up: Implement only the accepted delta and
   independently validate its behavior alongside the still-conditional D3.
+
+## Approval Resolution
+
+The operator approved ADR 588 choice 1 at reviewed commit `9575c077`.
+This selects D4 and the separately enumerated D5 ingestion-family changes;
+it does not expand temporary-table lifetime or same-transaction semantics.
+The historical evidence and recommendation wording below remain unchanged.
 
 ## Evidence
 

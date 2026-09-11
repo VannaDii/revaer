@@ -1,8 +1,21 @@
 # Ingestion IMDb conflict inference
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-10
-- Operator approval: Pending; D5 is not covered by conditional D3 or held D4
+- Operator approval: 2026-09-11, explicit D5 ingestion-family approval through
+  [ADR 588](588-first-release-decision-package.md#approval-resolution).
+
+## Approval Resolution
+
+The operator approved the IMDb fix below and the explicitly reproduced
+TMDB/TVDB ingestion extension in ADR 588 at reviewed commit `9575c077`.
+Canonical-merge changes, index changes, frozen migrations and runtime cutover
+remain outside this permission. D3 is still conditional and unproven.
+The original IMDb-only proposal below is retained as historical scope, not a
+current instruction to keep the now-approved ingestion-family fix held.
+
+## Reviewed Original Proposal
+
 - Context:
   - ADR 582 reproduces SQLSTATE `42P10` for real IMDb ingestion on a fresh
     backend against both the frozen reference and the final candidate. The

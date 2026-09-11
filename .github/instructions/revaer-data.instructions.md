@@ -31,7 +31,8 @@ applyTo:
 - ADR 551 finalization retains the exact frozen 1,624-statement candidate as
   transition evidence. Final SQL may differ only by its approved header,
   three dump timeout-reset removals, ADR 569's exact approved D2/D3 routine
-  substitutions, and reviewed lifecycle/security/grant
+  substitutions, ADR 588's exact approved D4/D5 ingestion-family corrections,
+  and reviewed lifecycle/security/grant
   sections. `just db-init-final-proof` must compare the exact legacy bytes and
   independently pinned final bytes, then test constrained owner/runtime roles
   in disposable PostgreSQL. Finalization is not runtime cutover: ordinary
@@ -45,10 +46,13 @@ applyTo:
   boundary and D2's function-scoped five-second reset bound are also approved;
   no additional extension grant, timeout increase or frozen-migration edit is
   authorized. Preserve their mutation, failure-path and expiry requirements.
-- ADR 579 D4 remains Proposed. The independently reproduced retained
-  `tmp_policy_rules` failure is not authorization to change its lifetime,
-  repair pooled sessions or accept the error. D3's conditional proof must stay
-  fail-closed, including the original frozen-reference counterexample.
+- ADR 588 choice 1 explicitly approved D4/D5 on 2026-09-11: add `ON COMMIT DROP`
+  only to ingestion's `tmp_policy_rules` and the existing non-null partial-index
+  predicates only to IMDb/TMDB/TVDB ingestion conflicts. Update exact generator,
+  final digest and mutation guards together. Do not change canonical merge,
+  indexes, frozen migrations, callers or same-transaction semantics. D3's
+  conditional proof stays fail-closed and retains the frozen counterexamples;
+  approval is not permission to normalize those failures into a passing proof.
 - Before the ADR 522 cutover, persisted-state behavior changes are blocked from
   the frozen corpus. Complete them before candidate freeze or defer them to a
   direct pre-v1 `init.sql` edit after cutover; do not create another migration.

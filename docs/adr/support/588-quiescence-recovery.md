@@ -1,5 +1,11 @@
 # S2 Quiescence And Recovery Proposal
 
+> Current approval: The operator accepted ADR 588's exact applicable choices
+> on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution)
+> releases only those named design holds. Earlier pending/candidate wording
+> below retains its historical context; implementation and qualification are
+> not certified, and all other conditions remain binding.
+
 Status: NEW, UNAPPROVED contract details for parent ADR588. ADR512's per-root
 barrier, ADR513 preservation, and ADR550/557 attestation stay binding. Nothing
 below adopts architecture, creates a service, edits SQL or resets user state.

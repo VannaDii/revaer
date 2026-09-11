@@ -1,7 +1,7 @@
 # Media Approval Register
 
-Decision navigation as of 2026-09-11, based on retained integration `f38e6a79`
-and the later operator approval recorded in ADR 587. Linked ADRs and their exact
+Decision navigation as of 2026-09-11, including the operator's explicit approval
+of ADR 588 at reviewed commit `9575c077`. Linked ADRs and their exact
 operator evidence remain authoritative. This register grants no consent and
 does not certify implementation. Read the complete linked contract before work;
 conditions and expiries are not discarded by a summary row.
@@ -23,41 +23,34 @@ Earlier accepted architectural authority remains linked from
 and the [completion ledger](adr/564-media-completion-ledger.md). This is not a
 retroactive reapproval or an exhaustive historical ADR re-audit.
 
-## Pending Or Held
+## Accepted Implementation Scope
 
-| Decision / Owner | Status | Exact Choice Still Needed / Impact |
+The operator explicitly approved choices 1-6 and separately authorized transfers
+in 7 on 2026-09-11. The [dated resolution](adr/588-first-release-decision-package.md#approval-resolution)
+pins the exact reviewed contracts and evidence. Older approval rows above record
+what those earlier decisions did or did not authorize; ADR 588 now resolves
+the named holds below without certifying implementation.
+
+| Choice / Scope | Approval | Conditions Still Required |
 | --- | --- | --- |
-| C1 / [586](adr/586-compliance-manifest-failure-boundary.md) | Pending | Typed fatal startup failure for invalid/missing compliance metadata versus an explicitly designed degraded contract. The recommendation prevents the entire service from starting, including unrelated APIs; general delivery approval does not select it. Blocks affected provider/router production wiring. |
-| C1-D delivery / [588](adr/support/588-decision-details.md#c1-d-exact-read-only-delivery-proposal) | Proposed, not approved | Operator-verified immutable compliance set, read-only installation, exact platform image/bundle binding and architecture-specific Helm configuration. No startup installer, mutable fallback or release-compliance waiver. |
-| D4 / [579](adr/579-ingestion-policy-temporary-table-lifetime.md) | Pending | Exact final-init `ON COMMIT DROP` correction for the policy work table; changes legacy transaction behavior. Preserve the warm-session counterexample until approved and fixed. |
-| D5 / [583](adr/583-ingestion-imdb-conflict-inference.md) | Pending | Exact final-init IMDb conflict predicate correction. Shared reference/final failure is not successful parity. |
-| D5 ingestion-family extension / [588](adr/support/588-decision-details.md#exact-recommendation-for-review) | Proposed, not approved | Extend the same predicate correction to the independently reproduced TMDB/TVDB ingestion branches. No canonical-merge rewrite or frozen-reference change. |
-| E1 / [558](adr/558-rvb1-native-process-broker-wire-contract.md), [588](adr/support/588-decision-details.md#e1-exact-candidate-and-observed-contradictions) | Held; exact conditional proposal | Select the exact 214-byte candidate and root-owned media HOME/layout conditionally on current-source amd64/arm64 closure and broker proof before activation. No historical image or nine-key isolation approval certifies those bytes/packages. |
-| S2 / [577](adr/577-runtime-shutdown-event-classification.md#s2-bound-investigation-hold-retained), [588](adr/support/588-decision-details.md#s2-exact-lifecycle-and-recovery-proposal) | Held; exact conditional proposal | Same-binary PID1 owner, 28 s force/2 s settlement allocation inside existing 30 s, total task envelope, bounded control/log/input contracts, graceful handoff and uncertain-root confirmation. One corrected 1,024-task mechanism trial is not full-service or dual-native timing qualification. |
-| Binary deletion exception / [585](adr/585-fixed-binary-deletion-review.md), [588 ASSET-1](adr/support/588-decision-details.md#asset-1-content-bound-replay-and-permanent-expiry) | Proposed, not approved | Revised proposal binds the exact 213 binary deletions to PR 130, ordinarily counts/reviews all text, permits provider-bound replays and permanently expires on first close/merge. Current canonical gates remain unchanged. |
-| Worker recovery and retention / [512](adr/512-fenced-resumable-worker-ownership-and-recovery.md), [513](adr/513-attempt-scoped-workspace-retention-transaction.md), [514](adr/514-packaged-media-subsystem-lifecycle-and-health-contract.md) | Enumerated values held; [588 LIFE-1](adr/support/588-decision-details.md#life-1-coupled-lease-recovery-and-retry-values) proposed | Exact 5/40 s shared renewal/expiry, quiescence-gated takeover and bounded retry/cooldown/reset proposal; no operational timing proof or automatic release of S2. Existing approved values stay fixed. |
-| Audio acceptance / [515](adr/515-versioned-audio-transformation-and-acceptance-contract.md), [588 AUDIO-1](adr/support/588-decision-details.md#audio-1-full-versioned-audio-contract) | Enumerated choices held; exact `/2` proposal | Three explicit intents, measured scalar/music delta, two-pass dialog/speech, configurable per-channel nominal/optional cap and full codec/layout/rate scope. Package/meter/short-form/listening qualification remains required; no legacy value or experimental pass activates it. |
-| Discovery/admission / [516](adr/516-durable-discovery-scheduling-and-versioned-aggregate-identity.md), [535](adr/535-bounded-cancellation-aware-fingerprint-admission.md), [588 DISC-1 through DISC-7](adr/support/588-decision-details.md#disc-1-through-disc-7-discovery-and-fingerprint-contract) | Exact proposal, not approved | Normalized durable frontier, exact aggregate bytes, observation/rescan/version semantics, read-only helper boundary and complete initial/hard admission tuple. Named-workload arithmetic is not native/storage qualification. |
+| 1: D4/D5 ingestion family | Approved; [exact changes](adr/support/588-decision-details.md#exact-recommendation-for-review) | Final-init-only scratch-table lifetime and IMDb/TMDB/TVDB predicate fixes. No canonical merge or frozen-reference change. Complete conditional D3 before cutover. |
+| 2: C1/C1-D and E1 | Approved; E1 activation conditional; [startup contract](adr/support/588-decision-details.md#package-environment-and-compliance-startup) | Whole-service failure on invalid compliance metadata, verified immutable read-only bundle and exact 214-byte environment. Real current-source native amd64/arm64 closure and startup evidence before activation. |
+| 3: S2/LIFE-1 | Approved for implementation; [shutdown/recovery contract](adr/support/588-decision-details.md#s2-exact-lifecycle-and-recovery-proposal) | Exact supervisor, deadlines, task/control limits, quiescence, lease/retry and operator recovery rules. Native saturation, blocked-I/O, recovery and timing qualification; no kernel-progress guarantee. |
+| 4: DISC-1 through DISC-7 | Approved for implementation; [discovery contract](adr/support/588-decision-details.md#disc-1-through-disc-7-discovery-and-fingerprint-contract) | Exact normalized frontier, identities, read-only helpers and complete initial/hard admission tuple. Current-source storage, multi-replica, cancellation and recovery evidence before activation. |
+| 5: AUDIO-1 | Approved for implementation; [audio contract](adr/support/588-decision-details.md#audio-1-full-versioned-audio-contract) | Three exact versioned intents, music scalar delta and bitrate/cap semantics. Full codec/layout/rate, meter, short-form and operator listening acceptance. |
+| 6: ASSET-1 | Narrow exception approved; [exact boundary](adr/support/588-decision-details.md#asset-1-content-bound-replay-and-permanent-expiry) | Only 213 content-bound binary deletions on PR 130; count/review all text normally. Fresh provider identity/history, exact content, permanent first-close/merge expiry and coordinated consent/guard/instruction implementation. The current guard is unchanged. |
+| 7: External transfers | Separately authorized; [exact scope](adr/support/588-decision-details.md#separately-scoped-upload-request) | Reviewed GitHub implementation/evidence, exact Sonar organization/project, and gated existing GHCR Revaer release destinations through merge or earlier revocation. No secrets, test media, unpublished experiments, unrelated files, criteria/server/billing changes or deployment. |
 
-## Decision Requests
+## Remaining Gates
 
-The [consolidated decision package](adr/588-first-release-decision-package.md)
-is ready for review of its exact recommendations, explicit conditional
-qualification and separate external-transfer scope. Its retained evidence
-includes failures and does not certify the service. No new decision is approved
-by preparation of this package.
+No named design choice in ADR 588 awaits another vote. Its conditional
+qualification, original-preservation, full CI/UI, strict Sonar with positive
+coverage, package, size, review and merge requirements remain unmet until
+exact-revision evidence proves them. Approval of ASSET-1 alone does not enable
+the exception or waive any unrelated guard.
 
-Present a bounded batch only when each choice is ready: problem and reproduced
-evidence, alternatives, recommendation, exact contract delta, blast radius,
-rollback, expiry where applicable, and affected L rows. Record the operator's
-actual answer and date in the owning ADR, then synchronize this register.
-If approval is conditional, retain the condition until evidence satisfies it.
-
-Production behavior, data-loss authority, numerical SLO/resource targets,
-support claims and quality criteria cannot be approved through routine task
-records. An unavailable test environment, missing service entitlement or absent
-review is an execution/access blocker, not an architectural decision or a pass.
-
-ADR 588 also requests separately scoped external-transfer consent. Architecture
-approval does not itself authorize GitHub/Sonar/GHCR uploads, and the earlier
-single-file Sonar command permission does not select the broader scope.
+Only a newly discovered or materially changed architectural choice returns for
+decision-specific approval. Existing accepted work continues while independent
+execution or verification problems are resolved. Record actual implementation,
+local verification, package qualification and merge separately in the
+[completion ledger](adr/564-media-completion-ledger.md).

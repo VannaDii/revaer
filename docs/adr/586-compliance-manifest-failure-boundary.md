@@ -1,8 +1,10 @@
 # Compliance manifest failure boundary
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-11
-- Operator approval: Pending
+- Operator approval: 2026-09-11, explicit C1/C1-D and conditional E1 approval
+  in [ADR 588](588-first-release-decision-package.md#approval-resolution).
+- Implementation status: Approved for implementation; not package-qualified.
 - Context:
   - Provider reconstruction reaches a retained loader that converts filesystem
     and JSON failures into `None`, then reports a digest-shaped unavailable
@@ -10,8 +12,8 @@
     sentinel values or logs. G1 reserves observable failure classification and
     availability changes for operator approval.
 - Decision:
-  - Pending C1 below. No runtime implementation or criteria exception is
-    authorized by this record.
+  - C1 below is accepted together with ADR 588's exact C1-D delivery contract.
+    No degraded fallback or criteria exception is selected.
 - Consequences:
   - The recommendation makes the packaged manifest a startup prerequisite.
     Missing or malformed evidence stops startup rather than degrading silently.
@@ -19,8 +21,9 @@
     explicitly inject a test loader; they may not manufacture a production
     digest or treat a missing artifact as verified compliance.
 - Follow-up:
-  - Obtain decision-specific approval before changing loader, bootstrap,
-    readiness, admission or error-response behavior.
+  - Implement and qualify the approved loader/bootstrap/delivery contract.
+    Earlier pending wording below is retained proposal history; the exact
+    ADR 588 resolution governs current implementation authority.
 
 ## Verified Conflict
 

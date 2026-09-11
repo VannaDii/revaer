@@ -21,6 +21,13 @@ The operator approved the evidence-led delivery recommendations in
 capability-to-evidence ledger; earlier checkpoints below are dated history,
 not current completion claims. All L1-L10 capabilities remain open.
 
+The operator subsequently approved ADR 588 choices 1-6 and separately scoped
+transfers in 7 at reviewed commit `9575c077`; see the
+[approval resolution](588-first-release-decision-package.md#approval-resolution).
+Those named design holds are resolved. The qualification conditions are not:
+older held/pending descriptions below remain historical checkpoints, not new
+approval requests or evidence of implementation.
+
 - [Approval register](../media-approval-register.md): decision scope and retained holds.
 - [Release verification matrix](../media-release-verification.md): journey,
   preservation, package, maintenance, and operating-envelope evidence required.
@@ -48,9 +55,9 @@ not current completion claims. All L1-L10 capabilities remain open.
 
 | Priority / Scope | Next Concrete Result | Exit Evidence / Current Constraint |
 | --- | --- | --- |
-| First: L1-L3, then L4 manual discovery and L6 dry-run | Complete approved init/root/profile integration through the actual authenticated API/UI. | Pristine init, stored-procedure binding, profile creation, portable configuration and a real dry-run with unchanged originals. D3 evidence is incomplete; D4/D5 remain pending. Do not soften the reproduced profile-creation failure. |
-| Independent prerequisite: L5/L10 | Establish exact native/package identity and approved broker evidence. | Linux amd64 and arm64 image digests, native closure, containment and environment evidence. E1 exact values remain held; C1 remains a separate startup-policy decision. |
-| Next: L7-L9 | Run one configured transformation through verification, replacement and crash recovery, then close the full included operation matrix. | Real output inspection plus filesystem/database/audit assertions. Resolve affected ownership, discovery, audio and shutdown holds before activation. |
+| First: L1-L3, then L4 manual discovery and L6 dry-run | Complete approved init/root/profile integration through the actual authenticated API/UI. | Pristine init, stored-procedure binding, profile creation, portable configuration and a real dry-run with unchanged originals. Implement approved D4/D5 and complete D3 evidence. Do not soften the reproduced profile-creation failure. |
+| Independent prerequisite: L5/L10 | Establish exact native/package identity and approved broker evidence. | Linux amd64 and arm64 image digests, native closure, containment and environment evidence. Implement approved C1/C1-D/E1; qualify both native packages before activation. |
+| Next: L7-L9 | Run one configured transformation through verification, replacement and crash recovery, then close the full included operation matrix. | Real output inspection plus filesystem/database/audit assertions. Implement and qualify the approved ownership, discovery, audio and shutdown contracts before activation. |
 | Merge closure: L10 | Publish verified deliverables in dependency order, retiring redundant unpublished candidates only after preservation is proved. | Exact diff/ancestry/size, full local gates, applicable remote checks, positive published Sonar coverage, actual review state, and resolved feedback. No current release or merge acceptance is established. |
 
 For each L row, attach requirement-level evidence progressively using the

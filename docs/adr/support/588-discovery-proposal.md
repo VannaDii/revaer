@@ -1,5 +1,11 @@
 # DISCOVERY/FINGERPRINT Consolidated Decision Evidence: v2
 
+> Current approval: The operator accepted ADR 588's exact applicable choices
+> on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution)
+> releases only those named design holds. Earlier pending/candidate wording
+> below retains its historical context; implementation and qualification are
+> not certified, and all other conditions remain binding.
+
 Status: **UNPUBLISHED, NONPRODUCTION PROPOSAL AND DISPOSABLE LAB ONLY.**
 
 Source: `fcdd95596fa062de9388d1be4f2ac96bbff571d1`; branch:

@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-11T23:10:33.320483+00:00",
+  "generated": "2026-09-11T23:47:18.096657+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4098,7 +4098,7 @@
     {
       "id": "adr/512-fenced-resumable-worker-ownership-and-recovery",
       "title": "Fenced resumable worker ownership and recovery",
-      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "consequences",
         "follow-up",
@@ -4115,7 +4115,7 @@
     {
       "id": "adr/513-attempt-scoped-workspace-retention-transaction",
       "title": "Attempt-scoped workspace retention transaction",
-      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "consequences",
         "follow-up",
@@ -4132,7 +4132,7 @@
     {
       "id": "adr/514-packaged-media-subsystem-lifecycle-and-health-contract",
       "title": "Packaged media subsystem lifecycle and health contract",
-      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "consequences",
         "follow-up",
@@ -4149,7 +4149,7 @@
     {
       "id": "adr/515-versioned-audio-transformation-and-acceptance-contract",
       "title": "Versioned audio transformation and acceptance contract",
-      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "baseline-and-held-existing-choices",
         "consequences",
@@ -4168,7 +4168,7 @@
     {
       "id": "adr/516-durable-discovery-scheduling-and-versioned-aggregate-identity",
       "title": "Durable discovery scheduling and versioned aggregate identity",
-      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "baseline-and-held-existing-choices",
         "consequences",
@@ -4431,7 +4431,7 @@
     {
       "id": "adr/535-bounded-cancellation-aware-fingerprint-admission",
       "title": "Bounded cancellation-aware fingerprint admission",
-      "summary": "Status: Accepted Date: 2026-08-16 Operator approval: Explicitly approved by the operator on 2026-08-16: \"I approve the ADRs as they are now and I'm resuming your goal.\"",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "consequences",
         "follow-up",
@@ -4723,7 +4723,7 @@
     {
       "id": "adr/558-rvb1-native-process-broker-wire-contract",
       "title": "RVB1 native process broker wire and lifecycle contract",
-      "summary": "Status: Accepted Date: 2026-08-16 Decision-review revision: 2026-09-09 Operator approval: 2026-09-09: \"ADRs 557-559 are approved according to the resolution\"",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "annex-a-exact-codec-draft-for-review",
         "approval-resolution",
@@ -4965,10 +4965,11 @@
     {
       "id": "adr/577-runtime-shutdown-event-classification",
       "title": "Runtime shutdown event classification",
-      "summary": "Status: Accepted Date: 2026-09-10 Operator approval: 2026-09-10: \"Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound.\" Context: ADR 576's CI run emitted warnings for bootstrap-requested task aborts. PR 194 contains related changes absent from local integration. ADR 559's G1 boundary explicitly reserves observable behavior and failure classification for decision-specific approval. Historical ADR 454's claim that approval was unnecessary is not authorization. Decision: S1 accepted within its exact predicate, task scope and message contract. S2 remains held pending a defensible shutdown bound. Consequences: S1 would change event severity for requested cancellation. S2",
+      "summary": "Status: Accepted Date: 2026-09-10 Operator approval: 2026-09-10: \"Approve **D1, D2, conditional D3, S1, and narrowly scoped F1**. Keep **S2 held** pending a defensible shutdown bound.\" Context: ADR 576's CI run emitted warnings for bootstrap-requested task aborts. PR 194 contains related changes absent from local integration. ADR 559's G1 boundary explicitly reserves observable behavior and failure classification for decision-specific approval. Historical ADR 454's claim that approval was unnecessary is not authorization. Decision: S1 accepted within its exact predicate, task scope and message contract. S2's later, bounded design is approved through ADR 588 as noted below. Consequences: S1 would change event severity",
       "tags": [
         "approval-boundary-correction",
         "approval-resolution",
+        "later-s2-resolution",
         "required-validation-after-approval",
         "restored-tree-checkpoint",
         "s1-implementation-evidence-2026-09-10",
@@ -4996,9 +4997,10 @@
     {
       "id": "adr/579-ingestion-policy-temporary-table-lifetime",
       "title": "Ingestion policy temporary table lifetime",
-      "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending. Conditional D3 does not authorize this additional routine-body and observable-lifetime change. Context: Independent D3 testing reproduces the same warm-session ingestion failure in the unmodified frozen reference and the final candidate. Decision: None made. Request D4 below as one additional, exact final-init parity exception. Keep the warm proof failing and cutover disabled meanwhile. Consequences: The proposed change would make a transaction-scoped policy work table disappear at commit instead of obstructing the next transaction on the same pooled connection. This is a behavior correction, not proven equivalence to the legacy error. Follow-up: Obtain a decision,",
+      "summary": "Status: Accepted Date: 2026-09-10 Operator approval: 2026-09-11, explicit D4 approval through [ADR 588](588-first-release-decision-package.md#approval-resolution). Context: Independent D3 testing reproduces the same warm-session ingestion failure in the unmodified frozen reference and the final candidate. Decision: D4 is accepted as the exact final-init parity exception below. Retain the frozen counterexample; do not activate cutover before full proof. Consequences: The proposed change would make a transaction-scoped policy work table disappear at commit instead of obstructing the next transaction on the same pooled connection. This is a behavior correction, not proven equivalence to the legacy error. Follow-up: Implement only the accepted delta and independently validate",
       "tags": [
         "alternatives",
+        "approval-resolution",
         "d4-exact-transaction-scoped-policy-work-table",
         "evidence",
         "required-evidence-after-approval",
@@ -5056,8 +5058,10 @@
     {
       "id": "adr/583-ingestion-imdb-conflict-inference",
       "title": "Ingestion IMDb conflict inference",
-      "summary": "Status: Proposed Date: 2026-09-10 Operator approval: Pending; D5 is not covered by conditional D3 or held D4 Context: ADR 582 reproduces SQLSTATE 42P10 for real IMDb ingestion on a fresh backend against both the frozen reference and the final candidate. The tested call rolls back rather than committing the external identifier. canonical_external_id_text_uq is a unique index over (canonical_torrent_id, id_type, id_value_text) with predicate id_value_text IS NOT NULL. The IMDb conflict target omits that predicate. Decision: Proposed D5: in the final candidate's public.search_result_ingest_v1 IMDb insert only, add WHERE id_value_text IS NOT NULL immediately after ON CONFLICT (canonical_torrent_id, id_type, id_value_text) and before DO",
+      "summary": "Status: Accepted Date: 2026-09-10 Operator approval: 2026-09-11, explicit D5 ingestion-family approval through [ADR 588](588-first-release-decision-package.md#approval-resolution).",
       "tags": [
+        "approval-resolution",
+        "reviewed-original-proposal",
         "task-record"
       ],
       "href": "/adr/583-ingestion-imdb-conflict-inference/"
@@ -5075,7 +5079,7 @@
     {
       "id": "adr/585-fixed-binary-deletion-review",
       "title": "Fixed binary deletion review",
-      "summary": "Proposes a one-deliverable, immutable-blob deletion exception to the changed-line guard; records no consent, implementation, asset acceptance, or merge authority.",
+      "summary": "Historical proposal. The revised, content-bound ASSET-1 contract and explicit approval in [ADR 588](588-first-release-decision-package.md#approval-resolution) supersede this proposal's exception scope, not its retained evidence.",
       "tags": [
         "asset-preservation-evidence-and-limits",
         "corrected-candidate-checkpoint",
@@ -5091,7 +5095,7 @@
     {
       "id": "adr/586-compliance-manifest-failure-boundary",
       "title": "Compliance manifest failure boundary",
-      "summary": "Status: Proposed Date: 2026-09-11 Operator approval: Pending Context: Provider reconstruction reaches a retained loader that converts filesystem and JSON failures into None, then reports a digest-shaped unavailable sentinel. Root policy prohibits hiding recoverable failure in absence, sentinel values or logs. G1 reserves observable failure classification and availability changes for operator approval. Decision: Pending C1 below. No runtime implementation or criteria exception is authorized by this record. Consequences: The recommendation makes the packaged manifest a startup prerequisite. Missing or malformed evidence stops startup rather than degrading silently. Development and E2E bootstrap must supply real valid fixture evidence or explicitly inject a",
+      "summary": "Status: Accepted Date: 2026-09-11 Operator approval: 2026-09-11, explicit C1/C1-D and conditional E1 approval in [ADR 588](588-first-release-decision-package.md#approval-resolution). Implementation status: Approved for implementation; not package-qualified. Context: Provider reconstruction reaches a retained loader that converts filesystem and JSON failures into None, then reports a digest-shaped unavailable sentinel. Root policy prohibits hiding recoverable failure in absence, sentinel values or logs. G1 reserves observable failure classification and availability changes for operator approval. Decision: C1 below is accepted together with ADR 588's exact C1-D delivery contract. No degraded fallback or criteria exception is selected. Consequences: The recommendation makes the packaged manifest a startup prerequisite. Missing or",
       "tags": [
         "alternatives",
         "c1-recommended-startup-failure-policy",
@@ -5116,7 +5120,7 @@
     {
       "id": "adr/588-first-release-decision-package",
       "title": "First-Release Approval Proposal",
-      "summary": "Status: Proposed Date: 2026-09-11 Operator approval: Pending Supersedes: None. Existing approvals, conditions and holds remain binding. Implementation status: Awaiting decisions; release qualification incomplete.",
+      "summary": "Status: Accepted Date: 2026-09-11 Operator approval: 2026-09-11: \"Approved\", in direct reply to the annotated approval question for choices 1-6 and, separately, transfers in 7. Supersedes: Only the pending decisions and exact contract deltas identified below; unrelated approvals, conditions and holds remain binding. Implementation status: Approved work may proceed; release qualification incomplete.",
       "tags": [
         "1-fix-database-ingestion",
         "2-require-verified-startup",
@@ -5126,6 +5130,7 @@
         "6-allow-one-asset-removal-exception",
         "7-authorize-transfers-separately",
         "after-approval",
+        "approval-resolution",
         "recommendation"
       ],
       "href": "/adr/588-first-release-decision-package/"
@@ -5143,7 +5148,7 @@
     {
       "id": "adr/support/588-audio-proposal",
       "title": "AUDIO Decision Approval Package",
-      "summary": "Status: **Recommendation for ADR588, not production adoption or release acceptance.** Date: 2026-09-11. Owner: bounded AUDIO investigation. Parent owns C1 and ADR588. Revision: **2, independent retained-evidence audit**. The original is preserved byte-for-byte as REPORT.v1.md; the original proposal is recommended-contract.v1.json. No media command was repeated for this audit.",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "adr515-hold-reconciliation",
         "commands-changes-and-cleanup",
@@ -5172,6 +5177,7 @@
         "investigation-completion-contract",
         "package-environment-and-compliance-startup",
         "research-authority-and-scope",
+        "reviewed-proposal-and-evidence-snapshot",
         "shutdown-reproduced-hazards-and-design-delta",
         "task-record"
       ],
@@ -5180,7 +5186,7 @@
     {
       "id": "adr/support/588-discovery-proposal",
       "title": "DISCOVERY/FINGERPRINT Consolidated Decision Evidence: v2",
-      "summary": "Status: **UNPUBLISHED, NONPRODUCTION PROPOSAL AND DISPOSABLE LAB ONLY.** Source: fcdd95596fa062de9388d1be4f2ac96bbff571d1; branch: work/media3-discovery-evidence-20260911; worktree: /private/tmp/revaer-discovery-evidence-20260911. Date: 2026-09-11. Tracked delta: none. All authored material is under the ignored artifacts/decision-evidence/discovery/. Parent owns ADR 588 and C1; this work does not touch C1, audio, ADR/index files, frozen migrations, runtime defaults, production, remote state, or source/media uploads.",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "cleanup-risk-rollback-and-policy-check",
         "disc-1-exact-relational-frontier-proposal",
@@ -5202,7 +5208,7 @@
     {
       "id": "adr/support/588-discovery-values",
       "title": "Exact DISCOVERY/FINGERPRINT Candidate Values: v2",
-      "summary": "Status: PROPOSED ONLY, 2026-09-11. No production default, activation, shared lease acceptance, or criteria change. Source fcdd95596fa062de9388d1be4f2ac96bbff571d1. Parent incorporates the decision in ADR 588 as DISC-1 through DISC-7, not the database D1-D5 decisions. This is the single bounded useful-workload revision of the sealed history/v1 package. This is the stable numeric tuple for reconciliation with S2; Linux containment/enforcement proof belongs to the independent S2 agent. I is the proposed initial policy value; H is the absolute candidate ceiling for an explicitly versioned operator-selected policy. Increasing I toward H is an explicit, coherent policy-version action, never independent field tuning. Equal I/H means fixed",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "fingerprint-admission-adr-535",
         "named-useful-workloads-and-scope",
@@ -5215,7 +5221,7 @@
     {
       "id": "adr/support/588-lifecycle-control",
       "title": "S2 Lifecycle Control Proposal",
-      "summary": "Status: NEW ARCHITECTURAL DELTA, UNAPPROVED AND UNIMPLEMENTED. This is an exact candidate for ADR 588, not an extension of RVB1 and not a third broker lane. No new daemon, socket, upload, dependency, or production setting was introduced.",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "exact-bytes",
         "ownership-and-bounds",
@@ -5228,7 +5234,7 @@
     {
       "id": "adr/support/588-quiescence-recovery",
       "title": "S2 Quiescence And Recovery Proposal",
-      "summary": "Status: NEW, UNAPPROVED contract details for parent ADR588. ADR512's per-root barrier, ADR513 preservation, and ADR550/557 attestation stay binding. Nothing below adopts architecture, creates a service, edits SQL or resets user state.",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "exact-new-operator-confirmation-delta",
         "new-graceful-root-quiescence-handoff",
@@ -5240,7 +5246,7 @@
     {
       "id": "adr/support/588-shutdown-proposal",
       "title": "S2 Bounded Shutdown Investigation: Revision 3 Final",
-      "summary": "Status: **DECISION EVIDENCE ONLY. CORRECTIVE MECHANISM OBSERVED; RELEASE NOT QUALIFIED.** The original additional P1024 run failed. Exactly one separately parent-delegated corrective P1024 run then tested the minimal owner at the existing28s/2s proposal. It met that case's phase ceilings. No completed v1 trial was repeated. No tracked/production change, build, image pull, prune, new service, upload, commit or push. Parent owns ADR588 and all implementation/integration decisions. Source/base: fcdd95596fa062de9388d1be4f2ac96bbff571d1. Branch: work/media3-shutdown-bound-20260911. Worktree: /private/tmp/revaer-shutdown-bound-20260911. Ownership: ignored artifacts/decision-evidence/shutdown-bound/ only. This final revision incorporates explicit verified-settlement messages, normal broker reuse, graceful durable handoff for planned restarts, lost-proof operator recovery, final DISC values and authoritative parent LIFE-1.",
+      "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",
       "tags": [
         "actual-task-contributors",
         "exact-integrated-acceptance",
@@ -5370,11 +5376,11 @@
     {
       "id": "media-approval-register",
       "title": "Media Approval Register",
-      "summary": "Decision navigation as of 2026-09-11, based on retained integration f38e6a79 and the later operator approval recorded in ADR 587. Linked ADRs and their exact operator evidence remain authoritative. This register grants no consent and does not certify implementation. Read the complete linked contract before work; conditions and expiries are not discarded by a summary row.",
+      "summary": "Decision navigation as of 2026-09-11, including the operator's explicit approval of ADR 588 at reviewed commit 9575c077. Linked ADRs and their exact operator evidence remain authoritative. This register grants no consent and does not certify implementation. Read the complete linked contract before work; conditions and expiries are not discarded by a summary row.",
       "tags": [
-        "decision-requests",
-        "pending-or-held",
-        "recorded-approvals"
+        "accepted-implementation-scope",
+        "recorded-approvals",
+        "remaining-gates"
       ],
       "href": "/media-approval-register/"
     },

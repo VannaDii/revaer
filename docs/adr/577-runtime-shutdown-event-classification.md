@@ -10,14 +10,23 @@
     classification for decision-specific approval. Historical ADR 454's claim
     that approval was unnecessary is not authorization.
 - Decision: S1 accepted within its exact predicate, task scope and message
-  contract. S2 remains held pending a defensible shutdown bound.
+  contract. S2's later, bounded design is approved through ADR 588 as noted below.
 - Consequences:
   - S1 would change event severity for requested cancellation. S2 would observe
     a task termination that currently is not awaited after an abort request.
   - Neither change is evidence of bounded native containment or complete
     recovery, and neither may be inferred from a desire for clean CI output.
-- Follow-up: Implement only S1
-  and retain independent event, cancellation, panic, timeout and cleanup proof.
+- Follow-up: Preserve S1's exact event contract; implement S2 only within
+  ADR 588's approved supervisor/recovery design and qualification requirements.
+
+## Later S2 Resolution
+
+On 2026-09-11 the operator approved ADR 588 choice 3 at reviewed commit
+`9575c077`; see its [approval resolution](588-first-release-decision-package.md#approval-resolution).
+This releases the S2 design hold for the exact new S2/LIFE-1 contract, not the
+earlier unbounded join prototype. Native containment, timing and recovery proof
+remain required. The S1 approval and earlier held-state evidence below retain
+their original dates and scopes.
 
 ## Approval Resolution
 

@@ -1,5 +1,11 @@
 # Attempt-scoped workspace retention transaction
 
+> Current approval: The operator accepted ADR 588's exact applicable choices
+> on 2026-09-11 at reviewed commit `9575c077`. The [resolution](588-first-release-decision-package.md#approval-resolution)
+> releases only those named design holds. Earlier pending/candidate wording
+> below retains its historical context; implementation and qualification are
+> not certified, and all other conditions remain binding.
+
 - Status: Accepted
 - Date: 2026-08-16
 - Operator approval: Explicitly approved by the operator on 2026-08-16:

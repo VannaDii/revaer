@@ -1,5 +1,11 @@
 # S2 Bounded Shutdown Investigation: Revision 3 Final
 
+> Current approval: The operator accepted ADR 588's exact applicable choices
+> on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution)
+> releases only those named design holds. Earlier pending/candidate wording
+> below retains its historical context; implementation and qualification are
+> not certified, and all other conditions remain binding.
+
 Status: **DECISION EVIDENCE ONLY. CORRECTIVE MECHANISM OBSERVED; RELEASE NOT QUALIFIED.**
 The original additional P1024 run failed. Exactly one separately parent-delegated
 corrective P1024 run then tested the minimal owner at the existing28s/2s proposal.

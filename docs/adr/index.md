@@ -508,15 +508,15 @@
 -   [574](574-root-input-contract.md) - Root input contract validation
 -   [575](575-media-conversion-gate.md) - Media conversion gate restoration
 -   [576](576-pinned-ffprobe-fixture-diagnostic.md) - Pinned FFprobe fixture diagnostic
--   [577](577-runtime-shutdown-event-classification.md) - Runtime shutdown event classification (S1 accepted; S2 held)
+-   [577](577-runtime-shutdown-event-classification.md) - Runtime shutdown event classification (S1 accepted; bounded S2 accepted through 588)
 -   [578](578-locked-fixture-diagnostic-disposition.md) - Locked fixture diagnostic disposition (Accepted; exact F1 only)
--   [579](579-ingestion-policy-temporary-table-lifetime.md) - Ingestion policy temporary table lifetime (Proposed; D4 held)
+-   [579](579-ingestion-policy-temporary-table-lifetime.md) - Ingestion policy temporary table lifetime (Accepted; D4 through 588)
 -   [580](580-ingestion-helper-compilation-evidence.md) - Ingestion helper compilation evidence
 -   [581](581-stack-boundary-reconciliation.md) - Stack boundary reconciliation
 -   [582](582-ingestion-existing-data-evidence.md) - Ingestion existing-data evidence
--   [583](583-ingestion-imdb-conflict-inference.md) - Ingestion IMDb conflict inference (Proposed; D5 held)
+-   [583](583-ingestion-imdb-conflict-inference.md) - Ingestion IMDb conflict inference (Accepted; D5 ingestion family through 588)
 -   [584](584-canonical-root-identity-paths.md) - Canonical root identity paths
--   [585](585-fixed-binary-deletion-review.md) - Fixed binary deletion review (Proposed; no exception approved)
--   [586](586-compliance-manifest-failure-boundary.md) - Compliance manifest failure boundary (Proposed; C1 pending)
+-   [585](585-fixed-binary-deletion-review.md) - Fixed binary deletion review (Superseded by accepted 588 ASSET-1)
+-   [586](586-compliance-manifest-failure-boundary.md) - Compliance manifest failure boundary (Accepted; C1/C1-D through 588)
 -   [587](587-evidence-led-delivery-governance.md) - Evidence-led delivery governance (Accepted; runtime holds retained)
--   [588](588-first-release-decision-package.md) - First-release approval proposal (Proposed; six design questions and separate transfer consent)
+-   [588](588-first-release-decision-package.md) - First-release approval proposal (Accepted 2026-09-11; exact designs and separate transfer scope, qualification required)

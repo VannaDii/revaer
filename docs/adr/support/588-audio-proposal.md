@@ -1,5 +1,11 @@
 # AUDIO Decision Approval Package
 
+> Current approval: The operator accepted ADR 588's exact applicable choices
+> on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution)
+> releases only those named design holds. Earlier pending/candidate wording
+> below retains its historical context; implementation and qualification are
+> not certified, and all other conditions remain binding.
+
 Status: **Recommendation for ADR588, not production adoption or release acceptance.**
 Date: 2026-09-11. Owner: bounded AUDIO investigation. Parent owns C1 and ADR588.
 

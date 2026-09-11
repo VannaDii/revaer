@@ -2,7 +2,16 @@
 
 Start with the [approval proposal](../588-first-release-decision-package.md).
 This appendix preserves the exact contracts, alternatives, evidence, acceptance
-conditions and task record. It records no new approval.
+conditions and task record. The operator accepted its exact scope on 2026-09-11
+at reviewed commit `9575c0770a86421857335da4ae36dc4cbbae4f6a`; see the
+[approval resolution](../588-first-release-decision-package.md#approval-resolution).
+
+## Reviewed Proposal And Evidence Snapshot
+
+The following text retains the pre-approval record, including its historical
+Pending/Proposed wording. That wording does not override the later explicit
+approval. All numerical contracts, qualification conditions, evidence failures
+and exclusions remain unchanged.
 
 - Status: Proposed
 - Date: 2026-09-11
@@ -1113,3 +1122,34 @@ reduce analysis or ask the operator to repaste secrets.
 - Stale-policy check: Reviewed AGENTS.md, the ADR template and DevOps scoped
   instructions. Moved detail links in the approval register and documentation
   navigation; no approval status or policy is relaxed.
+
+### Operator Approval Record
+
+- Motivation: Act on the operator's explicit approval of choices 1-6 and the
+  separately asked external-transfer scope in 7, without reopening those choices.
+- Design notes: Pin the decision to reviewed commit `9575c077` and link the
+  owning records/register to the dated resolution. Update stale D4/S2 instruction
+  holds; do not change values, weaken gates or treat acceptance as verification.
+- Test coverage summary: On reviewed base `9575c077` plus this approval-record
+  delta, `just docs-index`, `just instruction-drift` and `git diff --check`
+  pass. The unchanged `just docs-link-check` retry passes all 1,330 links
+  after a first-run HTTP 403 from the EBU R128 site. `just docs-build` exits
+  zero with the retained oversized-search-index warning. Full CI/UI and package
+  gates have not been rerun for this record; database implementation evidence
+  is tracked separately. No approval creates a validation or merge pass.
+- Sonar: `just --command sonar verify --file
+  docs/adr/588-first-release-decision-package.md --project VannaDii_Revaer`
+  returns HTTP 403 because Agentic Analysis is not enabled for the organization.
+  The exact project was independently resolved through the connected Sonar
+  service; MAIN-scope secrets analysis of the complete approval record reports
+  zero issues. `just --command sonar analyze secrets` with the exact 28 changed
+  instruction/documentation/index paths completes successfully. These focused
+  results are not canonical scanner, coverage or quality-gate acceptance.
+- Observability updates: No runtime telemetry change.
+- Risk and rollback plan: Approval can be misread as activation. Preserve the
+  exact scope and expiry checks; stop work outside it and retain the reviewed
+  proposal. Correct transcription errors without erasing the operator evidence.
+- Dependency rationale: None.
+- Stale-policy check: Reviewed AGENTS.md, the ADR template and scoped data,
+  DevOps and Sonar instructions. Reconciled named approval holds with this
+  actual consent; the frozen database authority and all release gates remain.
