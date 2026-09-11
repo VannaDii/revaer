@@ -35,6 +35,9 @@ applyTo:
   2026-09-11. The proof must retain frozen counterexamples, explicitly verify
   only the approved final error-to-success differences and fail on incomplete
   D3 scope; approval alone does not permit runtime cutover.
+  The canonical final proof must always run the independent D4/D5 correction
+  matrix before D3 comparison. The focused `--corrections-only` live harness
+  is regression evidence only and must never substitute for the final proof.
   Candidate/final disposable PostgreSQL cleanup must remove their anonymous
   volumes as well as containers, never prune unrelated Docker resources.
 

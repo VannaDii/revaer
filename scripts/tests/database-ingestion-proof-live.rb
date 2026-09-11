@@ -8,7 +8,7 @@ module RevaerDatabaseRebaseline
   class IngestionProofLive < FinalProof
     include IngestionProof
 
-    def run_ingestion!(candidate_path)
+    def run_ingestion!(candidate_path, corrections_only: false)
       @contract.freeze!
       @candidate = File.binread(candidate_path)
       @contract.verify_candidate_source!(@candidate)
@@ -30,7 +30,9 @@ module RevaerDatabaseRebaseline
         apply!("reference_proof", @candidate, role: "postgres")
         apply!(@database, final)
         seal!
-        verify_ingestion_parity!
+        verify_ingestion_corrections!
+        verify_ingestion_parity! unless corrections_only
+        raise Failure, "ingestion correction regression failed: #{@failures.join('; ')}" unless @failures.empty?
       ensure
         @runner.run!(["docker", "rm", "-fv", @container]) if started
       end
@@ -40,9 +42,10 @@ end
 
 if $PROGRAM_NAME == __FILE__
   begin
+    corrections_only = ARGV.delete("--corrections-only") == "--corrections-only"
     raise RevaerDatabaseRebaseline::Failure, "provide the pinned frozen candidate path" unless ARGV.length == 1
 
-    RevaerDatabaseRebaseline::IngestionProofLive.new.run_ingestion!(ARGV.fetch(0))
+    RevaerDatabaseRebaseline::IngestionProofLive.new.run_ingestion!(ARGV.fetch(0), corrections_only:)
   rescue RevaerDatabaseRebaseline::Failure => error
     warn "database-ingestion-proof: #{error.message}"
     exit 1

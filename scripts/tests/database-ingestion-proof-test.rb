@@ -4,11 +4,13 @@ require "tmpdir"
 require_relative "../database_rebaseline/final_proof"
 require_relative "../database_rebaseline/ingestion_proof"
 require_relative "database-ingestion-existing-test"
+require_relative "database-ingestion-corrections-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
     include IngestionProof
     include IngestionExistingTest
+    include IngestionCorrectionsTest
 
     def run_tests!
       @assertions = 0
@@ -26,6 +28,7 @@ module RevaerDatabaseRebaseline
       session_control_tests!
       normalization_tests!
       existing_data_tests!
+      correction_tests!
       cleanup_tests!
       puts "database-ingestion-proof-test: #{@assertions} assertions passed"
     end

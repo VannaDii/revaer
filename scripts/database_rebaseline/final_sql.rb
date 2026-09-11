@@ -16,6 +16,13 @@ module RevaerDatabaseRebaseline
     RESET_HEADER = "CREATE FUNCTION revaer_config.factory_reset_without_media_defaults_v1() RETURNS void\n    LANGUAGE plpgsql\n"
     RESET_SCOPED_HEADER = "#{RESET_HEADER}    SET lock_timeout TO '5s'\n"
     RESET_LOCAL_CALL = "    PERFORM set_config('lock_timeout', '5s', true);\n\n"
+    INGESTION_DELTAS = {
+      "CREATE TEMP TABLE tmp_policy_rules AS" => ["CREATE TEMP TABLE tmp_policy_rules ON COMMIT DROP AS", 1].freeze,
+      "ON CONFLICT (canonical_torrent_id, id_type, id_value_text)\n        DO UPDATE SET" =>
+        ["ON CONFLICT (canonical_torrent_id, id_type, id_value_text)\n        WHERE id_value_text IS NOT NULL\n        DO UPDATE SET", 1].freeze,
+      "ON CONFLICT (canonical_torrent_id, id_type, id_value_int)\n        DO UPDATE SET" =>
+        ["ON CONFLICT (canonical_torrent_id, id_type, id_value_int)\n        WHERE id_value_int IS NOT NULL\n        DO UPDATE SET", 2].freeze
+    }.freeze
     Routine = Data.define(:identity, :schema, :name, :trigger, :path)
 
     def initialize(contract)
@@ -39,8 +46,17 @@ module RevaerDatabaseRebaseline
 
     def approved_legacy_deltas(source)
       source = replace_routine_delta(source, "public.search_result_ingest_v1", CONFLICT_SETTING, CONFLICT_DIRECTIVE)
+      INGESTION_DELTAS.each do |original, (replacement, count)|
+        source = replace_routine_delta(source, "public.search_result_ingest_v1", original, replacement, count:)
+      end
       source = replace_routine_delta(source, "revaer_config.factory_reset_without_media_defaults_v1", RESET_HEADER, RESET_SCOPED_HEADER)
       replace_routine_delta(source, "revaer_config.factory_reset_without_media_defaults_v1", RESET_LOCAL_CALL, "")
+    end
+
+    def approved_ingestion_body(source)
+      INGESTION_DELTAS.reduce(source) do |body, (original, (replacement, count))|
+        exact_delta(body, "public.search_result_ingest_v1", original, replacement, count)
+      end
     end
 
     def routines(candidate)
@@ -128,15 +144,13 @@ module RevaerDatabaseRebaseline
 
     private
 
-    def replace_routine_delta(source, identity, original, replacement)
+    def replace_routine_delta(source, identity, original, replacement, count: 1)
       offset = 0
       matches = []
       SqlStatements.new(source).boundaries.each do |boundary|
         statement = source.byteslice(offset, boundary.byte_count - offset)
         if statement.match?(/^CREATE FUNCTION #{Regexp.escape(identity)}\(/)
-          raise Failure, "approved #{identity} delta does not match exactly once" unless statement.scan(original).length == 1
-
-          matches << [offset, statement.bytesize, statement.sub(original, replacement)]
+          matches << [offset, statement.bytesize, exact_delta(statement, identity, original, replacement, count)]
         end
         offset = boundary.byte_count
       end
@@ -144,6 +158,14 @@ module RevaerDatabaseRebaseline
 
       start, length, changed = matches.fetch(0)
       source.byteslice(0, start) + changed + source.byteslice(start + length..)
+    end
+
+    def exact_delta(source, identity, original, replacement, count)
+      unless source.scan(original).length == count
+        raise Failure, "approved #{identity} delta does not match exactly #{count} occurrence(s)"
+      end
+
+      source.gsub(original, replacement)
     end
 
     def replace_section(source, opening, closing, replacement)

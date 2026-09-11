@@ -118,15 +118,16 @@ module RevaerDatabaseRebaseline
       reference.zip(final).each do |old, fresh|
         same_body = old.fetch("source") == fresh.fetch("source")
         if old.fetch("name") == "search_result_ingest_v1"
-          same_body = "\n#variable_conflict use_column\n#{old.fetch('source').delete_prefix("\n")}" == fresh.fetch("source")
+          approved = FinalSql.new(@contract).approved_ingestion_body(old.fetch("source"))
+          same_body = "\n#variable_conflict use_column\n#{approved.delete_prefix("\n")}" == fresh.fetch("source")
           unless Array(old.fetch("settings")).include?("plpgsql.variable_conflict=use_column") &&
                  Array(fresh.fetch("settings")).none? { |entry| entry.start_with?("plpgsql.variable_conflict=") }
             raise Failure, "ingestion reference must retain its GUC and final only its local directive"
           end
         end
-        raise Failure, "ingestion function body or signature changed beyond D3" unless same_body && old.fetch("signature") == fresh.fetch("signature")
+        raise Failure, "ingestion function body or signature changed beyond D3/D4/D5" unless same_body && old.fetch("signature") == fresh.fetch("signature")
       end
-      check("ingestion frozen body retained independently of final directive", true)
+      check("ingestion frozen body retained independently of approved D3/D4/D5 deltas", true)
     end
 
     def ingestion_cases

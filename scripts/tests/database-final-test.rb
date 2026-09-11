@@ -17,6 +17,11 @@ module DatabaseFinalTest
     candidate = candidate.sub(RevaerDatabaseRebaseline::FinalSql::RESET_SCOPED_HEADER, RevaerDatabaseRebaseline::FinalSql::RESET_HEADER)
     reset_start = "    base_rate_limit_message CONSTANT text := 'Failed to seed rate limit policies';\n    errcode CONSTANT text := 'P0001';\n    rec RECORD;\nBEGIN\n"
     candidate = candidate.sub(reset_start, reset_start + RevaerDatabaseRebaseline::FinalSql::RESET_LOCAL_CALL)
+    candidate = candidate.sub("CREATE TEMP TABLE tmp_policy_rules ON COMMIT DROP AS", "CREATE TEMP TABLE tmp_policy_rules AS")
+    %w[text int].each do |type|
+      candidate = candidate.gsub("ON CONFLICT (canonical_torrent_id, id_type, id_value_#{type})\n        WHERE id_value_#{type} IS NOT NULL\n        DO UPDATE SET",
+                                 "ON CONFLICT (canonical_torrent_id, id_type, id_value_#{type})\n        DO UPDATE SET")
+    end
     contract.verify_candidate_source!(candidate)
     count = 1
     Dir.mktmpdir("revaer-final-policy.") do |directory|
@@ -27,6 +32,7 @@ module DatabaseFinalTest
       validator = RevaerDatabaseRebaseline::FinalSql.new(proxy)
       validator.verify!(final)
       count += 1
+      count += ingestion_delta_tests(validator, candidate, final)
       mutations = [
         final.sub("CREATE TABLE public.app_user", "CREATE TABLE public.unapproved_user"),
         final.sub("-- Revaer pre-v1 packaged database baseline.", "-- unapproved header"),
@@ -65,6 +71,62 @@ module DatabaseFinalTest
       end
     end
     puts "database-final-test: #{count} exact-delta assertions passed"
+  end
+
+  def ingestion_delta_tests(validator, candidate, final)
+    identity = "CREATE FUNCTION public.search_result_ingest_v1("
+    start = final.index(identity)
+    finish = final.index("\n$_$;", start)
+    raise "missing ingestion envelope" unless start && finish
+
+    body = final[start...finish]
+    mutations = [
+      final.sub("tmp_policy_rules ON COMMIT DROP AS", "tmp_policy_rules AS"),
+      final.sub("tmp_policy_rules ON COMMIT DROP AS", "tmp_policy_rules ON COMMIT DELETE ROWS AS"),
+      final.sub("tmp_policy_rules ON COMMIT DROP AS", "IF NOT EXISTS tmp_policy_rules ON COMMIT DROP AS"),
+      final.sub("tmp_policy_rules ON COMMIT DROP AS", "tmp_policy_rules ON COMMIT DROP AS SELECT 1; CREATE TEMP TABLE unapproved AS"),
+      final.sub("ON CONFLICT (canonical_torrent_id, id_type, id_value_text)\n", "ON CONFLICT (canonical_torrent_id, id_type, id_value_text)\n        WHERE id_value_text IS NOT NULL\n"),
+      final.sub("ON CONFLICT (canonical_torrent_id, id_type, id_value_int)\n", "ON CONFLICT (canonical_torrent_id, id_type, id_value_int)\n        WHERE id_value_int IS NOT NULL\n")
+    ]
+    %w[imdb tmdb tvdb].each do |id|
+      type = id == "imdb" ? "text" : "int"
+      branch = body[/    IF #{id}_id_value IS NOT NULL THEN\n        INSERT INTO canonical_external_id .*?    END IF;/m]
+      raise "missing #{id} ingestion branch" unless branch
+
+      predicate = "        WHERE id_value_#{type} IS NOT NULL\n"
+      ["", predicate.sub("IS NOT NULL", "IS NULL"), predicate * 2].each do |replacement|
+        mutations << final.sub(branch, branch.sub(predicate, replacement))
+      end
+    end
+    mutations.each_with_index do |mutated, index|
+      raise "ingestion mutation #{index} did not change the fixture" if mutated == final
+
+      begin
+        validator.verify!(mutated)
+      rescue RevaerDatabaseRebaseline::Failure => error
+        raise "ingestion mutation escaped exact legacy guard" unless error.message == "final init has unauthorized legacy deltas"
+      else
+        raise "unauthorized ingestion mutation #{index} passed"
+      end
+    end
+    # A changed pin cannot authorize a widened legacy delta; regenerate exact bytes.
+    generated = validator.legacy(candidate)
+    raise "generator changed SQL outside approved final prefix" unless final.start_with?(generated + RevaerDatabaseRebaseline::FinalSql::MARKER)
+
+    start = candidate.index(identity)
+    frozen_body = candidate[start...candidate.index("\n$_$;", start)]
+    RevaerDatabaseRebaseline::FinalSql::INGESTION_DELTAS.each_key do |original|
+      ["", original * 2].each do |replacement|
+        begin
+          validator.approved_ingestion_body(frozen_body.sub(original, replacement))
+        rescue RevaerDatabaseRebaseline::Failure => error
+          raise "wrong generator failure" unless error.message.include?("does not match exactly")
+        else
+          raise "missing or duplicated approved delta passed generation"
+        end
+      end
+    end
+    mutations.length + 7
   end
 end
 

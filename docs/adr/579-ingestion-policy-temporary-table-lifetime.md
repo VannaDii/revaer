@@ -24,6 +24,44 @@ The historical evidence and recommendation wording below remain unchanged.
 
 ## Evidence
 
+### Approved Implementation Checkpoint (2026-09-11)
+
+- Motivation: Implement ADR 588 choice 1 after its explicit operator approval.
+- Design notes: Source `9786ef13`, replayed after approval commit `676fdf12`,
+  changes only the four approved ingestion SQL fragments, exact generator and
+  digest/mutation guards. Independent D4/D5 regression evidence precedes the
+  still-fail-closed D3 comparison. Frozen migrations and runtime bootstrap are
+  unchanged; no cutover or same-transaction expansion is implemented.
+- Test coverage summary: 45 rebaseline, 40 exact-delta and 234 ingestion
+  assertions pass. The pinned PostgreSQL 16.14 matrix passes 27 cases and 220
+  checks, including original failures, rollback, warm-session/wrapper/helper
+  reuse, all three ID upserts and an actual-commit negative control.
+  Parent `just policy` passes after a permitted retry resolves the isolated
+  GPG sandbox-access failure; expected negative-test diagnostics are retained.
+  All 11 tested executable/configuration hashes remain identical after replay.
+  `just db-init-final-proof` remains failed on four D3 comparison/outcome checks
+  for existing IMDb ingestion and committed reuse; complete D3 scope is unproven.
+- Sonar: Secrets analysis of all 11 changed files succeeds. Supplemental MAIN
+  Ruby analysis reports zero issues for all eight complete Ruby files. CLI
+  `sonar verify` returns 403 for unavailable Agentic Analysis entitlement;
+  no canonical scanner/coverage or full CI/UI pass is claimed.
+- Observability updates: Retain exact SQLSTATE, caller role/settings, backend
+  and transaction identities, and all 18 application-table snapshots. The
+  observer and its additional grants exist only in disposable proof databases.
+- Risk and rollback plan: A broader generated delta fails the exact-byte guard.
+  Keep init inert until full proof; do not rewrite reference failures or remove
+  assertions to force acceptance. Revert only the scoped final/generator/pin
+  change if necessary, preserving the frozen candidate and failure evidence.
+- Dependency rationale: None.
+- Stale-policy check: Reviewed root, data/DevOps instructions and ADR 588.
+  The approved scope replaces the old D4/D5 hold, not D3's conditional proof.
+  Integrated instruction validation includes the parent-owned approval update.
+- Evidence: `artifacts/media-verification/2026-09-11-approved-ingestion/`
+  retains the worker handoff, tested-source hashes, raw logs, failed attempts
+  and final proof reports. Local implementation is not package or merge evidence.
+
+### Original Counterexample
+
 The independent proof at `19ca4e65` uses the exact pinned PostgreSQL 16.14
 image and frozen candidate. Six cold scenarios have matching observed results,
 data, errors and caller settings. The seventh commits a successful ingestion

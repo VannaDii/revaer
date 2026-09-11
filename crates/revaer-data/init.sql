@@ -26874,7 +26874,7 @@ BEGIN
     END IF;
 
     IF request_snapshot_id IS NOT NULL THEN
-        CREATE TEMP TABLE tmp_policy_rules AS
+        CREATE TEMP TABLE tmp_policy_rules ON COMMIT DROP AS
         SELECT psr.rule_order,
                pr.policy_rule_public_id,
                pr.rule_type,
@@ -27974,6 +27974,7 @@ BEGIN
             source_id
         )
         ON CONFLICT (canonical_torrent_id, id_type, id_value_text)
+        WHERE id_value_text IS NOT NULL
         DO UPDATE SET
             last_seen_at = EXCLUDED.last_seen_at,
             trust_tier_rank = GREATEST(canonical_external_id.trust_tier_rank, EXCLUDED.trust_tier_rank);
@@ -27999,6 +28000,7 @@ BEGIN
             source_id
         )
         ON CONFLICT (canonical_torrent_id, id_type, id_value_int)
+        WHERE id_value_int IS NOT NULL
         DO UPDATE SET
             last_seen_at = EXCLUDED.last_seen_at,
             trust_tier_rank = GREATEST(canonical_external_id.trust_tier_rank, EXCLUDED.trust_tier_rank);
@@ -28024,6 +28026,7 @@ BEGIN
             source_id
         )
         ON CONFLICT (canonical_torrent_id, id_type, id_value_int)
+        WHERE id_value_int IS NOT NULL
         DO UPDATE SET
             last_seen_at = EXCLUDED.last_seen_at,
             trust_tier_rank = GREATEST(canonical_external_id.trust_tier_rank, EXCLUDED.trust_tier_rank);

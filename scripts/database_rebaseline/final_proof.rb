@@ -5,6 +5,7 @@ require_relative "../database-rebaseline"
 require_relative "extension_proof"
 require_relative "reset_timeout_proof"
 require_relative "ingestion_proof"
+require_relative "ingestion_corrections"
 
 module RevaerDatabaseRebaseline
   # Disposable transition proof only, not an operator or application initializer.
@@ -12,6 +13,7 @@ module RevaerDatabaseRebaseline
     include ExtensionProof
     include ResetTimeoutProof
     include IngestionProof
+    include IngestionCorrections
     def initialize(contract = Contract.new, runner: CommandRunner.new)
       @contract = contract
       @runner = runner
@@ -63,6 +65,7 @@ module RevaerDatabaseRebaseline
         check("runtime read after bootstrap disabled", sql("SELECT count(*) FROM revaer_system.read_database_baseline_v1()", role: @runtime) == "1")
         verify_runtime_extension_primitives!
         verify_call_paths!
+        verify_ingestion_corrections!
         verify_ingestion_parity!
         @completed = true
       ensure
