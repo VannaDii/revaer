@@ -114,7 +114,7 @@ the repeated-call assertion, or accept `42P07` to manufacture a proof pass.
 ### Later Isolated Evidence
 
 Under the operator's 2026-09-11 research-only goal, the
-[consolidated package](588-first-release-decision-package.md#database-reproduced-defect-family)
+[consolidated package](support/588-decision-details.md#database-reproduced-defect-family)
 tests D4 on disposable database clones. Committed repeated calls and changed
 policy snapshots succeed with the proposed lifetime, and the table is absent
 after commit/rollback. Same-transaction repetition still fails, including in

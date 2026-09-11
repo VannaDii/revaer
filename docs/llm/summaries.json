@@ -5112,21 +5112,18 @@
   },
   {
     "id": "adr/588-first-release-decision-package",
-    "title": "First-Release Decision Package",
-    "summary": "Experimental candidate designs and values may be evaluated solely to produce evidence; they must remain clearly identified, unpublished, and outside production behavior.",
+    "title": "First-Release Approval Proposal",
+    "summary": "Status: Proposed Date: 2026-09-11 Operator approval: Pending Supersedes: None. Existing approvals, conditions and holds remain binding. Implementation status: Awaiting decisions; release qualification incomplete.",
     "tags": [
-      "acceptance-work-after-decisions",
-      "audio-1-full-versioned-audio-contract",
-      "corrected-asset-review-boundary",
-      "database-reproduced-defect-family",
-      "decision-completion-and-delivery-order",
-      "disc-1-through-disc-7-discovery-and-fingerprint-contract",
-      "execution-prerequisites",
-      "investigation-completion-contract",
-      "package-environment-and-compliance-startup",
-      "research-authority-and-scope",
-      "shutdown-reproduced-hazards-and-design-delta",
-      "task-record"
+      "1-fix-database-ingestion",
+      "2-require-verified-startup",
+      "3-bound-shutdown-and-require-safe-recovery",
+      "4-make-discovery-resumable-and-capacity-limited",
+      "5-adopt-three-audio-intents",
+      "6-allow-one-asset-removal-exception",
+      "7-authorize-transfers-separately",
+      "after-approval",
+      "recommendation"
     ],
     "href": "/adr/588-first-release-decision-package/"
   },
@@ -5156,6 +5153,26 @@
       "what-was-measured"
     ],
     "href": "/adr/support/588-audio-proposal/"
+  },
+  {
+    "id": "adr/support/588-decision-details",
+    "title": "ADR 588: Decision Details And Evidence",
+    "summary": "Experimental candidate designs and values may be evaluated solely to produce evidence; they must remain clearly identified, unpublished, and outside production behavior.",
+    "tags": [
+      "acceptance-work-after-decisions",
+      "audio-1-full-versioned-audio-contract",
+      "corrected-asset-review-boundary",
+      "database-reproduced-defect-family",
+      "decision-completion-and-delivery-order",
+      "disc-1-through-disc-7-discovery-and-fingerprint-contract",
+      "execution-prerequisites",
+      "investigation-completion-contract",
+      "package-environment-and-compliance-startup",
+      "research-authority-and-scope",
+      "shutdown-reproduced-hazards-and-design-delta",
+      "task-record"
+    ],
+    "href": "/adr/support/588-decision-details/"
   },
   {
     "id": "adr/support/588-discovery-proposal",

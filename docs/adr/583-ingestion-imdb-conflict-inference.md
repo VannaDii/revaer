@@ -37,7 +37,7 @@
 
 The operator's 2026-09-11 revised goal explicitly permits unpublished
 nonproduction decision experiments. The resulting
-[consolidated package](588-first-release-decision-package.md#database-reproduced-defect-family)
+[consolidated package](support/588-decision-details.md#database-reproduced-defect-family)
 reproduces the IMDb failure and the analogous TMDB/TVDB ingestion failures on
 both untouched reference and current final SQL. Its temporary candidate fixes
 all three with matching partial-index predicates. That package proposes an
