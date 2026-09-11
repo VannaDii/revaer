@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-11T20:45:32.032449+00:00",
+  "generated": "2026-09-11T22:32:46.118089+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5118,12 +5118,14 @@
       "title": "First-Release Decision Package",
       "summary": "Experimental candidate designs and values may be evaluated solely to produce evidence; they must remain clearly identified, unpublished, and outside production behavior.",
       "tags": [
+        "acceptance-work-after-decisions",
+        "audio-1-full-versioned-audio-contract",
         "corrected-asset-review-boundary",
         "database-reproduced-defect-family",
         "decision-completion-and-delivery-order",
+        "disc-1-through-disc-7-discovery-and-fingerprint-contract",
         "execution-prerequisites",
         "investigation-completion-contract",
-        "other-decision-investigations",
         "package-environment-and-compliance-startup",
         "research-authority-and-scope",
         "shutdown-reproduced-hazards-and-design-delta",
@@ -5140,6 +5142,102 @@
         "suggested-use-workflow"
       ],
       "href": "/adr/index/"
+    },
+    {
+      "id": "adr/support/588-audio-proposal",
+      "title": "AUDIO Decision Approval Package",
+      "summary": "Status: **Recommendation for ADR588, not production adoption or release acceptance.** Date: 2026-09-11. Owner: bounded AUDIO investigation. Parent owns C1 and ADR588. Revision: **2, independent retained-evidence audit**. The original is preserved byte-for-byte as REPORT.v1.md; the original proposal is recommended-contract.v1.json. No media command was repeated for this audit.",
+      "tags": [
+        "adr515-hold-reconciliation",
+        "commands-changes-and-cleanup",
+        "decision-requested",
+        "evidence-index",
+        "independent-finalization-execution",
+        "independent-findings",
+        "recommended-contracts",
+        "required-evidence-before-activation",
+        "what-was-measured"
+      ],
+      "href": "/adr/support/588-audio-proposal/"
+    },
+    {
+      "id": "adr/support/588-discovery-proposal",
+      "title": "DISCOVERY/FINGERPRINT Consolidated Decision Evidence: v2",
+      "summary": "Status: **UNPUBLISHED, NONPRODUCTION PROPOSAL AND DISPOSABLE LAB ONLY.** Source: fcdd95596fa062de9388d1be4f2ac96bbff571d1; branch: work/media3-discovery-evidence-20260911; worktree: /private/tmp/revaer-discovery-evidence-20260911. Date: 2026-09-11. Tracked delta: none. All authored material is under the ignored artifacts/decision-evidence/discovery/. Parent owns ADR 588 and C1; this work does not touch C1, audio, ADR/index files, frozen migrations, runtime defaults, production, remote state, or source/media uploads.",
+      "tags": [
+        "cleanup-risk-rollback-and-policy-check",
+        "disc-1-exact-relational-frontier-proposal",
+        "disc-2-exact-aggregate-contract",
+        "disc-3-upgrade-procedure",
+        "disc-4-stale-deletion-rename-and-configuration-semantics",
+        "disc-5-admission-fairness-and-overload",
+        "disc-6-s2-composition-and-original-root-quiescence",
+        "disc-7-exact-approval-delta-and-remaining-implementation-gates",
+        "evidence-and-source-findings",
+        "measurements-and-rationale",
+        "one-bounded-workload-revision",
+        "recommendation-and-decision-boundary",
+        "rejected-alternatives",
+        "validation-commands-and-provenance"
+      ],
+      "href": "/adr/support/588-discovery-proposal/"
+    },
+    {
+      "id": "adr/support/588-discovery-values",
+      "title": "Exact DISCOVERY/FINGERPRINT Candidate Values: v2",
+      "summary": "Status: PROPOSED ONLY, 2026-09-11. No production default, activation, shared lease acceptance, or criteria change. Source fcdd95596fa062de9388d1be4f2ac96bbff571d1. Parent incorporates the decision in ADR 588 as DISC-1 through DISC-7, not the database D1-D5 decisions. This is the single bounded useful-workload revision of the sealed history/v1 package. This is the stable numeric tuple for reconciliation with S2; Linux containment/enforcement proof belongs to the independent S2 agent. I is the proposed initial policy value; H is the absolute candidate ceiling for an explicitly versioned operator-selected policy. Increasing I toward H is an explicit, coherent policy-version action, never independent field tuning. Equal I/H means fixed",
+      "tags": [
+        "fingerprint-admission-adr-535",
+        "named-useful-workloads-and-scope",
+        "s2-coupling-candidates-not-shared-lease-acceptance",
+        "scheduler-and-traversal-adr-516",
+        "watcher-and-membership-adr-516"
+      ],
+      "href": "/adr/support/588-discovery-values/"
+    },
+    {
+      "id": "adr/support/588-lifecycle-control",
+      "title": "S2 Lifecycle Control Proposal",
+      "summary": "Status: NEW ARCHITECTURAL DELTA, UNAPPROVED AND UNIMPLEMENTED. This is an exact candidate for ADR 588, not an extension of RVB1 and not a third broker lane. No new daemon, socket, upload, dependency, or production setting was introduced.",
+      "tags": [
+        "exact-bytes",
+        "ownership-and-bounds",
+        "required-proof-not-performed-here",
+        "stop-latch-and-failure",
+        "verified-settlement-is-not-broker-death-per-request"
+      ],
+      "href": "/adr/support/588-lifecycle-control/"
+    },
+    {
+      "id": "adr/support/588-quiescence-recovery",
+      "title": "S2 Quiescence And Recovery Proposal",
+      "summary": "Status: NEW, UNAPPROVED contract details for parent ADR588. ADR512's per-root barrier, ADR513 preservation, and ADR550/557 attestation stay binding. Nothing below adopts architecture, creates a service, edits SQL or resets user state.",
+      "tags": [
+        "exact-new-operator-confirmation-delta",
+        "new-graceful-root-quiescence-handoff",
+        "shared-life-values-and-latest-parent-correction",
+        "what-survives"
+      ],
+      "href": "/adr/support/588-quiescence-recovery/"
+    },
+    {
+      "id": "adr/support/588-shutdown-proposal",
+      "title": "S2 Bounded Shutdown Investigation: Revision 3 Final",
+      "summary": "Status: **DECISION EVIDENCE ONLY. CORRECTIVE MECHANISM OBSERVED; RELEASE NOT QUALIFIED.** The original additional P1024 run failed. Exactly one separately parent-delegated corrective P1024 run then tested the minimal owner at the existing28s/2s proposal. It met that case's phase ceilings. No completed v1 trial was repeated. No tracked/production change, build, image pull, prune, new service, upload, commit or push. Parent owns ADR588 and all implementation/integration decisions. Source/base: fcdd95596fa062de9388d1be4f2ac96bbff571d1. Branch: work/media3-shutdown-bound-20260911. Worktree: /private/tmp/revaer-shutdown-bound-20260911. Ownership: ignored artifacts/decision-evidence/shutdown-bound/ only. This final revision incorporates explicit verified-settlement messages, normal broker reuse, graceful durable handoff for planned restarts, lost-proof operator recovery, final DISC values and authoritative parent LIFE-1.",
+      "tags": [
+        "actual-task-contributors",
+        "exact-integrated-acceptance",
+        "external45s-and-kernel-limits",
+        "failed-v2-linux-experiment",
+        "one-authorized-corrective-case",
+        "original-evidence-preserved",
+        "other-held-s2-numerical-values",
+        "phase-and-ownership-contract",
+        "recommendation",
+        "shared-deadline-and-retry-reconciliation",
+        "task-record-and-delivery"
+      ],
+      "href": "/adr/support/588-shutdown-proposal/"
     },
     {
       "id": "adr/template",

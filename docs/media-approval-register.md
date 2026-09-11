@@ -28,21 +28,24 @@ retroactive reapproval or an exhaustive historical ADR re-audit.
 | Decision / Owner | Status | Exact Choice Still Needed / Impact |
 | --- | --- | --- |
 | C1 / [586](adr/586-compliance-manifest-failure-boundary.md) | Pending | Typed fatal startup failure for invalid/missing compliance metadata versus an explicitly designed degraded contract. The recommendation prevents the entire service from starting, including unrelated APIs; general delivery approval does not select it. Blocks affected provider/router production wiring. |
+| C1-D delivery / [588](adr/588-first-release-decision-package.md#c1-d-exact-read-only-delivery-proposal) | Proposed, not approved | Operator-verified immutable compliance set, read-only installation, exact platform image/bundle binding and architecture-specific Helm configuration. No startup installer, mutable fallback or release-compliance waiver. |
 | D4 / [579](adr/579-ingestion-policy-temporary-table-lifetime.md) | Pending | Exact final-init `ON COMMIT DROP` correction for the policy work table; changes legacy transaction behavior. Preserve the warm-session counterexample until approved and fixed. |
 | D5 / [583](adr/583-ingestion-imdb-conflict-inference.md) | Pending | Exact final-init IMDb conflict predicate correction. Shared reference/final failure is not successful parity. |
 | D5 ingestion-family extension / [588](adr/588-first-release-decision-package.md#exact-recommendation-for-review) | Proposed, not approved | Extend the same predicate correction to the independently reproduced TMDB/TVDB ingestion branches. No canonical-merge rewrite or frozen-reference change. |
-| E1 / [558](adr/558-rvb1-native-process-broker-wire-contract.md) | Held | Exact package environment values, paths, HOME ownership and digest with amd64/arm64 evidence. Nine-key isolation approval does not approve candidate bytes or packages. |
-| S2 / [577](adr/577-runtime-shutdown-event-classification.md#s2-bound-investigation-hold-retained) | Held | A defensible shutdown bound and cleanup contract. No arbitrary timeout, process-abort fallback or unproved watcher termination. |
-| Binary deletion exception / [585](adr/585-fixed-binary-deletion-review.md) | Proposed, not approved | Exact binary boundaries only if separately approved; current canonical size/ancestry/binary gates remain unchanged. |
-| Worker recovery and retention / [512](adr/512-fenced-resumable-worker-ownership-and-recovery.md), [513](adr/513-attempt-scoped-workspace-retention-transaction.md), [514](adr/514-packaged-media-subsystem-lifecycle-and-health-contract.md) | Enumerated values held | Evidence-backed leases, heartbeats, recovery, cleanup takeover/expiry and retry/backoff where undecided. Approved exact values elsewhere stay fixed. |
-| Audio acceptance / [515](adr/515-versioned-audio-transformation-and-acceptance-contract.md) | Enumerated choices held | Measured presets, operation order and bitrate meaning/tolerances before affected transforms are enabled. |
-| Discovery/admission / [516](adr/516-durable-discovery-scheduling-and-versioned-aggregate-identity.md), [535](adr/535-bounded-cancellation-aware-fingerprint-admission.md) | Enumerated choices held | Scheduler/traversal/hash budgets, aggregate encoding/limit semantics and admission values before held behavior is activated. |
+| E1 / [558](adr/558-rvb1-native-process-broker-wire-contract.md), [588](adr/588-first-release-decision-package.md#e1-exact-candidate-and-observed-contradictions) | Held; exact conditional proposal | Select the exact 214-byte candidate and root-owned media HOME/layout conditionally on current-source amd64/arm64 closure and broker proof before activation. No historical image or nine-key isolation approval certifies those bytes/packages. |
+| S2 / [577](adr/577-runtime-shutdown-event-classification.md#s2-bound-investigation-hold-retained), [588](adr/588-first-release-decision-package.md#s2-exact-lifecycle-and-recovery-proposal) | Held; exact conditional proposal | Same-binary PID1 owner, 28 s force/2 s settlement allocation inside existing 30 s, total task envelope, bounded control/log/input contracts, graceful handoff and uncertain-root confirmation. One corrected 1,024-task mechanism trial is not full-service or dual-native timing qualification. |
+| Binary deletion exception / [585](adr/585-fixed-binary-deletion-review.md), [588 ASSET-1](adr/588-first-release-decision-package.md#asset-1-content-bound-replay-and-permanent-expiry) | Proposed, not approved | Revised proposal binds the exact 213 binary deletions to PR 130, ordinarily counts/reviews all text, permits provider-bound replays and permanently expires on first close/merge. Current canonical gates remain unchanged. |
+| Worker recovery and retention / [512](adr/512-fenced-resumable-worker-ownership-and-recovery.md), [513](adr/513-attempt-scoped-workspace-retention-transaction.md), [514](adr/514-packaged-media-subsystem-lifecycle-and-health-contract.md) | Enumerated values held; [588 LIFE-1](adr/588-first-release-decision-package.md#life-1-coupled-lease-recovery-and-retry-values) proposed | Exact 5/40 s shared renewal/expiry, quiescence-gated takeover and bounded retry/cooldown/reset proposal; no operational timing proof or automatic release of S2. Existing approved values stay fixed. |
+| Audio acceptance / [515](adr/515-versioned-audio-transformation-and-acceptance-contract.md), [588 AUDIO-1](adr/588-first-release-decision-package.md#audio-1-full-versioned-audio-contract) | Enumerated choices held; exact `/2` proposal | Three explicit intents, measured scalar/music delta, two-pass dialog/speech, configurable per-channel nominal/optional cap and full codec/layout/rate scope. Package/meter/short-form/listening qualification remains required; no legacy value or experimental pass activates it. |
+| Discovery/admission / [516](adr/516-durable-discovery-scheduling-and-versioned-aggregate-identity.md), [535](adr/535-bounded-cancellation-aware-fingerprint-admission.md), [588 DISC-1 through DISC-7](adr/588-first-release-decision-package.md#disc-1-through-disc-7-discovery-and-fingerprint-contract) | Exact proposal, not approved | Normalized durable frontier, exact aggregate bytes, observation/rescan/version semantics, read-only helper boundary and complete initial/hard admission tuple. Named-workload arithmetic is not native/storage qualification. |
 
 ## Decision Requests
 
-The in-progress [consolidated decision package](adr/588-first-release-decision-package.md)
-retains experiment results and the remaining finite investigations. It is not
-yet ready for the consolidated approval request and grants no production consent.
+The [consolidated decision package](adr/588-first-release-decision-package.md)
+is ready for review of its exact recommendations, explicit conditional
+qualification and separate external-transfer scope. Its retained evidence
+includes failures and does not certify the service. No new decision is approved
+by preparation of this package.
 
 Present a bounded batch only when each choice is ready: problem and reproduced
 evidence, alternatives, recommendation, exact contract delta, blast radius,
@@ -54,3 +57,7 @@ Production behavior, data-loss authority, numerical SLO/resource targets,
 support claims and quality criteria cannot be approved through routine task
 records. An unavailable test environment, missing service entitlement or absent
 review is an execution/access blocker, not an architectural decision or a pass.
+
+ADR 588 also requests separately scoped external-transfer consent. Architecture
+approval does not itself authorize GitHub/Sonar/GHCR uploads, and the earlier
+single-file Sonar command permission does not select the broader scope.
