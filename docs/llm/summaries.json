@@ -5029,6 +5029,7 @@
       "managed-workspace-validation-and-recipe-ownership",
       "phase-boundary-replay-checkpoint",
       "pr-99-correction",
+      "provider-preparation-and-compliance-decision",
       "staged-s1-classification",
       "synchronized-component-boundaries",
       "task-record",
@@ -5082,6 +5083,19 @@
       "task-record"
     ],
     "href": "/adr/585-fixed-binary-deletion-review/"
+  },
+  {
+    "id": "adr/586-compliance-manifest-failure-boundary",
+    "title": "Compliance manifest failure boundary",
+    "summary": "Status: Proposed Date: 2026-09-11 Operator approval: Pending Context: Provider reconstruction reaches a retained loader that converts filesystem and JSON failures into None, then reports a digest-shaped unavailable sentinel. Root policy prohibits hiding recoverable failure in absence, sentinel values or logs. G1 reserves observable failure classification and availability changes for operator approval. Decision: Pending C1 below. No runtime implementation or criteria exception is authorized by this record. Consequences: The recommendation makes the packaged manifest a startup prerequisite. Missing or malformed evidence stops startup rather than degrading silently. Development and E2E bootstrap must supply real valid fixture evidence or explicitly inject a",
+    "tags": [
+      "alternatives",
+      "c1-recommended-startup-failure-policy",
+      "task-record",
+      "validation-required-after-approval",
+      "verified-conflict"
+    ],
+    "href": "/adr/586-compliance-manifest-failure-boundary/"
   },
   {
     "id": "adr/index",

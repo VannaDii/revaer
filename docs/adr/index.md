@@ -517,3 +517,4 @@
 -   [583](583-ingestion-imdb-conflict-inference.md) - Ingestion IMDb conflict inference (Proposed; D5 held)
 -   [584](584-canonical-root-identity-paths.md) - Canonical root identity paths
 -   [585](585-fixed-binary-deletion-review.md) - Fixed binary deletion review (Proposed; no exception approved)
+-   [586](586-compliance-manifest-failure-boundary.md) - Compliance manifest failure boundary (Proposed; C1 pending)

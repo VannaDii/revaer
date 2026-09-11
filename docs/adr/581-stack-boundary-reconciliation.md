@@ -613,6 +613,42 @@ WARN (12,046,152 bytes). No remote source, stack or quality setting is changed;
 the conflicted primary checkout is preserved. D4/D5/S2 and the other exact
 operator holds remain open, as do full-service, package and Sonar acceptance.
 
+## Provider Preparation And Compliance Decision
+
+The next same-owner provider preparation is retained locally as `a5ec680c`
+over `3de017e0`: 4,915 changed lines in ten files. The complete production
+provider is donor-identical, while its database-test helper and twelve callers
+now propagate provisioning errors instead of returning successful absence.
+All 22 test declarations remain; none is claimed as executed. Only two
+existing app dependency edges are added to the lockfile, with independent
+whole-lock preservation proof. Formatting, drift, source-policy inspection,
+full offline locked all-feature metadata (439 resolved nodes) and exact donor
+subset checks pass. This is not compilation, full CI or E2E evidence.
+
+The partial provider artifact is explicitly non-runnable and unpublished:
+the parent-owned router constructors are absent. Review found the retained
+compliance-manifest loader converts file/JSON/field errors to logged `None`
+and later an unavailable digest sentinel, conflicting with root failure policy.
+Changing startup or API failure classification is reserved by G1, so affected
+wiring was not imported. [ADR 586](586-compliance-manifest-failure-boundary.md)
+presents C1 for explicit approval: typed manifest failure before background
+tasks and failed startup, without a new degraded mode or package-proof claim.
+No recommendation or delegation constitutes operator approval.
+
+The provider's existing license defaults and nonfatal capability refresh are
+separately flagged for policy/contract review; C1 does not approve or change
+them. No media operation, SQL, runtime failure policy, remote source or quality
+setting was changed by this checkpoint. The untouched parent worktree and
+completed provider worktree are removed, their refs and nonmedia source proof
+retained. No database, media fixture, build cache or server was created by the
+provider preparation. Full boundary gates remain unrun until the complete
+approved integration exists. Existing D4/D5/S2 and other holds remain open.
+
+ADR 586 and both indexes are updated together. Documentation indexing,
+instruction drift and whitespace checks pass; all 1,142 links pass. The book
+builds with the existing large-search-index WARN, not
+warning-free acceptance. The proposed decision remains local for review.
+
 ## Task Record
 
 - Motivation:
