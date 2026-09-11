@@ -18,6 +18,11 @@ pub const PACKAGED_ROOT_CATALOG_PATH: &str = "/etc/revaer/media-root-catalog.jso
 const UNTRUSTED_WRITE_BITS: u32 = 0o022;
 const READ_CHUNK_BYTES: usize = 64 * 1024;
 
+// Native mode fields have different integer widths across Unix ABIs.
+fn mode_bits(raw_mode: impl Into<u32>) -> u32 {
+    raw_mode.into()
+}
+
 #[derive(Debug, Clone, Copy)]
 enum LocalTrustPolicy {
     Packaged {
@@ -121,7 +126,7 @@ impl TrustedLocalRootCatalogSource {
         let file_evidence = RootCatalogFileEvidence {
             trust: self.trust_policy.source_trust(),
             owner_uid: opened.file_stat.st_uid,
-            mode: u32::from(opened.file_stat.st_mode),
+            mode: mode_bits(opened.file_stat.st_mode),
             document_bytes: document.len(),
         };
         Ok(RootCatalogLoad::loaded(catalog, file_evidence))
@@ -277,7 +282,7 @@ fn validate_directory(
     stat: &Stat,
     policy: LocalTrustPolicy,
 ) -> Result<(), RootCatalogSourceError> {
-    let mode = u32::from(stat.st_mode);
+    let mode = mode_bits(stat.st_mode);
     let valid = FileType::from_raw_mode(stat.st_mode) == FileType::Directory
         && policy.directory_owner_is_trusted(stat.st_uid)
         && mode & UNTRUSTED_WRITE_BITS == 0;
@@ -314,7 +319,7 @@ fn validate_file(stat: &Stat, policy: LocalTrustPolicy) -> Result<(), RootCatalo
     if stat.st_uid != policy.expected_file_owner() {
         return Err(untrusted(RootCatalogTrustViolation::OwnerMismatch));
     }
-    if u32::from(stat.st_mode) & UNTRUSTED_WRITE_BITS != 0 {
+    if mode_bits(stat.st_mode) & UNTRUSTED_WRITE_BITS != 0 {
         return Err(untrusted(RootCatalogTrustViolation::UntrustedWritableMode));
     }
     if stat.st_size < 0 {

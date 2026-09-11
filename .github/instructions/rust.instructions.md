@@ -66,6 +66,7 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, the root contract
 # Maintainability And Layout
 
 - Keep files single-purpose and cohesive.
+- Root-catalog file evidence must normalize native Unix mode widths losslessly and retain file-type as well as permission bits. Keep the exact trust mask, ownership checks and supported-target boundary unchanged when fixing platform-specific compilation or lint failures; permission-only evidence is not equivalent.
 - Target roughly 300-400 non-test LOC per production file. Split large files instead of silencing `too_many_lines`.
 - `lib.rs` should stay limited to crate docs, module declarations, light re-exports, and tiny crate-boundary glue.
 - `main.rs` must remain a thin bootstrap entry point.

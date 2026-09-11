@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -59,19 +59,22 @@ fn assert_untrusted(result: Result<crate::root_catalog::RootCatalogLoad, RootCat
 }
 
 #[test]
-fn trusted_native_file_loads_once_with_bounded_evidence() {
+fn trusted_native_file_loads_once_with_bounded_evidence() -> Result<(), Box<dyn std::error::Error>>
+{
     let directory = trusted_tempdir();
     let path = directory.path().join("catalog.json");
     write_valid(&path);
-    let load = source(&path).load_host().expect("trusted catalog");
+    let load = source(&path).load_host()?;
     assert_eq!(load.state(), RootCatalogSourceState::Loaded);
     assert_eq!(load.state().remediation_reason(), None);
     assert_eq!(load.catalog().slots().len(), 1);
-    let evidence = load.file_evidence().expect("loaded file evidence");
+    let evidence = load.file_evidence().ok_or("loaded file evidence missing")?;
     assert_eq!(evidence.trust(), RootCatalogSourceTrust::NativeOverride);
     assert_eq!(evidence.owner_uid(), operator_uid());
     assert_eq!(evidence.mode() & 0o777, 0o600);
+    assert_eq!(evidence.mode(), fs::metadata(&path)?.mode());
     assert_eq!(evidence.document_bytes(), valid_document().len());
+    Ok(())
 }
 
 #[test]

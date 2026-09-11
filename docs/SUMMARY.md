@@ -9,6 +9,7 @@
 -   [Media Release Verification](media-release-verification.md)
 -   [Execution Records](tasks/index.md)
     -   [Task Template](tasks/template.md)
+    -   [Root Catalog Mode Portability](tasks/2026-09-11-root-catalog-mode-portability.md)
 
 ## Web UI
 

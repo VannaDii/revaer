@@ -26,6 +26,8 @@ not current completion claims. All L1-L10 capabilities remain open.
   preservation, package, maintenance, and operating-envelope evidence required.
 - [Execution records](../tasks/index.md): bounded ongoing work without new ADRs
   for every implementation iteration.
+- [Root catalog mode portability](../tasks/2026-09-11-root-catalog-mode-portability.md):
+  bounded follow-through on Linux CI diagnostics; not root binding or cutover.
 - Latest retained integration before this documentation change: `f38e6a79`.
   [ADR 581](581-stack-boundary-reconciliation.md) records newer local boundaries
   and the 2026-09-11 remote audit. Older GitHub diff counts below used different
