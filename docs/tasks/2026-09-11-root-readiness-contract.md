@@ -1,6 +1,6 @@
 # Root Readiness Response Contract
 
-- Status: In progress
+- Status: Blocked
 - Date: 2026-09-11
 - Operator approval: Not applicable: nonarchitectural task record
 - Scope / owner / PR: Shared API-model readiness representation and independent
@@ -38,10 +38,11 @@ behavior is changed.
 Independent JSON vectors cover exact state mappings, wire shape, omission,
 generation precision, count bounds and ordering, malformed/duplicate/unknown
 fields, and privacy. Constructor tests separately exercise the typed entry
-point and its failure boundary. Run through existing
-`just test-media-root-contract`, then the unchanged full gates. Results and exact
-tested revision will be recorded after execution; prior passes do not certify
-this change.
+point and its failure boundary. Validation used existing
+`just test-media-root-contract` and the unchanged full gates. Local evidence is
+retained under `artifacts/media-verification/2026-09-11-root-readiness-contract/`
+in the primary checkout, including a command/result report and checksums. The
+record remains blocked because the complete handoff criteria are not satisfied.
 
 - Initial focused Linux run: exit 101, 57 passed and one failed. Independent
   tests demonstrated that Serde's derived struct decoder accepted positional
@@ -58,13 +59,52 @@ this change.
 - `just fmt`, `just instruction-drift` and whitespace validation pass.
   Documentation links passed at the earlier draft with 1,249 checked and zero
   errors. `just docs-build` exited 0 but retained the 12,418,905-byte search-index
-  warning. Final documentation checks and full CI/UI validation remain pending.
+  warning. Final documentation validation is recorded in the retained report.
 - The attempted `just --command sonar analyze secrets` file list did not run:
   sandboxed keychain/state access failed, and the permission reviewer rejected
   the broader source upload on retry. Requested operator consent for this exact
   deliverable's changed source/tests/docs under `VannaDii_Revaer`; the previous
   `final_sql.rb` consent is not reused. No clean Sonar or published coverage
   result is claimed.
+
+### Final Executable Evidence
+
+- Source `b65529a9` failed the first full CI attempt on two Rustdoc
+  `doc_markdown` findings. Corrected the comments, without changing lint policy.
+- Independent review also reproduced tagged unit-enum objects such as
+  `{"source":null}` being accepted where `kind` must be a string. The isolated
+  macOS regression run passed 60 tests and failed that case, for all five kinds.
+  Its patch is retained against `b65529a9`; the original run output remains in
+  the review task. String-only decoding fixes the finding.
+- Final executable `ea4fa87a59edf172d436af418866d15f901d20cb` passes all 61
+  focused root-contract tests on Linux arm64 and macOS: zero failed or ignored,
+  24 unrelated tests filtered by the canonical recipe, no warnings. This
+  comprises 39 readiness tests and the 22 existing root-input tests. The review
+  found no other concrete issue in its bounded scope, not a whole-service or
+  Copilot approval.
+- `just ci` at that exact source exited 0. Both strict Clippy passes, workspace
+  and minimal-feature tests, audit/dependency gates, UI build, all 18 package
+  coverage thresholds, native/script coverage and final release build completed.
+  It still emitted eight `config watcher task aborted during bootstrap shutdown`
+  WARN lines. S2 is held; exit 0 is not warning-free acceptance.
+- Rust LCOV retains 241 sources, 101,635 line records and 94,592 covered records;
+  native LLVM text and script coverage are also retained. These are local
+  coverage inputs, not published Sonar metrics or a Sonar gate result.
+- Fresh-database `just ui-e2e` at the same source exited 1: 46 passed, one failed,
+  61 not run. `tests/specs/api/media.spec.ts:130` expected profile creation HTTP
+  201 and received 400. Teardown still reports unexercised
+  `GET /v1/media/jobs/{media_job_public_id}/phases` and
+  `GET /v1/media/profiles/{media_profile_public_id}/readiness`. Assertions,
+  coverage requirements and fail-fast behavior are unchanged. JavaScript LCOV
+  from the actual partial run contains 56 sources, 5,185 lines and 3,864 covered
+  records; it is not a full UI pass.
+- The executable diff from `bb302c03` passes the canonical changed-lines gate:
+  1,738 additions and four deletions, 1,742/9,999. Final documentation adds only
+  execution evidence. This is a local base/head result, not a revalidation of
+  every existing GitHub PR.
+- No production package, full root/API/UI workflow, init cutover, authoritative
+  Sonar analysis, GitHub check or merge acceptance is established. No source
+  was pushed; C1, D4, D5, E1, S2 and the other retained holds remain in force.
 
 ## Observability And Status Docs
 
@@ -94,5 +134,10 @@ choice, workflow or recipe was changed. Routine documentation follows ADR 587;
 no new architectural decision is asserted.
 
 The primary checkout's existing workflow changes and documentation conflicts
-are preserved. Parent and independent test work use separate temporary
-worktrees; cleanup and final validation evidence will be recorded at closeout.
+are preserved. The independent test and review worktrees were removed after
+their files/results were retained. Linux validation containers exited and were
+removed; the task-owned database containers and volumes were removed after each
+run. `just clean-test-fixtures` completed, and container-local test media is gone.
+The implementation worktree is removed after preserving the source and final
+documentation in the retained integration; its removal also deletes build/test
+output. No unrelated worktree, container, volume or media is cleanup scope.

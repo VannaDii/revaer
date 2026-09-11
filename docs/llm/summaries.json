@@ -5379,7 +5379,7 @@
   {
     "id": "tasks/2026-09-11-root-readiness-contract",
     "title": "Root Readiness Response Contract",
-    "summary": "Status: In progress Date: 2026-09-11 Operator approval: Not applicable: nonarchitectural task record Scope / owner / PR: Shared API-model readiness representation and independent contract tests; local unpublished continuation from bb302c03. Approved authority: [ADR 557](../adr/557-root-persistence-contract.md#root-administration) R1-R4 and [ADR 559](../adr/559-media-approval-delta.md)'s narrow G1. The [approval register](../media-approval-register.md) retains every pending hold. Requirement ledger: [L2 and L9](../adr/564-media-completion-ledger.md#outside-in-ledger).",
+    "summary": "Status: Blocked Date: 2026-09-11 Operator approval: Not applicable: nonarchitectural task record Scope / owner / PR: Shared API-model readiness representation and independent contract tests; local unpublished continuation from bb302c03. Approved authority: [ADR 557](../adr/557-root-persistence-contract.md#root-administration) R1-R4 and [ADR 559](../adr/559-media-approval-delta.md)'s narrow G1. The [approval register](../media-approval-register.md) retains every pending hold. Requirement ledger: [L2 and L9](../adr/564-media-completion-ledger.md#outside-in-ledger).",
     "tags": [
       "motivation-and-design-notes",
       "observability-and-status-docs",

@@ -33,10 +33,13 @@ not current completion claims. All L1-L10 capabilities remain open.
   400 received): 46 passed, one failed, 61 not run, plus teardown coverage error.
   This is not root binding, cutover, published Sonar or package acceptance.
 - [Root readiness response contract](../tasks/2026-09-11-root-readiness-contract.md):
-  current outside-in continuation from `bb302c03`; path-free response grammar
-  and independent wire tests are being implemented. No route, database,
-  filesystem, UI or package readiness follows from this transport model.
-- Latest retained integration before this documentation change: `f38e6a79`.
+  source `ea4fa87a` passes 61 focused tests on Linux/macOS; independent review
+  caught and verified fixes for noncanonical Serde representations. Full CI
+  exits 0 with eight retained watcher warnings; E2E remains 46 passed, one
+  failed, 61 not run with the profile-creation and teardown failures. No route,
+  database, filesystem, published Sonar or package readiness follows from this
+  transport model.
+- Retained integration before this deliverable: `bb302c03`.
   [ADR 581](581-stack-boundary-reconciliation.md) records newer local boundaries
   and the 2026-09-11 remote audit. Older GitHub diff counts below used different
   comparison surfaces and must not replace canonical per-base/head checks.
@@ -55,6 +58,7 @@ following fields; do not mark a whole row complete from a representative test:
 
 | Requirement / Spec Anchor | Owner / PR | Implemented At | Locally Verified At | Package Verified At | Merged At | Remaining Limitation |
 | --- | --- | --- | --- | --- | --- | --- |
+| L2/L9: ADR 557 path-free readiness JSON representation | Local, unpublished | `ea4fa87a`, shared API models | 61 focused tests on Linux/macOS; [full CI/UI evidence](../tasks/2026-09-11-root-readiness-contract.md#final-executable-evidence) | Not run | Unmerged | No route, consistent SQL read, filesystem proof or usable root workflow; full handoff gates remain blocked |
 | Pending expansion for every included requirement | Unassigned until exact stack mapping | Source commit plus files, or not implemented | Source commit, dirty delta, Just command, full result and evidence path, or not run | Same source, platform, immutable image digest and report, or not run | Merge commit and remote gate/review readback, or unmerged | Explicit missing proof or decision |
 
 The field row is a required format, not fabricated evidence. The detailed
