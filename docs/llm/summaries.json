@@ -5029,7 +5029,8 @@
       "phase-boundary-replay-checkpoint",
       "pr-99-correction",
       "task-record",
-      "verified-boundaries"
+      "verified-boundaries",
+      "wired-candidate-and-first-service-boundary"
     ],
     "href": "/adr/581-stack-boundary-reconciliation/"
   },

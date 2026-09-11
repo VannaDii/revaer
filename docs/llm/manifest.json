@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-11T01:48:10.561681+00:00",
+  "generated": "2026-09-11T02:47:13.910345+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5032,7 +5032,8 @@
         "phase-boundary-replay-checkpoint",
         "pr-99-correction",
         "task-record",
-        "verified-boundaries"
+        "verified-boundaries",
+        "wired-candidate-and-first-service-boundary"
       ],
       "href": "/adr/581-stack-boundary-reconciliation/"
     },

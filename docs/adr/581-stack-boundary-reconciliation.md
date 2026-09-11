@@ -457,6 +457,54 @@ Documentation indexing, instruction drift and whitespace checks pass; link
 validation reports 1,139 OK and zero errors. The book builds with the existing
 large-search-index WARN, not warning-free documentation acceptance.
 
+## Wired Candidate And First Service Boundary
+
+The later wired candidate is validated at `822c5819`, a formatting-only runtime
+import correction over `d540f67c` with an existing ADR478 task note. Initial CI
+failed formatting; the next run failed loading `parking_lot` during Clippy.
+After cleaning only four affected package artifacts, full serial `just ci`
+exits zero, including strict Clippy, tests, coverage and release build. These
+earlier failures remain in separate logs. The successful log has 76 WARN lines;
+this is not warning-free acceptance. Rust LCOV records 217 sources, 95,578 lines
+and 88,755 covered lines. Explicit native testing passes 94 unit, seven
+build-contract and three integration tests, none ignored or filtered.
+
+The real audio fan-out fixture executes successfully and verifies two outputs;
+the separately prepared fixture suite remains ignored by the ordinary test
+invocation and is not claimed as executed. The isolated Ubuntu arm64 validation
+image adds real media tools, including FFmpeg 6.1.1, to satisfy that fixture.
+It does not validate the pinned Alpine release package or Linux amd64 support.
+
+Full `just ui-e2e` correctly exits one: 45 tests pass, one fails and 60 do not
+run. Profile creation receives 400 instead of the unchanged required 201 at
+`tests/specs/api/media.spec.ts:90`; teardown also reports absent UI coverage.
+This confirms a current operator-workflow blocker, not an accepted negative
+case. No assertion, route requirement or coverage gate is weakened. Source and
+generated API artifacts remain clean after the run. Published Sonar coverage
+and complete service acceptance remain unproved.
+
+Independent same-owner regrouping produces `004974ec` over `89c532a2`: 7,060
+changed lines, no binary entries or renames. It stages executable shared
+contracts/store/runtime prerequisites without API registration or temporary
+providers. All 159 migration files and their order match the donor exactly;
+no SQL is authored. Exact subset proof, locked metadata, format, policy, drift,
+size and scoped all-target strict compilation pass. Full CI and E2E on this
+exact first boundary remain required; the wired candidate's results do not
+certify it. No later group is started and no new architectural approval is
+inferred. Its completed agent and clean worktree are removed; committed refs
+and nonmedia evidence remain in the dated private evidence directories.
+
+The wired database container and storage are removed and canonical test-media
+cleanup passes. Existing D4/D5/S2 and package/stack/Sonar holds remain open.
+The next critical work is the profile creation/root integration and exact
+boundary validation, not a push justified by partial green results.
+The completed wired validation worktree is removed with its branch retained.
+Documentation indexing, drift and whitespace checks pass; link validation has
+1,139 successful links and no errors after enabling required network access.
+The book builds with the existing large-search-index WARN (12,011,486 bytes).
+No source push, remote criteria mutation or change to the primary checkout is
+made by this checkpoint.
+
 ## Task Record
 
 - Motivation:
