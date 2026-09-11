@@ -362,6 +362,101 @@ indexing, instruction drift and whitespace checks pass; link validation reports
 1,139 OK and zero errors. The book builds with its existing large-search-index
 WARN (11,961,608 bytes), not warning-free documentation acceptance.
 
+## Execution And API Boundary Validation
+
+Full isolated Linux arm64 `just ci` at `011da317` exits zero, including all
+18 package coverage gates and the release build. The added execution,
+replacement, verification, persistence, API and UI sources are included in this
+boundary; this does not imply that the later application job-runtime wiring
+is present. Rust LCOV has 207 source records, 81,763 line records and 75,986
+covered lines. Generic script coverage is retained. Forty held shutdown WARN
+records remain, so this is not warning-free acceptance or published Sonar proof.
+Explicit native tests pass: 94 unit tests, seven build-contract tests and three
+enabled native integration tests, with none ignored or filtered.
+
+Full E2E is not passing at this boundary. All 101 individual tests pass, but
+teardown rejects 39 uncovered media API operations. The original recipe returns
+zero anyway because later LCOV assertions mask the Playwright failure. This is
+a false-green gate, not acceptance. The route list and full output are retained;
+no route or assertion is removed. The application does not yet inject the real
+media provider at this boundary, so moving later success-only route smoke tests
+backward without reconciling the service boundary is not a proven fix.
+Application startup also regenerates both tracked OpenAPI artifacts; their
+exact output and drift are retained, then only these owned generated changes
+are restored. The later schema commits are not silently assumed present.
+
+Two earlier startup attempts failed from Docker storage exhaustion and a
+nested-cache ownership error. Host-backed Cargo registry and complete home
+cache mounts resolve those environment failures without pruning unrelated
+Docker resources. Their failed logs remain separate from the completed test
+run. The earlier managed-workspace E2E log was checked for the newly discovered
+teardown failure markers and has none; its result is not retroactively treated
+as this boundary's result.
+
+Correction `cee9c667`, validated locally as `13da9c59`, makes every existing
+LCOV assertion blocking and propagates the captured c8/Playwright status after
+checking coverage. The 28-case regression executes the resolved recipe with
+isolated command fixtures: two shard modes, success/failure test statuses and
+seven valid/invalid coverage shapes. Its original-recipe negative control
+reproduces the false success. Workflow regression, instruction drift, shell
+syntax and whitespace checks pass; the four-file correction is 89 changed
+lines. A real complete E2E rerun at `13da9c59` still has 101 passing tests and
+39 uncovered operations, but now correctly exits one. It is not a passing E2E
+gate. No test, route requirement, coverage assertion or threshold was weakened.
+
+The next eleven originals are reconstructed through `232a81ea`, retaining
+their exact code and historical migration deltas. Two missing per-diff E2E
+instruction updates caused real drift failures. The owning commits now include
+one maintenance instruction each; ADR 430 has two corresponding record lines.
+These four additive documentation lines are isolated in preservation evidence;
+they do not change executable behavior or create operator approval. All eleven
+size gates pass (largest 9,938/9,999), together with instruction drift,
+whitespace, workflow regression/live checks and patch preservation. There are
+no changed shell files, so that syntax-check input set is empty. Full compiler
+and E2E gates for these later eleven commits are not inferred from the earlier
+boundary's results. Original and pre-amend refs remain preserved.
+
+The next quality commit, original `f5f22fa1`, requires separate reconciliation:
+its rejected release-plugin alias, dependency downgrades and loss of working
+Playwright result paths must not overwrite the repaired baseline. No new
+duplicate tolerance, architectural approval or criteria relaxation is inferred
+from the original commit. D4/D5/S2, ADR 585, package acceptance and published
+Sonar remain open. No remote mutation was performed in this checkpoint.
+
+The corrected quality candidate `0fc991d5` preserves the real release graph and
+working Playwright configuration, retains inherited patched RNG/WASI versions,
+and removes only two unused duplicate tolerances. The original downgrade
+candidate's four duplicate-family failures are resolved without new exemptions.
+Full locked metadata, warnings-denied Cargo audit, canonical deny, workflow and
+preservation checks pass; its diff is 1,768/9,999. No full compiler or E2E result
+is inferred for this later candidate. Exact deviations and retained package
+records are recorded in the private quality report.
+
+The E2E correction is folded into its first owner `b0e8def9`, and all 31
+descendants are replayed through `d540f67c`. All 32 mapped size, drift,
+whitespace and changed-shell checks pass (largest 9,945/9,999), as do the
+28-case exit regression and workflow/live guards. Thirty descendant deltas
+remain exact; the original job-runtime commit's identical `set -euo pipefail`
+line is already present from the earlier fix and is retained once. This is
+accepted as a mechanical overlap, not a new architectural decision or literal
+patch-identity claim. Independent application of the correction to `0fc991d5`
+produces the exact final tree. Cargo/npm graphs and deny criteria are unchanged.
+The mapped API-service boundary `d26bc15b` has the exact tree of tested
+`13da9c59`; it retains the known E2E failure, not a pass.
+
+All completed agents and owned validation/reconstruction worktrees are removed,
+their refs and nonmedia evidence retained. Dedicated database/run containers
+and database storage are removed; canonical fixture cleanup passes. The user's
+primary checkout remains unchanged. Host-backed dependency caches are retained
+outside worktrees for future validation; no test media is retained. Private
+evidence lives in the dated execution-owner, job-stack and E2E-exit directories
+under `/private/tmp`. The next required work is the failing API/provider/schema
+boundary and full validation of the later application-wiring/quality segment,
+not a source push based on the earlier false success.
+Documentation indexing, instruction drift and whitespace checks pass; link
+validation reports 1,139 OK and zero errors. The book builds with the existing
+large-search-index WARN, not warning-free documentation acceptance.
+
 ## Task Record
 
 - Motivation:

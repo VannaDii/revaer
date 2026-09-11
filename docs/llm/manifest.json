@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-11T00:49:36.386746+00:00",
+  "generated": "2026-09-11T01:48:10.561681+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5025,6 +5025,7 @@
         "corrected-asset-owner-and-next-stack-segment",
         "dependency-and-ui-checkpoint",
         "exact-foundation-validation-and-immediate-replay",
+        "execution-and-api-boundary-validation",
         "integrated-validation-and-cleanup",
         "linux-foundation-and-eight-commit-replay",
         "managed-workspace-validation-and-recipe-ownership",

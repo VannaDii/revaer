@@ -560,3 +560,12 @@ these results neither close the integration E2E blocker above nor certify a
 supported release package. Reconstruction continues through `011da317`, with
 the recipe-test fix folded into its owner and every runtime patch preserved.
 No source push or merge is claimed, and all architectural holds are unchanged.
+
+The next execution/API boundary passes full CI and native tests at `011da317`,
+but is not E2E-passing: 101 tests pass while teardown rejects 39 uncovered media
+API routes. A discovered recipe-status bug had masked that failure. The bounded
+fix and 28 regression cases now propagate the real failure; `13da9c59` exits
+one on a complete rerun. ADR 581 records this correction, generated-schema
+drift, and the rebuilt stack through `d540f67c`. Later dependency audit/deny
+checks pass without new exemptions, but neither those checks nor exact-tree
+replay proves a complete operator workflow, passing E2E or release acceptance.
