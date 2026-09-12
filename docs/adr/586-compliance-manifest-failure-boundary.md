@@ -301,7 +301,33 @@ database finalization, shutdown policy, or release qualification.
   bootstrap without weakening full-suite or production rules. Parent owns
   DevOps, ledger, navigation/generated docs and full-gate reconciliation.
 
-Parent DevOps companion paragraph for `just/ui.just`:
+### Parent Integration Result (2026-09-11)
+
+- Amended worker `bee07560` was integrated byte-for-byte as `1c470560`;
+  matching DevOps guidance is in the parent delta. The completed worktree was
+  removed after its gate logs were archived under
+  `artifacts/media-verification/2026-09-11-c1-e2e-bootstrap/`.
+- Full `just ui-e2e` on `1c470560` plus the recorded parent proof/documentation
+  delta reaches the real API: 57 passed, one failed, 72 did not run. Schedule
+  enablement in `media.spec.ts` still returns 400 with
+  `media_profile_filesystem_identity_required` instead of the required 200.
+  The unchanged positive assertion remains blocking. No UI coverage files were
+  produced because the suite stopped before UI execution, so teardown also
+  fails. This is not full E2E or automation qualification.
+- The owned database and anonymous volumes were removed; canonical fixture
+  cleanup passes. Full-file MAIN TypeScript Sonar reports zero issues for the
+  setup and its new guard tests. Authoritative Sonar, published coverage,
+  stable-source full CI and both native packages remain outstanding.
+
+The legacy procedure rejects schedule/watch enablement and a supplied interval
+unconditionally (`0182_media_normalized_configuration_identity.sql:1417`).
+There is no missing fixture step that makes this PATCH valid. Complete D3 and
+the accepted init transition, implement ADR 557's attested root catalog and
+versioned profile/source-association workflow, then exercise real association
+activation in E2E. Positive enablement/run assertions remain required; no SQL
+fixture bypass or migration edit is authorized.
+
+The companion paragraph is implemented in the parent DevOps instruction delta:
 
 > Canonical `just ui-e2e` prepares the host app with `just ui-e2e-app-build`,
 > selects the exact completed Cargo library-test artifact and directly runs
@@ -312,3 +338,53 @@ Parent DevOps companion paragraph for `just/ui.just`:
 > must fail without terminating other workloads. Keep focused preparation checks
 > at `just ui-e2e-bootstrap-test` and `just ui-e2e-app-test`, using the existing
 > Node wrapper; these checks are neither the full UI gate nor package evidence.
+
+## Child Coverage And Export Checkpoint (2026-09-11)
+
+- Motivation: The two environment-isolated bootstrap tests also cleared
+  `LLVM_PROFILE_FILE`, leaving child profiles outside the collector. Worker
+  `7b84dfa0`, replayed as `f766560a`, preserves only that supplied value.
+  Tests cover supplied, empty and absent values and removal of stale/unrelated
+  entries. Production startup, environment handling and C1 assertions are unchanged.
+- Verification: The workspace/all-feature instrumented `bootstrap` target
+  passes three tests. Child-only preflight lines 61-66 each record a hit; no
+  new default profile appears under the app crate. Earlier profiles are retained,
+  not discarded. The first command combined incompatible `--no-report` and
+  `--no-clean` options and failed before execution; the corrected command uses
+  `--no-report` alone. Both logs are retained.
+- Export correction: Pinned cargo-llvm-cov 0.8.7 hides test/example/benchmark
+  paths and `*_tests.rs` by default. `just cov-report` disables that default for
+  LCOV, HTML and native exports, preserves existing Rust/native separation and
+  propagates each command's failure. `just cov` now fails immediately if its
+  instrumentation or tests fail. The separate 90% package gates are unchanged;
+  adding test lines cannot dilute them. No scanner property or server criterion
+  changes, and no new dependency or authored-file exclusion is introduced.
+- Evidence: Actual exports increase first-party Rust file records from 242 to
+  310, adding 68 and removing zero. Six structural mutations reject missing
+  exports, test hiding, changed package gates and masked failures. Four executable
+  recipe cases retain success or stop at the exact failed LCOV/HTML/native command.
+  The first failure-control draft targeted another recipe's shell setup; its
+  failure is retained, and the corrected test targets `cov` specifically.
+- Limits: This strengthens local coverage collection, not published Sonar
+  coverage or release readiness. Exports retain external native/macro records;
+  canonical scanner acceptance remains unverified without `SONAR_TOKEN`.
+  The earlier full CI run on `4981eef4` exits zero with eight watcher warnings;
+  it does not certify these later child/export changes. UI remains 57 passed,
+  one failed and 72 not run at the required scheduling workflow.
+- Observability/rollback: Preserve commands, raw profiles, default-filter and
+  inclusive reports under `artifacts/media-verification/2026-09-11-c1-e2e-bootstrap/`.
+  Revert only this test/export delta to roll back; do not suppress coverage or
+  runtime failures. No test media or completed child worktree remains.
+- Stale-policy check: Reviewed root, Rust, DevOps, Sonar instructions and the
+  approved ADR 586/588 boundary. Rust instructions preserve child instrumentation;
+  DevOps and the existing required-checks owner enforce inclusive exports and
+  unchanged package gates. Architecture, frozen SQL and approval scope are unchanged.
+
+### Pending Gate Findings
+
+The fixed 48-file source-only secrets scan ran after local inventory validation
+and found five hard-coded PostgreSQL password defaults in `just/quality.just`.
+They remain required fixes, not accepted test-fixture exceptions. The current
+full CI run evaluates the child/export checkpoint; it does not clear this finding.
+The documentation link gate also failed with one connection error and 37
+timeouts after a network-enabled retry. No scanner or link criterion was changed.

@@ -155,7 +155,8 @@ cov:
         cargo-llvm-cov cargo-llvm-cov 0.8.7
     rustup component add llvm-tools-preview
     cargo llvm-cov clean --workspace
-    toolchain_env="$(bash scripts/coverage-toolchain-env.sh)"; \
+    set -euo pipefail; \
+        toolchain_env="$(bash scripts/coverage-toolchain-env.sh)"; \
         eval "${toolchain_env}"; \
         export CC CXX LLVM_COV LLVM_PROFDATA REVAER_RUST_LLVM_VERSION; \
         test_database_url="${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh postgres)}"; \
@@ -196,16 +197,15 @@ cov:
             echo "Coverage below 90% for:${fail_list}"; \
             exit 1; \
         fi; \
-        rm -rf coverage; \
-        mkdir -p coverage; \
-        cargo llvm-cov report \
-            --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' \
-            --lcov --output-path coverage/lcov.info; \
-        cargo llvm-cov report \
-            --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' \
-            --html --output-dir coverage; \
-        cargo llvm-cov report --text --output-path coverage/llvm-cov.txt
+        just cov-report
     just script-coverage
+
+cov-report:
+    rm -rf coverage
+    mkdir -p coverage
+    cargo llvm-cov report --no-default-ignore-filename-regex --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --lcov --output-path coverage/lcov.info
+    cargo llvm-cov report --no-default-ignore-filename-regex --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --html --output-dir coverage
+    cargo llvm-cov report --no-default-ignore-filename-regex --text --output-path coverage/llvm-cov.txt
 
 script-coverage:
     command -v kcov >/dev/null 2>&1 || { echo "kcov is required for authored shell coverage" >&2; exit 1; }

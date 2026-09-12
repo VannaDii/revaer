@@ -1,10 +1,11 @@
 # C1-D Compliance Chart Binding
 
-- Status: Blocked
+- Status: In progress
 - Date: 2026-09-11
 - Operator approval: Not applicable: nonarchitectural task record
 - Scope / owner / PR: `work/media3-compliance-chart`, unpublished local chart
-  binding. Expanded operator-authorized ownership: `charts/revaer/**`,
+  binding. Expanded parent-assigned ownership within approved C1-D scope:
+  `charts/revaer/**`,
   `just/release.just`, `release/scripts/helm-package.sh`,
   `scripts/instruction-drift-check.sh`, `scripts/tests/compliance-chart-test.sh`,
   `scripts/tests/helm-package-test.sh`, `scripts/tests/instruction-drift-test.sh`
@@ -122,8 +123,10 @@ are synthetic renderer fixtures, not release evidence.
   private storage and generated credentials. Actual database image:
   `sha256:7e7dbab8d3b431a20793a6d99cb5a6bc84e44914309917f1bf5589a7568cdefd`.
   Sanitized local log: `target/compliance-chart-ci-053844c96620.log`.
-- No follow-up UI attempt: the operator explicitly directed against repeating
-  the known missing C1 startup metadata. No substitute witness was created.
+- No follow-up UI attempt in the worker: the parent kept this subtask scoped
+  to chart/packaging verification after the known C1 startup failure. This is
+  not operator consent to waive UI verification. No substitute witness was
+  created; the complete integrated UI gate remains outstanding.
 
 ### Initial Binding Evidence
 
@@ -208,6 +211,53 @@ Only these shared-file actions remain parent-owned:
    after real C1 startup preparation; repeated known-failing setup or invented
    metadata is not evidence. No default, schema or quality-gate relaxation is
    needed or authorized.
+
+## Parent Integration Checkpoint (2026-09-11)
+
+- Both worker commits are integrated: `fd1dc9b4` as `e940e873`, and `cad195b6`
+  as `e48364da`. The completed worker's scoped files were compared before its
+  worktree was removed. Retained artifacts are under
+  `artifacts/media-verification/2026-09-11-compliance-chart/`; historical
+  worktree-relative paths above now refer to that archive, not a live checkout.
+- Matching DevOps ownership/rules, instruction-drift coverage, navigation and
+  the ledger are integrated. `just helm-lint` passes with all 100 chart cases
+  and six packaging cases. Instruction-drift regressions now exercise 15 paths,
+  43 guard runs and 301 assertions. No lint fixture enters packaged defaults.
+- Move the three authored Ruby test bodies out of shell heredocs into tracked
+  `.rb` files, retaining thin canonical shell entrypoints. Chart and package
+  bodies are byte-identical extractions; the drift test also covers these new
+  paths. This exposes real source to Ruby analysis and execution coverage,
+  without exclusions, generated/test classification or dependency changes.
+  Full-file MAIN Ruby analysis reports zero issues for all three files.
+- Fix the scanner-installer test's access to the operator's personal GPG home:
+  real public-key inspection now uses a private mode-0700 temporary homedir.
+  Preserve the real fingerprint/signature/archive assertions. The focused test
+  and subsequent script-coverage gate pass; the initial permission failure is
+  retained, not suppressed. DevOps and drift tests cover this test boundary.
+- The integrated CI command exits zero but started before the final proof and
+  test-source edits. It retains eight watcher warnings and does not certify the
+  final revision. Corrected managed-database UI setup reaches the real API,
+  which refuses startup with `compliance_metadata_startup_failed` /
+  `missing_file`; no browser cases ran. The earlier UI attempt failed database
+  ownership matching and is separately retained. Neither failure is a waiver.
+- ADR 586 already permits explicitly injected test-only compliance loading.
+  The initial read-only audit incorrectly treated that missing E2E wiring as
+  missing approval; exact contract reconciliation corrected the conclusion.
+  Canonical test bootstrap is ongoing approved work. Production startup and
+  C1-D authenticated image delivery remain unchanged and separately required.
+- Canonical Sonar is blocked by unavailable `SONAR_TOKEN`; no published coverage
+  or quality-gate pass is claimed. Installer/authenticity, PVC contents, actual
+  Linux amd64/arm64 startup, stable-source CI/UI and release remain incomplete.
+  Earlier worker text attributing parent task direction to the operator was
+  corrected; parent delegation is not operator consent to waive a gate.
+- The integrated changed-file Sonar secrets scan found one hard-coded password
+  in the existing Helm lint default. Removed credentials from that rendering-only
+  URL instead of suppressing the finding. The repeat exact-file scan passes.
+  A new real unsigned-package case exercises the default URL separately from
+  the override: strict `just helm-lint` now passes all seven package cases and
+  100 assertions. The final Ruby test file again returns zero MAIN Sonar issues.
+  Earlier six-case coverage predates this fix; it is retained as such and must
+  not certify the new source.
 
 ## Observability And Status Docs
 

@@ -353,6 +353,70 @@ run_guardrail "${case_root}" >/dev/null
 
 conversion_recipe="$(just --justfile "${baseline}/justfile" --show test-media-conversion)"
 
+case_root="$(new_case coverage-default-test-hiding)"
+replace_once "${case_root}/just/quality.just" \
+  'cargo llvm-cov report --no-default-ignore-filename-regex' 'cargo llvm-cov report'
+expect_failure "coverage exports hiding authored tests by default" "${case_root}"
+
+case_root="$(new_case coverage-softened-package-gate)"
+replace_once "${case_root}/just/quality.just" '--fail-under-lines 90' '--fail-under-lines 0'
+expect_failure "a softened Rust package coverage threshold" "${case_root}"
+
+case_root="$(new_case coverage-tests-dilute-package-gate)"
+replace_once "${case_root}/just/quality.just" \
+  'cargo llvm-cov report --package' 'cargo llvm-cov report --no-default-ignore-filename-regex --package'
+expect_failure "test-file counts changing the established package coverage gate" "${case_root}"
+
+case_root="$(new_case coverage-execution-failure-masked)"
+replace_once "${case_root}/just/quality.just" \
+  $'set -euo pipefail; \\\n        toolchain_env=' $': \\\n        toolchain_env='
+expect_failure "coverage execution without fail-closed shell behavior" "${case_root}"
+
+case_root="$(new_case coverage-exports-detached)"
+replace_once "${case_root}/just/quality.just" '    just cov-report' '    true'
+expect_failure "coverage exports detached from canonical instrumentation" "${case_root}"
+
+case_root="$(new_case coverage-export-error-masked)"
+replace_once "${case_root}/just/quality.just" \
+  '--lcov --output-path coverage/lcov.info' '--lcov --output-path coverage/lcov.info || true'
+expect_failure "a suppressed coverage export failure" "${case_root}"
+
+for mode in pass lcov html text; do
+  case_root="$(new_case "coverage-export-${mode}")"
+  mkdir -p "${case_root}/bin"
+  cat > "${case_root}/bin/cargo" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${REVAER_COVERAGE_CALLS}"
+if [[ -n "${REVAER_COVERAGE_FAILURE}" && " $* " == *" ${REVAER_COVERAGE_FAILURE} "* ]]; then
+  exit 17
+fi
+SH
+  chmod +x "${case_root}/bin/cargo"
+  failure="--${mode}"
+  expected_calls=3
+  case "${mode}" in
+    pass) failure="" ;;
+    lcov) expected_calls=1 ;;
+    html) expected_calls=2 ;;
+  esac
+  status=0
+  (
+    cd "${case_root}"
+    PATH="${case_root}/bin:${PATH}" REVAER_COVERAGE_FAILURE="${failure}" \
+      REVAER_COVERAGE_CALLS="${case_root}/calls" \
+      just --no-dotenv --justfile "${case_root}/justfile" cov-report
+  ) > "${case_root}/export.log" 2>&1 || status=$?
+  if [[ "$(wc -l < "${case_root}/calls" | tr -d ' ')" != "${expected_calls}" ]]; then
+    echo "Coverage export ${mode} continued past a failed report or missed a report" >&2
+    exit 1
+  fi
+  if [[ ( "${mode}" = pass && "${status}" != 0 ) || ( "${mode}" != pass && "${status}" = 0 ) ]]; then
+    echo "Coverage export ${mode} did not preserve command failure" >&2
+    exit 1
+  fi
+done
+
 case_root="$(new_case media-fixture-only)"
 replace_once "${case_root}/just/media.just" "$conversion_recipe" \
   'test-media-conversion: verify-test-fixtures'

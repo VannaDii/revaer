@@ -5,6 +5,8 @@ require_relative "ingestion_existing"
 require_relative "ingestion_approved_deltas"
 require_relative "ingestion_compilation"
 require_relative "ingestion_wrapper"
+require_relative "ingestion_policy"
+require_relative "ingestion_dependencies"
 
 module RevaerDatabaseRebaseline
   # Uses FinalProof's private transport and evidence owner, never runtime SQL.
@@ -13,6 +15,8 @@ module RevaerDatabaseRebaseline
     include IngestionApprovedDeltas
     include IngestionCompilation
     include IngestionWrapper
+    include IngestionPolicy
+    include IngestionDependencies
     INGESTION_TABLES = %w[
       canonical_torrent canonical_torrent_source canonical_torrent_source_attr
       canonical_torrent_source_context_score canonical_torrent_best_source_context
@@ -64,6 +68,8 @@ module RevaerDatabaseRebaseline
       ingestion_inventory!
       verify_ingestion_compilation!
       verify_ingestion_wrapper!
+      verify_ingestion_policy!
+      verify_ingestion_dependencies!
       verify_ingestion_session_controls!
       verify_existing_ingestion_parity!
       ingestion_cases.each do |name, changes, expected, helpers_first|

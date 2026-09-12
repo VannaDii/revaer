@@ -33,6 +33,7 @@ module WorkflowGuardrails
     IMAGE_VERIFY_CONDITION = "inputs.final_image_compliance_bundle == ''"
     IMAGE_REACHABILITY_CONDITION =
       "inputs.final_image_compliance_bundle != '' || github.event_name == 'pull_request'"
+    RUST_COVERAGE_FILTER = '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$'
 
     def initialize(inputs, diagnostics)
       @inputs = inputs
@@ -47,6 +48,7 @@ module WorkflowGuardrails
       validate_udeps_contract
       validate_database_rebaseline_contract
       validate_media_conversion_recipes
+      validate_coverage_recipes
       validate_supply_chain_aggregate
       validate_ui_coverage_aggregate
       validate_image_workflow_contract
@@ -254,6 +256,38 @@ module WorkflowGuardrails
         error("#{name} must preserve ordered integrity/Rust execution, unfiltered all-feature " \
           "media_fixtures --include-ignored, denied warnings, fresh conversion evidence, and failures")
       end
+    end
+
+    def validate_coverage_recipes
+      report = "cargo llvm-cov report --no-default-ignore-filename-regex"
+      rust = "#{report} --ignore-filename-regex '#{RUST_COVERAGE_FILTER}'"
+      expected = {
+        "body" => [
+          ["rm -rf coverage"], ["mkdir -p coverage"],
+          ["#{rust} --lcov --output-path coverage/lcov.info"],
+          ["#{rust} --html --output-dir coverage"],
+          ["#{report} --text --output-path coverage/llvm-cov.txt"]
+        ],
+        "attributes" => [], "parameters" => [], "dependencies" => [],
+        "priors" => 0, "shebang" => false
+      }
+      recipe = @inputs.recipe_definitions["cov-report"]
+      unless @inputs.recipe_owners["cov-report"] == "just/quality.just" &&
+          recipe.is_a?(Hash) && expected.all? { |field, value| recipe[field] == value }
+        error("cov-report must retain ordered fail-closed LCOV, HTML and native exports without default test-file hiding")
+      end
+
+      body = @inputs.recipe_definitions.dig("cov", "body")
+      build = ['        cargo llvm-cov --workspace --all-features --include-ffi --no-report; \\']
+      threshold = [
+        ['        if ! cargo llvm-cov report --package "${name}" \\'],
+        ["            --ignore-filename-regex '#{RUST_COVERAGE_FILTER}' \\"],
+        ['            --json --summary-only --fail-under-lines 90 >/dev/null; then \\']
+      ]
+      valid = body.is_a?(Array) && body[4] == ['set -euo pipefail; \\'] &&
+        body.count(build) == 1 && body.each_cons(3).count(threshold) == 1 &&
+        body.last(2) == [["    just cov-report"], ["just script-coverage"]]
+      error("cov must fail closed on workspace execution and preserve the separate 90% package gates before exports") unless valid
     end
 
     def validate_image_workflow_contract

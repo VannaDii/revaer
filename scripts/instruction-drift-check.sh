@@ -133,8 +133,12 @@ collect_matches devops_matches \
   "scripts/image-release.sh" \
   "scripts/instruction-drift-check.sh" \
   "scripts/tests/compliance-chart-test.sh" \
+  "scripts/tests/compliance-chart-test.rb" \
   "scripts/tests/helm-package-test.sh" \
+  "scripts/tests/helm-package-test.rb" \
   "scripts/tests/instruction-drift-test.sh" \
+  "scripts/tests/instruction-drift-test.rb" \
+  "scripts/tests/install-sonar-scanner-test.sh" \
   "scripts/database-rebaseline.rb" \
   "scripts/database_rebaseline/**" \
   "scripts/with-node.sh" \

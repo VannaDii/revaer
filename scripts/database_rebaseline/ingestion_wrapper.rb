@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "ingestion_identity"
+
 module RevaerDatabaseRebaseline
   # Frozen warm evidence uses a real rollback, never a repaired temporary namespace.
   module IngestionWrapper
+    include IngestionIdentity
     WRAPPER_MODES = %w[cold helpers-first warm-rollback].freeze
     WRAPPER_INPUTS = %w[indexer_definition indexer_instance policy_snapshot search_request search_request_indexer_run canonical_torrent_source_base_score].freeze
     WRAPPER_INPUT_CLOCKS = {
@@ -13,6 +16,7 @@ module RevaerDatabaseRebaseline
     private
 
     def verify_ingestion_wrapper!
+      @wrapper_validated_evidence = {}
       @wrapper_evidence = File.join(@contract.output_path, "ingestion-wrapper")
       raise Failure, "wrapper evidence must not be a symlink" if File.symlink?(@wrapper_evidence)
 
@@ -39,7 +43,10 @@ module RevaerDatabaseRebaseline
                    warm_scope: "actual first ingestion rolled back, same-backend retry committed; not successful frozen committed reuse",
                    candidate_sha256: @contract.expected_candidate_sha256, final_sha256: @contract.final_sha256,
                    postgres_image: @contract.postgres_image, checks:, cases: }
-        File.binwrite(File.join(@wrapper_evidence, "report.json"), JSON.pretty_generate(report) + "\n")
+        path = File.join(@wrapper_evidence, "report.json")
+        bytes = JSON.pretty_generate(report) + "\n"
+        File.binwrite(path, bytes)
+        @wrapper_validated_evidence[path] = Digest::SHA256.hexdigest(bytes) if report.fetch(:passed)
       end
     end
 
@@ -65,7 +72,7 @@ module RevaerDatabaseRebaseline
           arguments: wrapper_arguments("sample", minute: 2, size: 500), wrapper: true, samples: 3 },
         { name: "trim-size-samples", fixtures: (0...25).map { |index| wrapper_arguments("sample", minute: index, size: (index + 1) * 100) },
           arguments: wrapper_arguments("sample", minute: 25, size: 2600), wrapper: true, samples: 25 }
-      ]
+      ] + wrapper_identity_cases
     end
 
     def wrapper_isolated(test_case, mode, variant, source, role)
@@ -95,8 +102,13 @@ module RevaerDatabaseRebaseline
         frames = wrapper_execute(session, database, role, prefix)
         evidence = { "seed_clock" => seed_clock, "fixtures" => fixtures, "before" => before, "inputs_before" => inputs_before,
                      "frames" => frames, "after" => ingestion_snapshot(database), "inputs_after" => wrapper_inputs(database) }
-        File.binwrite("#{prefix}.json", JSON.pretty_generate(evidence) + "\n")
+        bytes = JSON.pretty_generate(evidence) + "\n"
+        File.binwrite("#{prefix}.json", bytes)
+        first = @checks.length
         wrapper_verify!(name, test_case, session, evidence, variant, role)
+        if @checks.drop(first).all? { |entry| entry.fetch(:passed) }
+          @wrapper_validated_evidence["#{prefix}.json"] = Digest::SHA256.hexdigest(bytes)
+        end
         { "application" => compilation_comparable("fixture" => nil, "frames" => fixtures + frames), "inputs" => wrapper_comparable_inputs(evidence) }
       ensure
         sql("DROP DATABASE #{identifier(database)} WITH (FORCE)", role: "postgres", database: "postgres") if created
@@ -180,11 +192,12 @@ module RevaerDatabaseRebaseline
       source = tables.fetch("canonical_torrent_source").find { |row| row.fetch("canonical_torrent_source_public_id") == result.fetch("canonical_torrent_source_public_id") }
       return false unless canonical && source
 
-      fresh = test_case.fetch(:fixtures).empty? || test_case[:new_page] == true
+      fresh = test_case.fetch(:fixtures).empty? || test_case[:new_page] == true || test_case.fetch(:identity, {})[:operation] == "new"
       return false unless result.values_at("observation_created", "durable_source_created", "canonical_changed") == [fresh, fresh, fresh]
       return wrapper_scoring?(test_case, tables, canonical, source) if test_case[:scoring]
       return wrapper_paging?(test_case, frame) if test_case[:paging]
       return wrapper_samples?(test_case, tables, canonical) if test_case[:samples]
+      return false if test_case[:identity] && !wrapper_identity?(test_case, frame, canonical, source)
 
       tables.fetch("canonical_torrent_best_source_context").one? { |row| row.fetch("canonical_torrent_id") == canonical.fetch("canonical_torrent_id") && row.fetch("canonical_torrent_source_id") == source.fetch("canonical_torrent_source_id") }
     end

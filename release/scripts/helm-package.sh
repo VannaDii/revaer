@@ -24,7 +24,7 @@ metadata_template="${chart_root}/artifacthub-repo.yml"
 annotations_renderer="${repo_root}/release/scripts/render-helm-annotations.sh"
 release_repository="${REVAER_RELEASE_REPOSITORY:-${GITHUB_REPOSITORY:-VannaDii/Revaer}}"
 release_asset_url="https://github.com/${release_repository}/releases/download/${app_version}/${public_key_asset}"
-lint_database_url="${REVAER_HELM_LINT_DATABASE_URL:-postgres://revaer:revaer@postgres.default.svc.cluster.local:5432/revaer}"
+lint_database_url="${REVAER_HELM_LINT_DATABASE_URL:-postgres://postgres.default.svc.cluster.local:5432/revaer}"
 # Synthetic lint inputs only; the packaged chart must retain its empty bindings.
 lint_args=(
     --strict

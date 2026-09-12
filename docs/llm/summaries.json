@@ -4874,6 +4874,7 @@
       "in-call-setting-proof-checkpoint-2026-09-11",
       "independent-d3-counterexample",
       "observed-conflicts",
+      "policy-identity-and-native-proof-checkpoint-2026-09-11",
       "task-record",
       "wrapper-and-warm-cache-proof-checkpoint-2026-09-11"
     ],
@@ -5095,11 +5096,13 @@
   {
     "id": "adr/586-compliance-manifest-failure-boundary",
     "title": "Compliance manifest failure boundary",
-    "summary": "Status: Accepted Date: 2026-09-11 Operator approval: 2026-09-11, explicit C1/C1-D and conditional E1 approval in [ADR 588](588-first-release-decision-package.md#approval-resolution). Implementation status: Approved for implementation; not package-qualified. Context: Provider reconstruction reaches a retained loader that converts filesystem and JSON failures into None, then reports a digest-shaped unavailable sentinel. Root policy prohibits hiding recoverable failure in absence, sentinel values or logs. G1 reserves observable failure classification and availability changes for operator approval. Decision: C1 below is accepted together with ADR 588's exact C1-D delivery contract. No degraded fallback or criteria exception is selected. Consequences: The recommendation makes the packaged manifest a startup prerequisite. Missing or",
+    "summary": "Canonical `just ui-e2e` prepares the host app with `just ui-e2e-app-build`, selects the exact completed Cargo library-test artifact and directly runs `bootstrap::runtime_tests::e2e_serving_entry`. Its explicit compliance loader is `cfg(test)` only; production entrypoints retain required packaged metadata. Preserve the real runtime, disposable database, setup/auth flows, owned process groups, complete suites, route assertions and coverage gates. Occupied ports must fail without terminating other workloads. Keep focused preparation checks at `just ui-e2e-bootstrap-test` and `just ui-e2e-app-test`, using the existing Node wrapper; these checks are neither the full UI gate nor package evidence.",
     "tags": [
       "alternatives",
+      "c1-e2e-bootstrap-checkpoint-2026-09-11",
       "c1-implementation-checkpoint-2026-09-11",
       "c1-recommended-startup-failure-policy",
+      "child-coverage-and-export-checkpoint-2026-09-11",
       "task-record",
       "validation-required-after-approval",
       "verified-conflict"
@@ -5507,6 +5510,21 @@
     "href": "/runbook/"
   },
   {
+    "id": "tasks/2026-09-11-compliance-chart-binding",
+    "title": "C1-D Compliance Chart Binding",
+    "summary": "Approved ADR 588 C1-D chart bindings must retain exact platform-image and manifest SHA-256 digests, an empty image tag, conflict-checked amd64/arm64 scheduling, an existing prepared PVC, exact read-only imagehex/manifesthex subPath and the reserved manifest checksum annotation. The image repository must not contain a tag, digest, scheme or whitespace; numeric registry ports remain supported. Keep required source/package bindings empty by default. `just helm-lint` must depend on `helm-annotation-test`, `compliance-chart-test` and `helm-package-test`. Both packaging branches must use strict lint with explicit synthetic bindings only on the lint command, never in chart or package defaults. Preserve real unsigned-archive empty-value assertions and fail-closed signing command-construction regressions; doubles are not signature or release evidence. Keep chart/test ownership aligned with `scripts/instruction-drift-check.sh` and its regression suite. Rendering and unsigned packaging do not prove verified image identity, prepared storage, startup, installation, E1 activation or package qualification.",
+    "tags": [
+      "motivation-and-design-notes",
+      "observability-and-status-docs",
+      "parent-integration-checkpoint-2026-09-11",
+      "remaining-parent-integration",
+      "risk-rollback-and-dependencies",
+      "stale-policy-check-and-cleanup",
+      "test-coverage-summary"
+    ],
+    "href": "/tasks/2026-09-11-compliance-chart-binding/"
+  },
+  {
     "id": "tasks/2026-09-11-media-profile-create-rejection",
     "title": "Media Profile Create Rejection",
     "summary": "Status: In progress Date: 2026-09-11 Operator approval: Not applicable: nonarchitectural task record Scope / owner / PR: Bounded profile fixtures and API regression tests; parent-reviewed local integration, unpublished, runtime acceptance pending. Approved authority: [Specification](../../MEDIA_TRANSCODING.md), [ADR 419](../adr/419-pr76-media-data-review-remediation.md), and the existing [ADR 557](../adr/557-root-persistence-contract.md) / [ADR 559](../adr/559-media-approval-delta.md) cutover boundary. The operator's [ADR 588](../adr/588-first-release-decision-package.md) approval remains intact. Requirement ledger: [Media completion ledger](../adr/564-media-completion-ledger.md), configuration and discovery evidence; the parent recorded the bounded proof there without changing any approval status.",
@@ -5550,7 +5568,7 @@
   {
     "id": "tasks/index",
     "title": "Execution Records",
-    "summary": "Routine execution records retain scope, verification and remaining work without creating architectural approval events. [Root policy](../../AGENTS.md#5-task-record-and-adr-rules) defines their requirements; decisions remain in the [ADR catalogue](../adr/index.md). Continue the same record for iterations on one deliverable. Historical task ADRs retain their paths and are not bulk-migrated here. [Task template](template.md) [Root catalog mode portability](2026-09-11-root-catalog-mode-portability.md) [Root readiness response contract](2026-09-11-root-readiness-contract.md) [Media profile create rejection](2026-09-11-media-profile-create-rejection.md) Current governance implementation and its validation are recorded once in [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record). Media priorities and evidence remain in the [completion ledger](../adr/564-media-completion-ledger.md).",
+    "summary": "Routine execution records retain scope, verification and remaining work without creating architectural approval events. [Root policy](../../AGENTS.md#5-task-record-and-adr-rules) defines their requirements; decisions remain in the [ADR catalogue](../adr/index.md). Continue the same record for iterations on one deliverable. Historical task ADRs retain their paths and are not bulk-migrated here. [Task template](template.md) [Root catalog mode portability](2026-09-11-root-catalog-mode-portability.md) [Root readiness response contract](2026-09-11-root-readiness-contract.md) [Media profile create rejection](2026-09-11-media-profile-create-rejection.md) [C1-D compliance chart binding](2026-09-11-compliance-chart-binding.md) Current governance implementation and its validation are recorded once in [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record). Media priorities and evidence remain in the [completion ledger](../adr/564-media-completion-ledger.md).",
     "tags": [],
     "href": "/tasks/index/"
   },

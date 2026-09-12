@@ -6,7 +6,7 @@ module RevaerDatabaseRebaseline
 
     def wrapper_tests!
       cases = wrapper_cases
-      assert(cases.length == 8 && cases.map { |item| item.fetch(:name) }.uniq.length == 8, "retain distinct wrapper/scoring/page/size cases")
+      assert(cases.length == 26 && cases.map { |item| item.fetch(:name) }.uniq.length == 26, "retain distinct wrapper/scoring/page/size/identity cases")
       assert(IngestionProof::INGESTION_HELPERS.include?("search_result_ingest"), "inventory must include the actual Rust wrapper")
       assert(IngestionWrapper::WRAPPER_MODES == %w[cold helpers-first warm-rollback], "retain independent cold and warm compilation modes")
       cases.each do |test_case|
@@ -19,7 +19,7 @@ module RevaerDatabaseRebaseline
         assert(query.scan("tables_finish:").length == 2, "retain both transaction outcomes")
       end
       assert(cases.fetch(4).fetch(:fixtures).length == 10, "fill the real minimum-size page")
-      assert(cases.last.fetch(:fixtures).length == 25, "reach actual size-sample retention boundary")
+      assert(cases.find { |item| item.fetch(:name) == "trim-size-samples" }.fetch(:fixtures).length == 25, "reach actual size-sample retention boundary")
       wrapper_result_tests!(cases)
       wrapper_input_tests!
       wrapper_scoring_tests!(cases)

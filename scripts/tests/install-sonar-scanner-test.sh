@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/revaer-sonar-installer.XXXXXX")"
 trap 'rm -rf "${test_root}"' EXIT
 mkdir -p "${test_root}/bin" "${test_root}/runner"
+mkdir -m 700 "${test_root}/gnupg"
 
 cat > "${test_root}/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
@@ -137,7 +138,7 @@ for digest in \
   grep -Fq "${digest}" "${repo_root}/scripts/install-sonar-scanner.sh"
 done
 
-gpg --batch --no-autostart --with-colons --show-keys \
+gpg --homedir "${test_root}/gnupg" --batch --no-autostart --with-colons --show-keys \
   "${repo_root}/config/sonarsource-public-key.asc" \
   | awk -F: '$1 == "fpr" { print $10 }' \
   | grep -Fxq 679F1EE92B19609DE816FDE81DB198F93525EC1A

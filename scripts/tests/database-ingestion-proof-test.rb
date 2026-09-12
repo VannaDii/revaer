@@ -8,6 +8,9 @@ require_relative "database-ingestion-corrections-test"
 require_relative "database-ingestion-approved-deltas-test"
 require_relative "database-ingestion-compilation-test"
 require_relative "database-ingestion-wrapper-test"
+require_relative "database-ingestion-identity-test"
+require_relative "database-ingestion-policy-test"
+require_relative "database-ingestion-dependencies-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
@@ -17,6 +20,8 @@ module RevaerDatabaseRebaseline
     include IngestionApprovedDeltasTest
     include IngestionCompilationTest
     include IngestionWrapperTest
+    include IngestionIdentityTest
+    include IngestionPolicyTest
 
     def run_tests!
       @assertions = 0
@@ -38,6 +43,8 @@ module RevaerDatabaseRebaseline
       approved_delta_tests!
       compilation_tests!
       wrapper_tests!
+      identity_tests!
+      policy_tests!
       cleanup_tests!
       puts "database-ingestion-proof-test: #{@assertions} assertions passed"
     end
@@ -259,3 +266,4 @@ module RevaerDatabaseRebaseline
 end
 
 RevaerDatabaseRebaseline::IngestionProofTest.new.run_tests!
+RevaerDatabaseRebaseline::IngestionDependenciesTest.new.run_tests!

@@ -37,6 +37,9 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - SCA is enabled and fail-closed. Add `sonar.sca.sbomImportPaths=release/media-compliance/media-runtime-inventory.spdx.json` only when that exact committed matching inventory exists in the integrated tree; once present, the property and inventory are mandatory together.
 - Coverage must include the complete Rust workspace with all features and `--include-ffi` using exact cargo-llvm-cov 0.8.7, positive Rust LCOV, JavaScript/TypeScript LCOV, authored shell/Ruby generic coverage, a native compilation database, and retained native llvm-cov text. Hosted Linux must fail unless the `session.cpp` section contains at least one positive covered-line record; macOS may omit it only when the real native backend was not compiled.
 - Use available pinned clang-19 with Rust-bundled llvm-cov and llvm-profdata. Compatibility is behavioral, not exact LLVM-major equality.
+- Rust input generation follows the inclusive `cov-report` contract in
+  `devops.instructions.md`. Authored test files must remain visible in exported
+  coverage; a passing package threshold is not proof that Sonar received them.
 - PR and main workflows install exact SonarScanner CLI 8.1.0.6389 through `setup-revaer` only. Installation requires exact per-platform SHA-256 validation plus detached-signature verification against the committed key and pinned fingerprint. `just sonar-scan` is the one and only scanner invocation.
 - Sonar checkout uses complete Git history and the exact event head. The exact event base SHA must be an ancestor of the head; divergent or stale stacked branches fail with a restack requirement before analysis.
 - Reject every scanner log containing the `WARN` token after ANSI normalization. Retain one complete scanner log, one SCM evidence file, one `report-task.txt`, one submitted-report archive, one exact task ID, and the API result JSON used for verification.

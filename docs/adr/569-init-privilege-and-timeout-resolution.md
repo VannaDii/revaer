@@ -451,6 +451,113 @@ runtime bootstrap or the conditional D3 acceptance boundary.
   trigger and read-dependency closure. Full integrated CI/UI, canonical Sonar,
   both native packages and merge acceptance remain required.
 
+## Policy, Identity And Native Proof Checkpoint (2026-09-11)
+
+- Scope: Continue the approved D3 proof without changing frozen migrations,
+  final SQL, runtime authority or acceptance criteria. Policy commit `a3657b3b`
+  was replayed byte-for-byte as `ff7a681e`; native inventory `dc004eb9` was
+  replayed byte-for-byte as `6b335753`. Parent wiring invokes both through the
+  existing canonical proof, alongside the new identity matrix.
+- Policy evidence: 49 populated cases and 196 variant runs pass 1,472 checks.
+  Retain all 18 write tables and 19 read inputs, exact decisions and actual
+  `action::decision_type` execution. Exercise require families, precedence,
+  matchers, actions, severities and prefer branches. Cold/helper-first and
+  warm-rollback evidence remains distinct from approved committed D4 reuse.
+  The frozen release-group regex requires a literal-backslash suffix in this
+  fixture: ordinary suffix recognition and policy-creation API conformance
+  are not proved by these cases. No regex repair is included.
+- Identity evidence: Add new/reuse/GUID-promotion cases for six identity
+  strategies, with distinct lower-ID decoys and competing v1/v2 identities.
+  The full wrapper matrix now has 26 cases, 156 runs and 1,482 passing checks.
+  Independent replay validates 724 frames, including 324 identity frames,
+  with 3,024 additional assertions and 4,768 targeted mutation rejections.
+  Canonical/source/observation identities, refresh data, separate hash vectors,
+  unchanged unrelated rows and wrapper best-source selection are explicit.
+- Review corrections: Initial validators omitted some observation/refresh
+  assertions and skipped the common wrapper tail. Discriminating fixtures
+  replaced single-row identity cases. The first corrected live run then caught
+  a wrong test expectation: v2 reuse preserves canonical v1 absence but fills
+  source v1 from the supplied hash. The SQL was not changed to satisfy it.
+  A subsequent coherent wrong-selection mutation exposed result-anchored ID
+  selection. The final predicate independently selects the prior fixture
+  observation and binds all three expected IDs to it. Twelve modeled mutations
+  and 16 raw mutated frames pass the old predicate and fail the new one.
+  Independent re-review reports no remaining finding in that bounded scope.
+- Native evidence: The worker's pinned PostgreSQL 16.14 run passes 823 checks
+  with exact container/volume cleanup. It compares recursive catalog edges,
+  definitions/settings, read-relation dispatch, FK equality and trigger
+  bindings, actual policy cast, unaccent dictionary/template, and native file
+  identities. Real known answers run cold and across commits. Installed
+  callbacks and eligible row changes are explicitly not callback-entry traces;
+  `pg_depend` is not complete PL/pgSQL late-binding analysis. This run predates
+  the parent identity extension and is not combined-proof acceptance.
+- Harness: The integrated proof harness passes 1,868 assertions; the new
+  dependency harness passes 104. The last pre-native canonical run passes
+  3,465/3,466 checks, failing only the explicit incomplete-D3 sentinel. Its SQL
+  generation is unchanged by the final identity-predicate fix, which was
+  independently replayed against the retained raw evidence. The newly wired
+  canonical run on `6b335753` plus this staged proof delta passes 3,469/3,470:
+  its only failure is incomplete D3. All four dependency checks pass, tied to
+  166 current-process observation files. Finalizer guards pass 40 assertions.
+- Native review status: The 3,469/3,470 run predates three required validator
+  corrections. Coherent root/callback omissions could pass both catalogs;
+  check labels did not bind later-consumed frame bytes; equal invalid backend
+  IDs could satisfy warm provenance. The retained data itself replayed
+  consistently. Correction `7f7b91c9`, replayed as `4981eef4`, plus the parent
+  validation-time byte-hash producers closes those three findings. A fresh
+  canonical run again passes 3,469/3,470, failing only incomplete D3. Independent
+  replay passes 556 assertions, verifies all 166 file hashes and rejects the
+  exact unchanged-707-root callback omission, empty/duplicate frames and 14
+  invalid-backend mutations. Another 24 assertions exercise the actual producer
+  methods with mocked transport and tampered writes; no observation registry
+  was reconstructed from disk. The corrected native unit suite passes 197.
+- Analysis and gates: Full-file MAIN Ruby Sonar returns zero issues for the
+  final identity module/test, proof owner/harness and native module/test.
+  The integrated CI attempt exits zero, including all 18 package coverage gates
+  and the release build, but retains eight watcher shutdown warnings and the
+  fixture suite's explicit ignored test. Rust LCOV contains 94,718 covered
+  records of 101,711. Source changed during that run; it is not a clean final
+  revision certification. UI stops at missing C1 startup metadata before any
+  browser cases. ADR 586 already permits an explicit test-only injected loader;
+  wiring that path is approved implementation, not a new architecture request.
+  Canonical Sonar cannot start without `SONAR_TOKEN`; no published coverage,
+  full UI, Linux package, remote-check or merge pass is claimed.
+  Documentation generation succeeds; `just docs-build` exits zero but emits
+  a large-search-index warning (14,668,403 bytes). This is not warning-free
+  documentation qualification, and no search or analysis scope was reduced.
+- Latest integrated gates: On `4981eef4` plus the retained parent delta, with
+  executable source unchanged throughout the run, `just ci` exits zero through
+  all 18 package coverage gates, script coverage and the release build. Eight
+  watcher shutdown warnings remain, so this is not warning-free qualification.
+  Its owned database and anonymous volumes were removed. Full UI now reaches
+  57 passed, one failed and 72 not run through ADR 586's explicit test bootstrap;
+  legacy schedule enablement and missing UI coverage remain blocking. Full-file
+  MAIN Sonar reports zero issues for both corrected native files and both
+  producer files; canonical `just sonar-scan` still fails before analysis for
+  missing `SONAR_TOKEN`. The later child-coverage fix is tracked in ADR 586 and
+  is not retroactively certified by this CI run.
+- Observability and evidence: Preserve raw queries, diagnostics, images,
+  source boundaries, local execution coverage and review under
+  `artifacts/media-verification/2026-09-11-d3-identity-initial/`,
+  `2026-09-11-d3-identity-review-intermediate/`,
+  `2026-09-11-d3-integration-pre-native/` and `2026-09-11-d3-native/`.
+  The native worker did not retain two superseded development failures; their
+  final successful replacements do not reconstruct those missing logs.
+  No production telemetry or original media changed.
+- Risk/rollback and dependencies: Test oracles and normalization can hide real
+  differences, so retain deliberate negative controls, separate role/session
+  evidence and independent review. Revert only these proof changes to roll
+  back; retain the D3 gate and inert init. Use existing Ruby standard libraries,
+  PostgreSQL tools and pinned container only; no new dependency is introduced.
+- Stale-policy check: Reviewed root, data, DevOps, UI and Sonar instructions,
+  ADRs 569/586/588 and the closure audit. DevOps now requires fixture-bound
+  expected identities and the exact limits of catalog/native evidence. No
+  approval, condition, scanner scope or required check is weakened.
+- Remaining: Validation/error, identity-fill/conflict, attribute/signal and
+  reachability families plus complete helper/native dispatch qualifications.
+  Full stable-source CI/UI, canonical Sonar, both packages and merge remain
+  required. Every report retains `d3_complete=false`; no cutover is authorized.
+
 ## Task Record
 
 - Motivation: Present the two live single-init conflicts and the subsequently

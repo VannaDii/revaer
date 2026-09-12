@@ -4,6 +4,14 @@ applyTo:
   - ".github/actions/**"
   - "Dockerfile"
   - "release/**"
+  - "charts/revaer/**"
+  - "scripts/tests/compliance-chart-test.sh"
+  - "scripts/tests/compliance-chart-test.rb"
+  - "scripts/tests/helm-package-test.sh"
+  - "scripts/tests/helm-package-test.rb"
+  - "scripts/tests/instruction-drift-test.sh"
+  - "scripts/tests/instruction-drift-test.rb"
+  - "scripts/instruction-drift-check.sh"
   - "justfile"
   - "just/**"
   - "scripts/cargo-install-retry.sh"
@@ -12,6 +20,7 @@ applyTo:
   - "scripts/tests/exact-cargo-tool-test.sh"
   - "scripts/image-release.sh"
   - "scripts/install-sonar-scanner.sh"
+  - "scripts/tests/install-sonar-scanner-test.sh"
   - "scripts/prepare-sonar-scm.sh"
   - "scripts/sonar-*.sh"
   - "scripts/verify-sonar-inputs.sh"
@@ -77,6 +86,25 @@ applyTo:
 - Release packaging must preserve Artifact Hub ownership metadata when `ARTIFACTHUB_OWNER_NAME` and `ARTIFACTHUB_OWNER_EMAIL` are provided, even for unsigned packaging paths, because Artifact Hub ownership claim and verified-publisher flows depend on that published owner identity.
 - Release packaging should publish an explicit `artifacthub.io/images` chart annotation for the Revaer image so Artifact Hub can index the runtime image and generate package security scans reliably.
 - Helm release annotations must be rendered from a file through the portable renderer and covered by `just helm-annotation-test`. Do not pass multiline YAML through `awk -v` or interpolate annotation bodies into command text.
+- ADR 588 C1-D requires an explicit platform-image digest, matching `amd64` or
+  `arm64` selector, prepared existing PVC and manifest digest. Keep required
+  values empty in the shipped chart; reject tags, repository reference
+  suffixes, conflicting architecture and reserved compliance-checksum
+  overrides. Both the volume and mount must be read-only, with the exact
+  image/manifest subPath. Helm rendering is not image authenticity, prepared
+  storage, installer completion or package-startup proof. `just helm-lint`
+  must include `just compliance-chart-test` and `just helm-package-test`;
+  signing and unsigned packaging
+  lint must use `--strict` with explicit lint-only synthetic inputs. Never
+  write those fixtures into chart defaults or published packages. Tests must
+  inspect actual packaged defaults and preserve both signing-path checks.
+  Keep authored Ruby test logic in tracked `.rb` files behind the canonical
+  shell entrypoints so Ruby analysis and executed coverage see those sources;
+  shell heredocs must not hide the test implementation from its analyzer.
+- Sonar installer regression tests must inspect the real committed signing key
+  with a private temporary GPG home, never the operator's keyring or trust
+  database. Keep the exact fingerprint, archive and signature assertions;
+  sandbox access failures do not authorize bypassing authentication checks.
 - Workflows that install Rust toolchains must use the repository's configured toolchain source of truth rather than hard-coded ad hoc channels unless a documented exception is required.
 - Workflow build, lint, test, coverage, security, image, signing, manifest, and release gates must call canonical `just` recipes. Workflows may install tools, authenticate, or upload artifacts, but must not execute raw Cargo gates, Docker builds or manifest publication, Trivy scans, Cosign signing, or Helm packaging/publication directly.
 - Justfile recipes must run under non-login Bash so caller-selected Rust and NVM tool paths remain active inside every recipe.
@@ -107,11 +135,25 @@ applyTo:
 - Reusable image workflows may publish PR-scoped dev Helm charts only as an optional post-manifest job. Keep that publish step downstream of the multi-arch manifest job, drive it through `just helm-package` and `just helm-publish`, and derive the default prerelease chart version from the caller-provided PR number.
 - PR image verification and any explicitly authorized publication must wait for all UI shards, feature, native, media-conversion, Sonar/coverage, supply-chain, and matrix-loading jobs. Ordinary pull requests build and scan verification images without pushing or signing them. The same-repository caller must set `publish_dev_helm: true` before an eligible post-manifest dev chart publication; a failed prerequisite must prevent image, manifest, signature, and Helm publication.
 - Every UI shard coverage upload must use `if-no-files-found: error`. The aggregate must download all three exact named artifacts, prove nonempty API and UI records for each shard through `just ui-e2e-shard-coverage`, and only then evaluate combined route coverage.
+- Canonical `just ui-e2e` requires `just ui-e2e-bootstrap-test`, prepares the
+  host app with `just ui-e2e-app-build`, selects the exact completed Cargo
+  library-test artifact and directly runs
+  `bootstrap::runtime_tests::e2e_serving_entry`. Its explicit compliance loader
+  is `cfg(test)` only; production entrypoints retain required packaged metadata.
+  Preserve the real runtime, disposable database, setup/auth flows, owned process
+  groups, complete suites, route assertions and coverage gates. Occupied ports
+  must fail without terminating other workloads. Keep focused preparation checks
+  at `just ui-e2e-bootstrap-test` and `just ui-e2e-app-test`, using the existing
+  Node wrapper; these checks are neither the full UI gate nor package evidence.
 - Release-tag image publication in `ci.yml` must not depend on `release-dev` or any other `main`-only job. Split dev and tag image publishing into separate jobs when their prerequisites differ.
 - Stable tag activity in `ci.yml` must exclude prerelease tags consistently at the job boundary, not only in downstream publish jobs. Do not let prerelease tags build stable release artifacts that the later jobs refuse to publish.
 - Reusable-workflow caller jobs must not use `secrets: inherit` unless the callee truly requires repository secrets. Prefer the default GitHub token plus explicit job permissions, and pass named secrets only when the callee consumes them.
 - Helm chart validation and publication must flow through `just helm-lint`, `just helm-package`, and `just helm-publish`. Do not add ad hoc packaging or registry-push shell blocks to workflows.
 - Helm packaging must render multiline annotations without passing embedded newlines through `awk -v`; keep the renderer portable across the BSD and GNU userlands used by local and hosted gates.
+- The default Helm lint database URL must contain no credentials: rendering
+  never needs a database connection. Exercise both the default and explicit
+  override paths through real unsigned packaging; do not suppress a secrets
+  finding because the hard-coded value was intended as a fixture.
 - Every workflow job that invokes `just` must install it first through `./.github/actions/setup-revaer`; do not assume any hosted or self-hosted runner image already provides it. This includes each architecture job in the reusable image workflow before the Trivy verifier runs.
 - PR UI E2E jobs must use the runner-provided Chrome channel, shard the `ui-chromium` project without dependency projects, and install Playwright system dependencies without downloading redundant browser bundles. Run API route coverage in a separate API E2E job, construct that job's database URLs from the exact run-scoped Postgres service credentials, upload its route-coverage artifacts, and include them in the aggregate E2E coverage gate. Keep CI video capture disabled unless Playwright's bundled ffmpeg is intentionally installed.
 - `just lint` runs `scripts/workflow-guardrails.sh`, which rejects unpinned external action refs, direct `${{ inputs.* }}` interpolation inside `run:` blocks, direct workflow release/security gates, and nonempty Sonar coverage exclusions.
@@ -129,12 +171,34 @@ applyTo:
 - Cargo analysis tools are exact: cargo-udeps 0.1.57 on `nightly-2026-06-13`, cargo-audit 0.22.0, cargo-deny 0.18.9, cargo-llvm-cov 0.8.7, sqlx-cli 0.8.6, and trunk 0.21.14. Install them through `scripts/ensure-exact-cargo-tool.sh`; do not accept newer, older, floating-nightly, yanked-lock warning, or minimum-version substitutes. Preserve cargo-udeps cache and toolchain evidence in PR CI.
 - ADR 522 database rebaseline work must use the digest-qualified PostgreSQL image and exact server/client version in `.github/build-inputs.env`. The freeze guard validates the immutable migration corpus and keeps `init.sql` absent in the freeze phase; the candidate recipe writes only ignored local evidence, applies the full candidate to a fresh database, compares its normalized schema re-dump, and verifies its pinned SHA-256 and SQL statement count. The PR Feature Matrix job must run `just db-rebaseline-candidate` before migration-backed tests on every pull request. Assembly prefixes must be exact statement-boundary prefixes, apply to an empty database, and stay within the canonical no-rename changed-line limits. The full frozen candidate is 1,624 statements, 1,593,023 bytes, and 44,630 lines. ADR 551 finalization must retain and verify that candidate before validating exact authorized deltas, the independently reviewed final digest, and live constrained-role privilege evidence through `just db-init-final-proof`. Binary or uncountable diffs fail closed. Final SQL remains inert review evidence until coordinated cutover; finalization cannot select it for ordinary runtime/tests or retire migrations.
 - `scripts/workflow-guardrails.sh` composes the five ADR 482 Ruby owners for input loading, GitHub Actions, Sonar properties, required checks, and diagnostics. Do not merge them back into an unstructured parser or add a sixth policy owner without a separately approved decision.
+- `just cov` must fail immediately on instrumentation/test failure before any
+  report can mask it. Its separate 90% Rust package thresholds stay unchanged.
+  `just cov-report` must disable cargo-llvm-cov's default test/example/benchmark
+  hiding for LCOV, HTML and native exports, retain the existing Rust/native
+  stream separation, and propagate every export failure. The existing required
+  checks owner validates the parsed recipe contracts; test records must never
+  dilute the established package gates or disappear from Sonar's input.
 - Treat `sonar-project.properties` as the only versioned source of truth for Sonar scanner criteria. The exact scanner is installed only by `setup-revaer`, and `just sonar-scan` is the sole invocation in PR and main workflows. Version updates require exact per-platform SHA-256 pins, the committed fingerprint-verified SonarSource key, detached-signature verification, fixtures, and a task record.
 - Sonar criteria and server settings are fail-closed under the root policy. Do not relax any property, source scope, analyzer, coverage input, quality-gate condition, issue or hotspot state, new-code definition, or required check without exact operator consent naming the change, scope, reason, and expiry.
 - Release-tooling dependency changes under `release/**`, including JavaScript lockfiles such as `release/package-lock.json`, must stay manifest-scoped, avoid unrelated workflow churn, and update this instruction file in the same change so instruction-drift remains explicit.
 - Database rebaseline validation must translate missing candidate files into the existing bounded failure diagnostic with a repository-relative path. Do not call platform-specific exception accessors or treat missing evidence as successful validation; keep the missing-file regression in the policy suite.
 - ADR 551 pristine catalog evidence uses only `just db-pristine-catalog-generate`, `just db-pristine-catalog-validate`, and `just db-pristine-catalog-test` with the existing pinned PostgreSQL image. These fixture-only commands must read as a constrained database owner, account for every column in the 27 named catalogs, normalize identities, fail on unreadable populated catalogs, and remove their unique disposable container and volumes. They neither initialize Revaer nor change the frozen migrations or assembly file.
 - ADR 569 D3 ingestion proof must retain cold-session cases and exact known-answer helper-first cases under the caller's unchanged compilation setting. Verify helper records precede ingestion, compare all retained application results and table mutations, and reject missing, duplicate or changed evidence. These cases do not replace complete helper/trigger closure or successful repeated calls across commits. Preserve the failing warm counterexample until its separately approved correction is proved; never repair the test backend, accept its error, or certify D3 from a partial matrix.
+- Identity proof must bind reused canonical/source/observation IDs to independently
+  selected, recorded fixture rows. Returned IDs cannot define the expected target.
+  Include a coherent wrong-selection regression, distinct competing identities,
+  exact refresh/hash assertions and the wrapper's best-source result.
+- The canonical D3 gate must run the populated policy matrix and paired
+  catalog/native dependency inventory. Reject unexpected definitions, settings,
+  cast/dictionary/trigger bindings and read-input mutations. Only successful
+  same-process compilation/wrapper evidence may feed FK-input observations.
+  Producers must register the exact serialized bytes only after successful
+  validation; consumers must reject absent hashes, substituted bytes, missing
+  or duplicated frames, and invalid backend identities. Independently validate
+  declared catalog roots and referenced bindings, not just paired equality;
+  installed callbacks, eligible DML and `pg_depend` reachability are not callback
+  execution or complete PL/pgSQL late-binding proof. Preserve the explicit
+  incomplete-D3 failure until all remaining conditions are independently proved.
 - Existing-data ingestion proof must create application state through real recorded fixture ingestion, then use a distinct cold tested backend. Retain both stages' results, roles, settings, transaction-clock provenance and all 18 before/after table images; verify fixture continuity and stable identity relationships. Shared reference/final failures remain failed required outcomes, not successful parity. Neither cold reconnects nor timestamp/identity normalization may conceal warm-session defects or unrelated data changes; D4 and D5 need their own exact approvals.
 - The release lock's `cosmiconfig` YAML loader must resolve `js-yaml` outside the vulnerable `4.0.0` through `4.3.1` range in `GHSA-2883-xcg3-v3hh`; `4.3.2` is the minimal patched release. Keep its existing compatible dependency range and audit every committed npm graph at `info` severity after transitive security updates, without exceptions.
 - Prerelease Helm assets must be produced during the semantic-release prepare phase so the packaged chart version matches the dev release version exactly. OCI publication must consume those already-packaged assets after the GitHub release assets exist.

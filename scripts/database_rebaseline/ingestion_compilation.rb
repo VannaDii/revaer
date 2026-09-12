@@ -11,6 +11,7 @@ module RevaerDatabaseRebaseline
     private
 
     def verify_ingestion_compilation!
+      @compilation_validated_evidence = {}
       @compilation_evidence = File.join(@contract.output_path, "ingestion-compilation")
       raise Failure, "ingestion compilation evidence must not be a symlink" if File.symlink?(@compilation_evidence)
 
@@ -39,7 +40,10 @@ module RevaerDatabaseRebaseline
                    approved_metadata_delta: "ADR 588 D4 temporary-table lifetime", postgres_image: @contract.postgres_image,
                    candidate_sha256: @contract.expected_candidate_sha256, final_sha256: @contract.final_sha256,
                    checks:, cases: }
-        File.binwrite(File.join(@compilation_evidence, "report.json"), JSON.pretty_generate(report) + "\n")
+        path = File.join(@compilation_evidence, "report.json")
+        bytes = JSON.pretty_generate(report) + "\n"
+        File.binwrite(path, bytes)
+        @compilation_validated_evidence[path] = Digest::SHA256.hexdigest(bytes) if report.fetch(:passed)
       end
     end
 
@@ -101,8 +105,13 @@ module RevaerDatabaseRebaseline
         after = ingestion_snapshot(database)
         events = observed ? compilation_events(database) : []
         evidence = { "fixture" => fixture, "before" => before, "frames" => frames, "after" => after, "events" => events }
-        File.binwrite("#{prefix}.json", JSON.pretty_generate(evidence) + "\n")
+        bytes = JSON.pretty_generate(evidence) + "\n"
+        File.binwrite("#{prefix}.json", bytes)
+        first = @checks.length
         compilation_verify!(name, test_case, evidence, variant, role, observed:)
+        if @checks.drop(first).all? { |entry| entry.fetch(:passed) }
+          @compilation_validated_evidence["#{prefix}.json"] = Digest::SHA256.hexdigest(bytes)
+        end
         compilation_comparable(evidence)
       ensure
         sql("DROP DATABASE #{identifier(database)} WITH (FORCE)", role: "postgres", database: "postgres") if created
