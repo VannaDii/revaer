@@ -4874,6 +4874,7 @@
       "d3-function-local-variable-resolution",
       "in-call-setting-proof-checkpoint-2026-09-11",
       "independent-d3-counterexample",
+      "missing-hash-proof-2026-09-12",
       "observed-conflicts",
       "policy-identity-and-native-proof-checkpoint-2026-09-11",
       "settings-path-proof-2026-09-12",
@@ -5141,6 +5142,17 @@
       "recommendation"
     ],
     "href": "/adr/588-first-release-decision-package/"
+  },
+  {
+    "id": "adr/589-hash-helper-registration-deadline",
+    "title": "Fingerprint Helper Registration Deadline",
+    "summary": "Status: Proposed Date: 2026-09-12 Operator approval: Pending Supersedes: None. Clarifies only ADR 588's REGISTER_HASH deadline field. Implementation status: Not started; affected codec validation remains paused.",
+    "tags": [
+      "proposed-rule",
+      "requested-decision",
+      "task-record"
+    ],
+    "href": "/adr/589-hash-helper-registration-deadline/"
   },
   {
     "id": "adr/index",

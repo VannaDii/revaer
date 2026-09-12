@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
 require_relative "ingestion_identity"
+require_relative "ingestion_hash_fill"
 
 module RevaerDatabaseRebaseline
   # Frozen warm evidence uses a real rollback, never a repaired temporary namespace.
   module IngestionWrapper
     include IngestionIdentity
+    include IngestionHashFill
     WRAPPER_MODES = %w[cold helpers-first warm-rollback].freeze
     WRAPPER_INPUTS = %w[indexer_definition indexer_instance policy_snapshot search_request search_request_indexer_run canonical_torrent_source_base_score].freeze
     WRAPPER_INPUT_CLOCKS = {
@@ -22,6 +24,7 @@ module RevaerDatabaseRebaseline
 
       FileUtils.mkdir_p(@wrapper_evidence, mode: 0o700)
       first = @checks.length
+      source_hashes = wrapper_source_hashes
       cases = []
       completed = false
       begin
@@ -36,18 +39,30 @@ module RevaerDatabaseRebaseline
             cases << { name: test_case.fetch(:name), mode:, equivalent:, variants: }
           end
         end
+        check("wrapper source bytes unchanged during matrix", source_hashes == wrapper_source_hashes)
         completed = true
       ensure
         checks = @checks.drop(first)
         report = { completed:, passed: completed && checks.all? { |entry| entry.fetch(:passed) }, d3_complete: false,
                    warm_scope: "actual first ingestion rolled back, same-backend retry committed; not successful frozen committed reuse",
                    candidate_sha256: @contract.expected_candidate_sha256, final_sha256: @contract.final_sha256,
-                   postgres_image: @contract.postgres_image, checks:, cases: }
+                   postgres_image: @contract.postgres_image, source_sha256: source_hashes, checks:, cases: }
         path = File.join(@wrapper_evidence, "report.json")
         bytes = JSON.pretty_generate(report) + "\n"
         File.binwrite(path, bytes)
         @wrapper_validated_evidence[path] = Digest::SHA256.hexdigest(bytes) if report.fetch(:passed)
       end
+    end
+
+    def wrapper_source_hashes
+      paths = Dir.glob("scripts/database_rebaseline/*.rb", base: @contract.root) + %w[
+        scripts/database-rebaseline.rb scripts/tests/database-ingestion-proof-test.rb
+        scripts/tests/database-ingestion-wrapper-test.rb scripts/tests/database-ingestion-identity-test.rb
+        scripts/tests/database-ingestion-hash-fill-test.rb scripts/tests/database-ingestion-proof-seed.sql
+        scripts/tests/database-ingestion-helper-first.sql config/database-rebaseline.env
+        .github/build-inputs.env crates/revaer-data/init.sql
+      ]
+      paths.sort.to_h { |path| [path, Digest::SHA256.file(File.join(@contract.root, path)).hexdigest] }
     end
 
     def wrapper_arguments(guid, hash: "a", minute: 0, size: 1024, seeders: 5, title: "Wrapper proof")
@@ -72,7 +87,7 @@ module RevaerDatabaseRebaseline
           arguments: wrapper_arguments("sample", minute: 2, size: 500), wrapper: true, samples: 3 },
         { name: "trim-size-samples", fixtures: (0...25).map { |index| wrapper_arguments("sample", minute: index, size: (index + 1) * 100) },
           arguments: wrapper_arguments("sample", minute: 25, size: 2600), wrapper: true, samples: 25 }
-      ] + wrapper_identity_cases
+      ] + wrapper_identity_cases + wrapper_hash_fill_cases
     end
 
     def wrapper_isolated(test_case, mode, variant, source, role)
@@ -173,6 +188,7 @@ module RevaerDatabaseRebaseline
         evidence.fetch("inputs_before").fetch(table).all? { |row| columns.all? { |column| row.fetch(column) == seed_clock } }
       end)
       check("#{name} exact wrapper/scoring/page/sample result", frames.all? { |frame| wrapper_outcome?(test_case, frame) })
+      hash_fill_verify!(name, test_case, session, evidence) if test_case[:hash_fill]
     end
 
     def wrapper_comparable_inputs(evidence)

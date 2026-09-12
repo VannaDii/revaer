@@ -6,7 +6,7 @@ module RevaerDatabaseRebaseline
 
     def wrapper_tests!
       cases = wrapper_cases
-      assert(cases.length == 26 && cases.map { |item| item.fetch(:name) }.uniq.length == 26, "retain distinct wrapper/scoring/page/size/identity cases")
+      assert(cases.length == 32 && cases.map { |item| item.fetch(:name) }.uniq.length == 32, "retain distinct wrapper/scoring/page/size/identity/hash-fill cases")
       assert(IngestionProof::INGESTION_HELPERS.include?("search_result_ingest"), "inventory must include the actual Rust wrapper")
       assert(IngestionWrapper::WRAPPER_MODES == %w[cold helpers-first warm-rollback], "retain independent cold and warm compilation modes")
       cases.each do |test_case|

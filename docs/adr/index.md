@@ -520,3 +520,4 @@
 -   [586](586-compliance-manifest-failure-boundary.md) - Compliance manifest failure boundary (Accepted; C1/C1-D through 588)
 -   [587](587-evidence-led-delivery-governance.md) - Evidence-led delivery governance (Accepted; runtime holds retained)
 -   [588](588-first-release-decision-package.md) - First-release approval proposal (Accepted 2026-09-11; exact designs and separate transfer scope, qualification required)
+-   [589](589-hash-helper-registration-deadline.md) - Fingerprint helper registration deadline (Proposed; one field only)

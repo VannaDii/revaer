@@ -553,3 +553,4 @@
         -   [Shutdown proposal and evidence](adr/support/588-shutdown-proposal.md)
         -   [Lifecycle control contract](adr/support/588-lifecycle-control.md)
         -   [Quiescence and recovery contract](adr/support/588-quiescence-recovery.md)
+    -   [589: Fingerprint helper registration deadline (Proposed)](adr/589-hash-helper-registration-deadline.md)

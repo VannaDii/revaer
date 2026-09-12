@@ -84,6 +84,11 @@ applyTo:
   signal rows. Retain the frozen suffix-regex and nullable-uniqueness defects;
   do not claim their intended confidence-upsert branch has executed. UUID has
   no valid observation attribute key, and D5 ID cases keep their separate proof.
+  Missing-hash proof must independently specify both fixture states and every
+  write-table result, distinguish durable source fill from incoming observation
+  identity, and preserve competing-source conflicts and rollback sequence gaps.
+  Retain wrapper source hashes before/after execution. These cases do not close
+  unobserved metadata conflicts, concurrent reachability or native dependencies.
 
 - `just test-database-baseline-read` exercises the ADR 551 read-only stored-procedure boundary against a caller-provided disposable Postgres service with the same workspace-wide all-feature selection as CI, filtering only the test names. Package-only feature resolution is not equivalent evidence for tracing behavior. It must fail when the service is missing, reject unmanaged databases without initializing them, and retain the frozen migration authority until the coordinated cutover. Baseline errors must never retain raw database messages, role names, or credentials.
 

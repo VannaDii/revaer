@@ -43,6 +43,12 @@ the named holds below without certifying implementation.
 
 ## Remaining Gates
 
+[ADR 589](adr/589-hash-helper-registration-deadline.md) proposes one newly found
+wire-field clarification: carry the existing effective fingerprint deadline in
+`REGISTER_HASH`, without new durations or clock resets. Operator approval is
+pending; only affected codec validation is paused. This does not withdraw or
+reopen any accepted ADR 588 choice.
+
 No named design choice in ADR 588 awaits another vote. Its conditional
 qualification, original-preservation, full CI/UI, strict Sonar with positive
 coverage, package, size, review and merge requirements remain unmet until

@@ -764,3 +764,77 @@ were removed. Canonical `just sonar-scan` stops before analysis for unavailable
 The [coverage checkpoint](586-compliance-manifest-failure-boundary.md#settings-and-attribute-checkpoint-2026-09-12)
 records the current inputs and limits. No gate, warning, approval or required
 operator behavior was relaxed, and no PR was pushed or merged.
+
+## Missing-Hash Proof (2026-09-12)
+
+This continued D3 task adds six missing-source-hash cases: v1, v2 and explicit
+magnet identities, each with an uncontested or competing GUID-less peer. The
+target begins without hashes. Independent full-column models specify both
+real fixture states and all 18 write tables after ingestion, including exact
+identities, result flags, conflict/audit/health effects and sequence gaps after
+whole-transaction rollback. A conflicting peer blocks the corresponding durable
+hash fill while the incoming observation retains that identity. The derived
+magnet can still fill in the v1/v2 cases; this is observed frozen behavior,
+not permission to reinterpret source and observation state as equivalent.
+
+The source is `a19e5856` plus the five-file proof/test delta. The fresh canonical
+wrapper matrix passes all 1,945 checks, including 18 new paired cases in cold,
+helper-first and same-backend rollback/retry modes. Those pairs contain 36
+variant runs and 48 tested calls, separate from their 72 fixture calls. All
+31 declared proof-source hashes remain unchanged. The earlier 12 cold probes
+remain diagnostic history; replaying them with the new assertions is not
+relabeled as a fresh database run or full D3 qualification.
+
+The proof test owner passes 2,495 assertions, with the existing dependency,
+validation, settings and attribute suites also passing. Full-file Ruby MAIN
+analysis of all five changed files reports zero issues for `VannaDii_Revaer`;
+the exact five-file CLI secrets analysis passes. These are auxiliary Sonar
+results, not the authoritative repository scan or positive published coverage.
+Independent review subsequently found two validator gaps: coherently empty or
+changed read inputs could be accepted, and fixture results could contain extra
+fields. The initial pass above does not close those findings. The correction
+independently specifies all six seeded read tables, including column defaults
+and empty base scores, requires exactly five fixture result fields, and adds
+coherent mutations for every input column and result-schema drift. Corrected
+focused suites pass 5,621 assertions, including 3,479 in the proof test owner.
+Both corrected full-file Ruby MAIN analyses again report zero issues.
+
+The full `just db-init-final-proof` invocation then exercises 4,698 checks:
+4,697 pass and only `ingestion complete conditional D3 proof` fails. The report
+retains `completed=false` and `passed=false`; this is not conformance acceptance.
+The frozen candidate and final-init digests are unchanged. The owned
+`revaer-final-proof-92212-ec72842e01928e87` container was removed with its
+anonymous volume, and the exact-name absence check returned no container.
+The complete invocation is retained in
+`/private/tmp/revaer-approved-canonical-hash-fill.log`; its proof reports and raw
+SQL/stdout/stderr remain under `target/database-rebaseline/` pending archival.
+
+That original canonical evidence was archived before the corrected rerun, under
+`artifacts/media-verification/2026-09-12-d3-hash-fill/canonical-proof-evidence.tar.gz`.
+The independent review retains all 2,160 mutations, including the original 72
+accepted invalid controls, and all seven simulated-transport producer controls.
+Its proposed correction rejects every mutant; only the valid producer control
+registers evidence. In-memory review is not fresh database execution: parent
+revalidation of the applied correction and integrated gates remains in progress.
+The first CI invocation was interrupted after the findings, exited 130, and
+removed `revaer-approved-ci-279889b5ad8f` with its volume; exact-name absence was
+verified. Its complete original log remains separate from the corrected gates.
+
+The fresh corrected canonical invocation passes 4,733 of 4,734 checks and again
+stops only at the explicit incomplete-D3 guard. Its wrapper matrix passes all
+1,981 checks with unchanged declared source bytes. Independent recheck passes
+480 checks across all 36 corrected variants and 18 pairs, rejects the original
+malformed producer witnesses without registration, and retains the valid
+registration control. All 348 earlier review artifacts remain unchanged; no
+actionable finding remains in the bounded two-finding review scope. The corrected
+`revaer-final-proof-41476-b2544c088a52a19a` container and its anonymous volume were
+removed, and its exact-name absence check passed. The corrected full log is
+`/private/tmp/revaer-approved-canonical-hash-fill-corrected.log`.
+
+No frozen SQL, runtime behavior, telemetry or dependency changes. Rollback
+removes only this proof increment. The root, Rust, data, DevOps and Sonar
+instructions were reviewed; the DevOps proof contract was tightened. Stale Rust
+guidance permitting credential defaults was replaced with a reference to the
+already enforced explicit disposable-database input contract. Remaining metadata
+conflict/interleaving and helper/native conditions keep D3 incomplete. Accepted
+architecture still does not authorize premature init cutover or weakened gates.
