@@ -15,10 +15,13 @@ module RevaerDatabaseRebaseline
       assert(true, "synthetic paired graph is accepted")
       dependency_graph_tests!(fixture)
       dependency_drift_tests!(fixture)
+      dependency_omission_tests!(fixture)
       dependency_routine_tests!
       dependency_observation_tests!
+      dependency_evidence_tests!(fixture)
       dependency_output_tests!
       dependency_native_tests!
+      dependency_native_answer_tests!
       dependency_cleanup_tests!
       puts "database-ingestion-dependencies-test: #{@assertions} assertions passed"
     end
@@ -142,30 +145,51 @@ module RevaerDatabaseRebaseline
     def dependency_test_snapshot
       nodes = []
       add = lambda do |catalog, identity, value|
+        present = nodes.find { |node| node.values_at("catalog", "identity") == [catalog, identity] }
+        next present if present
+
+        defaults = DEPENDENCY_REFERENCES.fetch(catalog, []).to_h { |field| [field, nil] }
+        defaults.merge!(DEPENDENCY_ARRAY_REFERENCES.fetch(catalog, {}).transform_values { nil })
+        defaults["relam"] = nil if catalog == "pg_class"
+        defaults.merge!("pronamespace" => "pg_catalog", "proname" => "synthetic_callback", "proargtypes" => [], "prosrc" => "synthetic") if catalog == "pg_proc"
+        value = defaults.merge(value)
         node = { "catalog" => catalog, "oid" => nodes.length + 1, "identity" => identity, "value" => value }
         nodes << node
         node
       end
       dependency_roots.each do |table|
         add.call("pg_class", "public.#{table}", {
-          "relkind" => "r", "relrowsecurity" => false, "relforcerowsecurity" => false, "relhasrules" => false,
+          "relkind" => "r", "relam" => "heap", "relrowsecurity" => false, "relforcerowsecurity" => false, "relhasrules" => false,
           "columns" => [[1, "id", "pg_catalog.int8"], [2, "parent_id", "pg_catalog.int8"]],
           "constraints" => [["check_positive", true, "CHECK ((id > 0))"]], "index_definition" => nil
         })
       end
-      add.call("pg_attrdef", "public.canonical_torrent.id", { "definition" => "gen_random_uuid()" })
-      add.call("pg_class", "public.synthetic_index", { "index_definition" => [true, "btree (id)", "(id IS NOT NULL)"] })
       add.call("pg_cast", "(public.policy_action AS public.decision_type)", {
         "castsource" => "public.policy_action", "casttarget" => "public.decision_type",
         "castfunc" => "public.policy_action_to_decision_type(public.policy_action)", "castcontext" => "a", "castmethod" => "f"
       })
       add.call("pg_ts_dict", "public.unaccent", { "dicttemplate" => "public.unaccent", "dictinitoption" => "rules = 'unaccent'" })
+      @dependency_routines = IngestionProof::INGESTION_HELPERS.map do |name|
+        type = name == "policy_action_to_decision_type" ? "public.policy_action" : "text"
+        FinalSql::Routine.new(identity: "public.#{name}(#{type})", schema: "public", name:, trigger: false, path: "pg_catalog, public")
+      end
+      (@dependency_routines.map(&:identity) + DEPENDENCY_EXTENSION_ROOTS).each do |identity|
+        name, args = dependency_signature(identity)
+        add.call("pg_proc", identity, { "pronamespace" => "public", "proname" => name.delete_prefix("public."), "proargtypes" => args, "prolang" => "c" })
+      end
+      dependency_pristine_roots.each do |catalog, value|
+        name, args = dependency_catalog_signature(catalog, value)
+        add.call(catalog, "#{name}(#{args.join(',')})", copy(value))
+      end
+      roots = nodes.map { |node| node.values_at("catalog", "oid") }
+      add.call("pg_attrdef", "public.canonical_torrent.id", { "definition" => "gen_random_uuid()" })
+      add.call("pg_class", "public.synthetic_index", { "relam" => "btree", "index_definition" => [true, "btree (id)", "(id IS NOT NULL)"] })
+      %w[heap btree].zip(%w[heap_tableam_handler bthandler]).each do |name, handler|
+        add.call("pg_am", name, { "amname" => name, "handler" => "pg_catalog.#{handler}(pg_catalog.internal)" })
+      end
       add.call("pg_ts_template", "public.unaccent", { "tmplinit" => "public.unaccent_init(pg_catalog.internal)", "tmpllexize" => "public.unaccent_lexize(pg_catalog.internal,pg_catalog.internal,pg_catalog.internal,pg_catalog.internal)" })
-      add.call("pg_proc", "public.digest(pg_catalog.text,pg_catalog.text)", {
-        "pronamespace" => "public", "proname" => "digest", "prolang" => "c", "prosrc" => "pg_digest", "probin" => "$libdir/pgcrypto", "proconfig" => nil
-      })
       31.times do |index|
-        child = "public.canonical_torrent"
+        child = index.zero? ? "public.search_request_source_observation" : "public.canonical_torrent"
         parent = index < 28 ? "public.search_page" : "public.search_request"
         identity = "synthetic_fk_#{index} on #{child}"
         add.call("pg_constraint", identity, { "conname" => "synthetic_fk_#{index}", "contype" => "f", "conrelid" => child, "confrelid" => parent,
@@ -179,9 +203,23 @@ module RevaerDatabaseRebaseline
           })
         end
       end
-      roots = nodes.first(dependency_roots.length).map { |node| node.values_at("catalog", "oid") }
+      %w[canonical_torrent search_request_source_observation].each do |table|
+        add.call("pg_constraint", "#{table}_pkey on public.#{table}", { "contype" => "p", "conrelid" => "public.#{table}", "conkey" => [1] })
+      end
       edges = nodes.drop(1).map { |node| { "from" => roots.first, "to" => node.values_at("catalog", "oid"), "columns" => [0, 0], "via" => "synthetic:binding" } }
-      { "graph" => { "version" => "160014", "server" => "synthetic PostgreSQL 16.14", "roots" => roots, "nodes" => nodes, "edges" => edges },
+      index = 0
+      while index < nodes.length
+        node = nodes.fetch(index)
+        canonical = { "identity" => node.values_at("catalog", "identity"), "value" => node.fetch("value") }
+        dependency_reference_targets(canonical).each do |catalog, identity, via|
+          target = add.call(catalog, identity, {})
+          edge = { "from" => node.values_at("catalog", "oid"), "to" => target.values_at("catalog", "oid"), "columns" => [0, 0], "via" => via }
+          edges << edge
+          edges << edge.merge("via" => "pg_depend:n") if node.fetch("catalog") == "pg_am"
+        end
+        index += 1
+      end
+      { "graph" => { "version" => "160014", "server" => "synthetic PostgreSQL 16.14", "roots" => roots, "nodes" => nodes, "edges" => edges.uniq },
         "native" => { "image" => "synthetic-pinned-image", "files" => { "postgres" => "a" * 64 } } }
     end
 
@@ -200,13 +238,14 @@ module RevaerDatabaseRebaseline
       changed.fetch("roots") << ["pg_proc", 999_999]
       rejected("root missing") { dependency_validate_graph!(changed) }
       changed = copy(graph)
-      changed.fetch("roots").pop
+      changed.fetch("roots").delete_at(1)
       rejected("relation roots incomplete") { dependency_validate_graph!(changed) }
       changed = copy(graph)
       changed.fetch("roots") << copy(changed.fetch("roots").first)
       rejected("roots duplicated") { dependency_validate_graph!(changed) }
       changed = copy(graph)
-      changed.fetch("edges").pop
+      isolated = changed.fetch("nodes").find { |node| node.fetch("catalog") == "pg_attrdef" }.values_at("catalog", "oid")
+      changed.fetch("edges").reject! { |edge| edge.fetch("to") == isolated }
       rejected("unreachable evidence") { dependency_validate_graph!(changed) }
       changed = copy(graph)
       changed.fetch("edges").first["to"] = ["pg_proc", 999_999]
@@ -262,7 +301,11 @@ module RevaerDatabaseRebaseline
         rejected("relation kind/RLS/rule dispatch") { dependency_validate_pair!(changed, changed) }
       end
       changed = copy(fixture)
-      changed.fetch("graph").fetch("nodes").find { |node| node.fetch("catalog") == "pg_trigger" }.fetch("value")["tgfoid"] = "pg_catalog.\"RI_FKey_check_upd\"()"
+      graph = changed.fetch("graph")
+      trigger = graph.fetch("nodes").find { |node| node.fetch("catalog") == "pg_trigger" }
+      trigger.fetch("value")["tgfoid"] = "pg_catalog.\"RI_FKey_check_upd\"()"
+      target = graph.fetch("nodes").find { |node| node.fetch("identity") == trigger.fetch("value").fetch("tgfoid") }
+      graph.fetch("edges").find { |edge| edge.fetch("from") == trigger.values_at("catalog", "oid") && edge.fetch("via") == "pg_trigger:tgfoid" }["to"] = target.values_at("catalog", "oid")
       rejected("trigger function dispatch") { dependency_validate_pair!(changed, changed) }
       raw = Marshal.dump(fixture)
       dependency_canonical(fixture, "final")
@@ -270,6 +313,7 @@ module RevaerDatabaseRebaseline
     end
 
     def dependency_routine_tests!
+      previous = @dependency_routines
       @dependency_routines = [FinalSql::Routine.new(identity: "helper(text)", schema: "public", name: "helper", trigger: false, path: "pg_catalog, public")]
       source = { "pronamespace" => "public", "proname" => "helper", "prolang" => "plpgsql", "prosrc" => "BEGIN RETURN lower($1); END;",
                  "proconfig" => ["search_path=pg_catalog, public"], "prosecdef" => true, "definition" => "retained deparser text", "prosqlbody" => nil }
@@ -299,7 +343,166 @@ module RevaerDatabaseRebaseline
       dependency_routine!(frozen, "reference")
       dependency_routine!(corrected, "final")
       assert(frozen == corrected, "only exact existing D3/D4/D5 body transforms normalize")
-      @dependency_routines = nil
+      @dependency_routines = previous
+    end
+
+    def dependency_prune!(graph, removed)
+      graph.fetch("roots").reject! { |key| removed.include?(key) }
+      graph.fetch("edges").reject! { |edge| removed.include?(edge.fetch("from")) || removed.include?(edge.fetch("to")) }
+      reached = graph.fetch("roots").to_h { |key| [key, true] }
+      queue = reached.keys
+      adjacency = graph.fetch("edges").group_by { |edge| edge.fetch("from") }
+      index = 0
+      while index < queue.length
+        adjacency.fetch(queue.fetch(index), []).each do |edge|
+          key = edge.fetch("to")
+          next if reached.key?(key)
+
+          reached[key] = true
+          queue << key
+        end
+        index += 1
+      end
+      graph.fetch("nodes").select! { |node| reached.key?(node.values_at("catalog", "oid")) }
+      graph.fetch("edges").select! { |edge| reached.key?(edge.fetch("from")) && reached.key?(edge.fetch("to")) }
+    end
+
+    def dependency_omission_tests!(fixture)
+      roots = [
+        ["public.policy_text_match_v1(text)"], DEPENDENCY_EXTENSION_ROOTS.first(2),
+        [DEPENDENCY_EXTENSION_ROOTS.first], ["pg_catalog.lower(text)"], ["pg_catalog.=(bigint,bigint)"]
+      ]
+      callbacks = [
+        %w[pg_catalog.heap_tableam_handler(pg_catalog.internal) pg_catalog.bthandler(pg_catalog.internal)],
+        ["public.unaccent_init(pg_catalog.internal)"],
+        ["public.unaccent_lexize(pg_catalog.internal,pg_catalog.internal,pg_catalog.internal,pg_catalog.internal)"],
+        ['pg_catalog."RI_FKey_check_ins"()']
+      ]
+      (roots + callbacks).each do |identities|
+        changed = copy(fixture)
+        graph = changed.fetch("graph")
+        removed = graph.fetch("nodes").select { |node| identities.include?(node.fetch("identity")) }.map { |node| node.values_at("catalog", "oid") }
+        assert(removed.length == identities.length, "negative control identifies exact root/callback nodes")
+        dependency_prune!(graph, removed)
+        dependency_validate_graph!(graph)
+        assert(dependency_canonical(changed, "reference") == dependency_canonical(changed, "final"), "coherent omission cannot rely on paired inequality")
+        expected = roots.include?(identities) ? "root identities/overloads missing or substituted" : "reference target omitted"
+        rejected(expected) { dependency_validate_pair!(changed, changed) }
+      end
+      changed = copy(fixture)
+      graph = changed.fetch("graph")
+      original_roots = copy(graph.fetch("roots"))
+      graph.fetch("edges").reject! { |edge| edge.fetch("via") == "access-method:handler" }
+      dependency_validate_graph!(graph)
+      assert(graph.fetch("roots") == original_roots, "missing callback edges leave root inventory intact")
+      rejected("reference edge omitted or substituted") { dependency_validate_pair!(changed, changed) }
+      changed = copy(fixture)
+      graph = changed.fetch("graph")
+      graph.fetch("nodes").find { |node| node.fetch("catalog") == "pg_am" }.fetch("value").delete("handler")
+      rejected("reference field missing") { dependency_validate_pair!(changed, changed) }
+    end
+
+    def dependency_evidence_fixture(directory)
+      contract = Contract.new(root: @contract.root)
+      contract.define_singleton_method(:output_path) { directory }
+      proof = self.class.new(contract)
+      proof.instance_variable_set(:@dependency_routines, @dependency_routines)
+      originals = {}
+      checks = []
+      %w[compilation wrapper].each do |family|
+        path = File.join(directory, "ingestion-#{family}")
+        FileUtils.mkdir_p(path)
+        entries = proof.send(:dependency_observation_cases, "ingestion-#{family}").to_h do |name, role, count|
+          frames = count.times.map do |index|
+            before = IngestionProof::INGESTION_TABLES.to_h { |table| [table, []] }
+            before["search_request_source_observation"] = [{ "id" => 1, "parent_id" => 1 }]
+            after = copy(before)
+            after["search_request_source_observation"].first["parent_id"] = 2
+            { "clock" => "synthetic-clock-#{index}", "state" => "00000", "role" => { "session" => role }, "tables_before" => before, "tables_after" => after }
+          end
+          [File.join(path, "#{name}.json"), { "synthetic_case" => name, "frames" => frames, "events" => [] }]
+        end
+        check = { check: "synthetic #{family} validation", passed: true }
+        checks << check
+        entries[File.join(path, "report.json")] = { completed: true, passed: true, checks: [check],
+          candidate_sha256: contract.expected_candidate_sha256, final_sha256: contract.final_sha256 }
+        # Only synthetic unit fixtures register hashes here, from original serialized bytes.
+        registry = entries.to_h do |file, record|
+          bytes = JSON.pretty_generate(record) + "\n"
+          originals[file] = bytes
+          File.binwrite(file, bytes)
+          [file, Digest::SHA256.hexdigest(bytes)]
+        end
+        proof.instance_variable_set("@#{family}_validated_evidence", registry)
+      end
+      proof.instance_variable_set(:@checks, checks)
+      [proof, originals]
+    end
+
+    def dependency_evidence_tests!(fixture)
+      Dir.mktmpdir("revaer-native-registered-evidence.") do |directory|
+        proof, originals = dependency_evidence_fixture(directory)
+        evidence = proof.send(:dependency_observations, fixture)
+        assert(evidence.fetch(:files).length == originals.length, "all report/frame bytes are tied to the explicit unit registries")
+        assert(evidence.fetch(:callback_entry_trace) == false, "validated FK input bytes do not claim callback execution")
+        %w[compilation wrapper].each do |family|
+          variable = "@#{family}_validated_evidence"
+          registry = proof.instance_variable_get(variable)
+          [nil, {}, "not a registry"].each do |missing|
+            proof.instance_variable_set(variable, missing)
+            rejected("lacks current-process validated bytes") { proof.send(:dependency_observations, fixture) }
+          end
+          proof.instance_variable_set(variable, registry)
+          files = originals.keys.select { |path| path.include?("/ingestion-#{family}/") }
+          report = files.find { |path| path.end_with?("/report.json") }
+          frame_file = files.find { |path| JSON.parse(originals.fetch(path)).fetch("frames", []).length > 1 }
+          [report, frame_file].each do |path|
+            hash = registry.delete(path)
+            rejected("lacks current-process validated bytes") { proof.send(:dependency_observations, fixture) }
+            registry[path] = hash
+            File.binwrite(path, "{")
+            rejected("validated evidence bytes changed") { proof.send(:dependency_observations, fixture) }
+            File.binwrite(path, originals.fetch(path))
+            File.unlink(path)
+            rejected("cannot read dependency validated evidence") { proof.send(:dependency_observations, fixture) }
+            File.binwrite(path, originals.fetch(path))
+          end
+          record = JSON.parse(originals.fetch(frame_file))
+          calls = record.fetch("frames")
+          [[], calls.drop(1), calls + [calls.first], [calls.first] * calls.length].each do |changed|
+            File.binwrite(frame_file, JSON.generate(record.merge("frames" => changed)))
+            rejected("validated evidence bytes changed") { proof.send(:dependency_observations, fixture) }
+          end
+          substitute = files.find { |path| path != report && path != frame_file }
+          File.binwrite(frame_file, originals.fetch(substitute))
+          rejected("validated evidence bytes changed") { proof.send(:dependency_observations, fixture) }
+          File.binwrite(frame_file, originals.fetch(frame_file))
+        end
+        original = proof.instance_variable_get(:@compilation_validated_evidence)
+        proof.instance_variable_set(:@compilation_validated_evidence, proof.instance_variable_get(:@wrapper_validated_evidence))
+        rejected("lacks current-process validated bytes") { proof.send(:dependency_observations, fixture) }
+        proof.instance_variable_set(:@compilation_validated_evidence, original)
+        assert(proof.send(:dependency_observations, fixture).fetch(:files) == evidence.fetch(:files), "rejected mutations do not change the producers' registries")
+        dependency_evidence_reader_tests!(directory)
+      end
+    end
+
+    def dependency_evidence_reader_tests!(directory)
+      path = File.join(directory, "synthetic-invalid.json")
+      File.binwrite(path, "{")
+      registry = { path => Digest::SHA256.hexdigest("{") }
+      rejected("cannot read dependency validated evidence") { dependency_read_observation(path, registry) }
+      rejected("lacks current-process validated bytes") { dependency_read_observation(path, { path => "invalid" }) }
+      rejected("lacks current-process validated bytes") { dependency_read_observation("./relative.json", { "./relative.json" => "a" * 64 }) }
+      File.symlink(path, File.join(directory, "linked.json"))
+      linked = File.join(directory, "linked.json")
+      rejected("cannot read dependency validated evidence") { dependency_read_observation(linked, { linked => registry.fetch(path) }) }
+      call = { "state" => "00000", "role" => { "session" => "postgres" } }
+      [[], [call], [call, call]].each do |calls|
+        rejected("frames incomplete or duplicated") { dependency_observation_frames({ "frames" => calls }, "postgres", 2) }
+      end
+      rejected("stale role or failed calls") { dependency_observation_frames({ "frames" => [call] }, "runtime", 1) }
+      rejected("stale role or failed calls") { dependency_observation_frames({ "frames" => [call.merge("state" => "XX000")] }, "postgres", 1) }
     end
 
     def dependency_observation_tests!
@@ -380,6 +583,44 @@ module RevaerDatabaseRebaseline
       rejected("native file identity incomplete") { dependency_native_identity }
       mode = :invalid_hash
       rejected("invalid native file fingerprint") { dependency_native_identity }
+      @runner = previous
+    end
+
+    def dependency_native_answer_tests!
+      digest = Digest::SHA256.hexdigest("abc")
+      answer = { "title" => "hotel", "unaccent" => "cafe", "digest_text" => digest, "digest_bytes" => digest,
+                 "cast" => "flag", "uuid_binding" => "pg_catalog.gen_random_uuid()" }
+      records = [{ "backend" => 123, "role" => "postgres", "current" => "postgres", "before" => "error" }, answer, { "after" => "error" }] * 2
+      dependency_validate_native_answers!(records, "postgres")
+      assert(true, "positive integer same-backend native answers pass")
+      [nil, 0, -1, "123", 123.0].each do |backend|
+        [[0], [3], [0, 3]].each do |indexes|
+          changed = copy(records)
+          indexes.each { |index| changed[index] = changed.fetch(index).merge("backend" => backend) }
+          rejected("backend identity must be a positive Integer") { dependency_validate_native_answers!(changed, "postgres") }
+        end
+      end
+      changed = copy(records)
+      changed[3] = changed.fetch(3).merge("backend" => 124)
+      rejected("require the same backend") { dependency_validate_native_answers!(changed, "postgres") }
+      changed = copy(records)
+      changed.fetch(0).delete("backend")
+      rejected("backend identity must be a positive Integer") { dependency_validate_native_answers!(changed, "postgres") }
+      [records.drop(1), records + [records.first], nil].each do |changed|
+        rejected("known answer or caller provenance changed") { dependency_validate_native_answers!(changed, "postgres") }
+      end
+      previous = @runner
+      fake = Object.new
+      fake.define_singleton_method(:capture) do |command, **_options|
+        role = command.fetch(command.index("-U") + 1)
+        value = records.map { |record| record.key?("backend") ? record.merge("role" => role, "current" => role) : record }
+        CommandRunner::Result.new(stdout: value.map { |record| JSON.generate(record) + "\n" }.join, stderr: "", success: true)
+      end
+      Dir.mktmpdir("revaer-native-answer-unit.") do |directory|
+        @runner = fake
+        @dependency_evidence = directory
+        assert(dependency_native_answers!.keys == %w[reference final], "native transport uses the strict answer validator for both variants")
+      end
       @runner = previous
     end
 

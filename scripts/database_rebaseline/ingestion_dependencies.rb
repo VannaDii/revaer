@@ -31,6 +31,25 @@ module RevaerDatabaseRebaseline
       count min max sum percentile_cont gen_random_uuid
     ].freeze
     DEPENDENCY_NATIVE_OPERATORS = %w[= <> < <= > >= + - * / % || ~ ~* !~ !~* ~~ ~~* !~~ !~~*].freeze
+    DEPENDENCY_EXTENSION_ROOTS = [
+      "public.digest(bytea,text)", "public.digest(text,text)",
+      "public.unaccent(text)", "public.unaccent(regdictionary,text)"
+    ].freeze
+    DEPENDENCY_REFERENCES = {
+      "pg_proc" => %w[prolang prorettype provariadic prosupport],
+      "pg_type" => %w[typelem typarray typbasetype typcollation typsubscript typinput typoutput typreceive typsend typmodin typmodout typanalyze],
+      "pg_trigger" => %w[tgfoid tgconstraint], "pg_cast" => %w[castsource casttarget castfunc],
+      "pg_operator" => %w[oprleft oprright oprresult oprcom oprnegate oprcode oprrest oprjoin],
+      "pg_opclass" => %w[opcmethod opcfamily opcintype opckeytype], "pg_opfamily" => %w[opfmethod],
+      "pg_amop" => %w[amoplefttype amoprighttype amopopr amopmethod amopsortfamily],
+      "pg_amproc" => %w[amproclefttype amprocrighttype amproc],
+      "pg_ts_dict" => %w[dicttemplate], "pg_ts_template" => %w[tmplinit tmpllexize],
+      "pg_language" => %w[lanplcallfoid laninline lanvalidator]
+    }.freeze
+    DEPENDENCY_ARRAY_REFERENCES = {
+      "pg_proc" => { "proargtypes" => "pg_type", "proallargtypes" => "pg_type", "protrftypes" => "pg_type" },
+      "pg_constraint" => %w[conpfeqop conppeqop conffeqop conexclop].to_h { |field| [field, "pg_operator"] }
+    }.freeze
     DEPENDENCY_LIMITS = [
       "Explicit relation/routine roots come from the source-pinned case-11 audit, not pg_depend discovery of PL/pgSQL strings.",
       "Native function/operator roots include installed overload families; presence does not prove PL/pgSQL overload selection or execution.",
@@ -123,18 +142,7 @@ module RevaerDatabaseRebaseline
       edges << "SELECT 'pg_class'::regclass, seqrelid, 0, 'pg_type'::regclass, seqtypid, 0, 'sequence:type' FROM pg_sequence"
       edges << "SELECT 'pg_class'::regclass, a.attrelid, a.attnum, 'pg_type'::regclass, a.atttypid, 0, 'column:type' FROM pg_attribute a JOIN relation_roots r ON r.oid=a.attrelid WHERE a.attnum>0 AND NOT a.attisdropped"
       edges << "SELECT 'pg_class'::regclass, a.attrelid, a.attnum, 'pg_collation'::regclass, a.attcollation, 0, 'column:collation' FROM pg_attribute a JOIN relation_roots r ON r.oid=a.attrelid WHERE a.attnum>0 AND NOT a.attisdropped AND a.attcollation<>0"
-      references = {
-        "pg_proc" => %w[prolang prorettype provariadic prosupport],
-        "pg_type" => %w[typelem typarray typbasetype typcollation typsubscript typinput typoutput typreceive typsend typmodin typmodout typanalyze],
-        "pg_trigger" => %w[tgfoid tgconstraint], "pg_cast" => %w[castsource casttarget castfunc],
-        "pg_operator" => %w[oprleft oprright oprresult oprcom oprnegate oprcode oprrest oprjoin],
-        "pg_opclass" => %w[opcmethod opcfamily opcintype opckeytype], "pg_opfamily" => %w[opfmethod],
-        "pg_amop" => %w[amoplefttype amoprighttype amopopr amopmethod amopsortfamily],
-        "pg_amproc" => %w[amproclefttype amprocrighttype amproc],
-        "pg_ts_dict" => %w[dicttemplate], "pg_ts_template" => %w[tmplinit tmpllexize],
-        "pg_language" => %w[lanplcallfoid laninline lanvalidator]
-      }
-      references.each do |catalog, columns|
+      DEPENDENCY_REFERENCES.each do |catalog, columns|
         columns.each do |column|
           target = RevaerPostgresPristine::REFERENCES.fetch(column)
           edges << "SELECT '#{catalog}'::regclass, t.oid, 0, '#{target}'::regclass, t.#{column}::oid, 0, '#{catalog}:#{column}' FROM #{catalog} t WHERE t.#{column}::oid<>0"
@@ -390,7 +398,105 @@ module RevaerDatabaseRebaseline
         changed = (old.fetch("nodes") - fresh.fetch("nodes")).map { |node| node.fetch("identity").join(":") }
         raise Failure, "dependency definition/binding drift: #{changed.first(8).join(', ')}"
       end
+      dependency_validate_declared_roots!(fresh)
+      dependency_validate_bindings!(fresh)
       dependency_validate_dispatch!(fresh)
+    end
+
+    def dependency_signature(identity)
+      match = identity.match(/\A([^()]+)\(([^()]*)\)\z/)
+      raise Failure, "invalid dependency routine/operator identity" unless match
+
+      name = match[1].gsub(/"([a-z_][a-z0-9_]*)"/, '\1')
+      [name, match[2].split(",").map { |type| type.strip.delete_prefix("pg_catalog.") }]
+    end
+
+    def dependency_pristine_roots
+      @dependency_pristine_roots ||= begin
+        path = File.join(@contract.root, "config/postgres-pristine-16.14.tsv")
+        rows = File.foreach(path).filter_map do |line|
+          catalog, *fields = line.chomp.split("\t")
+          next unless %w[pg_proc pg_operator].include?(catalog)
+
+          values = fields.to_h do |field|
+            key, encoded = field.split("=", 2)
+            [key, JSON.parse(encoded)]
+          end
+          raise Failure, "duplicate pristine dependency field" unless values.length == fields.length
+
+          [catalog, values]
+        end
+        functions = rows.select { |catalog, row| catalog == "pg_proc" && row.fetch("pronamespace") == "pg_catalog" && DEPENDENCY_NATIVE_NAMES.include?(row.fetch("proname")) }
+        operators = rows.select { |catalog, row| catalog == "pg_operator" && row.fetch("oprnamespace") == "pg_catalog" && DEPENDENCY_NATIVE_OPERATORS.include?(row.fetch("oprname")) }
+        unless functions.map { |_, row| row.fetch("proname") }.uniq.sort == DEPENDENCY_NATIVE_NAMES.sort && operators.map { |_, row| row.fetch("oprname") }.uniq.sort == DEPENDENCY_NATIVE_OPERATORS.sort
+          raise Failure, "declared native dependency families missing from pinned catalog"
+        end
+        functions + operators
+      end
+    rescue JSON::ParserError, Errno::ENOENT => error
+      raise Failure, "cannot read pinned dependency root inventory: #{error.message}"
+    end
+
+    def dependency_catalog_signature(catalog, value)
+      if catalog == "pg_proc"
+        name = "#{value.fetch('pronamespace')}.#{value.fetch('proname')}"
+        args = value.fetch("proargtypes")
+      else
+        name = "#{value.fetch('oprnamespace')}.#{value.fetch('oprname')}"
+        args = value.values_at("oprleft", "oprright").map { |type| type || "NONE" }
+      end
+      [name, args.map { |type| type.delete_prefix("pg_catalog.") }]
+    end
+
+    def dependency_validate_declared_roots!(snapshot)
+      @dependency_routines ||= FinalSql.new(@contract).routines(@candidate)
+      authored = @dependency_routines.select { |routine| routine.schema == "public" && IngestionProof::INGESTION_HELPERS.include?(routine.name) }
+      raise Failure, "declared authored dependency roots incomplete" unless authored.map(&:name).sort == IngestionProof::INGESTION_HELPERS.sort
+
+      expected = authored.map { |routine| ["pg_proc", *dependency_signature(routine.identity)] }
+      expected.concat(DEPENDENCY_EXTENSION_ROOTS.map { |identity| ["pg_proc", *dependency_signature(identity)] })
+      expected.concat(dependency_pristine_roots.map { |catalog, value| [catalog, *dependency_catalog_signature(catalog, value)] })
+      expected.concat(dependency_roots.map { |table| ["pg_class", "public.#{table}"] })
+      expected.concat([["pg_cast", "(public.policy_action AS public.decision_type)"], ["pg_ts_dict", "public.unaccent"]])
+      nodes = snapshot.fetch("nodes").to_h { |node| [node.fetch("identity"), node.fetch("value")] }
+      actual = snapshot.fetch("roots").map do |key|
+        catalog, identity = key
+        next key unless %w[pg_proc pg_operator].include?(catalog)
+
+        signature = dependency_signature(identity)
+        raise Failure, "dependency root identity disagrees with signature fields" unless signature == dependency_catalog_signature(catalog, nodes.fetch(key))
+
+        [catalog, *signature]
+      end
+      raise Failure, "declared dependency root identities/overloads missing or substituted" unless expected.sort == actual.sort
+    end
+
+    def dependency_reference_targets(node)
+      catalog = node.fetch("identity").first
+      value = node.fetch("value")
+      references = DEPENDENCY_REFERENCES.fetch(catalog, []).map do |field|
+        [RevaerPostgresPristine::REFERENCES.fetch(field), value.fetch(field), "#{catalog}:#{field}"]
+      end
+      DEPENDENCY_ARRAY_REFERENCES.fetch(catalog, {}).each do |field, target|
+        Array(value.fetch(field)).each { |identity| references << [target, identity, "#{catalog}:#{field}"] }
+      end
+      references << ["pg_proc", value.fetch("handler"), "access-method:handler"] if catalog == "pg_am"
+      references << ["pg_am", value.fetch("relam"), "relation:access-method"] if catalog == "pg_class"
+      references.reject { |_, identity, _| identity.nil? }
+    rescue KeyError => error
+      raise Failure, "dependency reference field missing: #{error.message}"
+    end
+
+    def dependency_validate_bindings!(snapshot)
+      nodes = snapshot.fetch("nodes").to_h { |node| [node.fetch("identity"), node] }
+      edges = snapshot.fetch("edges").to_h { |edge| [[edge.fetch("from"), edge.fetch("to"), edge.fetch("via"), edge.fetch("columns")], true] }
+      nodes.each_value do |node|
+        dependency_reference_targets(node).each do |catalog, identity, via|
+          target = [catalog, identity]
+          raise Failure, "dependency reference target omitted: #{via} #{identity}" unless nodes.key?(target)
+          raise Failure, "dependency reference edge omitted or substituted: #{via}" unless edges.key?([node.fetch("identity"), target, via, [0, 0]])
+        end
+      end
     end
 
     def dependency_validate_dispatch!(snapshot)
@@ -443,6 +549,48 @@ module RevaerDatabaseRebaseline
       end
     end
 
+    # Registries belong to the producing matrices. Never reconstruct them from disk.
+    def dependency_read_observation(path, registry)
+      hash = registry[path] if registry.is_a?(Hash)
+      unless File.expand_path(path) == path && hash.is_a?(String) && hash.match?(/\A[0-9a-f]{64}\z/)
+        raise Failure, "dependency evidence lacks current-process validated bytes: #{path}"
+      end
+
+      bytes = File.open(path, File::RDONLY | File::NOFOLLOW, &:read)
+      raise Failure, "dependency validated evidence bytes changed: #{path}" unless Digest::SHA256.hexdigest(bytes) == hash
+
+      [JSON.parse(bytes), { path:, sha256: hash }]
+    rescue SystemCallError, IOError, JSON::ParserError => error
+      raise Failure, "cannot read dependency validated evidence: #{path}: #{error.message}"
+    end
+
+    def dependency_observation_cases(directory)
+      %w[reference final].flat_map do |variant|
+        role = variant == "reference" ? "postgres" : @runtime
+        if directory == "ingestion-wrapper"
+          wrapper_cases.flat_map do |test_case|
+            IngestionWrapper::WRAPPER_MODES.map do |mode|
+              ["#{test_case.fetch(:name)}-#{mode}-#{variant}", role, mode == "warm-rollback" ? 2 : 1]
+            end
+          end
+        else
+          compilation_cases.map { |test_case| ["#{test_case.fetch(:name)}-#{variant}-observed", role, test_case.fetch(:calls).length] }
+        end
+      end
+    end
+
+    def dependency_observation_frames(record, role, count)
+      calls = record.fetch("frames")
+      unless calls.is_a?(Array) && count.positive? && calls.length == count && calls.uniq.length == count
+        raise Failure, "dependency callback observation frames incomplete or duplicated"
+      end
+      unless calls.all? { |frame| frame.fetch("state") == "00000" && frame.fetch("role").fetch("session") == role }
+        raise Failure, "dependency callback observations have stale role or failed calls"
+      end
+
+      calls
+    end
+
     def dependency_observations(snapshot)
       catalogs = dependency_canonical(snapshot, "final").fetch("nodes")
       constraints = catalogs.select { |node| node.fetch("identity").first == "pg_constraint" }.map { |node| node.fetch("value") }
@@ -452,32 +600,22 @@ module RevaerDatabaseRebaseline
       files = []
       frames = []
       settings = []
-      %w[ingestion-compilation ingestion-wrapper].each do |directory|
+      registries = { "ingestion-compilation" => @compilation_validated_evidence, "ingestion-wrapper" => @wrapper_validated_evidence }
+      registries.each do |directory, registry|
         report_path = File.join(@contract.output_path, directory, "report.json")
-        bytes = File.binread(report_path)
-        report = JSON.parse(bytes)
+        report, evidence = dependency_read_observation(report_path, registry)
         expected = report.fetch("checks").map { |entry| entry.transform_keys(&:to_sym) }
         first = @checks.index(expected.first)
         raise Failure, "dependency observations require successful current-process #{directory}" unless report.fetch("completed") && report.fetch("passed") && !expected.empty? && expected.all? { |entry| entry.fetch(:passed) } && first && @checks.slice(first, expected.length) == expected
         raise Failure, "dependency observed source identity changed" unless report.fetch("candidate_sha256") == @contract.expected_candidate_sha256 && report.fetch("final_sha256") == @contract.final_sha256
 
-        names = %w[reference final].flat_map do |variant|
-          labels = if directory == "ingestion-wrapper"
-                     wrapper_cases.flat_map { |test_case| IngestionWrapper::WRAPPER_MODES.map { |mode| "#{test_case.fetch(:name)}-#{mode}-#{variant}" } }
-                   else
-                     compilation_cases.map { |test_case| "#{test_case.fetch(:name)}-#{variant}-observed" }
-                   end
-          labels.map { |name| [name, variant == "reference" ? "postgres" : @runtime] }
-        end
-        files << { path: report_path, sha256: Digest::SHA256.hexdigest(bytes) }
-        names.each do |name, role|
+        files << evidence
+        dependency_observation_cases(directory).each do |name, role, count|
           path = File.join(@contract.output_path, directory, "#{name}.json")
-          value = File.binread(path)
-          record = JSON.parse(value)
-          calls = record.fetch("frames")
-          raise Failure, "dependency callback observations have stale role or failed calls" unless calls.all? { |frame| frame.fetch("state") == "00000" && frame.fetch("role").fetch("session") == role }
+          record, evidence = dependency_read_observation(path, registry)
+          calls = dependency_observation_frames(record, role, count)
 
-          files << { path:, sha256: Digest::SHA256.hexdigest(value) }
+          files << evidence
           frames.concat(calls.map { |frame| [name, frame] })
           if directory == "ingestion-compilation"
             settings.concat(record.fetch("events").map { |event| { case: name, event:, origin: "disposable setting observer; not native FK callback entry" } })
@@ -550,17 +688,25 @@ module RevaerDatabaseRebaseline
         raise Failure, "native answer transport/diagnostic failure" unless outcome.success && outcome.stderr.empty?
 
         records = outcome.stdout.lines.map { |line| JSON.parse(line) }
-        digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        expected = { "title" => "hotel", "unaccent" => "cafe", "digest_text" => digest, "digest_bytes" => digest, "cast" => "flag", "uuid_binding" => "pg_catalog.gen_random_uuid()" }
-        valid = records.length == 6 && records.values_at(1, 4) == [expected, expected] && records.values_at(2, 5) == [{ "after" => "error" }] * 2
-        valid &&= records.values_at(0, 3).all? { |record| record.values_at("role", "current", "before") == [role, role, "error"] }
-        valid &&= records.fetch(0).fetch("backend") == records.fetch(3).fetch("backend")
-        raise Failure, "cold/warm native known answer or caller provenance changed" unless valid
+        dependency_validate_native_answers!(records, role)
 
         values[variant] = records
         check("ingestion dependencies #{variant} cold/warm native entries and actual cast answers", true)
       end
       values
+    end
+
+    def dependency_validate_native_answers!(records, role)
+      digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      expected = { "title" => "hotel", "unaccent" => "cafe", "digest_text" => digest, "digest_bytes" => digest, "cast" => "flag", "uuid_binding" => "pg_catalog.gen_random_uuid()" }
+      valid = records.is_a?(Array) && records.length == 6 && records.all? { |record| record.is_a?(Hash) }
+      valid &&= records.values_at(1, 4) == [expected, expected] && records.values_at(2, 5) == [{ "after" => "error" }] * 2
+      valid &&= records.values_at(0, 3).all? { |record| record.values_at("role", "current", "before") == [role, role, "error"] }
+      raise Failure, "cold/warm native known answer or caller provenance changed" unless valid
+
+      backends = records.values_at(0, 3).map { |record| record["backend"] }
+      raise Failure, "native answer backend identity must be a positive Integer" unless backends.all? { |backend| backend.is_a?(Integer) && backend.positive? }
+      raise Failure, "native answers require the same backend" unless backends.uniq.length == 1
     end
   end
 end
