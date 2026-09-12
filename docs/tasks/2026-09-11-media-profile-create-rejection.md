@@ -3,15 +3,16 @@
 - Status: In progress
 - Date: 2026-09-11
 - Operator approval: Not applicable: nonarchitectural task record
-- Scope / owner / PR: Bounded profile-create fixture and API regression tests;
-  `work/media3-profile-create-proof`, unpublished, parent integration pending.
+- Scope / owner / PR: Bounded profile fixtures and API regression tests;
+  parent-reviewed local integration, unpublished, runtime acceptance pending.
 - Approved authority: [Specification](../../MEDIA_TRANSCODING.md),
   [ADR 419](../adr/419-pr76-media-data-review-remediation.md), and the existing
   [ADR 557](../adr/557-root-persistence-contract.md) /
   [ADR 559](../adr/559-media-approval-delta.md) cutover boundary. The operator's
   [ADR 588](../adr/588-first-release-decision-package.md) approval remains intact.
 - Requirement ledger: [Media completion ledger](../adr/564-media-completion-ledger.md),
-  configuration and discovery evidence; no ledger or approval-status edits here.
+  configuration and discovery evidence; the parent recorded the bounded proof
+  there without changing any approval status.
 
 ## Motivation And Design Notes
 
@@ -29,7 +30,7 @@ This is an invalid fixture, not a demonstrated production rejection defect:
   Migration 0182 lines 1306-1308 deliberately reject scheduling or watching with
   `media_profile_filesystem_identity_required`. The application maps that
   detail to an invalid request; the API retains SQLSTATE `P0001` as HTTP 400.
-- Correct only the create fixture to disable scheduling and omit the interval.
+- The initial correction disables scheduling and omits the create interval.
   Retain its exact 201 assertion and add error-body diagnostics to create and
   the immediately following profile PATCH assertion. No validation, expected
   status, route-coverage requirement, production code, or migration changes.
@@ -69,28 +70,118 @@ This is an invalid fixture, not a demonstrated production rejection defect:
   **2 passed, 1 failed**, now at line 154 after successful create/list/get.
   The next PATCH sets `schedule_interval_minutes: 120` and receives the same
   identity rejection from `media_profile_update_v1` (0182 lines 1417-1425).
-  That request and all later discovery/readiness/job assertions remain intact.
+  That original failure remains retained; the continuation below corrects the
+  metadata-only PATCH fixture without relaxing its status assertion.
 - `just fmt`, focused policy guardrails, local schema generation and TypeScript
   `--noEmit` checks passed.
   `just api-test-client` failed at npm audit because sandbox DNS could not
   resolve the registry; no successful dependency audit is claimed.
-- `just instruction-drift` failed because E2E edits require a scoped
-  instruction update. Instructions and generated indexes are outside this
-  delegated write scope; the parent must integrate those changes explicitly.
+- The initial `just instruction-drift` failed because E2E edits require a scoped
+  instruction update. The operator subsequently authorized the matching UI
+  instruction and routine-task navigation edits; the continuation addresses it.
   `just ci` and `just ui-e2e` remain pending parent integration/revalidation.
   No full UI run, coverage waiver, upload, push, or release claim was made.
 - Durable local evidence, including the host source, both configs, exact commands,
   JSON test counts and original failure logs:
   `/Users/vanna/Source/revaer/artifacts/media-verification/2026-09-11-profile-create-proof/`.
 
+## Continued Profile And Scenario Proof
+
+The reviewed initial correction is commit
+`6fbf4ab038d94ae124ef8a53f29d4125b22a3d84`. This continuation changes only
+fixtures, regression tests, the matching UI instruction and this task's
+navigation/record. It does not implement missing root workflow or alter C1.
+
+- Frozen `media_profile_update_v1` (0182 lines 1417-1425) rejects any supplied
+  interval, including with scheduling disabled, and rejects watcher/schedule
+  enablement without verified identity. Remove the interval from the retention
+  PATCH and the post-import metadata PATCH. The validation success fixture now
+  also requests disabled automation without a cadence. Keep all exact success
+  assertions, including the later actual schedule/watcher enablement and runs.
+- Import/export already forces dry-run, disables automation and omits cadence
+  (`media_yaml_active_profile`); `existing_profile_matches_yaml` requires the
+  same safe representation. The corrected post-import PATCH retains the same
+  source/output roots rather than rebinding unverified paths.
+- Add a positive persisted metadata update and four discriminating negative
+  updates: schedule enablement, interval alone, interval with scheduling
+  disabled, and watcher enablement. Every rejected update asserts HTTP 400,
+  the exact identity/P0001 context, the entire unchanged persisted profile
+  (including retention), and unchanged source bytes. The watcher-create
+  negative now supplies no interval, so an invalid cadence cannot satisfy it.
+- Add independent API coverage for a real manual dry-run admission, duplicate
+  suppression, profile readiness, planning/discovery previews, job list/detail,
+  all seven diagnostic reads, cancel/retry, and unchanged profile/source state.
+  The job ID comes only from successful manual admission; no worker-owned write,
+  injected job row, root identity, or package witness is manufactured. Separate
+  disabled watcher/schedule run tests assert rejection and zero admitted jobs.
+
+One bounded anonymous-auth run of both media API files produced **13 passed,
+1 failed, 0 skipped, 0 flaky**. The original three-test file produced **2 passed,
+1 failed**; all eleven profile regressions passed. The full scenario passed
+creation, metadata update/validation, both target catalog operations and target
+pinning, policy operations, invalid profile controls, retention, capability and
+profile readiness reads, export, both valid imports, invalid import controls,
+restored-profile metadata, and disabled schedule listing. It then failed at
+`tests/specs/api/media.spec.ts:484`: schedule enablement expected 200, received
+400 with operation `media_profile_patch`, error code
+`media_profile_filesystem_identity_required`, SQLSTATE `P0001`.
+
+The later positive watcher enablement, watcher/scheduled runs and combined job
+reads in that monolithic scenario were **not reached**. Their assertions remain
+unchanged. The independent manual test passed those job-read routes using its
+own genuinely admitted dry-run job; this does not prove enabled automation or
+pass the full route-coverage gate. The current specification still includes
+enabled watcher/scheduled discovery. ADR 419 requires verified roots; ADR 557's
+approved replacement root contract is not wired through this legacy profile
+surface. Completing that capability is separate from fixture correction.
+
+Parent review then requested removal of the watcher-create test's unrelated
+interval. After verifying the first run left no media, the corrected watcher-only
+case was rerun against the same host: **1 passed**, zero skipped. The first
+run's exact pre-refinement source and counts remain preserved alongside the
+final source. No new full API run or API-key continuation run is claimed.
+
+Runtime proof still uses base `62c5d6a7` plus the retained temporary injected host;
+the tested fixture delta is over `6fbf4ab0`. PostgreSQL uses the same pinned image
+above, owned container `revaer-profile-patch-proof-pg-20260911`, loopback port
+62635 and explicit `DATABASE_URL`, `REVAER_TEST_DATABASE_URL`, `E2E_DB_ADMIN_URL`.
+API port 63051 was ephemeral. The host test exited successfully (1 passed,
+241 library tests filtered; binary/integration selections executed zero tests).
+The host's static capability collaborator and pre-C1 compliance response are
+not media execution, packaged metadata, real startup or whole-E2E evidence.
+Parent integration `4a67468f` contains C1 and requires a real metadata witness;
+this fixture-only patch does not bypass that boundary or change architecture.
+
+Final focused checks: `just fmt`, TypeScript `--noEmit`, policy guardrails,
+`just instruction-drift`, and `git diff --check` passed. Canonical `just ci`
+and `just ui-e2e` were not rerun in this bounded checkpoint and remain required
+on integrated source. No full-gate, warning-free CI or completion claim is made.
+Continuation evidence is retained under the same durable directory's
+`profile-patch-proof/`, including command/source records, original logs, JSON
+counts, both tested fixture revisions and cleanup verification.
+
+## Parent Integration Checkpoint
+
+The parent reviewed original commits `6fbf4ab0` and `f63c1849`, then replayed
+their fixture-only changes onto C1/D3 integration `4a67468f`. Both authored
+TypeScript files remain byte-identical to the retained final tested sources.
+The replay does not certify the combined runtime: the focused API host used
+pre-C1 source `62c5d6a7`, and full integrated CI/UI and canonical Sonar remain
+required. The task stays In progress; no release readiness, GitHub push or
+merge is implied.
+
+The parent also corrected this record's attribution of the watcher-only
+refinement: it was an implementation-review request, not an operator decision
+or new approval. The existing architectural approval boundary is unchanged.
+
 ## Observability And Status Docs
 
 No runtime metric, event, log, API schema or support-claim changes. Assertion
-messages now expose the existing error body. The following PATCH and later
-automation expectations still require their approved workflow integration;
-this correction is not a completed discovery or media vertical slice. Parent
-integration must update routine-task navigation through the existing Just
-surface, without changing any acceptance criterion.
+messages now expose the existing error body. Later automation expectations still
+require their approved workflow integration; this correction is not a completed
+discovery or media vertical slice. This continued record is registered in
+`docs/tasks/index.md` and `docs/SUMMARY.md`; generated documentation remains with
+the parent. No acceptance criterion or route-coverage threshold changed.
 
 ## Risk, Rollback And Dependencies
 
@@ -100,11 +191,18 @@ automation path is authorized or necessary for this bounded correction.
 
 ## Stale-Policy Check And Cleanup
 
-Reviewed `AGENTS.md`, scoped Rust/data/UI instructions, the task template,
+Reviewed `AGENTS.md`, scoped Rust/data/UI/DevOps instructions, the task template,
 the Just command surface, specification and cited ADRs. The stale create
-fixture is corrected; later profile-automation fixture drift is retained and
-documented. No policy contradiction is removed by broadening scope. Both owned
-API hosts terminated and their child databases were verified absent. Test
-media trees were removed by the executed hooks; the owned container was removed.
-The worktree is retained for parent integration, with no C1, bootstrap, runtime
-shutdown, D3, ledger, approval-status, instruction or generated-index edits.
+fixture and metadata-only cadence drift are corrected. Included automation
+remains a recorded failure, not a disabled assertion. The matching UI instruction
+now states the discriminating fixture/negative-proof boundary. No policy or
+architecture relaxation was made. All owned API hosts terminated and their
+child databases were verified absent. Test media trees were removed by executed
+hooks and checked in both temporary directories before the watcher refinement
+and after it; the owned containers and volumes were removed. Continuation ports
+62635 and 63051 both refused connections. Temporary host source/wiring and
+generated authentication state were removed. Original evidence remains retained.
+At worker handoff, the clean committed worktree was retained for parent
+integration. Its commits contain no C1, bootstrap, runtime shutdown, D3, ledger,
+approval-status or generated-index edits; the parent subsequently added only
+the ledger/index updates and integration record described above.

@@ -9,6 +9,7 @@ retain their paths and are not bulk-migrated here.
 - [Task template](template.md)
 - [Root catalog mode portability](2026-09-11-root-catalog-mode-portability.md)
 - [Root readiness response contract](2026-09-11-root-readiness-contract.md)
+- [Media profile create rejection](2026-09-11-media-profile-create-rejection.md)
 - Current governance implementation and its validation are recorded once in
   [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record).
 - Media priorities and evidence remain in the

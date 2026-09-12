@@ -5506,6 +5506,21 @@
     "href": "/runbook/"
   },
   {
+    "id": "tasks/2026-09-11-media-profile-create-rejection",
+    "title": "Media Profile Create Rejection",
+    "summary": "Status: In progress Date: 2026-09-11 Operator approval: Not applicable: nonarchitectural task record Scope / owner / PR: Bounded profile fixtures and API regression tests; parent-reviewed local integration, unpublished, runtime acceptance pending. Approved authority: [Specification](../../MEDIA_TRANSCODING.md), [ADR 419](../adr/419-pr76-media-data-review-remediation.md), and the existing [ADR 557](../adr/557-root-persistence-contract.md) / [ADR 559](../adr/559-media-approval-delta.md) cutover boundary. The operator's [ADR 588](../adr/588-first-release-decision-package.md) approval remains intact. Requirement ledger: [Media completion ledger](../adr/564-media-completion-ledger.md), configuration and discovery evidence; the parent recorded the bounded proof there without changing any approval status.",
+    "tags": [
+      "continued-profile-and-scenario-proof",
+      "motivation-and-design-notes",
+      "observability-and-status-docs",
+      "parent-integration-checkpoint",
+      "risk-rollback-and-dependencies",
+      "stale-policy-check-and-cleanup",
+      "test-coverage-summary"
+    ],
+    "href": "/tasks/2026-09-11-media-profile-create-rejection/"
+  },
+  {
     "id": "tasks/2026-09-11-root-catalog-mode-portability",
     "title": "Root Catalog Mode Portability",
     "summary": "Status: Blocked Date: 2026-09-11 Operator approval: Not applicable: nonarchitectural task record Scope / owner / PR: Integrating agent; root-catalog mode conversion and its existing evidence regression; unpublished child of governance d5662941. Approved authority: ADR 550 source trust contract and ADR 559 narrow G1. No new architecture, platform support, failure classification or trust rule. Requirement ledger: [L2](../adr/564-media-completion-ledger.md#outside-in-ledger).",
@@ -5534,7 +5549,7 @@
   {
     "id": "tasks/index",
     "title": "Execution Records",
-    "summary": "Routine execution records retain scope, verification and remaining work without creating architectural approval events. [Root policy](../../AGENTS.md#5-task-record-and-adr-rules) defines their requirements; decisions remain in the [ADR catalogue](../adr/index.md). Continue the same record for iterations on one deliverable. Historical task ADRs retain their paths and are not bulk-migrated here. [Task template](template.md) [Root catalog mode portability](2026-09-11-root-catalog-mode-portability.md) [Root readiness response contract](2026-09-11-root-readiness-contract.md) Current governance implementation and its validation are recorded once in [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record). Media priorities and evidence remain in the [completion ledger](../adr/564-media-completion-ledger.md).",
+    "summary": "Routine execution records retain scope, verification and remaining work without creating architectural approval events. [Root policy](../../AGENTS.md#5-task-record-and-adr-rules) defines their requirements; decisions remain in the [ADR catalogue](../adr/index.md). Continue the same record for iterations on one deliverable. Historical task ADRs retain their paths and are not bulk-migrated here. [Task template](template.md) [Root catalog mode portability](2026-09-11-root-catalog-mode-portability.md) [Root readiness response contract](2026-09-11-root-readiness-contract.md) [Media profile create rejection](2026-09-11-media-profile-create-rejection.md) Current governance implementation and its validation are recorded once in [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record). Media priorities and evidence remain in the [completion ledger](../adr/564-media-completion-ledger.md).",
     "tags": [],
     "href": "/tasks/index/"
   },

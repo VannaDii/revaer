@@ -148,7 +148,6 @@ test.describe('Media API', () => {
       params: { path: { media_profile_public_id: profileId } },
       body: {
         retention_days: 31,
-        schedule_interval_minutes: 120,
       },
     });
     expect(patchedProfile.response.status, JSON.stringify(patchedProfile.error)).toBe(200);
@@ -161,8 +160,7 @@ test.describe('Media API', () => {
         output_root: outputRoot,
         dry_run_only: true,
         retention_days: 30,
-        schedule_enabled: true,
-        schedule_interval_minutes: 60,
+        schedule_enabled: false,
         watcher_enabled: false,
       },
     });
@@ -461,11 +459,10 @@ test.describe('Media API', () => {
         dry_run_only: true,
         retention_days: 31,
         schedule_enabled: false,
-        schedule_interval_minutes: 120,
         watcher_enabled: false,
       },
     });
-    expect(restoredProfile.response.status).toBe(200);
+    expect(restoredProfile.response.status, JSON.stringify(restoredProfile.error)).toBe(200);
     expect(restoredProfile.data?.source_root).toBe(sourceRoot);
     expect(restoredProfile.data?.output_root).toBe(outputRoot);
 
@@ -484,7 +481,7 @@ test.describe('Media API', () => {
         schedule_interval_minutes: 120,
       },
     });
-    expect(scheduledProfile.response.status).toBe(200);
+    expect(scheduledProfile.response.status, JSON.stringify(scheduledProfile.error)).toBe(200);
     expect(scheduledProfile.data?.schedule_enabled).toBe(true);
 
     const watchers = await api.GET('/v1/media/discovery/watchers');
@@ -501,7 +498,7 @@ test.describe('Media API', () => {
         watcher_enabled: true,
       },
     });
-    expect(watcherProfile.response.status).toBe(200);
+    expect(watcherProfile.response.status, JSON.stringify(watcherProfile.error)).toBe(200);
     expect(watcherProfile.data?.watcher_enabled).toBe(true);
 
     const enabledWatchers = await api.GET('/v1/media/discovery/watchers');
