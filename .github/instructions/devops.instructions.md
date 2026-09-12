@@ -108,6 +108,13 @@ applyTo:
 - Workflows that install Rust toolchains must use the repository's configured toolchain source of truth rather than hard-coded ad hoc channels unless a documented exception is required.
 - Workflow build, lint, test, coverage, security, image, signing, manifest, and release gates must call canonical `just` recipes. Workflows may install tools, authenticate, or upload artifacts, but must not execute raw Cargo gates, Docker builds or manifest publication, Trivy scans, Cosign signing, or Helm packaging/publication directly.
 - Justfile recipes must run under non-login Bash so caller-selected Rust and NVM tool paths remain active inside every recipe.
+- Database-backed quality recipes require a nonempty caller-supplied
+  `REVAER_TEST_DATABASE_URL` or `DATABASE_URL` for a disposable test database.
+  Preserve explicitly supplied distinct values and propagate the resolved pair
+  to every database-backed child. Do not restore literal credential defaults or
+  conceal them in URL construction helpers. Missing input and child failures
+  must fail closed; the canonical policy suite exercises the real Just recipes
+  with isolated command fixtures before any database-backed work is allowed.
 - Media fixture acquisition must use `test-fixtures/lock.json` as the immutable source, revision, SHA-256, and byte-bound record. Cache keys must include that lock. Normal verification must create canonical probes in a private temporary tree and diff them against reviewed snapshots without modifying the worktree; snapshot replacement is allowed only through the explicit `just update-test-fixture-probes` operator recipe.
 - The operator-approved ADR 578 F1 contract is test-preparation-only: bind `mkv-theora-vorbis-live-style` to its exact locked identity, unchanged snapshot, single LF-terminated ASCII diagnostic with the approved pointer/byte bounds, and exact full tool-report hashes. Reject unknown/conflicting contracts and any `allowProbeDiagnostics` field for this fixture. Retain and print the original native error, full tool report and explicit classification/count; missing evidence is fatal. Source, snapshot, diagnostic, tool or scope drift expires F1. Keep all existing exit/JSON/stderr limits, unfiltered ignored-suite execution and positive conversion-report checks; neither F1 nor the update recipe authorizes changing this snapshot or production/Sonar/GitHub criteria.
 - Focused ADR 550 root-catalog parser and trusted-file validation runs through `just test-media-root-catalog`; keep that recipe scoped to `revaer-media-runtime` with all features and warnings denied.

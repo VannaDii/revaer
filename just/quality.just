@@ -81,21 +81,21 @@ lint-runtime-shutdown:
     cargo clippy -p revaer-app --lib --bins --examples --no-default-features -- -D warnings -W clippy::expect_used -W clippy::panic -W clippy::todo -W clippy::unimplemented -W clippy::unreachable -W clippy::unwrap_used
 
 test:
-    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
+    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-${DATABASE_URL:?Set REVAER_TEST_DATABASE_URL or DATABASE_URL to a caller-supplied disposable test database}}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test --workspace --all-features
 
 test-native:
     REVAER_NATIVE_IT=1 \
-    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
+    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-${DATABASE_URL:?Set REVAER_TEST_DATABASE_URL or DATABASE_URL to a caller-supplied disposable test database}}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-torrent-libt --all-features -- --test-threads=1
 
 test-features-min:
-    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
+    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-${DATABASE_URL:?Set REVAER_TEST_DATABASE_URL or DATABASE_URL to a caller-supplied disposable test database}}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-api --no-default-features
-    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}" \
+    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-${DATABASE_URL:?Set REVAER_TEST_DATABASE_URL or DATABASE_URL to a caller-supplied disposable test database}}" \
     DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
         cargo --config 'build.rustflags=["-Dwarnings"]' test -p revaer-app --no-default-features
 
@@ -159,7 +159,7 @@ cov:
         toolchain_env="$(bash scripts/coverage-toolchain-env.sh)"; \
         eval "${toolchain_env}"; \
         export CC CXX LLVM_COV LLVM_PROFDATA REVAER_RUST_LLVM_VERSION; \
-        test_database_url="${REVAER_TEST_DATABASE_URL:-$(bash scripts/local-postgres-url.sh postgres)}"; \
+        test_database_url="${REVAER_TEST_DATABASE_URL:-${DATABASE_URL:?Set REVAER_TEST_DATABASE_URL or DATABASE_URL to a caller-supplied disposable test database}}"; \
         database_url="${DATABASE_URL:-${test_database_url}}"; \
         db_managed="${REVAER_DB_MANAGED:-0}"; \
         if [ -z "${DATABASE_URL:-}" ]; then db_managed="1"; fi; \
@@ -303,11 +303,9 @@ js-coverage-merge:
     grep -q '^DA:' coverage/js-lcov.info
 
 validate:
-    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-postgres://revaer:revaer@localhost:5432/postgres}"
-    DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}"
-    export REVAER_TEST_DATABASE_URL DATABASE_URL
-    just db-start
-    just fmt lint helm-lint instruction-drift check-assets udeps audit deny ui-build test test-features-min cov
+    REVAER_TEST_DATABASE_URL="${REVAER_TEST_DATABASE_URL:-${DATABASE_URL:?Set REVAER_TEST_DATABASE_URL or DATABASE_URL to a caller-supplied disposable test database}}" \
+    DATABASE_URL="${DATABASE_URL:-$REVAER_TEST_DATABASE_URL}" \
+        just db-start fmt lint helm-lint instruction-drift check-assets udeps audit deny ui-build test test-features-min cov
 
 ci: validate
     just build-release

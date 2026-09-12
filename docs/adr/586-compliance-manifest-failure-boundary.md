@@ -388,3 +388,28 @@ They remain required fixes, not accepted test-fixture exceptions. The current
 full CI run evaluates the child/export checkpoint; it does not clear this finding.
 The documentation link gate also failed with one connection error and 37
 timeouts after a network-enabled retry. No scanner or link criterion was changed.
+
+### Test Database Input Correction
+
+The five literal defaults are removed. Database-backed quality recipes now
+require either existing caller-supplied database URL, preserve both when distinct,
+and propagate the selected values to their database-backed children. `cov` no
+longer falls back to the credential-construction helper either. `validate` passes
+the resolved environment to its entire unchanged gate sequence in one invocation,
+instead of losing assignments between separate recipe shells. This is a local
+test-input correction, not a runtime authentication or database-schema change.
+
+The real Just recipes pass 50 isolated mock-command runs and 160 assertions for
+absent/empty inputs, URL precedence and failure propagation. Workflow guardrails
+and instruction drift pass. The exact four-file follow-up secrets scan passes;
+full-file MAIN Ruby analysis reports zero issues. CLI `sonar verify` was rejected
+with the organization's agentic-analysis 403, not a clean analysis result. These
+focused checks do not replace full CI/UI, canonical Sonar or published coverage.
+The test creates no database or media and removes its temporary fixtures. No
+dependency, suppression, threshold or production behavior changes; roll back only
+the recipe/test correction, retaining the original finding as unresolved.
+
+Stale-policy check: root, DevOps and Sonar instructions were reviewed. DevOps now
+forbids credential fallbacks in these recipes, including moving them into helpers,
+and requires propagation and missing-input regression coverage. Remaining watcher,
+UI, canonical Sonar and documentation-network failures stay visible above.
