@@ -20,10 +20,33 @@
           "enum": ["Always", "IfNotPresent", "Never"]
         },
         "tag": {
-          "type": "string"
+          "type": "string",
+          "const": ""
+        },
+        "digest": {
+          "$ref": "#/definitions/sha256Digest"
+        },
+        "architecture": {
+          "type": "string",
+          "enum": ["amd64", "arm64"]
         }
       },
-      "required": ["repository", "pullPolicy", "tag"]
+      "required": ["repository", "pullPolicy", "tag", "digest", "architecture"]
+    },
+    "compliance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "existingClaim": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+        },
+        "manifestDigest": {
+          "$ref": "#/definitions/sha256Digest"
+        }
+      },
+      "required": ["existingClaim", "manifestDigest"]
     },
     "imagePullSecrets": {
       "type": "array",
@@ -90,6 +113,9 @@
     },
     "podAnnotations": {
       "type": "object",
+      "not": {
+        "required": ["checksum/compliance-manifest"]
+      },
       "additionalProperties": {
         "type": "string"
       }
@@ -253,6 +279,7 @@
   "required": [
     "replicaCount",
     "image",
+    "compliance",
     "imagePullSecrets",
     "nameOverride",
     "fullnameOverride",
@@ -273,7 +300,53 @@
     "tolerations",
     "affinity"
   ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "image": {
+            "properties": {
+              "architecture": { "const": "amd64" }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "nodeSelector": {
+            "properties": {
+              "kubernetes.io/arch": { "const": "amd64" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "image": {
+            "properties": {
+              "architecture": { "const": "arm64" }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "nodeSelector": {
+            "properties": {
+              "kubernetes.io/arch": { "const": "arm64" }
+            }
+          }
+        }
+      }
+    }
+  ],
   "definitions": {
+    "sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
     "persistence": {
       "type": "object",
       "additionalProperties": false,
