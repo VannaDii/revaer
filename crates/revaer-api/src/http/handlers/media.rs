@@ -32,9 +32,7 @@ use crate::app::media::{
     MediaProfilePatchParams, MediaProfileUpsertParams, MediaServiceError, MediaServiceErrorKind,
 };
 use crate::app::state::ApiState;
-use crate::http::constants::{
-    MEDIA_SOURCE_COMPLIANCE_BUNDLE_DIGEST_UNAVAILABLE, MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH,
-};
+use crate::http::constants::MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH;
 use crate::http::errors::ApiError;
 use crate::http::handlers::indexers::SYSTEM_ACTOR_PUBLIC_ID;
 use crate::models::{
@@ -1387,10 +1385,7 @@ pub(crate) async fn media_compliance(
         sbom_url: MEDIA_SBOM_URL.to_string(),
         inventory_path: MEDIA_INVENTORY_PATH.to_string(),
         exiftool_exception_path: MEDIA_EXIFTOOL_EXCEPTION_PATH.to_string(),
-        source_compliance_bundle_digest: state
-            .source_compliance_bundle_digest()
-            .unwrap_or(MEDIA_SOURCE_COMPLIANCE_BUNDLE_DIGEST_UNAVAILABLE)
-            .to_string(),
+        source_compliance_bundle_digest: state.source_compliance_bundle_digest().to_string(),
         source_compliance_bundle_path: MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH.to_string(),
         license_excluded_capabilities: MEDIA_LICENSE_EXCLUDED_CAPABILITIES
             .iter()
@@ -2759,7 +2754,7 @@ mod tests {
         );
         assert_eq!(
             response.source_compliance_bundle_digest,
-            "unavailable-until-final-image-bundle-is-present"
+            format!("sha256:{}", "ab".repeat(32))
         );
         assert!(
             response

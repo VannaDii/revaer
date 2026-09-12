@@ -226,6 +226,8 @@ async fn bootstrap_dependencies_from_database_url_track_persisted_settings_chang
     } = BootstrapDependencies::from_database_url_with_workspace_root(
         postgres.connection_string().to_string(),
         workspace.path().to_path_buf(),
+        super::compliance_tests::fixture_metadata()
+            .map_err(|source| AppError::Compliance { source })?,
     )
     .await?;
     watcher.disable_listen();
@@ -291,7 +293,9 @@ async fn build_api_server_accepts_bootstrapped_config() -> AppResult<()> {
         telemetry.clone(),
         system_native_process_supervisor(),
     ));
-    let server = build_api_server(&config, &events, None, telemetry, media)?;
+    let source_compliance = super::compliance_tests::fixture_metadata()
+        .map_err(|source| AppError::Compliance { source })?;
+    let server = build_api_server(&config, &events, None, telemetry, media, source_compliance)?;
     drop(server);
     Ok(())
 }
@@ -312,6 +316,8 @@ async fn run_bootstrap_services_rejects_public_setup_bind_from_dependencies() ->
     let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
         postgres.connection_string().to_string(),
         workspace.path().to_path_buf(),
+        super::compliance_tests::fixture_metadata()
+            .map_err(|source| AppError::Compliance { source })?,
     )
     .await?;
     dependencies.snapshot.app_profile.mode = AppMode::Setup;
@@ -347,6 +353,8 @@ async fn run_bootstrap_services_rejects_zero_http_port_from_dependencies() -> Ap
     let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
         postgres.connection_string().to_string(),
         workspace.path().to_path_buf(),
+        super::compliance_tests::fixture_metadata()
+            .map_err(|source| AppError::Compliance { source })?,
     )
     .await?;
     dependencies.snapshot.app_profile.http_port = 0;
@@ -398,6 +406,8 @@ async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> A
     let mut dependencies = BootstrapDependencies::from_database_url_with_workspace_root(
         postgres.connection_string().to_string(),
         workspace.path().to_path_buf(),
+        super::compliance_tests::fixture_metadata()
+            .map_err(|source| AppError::Compliance { source })?,
     )
     .await?;
     dependencies.snapshot.app_profile.mode = AppMode::Setup;

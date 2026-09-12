@@ -56,7 +56,4 @@ pub(crate) const EVENT_KIND_WHITELIST: &[&str] = &[
     "media_job_history_pruned",
 ];
 
-pub(crate) const MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH: &str =
-    "/app/compliance/final-image-compliance-bundle.json";
-pub(crate) const MEDIA_SOURCE_COMPLIANCE_BUNDLE_DIGEST_UNAVAILABLE: &str =
-    "unavailable-until-final-image-bundle-is-present";
+pub(crate) use crate::app::compliance::SOURCE_COMPLIANCE_BUNDLE_PATH as MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH;

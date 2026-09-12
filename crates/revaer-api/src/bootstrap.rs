@@ -6,6 +6,7 @@ use revaer_config::{AppMode, ConfigService};
 use revaer_events::EventBus;
 use revaer_telemetry::Metrics;
 
+use crate::app::compliance::SourceComplianceMetadata;
 use crate::app::indexers::IndexerFacade;
 use crate::error::{ApiServerError, ApiServerResult};
 use crate::{ApiServer, TorrentHandles};
@@ -21,8 +22,16 @@ pub fn build_api(
     events: EventBus,
     torrent_handles: Option<TorrentHandles>,
     metrics: Metrics,
+    source_compliance: SourceComplianceMetadata,
 ) -> ApiServerResult<ApiServer> {
-    ApiServer::new(config, indexers, events, torrent_handles, metrics)
+    ApiServer::new(
+        config,
+        indexers,
+        events,
+        torrent_handles,
+        metrics,
+        source_compliance,
+    )
 }
 
 /// Validate bind addr and mode before serving.

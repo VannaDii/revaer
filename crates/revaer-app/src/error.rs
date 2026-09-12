@@ -15,6 +15,20 @@ pub type AppResult<T> = Result<T, AppError>;
 /// Application-level error type.
 #[derive(Debug, Error)]
 pub enum AppError {
+    /// Required compliance metadata failed before infrastructure construction.
+    #[error("compliance metadata startup failed")]
+    Compliance {
+        /// Typed metadata failure, already reported at the preflight origin.
+        source: revaer_api::app::compliance::ComplianceMetadataError,
+    },
+    /// The task-free origin diagnostic could not be written.
+    #[error("compliance metadata startup diagnostic failed")]
+    ComplianceDiagnostic {
+        /// Original metadata failure, retained without exposing document contents.
+        compliance: revaer_api::app::compliance::ComplianceMetadataError,
+        /// Diagnostic sink failure.
+        source: io::Error,
+    },
     /// Environment configuration was missing.
     #[error("missing environment configuration")]
     MissingEnv {

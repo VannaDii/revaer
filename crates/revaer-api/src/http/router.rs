@@ -22,9 +22,10 @@ use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::TraceLayer,
 };
-use tracing::{Span, error};
+use tracing::Span;
 
 use crate::TorrentHandles;
+use crate::app::compliance::SourceComplianceMetadata;
 use crate::app::indexers::IndexerFacade;
 use crate::app::media::{MediaFacade, noop_media};
 use crate::app::state::ApiState;
@@ -35,7 +36,7 @@ use crate::http::auth::{require_api_key, require_factory_reset_auth, require_set
 use crate::http::compat_qb;
 use crate::http::constants::{
     HEADER_API_KEY, HEADER_API_KEY_LEGACY, HEADER_LAST_EVENT_ID, HEADER_REQUEST_ID,
-    HEADER_SETUP_TOKEN, MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH,
+    HEADER_SETUP_TOKEN,
 };
 use crate::http::filesystem::browse_filesystem;
 use crate::http::health::{dashboard, health, health_full, metrics};
@@ -56,54 +57,6 @@ use crate::http::torrents::handlers::{
 use crate::http::torznab::{torznab_api, torznab_download};
 use crate::openapi::OpenApiDependencies;
 
-const SOURCE_COMPLIANCE_DIGEST_FIELD: &str = "source_compliance_sha256";
-
-fn load_source_compliance_bundle_digest() -> Option<String> {
-    let contents = match std::fs::read_to_string(MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH) {
-        Ok(contents) => contents,
-        Err(source) => {
-            error!(
-                path = MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH,
-                error = %source,
-                "failed to read media source-compliance bundle"
-            );
-            return None;
-        }
-    };
-    let manifest = match serde_json::from_str::<serde_json::Value>(&contents) {
-        Ok(manifest) => manifest,
-        Err(source) => {
-            error!(
-                path = MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH,
-                error = %source,
-                "failed to parse media source-compliance bundle"
-            );
-            return None;
-        }
-    };
-    let Some(digest) = manifest
-        .get(SOURCE_COMPLIANCE_DIGEST_FIELD)
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-    else {
-        error!(
-            path = MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH,
-            field = SOURCE_COMPLIANCE_DIGEST_FIELD,
-            "media source-compliance bundle is missing its digest"
-        );
-        return None;
-    };
-    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        error!(
-            path = MEDIA_SOURCE_COMPLIANCE_BUNDLE_PATH,
-            field = SOURCE_COMPLIANCE_DIGEST_FIELD,
-            "media source-compliance bundle has an invalid SHA-256 digest"
-        );
-        return None;
-    }
-    Some(format!("sha256:{}", digest.to_ascii_lowercase()))
-}
-
 /// Axum router wrapper that hosts the Revaer API services.
 pub struct ApiServer {
     router: Router,
@@ -111,6 +64,7 @@ pub struct ApiServer {
 
 impl ApiServer {
     /// Construct a new API server with shared dependencies wired through application state.
+    /// Required compliance metadata must be loaded by the caller before infrastructure startup.
     ///
     /// # Errors
     ///
@@ -122,6 +76,7 @@ impl ApiServer {
         events: EventBus,
         torrent: Option<TorrentHandles>,
         telemetry: Metrics,
+        source_compliance: SourceComplianceMetadata,
     ) -> ApiServerResult<Self> {
         let openapi_path = crate::openapi_output_path();
         let openapi = OpenApiDependencies::embedded_at(&openapi_path);
@@ -132,10 +87,13 @@ impl ApiServer {
             torrent,
             telemetry,
             &openapi,
+            source_compliance,
         )
     }
 
     /// Construct a new API server with an explicit media facade.
+    /// The required metadata witness preserves the successful compliance wire value;
+    /// it does not certify manifest authenticity or the current package.
     ///
     /// # Errors
     ///
@@ -148,13 +106,14 @@ impl ApiServer {
         events: EventBus,
         torrent: Option<TorrentHandles>,
         telemetry: Metrics,
+        source_compliance: SourceComplianceMetadata,
     ) -> ApiServerResult<Self> {
         let openapi_path = crate::openapi_output_path();
         let openapi = OpenApiDependencies::embedded_at(&openapi_path);
         Self::with_config_with_media(
             Arc::new(config),
             indexers,
-            media,
+            (media, source_compliance),
             events,
             torrent,
             telemetry,
@@ -169,37 +128,23 @@ impl ApiServer {
         torrent: Option<TorrentHandles>,
         telemetry: Metrics,
         openapi: &OpenApiDependencies,
+        source_compliance: SourceComplianceMetadata,
     ) -> ApiServerResult<Self> {
-        Self::with_config_at(config, indexers, events, torrent, telemetry, openapi)
+        Self::with_config_with_media(
+            config,
+            indexers,
+            (noop_media(), source_compliance),
+            events,
+            torrent,
+            telemetry,
+            openapi,
+        )
     }
 
     fn with_config_with_media(
         config: SharedConfig,
         indexers: Arc<dyn IndexerFacade>,
-        media: Arc<dyn MediaFacade>,
-        events: EventBus,
-        torrent: Option<TorrentHandles>,
-        telemetry: Metrics,
-        openapi: &OpenApiDependencies,
-    ) -> ApiServerResult<Self> {
-        let state = Arc::new(
-            ApiState::new_with_media(
-                config,
-                indexers,
-                media,
-                telemetry.clone(),
-                Arc::clone(&openapi.document),
-                events,
-                torrent,
-            )
-            .with_source_compliance_bundle_digest(load_source_compliance_bundle_digest()),
-        );
-        Self::with_dependencies(state, telemetry, openapi)
-    }
-
-    pub(crate) fn with_config_at(
-        config: SharedConfig,
-        indexers: Arc<dyn IndexerFacade>,
+        media: (Arc<dyn MediaFacade>, SourceComplianceMetadata),
         events: EventBus,
         torrent: Option<TorrentHandles>,
         telemetry: Metrics,
@@ -208,7 +153,7 @@ impl ApiServer {
         let state = Arc::new(ApiState::new_with_media(
             config,
             indexers,
-            noop_media(),
+            media,
             telemetry.clone(),
             Arc::clone(&openapi.document),
             events,
@@ -329,7 +274,7 @@ impl ApiServer {
         Arc::new(ApiState::new_with_media(
             config,
             indexers,
-            media,
+            (media, SourceComplianceMetadata::fixture()),
             telemetry,
             openapi_document,
             events,

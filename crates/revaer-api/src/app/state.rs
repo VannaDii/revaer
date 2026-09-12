@@ -15,6 +15,7 @@ use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::TorrentHandles;
+use crate::app::compliance::SourceComplianceMetadata;
 use crate::app::indexers::IndexerFacade;
 use crate::app::media::MediaFacade;
 #[cfg(test)]
@@ -37,7 +38,7 @@ pub(crate) struct ApiState {
     torrent_metadata: Mutex<HashMap<Uuid, TorrentMetadata>>,
     pub(crate) torrent: Option<TorrentHandles>,
     dashboard_disk_usage: fn(&Path) -> std::io::Result<(u32, u32)>,
-    source_compliance_bundle_digest: Option<String>,
+    source_compliance: SourceComplianceMetadata,
     #[cfg(feature = "compat-qb")]
     compat_sessions: Mutex<HashMap<String, CompatSession>>,
 }
@@ -66,7 +67,7 @@ impl ApiState {
         Self::new_with_media(
             config,
             indexers,
-            noop_media(),
+            (noop_media(), SourceComplianceMetadata::fixture()),
             telemetry,
             openapi_document,
             events,
@@ -77,7 +78,7 @@ impl ApiState {
     pub(crate) fn new_with_media(
         config: Arc<dyn ConfigFacade>,
         indexers: Arc<dyn IndexerFacade>,
-        media: Arc<dyn MediaFacade>,
+        media: (Arc<dyn MediaFacade>, SourceComplianceMetadata),
         telemetry: Metrics,
         openapi_document: Arc<Value>,
         events: EventBus,
@@ -86,7 +87,7 @@ impl ApiState {
         Self {
             config,
             indexers,
-            media,
+            media: media.0,
             setup_token_ttl: Duration::from_mins(15),
             telemetry,
             openapi_document,
@@ -96,7 +97,7 @@ impl ApiState {
             torrent_metadata: Mutex::new(HashMap::new()),
             torrent,
             dashboard_disk_usage: dashboard_disk_usage_gb,
-            source_compliance_bundle_digest: None,
+            source_compliance: media.1,
             #[cfg(feature = "compat-qb")]
             compat_sessions: Mutex::new(HashMap::new()),
         }
@@ -111,13 +112,8 @@ impl ApiState {
         self
     }
 
-    pub(crate) fn with_source_compliance_bundle_digest(mut self, digest: Option<String>) -> Self {
-        self.source_compliance_bundle_digest = digest;
-        self
-    }
-
-    pub(crate) fn source_compliance_bundle_digest(&self) -> Option<&str> {
-        self.source_compliance_bundle_digest.as_deref()
+    pub(crate) fn source_compliance_bundle_digest(&self) -> &str {
+        self.source_compliance.digest()
     }
 
     pub(crate) fn add_degraded_component(&self, component: &str) -> bool {

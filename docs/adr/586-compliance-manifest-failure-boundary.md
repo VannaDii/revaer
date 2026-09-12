@@ -126,3 +126,78 @@ It is not permission to weaken any GitHub, Sonar, dependency or release check.
   Found retained loader behavior inconsistent with failure/absence policy;
   no policy is relaxed and no existing approval is rewritten. The fix remains
   pending a named decision rather than treating an agent delegation as consent.
+
+## C1 Implementation Checkpoint: 2026-09-11
+
+This checkpoint implements only ADR 588's approved early C1 boundary. It does
+not change the approval record above or implement C1-D delivery, Helm, E1,
+database finalization, shutdown policy, or release qualification.
+
+- Motivation/design: Both public app entrypoints call the same synchronous
+  typed preflight before `BootstrapDependencies` construction. Constructors
+  require `SourceComplianceMetadata`, which is carried into the real API state.
+  The type can only be loaded successfully (apart from explicit API unit-test
+  fixtures); it has no production default, optional-error value, or sentinel.
+- Compatibility: Preserve `/app/compliance/final-image-compliance-bundle.json`,
+  `source_compliance_sha256`, the existing 64-ASCII-hex check, trimming, lowercase
+  `sha256:` wire value, JSON duplicate-key behavior and symlink following. No
+  environment override, file-size limit, retry, installer, or new dependency.
+  Parsing this field is not authenticity, artifact-closure, or current-package
+  certification. API constructors now require the metadata witness explicitly.
+- Observability: The preflight writes exactly one task-free bounded category
+  to its injected diagnostic writer before telemetry exporters can start.
+  File/document/digest contents are not included. Read/JSON/field/digest errors
+  remain typed, with original sources retained. A diagnostic-write failure is
+  also returned with the original compliance failure; it is not retried or
+  silenced. The binary exits unsuccessfully without a second error report.
+- Test coverage: Real missing files, directory reads, permission denial,
+  non-UTF-8 files, malformed JSON, missing/wrong-type fields and invalid digest
+  syntax exercise the actual bootstrap's first poll without a Tokio runtime.
+  Tests assert one loader call and one exact diagnostic, including no content
+  leakage. Public entrypoints and the real binary are also exercised on the
+  host's packaged-metadata path. Every metadata failure maps to process failure.
+  Runtime tests moved into a test-only bootstrap module to inject a loader
+  explicitly, never a production fallback. An isolated test child starts the
+  actual application, serves the unchanged successful compliance response and
+  reads back real persisted ffmpeg/ffprobe capabilities. Test-child cancellation
+  does not qualify production shutdown or native package behavior.
+- Validation: `just fmt`, `just instruction-drift` and all four passes of
+  `just lint-runtime-shutdown` passed. Final `just test-features-min` passed:
+  API 436 library + 2 binary tests; app 257 library + 4 binary + 2 integration
+  tests; both doctest targets completed with zero tests. Zero failures or
+  ignored tests, no compiler warnings or database-skip messages. The real binary
+  exited 1 with exactly `compliance_metadata_startup_failed cause=missing_file`
+  on this unpackaged host. The injected-success child passed in 2.16 seconds;
+  the complete app library run passed in 112.96 seconds. These are observations,
+  not new numerical acceptance criteria. Evidence logs remain local at
+  `/private/tmp/revaer-c1-features-min-final.log` and
+  `/private/tmp/revaer-c1-lint-2.log`.
+  Initial compilation/lint findings were corrected without adding
+  dependencies or weakening criteria. Full `just ci`, `just ui-e2e`, coverage,
+  Sonar, remote checks and native amd64/arm64 package verification are not
+  claimed by this worker.
+- Reproducibility: Base `62c5d6a7e604eb2a112fd2578ae650a6900a7a9a` plus this
+  checkpoint's scoped app/API Rust delta; worktree
+  `/private/tmp/revaer-compliance-startup`, branch `work/media3-compliance-startup`.
+  The binary-format Git diff of the tested app/API Rust delta has SHA-256
+  `ce8dd269ae75e67d33c098d106b6a96240049e0ca29afeef8fecf94b168bb36a`;
+  only this documentation checkpoint changed after those code gates.
+  Own target directory, four Cargo build jobs and serialized Rust tests.
+  Both `DATABASE_URL` and `REVAER_TEST_DATABASE_URL` point explicitly to the
+  owned container `revaer-c1-startup-20260911-62c5` at `127.0.0.1:55263`.
+  PostgreSQL image:
+  `docker.io/library/postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777`
+  (linux/arm64). No generic database container, port 7070, CI/UI overlap,
+  browser monitoring, deployment, or remote push is used.
+  The owned container and anonymous volume were removed and their absence
+  verified after the final tests. No task media was acquired or retained;
+  fixture files and the child workspace used disposable temporary directories.
+- Risk/rollback: Production startup now intentionally fails when required
+  metadata is absent or malformed. Real bundle delivery remains required before
+  package activation. Revert this scoped code checkpoint only to withdraw the
+  implementation; doing so does not authorize publishing the old sentinel path.
+- Dependency rationale/stale-policy check: No dependencies added. Reviewed root
+  AGENTS, scoped Rust/data instructions, ADR 586, ADR 588's current approval
+  resolution and C1 detail. Removed the retained failure-to-absence conflict;
+  no instruction contract, frozen migration, init SQL, workflow, Just recipe,
+  approval status, generated documentation index or parent ledger was edited.

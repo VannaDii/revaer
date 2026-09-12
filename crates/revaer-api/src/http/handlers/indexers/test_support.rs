@@ -2357,7 +2357,10 @@ pub(crate) fn indexer_test_state_with_media(
     Ok(Arc::new(ApiState::new_with_media(
         Arc::new(StubConfig),
         indexers,
-        media,
+        (
+            media,
+            crate::app::compliance::SourceComplianceMetadata::fixture(),
+        ),
         telemetry,
         Arc::new(json!({})),
         EventBus::with_capacity(4),
