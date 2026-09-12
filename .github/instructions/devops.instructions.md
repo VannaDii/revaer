@@ -70,6 +70,20 @@ applyTo:
   normalized; unrelated fields or unobserved clocks must remain visible.
   Candidate/final disposable PostgreSQL cleanup must remove their anonymous
   volumes as well as containers, never prune unrelated Docker resources.
+  Settings-path proof must pair uninstrumented runs with rollback-surviving
+  test-only NOTICE traces, retain full native diagnostics and exact frozen
+  statement/stack coordinates, and verify caller settings after savepoint and
+  whole-transaction completion. Keep successful rollback/retry, late validation
+  failure and nested policy-regex failure in cold/helper-first modes. These
+  observations do not certify unobserved helper, native or concurrent paths.
+  Validate combined NOTICE/error ordering before separating their records,
+  independently verify seeded read inputs and their timestamp provenance, and
+  bind nested regex errors to the selected title-rule callsite.
+  Attribute/signal proof must preserve exact typed values, normalization,
+  trust-bucket boundaries, identities, rollback sequence gaps and repeated
+  signal rows. Retain the frozen suffix-regex and nullable-uniqueness defects;
+  do not claim their intended confidence-upsert branch has executed. UUID has
+  no valid observation attribute key, and D5 ID cases keep their separate proof.
 
 - `just test-database-baseline-read` exercises the ADR 551 read-only stored-procedure boundary against a caller-provided disposable Postgres service with the same workspace-wide all-feature selection as CI, filtering only the test names. Package-only feature resolution is not equivalent evidence for tracing behavior. It must fail when the service is missing, reject unmanaged databases without initializing them, and retain the frozen migration authority until the coordinated cutover. Baseline errors must never retain raw database messages, role names, or credentials.
 

@@ -660,3 +660,107 @@ removed. Raw coverage and the complete log are retained with the proof evidence.
 The fixed 52-file secrets scan ran successfully; canonical `just sonar-scan`
 stopped before analysis because `SONAR_TOKEN` was unavailable. Full UI, positive
 published Sonar coverage, both native packages and D3 qualification remain open.
+
+## Settings-Path Proof (2026-09-12)
+
+The next bounded increment observes successful rollback/retry, late validation
+failure and nested policy-regex failure in cold and helper-first sessions.
+Test-only NOTICE records survive rollback; paired uninstrumented runs check
+that observers preserve application outcomes. Exact frozen insertion/stack
+coordinates, original diagnostics, caller settings after transaction completion,
+all 18 table images and the 19 read inputs remain required. The existing
+protocol is unchanged unless its explicit finish-setting observation is enabled.
+
+Focused units pass 281 assertions. The fresh isolated run passes 266 checks,
+including 43 settings-path checks, and removes its exact container and named
+volume. Its source is `af67cfce` plus the five proof/test changes, before later
+canonical wiring. The initial missing-notice-context attempt remains retained;
+the corrected client requests complete context rather than discarding it.
+Independent review and canonical integrated validation remain in progress.
+
+No production telemetry, dependency, schema or frozen-authority change is made.
+Rollback removes only this proof increment; the incomplete-D3 failure remains.
+Root, data, DevOps and Sonar instructions were reviewed; DevOps now specifies
+the exact trace boundary. Neither these tests nor approval imply full D3,
+clean CI/UI, package, published Sonar or merge qualification.
+
+Independent review found three validator gaps: NOTICE/error ordering was lost,
+matching empty input snapshots passed, and the regex error was not restricted
+to the selected title callsite. The parent added combined-stream validation,
+independent seed/clock checks and the exact title/helper coordinates, with
+regressions. The initial 281-assertion/live result is not evidence that those
+gaps were closed; corrected units pass 309 assertions. The superseded canonical
+run was interrupted with
+exit 130, its owned container was verified absent, and its log was retained.
+
+The corrected disposable run on `52c7ef13` plus the owned settings/wiring delta
+passes all 266 checks and removes its exact container and named volume. All 12
+declared source hashes match the parent. Independent recheck passes 194 review
+and 309 unit assertions, rejects the ten unchanged original witnesses and 16
+fresh coherent mutations, and finds no residual issue in the three-finding
+scope. Its isolated checkout differs only by six canonical wiring lines in
+one declared file; this is retained replay, not a second live integrated run.
+All 230 original review artifacts remain unchanged. Exact source selections,
+raw output, failed attempts, commands and manifests are archived under
+`artifacts/media-verification/2026-09-12-d3-setting-paths/`.
+
+The exact ten-file secrets scan passes. Full-file Ruby MAIN analysis of the
+two corrected files and both canonical wiring owners reports zero issues for
+`VannaDii_Revaer`. These auxiliary results do not establish canonical scanner,
+quality-gate or positive published-coverage acceptance. The combined canonical
+result below exercises the integrated wiring on stable executable source.
+
+## Attribute And Signal Proof (2026-09-12)
+
+Worker `90a3c37b`, replayed as `52c7ef13`, adds 12 cases and 48 cold/helper-first
+variant runs. It checks every valid non-D5 typed attribute key, normalized
+language/subtitles, year/season/episode, release-group acceptance/rejection,
+trust ranks 19/20/30/40, real first signals and repeated ingestion. Focused units
+pass 206 assertions; the worker's pinned arm64 live driver passes 297 checks.
+All 19 declared source hashes match its commit, and all three attempts' exact
+containers and named volumes were verified absent. Raw attempts remain retained.
+
+The frozen ordinary-suffix regex defect and duplicate signals caused by nullable
+uniqueness remain explicit limitations, not accepted feature completion. No UUID
+attribute key is invented; D5 ID cases retain their separate required proof.
+Independent review replays all 48 variants and 192 frames, passes 245 review
+and 206 unit assertions, rejects 26 mutations, and passes three producer
+controls. No actionable finding remains within that scope. Repeated identical
+attributes do not prove changed-value conflict updates or metadata conflicts.
+Both full Ruby files report zero MAIN-scope Sonar issues. Exact raw attempts,
+source, replay, commands and manifests are retained under
+`artifacts/media-verification/2026-09-12-d3-attributes/`.
+
+Canonical wiring is present and exercised by the combined result below. The two
+completed review worktrees were removed after archival, and the reviewer was
+closed. No new runtime, schema, telemetry or dependency change is made.
+Rollback removes only the proof increment. Root, data, DevOps and Sonar policy
+were reviewed; the DevOps proof contract was tightened without relaxing a gate.
+
+### Combined Proof Result
+
+On `52c7ef13` plus the owned settings and canonical-wiring delta,
+`just db-init-final-proof` passes 4,234 of 4,235 checks and exits one. Its sole
+failure is the explicit incomplete-D3 gate. All 43 settings-path and 73
+attribute checks complete successfully; their 12 and 19 declared source hashes
+still match the parent. No executable source changed during the run.
+
+The exact PID-bound disposable container was removed and its absence verified;
+the proof's cleanup completed without a recorded failure. Complete raw proof
+evidence and the log are retained in the settings-path archive. This closes
+neither unobserved identity-fill/conflict and reachability cases nor full
+helper/native qualification. The frozen migrations remain authoritative.
+Full clean CI/UI, canonical Sonar with positive published coverage, both native
+packages and exact-revision PR acceptance remain separate required gates.
+
+Full `just ci` on the same stable executable source exits zero with all 18
+unchanged package gates, script coverage and the release build, but retains
+eight config-watcher shutdown WARNs. Full `just ui-e2e` again reports 57 passed,
+one failed and 72 not run: schedule enablement receives 400
+`media_profile_filesystem_identity_required` instead of the required 200, and
+teardown rejects missing UI coverage. Both exact gate databases and volumes
+were removed. Canonical `just sonar-scan` stops before analysis for unavailable
+`SONAR_TOKEN`; positive local coverage is not published Sonar acceptance.
+The [coverage checkpoint](586-compliance-manifest-failure-boundary.md#settings-and-attribute-checkpoint-2026-09-12)
+records the current inputs and limits. No gate, warning, approval or required
+operator behavior was relaxed, and no PR was pushed or merged.

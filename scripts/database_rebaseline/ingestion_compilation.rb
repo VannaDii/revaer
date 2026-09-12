@@ -282,8 +282,10 @@ module RevaerDatabaseRebaseline
       frames.map do |frame|
         normalized = frame.merge("backend" => "<validated-backend>", "role" => "<validated-direct-role>", "outside" => "<validated-ADR-588-D4-lifetime>")
         normalized["clock"] = clocks.fetch(frame.fetch("clock"))
-        normalized["result"] = frame.fetch("result").to_h do |key, value|
-          [key, IngestionExisting::EXISTING_IDENTITIES.any? { |table| key == "#{table}_public_id" } ? identities.fetch(value) : value]
+        if frame.key?("result")
+          normalized["result"] = frame.fetch("result").to_h do |key, value|
+            [key, IngestionExisting::EXISTING_IDENTITIES.any? { |table| key == "#{table}_public_id" } ? identities.fetch(value) : value]
+          end
         end
         %w[tables_before tables_after tables_finish].each do |key|
           normalized[key] = frame.fetch(key).to_h do |table, rows|

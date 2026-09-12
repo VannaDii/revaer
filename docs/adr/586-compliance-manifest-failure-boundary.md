@@ -460,3 +460,29 @@ Canonical `just sonar-scan` again stopped before analysis for missing
 `SONAR_TOKEN`; the per-file checks do not substitute for it. The UI result and
 scheduling/root-association failure above remain the latest full UI evidence.
 Neither native package qualification nor remote PR/check acceptance is claimed.
+
+### Settings And Attribute Checkpoint (2026-09-12)
+
+Full `just ci` and `just ui-e2e` were rerun on `52c7ef13` plus the reviewed
+settings/canonical-wiring delta. Executable files stayed unchanged throughout;
+only documentation changed. CI exits zero, including the 18 unchanged package
+gates, script coverage and release build. Eight watcher-shutdown WARNs remain.
+UI reports 57 passed, one failed and 72 not run at the same required schedule
+PATCH: 400 `media_profile_filesystem_identity_required`, followed by missing
+UI-coverage rejection during teardown. Neither run establishes a clean handoff.
+
+Fresh Rust LCOV retains 310 first-party files, 131,114 line records and 122,231
+positive records, the six child-process hits and all seven other native/macro
+records. The new attribute/settings modules have 153/215 and 129/209 covered
+line records in the real CI script report; their tests have 211/273 and 169/170.
+Uncovered lines remain visible. No unpublished live-run coverage was merged
+into the canonical CI reports or substituted for published Sonar metrics.
+
+The owned databases `revaer-approved-ci-51738467ff3a` and
+`revaer-approved-ui-e2e-bb2d81729e9b` and their volumes were removed. Full logs,
+unmodified coverage, UI results and the disposable gate harness are retained
+under `artifacts/media-verification/2026-09-12-d3-setting-paths/`. Canonical
+`just sonar-scan` stops before analysis because `SONAR_TOKEN` remains unavailable.
+The reviewed per-file Ruby/secrets scans are auxiliary evidence only. D3,
+root/scheduling workflow, warning-free shutdown, both native packages and exact
+PR checks/reviews remain required; no criteria or production behavior changed.

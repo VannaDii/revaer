@@ -162,6 +162,7 @@ module RevaerDatabaseRebaseline
           #{finish.empty? ? '' : "#{finish};"}
           SELECT 'outside:' || #{finish.empty? ? "'not-committed'" : "(to_regclass('pg_temp.tmp_policy_rules') IS NOT NULL)::text"};
           SELECT 'tables_finish:' || ingestion_observation.snapshot()::text;
+          #{test_case[:finish_setting] ? "SELECT 'finished_setting:' || current_setting('plpgsql.variable_conflict');" : ''}
         SQL
       end
       pieces.join("\n")
@@ -177,7 +178,7 @@ module RevaerDatabaseRebaseline
       end
       frames = test_case.fetch(:calls).map do |_call|
         frame = {}
-        CORRECTION_RECORDS.each do |key|
+        correction_records(test_case).each do |key|
           if key == "state" && lines.first&.start_with?("{")
             frame["result"] = JSON.parse(lines.shift)
           end
@@ -208,6 +209,10 @@ module RevaerDatabaseRebaseline
       frames
     rescue JSON::ParserError
       raise Failure, "ingestion correction invalid JSON evidence"
+    end
+
+    def correction_records(test_case)
+      test_case[:finish_setting] ? CORRECTION_RECORDS + ["finished_setting"] : CORRECTION_RECORDS
     end
 
     def correction_diagnostics(stderr, wrapper:)

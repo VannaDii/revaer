@@ -8,6 +8,8 @@ require_relative "ingestion_wrapper"
 require_relative "ingestion_policy"
 require_relative "ingestion_dependencies"
 require_relative "ingestion_validation"
+require_relative "ingestion_setting_paths"
+require_relative "ingestion_attributes"
 
 module RevaerDatabaseRebaseline
   # Uses FinalProof's private transport and evidence owner, never runtime SQL.
@@ -19,6 +21,8 @@ module RevaerDatabaseRebaseline
     include IngestionPolicy
     include IngestionDependencies
     include IngestionValidation
+    include IngestionSettingPaths
+    include IngestionAttributes
     INGESTION_TABLES = %w[
       canonical_torrent canonical_torrent_source canonical_torrent_source_attr
       canonical_torrent_source_context_score canonical_torrent_best_source_context
@@ -72,6 +76,8 @@ module RevaerDatabaseRebaseline
       verify_ingestion_wrapper!
       verify_ingestion_policy!
       verify_ingestion_validation!
+      verify_ingestion_setting_paths!
+      verify_ingestion_attributes!
       verify_ingestion_dependencies!
       verify_ingestion_session_controls!
       verify_existing_ingestion_parity!

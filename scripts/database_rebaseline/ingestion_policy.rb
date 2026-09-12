@@ -406,7 +406,7 @@ module RevaerDatabaseRebaseline
       records = stderr.split(/(?=^ERROR:  )/)
       lines = stdout.lines(chomp: true)
       frames = session_case.fetch(:calls).map do |_call|
-        IngestionCorrections::CORRECTION_RECORDS.to_h do |key|
+        correction_records(session_case).to_h do |key|
           line = lines.shift
           raise Failure, "policy error record missing or reordered: #{key}" unless line&.start_with?("#{key}:")
 
