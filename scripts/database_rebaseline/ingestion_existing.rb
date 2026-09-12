@@ -61,10 +61,12 @@ module RevaerDatabaseRebaseline
         reference = ingestion_existing_isolated(name, fixture, tested, source: "reference_proof", role: "postgres", variant: "reference")
         final = ingestion_existing_isolated(name, fixture, tested, source: @database, role: @runtime, variant: "final")
         equivalent = reference == final
-        accepted = equivalent && ingestion_existing_outcome?(name, reference)
+        approved_delta = ingestion_approved_delta(name, reference, final)
+        admissible = equivalent || !approved_delta.nil?
+        accepted = admissible && ingestion_existing_outcome?(name, final)
         expected = name == "existing-attrs-rollback" ? ["P0001"] : ["00000"]
-        @ingestion_results << { name:, expected:, reference:, final:, equivalent:, accepted:, existing_data_cold_backend: true }
-        check("ingestion #{name} fixture and tested parity", equivalent)
+        @ingestion_results << { name:, expected:, reference:, final:, equivalent:, approved_delta:, accepted:, existing_data_cold_backend: true }
+        check("ingestion #{name} parity or exact approved correction", admissible)
         check("ingestion #{name} required outcome", accepted)
       end
     end

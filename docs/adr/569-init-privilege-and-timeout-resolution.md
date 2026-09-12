@@ -268,6 +268,68 @@ presents D4's exact additional temporary-table lifetime delta for approval;
 conditional D3 does not authorize that change. No D4 SQL is implemented, no
 frozen migration is edited, and the final init remains inert and unpublishable.
 
+## Approved Correction Comparison Checkpoint (2026-09-11)
+
+This continues D3 verification after the [ADR 588 approval](588-first-release-decision-package.md#approval-resolution).
+It changes the disposable proof only, not final SQL, migrations, privileges,
+runtime bootstrap or the conditional D3 acceptance boundary.
+
+- Motivation: Raw parity rejects the two separately approved D4/D5 fixes. The
+  proof must recognize their exact effects without rewriting the reference or
+  treating its failed calls as successful application behavior.
+- Design notes: Recognize only `warm-committed` and `existing-external-id`.
+  Retain `equivalent=false` and record the named approval separately. Pin the
+  original SQLSTATE, statement digest, routine, line and native location;
+  require exact successful results and all 18 final table images, including
+  unchanged rows, generated identity links and transaction provenance. The
+  D4/D5 correction matrix remains mandatory before these comparisons.
+- Test coverage summary: On parent `b5c860eb` plus the retained proof delta,
+  `just db-init-final-proof` passes 371 of 372 checks using pinned PostgreSQL
+  16.14. All 21 current ingestion comparisons meet their required outcomes;
+  19 retain parity and two explicitly validate the approved correction. The
+  remaining failure is the complete conditional D3 scope gate, not a pass.
+  The 27-case, 220-check independent correction matrix passes again. Harness
+  tests pass 316 assertions, including 82 new checks rejecting extra table
+  writes, changed diagnostics/settings/results, lost counterexamples and
+  unrelated case names. Exact finalizer guards pass 40 assertions.
+  Full `just ci` exits zero, including all 18 package coverage gates, script
+  coverage and release build, but retains eight config-watcher shutdown WARNs;
+  this is not warning-free release acceptance. Rust LCOV contains 94,524
+  covered records of 101,615. All five changed Ruby files have positive generic
+  coverage. Full serial `just ui-e2e` still fails profile creation (201 expected,
+  400 received): 46 passed, one failed, 61 not run, plus missing job-phase and
+  profile-readiness route coverage. Earlier UI attempts stopped at an occupied
+  port and concurrent asset generation; logs are retained. No assertion changed.
+- Sonar: Whole-file Ruby MAIN analysis through `analyze_code_snippet` reports
+  zero issues for all five changed Ruby files in `VannaDii_Revaer`.
+  `just --command sonar analyze secrets <changed-files>` passes after retrying
+  outside the keychain/cache sandbox. This supplements, not replaces, the
+  canonical scanner and positive published coverage, which remain outstanding.
+  Documentation links pass 1,333 checks; instruction drift and diff checks pass.
+- Observability updates: Retain both raw variants and the explicit approval
+  field. `complete=false` and `passed=false` remain until full D3 proof exists.
+  No production telemetry changes.
+- Risk and rollback plan: An overly broad exception could hide a regression.
+  Exact fixture-specific predicates and mutation tests limit this risk; remove
+  only this proof delta to restore strict raw equality. Never modify the frozen
+  reference or enable cutover to make the proof pass.
+- Dependency rationale: No new dependency; use existing Ruby standard library,
+  SQL statement parser, pinned PostgreSQL and canonical Just commands.
+- Stale-policy check: Reviewed root, data, DevOps and Sonar instructions and
+  ADRs 569/579/583/588. DevOps now describes the precise approved comparison
+  without weakening full D3 verification. Earlier counterexample records
+  are historical; this checkpoint does not claim clean full CI/UI, canonical
+  Sonar, package qualification, publication or merge.
+- Remaining work: The bounded closure audit identifies mutating logger-first
+  calls, populated policy matchers and casts, in-call setting observations,
+  and discriminating warm wrapper/scoring/paging paths as the next executable
+  batch. Its catalog inventory is not behavioral proof or D3 completion.
+- Evidence and cleanup: Exact tested source hashes, patch, all proof JSON,
+  gate logs, local coverage and the closure audit are retained under
+  `artifacts/media-verification/2026-09-11-d3-adjudication/`. UI teardown removed
+  its last task database and media; the canonical fixture cleanup passes.
+  No production media, frozen migration, user checkout or remote PR changed.
+
 ## Task Record
 
 - Motivation: Present the two live single-init conflicts and the subsequently

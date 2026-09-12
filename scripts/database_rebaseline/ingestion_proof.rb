@@ -2,11 +2,13 @@
 
 require "json"
 require_relative "ingestion_existing"
+require_relative "ingestion_approved_deltas"
 
 module RevaerDatabaseRebaseline
   # Uses FinalProof's private transport and evidence owner, never runtime SQL.
   module IngestionProof
     include IngestionExisting
+    include IngestionApprovedDeltas
     INGESTION_TABLES = %w[
       canonical_torrent canonical_torrent_source canonical_torrent_source_attr
       canonical_torrent_source_context_score canonical_torrent_best_source_context
@@ -65,9 +67,11 @@ module RevaerDatabaseRebaseline
         reference = ingestion_isolated(name, query, source: "reference_proof", role: "postgres", variant: "reference", helpers_first:)
         final = ingestion_isolated(name, query, source: @database, role: @runtime, variant: "final", helpers_first:)
         equivalent = reference == final
-        accepted = equivalent && reference.fetch("states") == expected
-        @ingestion_results << { name:, expected:, helpers_first:, reference:, final:, equivalent:, accepted: }
-        check("ingestion #{name} observed application parity", equivalent)
+        approved_delta = ingestion_approved_delta(name, reference, final)
+        admissible = equivalent || !approved_delta.nil?
+        accepted = admissible && final.fetch("states") == expected
+        @ingestion_results << { name:, expected:, helpers_first:, reference:, final:, equivalent:, approved_delta:, accepted: }
+        check("ingestion #{name} parity or exact approved correction", admissible)
         check("ingestion #{name} required outcome", accepted)
         next if accepted
 

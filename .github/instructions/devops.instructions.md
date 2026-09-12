@@ -38,6 +38,12 @@ applyTo:
   The canonical final proof must always run the independent D4/D5 correction
   matrix before D3 comparison. The focused `--corrections-only` live harness
   is regression evidence only and must never substitute for the final proof.
+  The existing D3 `warm-committed` and `existing-external-id` cases may recognize
+  only their exact ADR 588 D4/D5 correction: retain `equivalent=false`, original
+  SQLSTATE/native diagnostic evidence, and a named `approved_delta`. Compare
+  every result, setting, identity and all 18 table images against independently
+  specified expected changes. Additional differences and shared failures must
+  fail; recognizing either correction must not discharge the D3 closure gate.
   Candidate/final disposable PostgreSQL cleanup must remove their anonymous
   volumes as well as containers, never prune unrelated Docker resources.
 

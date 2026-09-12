@@ -5,12 +5,14 @@ require_relative "../database_rebaseline/final_proof"
 require_relative "../database_rebaseline/ingestion_proof"
 require_relative "database-ingestion-existing-test"
 require_relative "database-ingestion-corrections-test"
+require_relative "database-ingestion-approved-deltas-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
     include IngestionProof
     include IngestionExistingTest
     include IngestionCorrectionsTest
+    include IngestionApprovedDeltasTest
 
     def run_tests!
       @assertions = 0
@@ -29,6 +31,7 @@ module RevaerDatabaseRebaseline
       normalization_tests!
       existing_data_tests!
       correction_tests!
+      approved_delta_tests!
       cleanup_tests!
       puts "database-ingestion-proof-test: #{@assertions} assertions passed"
     end
