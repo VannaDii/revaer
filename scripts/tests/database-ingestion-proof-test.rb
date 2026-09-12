@@ -11,6 +11,7 @@ require_relative "database-ingestion-wrapper-test"
 require_relative "database-ingestion-identity-test"
 require_relative "database-ingestion-policy-test"
 require_relative "database-ingestion-dependencies-test"
+require_relative "database-ingestion-validation-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
@@ -267,3 +268,4 @@ end
 
 RevaerDatabaseRebaseline::IngestionProofTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionDependenciesTest.new.run_tests!
+RevaerDatabaseRebaseline::IngestionValidationTest.new.run_tests!

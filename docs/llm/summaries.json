@@ -4876,6 +4876,7 @@
       "observed-conflicts",
       "policy-identity-and-native-proof-checkpoint-2026-09-11",
       "task-record",
+      "validation-guard-checkpoint-2026-09-11",
       "wrapper-and-warm-cache-proof-checkpoint-2026-09-11"
     ],
     "href": "/adr/569-init-privilege-and-timeout-resolution/"

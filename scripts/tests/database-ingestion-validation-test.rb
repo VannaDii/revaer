@@ -16,6 +16,7 @@ module RevaerDatabaseRebaseline
       @ingestion_inventory = { "reference_proof" => { "routines" => [{ "name" => "search_result_ingest_v1", "signature" => "search_result_ingest_v1(uuid)", "source" => body }] } }
       validation_sites!
       validation_case_tests!
+      validation_result_tests!
       validation_mutation_tests!
       validation_control_tests!
       validation_bytes_tests!
@@ -102,6 +103,20 @@ module RevaerDatabaseRebaseline
 
     def copy(value)
       Marshal.load(Marshal.dump(value))
+    end
+
+    def validation_result_tests!
+      [true, false].each do |accepted|
+        guard = validation_case("request-null", :request_null)
+        assert(validation_case_result(guard, "cold", accepted) == {
+          name: "request-null", mode: "cold", equivalent: accepted, accepted:, approved_delta: nil
+        }, "guard equality and acceptance remain explicit")
+        control = validation_case("null-arrays", nil)
+        assert(validation_case_result(control, "helpers-first", accepted) == {
+          name: "null-arrays", mode: "helpers-first", equivalent: false, accepted:,
+          approved_delta: "ADR 588 D4: third call retains frozen 42P07, final succeeds"
+        }, "approved error-to-success correction is never reported as equivalence")
+      end
     end
 
     def validation_case_tests!

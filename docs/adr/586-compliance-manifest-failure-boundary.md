@@ -413,3 +413,50 @@ Stale-policy check: root, DevOps and Sonar instructions were reviewed. DevOps no
 forbids credential fallbacks in these recipes, including moving them into helpers,
 and requires propagation and missing-input regression coverage. Remaining watcher,
 UI, canonical Sonar and documentation-network failures stay visible above.
+
+### Integrated Coverage Result
+
+Full `just ci` against the stable executable source at `8cf7c928` exits zero,
+including all 18 unchanged package gates, script coverage and the release build.
+Documentation alone changed during execution. Eight config-watcher shutdown
+WARNs remain, so this is not warning-free handoff evidence. The exact owned
+database `revaer-approved-ci-4d5753ae1397` and anonymous volumes were removed.
+
+The fresh export confirms 310 first-party Rust files, 68 added and none removed
+relative to the retained default-filter report. It has 122,233 positive
+first-party line records out of 131,114; bootstrap child-only lines 61-66 each
+have one hit. Seven external native/macro records remain visible and are not
+counted as first-party. The log and raw coverage are retained under
+`artifacts/media-verification/2026-09-11-c1-e2e-bootstrap/`.
+
+The later credential fix is `7ae86f2e`; this CI execution does not certify it.
+Fresh full `just ui-e2e` on `7ae86f2e` plus documentation-only changes again
+reports 57 passed, one failed and 72 not run. The unchanged schedule PATCH
+assertion receives 400 `media_profile_filesystem_identity_required`; teardown
+also rejects missing UI coverage. The owned database
+`revaer-approved-ui-e2e-cb26faa89ef6` and volumes were removed, and canonical
+fixture cleanup passes. Canonical Sonar still lacks its token; no published
+coverage, native package or remote-check acceptance is established.
+The credential-fix worktree was removed after its clean commit was retained
+in integration and its focused evidence was archived.
+
+### Final Integrated Checkpoint (2026-09-12)
+
+Full `just ci` on `021656b4` plus the parent validation wiring/report correction
+exits zero with all 18 package gates, script coverage and the release build.
+Executable source stayed unchanged during the run; only documentation changed.
+This run includes the explicit database-input correction and its 50 recipe runs,
+but still emits eight watcher-shutdown WARNs. It is not warning-free acceptance.
+The owned database `revaer-approved-ci-13d9879c395b` and volumes were removed.
+
+Fresh LCOV contains 310 first-party Rust files, 131,114 first-party line records
+and 122,231 positive records. Bootstrap child-only lines 61-66 each have one hit;
+all seven external native/macro records remain visible. These are local
+coverage measurements, not published Sonar metrics. Raw exports and the log
+are retained under `artifacts/media-verification/2026-09-11-d3-validation/`.
+
+The reviewed 52-file `sonar analyze secrets` invocation ran successfully.
+Canonical `just sonar-scan` again stopped before analysis for missing
+`SONAR_TOKEN`; the per-file checks do not substitute for it. The UI result and
+scheduling/root-association failure above remain the latest full UI evidence.
+Neither native package qualification nor remote PR/check acceptance is claimed.

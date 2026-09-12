@@ -195,6 +195,16 @@ applyTo:
   selected, recorded fixture rows. Returned IDs cannot define the expected target.
   Include a coherent wrong-selection regression, distinct competing identities,
   exact refresh/hash assertions and the wrapper's best-source result.
+- The canonical D3 validation matrix must exercise the 32 frozen validation
+  guard sites with exact SQLSTATE, detail and native/source coordinates, not
+  infer an expected guard from the observed error. Retain all 18 table images,
+  read inputs, seed clocks and direct role/GUC/backend evidence across cold,
+  helper-first and same-backend repeated calls. Preserve legitimate NULL/empty
+  controls and the exact approved D4 third-call counterexample. Report corrected
+  controls as `equivalent=false` with explicit acceptance and approved delta;
+  comparison of their first two calls cannot certify full equivalence. Keep
+  the matrix in the canonical final proof and its unit harness in the policy
+  suite. These bounded guard cases never discharge the incomplete-D3 sentinel.
 - The canonical D3 gate must run the populated policy matrix and paired
   catalog/native dependency inventory. Reject unexpected definitions, settings,
   cast/dictionary/trigger bindings and read-input mutations. Only successful

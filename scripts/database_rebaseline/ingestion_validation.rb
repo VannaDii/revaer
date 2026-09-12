@@ -181,9 +181,8 @@ module RevaerDatabaseRebaseline
               [variant, validation_isolated(test_case, mode, variant, source, role)]
             end
             equal = validation_comparable(variants.fetch("reference"), test_case) == validation_comparable(variants.fetch("final"), test_case)
-            check("validation #{test_case.fetch(:name)} #{mode} full paired guard/control evidence", equal)
-            cases << { name: test_case.fetch(:name), mode:, equivalent: equal,
-                       approved_delta: test_case[:site] ? nil : "ADR 588 D4: third call retains frozen 42P07, final succeeds" }
+            check("validation #{test_case.fetch(:name)} #{mode} paired evidence outside the approved correction", equal)
+            cases << validation_case_result(test_case, mode, equal)
           end
         end
         check("validation source bytes unchanged during matrix", hashes == validation_source_hashes)
@@ -203,6 +202,12 @@ module RevaerDatabaseRebaseline
         @correction_evidence = previous
       end
       raise Failure, "validation matrix failed; retained exact evidence" unless @checks.drop(first).all? { |entry| entry.fetch(:passed) }
+    end
+
+    def validation_case_result(test_case, mode, accepted)
+      corrected = test_case.fetch(:site).nil?
+      { name: test_case.fetch(:name), mode:, equivalent: accepted && !corrected, accepted:,
+        approved_delta: corrected ? "ADR 588 D4: third call retains frozen 42P07, final succeeds" : nil }
     end
 
     def validation_write(name, bytes)

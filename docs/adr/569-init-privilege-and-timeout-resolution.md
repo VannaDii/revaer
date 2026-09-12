@@ -587,3 +587,76 @@ runtime bootstrap or the conditional D3 acceptance boundary.
   uncertified D3 candidate and to distinguish reference normalization from proof.
   No accepted ADR, required check, quality threshold, or frozen migration is
   changed by this proposal. Indexes and generated docs are updated.
+
+## Validation Guard Checkpoint (2026-09-11)
+
+- Motivation: Add the bounded validation/error family from closure-audit case 6
+  without changing the frozen ingestion routine or discharging D3.
+- Design notes: Worker `13ee74af`, replayed as `021656b4`, adds 108 cases at
+  32 independently fixed RAISE coordinates. Cases cover request/indexer
+  eligibility, title/hash/identity guards, companion arrays, duplicate keys,
+  value channels/types and numeric/text domain failures. Four legitimate
+  NULL/empty controls remain accepted. Cold and helper-first sessions repeat
+  errors after savepoint rollback and commit on the same backend. Successful
+  controls retain first-call rollback, second-call commit and the exact D4
+  frozen third-call error versus final success.
+- Evidence integrity: Retain exact diagnostics, roles/GUC/backend/clock frames,
+  unchanged read inputs and all 18 table images. Register original serialized
+  bytes only after validation; missing hashes, changed bytes and framing or
+  state mutations remain errors. Sequence rollback and complete helper/native
+  closure are not claimed.
+- Test coverage summary: Worker units pass 1,426 assertions. Its fresh live
+  wrapper passes 872 checks, including 649 validation-matrix checks across
+  216 paired cases. All nine recorded source hashes match the committed files;
+  exact container and named-volume cleanup succeeds. Earlier failed attempts
+  remain in the archived worker evidence. Parent units pass 1,430 assertions
+  after four added report-classification checks; the existing harness's 1,868
+  and native inventory's 197 assertions also pass.
+- Parent correction: The worker labelled successful D4 controls equivalent
+  after comparing only their first two calls. Raw third-call differences were
+  retained, but that label was misleading. The parent now records
+  `equivalent=false`, explicit acceptance and the named approved delta. The
+  archived worker result predates this reporting correction. Canonical proof
+  and policy-harness wiring are present; fresh integrated evidence and
+  independent review are still pending at this checkpoint.
+- Observability updates: No production telemetry changes. Preserve source,
+  initial/final evidence and review under
+  `artifacts/media-verification/2026-09-11-d3-validation/`.
+- Risk and rollback: A bounded matrix cannot certify all ingestion behavior.
+  Keep `d3_complete=false`, the canonical incomplete-proof failure and frozen
+  migration authority. Reverting this proof increment cannot permit cutover.
+- Dependency rationale: Existing Ruby, PostgreSQL transport and proof helpers
+  only; no runtime dependency, schema, permission or package change.
+- Stale-policy check: Reviewed root, DevOps, Sonar and the ADR 569/588 approved
+  boundary. DevOps now requires these exact guard/control distinctions and
+  canonical wiring. No acceptance criterion or prior hold is relaxed.
+
+### Integrated Validation Result
+
+The fresh canonical proof on `021656b4` plus the parent wiring/report correction
+passes 4,118 of 4,119 checks. Its only failure is the required incomplete-D3
+sentinel. The new matrix completes all 649 checks: 216 accepted pairs, with
+208 equivalent guard cases and eight explicitly non-equivalent approved D4
+controls. Its nine declared source hashes still match. This is not a successful
+final-init qualification or permission to replace the frozen migrations.
+
+Independent review retains 4,637 assertions, 692 rejected coherent mutations,
+eight mocked producer controls and byte-hash readback of 3,030 raw files. It
+also checks the parent's report correction independently; no residual actionable
+finding remains in this bounded review. The reviewer did not recreate a worker
+registry from old files or certify the new canonical run. Reproducible review
+code, results, raw inputs and exact limits are retained under
+`artifacts/media-verification/2026-09-11-d3-validation-review/`.
+The completed worker worktree and reviewer have been removed/closed. Full-file
+MAIN Ruby analysis reports zero issues for the new module and its tests;
+the two canonical wiring owners also report zero MAIN Ruby issues.
+
+Final `just ci` on the same stable executable source exits zero on 2026-09-12,
+including all 18 unchanged package coverage gates, script coverage and the
+release build. Documentation alone changed during execution. Eight
+config-watcher shutdown WARNs remain; this is not a clean handoff. The exact
+owned database `revaer-approved-ci-13d9879c395b` and its anonymous volumes were
+removed. Raw coverage and the complete log are retained with the proof evidence.
+The fixed 52-file secrets scan ran successfully; canonical `just sonar-scan`
+stopped before analysis because `SONAR_TOKEN` was unavailable. Full UI, positive
+published Sonar coverage, both native packages and D3 qualification remain open.
