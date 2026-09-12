@@ -44,6 +44,13 @@ applyTo:
   every result, setting, identity and all 18 table images against independently
   specified expected changes. Additional differences and shared failures must
   fail; recognizing either correction must not discharge the D3 closure gate.
+  The D3 compilation matrix must compare plain and disposable-observer runs
+  against both exact variants. Retain complete per-operation table images,
+  real persisted helper inputs, direct-role/backend/transaction provenance,
+  and ordered in-call setting observations. Validate the approved D4 temporary
+  table lifetime before normalizing that metadata; never normalize arbitrary
+  text, result fields, settings or unobserved timestamps. Successful committed
+  observer events do not establish error-path or full helper/trigger closure.
   Candidate/final disposable PostgreSQL cleanup must remove their anonymous
   volumes as well as containers, never prune unrelated Docker resources.
 

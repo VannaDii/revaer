@@ -330,6 +330,64 @@ runtime bootstrap or the conditional D3 acceptance boundary.
   its last task database and media; the canonical fixture cleanup passes.
   No production media, frozen migration, user checkout or remote PR changed.
 
+## In-Call Setting Proof Checkpoint (2026-09-11)
+
+- Scope: Proof-only continuation from `62c5d6a7`; no final SQL, frozen
+  migration, privilege, runtime or acceptance-criteria change.
+- Motivation and design: Exercise the real conflict logger before ingestion
+  on a cold tested connection, including NULL fallback and 256-character
+  truncation, then reuse that connection across commits. Also exercise cold
+  canonical insertion, nested conflict logging and a persisted policy flag
+  through the real decision cast. Disposable triggers observe session/current
+  role, backend, transaction and ambient setting at three write boundaries.
+- Verification: Four cases, two database variants and paired plain/observed
+  runs pass 140 checks. All 18 application tables compare per operation;
+  instrumentation must preserve behavior. Validate D4's exact temporary-table
+  lifetime separately before normalizing that metadata. Generated identities
+  and named transaction columns normalize only after validation; arbitrary
+  UUID-shaped text and other timestamps remain visible. Harness tests pass
+  515 assertions. Full `just db-init-final-proof` passes 511/512 checks; its
+  sole failure remains the incomplete-D3 gate. These observations cover
+  committed successful writes, not failed-call or complete trigger closure.
+- Counterevidence retained: The first draft miscounted the two distinct hash
+  conflict records and used `decision_type` instead of the persisted `decision`
+  column. The harness was corrected against the unchanged routine/schema;
+  neither failed assertion nor initial evidence was hidden.
+- Observability: Raw queries, diagnostics, full images, observer events and
+  real Ruby coverage are retained. No production telemetry changes.
+- Risk and rollback: Observers could affect compilation or writes; paired
+  uninstrumented runs and exact state comparisons guard that risk. Remove
+  only this proof delta to roll back. Never use it to enable cutover early.
+- Dependencies: Existing Ruby standard library and pinned PostgreSQL only.
+- Stale-policy check: Reviewed root, data, DevOps and Sonar instructions and
+  ADRs 569/588. DevOps records the bounded evidence contract. Historical
+  checkpoints remain historical, not fresh release or approval claims.
+- Remaining work: Populated policy matchers, discriminating warm wrapper and
+  paging branches, remaining errors/mutations, and native/trigger closure.
+- Full gates on the proof-only tree: `just ci` exits zero with all 18 package
+  coverage gates and the release build, but retains eight config-watcher
+  shutdown WARNs. Rust LCOV records 94,557 covered lines of 101,615 records.
+  The merged real script coverage includes 173/174 lines in the new compilation
+  module and 107/107 in its tests. `just ui-e2e` again reports 46 passed, one
+  failed and 61 not run: profile creation returns 400 instead of 201, and
+  teardown rejects missing job-phase/readiness GET coverage. The initial CI
+  instruction-drift failure and UI database-ownership setup failure are retained;
+  the reruns use the matching instruction update and documented caller-managed
+  disposable database option, not reduced tests or relaxed assertions.
+- Sonar and review: All five changed Ruby files return zero issues from
+  whole-file MAIN analysis after a retained DNS-failure retry. Secrets analysis
+  passes. `just sonar-scan` stops because `SONAR_TOKEN` is unavailable; no
+  canonical scan or published-coverage pass is claimed. Independent review
+  found no actionable issue and rejected 52 additional evidence mutations;
+  it replayed retained results, not a second live PostgreSQL run. Finalizer
+  guards pass 40 assertions and documentation links pass 1,333 checks.
+- Evidence: Source hashes, exact dirty delta, initial failures, final raw proof,
+  gate logs, local coverage and review are retained in
+  `artifacts/media-verification/2026-09-11-d3-compilation/`. No runtime SQL or
+  frozen migration changed. C1 was implemented independently at `81947a65`;
+  this proof-only CI/UI run does not qualify the combined integration, packages,
+  publication, merge or complete service.
+
 ## Task Record
 
 - Motivation: Present the two live single-init conflicts and the subsequently

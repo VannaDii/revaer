@@ -135,7 +135,7 @@ module RevaerDatabaseRebaseline
         pieces << File.binread(File.join(@contract.root, "scripts/tests/database-ingestion-helper-first.sql"))
       end
       test_case.fetch(:calls).each_with_index do |arguments, index|
-        call = ingestion_call(arguments)
+        call = block_given? ? yield(arguments) : ingestion_call(arguments)
         call = call.sub("public.search_result_ingest_v1(", "public.search_result_ingest(") if test_case[:wrapper]
         finish = test_case[:rollback] && index.zero? && !test_case[:commit_control] ? "ROLLBACK" : "COMMIT"
         finish = "" if test_case[:same_transaction] && index.zero?

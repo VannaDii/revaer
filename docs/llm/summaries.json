@@ -4871,6 +4871,7 @@
       "d1-clarify-the-extension-privilege-boundary",
       "d2-function-scoped-reset-lock-bound",
       "d3-function-local-variable-resolution",
+      "in-call-setting-proof-checkpoint-2026-09-11",
       "independent-d3-counterexample",
       "observed-conflicts",
       "task-record"
@@ -5096,6 +5097,7 @@
     "summary": "Status: Accepted Date: 2026-09-11 Operator approval: 2026-09-11, explicit C1/C1-D and conditional E1 approval in [ADR 588](588-first-release-decision-package.md#approval-resolution). Implementation status: Approved for implementation; not package-qualified. Context: Provider reconstruction reaches a retained loader that converts filesystem and JSON failures into None, then reports a digest-shaped unavailable sentinel. Root policy prohibits hiding recoverable failure in absence, sentinel values or logs. G1 reserves observable failure classification and availability changes for operator approval. Decision: C1 below is accepted together with ADR 588's exact C1-D delivery contract. No degraded fallback or criteria exception is selected. Consequences: The recommendation makes the packaged manifest a startup prerequisite. Missing or",
     "tags": [
       "alternatives",
+      "c1-implementation-checkpoint-2026-09-11",
       "c1-recommended-startup-failure-policy",
       "task-record",
       "validation-required-after-approval",
