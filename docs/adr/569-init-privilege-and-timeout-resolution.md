@@ -388,6 +388,69 @@ runtime bootstrap or the conditional D3 acceptance boundary.
   this proof-only CI/UI run does not qualify the combined integration, packages,
   publication, merge or complete service.
 
+## Wrapper And Warm-Cache Proof Checkpoint (2026-09-11)
+
+- Scope: Continued D3 proof from integration `18357155`, with no final SQL,
+  frozen migration, runtime, authority, dependency or criterion change.
+- Motivation and design: Add the actual Rust-called `search_result_ingest`
+  wrapper to the exact routine inventory. Compare its first visible-source
+  tail, competing stored scores and seeder thresholds, a full ten-item page
+  and its successor, canonical reuse without page mutation, the third size
+  sample, and retention of the latest 25 samples after the 26th observation.
+  Fixture rows come from successful ingestion on separate recorded backends;
+  explicit base scores are pinned read inputs, not fabricated procedure results.
+- Warm-cache boundary: Each of eight cases runs cold, after pure-helper first
+  use, and after a real same-backend ingestion rollback followed by a committed
+  retry. Rollback is observed through full table images; no DROP, DISCARD,
+  reconnect, role substitution or compiler-setting change repairs the tested
+  session. This is warm-after-rollback evidence, not successful frozen
+  committed reuse. The separate exact D4/D5 correction matrix remains mandatory.
+- Validation: All 48 database-variant runs and 24 paired comparisons pass
+  456 checks. The actual canonical `just db-init-final-proof` passes 967/968;
+  only complete conditional D3 remains unproven. All 18 write tables compare
+  per operation. Six read-input relations are retained and immutable across
+  tested calls; only explicitly named input timestamps equal to the recorded
+  seed transaction may normalize. Other input values and unobserved timestamps
+  remain visible. This does not claim a complete read/native dependency closure.
+- Harness and analysis: 619 assertions pass, including deliberate mutations
+  of result identities/flags, every write-table image, stored scores, title
+  selection, page seal/position, retained samples and input clock provenance.
+  Finalizer mutation guards pass 40 assertions; instruction drift and whitespace
+  checks pass. All four changed Ruby files return zero issues from full-file
+  MAIN Sonar analysis; both review-corrected files were rescanned with zero
+  issues. `just script-coverage` passes. Merging its executed records with the
+  instrumented canonical proof records gives wrapper coverage of 139/139 lines,
+  wrapper-test coverage of 127/127, proof-owner coverage of 211/217 and
+  proof-harness coverage of 195/196. This is local measured coverage, not
+  canonical Sonar or positive published coverage proof.
+- Independent review found that the initial highest-score fixture also won
+  the lowest-ID tie-break, so wrong local-variable ordering could remain
+  invisible. Reversed the real fixture insertion order and retained a negative
+  control: the high-score source has the larger ID; wrong local ordering
+  selects the already-100-seeder low-score source and incorrectly leaves the
+  previous best unchanged. Initial reports and source are preserved under
+  `artifacts/media-verification/2026-09-11-d3-wrapper-initial/`; their numerical
+  pass counts alone do not establish this corrected binding proof. The full
+  corrected canonical run again passes 967/968 checks, with only the incomplete
+  D3 sentinel failing. Independent re-review replayed all 48 runs and 400 raw
+  frames, verified all eight decisive calls reject the faulty ordering, and
+  found no remaining issue in that scope.
+- Scanner boundary: The exact-file Sonar secret scan passed. The authoritative
+  `just sonar-scan` exited before analysis because `SONAR_TOKEN` is unavailable;
+  no canonical quality-gate or published-coverage pass is claimed.
+- Observability: Retain raw queries/results/diagnostics, all transaction and
+  input images, source identity and check reports. No runtime telemetry changes.
+- Risk and rollback: Test setup or normalization could hide a real difference;
+  separate connections, unchanged inputs, exact result predicates and mutation
+  tests constrain that risk. Remove only this proof delta to roll back; retain
+  the conditional D3 gate and never cut over from this subset.
+- Stale-policy check: Reviewed root, scoped data/DevOps/Sonar instructions,
+  ADRs 569/588 and the existing proof owners. The DevOps update makes the
+  warm-rollback and named-clock limitations explicit; no approval is inferred.
+- Remaining: Complete populated policy/error/identity branches and native,
+  trigger and read-dependency closure. Full integrated CI/UI, canonical Sonar,
+  both native packages and merge acceptance remain required.
+
 ## Task Record
 
 - Motivation: Present the two live single-init conflicts and the subsequently

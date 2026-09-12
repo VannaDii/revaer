@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-12T02:16:20.596681+00:00",
+  "generated": "2026-09-12T02:59:06.947846+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4877,7 +4877,8 @@
         "in-call-setting-proof-checkpoint-2026-09-11",
         "independent-d3-counterexample",
         "observed-conflicts",
-        "task-record"
+        "task-record",
+        "wrapper-and-warm-cache-proof-checkpoint-2026-09-11"
       ],
       "href": "/adr/569-init-privilege-and-timeout-resolution/"
     },

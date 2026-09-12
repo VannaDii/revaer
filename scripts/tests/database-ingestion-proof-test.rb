@@ -7,6 +7,7 @@ require_relative "database-ingestion-existing-test"
 require_relative "database-ingestion-corrections-test"
 require_relative "database-ingestion-approved-deltas-test"
 require_relative "database-ingestion-compilation-test"
+require_relative "database-ingestion-wrapper-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
@@ -15,6 +16,7 @@ module RevaerDatabaseRebaseline
     include IngestionCorrectionsTest
     include IngestionApprovedDeltasTest
     include IngestionCompilationTest
+    include IngestionWrapperTest
 
     def run_tests!
       @assertions = 0
@@ -35,6 +37,7 @@ module RevaerDatabaseRebaseline
       correction_tests!
       approved_delta_tests!
       compilation_tests!
+      wrapper_tests!
       cleanup_tests!
       puts "database-ingestion-proof-test: #{@assertions} assertions passed"
     end
@@ -149,7 +152,7 @@ module RevaerDatabaseRebaseline
       assert(cases.length == 13, "retain six cold cases, six helper-first cases and the warm counterexample")
       assert(cases.count { |entry| entry[3] } == 6, "all cold cases must repeat after helper compilation")
       expected = ingestion_helper_expectations
-      assert(expected.keys.sort == INGESTION_HELPERS.reject { |name| %w[search_result_ingest_v1 log_source_metadata_conflict_v1].include?(name) }.sort, "pure helper inventory changed")
+      assert(expected.keys.sort == INGESTION_HELPERS.reject { |name| %w[search_result_ingest search_result_ingest_v1 log_source_metadata_conflict_v1].include?(name) }.sort, "pure helper inventory changed")
       warm = ingestion_session({}, helpers_first: true)
       assert(warm.index("SELECT 'helpers:'") < warm.index("SAVEPOINT ingestion_call;"), "helpers must compile before ingestion")
       assert(!ingestion_session({}).include?("SELECT 'helpers:'"), "cold cases must retain uncompiled helpers")

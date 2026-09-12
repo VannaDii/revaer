@@ -4874,7 +4874,8 @@
       "in-call-setting-proof-checkpoint-2026-09-11",
       "independent-d3-counterexample",
       "observed-conflicts",
-      "task-record"
+      "task-record",
+      "wrapper-and-warm-cache-proof-checkpoint-2026-09-11"
     ],
     "href": "/adr/569-init-privilege-and-timeout-resolution/"
   },

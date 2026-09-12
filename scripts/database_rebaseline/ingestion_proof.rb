@@ -4,6 +4,7 @@ require "json"
 require_relative "ingestion_existing"
 require_relative "ingestion_approved_deltas"
 require_relative "ingestion_compilation"
+require_relative "ingestion_wrapper"
 
 module RevaerDatabaseRebaseline
   # Uses FinalProof's private transport and evidence owner, never runtime SQL.
@@ -11,6 +12,7 @@ module RevaerDatabaseRebaseline
     include IngestionExisting
     include IngestionApprovedDeltas
     include IngestionCompilation
+    include IngestionWrapper
     INGESTION_TABLES = %w[
       canonical_torrent canonical_torrent_source canonical_torrent_source_attr
       canonical_torrent_source_context_score canonical_torrent_best_source_context
@@ -21,7 +23,7 @@ module RevaerDatabaseRebaseline
       indexer_health_event
     ].freeze
     INGESTION_HELPERS = %w[
-      search_result_ingest_v1 normalize_title_v1 normalize_magnet_uri_v1
+      search_result_ingest search_result_ingest_v1 normalize_title_v1 normalize_magnet_uri_v1
       derive_magnet_hash_v1 compute_title_size_hash_v1 policy_text_match_v1
       policy_uuid_match_v1 policy_int_match_v1 policy_release_group_match_v1
       log_source_metadata_conflict_v1 policy_action_to_decision_type
@@ -61,6 +63,7 @@ module RevaerDatabaseRebaseline
       @ingestion_stop = "proof interrupted before acceptance"
       ingestion_inventory!
       verify_ingestion_compilation!
+      verify_ingestion_wrapper!
       verify_ingestion_session_controls!
       verify_existing_ingestion_parity!
       ingestion_cases.each do |name, changes, expected, helpers_first|

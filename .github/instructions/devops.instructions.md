@@ -51,6 +51,14 @@ applyTo:
   table lifetime before normalizing that metadata; never normalize arbitrary
   text, result fields, settings or unobserved timestamps. Successful committed
   observer events do not establish error-path or full helper/trigger closure.
+  Include the actual `search_result_ingest` application wrapper in the D3
+  inventory and exercise discriminating stored scores, page boundaries and
+  size-sample retention. Warm-after-rollback proof must retain the real first
+  call, rollback images and same-backend committed retry; never label it as
+  successful frozen committed reuse. Keep the separate approved D4/D5 matrix.
+  Pin and verify read inputs as well as all 18 write-table images. Only named
+  input timestamp columns equal to an observed seed-transaction clock may be
+  normalized; unrelated fields or unobserved clocks must remain visible.
   Candidate/final disposable PostgreSQL cleanup must remove their anonymous
   volumes as well as containers, never prune unrelated Docker resources.
 
