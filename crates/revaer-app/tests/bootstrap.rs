@@ -13,6 +13,7 @@ fn public_entrypoints_require_packaged_metadata_before_infrastructure() -> anyho
             .env_clear()
             .env("REVAER_C1_PUBLIC_ENTRYPOINT_CHILD", "1")
             .env("DATABASE_URL", "not-a-database-url")
+            .env("REVAER_E2E_SERVING_ENTRY", "1")
             .args([
                 "--exact",
                 "public_entrypoints_require_packaged_metadata_before_infrastructure",
@@ -57,6 +58,7 @@ fn real_process_exits_nonzero_with_one_bounded_origin_diagnostic() -> anyhow::Re
     let output = Command::new(env!("CARGO_BIN_EXE_revaer-app"))
         .env_clear()
         .env("DATABASE_URL", "not-a-database-url")
+        .env("REVAER_E2E_SERVING_ENTRY", "1")
         .output()?;
     assert!(!output.status.success());
     assert_eq!(output.status.code(), Some(1));

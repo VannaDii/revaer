@@ -29,7 +29,20 @@ api-test-client:
     bash scripts/with-node.sh npm --prefix tests run gen:api-client
     test -s tests/support/api/schema.ts
 
-ui-e2e: trunk-install api-test-client
+ui-e2e-app-build:
+    cargo test -p revaer-app --lib --no-run --message-format=json-render-diagnostics
+
+ui-e2e-app-test:
+    cargo test -p revaer-app --lib bootstrap::runtime_tests::e2e_ -- --test-threads=1
+    cargo test -p revaer-app --lib bootstrap::compliance_tests -- --test-threads=1
+    cargo test -p revaer-app --test bootstrap
+
+ui-e2e-bootstrap-test: api-test-client
+    bash scripts/with-node.sh tests/node_modules/.bin/tsc --noEmit --strict --target ES2022 --module CommonJS --moduleResolution Node --esModuleInterop --types node --typeRoots tests/node_modules/@types tests/unit/e2e-bootstrap.test.ts
+    bash scripts/with-node.sh tests/node_modules/.bin/tsc --project tests/tsconfig.coverage.json
+    NODE_PATH="${PWD}/tests/node_modules" bash scripts/with-node.sh node --test target/js-coverage-tests/unit/e2e-bootstrap.test.js
+
+ui-e2e: trunk-install api-test-client ui-e2e-bootstrap-test
     if [ "${CI:-}" = "true" ] || { [ "$(uname -s)" = "Linux" ] && sudo -n true >/dev/null 2>&1; }; then \
         if [ -n "${E2E_BROWSER_CHANNEL:-}" ]; then \
             cd tests && bash ../scripts/with-node.sh npx playwright install-deps; \

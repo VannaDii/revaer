@@ -12,6 +12,124 @@ use tokio::time::{Duration, timeout};
 
 static BOOTSTRAP_TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 const BOOTSTRAP_BIND_FAILURE_TIMEOUT: Duration = Duration::from_secs(30);
+const E2E_SERVING_ENTRY: &str = "bootstrap::runtime_tests::e2e_serving_entry";
+const E2E_SERVING_ENV: &str = "REVAER_E2E_SERVING_ENTRY";
+
+#[test]
+fn e2e_serving_entry() -> Result<()> {
+    let selection = std::env::var_os(E2E_SERVING_ENV);
+    if selection.is_none() {
+        // Ordinary Rust runs exercise the launch guards, not a detached server.
+        for (selection, exact, diagnostic) in [
+            ("invalid", true, "invalid E2E serving selection"),
+            ("1", false, "E2E serving entry requires exact selection"),
+            ("1", true, "E2E serving entry requires DATABASE_URL"),
+        ] {
+            let mut child = Command::new(std::env::current_exe()?);
+            if exact {
+                child.arg("--exact");
+            }
+            let output = child
+                .args([E2E_SERVING_ENTRY, "--nocapture"])
+                .env(E2E_SERVING_ENV, selection)
+                .env_remove("DATABASE_URL")
+                .output()?;
+            assert!(!output.status.success());
+            assert!(String::from_utf8(output.stderr)?.contains(diagnostic));
+        }
+        return Ok(());
+    }
+    anyhow::ensure!(
+        selection.as_deref() == Some(std::ffi::OsStr::new("1")),
+        "invalid E2E serving selection"
+    );
+    anyhow::ensure!(
+        std::env::args()
+            .skip(1)
+            .eq(["--exact", E2E_SERVING_ENTRY, "--nocapture"]),
+        "E2E serving entry requires exact selection"
+    );
+    let database_url = std::env::var("DATABASE_URL")
+        .map_err(|_| anyhow::anyhow!("E2E serving entry requires DATABASE_URL"))?;
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(run_app_with_database_url(database_url))?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn e2e_serving_preserves_setup_configuration() -> Result<()> {
+    let _guard = bootstrap_test_guard().await;
+    if std::env::var_os("REVAER_BOOTSTRAP_CHILD_E2E_SETUP").is_none() {
+        let postgres = start_postgres()?;
+        return run_bootstrap_child(
+            "e2e_serving_preserves_setup_configuration",
+            &[
+                ("REVAER_BOOTSTRAP_CHILD_E2E_SETUP", "1"),
+                ("DATABASE_URL", postgres.connection_string()),
+            ],
+            &[],
+        );
+    }
+
+    let database_url = std::env::var("DATABASE_URL")?;
+    let service = ConfigService::new(database_url.clone()).await?;
+    let reserved = TcpListener::bind(("127.0.0.1", 0))?;
+    let address = reserved.local_addr()?;
+    let mut profile = service.get_app_profile().await?;
+    assert_eq!(profile.mode, AppMode::Setup);
+    let expected_auth = profile.auth_mode;
+    profile.http_port = i32::from(address.port());
+    service
+        .apply_changeset(
+            "tester",
+            "e2e-isolated-listener",
+            SettingsChangeset {
+                app_profile: Some(profile),
+                ..SettingsChangeset::default()
+            },
+        )
+        .await?;
+    drop(reserved);
+
+    let mut serving = tokio::process::Command::new(std::env::current_exe()?)
+        .args(["--exact", E2E_SERVING_ENTRY, "--nocapture"])
+        .env(E2E_SERVING_ENV, "1")
+        .env("DATABASE_URL", database_url)
+        .kill_on_drop(true)
+        .spawn()?;
+    let requests = async {
+        let client = reqwest::Client::new();
+        loop {
+            match client.get(format!("http://{address}/health")).send().await {
+                Ok(response) => {
+                    assert_eq!(response.status(), reqwest::StatusCode::OK);
+                    let health: revaer_api::models::HealthResponse =
+                        serde_json::from_slice(&response.bytes().await?)?;
+                    assert_eq!(health.mode, "setup");
+                    assert_eq!(health.database.status, "ok");
+                    break;
+                }
+                Err(error) if error.is_connect() => tokio::task::yield_now().await,
+                Err(error) => return Err(error.into()),
+            }
+        }
+        let profile = service.get_app_profile().await?;
+        assert_eq!(profile.mode, AppMode::Setup);
+        assert_eq!(profile.auth_mode, expected_auth);
+        assert_eq!(profile.http_port, i32::from(address.port()));
+        anyhow::Ok(())
+    };
+    let result = tokio::select! {
+        result = serving.wait() => anyhow::bail!("E2E application stopped before checks completed: {result:?}"),
+        result = timeout(BOOTSTRAP_BIND_FAILURE_TIMEOUT, requests) => result,
+    };
+    // Reap only this focused child; canonical E2E retains process-group teardown.
+    serving.kill().await?;
+    result??;
+    Ok(())
+}
 
 async fn run_app() -> AppResult<()> {
     run_app_with_compliance_loader(None, fixture_metadata, &mut std::io::stderr()).await

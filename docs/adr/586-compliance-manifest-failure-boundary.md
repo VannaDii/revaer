@@ -201,3 +201,114 @@ database finalization, shutdown policy, or release qualification.
   resolution and C1 detail. Removed the retained failure-to-absence conflict;
   no instruction contract, frozen migration, init SQL, workflow, Just recipe,
   approval status, generated documentation index or parent ledger was edited.
+
+## C1 E2E Bootstrap Checkpoint: 2026-09-11
+
+- Execution status: Implemented with focused verification; integration/full
+  gates remain pending. This is not a Recorded completion or package claim.
+  Existing ADR 586/588 approval permits explicit test-loader bootstrap; ADR
+  588's production-entry prohibition and canonical full UI requirement remain.
+- Motivation/design: Replace E2E's unpackaged production-binary launch with
+  the app library's exact `bootstrap::runtime_tests::e2e_serving_entry`, defined
+  only in the existing `cfg(test)` runtime module. The exact argument vector
+  plus `REVAER_E2E_SERVING_ENTRY=1` selects serving; ordinary Rust test runs
+  exercise invalid/missing selection guards instead of starting a server.
+  The entry uses the existing explicit fixture loader, actual shared typed
+  preflight and concrete application runtime. No production/bootstrap API,
+  dependency, feature, fallback, `/app` fixture, auth mode or policy is added.
+- Wiring/lifecycle: `tests/global-setup.ts` invokes `just ui-e2e-app-build`,
+  parses completed Cargo JSON and accepts exactly one current-source library
+  test executable. It launches that executable directly, preserving the owned
+  serving PID/process group, database URL, media workspace and normal startup
+  configuration. Temporary database state is saved before migrations and UI
+  PID state before readiness checks so failed starts remain cleanup-visible.
+  Occupied ports now fail without broad process searches or termination.
+  Existing global teardown, fixtures, Playwright projects/specs, auth/setup
+  flows, route assertions and coverage criteria are unchanged.
+  Parent-review tightening makes `ui-e2e-bootstrap-test` a direct dependency of
+  canonical `ui-e2e`, retaining direct `trunk-install` and `api-test-client`
+  dependencies. Just deduplicates API preparation; the 17 bootstrap guards are
+  enforced before the full suite, not available only as a manual recipe.
+- Focused evidence, from base `e48364da66b025f15c9bb87735b8e2160c5b1c0f` in
+  `/private/tmp/revaer-c1-e2e-bootstrap`, branch `work/media3-c1-e2e-bootstrap`:
+  `CARGO_BUILD_JOBS=2 just ui-e2e-app-build` passed; actual Cargo output selected
+  one executable whose exact test listing contained one serving entry.
+  `just ui-e2e-bootstrap-test` passed its strict bootstrap dependency-tree
+  typecheck and 17 Node regressions, zero failed/skipped; locked npm install
+  and mandatory audit reported zero vulnerabilities. Selection tests reject
+  incomplete/failed/ambiguous builds, production/foreign artifacts and invalid
+  executable paths; a real occupied listener remains alive after refusal.
+- Dependency-tightening verification: Reran `just ui-e2e-bootstrap-test`: all
+  17 tests and strict typechecking passed, with zero npm audit vulnerabilities.
+  `just --dry-run ui-e2e` and parsed Just JSON assertions proved all three
+  direct dependencies, one shared API preparation, and the guard runner before
+  Playwright. `just --command bash scripts/workflow-guardrails.sh` and
+  `just --command bash scripts/policy-guardrails.sh` passed, as did
+  `git diff --check`. Logs under `target/`: `e2e-bootstrap-dependency-test.log`,
+  `e2e-dependency-dry-run.log`, `e2e-dependency-assertions.log`,
+  `e2e-dependency-workflow-guardrails.log` and
+  `e2e-dependency-policy-guardrails.log`. No Sonar analysis was run on this
+  checkpoint's eight changed files; canonical full qualification is unclaimed.
+- Runtime evidence: With both database URL variables explicitly pointing to
+  the owned disposable database, `CARGO_BUILD_JOBS=2 just ui-e2e-app-test`
+  passed 8 top-level tests: 2 E2E entry/setup, 4 compliance and 2 production
+  entry regressions, zero failed/ignored/skipped. The serving regression invokes
+  the exact child entry, requires real HTTP 200, typed health `mode=setup` and
+  healthy database, and verifies persisted Setup/auth state is unchanged.
+  Only the dynamic listener port is configured. The focused child is killed
+  and reaped after assertions; this is not production-shutdown qualification.
+  With the test selector present, the real production binary still exited 1
+  with exactly `compliance_metadata_startup_failed cause=missing_file`.
+  `CARGO_BUILD_JOBS=2 just lint-runtime-shutdown` passed all four existing
+  all-feature/minimal and production-panic-boundary passes; `just fmt` and
+  `git diff --check` passed, without compiler warnings or new suppressions.
+- Evidence files beneath the worktree's `target/`: `e2e-app-build.jsonl`,
+  `e2e-entry-selection.log`, `e2e-bootstrap-test-final.log`,
+  `e2e-app-test-final.log`, `e2e-app-lint-final.log`,
+  `e2e-instruction-drift.log`, `e2e-strict-types.log` and `e2e-cleanup-check.log`.
+  Parent must preserve these logs before removing the worktree if needed.
+- Limitations: `just instruction-drift` fails only for the parent-owned DevOps
+  companion to `just/ui.just`; Rust/UI instructions are updated here. A separate
+  `just --command bash scripts/with-node.sh tests/node_modules/.bin/tsc --project
+  tests/tsconfig.coverage.json --noCheck false --noEmit` probe reported 72
+  errors in unchanged fixtures/specs/API wrappers; no criteria were changed.
+  Initial npm audit DNS and compiled-test module resolution failures preceded
+  the clean final Node run; canonical `NODE_PATH` wiring fixed the latter.
+  One initial disposable DB had an SSLRequest error; final DB startup initially
+  lacked its published port, then the existing `just db-start` recovered on one
+  bounded retry. These failures are not counted as passing runs.
+- Cleanup/reproducibility: Final owned Postgres container
+  `revaer-c1-e2e-1b1ba4e646df` used `127.0.0.1:51284`, image ID
+  `sha256:7e7dbab8d3b431a20793a6d99cb5a6bc84e44914309917f1bf5589a7568cdefd`.
+  Its exact container, anonymous volumes and private database directory were
+  removed; earlier attempt resources were also removed. Runtime children used
+  the established disposable media workspace; no test media was acquired.
+  No parent database/target, generic service port, full CI/UI, browser, cluster,
+  upload, push, publication or signing operation was used.
+- Operator preparation: Canonical `just ui-e2e` now builds the host app test
+  executable itself; no image, signature or `/app/compliance` bundle is an E2E
+  prerequisite. Retain the established native/FFmpeg toolchain, exact NVM Node,
+  Trunk/browser prerequisites, disposable DB inputs and private `E2E_FS_ROOT`.
+  Port 7070 and the configured UI port must be free; setup will not evict owners.
+  Full `just ci`/`just ui-e2e`, Sonar and separate package qualification remain
+  parent-owned and unclaimed, not waived by this scoped handoff.
+- Observability/risk/rollback: No production diagnostics change. Build selection
+  and launch-guard failures are explicit. Reverting this scoped checkpoint
+  restores the prior E2E prerequisite failure, not permission to install fake
+  compliance evidence or bypass production preflight. No dependencies added.
+- Stale-policy check: Reviewed root AGENTS, scoped Rust/UI/DevOps and approved
+  ADR 586/588 C1/C1-D authority. This checkpoint specializes explicit test-only
+  bootstrap without weakening full-suite or production rules. Parent owns
+  DevOps, ledger, navigation/generated docs and full-gate reconciliation.
+
+Parent DevOps companion paragraph for `just/ui.just`:
+
+> Canonical `just ui-e2e` prepares the host app with `just ui-e2e-app-build`,
+> selects the exact completed Cargo library-test artifact and directly runs
+> `bootstrap::runtime_tests::e2e_serving_entry`. Its explicit compliance loader
+> is `cfg(test)` only; production entrypoints retain required packaged metadata.
+> Preserve the real runtime, disposable database, setup/auth flows, owned process
+> groups, complete suites, route assertions and coverage gates. Occupied ports
+> must fail without terminating other workloads. Keep focused preparation checks
+> at `just ui-e2e-bootstrap-test` and `just ui-e2e-app-test`, using the existing
+> Node wrapper; these checks are neither the full UI gate nor package evidence.

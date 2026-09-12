@@ -29,26 +29,14 @@ type HttpWaitConfig = {
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', 'host.docker.internal']);
 
-const STOP_PATTERNS = [
-  'cargo run -p revaer-app',
-  'cargo run -p revaer-ui',
-  'trunk serve',
-  'target/debug/revaer-app',
-  'target/release/revaer-app',
-];
-
-const KNOWN_DEV_PROCESS = /revaer-app|revaer-ui|trunk serve|cargo run -p revaer-app|cargo run -p revaer-ui/;
 const LOCAL_TEST_DB_USER = 'revaer';
+export const E2E_SERVING_ENTRY = 'bootstrap::runtime_tests::e2e_serving_entry';
 
 const CARGO_BIN_DIR = process.env.CARGO_HOME
   ? path.join(process.env.CARGO_HOME, 'bin')
   : path.join(os.homedir(), '.cargo', 'bin');
 
 const COMMAND_CANDIDATES = new Map<string, string[]>([
-  [
-    'cargo',
-    [path.join(CARGO_BIN_DIR, 'cargo'), '/usr/local/bin/cargo', '/opt/homebrew/bin/cargo', '/usr/bin/cargo'],
-  ],
   [
     'just',
     [path.join(CARGO_BIN_DIR, 'just'), '/usr/local/bin/just', '/opt/homebrew/bin/just', '/usr/bin/just'],
@@ -64,11 +52,6 @@ const COMMAND_CANDIDATES = new Map<string, string[]>([
       '/opt/homebrew/bin/lsof',
     ],
   ],
-  [
-    'pgrep',
-    ['/usr/bin/pgrep', '/bin/pgrep', '/usr/local/bin/pgrep', '/opt/homebrew/bin/pgrep'],
-  ],
-  ['ps', ['/bin/ps', '/usr/bin/ps']],
   [
     'rustup',
     [
@@ -119,7 +102,6 @@ export default async function globalSetup(): Promise<void> {
     process.env.E2E_DB_PREFIX = dbPrefix;
     process.env.E2E_FS_ROOT = fsRoot;
 
-    stopDevServers();
     await requirePortFree(7070);
     await requirePortFree(uiPort);
     fs.mkdirSync(resolvedFsRoot, { recursive: true });
@@ -137,10 +119,15 @@ export default async function globalSetup(): Promise<void> {
     }
     runCommand('just', ['sqlx-install'], { cwd: root });
 
-    runCommand('cargo', ['build', '-p', 'revaer-app'], { cwd: root });
-    const apiBin = cargoDebugBinary(root, 'revaer-app');
-    if (!fs.existsSync(apiBin)) {
-      throw new Error(`revaer-app binary not found at ${apiBin}`);
+    const buildOutput = execFileSync(requireCommand('just'), ['ui-e2e-app-build'], {
+      cwd: root,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'inherit'],
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const apiCommand = e2eServingCommand(buildOutput, root);
+    if (!fs.existsSync(apiCommand.executable)) {
+      throw new Error(`E2E serving executable not found at ${apiCommand.executable}`);
     }
 
     const logDir = path.join(testsDir, 'logs');
@@ -148,12 +135,13 @@ export default async function globalSetup(): Promise<void> {
 
     const activeDbUrl = await createTempDb(adminUrl, dbPrefix, root);
     const apiProcess = spawnLoggedWithEnv(
-      apiBin,
-      [],
+      apiCommand.executable,
+      apiCommand.args,
       path.join(logDir, 'api.log'),
       {
         DATABASE_URL: activeDbUrl,
         REVAER_MEDIA_WORKSPACE_ROOT: path.join(resolvedFsRoot, '.media-workspace'),
+        REVAER_E2E_SERVING_ENTRY: '1',
       },
       { cwd: root },
     );
@@ -189,13 +177,12 @@ export default async function globalSetup(): Promise<void> {
       },
     );
 
-    await waitForHttp(baseUrl, httpWait, uiProcess, 'UI');
-
     writeState({
       apiPid: apiProcess.pid,
       dbUrl: activeDbUrl,
       uiPid: uiProcess.pid,
     });
+    await waitForHttp(baseUrl, httpWait, uiProcess, 'UI');
   } catch (error) {
     await cleanupE2EState();
     throw error;
@@ -284,10 +271,6 @@ function withTemporaryEnv<T>(overrides: NodeJS.ProcessEnv, callback: () => T): T
   }
 }
 
-function commandExists(command: string): boolean {
-  return findCommand(command) !== null;
-}
-
 function requireCommand(command: string): string {
   const resolved = findCommand(command);
   if (!resolved) {
@@ -304,25 +287,39 @@ function findCommand(command: string): string | null {
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
 }
 
-function cargoDebugBinary(root: string, binaryName: string): string {
-  const targetDir = cargoTargetDir(root);
-  const buildTarget = process.env.CARGO_BUILD_TARGET?.trim();
-  const debugDir = buildTarget
-    ? path.join(targetDir, buildTarget, 'debug')
-    : path.join(targetDir, 'debug');
-  return path.join(debugDir, executableName(binaryName));
-}
-
-function cargoTargetDir(root: string): string {
-  const configured = process.env.CARGO_TARGET_DIR?.trim();
-  if (!configured) {
-    return path.join(root, 'target');
+export function e2eServingCommand(output: string, root: string): {
+  executable: string;
+  args: string[];
+} {
+  const candidates: string[] = [];
+  let finished = false;
+  for (const line of output.split(/\r?\n/).filter((entry) => entry.trim())) {
+    const message = JSON.parse(line);
+    if (message.reason === 'build-finished') {
+      if (finished || message.success !== true) {
+        throw new Error('E2E app build did not finish successfully exactly once.');
+      }
+      finished = true;
+    }
+    if (message.reason !== 'compiler-artifact' || message.target?.name !== 'revaer_app') {
+      continue;
+    }
+    if (
+      message.profile?.test === true &&
+      Array.isArray(message.target.kind) &&
+      message.target.kind.length === 1 &&
+      message.target.kind[0] === 'lib' &&
+      message.target.src_path === path.join(root, 'crates/revaer-app/src/lib.rs') &&
+      typeof message.executable === 'string' &&
+      path.isAbsolute(message.executable)
+    ) {
+      candidates.push(message.executable);
+    }
   }
-  return path.isAbsolute(configured) ? configured : path.resolve(root, configured);
-}
-
-function executableName(binaryName: string): string {
-  return process.platform === 'win32' ? `${binaryName}.exe` : binaryName;
+  if (!finished || candidates.length !== 1) {
+    throw new Error('Expected exactly one completed revaer-app library test executable.');
+  }
+  return { executable: candidates[0], args: ['--exact', E2E_SERVING_ENTRY, '--nocapture'] };
 }
 
 function urlParts(input: string): UrlParts {
@@ -418,156 +415,11 @@ async function isPortOpen(port: number): Promise<boolean> {
   return canConnect('127.0.0.1', port, 200);
 }
 
-function stopDevServers(): void {
-  if (!commandExists('pgrep')) {
-    return;
-  }
-  for (const pattern of STOP_PATTERNS) {
-    stopDevServersMatching(pattern);
-  }
-}
-
-function stopDevServersMatching(pattern: string): void {
-  const output = pgrep(pattern);
-  if (!output) {
-    return;
-  }
-  for (const pidStr of output.split(/\s+/)) {
-    stopDevPid(Number(pidStr));
-  }
-}
-
-function pgrep(pattern: string): string {
-  const pgrepPath = findCommand('pgrep');
-  if (!pgrepPath) {
-    return '';
-  }
-  try {
-    return execFileSync(pgrepPath, ['-f', pattern], { encoding: 'utf-8' }).trim();
-  } catch {
-    return '';
-  }
-}
-
-function stopDevPid(pid: number): void {
-  if (!pid || pid === process.pid) {
-    return;
-  }
-  const cmd = readCommand(pid);
-  if (!shouldStopDevCommand(cmd)) {
-    return;
-  }
-  console.error(`Stopping existing Revaer dev process (pid ${pid}: ${cmd})`);
-  try {
-    process.kill(pid, 'SIGTERM');
-  } catch {
-    // Ignore missing process.
-  }
-}
-
-function shouldStopDevCommand(cmd: string): boolean {
-  return Boolean(
-    cmd &&
-      !cmd.includes('pgrep -f') &&
-      !cmd.includes('ps -p') &&
-      !cmd.includes('global-setup'),
-  );
-}
-
-async function requirePortFree(port: number): Promise<void> {
+export async function requirePortFree(port: number): Promise<void> {
   if (!(await isPortOpen(port))) {
     return;
   }
-  const freed = await stopKnownDevProcesses(port);
-  if (freed) {
-    return;
-  }
   throw new Error(`Port ${port} is in use; stop existing services before running ui-e2e.`);
-}
-
-async function stopKnownDevProcesses(port: number): Promise<boolean> {
-  if (!commandExists('lsof')) {
-    return false;
-  }
-  const pids = pidsOnPort(port);
-  if (pids.length === 0) {
-    return false;
-  }
-
-  if (!stopKnownPids(port, pids)) {
-    return false;
-  }
-  return waitForPortRelease(port);
-}
-
-function stopKnownPids(port: number, pids: number[]): boolean {
-  let stopped = false;
-  for (const pid of pids) {
-    stopped = stopKnownPid(port, pid) || stopped;
-  }
-  return stopped;
-}
-
-function stopKnownPid(port: number, pid: number): boolean {
-  const cmd = readCommand(pid);
-  if (!cmd) {
-    return false;
-  }
-  if (!KNOWN_DEV_PROCESS.test(cmd)) {
-    throw new Error(`Port ${port} is in use by a non-Revaer process: ${cmd}`);
-  }
-  console.error(`Stopping existing Revaer dev process on port ${port} (pid ${pid}: ${cmd})`);
-  try {
-    process.kill(pid, 'SIGTERM');
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function waitForPortRelease(port: number): Promise<boolean> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (!(await isPortOpen(port))) {
-      return true;
-    }
-    await delay(250);
-  }
-  return false;
-}
-
-function pidsOnPort(port: number): number[] {
-  const lsofPath = findCommand('lsof');
-  if (!lsofPath) {
-    return [];
-  }
-  try {
-    const output = execFileSync(lsofPath, ['-ti', `:${port}`], {
-      encoding: 'utf-8',
-    }).trim();
-    if (!output) {
-      return [];
-    }
-    return output
-      .split(/\s+/)
-      .map(Number)
-      .filter((pid) => Number.isFinite(pid) && pid > 0);
-  } catch {
-    return [];
-  }
-}
-
-function readCommand(pid: number): string {
-  const psPath = findCommand('ps');
-  if (!psPath) {
-    return '';
-  }
-  try {
-    return execFileSync(psPath, ['-p', String(pid), '-o', 'args='], {
-      encoding: 'utf-8',
-    }).trim();
-  } catch {
-    return '';
-  }
 }
 
 async function waitForHttp(
@@ -663,6 +515,7 @@ async function createTempDb(adminUrl: string, prefix: string, root: string): Pro
     ['database', 'create', '--database-url', dbUrl],
     { cwd: root },
   );
+  writeState({ dbUrl });
   runCommandWithEnv(
     'sqlx',
     ['migrate', 'run', '--database-url', dbUrl, '--source', 'crates/revaer-data/migrations'],

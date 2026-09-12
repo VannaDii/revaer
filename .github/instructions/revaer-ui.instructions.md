@@ -1,5 +1,6 @@
 ---
 applyTo:
+  - "just/ui.just"
   - "crates/revaer-ui/**"
   - "tests/**"
 ---
@@ -35,6 +36,23 @@ applyTo:
 
 # UI And E2E Maintenance
 
+- ADR 586/588 permits an explicitly selected test-only compliance loader for
+  canonical E2E. `just ui-e2e-app-build` builds the app library test executable;
+  setup must select its exact current-source Cargo JSON artifact and launch
+  only `bootstrap::runtime_tests::e2e_serving_entry`. Preserve the real shared
+  preflight, serving runtime, disposable database, setup/auth configuration,
+  complete Playwright suites, route assertions and coverage gates. Never use
+  the limited injected-success smoke test's Active/NoAuth configuration or
+  count that smoke test as the full UI gate. Production entrypoints must not
+  select fixtures or gain a bypass. This test path is not C1-D package proof.
+- E2E setup must refuse occupied ports without searching for or terminating
+  other development processes. Record each owned database/process before the
+  next fallible setup step so existing teardown can clean failed starts.
+  Keep artifact-selection and non-destructive port regressions in
+  `just ui-e2e-bootstrap-test`, including its strict bootstrap typecheck;
+  all Node execution uses the existing wrapper. `just ui-e2e-app-test` must
+  exercise the exact serving entry and production preflight regressions against
+  an explicitly supplied disposable database without changing auth/setup state.
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
 - API E2E media tests must create real source files beneath private per-test temporary profile roots and remove the complete temporary tree in `afterEach`, including when an assertion fails. Synthetic paths may be used only for routes whose contract explicitly rejects or never reads the filesystem.
 - Legacy path-taking profile fixtures must follow ADR 419: create in dry-run with automation disabled and no cadence; metadata-only updates must not supply scheduling intervals. Retain positive persistence checks and explicit rejection tests for unverified automation or interval changes, including unchanged persisted state. Missing included automation capabilities remain failures, not permission to fabricate root identity, remove workflow assertions, or count injected-host checks as package/full E2E proof.
