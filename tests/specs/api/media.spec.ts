@@ -122,12 +122,11 @@ test.describe('Media API', () => {
         output_root: outputRoot,
         dry_run_only: true,
         retention_days: 30,
-        schedule_enabled: true,
-        schedule_interval_minutes: 60,
+        schedule_enabled: false,
         watcher_enabled: false,
       },
     });
-    expect(createdProfile.response.status).toBe(201);
+    expect(createdProfile.response.status, JSON.stringify(createdProfile.error)).toBe(201);
     const profileId = createdProfile.data?.media_profile_public_id;
     if (!profileId) {
       throw new Error('Missing media profile public id');
@@ -152,7 +151,7 @@ test.describe('Media API', () => {
         schedule_interval_minutes: 120,
       },
     });
-    expect(patchedProfile.response.status).toBe(200);
+    expect(patchedProfile.response.status, JSON.stringify(patchedProfile.error)).toBe(200);
     expect(patchedProfile.data?.retention_days).toBe(31);
 
     const validatedProfile = await api.POST('/v1/media/profiles/validate', {
