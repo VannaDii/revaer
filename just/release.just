@@ -25,7 +25,13 @@ api-export:
 helm-annotation-test:
     bash release/tests/helm-annotation-rendering.sh
 
-helm-lint: helm-annotation-test
+compliance-chart-test:
+    bash scripts/tests/compliance-chart-test.sh
+
+helm-package-test:
+    bash scripts/tests/helm-package-test.sh
+
+helm-lint: helm-annotation-test compliance-chart-test helm-package-test
     if ! command -v helm >/dev/null 2>&1; then \
         echo "helm is required to lint the chart"; \
         exit 1; \

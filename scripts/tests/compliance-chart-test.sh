@@ -107,6 +107,7 @@ valid = []
 end
 valid << ['image-rollover', mutated(base, %w[image digest], "sha256:#{'c' * 64}")]
 valid << ['manifest-rollover', mutated(base, %w[compliance manifestDigest], "sha256:#{'d' * 64}")]
+valid << ['unqualified-repository', mutated(base, %w[image repository], 'revaer')]
 valid << ['minimum-claim', mutated(base, %w[compliance existingClaim], 'a')]
 valid << ['maximum-claim', mutated(base, %w[compliance existingClaim], "#{'a' * 63}.#{'b' * 63}.#{'c' * 63}.#{'d' * 61}")]
 custom = mutated(base, %w[image repository], 'registry.example.test:5000/team/revaer')
@@ -136,6 +137,12 @@ bad_digests = ['', nil, 'latest', 'a' * 64, "sha256:#{'a' * 63}", "sha256:#{'a' 
   end
 end
 {
+  %w[image repository] => ['', nil, true, 42, [], 'revaer:latest', 'revaer:5000',
+    'registry.example.test/team/revaer:mutable', 'registry.example.test:5000/team/revaer:mutable',
+    "registry.example.test/team/revaer@sha256:#{'c' * 64}", 'registry.example.test:tag/team/revaer',
+    'registry.example.test/team:tag/revaer', 'https://registry.example.test/team/revaer',
+    'oci://registry.example.test/team/revaer', ' revaer', 'revaer ', "revaer\n", "revaer\t",
+    "registry.example.test/\u00a0revaer", "revaer\u0000"],
   %w[image architecture] => ['', nil, 'x86_64', 'aarch64', 'AMD64', "arm64\n", true, []],
   %w[image tag] => ['latest', 'v1.2.3', ' ', "\n", nil, 42, false],
   %w[compliance existingClaim] => ['', nil, ' ', ' prepared', 'bad/name', 'bad..name', 'Upper',

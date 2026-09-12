@@ -4,8 +4,16 @@
 - Date: 2026-09-11
 - Operator approval: Not applicable: nonarchitectural task record
 - Scope / owner / PR: `work/media3-compliance-chart`, unpublished local chart
-  binding; only `charts/revaer/**`, `scripts/tests/compliance-chart-test.sh`
-  and this record. Parent owns shared integration and worktree removal.
+  binding. Expanded operator-authorized ownership: `charts/revaer/**`,
+  `just/release.just`, `release/scripts/helm-package.sh`,
+  `scripts/instruction-drift-check.sh`, `scripts/tests/compliance-chart-test.sh`,
+  `scripts/tests/helm-package-test.sh`, `scripts/tests/instruction-drift-test.sh`
+  and this record. Parent owns DevOps instructions, documentation navigation
+  and generated indexes, ledger, integration and worktree removal.
+- Initial binding commit: `fd1dc9b48d6b9547f3a0245458cd1cf0d53823dd`, preserved
+  unchanged. Parent reports integration as `e940e873` on base `0e5deb92` in
+  `/private/tmp/revaer-approved-integration`; follow-up evidence below is local
+  to this worktree, not certification of that integrated revision.
 - Approved authority: [ADR 588 approval resolution](../adr/588-first-release-decision-package.md#approval-resolution),
   reviewed snapshot `9575c0770a86421857335da4ae36dc4cbbae4f6a`, exact
   [C1-D contract](../adr/support/588-decision-details.md#c1-d-exact-read-only-delivery-proposal).
@@ -38,12 +46,89 @@ behavior and reject bad bindings instead of manufacturing compliance metadata.
   manifest, verify PVC contents/ownership, exclude other writers, or prove
   application startup. Those remain operator/installer and package gates.
 
+### Packaging And Repository Follow-Up
+
+The source-review concern was reproduced against `fd1dc9b4`: with an empty
+`image.tag`, a repository ending in `:mutable` rendered a tagged-and-digested
+reference, and a repository already containing `@sha256:<64 c characters>`
+rendered a double-digest reference. The existing numeric-port repository
+`registry.example.test:5000/team/revaer` rendered correctly.
+
+- Add the same bounded bare-repository separator guard in schema and the real
+  `revaer.image` helper. Reject embedded tags, digests, schemes, whitespace and
+  invalid types while retaining numeric registry ports and unqualified names.
+  This is not a new OCI grammar, registry verifier or runtime dependency.
+- Add canonical `just compliance-chart-test` and `just helm-package-test`
+  recipes, both dependencies of `just helm-lint` alongside the existing
+  annotation test. The policy suite also discovers all three `*-test.sh` files.
+- Both signing branches of the existing packaging helper use `helm lint
+  --strict` with identical, explicit command-line-only synthetic bindings.
+  Required source and packaged bindings remain empty; no fixtures enter either
+  default.
+- Exercise the real release helper, annotation renderer, strict Helm lint and
+  unsigned packaging. Signing tests replace only GPG and signed package/verify
+  boundaries with command-recording doubles: they produce no signed archive
+  and establish no signing, signature-verification or release evidence.
+- Tighten instruction-drift mapping for the chart, checker and owned tests;
+  fixture repositories prove that matching DevOps updates are required.
+
 ## Test Coverage Summary
 
-Source: `18357155ce084f82eefde1fb6d06fa3a3f0fd09c` plus only this local
-commit's scoped chart, test and record delta. Environment: macOS arm64,
-Just `1.58.0`, Helm `v4.3.0+gbec5b06`, Ruby `4.0.6`. All accepted digests/PVC
-names in the tests are synthetic renderer fixtures, not release evidence.
+Follow-up source: `fd1dc9b48d6b9547f3a0245458cd1cf0d53823dd` plus only the
+owned implementation/test delta in this follow-up commit; this record was
+updated after execution. Environment: macOS arm64, Just `1.58.0`, Helm
+`v4.3.0+gbec5b06`, Ruby `4.0.6`. All accepted digests/PVC names in the tests
+are synthetic renderer fixtures, not release evidence.
+
+- `just compliance-chart-test`: 100 cases, 10 accepted and 90 rejected,
+  308 Helm calls and 4,702 assertions. Strict lint, ordinary rendering,
+  independent schema-only charts and schema-disabled template guards are
+  exercised. Parsed YAML rejects duplicate keys and checks exact bindings,
+  preserved unrelated settings, both architectures and rollover. The new
+  repository cases include numeric ports, unqualified names, tags, digests,
+  schemes, ASCII/Unicode whitespace, NUL and invalid types.
+- `just helm-package-test`: six cases and 80 assertions. Real unsigned archive
+  contents equal the source values, including all five empty binding fields;
+  package version arguments are verified. Both branches have exact strict
+  lint-only arguments. Command models verify signing/verification arguments,
+  temporary key permissions, no unsigned GPG calls and failure propagation
+  for unsigned lint, signed lint, signed packaging and signed verification.
+  The first harness attempt exposed macOS `/var` versus `/private/var` aliases;
+  canonicalizing its private fixture root resolved that assertion failure.
+- `just --command bash scripts/tests/instruction-drift-test.sh`: 11 paths,
+  31 guard runs and 217 assertions. Chart/test/checker/release paths reject
+  absent or unrelated instruction updates, then accept matching fixture
+  DevOps updates. Dirty/staged and recursive chart paths are covered; two
+  unrelated/lookalike paths remain outside the new mapping.
+- `just helm-lint`: passed, including annotation, chart and packaging suites.
+  Its real unsigned `dist/helm/revaer-0.0.0-dev.0.tgz` was independently read
+  with `helm show values` through `just --command ruby --disable-gems`.
+  All values equal source, and `image.digest`, `image.architecture`,
+  `image.tag`, `compliance.existingClaim` and `compliance.manifestDigest` are
+  empty. The archive from the subsequent isolated CI run has SHA-256
+  `28666938b9e630dbe94212cecc4ba21c3ab400f469e4a445aeca4bd192ca7960`.
+  This identifies that local unsigned archive only, not a qualified release.
+- `just --command bash -n <path>` passed separately for all five changed Bash
+  scripts; `git diff --check` passed. ShellCheck is not installed locally.
+- Real `just instruction-drift`: exit 1, correctly requiring the parent-owned
+  DevOps update for chart, test, release and lint-control changes. No matching
+  instruction update was fabricated in this worktree.
+- Isolated `just ci`: exit 1 at that same instruction-drift gate, after passing
+  formatting, policy/fixture tests, both all-feature workspace Clippy passes
+  and `helm-lint`. The focused suites and Clippy emitted no warnings or skips;
+  expected negative-case diagnostics remain visible in policy fixture tests.
+  Later CI gates did not run. The invocation used `CARGO_BUILD_JOBS=2`, unique
+  managed container `revaer-chart-ci-053844c96620`, dynamic port `60213`,
+  private storage and generated credentials. Actual database image:
+  `sha256:7e7dbab8d3b431a20793a6d99cb5a6bc84e44914309917f1bf5589a7568cdefd`.
+  Sanitized local log: `target/compliance-chart-ci-053844c96620.log`.
+- No follow-up UI attempt: the operator explicitly directed against repeating
+  the known missing C1 startup metadata. No substitute witness was created.
+
+### Initial Binding Evidence
+
+These historical results tested `18357155ce084f82eefde1fb6d06fa3a3f0fd09c`
+plus the original binding delta, not the follow-up or parent integration:
 
 - `just --command bash scripts/tests/compliance-chart-test.sh`: 79 cases,
   9 accepted and 70 rejected, 244 Helm calls and 4,151 assertions. Positive
@@ -58,12 +143,9 @@ names in the tests are synthetic renderer fixtures, not release evidence.
   focused and policy-suite executions passed, with no Helm warnings or skips.
 - `just --command bash -n scripts/tests/compliance-chart-test.sh`: passed.
 - `just instruction-drift` and `git diff --check`: passed for this owned delta.
-- `just helm-lint`: exit 1. The existing packaging script supplies only a
-  database value to Helm, so the four now-required inputs fail validation.
-  The preceding `helm-annotation-test` passes. No chart package is produced.
-- `just ci`: exit 1 at the same packaging lint invocation, after successful
-  formatting, policy/fixture-script tests and both workspace Clippy passes.
-  Later CI gates did not run; this is not a full CI pass.
+- `just helm-lint` and `just ci`: exit 1 at packaging lint because the existing
+  helper supplied only a database value. This failure is resolved by the
+  follow-up, but the later instruction-drift gate now blocks full CI.
 - `just ui-e2e`: exit 1. The sandboxed attempt failed npm audit DNS resolution;
   the network-enabled retry passed npm audit (zero vulnerabilities) and stopped
   before tests because port 8080 was occupied by an unrelated application,
@@ -83,40 +165,49 @@ signature/attestation verification, native package qualification, remote check,
 GitHub push or browser monitoring is claimed. Full gates remain required after
 parent integration; `Blocked` does not waive them.
 
-## Parent Integration Wiring
+## Remaining Parent Integration
 
-These shared-file edits are intentionally not included in this ownership slice:
+Just/release wiring and the instruction-drift checker are implemented here.
+Only these shared-file actions remain parent-owned:
 
-1. In `just/release.just`, add the focused recipe:
+1. Add these entries to DevOps `applyTo` (existing release/Just entries remain):
 
-   ```just
-   compliance-chart-test:
-       bash scripts/tests/compliance-chart-test.sh
+   ```yaml
+   - "charts/revaer/**"
+   - "scripts/instruction-drift-check.sh"
+   - "scripts/tests/compliance-chart-test.sh"
+   - "scripts/tests/helm-package-test.sh"
+   - "scripts/tests/instruction-drift-test.sh"
    ```
 
-   Add `compliance-chart-test` to `helm-lint`'s dependencies alongside
-   `helm-annotation-test`. `scripts/tests/policy-suite.sh` already discovers
-   `*-test.sh`, so policy and its coverage harness need no duplicate invocation.
-2. In both signing branches of `release/scripts/helm-package.sh`, keep the
-   real chart defaults empty and pass explicit lint-only inputs to `helm lint`:
-   `image.digest=sha256:` plus 64 `a` characters, `image.architecture=amd64`,
-   `image.tag=` (empty), `compliance.existingClaim=lint-only-not-prepared`, and
-   `compliance.manifestDigest=sha256:` plus 64 `b` characters. Use quoted
-   `--set-string` arguments or a private values file outside the chart copy;
-   never bake fixtures into the packaged `values.yaml`. Run lint with `--strict`.
-   The focused suite covers both architectures. These are syntactic packaging
-   checks, not authenticated images, prepared storage or installation evidence.
-3. Update scoped DevOps guidance with the approved required-input contract,
-   reserved annotation, focused recipe and lint-only fixture boundary. Include
-   `charts/revaer/**` and `scripts/tests/compliance-chart-test.sh` in its scope.
-   Keep the instruction-drift mapping aligned if its ownership scope changes.
-4. Add this record to `docs/tasks/index.md` and `docs/SUMMARY.md`, regenerate
+   Requested DevOps paragraph for the existing Helm rules:
+
+   > Approved ADR 588 C1-D chart bindings must retain exact platform-image and
+   > manifest SHA-256 digests, an empty image tag, conflict-checked amd64/arm64
+   > scheduling, an existing prepared PVC, exact read-only imagehex/manifesthex
+   > subPath and the reserved manifest checksum annotation. The image repository
+   > must not contain a tag, digest, scheme or whitespace; numeric registry ports
+   > remain supported. Keep required source/package bindings empty by default.
+   > `just helm-lint` must depend on `helm-annotation-test`,
+   > `compliance-chart-test` and `helm-package-test`. Both packaging branches must
+   > use strict lint with explicit synthetic bindings only on the lint command,
+   > never in chart or package defaults. Preserve real unsigned-archive empty-value
+   > assertions and fail-closed signing command-construction regressions; doubles
+   > are not signature or release evidence. Keep chart/test ownership aligned
+   > with `scripts/instruction-drift-check.sh` and its regression suite. Rendering
+   > and unsigned packaging do not prove verified image identity, prepared storage,
+   > startup, installation, E1 activation or package qualification.
+
+2. Add this record to `docs/tasks/index.md` and `docs/SUMMARY.md`, regenerate
    documentation indexes through Just, and update the completion ledger only
    to the demonstrated chart-binding boundary. D3 wrapper proof remains the
    parent's independent work; C1 installer/early-startup and E1 remain separate.
-5. Rerun `just compliance-chart-test`, `just helm-lint`, `just ci`,
-   `just ui-e2e`, instruction drift and the changed-line gate against the actual
-   integrated base/head. No default, schema or quality-gate relaxation is needed.
+3. Revalidate `just compliance-chart-test`, `just helm-package-test`,
+   `just helm-lint`, `just ci`, instruction drift and the changed-line gate
+   against the actual integrated base/head. Full `just ui-e2e` remains required
+   after real C1 startup preparation; repeated known-failing setup or invented
+   metadata is not evidence. No default, schema or quality-gate relaxation is
+   needed or authorized.
 
 ## Observability And Status Docs
 
@@ -149,10 +240,16 @@ The current root instruction uses routine task records, consistent with the
 explicit ownership request. The approved C1-D text is unchanged from the reviewed
 snapshot apart from the later approval wrapper. Removed stale chart tag-fallback
 instructions and install examples that lacked required operator inputs. The
-packaging lint mismatch is recorded for parent integration, not suppressed.
+follow-up removes the packaging lint mismatch and repository-reference bypass,
+and tightens ownership matching. DevOps scope/guidance still needs the exact
+parent update above; the real drift gate correctly blocks until integration.
 
-Chart fixtures are private and removed at exit. Both CI runs finished at the
-recorded lint failure; all UI attempts exited. Removed the exact owned CI
+All chart/package/Git fixtures are private and removed at exit. The follow-up
+CI run exited at instruction drift; its exact owned container, anonymous
+volumes and private storage were removed after mount-ownership verification.
+No generic port or database container was used during the follow-up. The two
+initial CI runs finished at the recorded lint failure; all initial UI attempts
+exited. Removed the exact initial owned CI
 database container `0aa3ff4d012d` with volume cleanup, its worktree-bound
 `.server_root/postgres-data`, and the empty local UI fixture directory. The
 exited API PID was independently checked. No owned process, container or

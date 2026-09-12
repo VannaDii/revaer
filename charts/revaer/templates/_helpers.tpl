@@ -55,6 +55,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "revaer.image" -}}
+{{- $repository := .Values.image.repository -}}
+{{- if not (kindIs "string" $repository) -}}
+{{- fail "image.repository must be a bare repository without a tag, digest, scheme or whitespace; a numeric registry port is permitted." -}}
+{{- end -}}
+{{- if not (regexMatch "^([A-Za-z0-9._-]+:[0-9]+/)?[A-Za-z0-9._/-]+$" $repository) -}}
+{{- fail "image.repository must be a bare repository without a tag, digest, scheme or whitespace; a numeric registry port is permitted." -}}
+{{- end -}}
 {{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
 {{- end -}}
 

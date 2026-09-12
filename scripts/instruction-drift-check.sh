@@ -125,11 +125,16 @@ collect_matches devops_matches \
   ".github/actions/**" \
   ".github/build-inputs.env" \
   "Dockerfile" \
+  "charts/revaer/**" \
   "config/database-rebaseline.env" \
   "just/**" \
   "scripts/cargo-install-retry.sh" \
   "scripts/ensure-exact-cargo-tool.sh" \
   "scripts/image-release.sh" \
+  "scripts/instruction-drift-check.sh" \
+  "scripts/tests/compliance-chart-test.sh" \
+  "scripts/tests/helm-package-test.sh" \
+  "scripts/tests/instruction-drift-test.sh" \
   "scripts/database-rebaseline.rb" \
   "scripts/database_rebaseline/**" \
   "scripts/with-node.sh" \

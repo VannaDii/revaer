@@ -33,7 +33,10 @@ These empty placeholders deliberately fail validation. `image.digest` must be
 the verified architecture-specific registry digest, not a mutable tag, local
 image config ID or multi-platform index digest. Helm validates its syntax, not
 its registry identity, signatures, provenance or architecture. Keep
-`image.repository` aligned with the verified image; registry ports are supported.
+`image.repository` aligned with the verified image. Supply only the repository,
+without a tag, digest, URL scheme or whitespace. A numeric registry port such as
+`registry.example.test:5000/team/revaer` is supported. This separator guard is
+not a full OCI reference validator or registry verification.
 
 The PVC must already contain the immutable directory
 `<image-sha256-hex>/<manifest-sha256-hex>/`, without the `sha256:` prefixes.

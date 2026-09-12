@@ -25,6 +25,16 @@ annotations_renderer="${repo_root}/release/scripts/render-helm-annotations.sh"
 release_repository="${REVAER_RELEASE_REPOSITORY:-${GITHUB_REPOSITORY:-VannaDii/Revaer}}"
 release_asset_url="https://github.com/${release_repository}/releases/download/${app_version}/${public_key_asset}"
 lint_database_url="${REVAER_HELM_LINT_DATABASE_URL:-postgres://revaer:revaer@postgres.default.svc.cluster.local:5432/revaer}"
+# Synthetic lint inputs only; the packaged chart must retain its empty bindings.
+lint_args=(
+    --strict
+    --set "database.url=${lint_database_url}"
+    --set-string "image.digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    --set-string "image.architecture=amd64"
+    --set-string "image.tag="
+    --set-string "compliance.existingClaim=lint-only-not-prepared"
+    --set-string "compliance.manifestDigest=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+)
 
 rm -rf "${dist_dir}"
 mkdir -p "${dist_dir}"
@@ -171,7 +181,7 @@ EOF
     fi
     append_owner "${metadata_output}" "${owner_name}" "${owner_email}"
 
-    helm lint "${chart_copy_dir}/revaer" --set "database.url=${lint_database_url}"
+    helm lint "${chart_copy_dir}/revaer" "${lint_args[@]}"
     helm package "${chart_copy_dir}/revaer" \
         --destination "${dist_dir}" \
         --version "${chart_version}" \
@@ -189,7 +199,7 @@ else
         append_repository_id "${metadata_output}" "${ARTIFACTHUB_REPOSITORY_ID}"
     fi
     append_owner "${metadata_output}" "${owner_name}" "${owner_email}"
-    helm lint "${chart_copy_dir}/revaer" --set "database.url=${lint_database_url}"
+    helm lint "${chart_copy_dir}/revaer" "${lint_args[@]}"
     helm package "${chart_copy_dir}/revaer" \
         --destination "${dist_dir}" \
         --version "${chart_version}" \
