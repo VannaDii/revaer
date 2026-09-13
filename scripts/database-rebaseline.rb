@@ -49,9 +49,13 @@ module RevaerDatabaseRebaseline
       when "changed-lines"
         ensure_argument_count!(3)
         scope, base_ref, head_ref = @arguments
-        additions, deletions, total, maximum = ChangedLineGuard.new(contract).verify!(
+        guard = ChangedLineGuard.new(contract)
+        additions, deletions, total, maximum = guard.verify!(
           scope, base_ref, head_ref
         )
+        if guard.asset_exception_evidence
+          @output.puts("database-rebaseline: approved asset exception #{JSON.generate(guard.asset_exception_evidence)}")
+        end
         @output.puts(
           "database-rebaseline: #{scope} diff has #{additions} additions and " \
           "#{deletions} deletions (#{total}/#{maximum})"

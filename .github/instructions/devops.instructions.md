@@ -34,6 +34,21 @@ applyTo:
 
 # Workflow And Release Rules
 
+- ADR 588 ASSET-1 is the only approved binary changed-line exception. Its exact
+  213 path/mode/blob/SHA-256/byte deletions belong solely to repository node
+  `R_kgDOQJiaFw`, PR 130 node `PR_kwDOQJiaF8749-ef`, same-repository head
+  `stack/media3-53-sonar-asset-inputs`. Count all text with no rename inference
+  under the unchanged 9,999 ceiling. Every exception evaluation must read the
+  actual provider refs and complete unfiltered paginated timeline; close, merge
+  or reopen permanently expires it. Missing, duplicate, changing or malformed
+  evidence fails closed. Do not use cached receipts, synthetic provider input,
+  an ancestor-to-tip comparison or a local unpublished candidate for a canonical
+  pass. The checked head must contain the evaluated guard, actual consent and
+  scoped instructions; include their text in their owning review boundary.
+  Preserve the full provider receipt in the canonical command log and re-read
+  current refs/state before merge. This approves accounting only, not assets,
+  criteria changes or release; remove the exception after its first close/merge.
+
 - ADR 569 D1/D2 and conditional D3 were explicitly approved on 2026-09-10.
   `just db-init-final-proof` must retain the exact stock-extension inventory,
   definition/ACL mutation rejection, reset timeout scope/failure evidence, and
@@ -195,7 +210,7 @@ applyTo:
 - Every direct checked-in workflow job requires a positive `timeout-minutes` no greater than 180. Every `setup-revaer` step requires `timeout-minutes: 20`. Required jobs and steps must not use `continue-on-error: true` or expressions that can conceal failure; literal boolean or string `false` is permitted.
 - The root `justfile` is an import-only index using non-login `bash -c` and exactly the seven ADR 482 modules under `just/`. Each recipe has one module owner. Node commands run through `scripts/with-node.sh`, which selects and verifies exact Node 24.19.0 from `.nvmrc` so the NVM-managed version remains active.
 - Cargo analysis tools are exact: cargo-udeps 0.1.57 on `nightly-2026-06-13`, cargo-audit 0.22.0, cargo-deny 0.18.9, cargo-llvm-cov 0.8.7, sqlx-cli 0.8.6, and trunk 0.21.14. Install them through `scripts/ensure-exact-cargo-tool.sh`; do not accept newer, older, floating-nightly, yanked-lock warning, or minimum-version substitutes. Preserve cargo-udeps cache and toolchain evidence in PR CI.
-- ADR 522 database rebaseline work must use the digest-qualified PostgreSQL image and exact server/client version in `.github/build-inputs.env`. The freeze guard validates the immutable migration corpus and keeps `init.sql` absent in the freeze phase; the candidate recipe writes only ignored local evidence, applies the full candidate to a fresh database, compares its normalized schema re-dump, and verifies its pinned SHA-256 and SQL statement count. The PR Feature Matrix job must run `just db-rebaseline-candidate` before migration-backed tests on every pull request. Assembly prefixes must be exact statement-boundary prefixes, apply to an empty database, and stay within the canonical no-rename changed-line limits. The full frozen candidate is 1,624 statements, 1,593,023 bytes, and 44,630 lines. ADR 551 finalization must retain and verify that candidate before validating exact authorized deltas, the independently reviewed final digest, and live constrained-role privilege evidence through `just db-init-final-proof`. Binary or uncountable diffs fail closed. Final SQL remains inert review evidence until coordinated cutover; finalization cannot select it for ordinary runtime/tests or retire migrations.
+- ADR 522 database rebaseline work must use the digest-qualified PostgreSQL image and exact server/client version in `.github/build-inputs.env`. The freeze guard validates the immutable migration corpus and keeps `init.sql` absent in the freeze phase; the candidate recipe writes only ignored local evidence, applies the full candidate to a fresh database, compares its normalized schema re-dump, and verifies its pinned SHA-256 and SQL statement count. The PR Feature Matrix job must run `just db-rebaseline-candidate` before migration-backed tests on every pull request. Assembly prefixes must be exact statement-boundary prefixes, apply to an empty database, and stay within the canonical no-rename changed-line limits. The full frozen candidate is 1,624 statements, 1,593,023 bytes, and 44,630 lines. ADR 551 finalization must retain and verify that candidate before validating exact authorized deltas, the independently reviewed final digest, and live constrained-role privilege evidence through `just db-init-final-proof`. Binary or uncountable diffs fail closed except for the fully qualified ASSET-1 stack-only boundary above; init-assembly has no exception. Final SQL remains inert review evidence until coordinated cutover; finalization cannot select it for ordinary runtime/tests or retire migrations.
 - `scripts/workflow-guardrails.sh` composes the five ADR 482 Ruby owners for input loading, GitHub Actions, Sonar properties, required checks, and diagnostics. Do not merge them back into an unstructured parser or add a sixth policy owner without a separately approved decision.
 - `just cov` must fail immediately on instrumentation/test failure before any
   report can mask it. Its separate 90% Rust package thresholds stay unchanged.

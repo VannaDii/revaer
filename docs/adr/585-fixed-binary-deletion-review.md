@@ -9,8 +9,8 @@
 - Date: 2026-09-10
 - Operator approval: 2026-09-11 approval applies only to ADR 588's revised
   ASSET-1 scope at reviewed commit `9575c077`, not this earlier proposal wholesale.
-- Implementation status: The exception guard is not yet enabled; exact provider,
-  content, expiry and coordinated consent/guard/instruction checks are required.
+- Implementation status: Local guard implementation is under validation below;
+  no published checked head yet contains it and no canonical exception pass is claimed.
 
 The pre-approval investigation below remains historical. Approval alone neither
 changes the canonical guard nor establishes asset, review or merge acceptance.
@@ -253,3 +253,59 @@ asset correctness, required checks, Sonar criteria, or D4/D5/S2 holds?
   the distinction between approved asset work and unapproved size handling are
   recorded above, not silently corrected remotely. D4/D5 approval has been
   requested by the parent but not received; D4, D5 and S2 remain held.
+
+## Approved Guard Implementation (2026-09-12)
+
+This continuation implements only the ASSET-1 scope actually approved in
+[ADR 588](588-first-release-decision-package.md#approval-resolution), at reviewed
+`9575c077`. The historical proposal and inventory above are not broader consent.
+
+- Motivation and design: unblock one review-accounting boundary without hiding
+  text or authorizing different deletions. The ordinary canonical command uses
+  NUL-delimited, no-rename Git numstat. Its only binary exception pins all 213
+  inventory entries, checks raw deletion metadata and immutable blob bytes, and
+  cross-checks complete raw/numstat path sets. Init assembly remains ineligible.
+- Provider and expiry: the guard reads the exact repository/PR/head identity
+  and complete unfiltered timeline through GitHub CLI. It validates pagination,
+  counts, unique event identities and unchanged PR metadata across pages. Any
+  close, merge or reopen permanently expires this exception. No cached receipt
+  or caller-supplied provider payload is a canonical input.
+- Coordinated consent: the checked head must contain the evaluated guard,
+  its entry point/helpers, the actual ADR 588 consent/contract, this fixed
+  inventory and the scoped instruction update. Their text remains counted at
+  its owning review boundary. A diagnostic for an unpublished candidate is not
+  a canonical pass, and a new base/head pair must match fresh provider state.
+- Test coverage: 45 existing rebaseline assertions and 93 new guard assertions
+  pass. New tests exercise
+  exact inventory bytes from immutable Git objects, synthetic provider/head
+  controls, paginated expiry, changed/malformed/duplicate/missing evidence,
+  raw/numstat disagreement, and the 9,999/10,000 text boundary. The first legacy
+  test exposed an unclassified missing-manifest error; it is corrected without
+  accepting an unknown binary entry. A disposable real Git repository verifies
+  all 213 deletions, immutable blobs, checked-head source and subsequent text
+  corrections against an explicitly synthetic provider. Its files are removed
+  on exit. `just policy` passed before that final real-Git case was added; the
+  updated focused test passed afterward. Combined CI/UI results remain pending.
+- Live evidence: PR 130 remains open at `6471074e..a3797174`. The new reader
+  successfully reads all 26 unfiltered timeline entries with no expiry event.
+  The filtered API returned an unfiltered total of 26 with zero selected nodes;
+  that is not sufficient completeness proof and is not used by the guard.
+- Sonar: full-file MAIN analysis of four changed Ruby files reported zero
+  issues before the final real-Git test addition; that changed test source still
+  needs reanalysis. The eight-file secrets upload was rejected by auto-review
+  before process creation, including after the actual ADR 588 transfer record
+  was checked. A fresh exact-payload permission request is outstanding; no
+  alternate upload was used. The canonical scanner still lacks its required
+  token. Auxiliary results are not canonical analysis, published coverage,
+  full CI/UI, native-package or exact-restacked-PR acceptance.
+- Observability: successful canonical use prints the full provider receipt,
+  exact checked SHAs, inventory identity and original binary byte/count totals
+  before the ordinary text subtotal. No runtime telemetry or external mutation.
+- Risk and rollback: accounting does not prove asset correctness. Remove this
+  single exception after close/merge, or revert the guard increment to restore
+  universal binary rejection. Before any merge, re-read current refs/state and
+  require the remaining asset, stack, review and quality gates.
+- Dependency rationale: existing Git/GitHub CLI and Ruby standard libraries only.
+- Stale-policy check: root, DevOps and Sonar rules and ADRs 522/528/588 reviewed.
+  DevOps now names the exact approved exception and keeps init assembly strict;
+  no unrelated criterion, approval, source visibility or threshold is changed.

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require_relative "../stack_asset_exception"
 
 module RevaerDatabaseRebaseline
   Corpus = Data.define(:file_count, :last_file, :sha256)
@@ -242,23 +243,33 @@ module RevaerDatabaseRebaseline
   end
 
   class ChangedLineGuard
+    attr_reader :asset_exception_evidence
+
     def initialize(contract, runner: CommandRunner.new)
       @contract = contract
       @runner = runner
     end
 
     def verify!(scope, base_ref, head_ref)
+      @asset_exception_evidence = nil
       base_sha = resolve_ref!(base_ref)
       head_sha = resolve_ref!(head_ref)
       output = @runner.run!(
-        ["git", "diff", "--no-renames", "--numstat", base_sha, head_sha, "--"],
+        ["git", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--numstat", "-z", base_sha, head_sha, "--"],
         chdir: @contract.root
       )
-      additions, deletions = totals(output)
+      additions, deletions, binary_paths, changed_paths = totals(output)
       changed_lines = additions + deletions
       maximum = @contract.changed_line_limit(scope)
       if changed_lines > maximum
         raise Failure, "#{scope} diff has #{changed_lines} changed lines; maximum is #{maximum}"
+      end
+      unless binary_paths.empty?
+        raise Failure, "Git reported a binary or uncountable changed-line entry" unless scope == "stack"
+
+        @asset_exception_evidence = StackAssetException.new(@contract, runner: @runner).verify!(
+          base_sha, head_sha, binary_paths, changed_paths
+        )
       end
 
       [additions, deletions, changed_lines, maximum]
@@ -282,13 +293,27 @@ module RevaerDatabaseRebaseline
     end
 
     def totals(output)
-      output.lines(chomp: true).reduce([0, 0]) do |(additions, deletions), line|
+      return [0, 0, [], []] if output.empty?
+
+      records = output.split("\0", -1)
+      raise Failure, "Git changed-line output is incomplete" unless records.pop == ""
+
+      paths = []
+      counts = records.reduce([0, 0, []]) do |(additions, deletions, binary_paths), line|
         added, removed, path = line.split("\t", 3)
-        unless added&.match?(/\A\d+\z/) && removed&.match?(/\A\d+\z/) && path && !path.empty?
+        if path.nil? || path.empty? || paths.include?(path)
+          raise Failure, "Git changed-line paths are missing or duplicated"
+        end
+        paths << path
+        if added == "-" && removed == "-"
+          next [additions, deletions, binary_paths + [path]]
+        end
+        unless added&.match?(/\A\d+\z/) && removed&.match?(/\A\d+\z/)
           raise Failure, "Git reported a binary or uncountable changed-line entry: #{line}"
         end
-        [additions + Integer(added, 10), deletions + Integer(removed, 10)]
+        [additions + Integer(added, 10), deletions + Integer(removed, 10), binary_paths]
       end
+      counts + [paths]
     end
   end
 end

@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-13T00:29:59.171212+00:00",
+  "generated": "2026-09-13T01:15:10.675992+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5089,6 +5089,7 @@
       "title": "Fixed binary deletion review",
       "summary": "Historical proposal. The revised, content-bound ASSET-1 contract and explicit approval in [ADR 588](588-first-release-decision-package.md#approval-resolution) supersede this proposal's exception scope, not its retained evidence.",
       "tags": [
+        "approved-guard-implementation-2026-09-12",
         "asset-preservation-evidence-and-limits",
         "corrected-candidate-checkpoint",
         "exact-approval-question",
