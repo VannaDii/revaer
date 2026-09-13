@@ -1,7 +1,12 @@
-use super::{log_runtime_task_join_error, stop_runtime_task, stop_runtime_task_gracefully};
+use super::{
+    MediaRuntimeTasks, log_runtime_task_join_error, stop_media_runtime_tasks, stop_runtime_task,
+    stop_runtime_task_gracefully as stop_with_authority,
+};
+use crate::runtime_shutdown::{self, RuntimeShutdownSender};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+use tokio::time::Instant;
 use tracing::Level;
 
 #[path = "shutdown_tests/support.rs"]
@@ -10,6 +15,110 @@ use support::{
     CapturedEvent, CleanupWitness, PANIC_MESSAGE, TEST_BOUND, capture, pending_task, poll_pending,
     wait_finished,
 };
+
+fn shutdown_after(grace: Duration) -> RuntimeShutdownSender {
+    let (shutdown, _receiver) = runtime_shutdown::channel();
+    let origin = Instant::now();
+    assert!(runtime_shutdown::request_until(
+        &shutdown,
+        origin,
+        origin + grace
+    ));
+    shutdown
+}
+
+async fn stop_runtime_task_gracefully<T>(
+    task: tokio::task::JoinHandle<T>,
+    name: &'static str,
+    grace: Duration,
+) {
+    let shutdown = shutdown_after(grace);
+    stop_with_authority(task, name, &shutdown).await;
+}
+
+#[tokio::test]
+async fn shortening_authority_wakes_an_existing_grace_wait() -> anyhow::Result<()> {
+    let (task, drops) = pending_task(false).await?;
+    let id = task.id();
+    let shutdown = shutdown_after(TEST_BOUND);
+    let events = capture(async {
+        let stop = stop_with_authority(task, "media_job", &shutdown);
+        tokio::pin!(stop);
+        poll_pending(&mut stop).await;
+        let now = Instant::now();
+        assert!(runtime_shutdown::request_until(&shutdown, now, now));
+        stop.await;
+    })
+    .await?;
+    assert_eq!(
+        events,
+        [
+            CapturedEvent::deadline("media_job"),
+            CapturedEvent::join(Level::INFO, "media_job", id, false),
+        ]
+    );
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn sequential_media_stops_do_not_replenish_expired_authority() -> anyhow::Result<()> {
+    let (discovery, discovery_drops) = pending_task(false).await?;
+    let (job, job_drops) = pending_task(false).await?;
+    let (retention, retention_drops) = pending_task(false).await?;
+    let expected: Vec<_> = [
+        ("media_discovery", discovery.id()),
+        ("media_job", job.id()),
+        ("media_retention", retention.id()),
+    ]
+    .into_iter()
+    .flat_map(|(name, id)| {
+        [
+            CapturedEvent::deadline(name),
+            CapturedEvent::join(Level::INFO, name, id, false),
+        ]
+    })
+    .collect();
+    let shutdown = shutdown_after(Duration::ZERO);
+    let tasks = MediaRuntimeTasks {
+        shutdown,
+        discovery,
+        job,
+        retention,
+    };
+    let events = capture(stop_media_runtime_tasks(tasks)).await?;
+    assert_eq!(events, expected);
+    for drops in [discovery_drops, job_drops, retention_drops] {
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+    Ok(())
+}
+
+#[test]
+fn bootstrap_requests_shared_shutdown_before_waiting_for_any_runtime() -> anyhow::Result<()> {
+    let source = include_str!("../bootstrap.rs");
+    let scope = source
+        .split_once("let serve_result = api.serve(addr).await;")
+        .ok_or_else(|| anyhow::anyhow!("bootstrap serve boundary missing"))?
+        .1;
+    let request = scope
+        .find("request_media_runtime_shutdown(&media_runtime_tasks);")
+        .ok_or_else(|| anyhow::anyhow!("bootstrap shutdown request missing"))?;
+    for stop in [
+        "stop_runtime_task(indexer_runtime_task",
+        "stop_runtime_task(import_job_runtime_task",
+        "stop_media_runtime_tasks(media_runtime_tasks)",
+        "stop_runtime_task(fsops_worker",
+    ] {
+        assert!(
+            request
+                < scope
+                    .find(stop)
+                    .ok_or_else(|| anyhow::anyhow!("bootstrap stop missing: {stop}"))?
+        );
+    }
+    Ok(())
+}
 
 #[tokio::test]
 async fn requested_abort_is_info_with_error_task_and_cleanup() -> anyhow::Result<()> {

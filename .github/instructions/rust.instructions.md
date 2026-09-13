@@ -45,6 +45,13 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, the root contract
 - FFI crates may omit a crate-wide `forbid(unsafe_code)` if necessary, but unsafe code must stay isolated to the documented boundary modules and shims. Do not use lint suppressions to permit unsafe.
 # CI And Recipe Maintenance
 
+- ADR 588 S2's application shutdown authority must retain the first monotonic
+  origin and only shorten its shared absolute deadline within the unchanged
+  30-second application budget. Bootstrap must latch it before background-task
+  waits; media-task cooperative waits must observe subsequent shortening and
+  must not allocate fresh per-task grace. Preserve warnings and real join
+  classification. This local timer authority does not qualify independent
+  PID1 enforcement, post-abort/native/configuration settlement or recovery.
 - ADR 586/588's E2E serving entry and its launch selection belong only in
   `cfg(test)` app bootstrap code. It must invoke the shared typed compliance
   preflight with an explicit test loader, then run the real application without

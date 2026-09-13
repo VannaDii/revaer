@@ -45,7 +45,6 @@ use crate::orchestrator::{
 use revaer_torrent_core::{TorrentEngine, TorrentInspector, TorrentWorkflow};
 
 const SYSTEM_USER_PUBLIC_ID: Uuid = Uuid::from_u128(0);
-const MEDIA_RUNTIME_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 
 /// Dependencies required to bootstrap the Revaer application.
 pub(crate) struct BootstrapDependencies {
@@ -425,6 +424,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
 
     let serve_result = api.serve(addr).await;
 
+    request_media_runtime_shutdown(&media_runtime_tasks);
     stop_runtime_task(indexer_runtime_task, "indexer").await;
     stop_runtime_task(import_job_runtime_task, "import_job").await;
     stop_media_runtime_tasks(media_runtime_tasks).await;
@@ -490,25 +490,18 @@ fn spawn_media_runtime_tasks(
     }
 }
 
-async fn stop_media_runtime_tasks(tasks: MediaRuntimeTasks) {
+fn request_media_runtime_shutdown(tasks: &MediaRuntimeTasks) {
     if runtime_shutdown::request(&tasks.shutdown) {
         info!("media runtime shutdown requested");
     } else {
         warn!("media runtime shutdown requested after receivers closed");
     }
-    stop_runtime_task_gracefully(
-        tasks.discovery,
-        "media_discovery",
-        MEDIA_RUNTIME_SHUTDOWN_GRACE,
-    )
-    .await;
-    stop_runtime_task_gracefully(tasks.job, "media_job", MEDIA_RUNTIME_SHUTDOWN_GRACE).await;
-    stop_runtime_task_gracefully(
-        tasks.retention,
-        "media_retention",
-        MEDIA_RUNTIME_SHUTDOWN_GRACE,
-    )
-    .await;
+}
+
+async fn stop_media_runtime_tasks(tasks: MediaRuntimeTasks) {
+    stop_runtime_task_gracefully(tasks.discovery, "media_discovery", &tasks.shutdown).await;
+    stop_runtime_task_gracefully(tasks.job, "media_job", &tasks.shutdown).await;
+    stop_runtime_task_gracefully(tasks.retention, "media_retention", &tasks.shutdown).await;
 }
 
 async fn stop_runtime_task<T>(task: tokio::task::JoinHandle<T>, task_name: &'static str) {
@@ -524,7 +517,7 @@ async fn stop_runtime_task<T>(task: tokio::task::JoinHandle<T>, task_name: &'sta
 async fn stop_runtime_task_gracefully<T>(
     mut task: tokio::task::JoinHandle<T>,
     task_name: &'static str,
-    grace: Duration,
+    shutdown: &runtime_shutdown::RuntimeShutdownSender,
 ) {
     if task.is_finished() {
         if let Err(err) = task.await {
@@ -533,18 +526,30 @@ async fn stop_runtime_task_gracefully<T>(
         return;
     }
 
-    if let Ok(result) = tokio::time::timeout(grace, &mut task).await {
-        if let Err(err) = result {
-            log_runtime_task_join_error(&err, task_name, false);
+    tokio::select! {
+        result = &mut task => {
+            if let Err(err) = result {
+                log_runtime_task_join_error(&err, task_name, false);
+            }
         }
-    } else {
-        task.abort();
-        warn!(
-            task = task_name,
-            "runtime task aborted after graceful shutdown timeout"
-        );
-        if let Err(err) = task.await {
-            log_runtime_task_join_error(&err, task_name, true);
+        elapsed = runtime_shutdown::deadline_elapsed(shutdown) => {
+            task.abort();
+            match elapsed {
+                Ok(()) => warn!(
+                    task = task_name,
+                    "runtime task aborted after graceful shutdown timeout"
+                ),
+                Err(error) => warn!(
+                    error = %error,
+                    task = task_name,
+                    "runtime shutdown authority closed before deadline observation"
+                ),
+            }
+            // S2's independent owner and native settlement remain separate work.
+            // This existing join does not grant a new cooperative grace period.
+            if let Err(err) = task.await {
+                log_runtime_task_join_error(&err, task_name, true);
+            }
         }
     }
 }

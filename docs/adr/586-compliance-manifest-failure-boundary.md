@@ -566,3 +566,58 @@ removes only this record; all original failing evidence remains retained.
   approval/S2/LIFE-1 bounds. The approved shutdown appendices differ from reviewed
   `9575c077` only by dated approval banners. Historical held wording is not a
   renewed approval hold. No policy contradiction or rule was edited away.
+
+### Shared Shutdown Authority Prerequisite (2026-09-12)
+
+- Implementation status: production-used prerequisite, focused verification
+  passed under ADR 588 S2/LIFE-1 and the explicit continuation scope. Full S2
+  and the parent's combined gates remain incomplete.
+- Motivation: replace boolean-only shutdown with production-used immutable
+  origin/absolute-deadline authority before implementing downstream settlement.
+- Design: one private publisher retains the first observed monotonic origin;
+  request publication atomically clamps the shared deadline to the earliest
+  supplied bound and original 30-second application budget. Duplicate/later
+  requests coalesce; expiry cannot be revived. Owner drop publishes the same
+  stop authority before closing the channel, including when no receivers remain.
+  Existing runtime receivers retain their cooperative stop interface.
+- Production integration: bootstrap requests the shared authority immediately
+  after serving returns, before any existing background-task shutdown await.
+  All three sequential media-task grace waits observe that same absolute
+  authority, including shortening while pending; no per-task budget restarts.
+- Observability: preserve existing grace-expiry WARN and actual JoinError
+  classification, including WARN for panic/external cancellation. Unexpected
+  loss of deadline observation is a distinct WARN, not a successful timeout.
+  The config watcher abort/drop path and its warning guard remain unchanged.
+- Remaining coupling: immediate-abort joins and post-grace abort joins retain
+  their existing settlement behavior. This does not independently bound
+  non-yielding work, logging, Tokio teardown or native termination. PID1's exact
+  28/30-second phases, native enforcement, configuration acknowledgements,
+  listener/worker ownership and recovery still require their approved owners.
+  ADR 589 and every existing duration/quality criterion remain unchanged.
+- Test coverage: focused shared-authority and bootstrap regressions cover first
+  origin, deadline clipping, duplicate/concurrent requests, irrevocable expiry,
+  owner loss, observer retention, pending-wait shortening, sequential media
+  waits without replenishment, and unchanged S1 warning/cleanup assertions.
+  Final warnings-denied Just runs of `bootstrap::shutdown_tests` plus
+  `runtime_shutdown::tests` passed 25 tests each with all features and no default
+  features, zero failures/ignored tests. The canonical shutdown recipe also
+  passed its 15 bootstrap cases in both configurations. All four strict
+  `just lint-runtime-shutdown` invocations and `just fmt` passed. Deliberate
+  panic hooks and failure-path WARNs remain visible and asserted. Initial lint
+  failure on two test-only style issues is retained separately from the corrected
+  pass; no rule or expected event was relaxed.
+- Risk/rollback: this removes redundant cooperative waiting without certifying
+  whole-process quiescence. Revert this prerequisite as one patch if required;
+  never represent the prior per-task waits as accepted aggregate enforcement.
+- Dependency rationale: existing Tokio watch/time and standard library only;
+  no dependency, runtime tuning, native control, database or media change.
+- Stale-policy check: existing root/Rust and ADR 588 S2/LIFE-1 authority remain
+  applicable; the matching Rust instruction now records this narrow invariant
+  and its qualification limits. No criterion was weakened or approval inferred.
+  Parent retains integration, D3 and the combined full CI/UI gates. Prior
+  reproduction evidence remains separate under `target/watcher-graceful-stop/`.
+- Evidence/cleanup: `target/shutdown-authority/` retains commands, full logs,
+  the exact staged delta from `2d8e7c2d`, source/test-binary hashes, tool/host
+  identity and native build evidence. Its owned build directory was removed
+  after verification; no database, service, test media or remote operation was
+  created for these focused tests. The prior 80-file evidence seal still matches.
