@@ -136,7 +136,7 @@ module RevaerDatabaseRebaseline
       return false unless %w[inputs_before inputs_after].all? { |key| size_tables_equal?(evidence.fetch(key), base) }
       return false unless %w[size_inputs_before size_inputs_after].all? do |key|
         read = evidence.fetch(key)
-        read.fetch("stderr").empty? && metadata_json_parse(read.fetch("stdout")) == read.fetch("data") && size_tables_equal?(read.fetch("data"), domains)
+        read.fetch("stderr").empty? && size_tables_equal?(metadata_json_parse(read.fetch("stdout")), read.fetch("data")) && size_tables_equal?(read.fetch("data"), domains)
       end
 
       uuids = frames.flat_map { |frame| frame.fetch("result").values_at("canonical_torrent_public_id", "canonical_torrent_source_public_id") }

@@ -975,3 +975,16 @@ receipts are retained before retry. The model now expects exactly decimal
 zero while still rejecting float-valued identities. This corrects the model,
 not the database or comparison strictness. The disposable container and named
 volume were removed; this failed run is not passing evidence.
+
+At integrated `ccf6f7ff`, the bounded live run passes 1,422 checks across 114
+variants; the canonical run passes 6,024/6,025 checks, failing only the existing
+incomplete-D3 guard. Its 156 paired wrapper cases pass 3,235 checks. Containers
+and the bounded named volumes were independently confirmed absent. Full CI
+exits zero with the existing watcher WARNs; this is not a clean handoff.
+
+Post-run inspection found a narrower validator defect: Ruby numeric equality
+accepted a raw domain ID of `1.0` alongside a decoded ID of `1`. The current
+comparison now requires the same exact table encoding for raw and declared
+read inputs, and explicit regressions retain that original false acceptance.
+Database results and earlier evidence remain unchanged; final-source focused
+and combined verification is pending. No SQL, runtime or criterion changed.

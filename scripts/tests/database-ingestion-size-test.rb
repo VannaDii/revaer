@@ -98,6 +98,12 @@ module RevaerDatabaseRebaseline
         read["stdout"] = JSON.generate(read.fetch("data"))
         assert(!size_evidence?(spec, session, changed), "coherent domain substitution rejected")
         changed = Marshal.load(raw)
+        read = changed.fetch("size_inputs_after")
+        decoded = JSON.parse(read.fetch("stdout"))
+        decoded.fetch("media_domain").first["media_domain_id"] = 1.0
+        read["stdout"] = JSON.generate(decoded)
+        assert(!size_evidence?(spec, session, changed), "raw and declared input numeric types must agree")
+        changed = Marshal.load(raw)
         changed.fetch("size_inputs_after")["stderr"] = "unexpected"
         assert(!size_evidence?(spec, session, changed), "read diagnostics rejected")
         changed = Marshal.load(raw)
