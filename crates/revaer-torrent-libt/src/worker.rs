@@ -238,9 +238,18 @@ impl Worker {
             EngineCommand::SetSequential { id, sequential } => {
                 self.handle_set_sequential(id, sequential).await?;
             }
-            EngineCommand::UpdateLimits { id, limits } => {
-                self.handle_update_limits(id, limits).await?;
-            }
+            EngineCommand::UpdateLimits {
+                id,
+                limits,
+                respond_to,
+            } => match self.handle_update_limits(id, limits).await {
+                Ok(()) => Self::send_response(respond_to, Ok(()), operation, id),
+                Err(err) => {
+                    self.report_command_error(&err);
+                    Self::send_response(respond_to, Err(err), operation, id);
+                    return Ok(());
+                }
+            },
             EngineCommand::UpdateSelection { id, rules } => {
                 self.handle_update_selection(id, rules).await?;
             }
@@ -1587,6 +1596,7 @@ mod tests {
         TorrentSource,
         model::{TorrentAuthorRequest, TorrentOptionsUpdate},
     };
+    use std::collections::VecDeque;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
@@ -1640,7 +1650,7 @@ mod tests {
     struct ControlledSession {
         deadlines: DeadlineLog,
         apply_result: Option<oneshot::Receiver<TorrentResult<()>>>,
-        limits_result: Option<oneshot::Receiver<TorrentResult<()>>>,
+        limits_results: VecDeque<oneshot::Receiver<TorrentResult<()>>>,
     }
 
     #[async_trait]
@@ -1685,7 +1695,7 @@ mod tests {
             _id: Option<Uuid>,
             _limits: &TorrentRateLimit,
         ) -> TorrentResult<()> {
-            match self.limits_result.take() {
+            match self.limits_results.pop_front() {
                 Some(result) => result
                     .await
                     .map_err(|err| op_failed("update_limits", None, err))?,
@@ -3232,6 +3242,234 @@ mod tests {
         })
     }
 
+    fn assert_pending<F: std::future::Future>(future: std::pin::Pin<&mut F>) {
+        assert!(
+            future
+                .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()))
+                .is_pending()
+        );
+    }
+
+    fn limits_failure(id: Option<Uuid>) -> TorrentError {
+        op_failed(
+            "native.update_limits",
+            id,
+            LibtorrentError::NativeFailure {
+                operation: "update_limits",
+                message: "injected limits failure".into(),
+            },
+        )
+    }
+
+    fn assert_limits_failure(result: TorrentResult<()>, id: Option<Uuid>) -> Result<()> {
+        let Err(TorrentError::OperationFailed {
+            operation,
+            torrent_id,
+            source,
+        }) = result
+        else {
+            return Err(anyhow!("expected original limits failure"));
+        };
+        assert_eq!(operation, "native.update_limits");
+        assert_eq!(torrent_id, id);
+        let Some(LibtorrentError::NativeFailure { operation, message }) = source.downcast_ref()
+        else {
+            return Err(anyhow!("native limits failure type lost"));
+        };
+        assert_eq!(*operation, "update_limits");
+        assert_eq!(message, "injected limits failure");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_ack_waits_for_completed_updates_for_both_targets() -> Result<()> {
+        for id in [None, Some(Uuid::new_v4())] {
+            let (release, result) = oneshot::channel();
+            let session = ControlledSession {
+                limits_results: VecDeque::from([result]),
+                ..ControlledSession::default()
+            };
+            let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
+            let limits = TorrentRateLimit {
+                download_bps: Some(1_000),
+                upload_bps: None,
+            };
+            let (respond_to, mut response) = oneshot::channel();
+            let mut handling = Box::pin(worker.handle(EngineCommand::UpdateLimits {
+                id,
+                limits: limits.clone(),
+                respond_to,
+            }));
+            assert_pending(handling.as_mut());
+            assert!(matches!(
+                response.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            ));
+            release
+                .send(Ok(()))
+                .map_err(|reply| anyhow!("session reply lost: {reply:?}"))?;
+            handling.await?;
+            response.await??;
+            if let Some(id) = id {
+                assert_eq!(worker.per_torrent_limits.get(&id), Some(&limits));
+            } else {
+                assert_eq!(worker.base_limits, limits);
+                assert_eq!(worker.global_limits, limits);
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_ack_waits_for_global_reconciliation_and_returns_its_result() -> Result<()>
+    {
+        for fails in [false, true] {
+            let (first_release, first_result) = oneshot::channel();
+            let (reconcile_release, reconcile_result) = oneshot::channel();
+            first_release
+                .send(Ok(()))
+                .map_err(|reply| anyhow!("session reply lost: {reply:?}"))?;
+            let session = ControlledSession {
+                limits_results: VecDeque::from([first_result, reconcile_result]),
+                ..ControlledSession::default()
+            };
+            let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
+            worker.alt_speed = always_active_config().alt_speed.and_then(alt_speed_plan);
+            assert!(worker.alt_speed.is_some());
+            let limits = TorrentRateLimit {
+                download_bps: Some(50_000),
+                upload_bps: None,
+            };
+            let (respond_to, mut response) = oneshot::channel();
+            let mut handling = Box::pin(worker.handle(EngineCommand::UpdateLimits {
+                id: None,
+                limits: limits.clone(),
+                respond_to,
+            }));
+            assert_pending(handling.as_mut());
+            assert!(matches!(
+                response.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            ));
+            reconcile_release
+                .send(if fails {
+                    Err(limits_failure(None))
+                } else {
+                    Ok(())
+                })
+                .map_err(|reply| anyhow!("reconciliation reply lost: {reply:?}"))?;
+            handling.await?;
+            if fails {
+                assert_limits_failure(response.await?, None)?;
+                assert_eq!(worker.global_limits, limits);
+            } else {
+                response.await??;
+                assert_eq!(worker.global_limits.download_bps, Some(10_000));
+            }
+            assert_eq!(worker.health.contains("session"), fails);
+            assert_eq!(worker.base_limits, limits);
+            assert!(
+                worker
+                    .alt_speed
+                    .as_ref()
+                    .is_some_and(|plan| plan.active != fails)
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_ack_preserves_health_and_results_with_or_without_receiver() -> Result<()>
+    {
+        for id in [None, Some(Uuid::new_v4())] {
+            for fails in [false, true] {
+                for receiver_lost in [false, true] {
+                    let (release, result) = oneshot::channel();
+                    release
+                        .send(if fails {
+                            Err(limits_failure(id))
+                        } else {
+                            Ok(())
+                        })
+                        .map_err(|reply| anyhow!("session reply lost: {reply:?}"))?;
+                    let session = ControlledSession {
+                        limits_results: VecDeque::from([result]),
+                        ..ControlledSession::default()
+                    };
+                    let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
+                    let limits = TorrentRateLimit {
+                        download_bps: Some(1_000),
+                        upload_bps: None,
+                    };
+                    let (respond_to, response) = oneshot::channel();
+                    let response = if receiver_lost {
+                        drop(response);
+                        None
+                    } else {
+                        Some(response)
+                    };
+                    worker
+                        .handle(EngineCommand::UpdateLimits {
+                            id,
+                            limits: limits.clone(),
+                            respond_to,
+                        })
+                        .await?;
+                    assert_eq!(worker.health.contains("session"), fails);
+                    if let Some(response) = response {
+                        if fails {
+                            assert_limits_failure(response.await?, id)?;
+                        } else {
+                            response.await??;
+                        }
+                    }
+                    if let Some(id) = id {
+                        assert_eq!(
+                            worker.per_torrent_limits.get(&id),
+                            if fails { None } else { Some(&limits) }
+                        );
+                    } else {
+                        assert_eq!(
+                            worker.global_limits.download_bps,
+                            if fails { None } else { limits.download_bps }
+                        );
+                    }
+                    let (respond_to, response) = oneshot::channel();
+                    worker
+                        .handle(EngineCommand::InspectSettings { respond_to })
+                        .await?;
+                    response.await??;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_ack_does_not_replace_result_with_later_poll_failure() -> Result<()> {
+        for id in [None, Some(Uuid::new_v4())] {
+            let mut worker = Worker::new(EventBus::new(), Box::new(ErrorSession), None);
+            let (respond_to, response) = oneshot::channel();
+            let result = worker
+                .handle(EngineCommand::UpdateLimits {
+                    id,
+                    limits: TorrentRateLimit::default(),
+                    respond_to,
+                })
+                .await;
+            assert!(matches!(
+                result,
+                Err(TorrentError::OperationFailed {
+                    operation: "poll_events",
+                    ..
+                })
+            ));
+            response.await??;
+            assert!(worker.health.contains("session"));
+        }
+        Ok(())
+    }
+
     #[tokio::test]
     async fn apply_config_ack_waits_for_session_and_reconciliation() -> Result<()> {
         use std::{
@@ -3243,7 +3481,7 @@ mod tests {
         let (limits_release, limits_result) = oneshot::channel();
         let session = ControlledSession {
             apply_result: Some(apply_result),
-            limits_result: Some(limits_result),
+            limits_results: VecDeque::from([limits_result]),
             ..ControlledSession::default()
         };
         let mut worker = Worker::new(EventBus::new(), Box::new(session), None);
@@ -3307,7 +3545,7 @@ mod tests {
                 if operation == "apply_config" {
                     session.apply_result = Some(result_receiver);
                 } else {
-                    session.limits_result = Some(result_receiver);
+                    session.limits_results.push_back(result_receiver);
                 }
                 let bus = EventBus::new();
                 let mut stream = bus.subscribe(None);

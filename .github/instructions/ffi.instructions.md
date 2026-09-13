@@ -11,14 +11,18 @@ applyTo:
 - `just lint` mechanically enforces that authored `unsafe` stays inside `crates/revaer-torrent-libt/src/ffi.rs` and `crates/revaer-torrent-libt/src/ffi/**`.
 - The public surface exposed to the rest of the workspace must be safe Rust wrappers and translated domain types.
 - Document safety invariants and failure translation at the boundary.
-- Runtime configuration acknowledgement must carry the completed worker
-  application result, including alternate-speed reconciliation, not enqueue
+- Runtime configuration and global/per-torrent limit acknowledgements must carry
+  the completed worker handler result, including alternate-speed reconciliation,
+  not enqueue
   success. Preserve the original typed error and worker-origin warning/health
   reporting even when the caller drops its reply receiver. Receiver loss is not
   cancellation of admitted work or proof of rollback; a closed reply channel is
-  an unobserved completion, not success. This ADR 588 S2 prerequisite does not
-  establish native atomicity, shutdown admission/settlement or applied-revision
-  publication.
+  an unobserved completion, not success. Preserve target identity and native
+  error sources for per-torrent as well as global limits. Successful replies
+  precede the independent event flush; handler failure retains the existing
+  skipped flush and cannot immediately clear degraded health. These ADR 588 S2
+  acknowledgements alone do not establish native atomicity, shutdown
+  admission/settlement or revision-wide publication atomicity.
 
 # `catch_unwind`
 

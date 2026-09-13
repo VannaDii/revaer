@@ -52,6 +52,8 @@ pub enum EngineCommand {
         id: Option<Uuid>,
         /// Rate limit configuration.
         limits: TorrentRateLimit,
+        /// Channel that receives the completed worker limit-update result.
+        respond_to: oneshot::Sender<TorrentResult<()>>,
     },
     /// Update file selection rules for a torrent.
     UpdateSelection {

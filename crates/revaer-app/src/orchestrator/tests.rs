@@ -650,11 +650,14 @@ mod engine_refresh_tests {
         },
     };
     use std::collections::HashMap;
+    use std::future::Future;
     use std::path::PathBuf;
+    use std::pin::Pin;
     use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+    use std::task::{Context, Waker};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
-    use tokio::sync::{Mutex, RwLock};
+    use tokio::sync::{Mutex, RwLock, oneshot};
 
     type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -688,6 +691,33 @@ mod engine_refresh_tests {
         peers: RwLock<HashMap<Uuid, Vec<PeerSnapshot>>>,
         fail_apply_plan: AtomicBool,
         fail_update_limits: AtomicBool,
+        apply_reply: Mutex<Option<oneshot::Receiver<TorrentResult<()>>>>,
+        limits_reply: Mutex<Option<oneshot::Receiver<TorrentResult<()>>>>,
+    }
+
+    async fn wait_for_engine_reply(
+        gate: &Mutex<Option<oneshot::Receiver<TorrentResult<()>>>>,
+        operation: &'static str,
+    ) -> TorrentResult<()> {
+        let reply = gate.lock().await.take();
+        match reply {
+            Some(reply) => reply
+                .await
+                .map_err(|source| TorrentError::OperationFailed {
+                    operation,
+                    torrent_id: None,
+                    source: Box::new(source),
+                })?,
+            None => Ok(()),
+        }
+    }
+
+    fn assert_pending<F: Future>(future: Pin<&mut F>) {
+        assert!(
+            future
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
     }
 
     #[async_trait]
@@ -741,6 +771,7 @@ mod engine_refresh_tests {
                     operation: "update_limits",
                 });
             }
+            wait_for_engine_reply(&self.limits_reply, "update_limits").await?;
             self.limits.write().await.push((id, limits));
             Ok(())
         }
@@ -815,6 +846,7 @@ mod engine_refresh_tests {
                     operation: "apply_engine_plan",
                 });
             }
+            wait_for_engine_reply(&self.apply_reply, "apply_engine_plan").await?;
             self.applied.write().await.push(plan.clone());
             Ok(())
         }
@@ -1035,6 +1067,108 @@ mod engine_refresh_tests {
         );
         assert_eq!(recorded_limits[0].1.download_bps, Some(1_500_000));
         assert_eq!(recorded_limits[0].1.upload_bps, Some(750_000));
+        assert_eq!(*orchestrator.engine_profile.read().await, updated);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_engine_profile_waits_for_application_and_limits_before_publication()
+    -> TestResult<()> {
+        let engine = Arc::new(RecordingEngine::default());
+        let (apply_release, apply_reply) = oneshot::channel();
+        let (limits_release, limits_reply) = oneshot::channel();
+        *engine.apply_reply.lock().await = Some(apply_reply);
+        *engine.limits_reply.lock().await = Some(limits_reply);
+        let initial = engine_profile("initial");
+        let mut attempted = engine_profile("completed");
+        attempted.max_download_bps = Some(1_500_000);
+        attempted.ip_filter.last_error = Some("previous fetch failure".into());
+        let config = Arc::new(StubConfig {
+            secrets: HashMap::new(),
+            applied: Mutex::new(Vec::new()),
+            fail_secret_lookup: false,
+            fail_apply_changeset: false,
+        });
+        let bus = EventBus::new();
+        let orchestrator = TorrentOrchestrator::new(
+            Arc::clone(&engine),
+            FsOpsService::new(bus.clone(), Metrics::new()?),
+            bus,
+            sample_fs_policy(),
+            initial.clone(),
+            None,
+            Some(config.clone()),
+        );
+        let mut update = Box::pin(orchestrator.update_engine_profile(attempted.clone()));
+        assert_pending(update.as_mut());
+        assert_eq!(*orchestrator.engine_profile.read().await, initial);
+        let mut prepared = attempted.clone();
+        prepared.ip_filter.last_error = None;
+        assert_eq!(config.applied_len().await, 1);
+        assert_eq!(
+            config.applied.lock().await[0].engine_profile.as_ref(),
+            Some(&prepared)
+        );
+        assert!(engine.limits.read().await.is_empty());
+        apply_release
+            .send(Ok(()))
+            .map_err(|reply| format!("apply reply lost: {reply:?}"))?;
+        assert_pending(update.as_mut());
+        assert_eq!(*orchestrator.engine_profile.read().await, initial);
+        assert_eq!(engine.applied.read().await.len(), 1);
+        assert!(engine.limits.read().await.is_empty());
+        let published = orchestrator.engine_profile.read().await;
+        limits_release
+            .send(Ok(()))
+            .map_err(|reply| format!("limits reply lost: {reply:?}"))?;
+        assert_pending(update.as_mut());
+        assert_eq!(*published, initial);
+        assert_eq!(engine.limits.read().await.len(), 1);
+        drop(published);
+        update.await?;
+        assert_eq!(*orchestrator.engine_profile.read().await, attempted);
+        assert_eq!(engine.limits.read().await.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_engine_profile_cancelled_wait_retains_previous_publication() -> TestResult<()> {
+        for during_apply in [true, false] {
+            let engine = Arc::new(RecordingEngine::default());
+            let (release, reply) = oneshot::channel();
+            if during_apply {
+                *engine.apply_reply.lock().await = Some(reply);
+            } else {
+                *engine.limits_reply.lock().await = Some(reply);
+            }
+            let initial = engine_profile("initial");
+            let mut attempted = engine_profile("cancelled");
+            attempted.max_download_bps = Some(1_500_000);
+            let bus = EventBus::new();
+            let orchestrator = TorrentOrchestrator::new(
+                Arc::clone(&engine),
+                FsOpsService::new(bus.clone(), Metrics::new()?),
+                bus,
+                sample_fs_policy(),
+                initial.clone(),
+                None,
+                None,
+            );
+            let mut update = Box::pin(orchestrator.update_engine_profile(attempted));
+            assert_pending(update.as_mut());
+            drop(update);
+            assert!(release.is_closed());
+            assert_eq!(*orchestrator.engine_profile.read().await, initial);
+            assert_eq!(
+                engine.applied.read().await.len(),
+                usize::from(!during_apply)
+            );
+            assert!(engine.limits.read().await.is_empty());
+            // Losing a completion observer is not evidence that admitted native work stopped.
+            let next = engine_profile("next-completed");
+            orchestrator.update_engine_profile(next.clone()).await?;
+            assert_eq!(*orchestrator.engine_profile.read().await, next);
+        }
         Ok(())
     }
 
@@ -1255,7 +1389,9 @@ mod engine_refresh_tests {
             fail_apply_changeset: false,
         });
 
+        let initial = engine_profile("initial");
         let mut profile = engine_profile("tracker-secret-error");
+        profile.max_download_bps = Some(1_500_000);
         profile.tracker = TrackerConfig {
             auth: Some(TrackerAuthConfig {
                 username_secret: Some("TRACKER_USER".to_string()),
@@ -1270,7 +1406,7 @@ mod engine_refresh_tests {
             fsops,
             bus,
             sample_fs_policy(),
-            profile.clone(),
+            initial.clone(),
             None,
             Some(config),
         ));
@@ -1286,6 +1422,9 @@ mod engine_refresh_tests {
                 source: revaer_config::ConfigError::NotificationPayloadInvalid,
             }
         ));
+        assert_eq!(*orchestrator.engine_profile.read().await, initial);
+        assert!(engine.applied.read().await.is_empty());
+        assert!(engine.limits.read().await.is_empty());
         Ok(())
     }
 
@@ -1302,7 +1441,9 @@ mod engine_refresh_tests {
             fail_apply_changeset: false,
         });
 
+        let initial = engine_profile("initial");
         let mut profile = engine_profile("proxy-secret-error");
+        profile.max_download_bps = Some(1_500_000);
         profile.tracker = TrackerConfig {
             proxy: Some(TrackerProxyConfig {
                 host: "proxy.local".to_string(),
@@ -1320,7 +1461,7 @@ mod engine_refresh_tests {
             fsops,
             bus,
             sample_fs_policy(),
-            profile.clone(),
+            initial.clone(),
             None,
             Some(config),
         ));
@@ -1336,6 +1477,9 @@ mod engine_refresh_tests {
                 source: revaer_config::ConfigError::NotificationPayloadInvalid,
             }
         ));
+        assert_eq!(*orchestrator.engine_profile.read().await, initial);
+        assert!(engine.applied.read().await.is_empty());
+        assert!(engine.limits.read().await.is_empty());
         Ok(())
     }
 
@@ -1346,18 +1490,21 @@ mod engine_refresh_tests {
         let bus = EventBus::new();
         let metrics = Metrics::new()?;
         let fsops = FsOpsService::new(bus.clone(), metrics);
+        let initial = engine_profile("initial");
+        let mut attempted = engine_profile("apply-error");
+        attempted.max_download_bps = Some(1_500_000);
         let orchestrator = Arc::new(TorrentOrchestrator::new(
             Arc::clone(&engine),
             fsops,
             bus,
             sample_fs_policy(),
-            engine_profile("apply-error"),
+            initial.clone(),
             None,
             None,
         ));
 
         let err = orchestrator
-            .update_engine_profile(engine_profile("apply-error"))
+            .update_engine_profile(attempted)
             .await
             .expect_err("engine apply failures should surface");
         assert!(matches!(
@@ -1369,6 +1516,8 @@ mod engine_refresh_tests {
                 },
             }
         ));
+        assert_eq!(*orchestrator.engine_profile.read().await, initial);
+        assert!(engine.limits.read().await.is_empty());
         Ok(())
     }
 
@@ -1381,18 +1530,21 @@ mod engine_refresh_tests {
         let bus = EventBus::new();
         let metrics = Metrics::new()?;
         let fsops = FsOpsService::new(bus.clone(), metrics);
+        let initial = engine_profile("initial");
+        let mut attempted = engine_profile("limit-error");
+        attempted.max_download_bps = Some(1_500_000);
         let orchestrator = Arc::new(TorrentOrchestrator::new(
             Arc::clone(&engine),
             fsops,
             bus,
             sample_fs_policy(),
-            engine_profile("limit-error"),
+            initial.clone(),
             None,
             None,
         ));
 
         let err = orchestrator
-            .update_engine_profile(engine_profile("limit-error"))
+            .update_engine_profile(attempted)
             .await
             .expect_err("limit update failures should surface");
         assert!(matches!(
@@ -1404,6 +1556,9 @@ mod engine_refresh_tests {
                 },
             }
         ));
+        assert_eq!(*orchestrator.engine_profile.read().await, initial);
+        assert_eq!(engine.applied.read().await.len(), 1);
+        assert!(engine.limits.read().await.is_empty());
         Ok(())
     }
 
@@ -2183,7 +2338,9 @@ mod engine_refresh_tests {
             .await;
 
         let mut plan = EngineRuntimePlan::from_profile(&engine_profile("refresh"));
-        orchestrator.refresh_ip_filter(&mut plan).await?;
+        orchestrator
+            .refresh_ip_filter(&engine_profile("refresh"), &mut plan)
+            .await?;
 
         assert!(
             orchestrator.ip_filter_cache.read().await.is_none(),
@@ -2364,9 +2521,14 @@ mod engine_refresh_tests {
         ));
 
         let previous = IpFilterConfig::default();
-        orchestrator
-            .persist_ip_filter_metadata(config.as_ref(), &previous, &previous)
-            .await?;
+        let profile = orchestrator.engine_profile.read().await.clone();
+        TorrentOrchestrator::<RecordingEngine>::persist_ip_filter_metadata(
+            config.as_ref(),
+            &profile,
+            &previous,
+            &previous,
+        )
+        .await?;
 
         assert_eq!(config.applied_len().await, 0);
         Ok(())
@@ -2399,11 +2561,24 @@ mod engine_refresh_tests {
             etag: Some("etag".to_string()),
             ..Default::default()
         };
-        orchestrator
-            .persist_ip_filter_metadata(config.as_ref(), &previous, &updated)
-            .await?;
+        let mut candidate = engine_profile("metadata-candidate");
+        candidate.max_download_bps = Some(1_500_000);
+        let initial = orchestrator.engine_profile.read().await.clone();
+        TorrentOrchestrator::<RecordingEngine>::persist_ip_filter_metadata(
+            config.as_ref(),
+            &candidate,
+            &previous,
+            &updated,
+        )
+        .await?;
 
         assert_eq!(config.applied_len().await, 1);
+        candidate.ip_filter = updated;
+        assert_eq!(
+            config.applied.lock().await[0].engine_profile.as_ref(),
+            Some(&candidate)
+        );
+        assert_eq!(*orchestrator.engine_profile.read().await, initial);
         Ok(())
     }
 }

@@ -1038,5 +1038,6 @@ shared read model now retains decimal weights. The original failed source and
 database evidence were archived before retry; no SQL or comparison was relaxed.
 The subsequent pinned live run passes all 24 variants, each with one successful
 fixture and two exact `23505` failures, plus the mandatory D4/D5 controls.
-Both disposable runs report resource cleanup. Combined canonical, CI and UI
-verification remain pending at this checkpoint.
+Both disposable runs report resource cleanup. Canonical database verification
+at `c9a25f31` passes 6,049/6,050 checks; only the unchanged incomplete-D3 guard
+fails. Combined runtime CI and UI verification remain pending at this checkpoint.

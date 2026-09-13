@@ -45,6 +45,14 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, the root contract
 - FFI crates may omit a crate-wide `forbid(unsafe_code)` if necessary, but unsafe code must stay isolated to the documented boundary modules and shims. Do not use lint suppressions to permit unsafe.
 # CI And Recipe Maintenance
 
+- Torrent orchestrator refresh must retain the previous `engine_profile` through
+  preparation and until both engine application and global limit updates have
+  completed successfully. Pass the current candidate explicitly to blocklist
+  metadata preparation; never publish it early to supply that helper's input.
+  Preserve the existing startup-before-watcher and awaited-refresh sequencing.
+  This ADR 588 S2 field-publication boundary does not serialize arbitrary new
+  callers or make native mutations, best-effort metadata changes, filesystem
+  policy or the complete configuration revision atomic.
 - ADR 588 S2's application shutdown authority must retain the first monotonic
   origin and only shorten its shared absolute deadline within the unchanged
   30-second application budget. Bootstrap must latch it before background-task

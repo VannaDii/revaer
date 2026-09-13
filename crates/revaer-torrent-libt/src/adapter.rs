@@ -139,9 +139,19 @@ impl TorrentEngine for LibtorrentEngine {
             .await
     }
 
+    /// Wait for the worker's limit update, including global alternate-speed
+    /// reconciliation. Dropping the caller does not cancel an admitted command;
+    /// an error or lost completion does not establish native rollback.
     async fn update_limits(&self, id: Option<Uuid>, limits: TorrentRateLimit) -> TorrentResult<()> {
-        self.send_command(EngineCommand::UpdateLimits { id, limits })
-            .await
+        let (respond_to, rx) = oneshot::channel();
+        self.send_command(EngineCommand::UpdateLimits {
+            id,
+            limits,
+            respond_to,
+        })
+        .await?;
+        rx.await
+            .map_err(|err| op_failed("update_limits", id, err))?
     }
 
     async fn update_selection(&self, id: Uuid, rules: FileSelectionUpdate) -> TorrentResult<()> {
@@ -491,6 +501,178 @@ mod tests {
         let engine = LibtorrentEngine { commands };
         engine
             .apply_runtime_config(runtime_config_template("ack-downloads", "ack-resume"))
+            .await?;
+        engine.inspect_settings().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_waits_for_typed_worker_results_for_both_targets() -> Result<()> {
+        for id in [None, Some(Uuid::new_v4())] {
+            for fails in [false, true] {
+                let (commands, mut receiver) = mpsc::channel(COMMAND_BUFFER);
+                let engine = LibtorrentEngine { commands };
+                let limits = TorrentRateLimit {
+                    download_bps: Some(1_000),
+                    upload_bps: None,
+                };
+                let mut update = Box::pin(engine.update_limits(id, limits.clone()));
+                assert_pending(update.as_mut());
+                let command = receiver.try_recv()?;
+                assert_eq!(command.operation(), "update_limits");
+                assert_eq!(command.torrent_id(), id);
+                let EngineCommand::UpdateLimits {
+                    id: target,
+                    limits: requested,
+                    respond_to,
+                } = command
+                else {
+                    return Err(anyhow!("expected limits command"));
+                };
+                assert_eq!(target, id);
+                assert_eq!(requested, limits);
+                assert_pending(update.as_mut());
+                let result = if fails {
+                    Err(op_failed(
+                        "native.update_limits",
+                        id,
+                        crate::error::LibtorrentError::NativeFailure {
+                            operation: "update_limits",
+                            message: "injected limits failure".into(),
+                        },
+                    ))
+                } else {
+                    Ok(())
+                };
+                respond_to
+                    .send(result)
+                    .map_err(|reply| anyhow!("reply lost: {reply:?}"))?;
+                if fails {
+                    let Err(TorrentError::OperationFailed {
+                        operation,
+                        torrent_id,
+                        source,
+                    }) = update.await
+                    else {
+                        return Err(anyhow!("expected original limits failure"));
+                    };
+                    assert_eq!(operation, "native.update_limits");
+                    assert_eq!(torrent_id, id);
+                    let Some(crate::error::LibtorrentError::NativeFailure { operation, message }) =
+                        source.downcast_ref()
+                    else {
+                        return Err(anyhow!("native failure type lost"));
+                    };
+                    assert_eq!(*operation, "update_limits");
+                    assert_eq!(message, "injected limits failure");
+                } else {
+                    update.await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_reports_closed_command_and_reply_channels() -> Result<()> {
+        for id in [None, Some(Uuid::new_v4())] {
+            for reply_lost in [false, true] {
+                let (commands, mut receiver) = mpsc::channel(COMMAND_BUFFER);
+                let engine = LibtorrentEngine { commands };
+                let mut update = Box::pin(engine.update_limits(id, TorrentRateLimit::default()));
+                if reply_lost {
+                    assert_pending(update.as_mut());
+                    drop(receiver.try_recv()?);
+                } else {
+                    drop(receiver);
+                }
+                let Err(TorrentError::OperationFailed {
+                    operation,
+                    torrent_id,
+                    source,
+                }) = update.await
+                else {
+                    return Err(anyhow!("expected closed limits channel failure"));
+                };
+                assert_eq!(operation, "update_limits");
+                assert_eq!(torrent_id, id);
+                if reply_lost {
+                    assert!(source.is::<oneshot::error::RecvError>());
+                } else {
+                    assert!(source.is::<mpsc::error::SendError<EngineCommand>>());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_cancellation_preserves_admission_boundary() -> Result<()> {
+        for id in [None, Some(Uuid::new_v4())] {
+            for admitted in [false, true] {
+                let (commands, mut receiver) = mpsc::channel(1);
+                if !admitted {
+                    commands.try_send(EngineCommand::Recheck { id: Uuid::nil() })?;
+                }
+                let engine = LibtorrentEngine { commands };
+                let mut update = Box::pin(engine.update_limits(id, TorrentRateLimit::default()));
+                assert_pending(update.as_mut());
+                drop(update);
+                match receiver.try_recv()? {
+                    EngineCommand::UpdateLimits {
+                        id: target,
+                        respond_to,
+                        ..
+                    } => {
+                        assert!(admitted);
+                        assert_eq!(target, id);
+                        assert!(respond_to.is_closed());
+                    }
+                    EngineCommand::Recheck { .. } => assert!(!admitted),
+                    command => return Err(anyhow!("unexpected command: {command:?}")),
+                }
+                assert!(matches!(
+                    receiver.try_recv(),
+                    Err(mpsc::error::TryRecvError::Empty)
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_limits_ack_traverses_worker_and_preserves_not_found() -> Result<()> {
+        let (commands, receiver) = mpsc::channel(COMMAND_BUFFER);
+        worker::spawn(
+            EventBus::new(),
+            receiver,
+            None,
+            Box::new(crate::session::StubSession::default()),
+        );
+        let engine = LibtorrentEngine { commands };
+        let id = Uuid::new_v4();
+        engine
+            .update_limits(None, TorrentRateLimit::default())
+            .await?;
+        assert!(
+            matches!(engine.update_limits(Some(id), TorrentRateLimit::default()).await,
+            Err(TorrentError::NotFound { torrent_id }) if torrent_id == id)
+        );
+        engine
+            .add_torrent(AddTorrent {
+                id,
+                source: TorrentSource::magnet("magnet:?xt=urn:btih:limits-ack"),
+                options: AddTorrentOptions::default(),
+            })
+            .await?;
+        engine
+            .update_limits(
+                Some(id),
+                TorrentRateLimit {
+                    download_bps: Some(1_000),
+                    upload_bps: None,
+                },
+            )
             .await?;
         engine.inspect_settings().await?;
         Ok(())

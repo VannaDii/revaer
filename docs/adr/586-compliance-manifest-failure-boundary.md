@@ -729,3 +729,74 @@ The single worker was closed after delivery, all 24 evidence checksums verified,
 and its clean worktree removed. Evidence is retained under
 `artifacts/media-verification/2026-09-12-size-config/`. No GitHub mutation or
 upload occurred, and no gate, deadline or approval condition was weakened.
+
+### Completed Engine-Profile Publication Boundary (2026-09-12)
+
+- Status: bounded production change and focused verification complete on base
+  `a8133fdf`. Authority is operator-approved ADR 588 S2's actual-acknowledgement
+  and no-publication-after-partial-application requirements, not delegation or
+  an inferred new architectural decision. Parent retains combined full gates.
+- Motivation/reproduction: four strengthened existing tests use genuinely
+  distinct old/attempted profiles, including changed rate limits. Before the
+  production change, tracker preparation, proxy preparation, engine application
+  and limit-update failures all left the attempted profile published. All four
+  original failing assertions and their exact base/test delta are retained.
+- Caller boundary: live startup awaits `spawn_libtorrent_orchestrator` before
+  spawning the configuration watcher (`bootstrap.rs:368`, `:380`); the watcher
+  awaits each `apply_config_snapshot` (`:747`) before taking another snapshot.
+  No independent production blocklist-refresh caller exists. Its metadata
+  changes can trigger later watcher snapshots, but do not launch overlapping
+  refresh calls. No new lock, queue, generation or cancellation policy was added.
+- Design: `UpdateLimits` now uses the existing oneshot ACK pattern for global
+  and per-torrent callers. The reply carries the completed handler result,
+  including global alternate-speed reconciliation, with original typed native
+  errors and target identity intact. The app publishes `engine_profile` only
+  after preparation, completed engine application and completed global limits
+  succeed. Blocklist metadata preparation now receives the current candidate
+  explicitly, rather than relying on prematurely published state.
+- Observability: handler errors retain worker-origin command WARN and degraded
+  health reporting before their result moves to the reply, including receiver
+  loss. Failed handlers retain the skipped event flush; successful replies still
+  precede independent polling. Later polling failure cannot replace a completed
+  handler result. Existing log levels, warning text and quality criteria remain.
+- Cancellation: a dropped pre-admission caller leaves no command; after enqueue,
+  receiver loss does not cancel admitted work. Channel closure is typed transport
+  failure, not success or proof of non-execution. Pending/cancelled app waits
+  retain the prior profile even when earlier mutations have completed.
+- Verification: focused Just runs pass 17 app tests and 22 libtorrent tests with
+  all features, plus 22 libtorrent tests without default features. Four scoped
+  Clippy passes cover both crates' all-target and panic-free production surfaces
+  in both feature configurations. Formatting and patch whitespace checks pass.
+  Existing app orchestrator feature gating means two initial minimal-feature
+  probes selected zero tests; neither is counted as validation. A test-only
+  read-guard type error and two sandbox-denied local-listener tests are retained
+  separately from their corrected/authorized passes. No assertion was weakened.
+- Test scope: real adapter/worker dispatch with injected sessions; pending
+  application/limits/publication, original preparation/apply/limit failures,
+  typed global/per-torrent native errors and NotFound, early/late cancellation,
+  lost receivers, global reconciliation success/failure, event-flush isolation,
+  retained health, candidate-bound metadata and the existing cache regressions.
+  Local arm64 libtorrent 2.1.1 compiled; this is not native/package qualification.
+  These runs are not instrumented coverage and make no new coverage claim.
+- Limits/risk: the field boundary relies on the existing serial refresh callers,
+  not arbitrary concurrent calls. Manual rate overrides and persisted settings
+  remain independently mutable. Best-effort metadata/cache preparation can still
+  have side effects before a later failure; no DB or revision-wide atomicity,
+  filesystem-policy rollback, native rollback/settlement, owner/PID1 closure,
+  queued shutdown classification, watcher-WARN fix or S2 completion is claimed.
+  Waiting callers now observe actual limit failures and latency, without a new
+  timeout, duration, dependency, numeric budget or REGISTER_HASH change.
+- Rollback: revert the limit ACK and app publication change together; do not
+  present restored enqueue-only success as completion evidence.
+- Dependency/stale-policy check: existing Tokio oneshots and standard-library
+  test controls only. Root, Rust and FFI instructions and actual ADR 588 approval
+  were reviewed; matching Rust/FFI guidance records this narrow invariant and
+  its remaining limits. No approval, exception or criteria relaxation was added.
+- Evidence/cleanup: `target/config-publication/evidence/` retains exact commands,
+  raw failed/final logs, source deltas, base identities, binary/native hashes and
+  host/tool identity. One owned build cache was reused throughout and retained
+  with the clean worktree for parent review. The two mock listeners used owned
+  `127.0.0.1:0` binds and ended with their test process. No DB or test media was
+  created; `.server_root` remains absent. No old/parent checkout was edited, no
+  agents were launched, and no full CI/UI, upload, remote mutation or media
+  download was performed. Parent-owned D3/scripts, ADR 569 and indexes are untouched.
