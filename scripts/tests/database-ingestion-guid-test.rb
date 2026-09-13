@@ -1,0 +1,181 @@
+# frozen_string_literal: true
+
+require_relative "database-ingestion-attributes-test"
+
+module RevaerDatabaseRebaseline
+  class IngestionGuidTest < IngestionAttributesTest
+    def run_tests!
+      @assertions = 0
+      @runtime = "guid_unit_runtime"
+      GUID_KINDS.product(GUID_MODES).each do |kind, mode|
+        pair = %w[reference final].to_h do |variant|
+          role = variant == "reference" ? "postgres" : @runtime
+          evidence = guid_test_evidence(kind, mode, role)
+          [variant, guid_validate!(evidence, kind, mode, variant, role)]
+        end
+        assert(JSON.generate(pair.fetch("reference")) == JSON.generate(pair.fetch("final")), "GUID bounded synthetic path parity")
+        guid_mutations!(kind, mode)
+      end
+      guid_instrument_tests!
+      puts "database-ingestion-guid-test: #{@assertions} assertions passed"
+    end
+
+    private
+
+    def attributes_source_hashes
+      guid_source_hashes
+    end
+
+    def verify_ingestion_attributes!
+      verify_ingestion_guid!
+    ensure
+      @attributes_evidence = @guid_evidence
+    end
+
+    def guid_test_transport(frame, helpers: false)
+      lines = helpers ? ["helpers:#{JSON.generate(ingestion_helper_expectations)}"] : []
+      correction_records(guid_session({})).each do |key|
+        lines << JSON.generate(frame.fetch("result")) if key == "state"
+        value = frame.fetch(key)
+        lines << "#{key}:#{%w[role clock tables_before tables_after tables_finish].include?(key) ? JSON.generate(value) : value}"
+      end
+      { "stdout" => lines.join("\n") + "\n", "stderr" => "", "frames" => [frame] }
+    end
+
+    def guid_test_frame(role, number, before, after, source: 1)
+      row = after.fetch("canonical_torrent_source").find { |item| item.fetch("canonical_torrent_source_id") == source }
+      canonical = after.fetch("canonical_torrent").find { |item| item.fetch("canonical_torrent_id") == source }
+      { "backend" => (100 + number).to_s, "clock" => "2026-09-12T00:00:0#{number}+00:00",
+        "before" => "error", "after" => "error", "finished_setting" => "error",
+        "role" => { "session" => role, "current" => role, "superuser" => role == "postgres", "create_role" => role == "postgres", "bypass_rls" => role == "postgres" },
+        "state" => "00000", "within" => "true", "outside" => (role == "postgres").to_s,
+        "tables_before" => copy(before), "tables_after" => copy(after), "tables_finish" => copy(after),
+        "result" => { "canonical_torrent_public_id" => canonical.fetch("canonical_torrent_public_id"),
+          "canonical_torrent_source_public_id" => row.fetch("canonical_torrent_source_public_id"),
+          "canonical_changed" => false, "observation_created" => false, "durable_source_created" => false } }
+    end
+
+    # Minimal synthetic records test the oracle, never stand in for live SQL evidence.
+    def guid_test_evidence(kind, mode, role)
+      before = attributes_empty
+      fixtures = (1..(kind == "competing-guid" ? 2 : 1)).map do |id|
+        previous = copy(before)
+        before.fetch("canonical_torrent") << { "canonical_torrent_id" => id, "canonical_torrent_public_id" => "56900000-0000-4000-8000-00000000009#{id * 2 - 2}" }
+        before.fetch("canonical_torrent_source") << { "canonical_torrent_source_id" => id, "canonical_torrent_id" => id,
+          "canonical_torrent_source_public_id" => "56900000-0000-4000-8000-00000000009#{id * 2 - 1}", "source_guid" => nil, "infohash_v1" => (id == 1 ? "a" : "b") * 40 }
+        guid_test_transport(guid_test_frame(role, id, previous, before, source: id))
+      end
+      intermediate = copy(before)
+      selected = kind == "competing-guid" ? 2 : 1
+      intermediate.fetch("canonical_torrent_source").fetch(selected - 1)["source_guid"] = selected == 2 ? "wanted" : "other"
+      b = guid_test_frame(role, 3, before, intermediate, source: selected)
+      after = copy(intermediate)
+      existing = before.fetch("canonical_torrent_source").fetch(selected - 1).fetch("canonical_torrent_source_public_id")
+      after.merge!(guid_expected_records(1, existing, "2026-09-12T00:00:04+00:00"))
+      after["search_request_source_observation"] = [{ "source_guid" => "wanted", "guid_conflict" => true, "canonical_torrent_source_id" => 1, "canonical_torrent_id" => 1 }]
+      a = guid_test_frame(role, 4, before, after)
+      a.fetch("result")["observation_created"] = kind != "competing-guid"
+      seed = "2026-09-12T00:00:00+00:00"
+      inputs = metadata_read_tables(seed)
+      { "seed_clock" => seed, "fixtures" => fixtures, "before" => before, "intermediate" => intermediate, "after" => after,
+        "paused" => guid_test_transport(a, helpers: mode == "helpers-first"), "contender" => guid_test_transport(b, helpers: mode == "helpers-first"),
+        "barrier" => { "pid" => 104, "usename" => role, "application_name" => "guid-race-paused", "classid" => "588", "objid" => "1029", "objsubid" => 2, "granted" => false },
+        "inputs_before" => inputs, "inputs_after" => copy(inputs) }
+    end
+
+    def guid_mutations!(kind, mode)
+      original = guid_test_evidence(kind, mode, @runtime)
+      validate = ->(value) { guid_validate!(value, kind, mode, "final", @runtime) }
+      changed = copy(original)
+      changed.fetch("paused").fetch("frames").first["after"] = "use_column"
+      rejected("raw and declared") { validate.call(changed) }
+      changed = copy(original)
+      changed.fetch("paused")["stderr"] = "unexpected diagnostic"
+      rejected("unexpected diagnostic") { validate.call(changed) }
+      changed = copy(original)
+      changed.fetch("paused")["stdout"] = changed.fetch("paused").fetch("stdout").sub('role:{', 'role:{"session":"duplicate",')
+      rejected("duplicate metadata JSON") { validate.call(changed) }
+      %w[before after finished_setting within outside backend clock].each do |key|
+        changed = copy(original)
+        frame = changed.fetch("paused").fetch("frames").first
+        frame[key] = key == "clock" ? "2026-02-30T00:00:00+00:00" : "101"
+        changed["paused"] = guid_test_transport(frame, helpers: mode == "helpers-first")
+        rejected("GUID") { validate.call(changed) }
+      end
+      original.fetch("barrier").each_key do |key|
+        changed = copy(original)
+        changed.fetch("barrier")[key] = "altered"
+        rejected("exact barrier") { validate.call(changed) }
+      end
+      %w[session current superuser create_role bypass_rls].each do |key|
+        changed = copy(original)
+        frame = changed.fetch("paused").fetch("frames").first
+        frame.fetch("role")[key] = "altered"
+        changed["paused"] = guid_test_transport(frame, helpers: mode == "helpers-first")
+        rejected("direct authority") { validate.call(changed) }
+      end
+      IngestionProof::INGESTION_TABLES.each do |table|
+        changed = copy(original)
+        changed.fetch("after").fetch(table) << { "unexpected" => true }
+        rejected("committed transition") { validate.call(changed) }
+      end
+      guid_expected_records(1, "unused", "unused").each do |table, rows|
+        rows.first.each_key do |column|
+          changed = copy(original)
+          changed.fetch("after").fetch(table).first[column] = "altered"
+          frame = changed.fetch("paused").fetch("frames").first
+          frame["tables_after"] = frame["tables_finish"] = copy(changed.fetch("after"))
+          changed["paused"] = guid_test_transport(frame, helpers: mode == "helpers-first")
+          rejected("independent conflict") { validate.call(changed) }
+        end
+      end
+      changed = copy(original)
+      changed.fetch("inputs_after").fetch("trust_tier").first["default_weight"] = 666.0
+      rejected("read inputs") { validate.call(changed) }
+      IngestionPolicy::POLICY_READ_TABLES.each do |table|
+        changed = copy(original)
+        changed.fetch("inputs_before").fetch(table) << { "unexpected" => true }
+        changed["inputs_after"] = copy(changed.fetch("inputs_before"))
+        rejected("read inputs") { validate.call(changed) }
+      end
+      changed = copy(original)
+      changed.fetch("barrier")["classid"] = 588.0
+      rejected("exact barrier") { validate.call(changed) }
+      changed = copy(original)
+      frame = changed.fetch("paused").fetch("frames").first
+      frame.fetch("result")["observation_created"] = kind == "competing-guid"
+      changed["paused"] = guid_test_transport(frame, helpers: mode == "helpers-first")
+      rejected("observation binding") { validate.call(changed) }
+    end
+
+    def guid_instrument_tests!
+      original = File.binread(File.join(@contract.root, "crates/revaer-data/migrations/0052_indexer_search_result_ingest_proc.sql"))
+      GUID_KINDS.each do |kind|
+        changed = guid_instrument(original, kind)
+        hook = "        IF pg_catalog.current_setting('application_name') = 'guid-race-paused' THEN\n            PERFORM pg_catalog.pg_advisory_xact_lock(588, 1029);\n        END IF;\n"
+        assert(changed.scan(hook).length == 1 && changed.sub(hook, "") == original, "only exact disposable scheduling hook changes")
+        rejected("one exact observation site") { guid_instrument(original + original, kind) }
+        rejected("one exact observation site") { guid_instrument("", kind) }
+      end
+      query = correction_session(guid_session({}, helpers: true))
+      assert(query.scan("FROM public.search_result_ingest(").length == 1 && query.scan("COMMIT;").length == 1, "one actual wrapper and committed lifetime")
+      assert(!query.match?(/DISCARD|DROP TABLE|SET ROLE|SET plpgsql|\\connect/), "no compiler or namespace repair")
+    end
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  begin
+    proof = RevaerDatabaseRebaseline::IngestionGuidTest.new
+    if ARGV.empty?
+      proof.run_tests!
+    elsif ARGV.length == 2 && ARGV.first == "--live"
+      proof.run_live!(ARGV.fetch(1))
+    else
+      raise RevaerDatabaseRebaseline::Failure, "expected no arguments or --live exact-candidate-path"
+    end
+  rescue RevaerDatabaseRebaseline::Failure => error
+    warn "database-ingestion-guid-test: #{error.message}"
+    exit 1
+  end
+end

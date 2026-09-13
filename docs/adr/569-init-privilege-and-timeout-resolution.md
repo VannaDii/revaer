@@ -1196,3 +1196,52 @@ approval was adopted. Existing root/data/DevOps and ADR 569/588 scope apply.
 The worker was closed and its clean worktree removed. Evidence is retained at
 `artifacts/media-verification/2026-09-13-d3-closure/`. Rollback discards the
 experiment only; frozen authority and the incomplete-D3 gate remain unchanged.
+
+## Concurrent GUID Conflict Proof (2026-09-13)
+
+In progress under conditional D3. Two controlled interleavings reach the
+frozen ingestion conflict callsites at lines 1029 and 1046: another real wrapper
+caller either claims the wanted GUID on a competing source, or changes the
+selected source's GUID before its next read. Each runs cold/helper-first against
+reference/final, on separate direct-role backends in disposable clones. The
+only instrumentation is one exact administrator-installed advisory barrier;
+original and instrumented definitions are retained. No production SQL changes.
+
+The canonical harness now includes these eight variants and four comparisons.
+It verifies all 18 committed table transitions, independently specified conflict,
+audit and health records, all 19 independently specified read-input tables,
+unchanged caller settings through commit, exact role capabilities and the
+approved D4 scratch lifetime. Raw transport is reparsed before comparison.
+Only the verified conflicting source UUID text is additionally normalized.
+The legacy competing-GUID observation reuse remains visible; this does not
+repair or newly approve that behavior. Controlled scheduling does not establish
+uninstrumented timing, in-call setting scope or native/helper closure.
+
+The initial local prototype passed 349 checks on clean `94c691fe`, with source
+hashes and resource cleanup verified. Canonical promotion caught two harness
+errors: OID-valued lock tags are JSON strings, and the initial reader returned
+only six wrapper inputs rather than the required 19-table policy inventory.
+Both failures and cleanup receipts are retained. The corrected reader uses the
+existing complete snapshot and independent seed oracle; it does not narrow
+the expected inventory. Focused live proof passes all eight variants, four
+comparisons and mandatory D4/D5 controls. The expanded unit suite passes 356
+assertions, including coherent mutations of every read-input table. Integrated
+gates are recorded below.
+
+Reusing the earlier native archive also binds both actual score upsert/selection
+statements to the public score table in four first-visible contexts. All eight
+plans match their raw log records and show one inserted/selected row. This
+supports those observed binding premises only, not universal operator/OID
+binding or complete native closure. No profiler run or adoption was needed.
+
+Test-only observability adds retained SQL, raw results, plans, source hashes and
+cleanup receipts. No dependency, permission, deadline or approval change is
+introduced. Rollback removes this proof increment only; frozen migrations and
+the incomplete-D3 failure remain. Root/data/DevOps instructions and ADRs 569/588
+were reviewed; DevOps now records this bounded proof without weakening policy.
+
+An independent, single-task UI investigation confirmed that frozen
+`media_profile_update_v1` rejects scheduling regardless of fixture identity.
+No fixture-only change can preserve the positive assertions. The approved
+root-persistence/API integration after cutover remains required. No code changed
+in that investigation; its agent was closed and clean worktree removed.

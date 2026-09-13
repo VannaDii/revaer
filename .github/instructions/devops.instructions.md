@@ -88,6 +88,14 @@ applyTo:
   cold, helper-first and warm-after-rollback sessions. Verify independent
   canonical hashes and exact helper outputs; these cases do not establish
   concurrent metadata or native-trigger closure.
+  Concurrent GUID proof must retain both exact conflict callsites using only
+  administrator-installed barriers in disposable clones. Exercise real wrapper
+  callers on separate backends, cold/helper-first compilation, complete
+  committed 18-table transitions, immutable read inputs, exact conflict/audit/
+  health records and caller settings through commit. Retain raw transport and
+  reject altered evidence before any narrow UUID-text normalization. Controlled
+  scheduling and legacy observation reuse do not establish uninstrumented
+  timing, in-call settings, native/helper closure or complete D3.
   Candidate/final disposable PostgreSQL cleanup must remove their anonymous
   volumes as well as containers, never prune unrelated Docker resources.
   Settings-path proof must pair uninstrumented runs with rollback-surviving
