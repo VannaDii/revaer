@@ -45,6 +45,11 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, the root contract
 - FFI crates may omit a crate-wide `forbid(unsafe_code)` if necessary, but unsafe code must stay isolated to the documented boundary modules and shims. Do not use lint suppressions to permit unsafe.
 # CI And Recipe Maintenance
 
+- Preserve ADR 501's inherited-pipe cleanup and error contract when repairing
+  native supervision. Observe EOF on both owned captures in the existing
+  bounded verification phases, without a fresh grace period. Keep read failures,
+  deadlines and final unclosed-pipe evidence intact; missing captures on a
+  failed setup path are not proof of EOF. This does not qualify full S2.
 - Torrent orchestrator refresh must retain the previous `engine_profile` through
   preparation and until both engine application and global limit updates have
   completed successfully. Pass the current candidate explicitly to blocklist

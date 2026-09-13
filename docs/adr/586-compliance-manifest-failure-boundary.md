@@ -834,3 +834,36 @@ Evidence and source bundle are retained under
 closed, its clean worktree/cache removed, and all 36 worker evidence checksums
 verified. The user checkout and its existing conflicts were preserved. No new
 architecture, criteria exception, GitHub mutation, upload or merge occurred.
+
+### Native Pipe-Closure Verification (In Progress)
+
+- Motivation: retained `749ba0b4` CI reports unclosed output pipes after the
+  20 ms deadline. Cleanup's completion predicate checks only leader reaping and
+  process-group absence, allowing it to skip its existing forced verification
+  while pipe closure remains unobserved.
+- Authority/design: ADR 501, already Accepted at operator-reviewed `9575c077`,
+  authorizes the shared supervisor, bounded inherited-pipe cleanup and unchanged
+  five-second grace with primary/secondary failure preservation. Existing
+  `system.rs` already requires pipe EOF and reports its absence. Require both
+  captures to reach EOF in cleanup's existing completion predicate; retain
+  graceful/forced phases, polling interval, budgets, deadline classification
+  and final unclosed-pipe diagnostic. Do not signal a group already observed
+  absent just because its pipes need observation. No new S2 owner or deadline.
+- Test evidence: two new real-pipe regressions fail on `ac094da9` plus the
+  retained test-only delta: exited-group cleanup returns before EOF and before
+  exhausting available verification steps. Tests control injected process
+  observations and pipe-writer lifetime; no child or media is created. Original
+  failing CI, new failures and exact source delta are retained. Corrected
+  focused verification passes all 41 process tests, including the unchanged
+  setup-time deadline test, and strict all-target/production Clippy passes.
+  Formatting, instruction drift and patch whitespace checks pass. Full gates
+  remain pending; these focused results are not package or coverage evidence.
+- Observability/risk: read errors, deadline and unclosed-pipe evidence remain
+  intact. This addresses an exposed cleanup gap, not every OS scheduling detail
+  in the original CI failure or full native/PID1/recovery qualification. Roll
+  back the predicate and matching signal guard together if necessary, retaining
+  failing evidence and the release hold instead of relaxing assertions.
+- Dependency/stale-policy check: existing standard-library pipes and descriptor
+  conversions only; no dependency or manifest change. Root, Rust instructions,
+  ADR 501, ADR 559 G1 and approved ADR 588 S2 were reviewed. Matching Rust guidance
+  references existing policy; no approval, threshold or exception is added.

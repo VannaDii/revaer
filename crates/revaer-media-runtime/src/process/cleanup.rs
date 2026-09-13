@@ -150,11 +150,13 @@ where
         return monitor.into_outcome(evidence);
     }
 
-    record_signal(
-        target.signal_process_group(Signal::TERM),
-        "process-group termination failed",
-        &mut evidence,
-    );
+    if initial.group_present {
+        record_signal(
+            target.signal_process_group(Signal::TERM),
+            "process-group termination failed",
+            &mut evidence,
+        );
+    }
     if !initial.leader_reaped {
         record_signal(
             target.signal_process_leader(Signal::TERM),
@@ -217,11 +219,12 @@ where
 struct CleanupState {
     leader_reaped: bool,
     group_present: bool,
+    streams_closed: bool,
 }
 
 impl CleanupState {
     const fn complete(self) -> bool {
-        self.leader_reaped && !self.group_present
+        self.leader_reaped && !self.group_present && self.streams_closed
     }
 }
 
@@ -345,9 +348,10 @@ fn observe<O>(
 where
     O: CleanupOperations,
 {
-    if let Some(streams) = streams {
+    let streams_closed = streams.is_none_or(|streams| {
         streams.drain();
-    }
+        streams.all_closed()
+    });
     let leader_reaped = if leader_reaped {
         true
     } else {
@@ -372,6 +376,7 @@ where
     CleanupState {
         leader_reaped,
         group_present,
+        streams_closed,
     }
 }
 
@@ -414,6 +419,11 @@ fn push_unique(evidence: &mut NativeProcessSecondaryEvidence, message: String) {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
+    use std::error::Error;
+    use std::io::{PipeWriter, Write};
+    use std::os::fd::OwnedFd;
+
+    use crate::process::{NativeProcessRequest, stream::configure_nonblocking};
 
     use super::*;
 
@@ -440,6 +450,18 @@ mod tests {
     }
 
     impl FakeCleanupOperations {
+        fn exited_group(observations: usize) -> Self {
+            Self {
+                calls: Vec::new(),
+                leader_reaped: VecDeque::from([Ok(true)]),
+                group_exists: std::iter::repeat_n(Ok(false), observations).collect(),
+                group_term: VecDeque::new(),
+                leader_term: VecDeque::new(),
+                group_kill: VecDeque::new(),
+                leader_kill: VecDeque::new(),
+            }
+        }
+
         fn successful_escalation() -> Self {
             Self {
                 calls: Vec::new(),
@@ -536,6 +558,121 @@ mod tests {
 
     fn test_process_group() -> Result<Pid, String> {
         Pid::from_raw(42).ok_or_else(|| "test process-group id must be nonzero".to_string())
+    }
+
+    fn open_capture_streams() -> Result<(ProcessStreams, [PipeWriter; 2]), Box<dyn Error>> {
+        let (stdout_reader, mut stdout_writer) = io::pipe()?;
+        let (stderr_reader, mut stderr_writer) = io::pipe()?;
+        stdout_writer.write_all(b"stdout")?;
+        stderr_writer.write_all(b"stderr")?;
+        let request = NativeProcessRequest::inspection(
+            "/unused",
+            std::iter::empty::<String>(),
+            Duration::from_secs(1),
+            16,
+            16,
+        );
+        let streams = ProcessStreams::new(
+            OwnedFd::from(stdout_reader).into(),
+            OwnedFd::from(stderr_reader).into(),
+            &request,
+            configure_nonblocking,
+        )?;
+        Ok((streams, [stdout_writer, stderr_writer]))
+    }
+
+    #[test]
+    fn exited_group_waits_for_pipe_eof_within_forced_verification() -> Result<(), Box<dyn Error>> {
+        let (mut streams, writers) = open_capture_streams()?;
+        let mut writers = Some(writers);
+        let mut observations = 0;
+        let mut operations = FakeCleanupOperations::exited_group(4);
+        let deadline = NativeProcessError::deadline_exceeded(Duration::from_millis(20));
+        let outcome = terminate_and_verify_with(
+            &mut FakeChild,
+            test_process_group()?,
+            false,
+            Some(&mut streams),
+            Duration::from_secs(1),
+            &mut operations,
+            |_| {
+                observations += 1;
+                if observations == 7 {
+                    drop(writers.take());
+                }
+                Some(deadline.clone())
+            },
+        );
+
+        assert!(streams.all_closed());
+        assert_eq!(observations, 8);
+        assert_eq!(outcome.boundary, Some(deadline));
+        assert!(outcome.evidence.is_empty());
+        assert_eq!(operations.calls.len(), 5);
+        let output = streams.into_output();
+        assert_eq!(output.stdout(), b"stdout");
+        assert_eq!(output.stderr(), b"stderr");
+        Ok(())
+    }
+
+    #[test]
+    fn exited_group_preserves_unclosed_pipe_when_verification_budget_expires()
+    -> Result<(), Box<dyn Error>> {
+        let (mut streams, [stdout_writer, stderr_writer]) = open_capture_streams()?;
+        drop(stdout_writer);
+        let mut observations = 0;
+        let mut operations = FakeCleanupOperations::exited_group(3);
+        let deadline = NativeProcessError::deadline_exceeded(Duration::from_millis(20));
+        let outcome = terminate_and_verify_with(
+            &mut FakeChild,
+            test_process_group()?,
+            false,
+            Some(&mut streams),
+            Duration::ZERO,
+            &mut operations,
+            |_| {
+                observations += 1;
+                Some(deadline.clone())
+            },
+        );
+
+        assert!(!streams.all_closed());
+        assert_eq!(observations, 6);
+        assert_eq!(outcome.boundary, Some(deadline));
+        assert!(outcome.evidence.is_empty());
+        assert_eq!(operations.calls.len(), 4);
+        drop(stderr_writer);
+        streams.drain();
+        assert!(streams.all_closed());
+        Ok(())
+    }
+
+    #[test]
+    fn exited_group_with_closed_pipes_needs_no_signals_or_waits() -> Result<(), Box<dyn Error>> {
+        let (mut streams, writers) = open_capture_streams()?;
+        drop(writers);
+        let mut operations = FakeCleanupOperations::exited_group(1);
+        let outcome = terminate_and_verify_with(
+            &mut FakeChild,
+            test_process_group()?,
+            false,
+            Some(&mut streams),
+            Duration::ZERO,
+            &mut operations,
+            |_| None,
+        );
+
+        assert!(streams.all_closed());
+        assert!(outcome.boundary.is_none());
+        assert!(outcome.evidence.is_empty());
+        assert_eq!(
+            operations.calls,
+            [
+                CleanupCall::ProbeLeaderReaped,
+                CleanupCall::ProbeGroupExists
+            ]
+        );
+        Ok(())
     }
 
     #[test]
