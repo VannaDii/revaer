@@ -524,3 +524,45 @@ This is continued validation only: no runtime, dependency, observability or
 criteria changes. Root, DevOps and Sonar instructions were reviewed; this
 checkpoint removes no rule and resolves no failure by documentation. Rollback
 removes only this record; all original failing evidence remains retained.
+
+### Watcher Warning Reproduction (2026-09-12)
+
+- Status: Blocked implementation boundary; this is not a runtime correction.
+- Motivation: reproduce the eight actual watcher-abort WARNs in
+  `/private/tmp/revaer-integrated-metadata-ci.log` on assigned source
+  `2af9c420ff2865a7ad46dc4b7af4be302ab45ee2` before selecting a fix.
+- Design finding: bootstrap still aborts an unfinished watcher without joining
+  it. Its twelve relevant runtime/test files are unchanged from the prior
+  source review at `a19e5856`. The existing injected shutdown channel carries
+  only a boolean, not S2's shared immutable deadline/ownership receipt. Native
+  configuration returns on enqueue and its worker exposes no join handle.
+  An idle-only stop does not settle admitted work; cancelling active preparation
+  can leave partial configuration; reusing the per-task grace/unconditional
+  join is not ADR 588's approved bounded design. No substitute was implemented.
+- Required delta: implement the already-approved S2 ownership/deadline and
+  native configuration settlement prerequisites outside this bootstrap-only
+  assignment, then connect cooperative watcher cancellation and classified
+  settlement. This requests no new architecture and does not touch ADR 589.
+- Test coverage: an offline, warnings-denied, all-feature app test build through
+  Just succeeded on Darwin arm64/Rust 1.96.0. The four existing bootstrap
+  bind-failure tests ran twice through Just with their real child processes:
+  eight successful invocations, zero skips, and exactly eight matching WARNs.
+  This adds current runtime reproduction to the prior source-only finding;
+  it is neither a fixed result nor a repeat of full CI/coverage/UI.
+- Evidence: ignored `target/watcher-graceful-stop/` retains the exact original
+  CI log, original line mapping, reproduction driver, per-test commands/raw
+  stdout/stderr, source/binary hashes, build evidence and cleanup result.
+- Cleanup: pinned PostgreSQL image `57c72fd2a128...ffc07777`, resolved arm64
+  image `7e7dbab8d3b4...cdefd`; unique container
+  `revaer-watcher-graceful-ab6a05b60270` removed with volumes, exact-name absence
+  verified, and loopback port 57959 successfully rebound. No test media acquired
+  or generated; existing test temporary-workspace cleanup remained in use.
+- Observability/dependencies: unchanged. All eight warnings remain unresolved;
+  no suppression, timing, criteria, production, test or dependency edit occurred.
+- Risk/rollback: the known unobserved shutdown remains; rollback removes this
+  documentation checkpoint only. Parent owns integration and both full gates.
+- Stale-policy check: reviewed root AGENTS, scoped Rust/data/DevOps guidance,
+  ADR 559 G1, ADR 577's later S2 resolution, ADR 586, and ADR 588's actual
+  approval/S2/LIFE-1 bounds. The approved shutdown appendices differ from reviewed
+  `9575c077` only by dated approval banners. Historical held wording is not a
+  renewed approval hold. No policy contradiction or rule was edited away.
