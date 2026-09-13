@@ -1694,3 +1694,56 @@ guidance were reviewed; the scoped instruction now records this fixture and
 oracle boundary without relaxing the incomplete-D3 guard. Rollback removes the
 new proof case, its tests and scoped guidance together; existing evidence stays
 retained. Observability changes are limited to disposable proof evidence.
+
+### External-ID Qualification And Helper Errors (2026-09-13)
+
+Revision `fa721b33` passes all eight differing-ID variant/mode executions and
+their four paired fixture checks. Every frozen attempt retains its exact D5
+error/rollback; final rollback and committed retries satisfy the independent
+18-table, read-input, logger and sequence oracles. The canonical result is
+8,023/8,024, with only the unchanged incomplete-D3 guard failing. All 11 archived
+source registries match. Full `just ci` passes without warnings, including all
+18 package coverage gates. Full `just ui-e2e` remains 57 passed, one failed and
+72 unrun, with missing UI coverage. The legacy profile procedure rejects
+scheduling; ADR 557's approved association/root workflow must be implemented,
+not replaced by a fixture that accepts the current 400 response.
+
+Four unpublished native trials now observe token and persisted-signal regex
+failures in cold and helper-first sessions. Both variants preserve the exact
+nested diagnostic and complete rollback, with equal ordinary/observed results
+within each variant and unchanged target native hashes. The actual nested
+helper and final regex operator have reference/final settings 2/0; caller and
+helper-first controls remain 0. These existing-identity error cases require
+zero RI entries. The initial inherited success-only RI expectation failed and
+is retained alongside the corrected error-specific oracle. A separate populated
+success trial still fails because its SQL cast helper was not observed; optimizer
+inlining is only a hypothesis. No canonical profiler, native closure, package
+acceptance or D3 completion is adopted from these experiments.
+
+The bounded reachability sidecar distinguishes constraint-unreachable signal
+updates from valid direct-writer schedules for eleven durable attribute updates
+and a zero-sample path. Missing trust rank is also schema-reachable. Its source
+reasoning and focused assertions are preserved, not live concurrency evidence.
+The prepared two-case trust-rank patch passes its worker's focused tests but is
+not integrated or live-qualified here. It retains explicit pending native branch
+evidence; common confidence output cannot substitute for branch observation.
+
+`just js-coverage-merge sonar-verify-inputs` passes. Retained Rust LCOV has
+322 sources, 133,799 lines and 124,475 positive records; partial API JavaScript
+has 61 sources, 5,402 lines and 4,249 positive records. No new Sonar scan or
+positive published coverage is established. The archive
+`artifacts/media-verification/2026-09-13-external-id-policy-entry/` retains the
+canonical source bundle, logs, coverage, 58 profiles, all six native attempts
+and the pending worker patches. Completed workers, owned databases/volumes and
+the temporary debugger image were removed; both integration worktrees cleaned
+test media, and UI port 61092 was confirmed closed. ADR 589 remains pending.
+No SQL cutover, source push, merge or release acceptance is claimed.
+
+Checkpoint documentation validation also encountered the EBU R128 landing
+page's 403 response. Its citation now points to the official recommendation
+PDF carrying the same referenced broadcast target. No audio recommendation,
+approval, accepted HTTP status or link-check criterion changed; the original
+sandbox/network failures remain archived alongside the final rerun.
+The final `just docs-link-check` passes all 1,379 links; instruction drift and
+diff whitespace checks also pass. These documentation results do not replace
+the exact-source CI/UI outcomes or any remaining release gate.

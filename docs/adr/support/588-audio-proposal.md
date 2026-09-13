@@ -85,7 +85,7 @@ The -18 consumer target is this product recommendation within EBU's streaming
 distribution range, not the EBU R128 broadcast target of -23 LUFS. The -16 speech
 choice has a relevant consumer-spoken-audio precedent in Apple's guidance; that
 does not establish audiobook-marketplace compliance. [EBU R128 S2](https://tech.ebu.ch/docs/r/r128s2.pdf),
-[EBU R128](https://tech.ebu.ch/publications/r128),
+[EBU R128](https://tech.ebu.ch/docs/r/r128.pdf),
 [Apple audio guidance](https://podcasters.apple.com/support/893-audio-requirements).
 
 The mono adjustment is an explicit Revaer playback convention for one mono
