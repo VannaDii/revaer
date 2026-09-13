@@ -867,3 +867,38 @@ architecture, criteria exception, GitHub mutation, upload or merge occurred.
   conversions only; no dependency or manifest change. Root, Rust instructions,
   ADR 501, ADR 559 G1 and approved ADR 588 S2 were reviewed. Matching Rust guidance
   references existing policy; no approval, threshold or exception is added.
+
+### Pipe-Closure Full-Gate Checkpoint (2026-09-13)
+
+Full `just ci` at clean `132a7fbc` exits zero. All 327 media-runtime tests pass
+in ordinary and instrumented runs, including the unchanged setup-time deadline
+assertion. All 18 package coverage gates pass; fresh Rust LCOV, native text,
+52 raw profiles, merged profile data and real script coverage are retained.
+The release build succeeds. Eight existing configuration-watcher shutdown
+WARNs remain, so this is not clean handoff or complete S2 evidence.
+
+Full `just ui-e2e` on the same revision exits one: 57 passed, one failed and
+72 not run. Schedule enablement still receives 400 with
+`media_profile_filesystem_identity_required` instead of the required 200, and
+teardown rejects missing UI coverage. Actual partial JS coverage is preserved.
+Canonical `SONAR_TOKEN` remains absent; no refused upload was retried and no
+published coverage or remote acceptance is claimed.
+
+Documentation builds successfully but retains its oversized search-index WARN;
+that warning is not a clean documentation result or a reason to disable indexing.
+
+The sole database subagent completed reviewed sidecar `bbf50836`: 208 unit
+assertions and 306 bounded live checks establish that internal RI callbacks
+cannot be counted by the selected PostgreSQL function-statistics mechanism.
+Its guard rejects substituted callback identities; NULL is not zero invocations.
+The failed attempts, real FK counterexamples, final archive and original
+`8797ae00` archive are retained with 460 verified manifest entries. The parent
+corrected delegation-versus-operator-approval wording before closing the agent.
+That commit is ready for the next integration, not part of the frozen `132a7fbc`
+full-gate source. No second profiler or duplicate full gate was launched.
+
+Evidence is retained at `artifacts/media-verification/2026-09-13-pipe-eof/`.
+Both exact parent database names and the UI listener were confirmed absent,
+managed test-media cleanup passed, and the completed clean worker worktree was
+removed. The user checkout and conflicts remain untouched. No new architectural
+approval, criteria relaxation, GitHub mutation, upload or merge occurred.
