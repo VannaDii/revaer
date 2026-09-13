@@ -250,6 +250,13 @@ applyTo:
   Each wrapper run must retain a unique evidence directory; dependency consumers
   must use that current-process directory and its successfully validated hashes,
   never infer registration from historical files or overwrite a prior run.
+- Committed size-sampling evidence must call the actual application wrapper
+  three times in one unchanged backend, covering median promotion, duplicate
+  suppression with identity consumption and out-of-order observations. Retain
+  the frozen reference's exact D4 failures separately; require successful final
+  calls and independently specified complete table images, unchanged read
+  inputs and the sample sequence. These bounded cases do not certify all warm
+  paths, other sequence behavior, native callback execution or complete D3.
 - The canonical D3 validation matrix must exercise the 32 frozen validation
   guard sites with exact SQLSTATE, detail and native/source coordinates, not
   infer an expected guard from the observed error. Retain all 18 table images,

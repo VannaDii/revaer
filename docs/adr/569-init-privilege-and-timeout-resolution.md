@@ -1104,3 +1104,30 @@ operator's ADR 588 approval boundary were reviewed. DevOps now records this
 counter limitation; no contradictory authority was removed or relaxed. Parent
 owns integration, ledgers/indexes and full CI/UI. No canonical full proof,
 full gates, alternative profiler, native closure or complete D3 is claimed.
+
+## Committed Sampling Evidence (2026-09-13)
+
+In progress under conditional D3: add three-call application-wrapper cases for
+median promotion, duplicate sample suppression and out-of-order observations.
+Both cold and pure-helper-first modes retain the same tested backend across
+commits. The frozen reference must keep its exact approved D4 failure on calls
+two and three; the final implementation must succeed. Independent expectations
+cover all 18 write tables, unchanged 19 read inputs and the sample identity
+sequence, including duplicate allocation. Other sequences and complete native
+or warm-path closure are not certified. The incomplete-D3 guard remains.
+
+Mutation tests reject substituted state, raw/declared evidence divergence,
+caller role/settings/backend changes, invalid clocks, numeric type changes and
+altered native diagnostics. The focused suite passes 200 assertions and the
+complete database unit harness passes. The pinned live run passes 237 checks,
+including required D4/D5 controls and all 12 committed sampling variants, with
+exact source hashes and successful disposable container/volume cleanup.
+Two test-harness failures are retained before correction: the diagnostic hash
+needed its already-approved `SQL statement` representation, and synthetic
+readback snapshots needed independent copies. Neither fix changes a criterion
+or database implementation. Integrated gates remain pending. Evidence
+uses uniquely owned disposable databases and retained raw transport; no runtime
+observability, dependency, SQL, privilege, timer or approval boundary changes.
+Rollback removes only the added proof module and tests. Root, data and DevOps
+instructions plus ADR 588 approval were reviewed; DevOps records the bounded
+committed-call requirement without weakening or contradicting existing policy.
