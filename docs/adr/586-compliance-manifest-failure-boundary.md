@@ -991,3 +991,35 @@ approval, criteria relaxation, GitHub mutation, upload or merge occurred.
   or new agent was needed. Test-owned temporary directories and task handles
   are closed; owned build output is removed after evidence sealing, leaving the
   committed worktree clean for parent integration/removal.
+
+### Sampling And Owned-Watcher Integration (2026-09-13)
+
+Parent reviewed `8c4b95be` and integrated it as `fe0948a4`, following sampling
+proof `f5981931` and the native-counter limitation `0ef147c0`. No runtime SQL,
+deadline, approval or quality criterion changed. The worker is closed, its
+clean worktree removed, and all 203 archived evidence entries verified.
+
+On clean executable revision `fe0948a4`, full `just ci` exits zero with no
+WARN or compiler-warning lines. The prior eight watcher-abort warnings no
+longer occur. All 18 package coverage gates pass, and fresh Rust/native reports,
+raw profiles, merged profiles and script coverage are retained. This is an
+integrated cooperative-shutdown result, not complete S2/native containment.
+
+Full `just ui-e2e` on the same revision exits one: 57 passed, one failed and
+72 not run. The unchanged schedule-PATCH assertion requires 200 but receives
+400, `media_profile_filesystem_identity_required`, at `media.spec.ts:484`.
+Teardown also rejects absent UI coverage. Partial JS coverage is retained,
+not presented as complete route coverage. Both gates use separately owned
+pinned disposable databases; each removed its container and anonymous volumes.
+Test-media cleanup passed. Canonical Sonar authentication remains absent;
+no refused upload was retried or positive published coverage claimed.
+
+The bounded evidence is under
+`artifacts/media-verification/2026-09-13-sampling-shutdown/`: exact-source
+database proof, worker archive, full CI/UI logs, Rust/script and partial JS
+coverage, first-failure history and cleanup checks. Scheduling/root binding,
+complete D3, broader S2, both native packages, Sonar and remote review/check
+qualification remain open. No GitHub mutation, push, merge or release occurred.
+Documentation indexing and instruction-drift checks pass. The documentation
+build exits zero but retains its oversized-search-index WARN (15,228,470 bytes);
+it is not a warning-free documentation result or permission to exclude ADRs.

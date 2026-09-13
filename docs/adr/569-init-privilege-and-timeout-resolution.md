@@ -1131,3 +1131,10 @@ observability, dependency, SQL, privilege, timer or approval boundary changes.
 Rollback removes only the added proof module and tests. Root, data and DevOps
 instructions plus ADR 588 approval were reviewed; DevOps records the bounded
 committed-call requirement without weakening or contradicting existing policy.
+
+The canonical proof at `f5981931` passes 6,062/6,063 checks. Only the unchanged
+incomplete-D3 gate fails. All 38 sampling-proof source hashes also match the
+combined shutdown revision `fe0948a4`; its full CI passes without WARN or
+compiler-warning lines. UI still fails schedule enablement and missing UI
+coverage. See the [combined checkpoint](586-compliance-manifest-failure-boundary.md#sampling-and-owned-watcher-integration-2026-09-13).
+Frozen migrations remain runtime authority; final init remains inert.
