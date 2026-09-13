@@ -33,6 +33,7 @@ module RevaerDatabaseRebaseline
     METADATA_SOURCE_FILES = (IngestionAttributes::ATTRIBUTE_SOURCE_FILES + %w[
       scripts/database_rebaseline/ingestion_metadata.rb scripts/tests/database-ingestion-metadata-test.rb
       scripts/tests/database-ingestion-proof-test.rb scripts/database_rebaseline/contract.rb scripts/database_rebaseline/support.rb
+      scripts/stack_asset_exception.rb
       scripts/database_rebaseline/ingestion_hash_fill.rb crates/revaer-data/migrations/0012_indexer_core.sql
       crates/revaer-data/migrations/0022_indexer_canonicalization.sql crates/revaer-data/migrations/0025_indexer_conflicts_decisions.sql
       crates/revaer-data/migrations/0030_indexer_seed_data.sql crates/revaer-data/migrations/0045_indexer_conflict_resolution_procs.sql

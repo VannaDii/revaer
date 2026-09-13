@@ -867,9 +867,14 @@ findings invalidate any claim that the original validator closed those cases.
 The two-file correction `0caaf40c` rejects all 36 original actionable witnesses;
 12,927 assertions and 37 producer controls pass using retained transports.
 That replay is not fresh PostgreSQL execution or independent approval of the
-correction. Parent review also requires compatibility with older JSON runtimes,
-without relaxing duplicate-key rejection; that correction and the integrated
-gates remain in progress.
+correction. Parent review identified compatibility with older JSON runtimes;
+follow-up `9d055ac7` combines the standard object hook and native rejection,
+with a fail-closed behavioral check. It passes 12,931 focused assertions and
+rejects all 36 original witnesses on retained transports. Decoder-only controls
+pass on Ruby 2.6.10 / JSON 2.1.0 and Ruby 4.0.6 / JSON 2.18.0; they do not certify
+the full suite on older Ruby. Parent inspected both patches. The integrated
+metadata and wrapper source lists include the new guard; fresh gates remain
+pending, and the earlier broad producer matrix was not repeated unnecessarily.
 
 The metadata owner retains unique raw SQL/stdout/stderr directories and only
 registers successfully validated bytes. The original findings and later
