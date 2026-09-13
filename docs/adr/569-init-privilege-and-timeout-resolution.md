@@ -1646,3 +1646,36 @@ the new proof cases and corresponding guidance together, never alters SQL to
 satisfy their expectations. The root and DevOps stale-policy check found no
 approval change; scoped guidance now records the actual NULL derivation and
 nested-error boundaries.
+
+### Qualified Boundary Batch (2026-09-13)
+
+Executable revision `e545d849` passes 8,011 of 8,012 canonical checks; only the
+explicit incomplete-D3 guard fails. All 36 promotion variants, all four total
+score cases and all 32 new policy cold/helper-first comparisons pass live,
+including the exact nested regex diagnostics. All 11 retained source registries
+match the tested files. The earlier erroneous oracle and its 36 failures remain
+archived rather than being overwritten by the successful rerun.
+
+Full `just ci` passes without WARN/compiler-warning lines, including all 18
+package coverage gates and release compilation. Full `just ui-e2e` remains
+57 passed, one failed and 72 unrun: schedule enablement still receives the
+filesystem-identity-required 400 instead of 200, and UI coverage is absent.
+`just js-coverage-merge sonar-verify-inputs` passes. Rust LCOV has 322 source
+records, 133,799 lines and 124,508 positive records; JavaScript has 61 sources,
+5,402 lines and 4,249 positive records from partial API execution, not full UI.
+
+Canonical scanner credentials remain absent. The configured read-only Sonar
+connection reports project `VannaDii_Revaer` with an OK gate but coverage 0.0
+over 1,344 lines to cover. That existing project result is not tied to this
+unpublished revision and does not meet positive-coverage acceptance. No new
+analysis, code upload, issue disposition or server-criteria mutation occurred.
+
+The archive `artifacts/media-verification/2026-09-13-score-helper-entry/` retains
+both canonical attempts, matching source bundles, all gate logs, coverage,
+58 raw/merged profiles, native trials and failures, and worker sources. A
+reviewed external-ID conflict patch based on `e545d849` is preserved separately
+for the next batch; its worker reports 10,595 focused assertions, but it is not
+integrated or live-qualified here. Completed worker worktrees were removed after
+preservation. Both integration worktrees ran test-media cleanup, and the exact
+temporary UI port was confirmed closed. No source push, merge, runtime cutover
+or release acceptance follows from this checkpoint.

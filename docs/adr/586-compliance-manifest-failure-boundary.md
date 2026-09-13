@@ -1131,3 +1131,12 @@ test-only changes and new regression together, with production behavior intact.
 The root and Rust instructions were reviewed; no criteria or approval drift was
 introduced. Parent validation must retain the initial failure and every remaining
 failure rather than treating repetition counts as release acceptance.
+
+Parent integration `e545d849` passes full `just ci` without warnings, all 18
+package coverage thresholds and release compilation. Full UI still reports
+57 passed, one failed and 72 unrun at the unchanged scheduling/root-identity
+boundary, plus missing UI coverage. Local Sonar inputs validate, but no scan of
+this revision or positive published coverage is established. The exact-source
+logs and 58 raw/merged profiles are retained in
+`artifacts/media-verification/2026-09-13-score-helper-entry/`; completed workers
+and owned validation databases were removed, and test media was cleaned.
