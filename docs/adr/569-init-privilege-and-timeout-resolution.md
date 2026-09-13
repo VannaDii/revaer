@@ -1167,3 +1167,32 @@ and the separate mandatory D4/D5 controls. All recorded source hashes still
 match after execution. The uniquely owned container and named volume were
 removed. No first-attempt database failure occurred in this increment.
 Canonical proof, full CI/UI and published Sonar evidence remain pending.
+
+The frozen executable checkpoint `e3fb95c6` subsequently passes 6,575/6,576
+canonical checks; only incomplete D3 fails. All 183 wrapper pairs pass 3,748
+checks. Full CI exits zero without WARN/compiler-warning lines. UI exits one:
+57 passed, one failed, 72 not run; schedule enablement still returns 400 rather
+than the required 200, and teardown rejects missing UI coverage. Owned gate
+databases and volumes were removed. Canonical Sonar authentication remains
+unavailable; no analysis, upload, remote pass or release acceptance is claimed.
+
+## Bounded Native Callback Observation (2026-09-13)
+
+One isolated worker at `36abef44` established stock PostgreSQL 16.14
+`auto_explain` viability for the first-visible wrapper, with eight plain/profiled,
+reference/final and cold/helper-first variants passing. Four profiled variants
+each record 16 completed native RI insert callbacks. Parent independently
+matched all 364 plan records and 64 callback entries to raw structured logs.
+These observed counts are not independent count oracles or complete D3 evidence.
+The initial observer-only 42501 is retained; correction moved administrator-only
+setting reads to separately labeled bootstrap receipts, adding no runtime
+privilege or role substitution. Original and corrected archives are retained.
+
+This completes only the bounded mechanism experiment. Native update/delete,
+error/skip paths, concurrent GUID conflicts and full helper closure remain;
+the independently reviewed score argument still requires its exact binding
+premises. No production/canonical observer, SQL, dependency, criterion or new
+approval was adopted. Existing root/data/DevOps and ADR 569/588 scope apply.
+The worker was closed and its clean worktree removed. Evidence is retained at
+`artifacts/media-verification/2026-09-13-d3-closure/`. Rollback discards the
+experiment only; frozen authority and the incomplete-D3 gate remain unchanged.
