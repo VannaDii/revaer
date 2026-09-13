@@ -77,6 +77,13 @@ applyTo:
   settings, and successful same-pool recovery. Publish the checkpoint atomically
   before releasing the lock. This does not prove client-future cancellation,
   every interruption site or complete conditional D3.
+- The cancellation probe's explicit cache state is mandatory. Retain cold
+  coverage and a real committed warm-up on the same single-connection pool,
+  with distinct source identity. Publish readiness before controller locking,
+  accept only its exact backend/database/cache-state start signal, and retain
+  the prepared state through cancellation. Frozen warm recovery keeps D4's
+  exact `42P07` and rollback; final recovery success is a named correction,
+  not equivalent frozen behavior or full D3 acceptance.
 - Runtime trust-rank qualification must reuse the ingestion backend while a
   separate direct writer commits the rank changes. Cover both directions across
   the existing confidence thresholds, preserve all unrelated read/write images,

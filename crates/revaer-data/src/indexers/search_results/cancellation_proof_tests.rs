@@ -1,22 +1,55 @@
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, ensure};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use uuid::Uuid;
 
 use super::pool_proof_tests::{Frame, Request, input, outcome, read_request, session};
-use super::search_result_ingest;
+use super::{SearchResultIngestInput, search_result_ingest};
 
 const PROOF_INPUT: &str = "REVAER_INGESTION_CANCELLATION_PROOF";
 const VALID_REQUEST: &str = "56900000-0000-4000-8000-000000000002";
 
-fn checkpoint_path(report_path: &Path) -> PathBuf {
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum CacheState {
+    Cold,
+    WarmCommitted,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CancellationRequest {
+    connection: Request,
+    cache_state: CacheState,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StartSignal {
+    database: String,
+    pid: i32,
+    cache_state: CacheState,
+}
+
+fn read_cancellation_request(path: Option<&Path>) -> anyhow::Result<Option<CancellationRequest>> {
+    path.map(|path| Ok(serde_json::from_reader(fs::File::open(path)?)?))
+        .transpose()
+}
+
+fn sidecar_path(report_path: &Path, suffix: &str) -> PathBuf {
     let mut path = report_path.as_os_str().to_os_string();
-    path.push(".cancelled.json");
+    path.push(suffix);
     path.into()
+}
+
+fn checkpoint_path(report_path: &Path) -> PathBuf {
+    sidecar_path(report_path, ".cancelled.json")
 }
 
 fn require_absent(path: &Path) -> anyhow::Result<()> {
@@ -43,13 +76,18 @@ fn options(request: &Request) -> anyhow::Result<PgConnectOptions> {
     );
     require_absent(&request.report_path)?;
     require_absent(&checkpoint_path(&request.report_path))?;
+    require_absent(&sidecar_path(&request.report_path, ".prepared.json"))?;
+    require_absent(&sidecar_path(&request.report_path, ".start.json"))?;
     Ok(request
         .options()?
         .application_name("revaer-ingestion-cancellation-proof"))
 }
 
 fn publish(path: &Path, frames: &[Frame]) -> anyhow::Result<()> {
-    let bytes = serde_json::to_vec_pretty(frames)?;
+    publish_bytes(path, &serde_json::to_vec_pretty(frames)?)
+}
+
+fn publish_bytes(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let mut sidecar = path.as_os_str().to_os_string();
     sidecar.push(format!(".{}.tmp", Uuid::new_v4()));
     let sidecar = PathBuf::from(sidecar);
@@ -58,7 +96,7 @@ fn publish(path: &Path, frames: &[Frame]) -> anyhow::Result<()> {
         .create_new(true)
         .open(&sidecar)?;
     let result = (|| -> anyhow::Result<()> {
-        output.write_all(&bytes)?;
+        output.write_all(bytes)?;
         output.sync_all()?;
         // Linking complete bytes publishes atomically without replacing any existing path.
         fs::hard_link(&sidecar, path)?;
@@ -75,9 +113,67 @@ fn publish(path: &Path, frames: &[Frame]) -> anyhow::Result<()> {
     }
 }
 
-async fn observe(pool: &PgPool, report_path: &Path) -> anyhow::Result<()> {
+fn read_start_signal(path: &Path) -> anyhow::Result<Option<StartSignal>> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            ensure!(metadata.is_file(), "start signal must be a regular file");
+            Ok(Some(serde_json::from_reader(fs::File::open(path)?)?))
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).context("inspect controller start signal"),
+    }
+}
+
+async fn await_start(path: &Path, expected: &StartSignal) -> anyhow::Result<()> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(180);
+    loop {
+        if let Some(signal) = read_start_signal(path)? {
+            ensure!(&signal == expected, "controller start identity changed");
+            return Ok(());
+        }
+        ensure!(
+            tokio::time::Instant::now() < deadline,
+            "controller start timed out"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+fn warmup_input(valid: Uuid) -> anyhow::Result<SearchResultIngestInput<'static>> {
+    let mut warmup = input(valid, 2)?;
+    warmup.source_guid = Some("pool-proof-warmup");
+    warmup.infohash_v1 = Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    Ok(warmup)
+}
+
+async fn observe(pool: &PgPool, request: &CancellationRequest) -> anyhow::Result<()> {
+    let report_path = &request.connection.report_path;
     let valid = Uuid::parse_str(VALID_REQUEST)?;
-    let mut frames = Vec::with_capacity(2);
+    let mut frames = Vec::with_capacity(3);
+    if request.cache_state == CacheState::WarmCommitted {
+        let before = session(pool).await?;
+        let outcome = outcome(search_result_ingest(pool, &warmup_input(valid)?).await)?;
+        let after = session(pool).await?;
+        frames.push(Frame {
+            name: "warmup",
+            before,
+            outcome,
+            after,
+        });
+    }
+    let prepared = session(pool).await?;
+    let signal = StartSignal {
+        database: request.connection.database.clone(),
+        pid: prepared.pid,
+        cache_state: request.cache_state,
+    };
+    publish_bytes(
+        &sidecar_path(report_path, ".prepared.json"),
+        &serde_json::to_vec_pretty(&serde_json::json!({
+            "frames": &frames, "session": prepared, "start_signal": &signal,
+        }))?,
+    )?;
+    await_start(&sidecar_path(report_path, ".start.json"), &signal).await?;
     for (name, minute) in [("cancelled", 0), ("recovery", 1)] {
         let before = session(pool).await?;
         let outcome = outcome(search_result_ingest(pool, &input(valid, minute)?).await)?;
@@ -96,12 +192,12 @@ async fn observe(pool: &PgPool, report_path: &Path) -> anyhow::Result<()> {
     publish(report_path, &frames)
 }
 
-async fn run(request: Request) -> anyhow::Result<()> {
+async fn run(request: CancellationRequest) -> anyhow::Result<()> {
     let pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect_with(options(&request)?)
+        .connect_with(options(&request.connection)?)
         .await?;
-    let result = observe(&pool, &request.report_path).await;
+    let result = observe(&pool, &request).await;
     pool.close().await;
     result
 }
@@ -109,12 +205,12 @@ async fn run(request: Request) -> anyhow::Result<()> {
 #[tokio::test]
 async fn application_cancellation_qualification() -> anyhow::Result<()> {
     let path = std::env::var_os(PROOF_INPUT);
-    match read_request(path.as_deref().map(Path::new))? {
+    match read_cancellation_request(path.as_deref().map(Path::new))? {
         Some(request) => run(request).await?,
         None => {
             // Ordinary tests exercise only the explicit-launch guard.
             ensure!(
-                read_request(None)?.is_none(),
+                read_cancellation_request(None)?.is_none(),
                 "absent cancellation proof input must not launch"
             );
         }
@@ -129,6 +225,90 @@ fn request_value(database: &str) -> serde_json::Value {
         "role": "postgres",
         "report_path": std::env::temp_dir().join(format!("cancellation-proof-{}.json", Uuid::new_v4())),
     })
+}
+
+#[test]
+fn cancellation_cache_selection_is_explicit_and_strict() -> anyhow::Result<()> {
+    assert!(read_cancellation_request(None)?.is_none());
+    let missing = std::env::temp_dir().join(format!("missing-cache-{}.json", Uuid::new_v4()));
+    assert!(read_cancellation_request(Some(&missing)).is_err());
+    for (name, expected) in [
+        ("cold", CacheState::Cold),
+        ("warm_committed", CacheState::WarmCommitted),
+    ] {
+        let value = serde_json::json!({
+            "connection": request_value("ingestion_pool_cancel_reference_a1"),
+            "cache_state": name,
+        });
+        let request: CancellationRequest = serde_json::from_value(value.clone())?;
+        assert_eq!(request.cache_state, expected);
+        for field in ["connection", "cache_state"] {
+            let mut missing = value.clone();
+            missing
+                .as_object_mut()
+                .context("request is an object")?
+                .remove(field)
+                .context("required request field exists")?;
+            assert!(serde_json::from_value::<CancellationRequest>(missing).is_err());
+            let duplicate = format!(
+                "{{{field:?}:{},{}",
+                value[field],
+                serde_json::to_string(&value)?.trim_start_matches('{')
+            );
+            assert!(serde_json::from_str::<CancellationRequest>(&duplicate).is_err());
+        }
+        let mut extra = value.clone();
+        extra["extra"] = true.into();
+        assert!(serde_json::from_value::<CancellationRequest>(extra).is_err());
+        for invalid in [serde_json::Value::Null, false.into(), "warm".into()] {
+            let mut changed = value.clone();
+            changed["cache_state"] = invalid;
+            assert!(serde_json::from_value::<CancellationRequest>(changed).is_err());
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancellation_start_requires_exact_published_controller_identity() -> anyhow::Result<()> {
+    let directory = std::env::temp_dir().join(format!("cancellation-start-{}", Uuid::new_v4()));
+    fs::create_dir(&directory)?;
+    let result = async {
+        let path = directory.join("start.json");
+        assert!(read_start_signal(&path)?.is_none());
+        assert!(read_start_signal(&directory).is_err());
+        let signal = StartSignal {
+            database: "ingestion_pool_cancel_reference_a1".into(),
+            pid: 123,
+            cache_state: CacheState::WarmCommitted,
+        };
+        let value = serde_json::to_value(&signal)?;
+        for field in ["database", "pid", "cache_state"] {
+            let mut changed = value.clone();
+            changed[field] = match field {
+                "pid" => 456.into(),
+                "cache_state" => "cold".into(),
+                _ => "ingestion_pool_cancel_reference_b2".into(),
+            };
+            publish_bytes(&path, &serde_json::to_vec(&changed)?)?;
+            assert!(await_start(&path, &signal).await.is_err());
+            fs::remove_file(&path)?;
+        }
+        publish_bytes(&path, &serde_json::to_vec(&value)?)?;
+        await_start(&path, &signal).await?;
+        fs::remove_file(&path)?;
+        let mut extra = value.clone();
+        extra["extra"] = true.into();
+        publish_bytes(&path, &serde_json::to_vec(&extra)?)?;
+        assert!(read_start_signal(&path).is_err());
+        fs::remove_file(&path)?;
+        publish_bytes(&path, b"{")?;
+        assert!(read_start_signal(&path).is_err());
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+    fs::remove_dir_all(&directory)?;
+    result
 }
 
 #[test]
@@ -208,6 +388,17 @@ fn cancellation_input_reuses_valid_request_at_successive_minutes() -> anyhow::Re
     let valid = Uuid::parse_str(VALID_REQUEST)?;
     let cancelled = input(valid, 0)?;
     let recovery = input(valid, 1)?;
+    let warmup = warmup_input(valid)?;
+    assert_ne!(warmup.source_guid, cancelled.source_guid);
+    assert_ne!(warmup.infohash_v1, cancelled.infohash_v1);
+    assert_eq!(
+        warmup.search_request_public_id,
+        cancelled.search_request_public_id
+    );
+    assert_eq!(
+        (warmup.observed_at - cancelled.observed_at).num_seconds(),
+        120
+    );
     assert_eq!(cancelled.search_request_public_id, valid);
     assert_eq!(recovery.search_request_public_id, valid);
     assert_eq!(

@@ -6,7 +6,8 @@ module RevaerDatabaseRebaseline
   class IngestionCancellationTest < FinalProof
     def run_tests!
       @assertions = 0
-      %w[reference final].each do |variant|
+      %w[reference final].product(IngestionCancellation::CANCELLATION_CACHE_STATES).each do |variant, cache_state|
+        @cache_state = cache_state
         value = fixture(variant)
         validate(value, variant)
         assert(@checks.length == 1 && @checks.first.fetch(:passed), "valid synthetic #{variant}")
@@ -21,24 +22,43 @@ module RevaerDatabaseRebaseline
             rejected(value, variant) { |changed| changed.fetch("frames").last.fetch(boundary)[key] = "changed" }
           end
         end
-        value.fetch("checkpoint").first.fetch("outcome").each_key do |key|
+        value.fetch("checkpoint").last.fetch("outcome").each_key do |key|
           rejected(value, variant) do |changed|
-            changed.fetch("checkpoint").first.fetch("outcome")[key] = "changed"
-            changed.fetch("frames").first.fetch("outcome")[key] = "changed"
+            changed.fetch("checkpoint").last.fetch("outcome")[key] = "changed"
+            changed.fetch("frames")[-2].fetch("outcome")[key] = "changed"
           end
         end
         IngestionProof::INGESTION_TABLES.each do |table|
           rejected(value, variant) { |changed| changed.fetch("cancelled").fetch(table) << { "unexpected" => true } }
           rejected(value, variant) { |changed| changed.fetch("cancelled").delete(table) }
         end
-        %w[before cancelled after inputs_before inputs_cancelled inputs_after].each do |boundary|
+        %w[before prepared cancelled after inputs_before inputs_prepared inputs_cancelled inputs_after].each do |boundary|
           rejected(value, variant) { |changed| changed.fetch(boundary)["unexpected"] = [] }
         end
         IngestionPolicy::POLICY_READ_TABLES.each do |table|
           rejected(value, variant) { |changed| changed.fetch("inputs_cancelled").fetch(table) << { "unexpected" => true } }
         end
-        IngestionPool::POOL_ROW_KEYS.each do |key|
-          rejected(value, variant) { |changed| changed.fetch("frames").last.fetch("outcome").fetch("row")[key] = false }
+        if value.fetch("frames").last.fetch("outcome").key?("row")
+          IngestionPool::POOL_ROW_KEYS.each do |key|
+            rejected(value, variant) { |changed| changed.fetch("frames").last.fetch("outcome").fetch("row")[key] = false }
+          end
+        else
+          value.fetch("frames").last.fetch("outcome").each_key do |key|
+            rejected(value, variant) { |changed| changed.fetch("frames").last.fetch("outcome")[key] = false }
+          end
+        end
+        rejected(value, variant) { |changed| changed["cache_state"] = "changed" }
+        value.fetch("preparation").fetch("session").each_key do |key|
+          rejected(value, variant) { |changed| changed.fetch("preparation").fetch("session")[key] = "changed" }
+        end
+        value.fetch("preparation").fetch("start_signal").each_key do |key|
+          rejected(value, variant) { |changed| changed.fetch("preparation").fetch("start_signal")[key] = "changed" }
+        end
+        rejected(value, variant) { |changed| changed.fetch("preparation")["extra"] = [] }
+        if cache_state == "warm_committed"
+          rejected(value, variant) { |changed| changed.fetch("preparation").fetch("frames").clear }
+          rejected(value, variant) { |changed| changed.fetch("prepared").fetch("canonical_torrent_source").first["infohash_v1"] = "a" * 40 }
+          rejected(value, variant) { |changed| changed.fetch("prepared").fetch("canonical_torrent").clear }
         end
         rejected(value, variant) { |changed| changed.fetch("frames").pop }
         rejected(value, variant) { |changed| changed["checkpoint"] = [] }
@@ -47,6 +67,7 @@ module RevaerDatabaseRebaseline
         rejected(value, variant) { |changed| changed.fetch("after").fetch("canonical_torrent").clear }
         rejected(value, variant) { |changed| changed.fetch("after").fetch("canonical_torrent_source").first["last_seen_at"] = "changed" }
       end
+      @cache_state = "cold"
       duplicate_rejected = begin
         metadata_json_parse('{"state":"00000","state":"57014"}')
         false
@@ -75,7 +96,7 @@ module RevaerDatabaseRebaseline
       @checks = []
       @failures = []
       role = variant == "reference" ? "postgres" : "proof_runtime_unit"
-      cancellation_validate!(value, variant, "ingestion_pool_cancel_unit", role)
+      cancellation_validate!(value, variant, "ingestion_pool_cancel_unit", role, cache_state: @cache_state)
     end
 
     def rejected(original, variant)
@@ -104,15 +125,42 @@ module RevaerDatabaseRebaseline
       recovered = { "name" => "recovery", "before" => backend, "after" => backend, "outcome" => { "kind" => "success", "row" => row } }
       empty = IngestionProof::INGESTION_TABLES.to_h { |table| [table, []] }
       inputs = IngestionPolicy::POLICY_READ_TABLES.to_h { |table| [table, []] }
-      { "locker" => { "pid" => 321, "database" => database, "role" => "postgres" },
+      value = { "cache_state" => @cache_state,
+        "preparation" => { "frames" => [], "session" => failed.fetch("before"),
+          "start_signal" => { "database" => database, "pid" => 123, "cache_state" => @cache_state } },
+        "locker" => { "pid" => 321, "database" => database, "role" => "postgres" },
         "blocked" => { "pid" => 123, "database" => database, "role" => role, "application" => IngestionCancellation::CANCELLATION_APPLICATION,
                        "state" => "active", "wait_type" => "Lock", "wait_event" => "relation", "blockers" => [321],
                        "source_insert_wait" => true, "canonical_write_lock" => true, "query" => "SELECT * FROM search_result_ingest(" },
         "checkpoint" => [failed], "cancel_result" => "t", "frames" => [failed, recovered],
-        "before" => empty, "cancelled" => empty, "inputs_before" => inputs, "inputs_cancelled" => inputs, "inputs_after" => inputs,
+        "before" => empty, "prepared" => empty, "cancelled" => empty, "inputs_before" => inputs, "inputs_prepared" => inputs, "inputs_cancelled" => inputs, "inputs_after" => inputs,
         "after" => empty.merge("canonical_torrent" => [{ "canonical_torrent_public_id" => row.fetch("canonical") }],
           "canonical_torrent_source" => [{ "canonical_torrent_source_public_id" => row.fetch("source"), "source_guid" => "pool-proof-source", "last_seen_at" => "2026-09-10T00:01:00+00:00" }],
           "search_request_source_observation" => [{}]) }
+      return value if @cache_state == "cold"
+
+      warm_row = row.merge("canonical" => "56900000-0000-4000-8000-000000000020", "source" => "56900000-0000-4000-8000-000000000021")
+      warmup = { "name" => "warmup", "before" => backend.merge("conflict_setting" => nil), "after" => backend,
+                 "outcome" => { "kind" => "success", "row" => warm_row } }
+      prepared = empty.merge("canonical_torrent" => [{ "canonical_torrent_public_id" => warm_row.fetch("canonical") }],
+        "canonical_torrent_source" => [{ "canonical_torrent_source_public_id" => warm_row.fetch("source"),
+          "source_guid" => "pool-proof-warmup", "last_seen_at" => "2026-09-10T00:02:00+00:00", "infohash_v1" => "b" * 40 }],
+        "search_request_source_observation" => [{}])
+      failed["before"] = backend
+      value["preparation"]["frames"] = [warmup]
+      value["preparation"]["session"] = backend
+      value["checkpoint"] = [warmup, failed]
+      value["frames"] = [warmup, failed, recovered]
+      value["prepared"] = prepared
+      value["cancelled"] = prepared
+      if variant == "reference"
+        recovered["outcome"] = { "kind" => "database_error", "operation" => "search result ingest", "state" => "42P07",
+          "message" => 'relation "tmp_policy_rules" already exists', "detail" => nil }
+        value["after"] = prepared
+      else
+        value["after"] = value.fetch("after").to_h { |table, rows| [table, rows + prepared.fetch(table)] }
+      end
+      value
     end
   end
 end

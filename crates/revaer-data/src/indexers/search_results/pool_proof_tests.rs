@@ -52,7 +52,7 @@ impl Request {
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub(super) struct Backend {
-    pid: i32,
+    pub(super) pid: i32,
     database: String,
     session_role: String,
     current_role: String,

@@ -82,6 +82,13 @@ applyTo:
   Cancel only the observed owned backend; release the lock after the checkpoint.
   Bound and reap the owned probe process, retain failures, and never classify
   idle-backend signalling or a guard-only Rust pass as cancellation evidence.
+  Run cold and committed-warm cancellation separately. Warm-up must complete
+  an actual Rust ingestion on the same backend with a distinct source/hash
+  before the controller takes its lock. Bind the atomically published start
+  signal to the prepared backend, database and explicit cache state. Retain
+  warm-up frames and all prepared/rollback/read images; preserve the exact
+  frozen D4 recovery failure separately from final recovery success. A warm
+  cancellation case does not supply native in-call settings or full D3 proof.
   Include the actual `search_result_ingest` application wrapper in the D3
   inventory and exercise discriminating stored scores, page boundaries and
   size-sample retention. Warm-after-rollback proof must retain the real first

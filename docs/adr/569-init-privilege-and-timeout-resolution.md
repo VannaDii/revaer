@@ -1741,22 +1741,20 @@ No SQL cutover, source push, merge or release acceptance is claimed.
 
 ### Reachable Concurrency Batch (2026-09-13, In Progress)
 
-The [R1/R2 source dispositions](support/569-ingestion-reachability.md) and K1's
-two missing-trust-rank cases are integrated locally on `fe384734` plus the
-recorded working-tree delta. The attribute and shared validation unit harnesses
-pass 623 and 1,430 assertions respectively. K1 retains explicit pending native
-branch evidence; these unit checks do not qualify the live branches.
-The metadata harness also passes 10,614 assertions, including 10,104 rejected
-semantic mutations; this establishes validator sensitivity, not live scheduling.
+Source `09c24398` live-qualifies K1's two missing-trust-rank cases, K2's
+durable-attribute conflicts and K3's sample-prune race. The canonical result is
+8,037/8,038 checks: only the unchanged incomplete-D3 guard fails. K2 completes
+16 plain/observed executions and four paired cases; K3 completes eight executions
+and two paired cases. The [R1/R2 dispositions](support/569-ingestion-reachability.md)
+remain source reasoning where marked, not blanket live reachability proof.
+K1 still lacks native branch observation; matching confidence is not a substitute.
 
-The K2 durable-attribute conflict and K3 sample-prune race harnesses are now
-integrated into the canonical proof and policy suite. Their worker unit harnesses
-pass 3,373 and 1,135 assertions; live PostgreSQL qualification and full gates
-remain pending for this batch. No schema, runtime, approval or quality criterion changes
-are included. Root, database and DevOps instructions were reviewed; DevOps now
-records the missing-rank evidence boundary. No new dependency is introduced.
-Rollback is removal of these verification additions; frozen/final authority and
-the incomplete-D3 guard remain unchanged.
+Both races run unconditionally in the canonical proof and policy suite.
+Their current focused harnesses pass 3,381 and 1,147 assertions. Attribute,
+shared-validation and metadata harnesses pass 623, 1,430 and 10,614 assertions;
+the last includes 10,104 rejected semantic mutations. Canonical evidence at
+`artifacts/media-verification/2026-09-13-reachable-concurrency/` retains 31 entries
+and 13 matching source registries, including every failed attempt below.
 
 The first live run on `1b725dd2` passes all eight K1 variant/mode executions,
 but stops at K2's incorrectly expected parent transaction lock. Actual evidence
@@ -1765,7 +1763,8 @@ is `27422`. The corrected harness additionally records the inserted rows' xmin;
 3,381 focused assertions reject substituting the parent for that child. Both
 races now run first within D3 without removing or skipping any later case.
 The failed source-bound run is retained in
-`artifacts/media-verification/2026-09-13-reachable-concurrency/`; rerun pending.
+`artifacts/media-verification/2026-09-13-reachable-concurrency/`; the final rerun
+result is recorded above.
 
 A separate unpublished plan experiment on `1b725dd2` observes the cast helper
 inlined into the reference decision INSERT, but 11 actual SQL helper executions
@@ -1796,3 +1795,41 @@ sandbox/network failures remain archived alongside the final rerun.
 The final `just docs-link-check` passes all 1,379 links; instruction drift and
 diff whitespace checks also pass. These documentation results do not replace
 the exact-source CI/UI outcomes or any remaining release gate.
+
+Full `just ci` on `09c24398` initially fails two bootstrap tests with a final
+fallback-host DNS diagnostic. A fresh minimal-feature run and full CI retry
+both pass, including Rust/script coverage and the release build. The original
+cause remains unproven. The retry retains its runner, private server diagnostics
+and coverage in `ci-r2-09c24398.tar.gz` (SHA-256
+`1cbd75325ba3035a1f3791d55457dfa65a53a249361bb4b8ed1137e04c830190`).
+The latest full UI run on that source remains 57 passed, one failed and 72
+unrun at schedule enablement, plus missing UI coverage. No new published Sonar
+coverage, package acceptance, push, merge or cutover follows from local CI.
+
+### Committed-Warm Cancellation (2026-09-13, In Progress)
+
+The next change adds an explicit cold/committed-warm selection to the controlled
+Rust cancellation probe. A real first ingestion commits a distinct source/hash
+on the same single-connection pool. The controller validates the atomic prepared
+checkpoint before acquiring the source-insert lock, then publishes a start signal
+bound to that database/backend/cache state. Cancellation retains complete prepared,
+rollback and read-input images. Frozen warm recovery must retain D4's exact
+`42P07`; final recovery independently requires success with distinct identities.
+Native in-call settings and full D3 remain unproven. Initial focused checks pass
+seven Rust tests and 513 validator assertions; live qualification is pending.
+
+The independent diagnostic fix `f328be01` preserves ordered endpoint/admin
+errors instead of replacing the actual endpoint failure with the fallback's
+error. Credential-safe rendering, candidate order, successful fallback, probe
+failure and redaction have focused coverage. Its worker reports 13 library and
+two integration tests plus strict Clippy passing; parent full gates remain
+pending. This improves evidence capture, not the unexplained original CI cause.
+
+Motivation and design: complete the existing warm-cache cancellation obligation
+without changing application behavior or hiding frozen defects. Observability
+is confined to disposable proof evidence and test setup diagnostics. No dependency,
+schema, runtime, approval or quality-criterion change is included. Rollback removes
+these proof additions and restores the earlier diagnostic rendering; retained
+evidence and the incomplete-D3 guard remain. Stale-policy review covers root,
+Rust, database and DevOps instructions; the scoped cancellation rules now identify
+the handshake and exact frozen/final recovery distinction. ADR 589 stays pending.
