@@ -6,7 +6,7 @@ module RevaerDatabaseRebaseline
 
     def wrapper_tests!
       cases = wrapper_cases
-      assert(cases.length == 32 && cases.map { |item| item.fetch(:name) }.uniq.length == 32, "retain distinct wrapper/scoring/page/size/identity/hash-fill cases")
+      assert(cases.length == 33 && cases.map { |item| item.fetch(:name) }.uniq.length == 33, "retain distinct wrapper/scoring/page/size/identity/hash-fill cases")
       assert(IngestionProof::INGESTION_HELPERS.include?("search_result_ingest"), "inventory must include the actual Rust wrapper")
       assert(IngestionWrapper::WRAPPER_MODES == %w[cold helpers-first warm-rollback], "retain independent cold and warm compilation modes")
       guard_path = "scripts/stack_asset_exception.rb"
@@ -149,16 +149,33 @@ module RevaerDatabaseRebaseline
 
     def wrapper_sample_tests!(cases)
       cases.select { |item| item[:samples] }.each do |test_case|
-        values = test_case.fetch(:samples) == 3 ? [100, 500, 900] : (2..26).map { |value| value * 100 }
-        canonical = { "size_bytes" => values.fetch(values.length / 2) }
-        tables = { "canonical_size_sample" => values.map { |value| { "size_bytes" => value } }, "canonical_size_rollup" => [{ "sample_count" => values.length, "size_median" => canonical.fetch("size_bytes"), "size_min" => values.min, "size_max" => values.max }] }
+        values, median, displayed = case test_case.fetch(:name)
+                                    when "second-size-sample" then [[100, 900], 500, 100]
+                                    when "third-size-sample" then [[100, 500, 900], 500, 500]
+                                    when "trim-size-samples" then [(2..26).map { |value| value * 100 }, 1400, 1400]
+                                    else raise Failure, "unknown sample test case"
+                                    end
+        canonical = { "size_bytes" => displayed }
+        tables = { "canonical_size_sample" => values.map { |value| { "size_bytes" => value } }, "canonical_size_rollup" => [{ "sample_count" => values.length, "size_median" => median, "size_min" => values.min, "size_max" => values.max }] }
         assert(wrapper_samples?(test_case, tables, canonical), "exact retained sample set and median")
         tables.fetch("canonical_size_sample") << { "size_bytes" => 100 }
         assert(!wrapper_samples?(test_case, tables, canonical), "extra old sample must fail")
         tables.fetch("canonical_size_sample").pop
         canonical["size_bytes"] += 1
-        assert(!wrapper_samples?(test_case, tables, canonical), "wrong canonical median must fail")
+        assert(!wrapper_samples?(test_case, tables, canonical), "wrong canonical display size must fail")
+        canonical["size_bytes"] = displayed
+        %w[sample_count size_median size_min size_max].each do |column|
+          altered = Marshal.load(Marshal.dump(tables))
+          altered.fetch("canonical_size_rollup").first[column] += 1
+          assert(!wrapper_samples?(test_case, altered, canonical), "wrong rollup #{column} must fail")
+        end
+        if test_case.fetch(:samples) == 2
+          assert(test_case.fetch(:fixtures).first.fetch(:size_bytes_input) == "100::bigint" &&
+            test_case.fetch(:arguments).fetch(:size_bytes_input) == "900::bigint", "two real samples discriminate first value from median")
+          assert(!wrapper_samples?(test_case, tables, { "size_bytes" => 500 }), "two-sample median must not replace the first display size")
+        end
       end
+      assert(!wrapper_samples?({ samples: 4 }, {}, {}), "unknown sample model must fail closed")
     end
   end
 end

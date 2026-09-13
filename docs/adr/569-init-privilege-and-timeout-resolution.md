@@ -925,3 +925,21 @@ proof-only work with existing dependencies and no SQL/runtime/init delta;
 rollback removes this increment. Root, data, Rust, DevOps and Sonar instructions
 were reviewed; DevOps now requires the actual same-backend mutating controls.
 No broader D3, helper/native closure, cutover or new approval is claimed.
+
+The bounded PostgreSQL run at clean `119ec599` passes 261 checks, including
+24 metadata variants across three cases and four compilation modes. The
+12 paired outcomes retain the exact D4 exception; `d3_complete=false` remains.
+Its original report, raw evidence and real Ruby coverage are archived under
+`artifacts/media-verification/2026-09-12-helper-order/`; the exact disposable
+container and named volume were removed and absence verified. Independent
+two-file review reports no actionable finding after replaying the 24 variants;
+its temporary worktree was removed. This is not a full-service or Sonar pass.
+
+A further wrapper regression distinguishes two actual size samples (100, 900)
+from their median (500): the canonical display must remain the first sample
+(100) until the third sample. The existing cold, helper-first and same-backend
+rollback/retry modes exercise it without changing stored procedures. Separate
+checks reject wrong rollup counts, extrema, median and premature promotion.
+This is the same proof-only implementation boundary with no new dependency;
+DevOps now records the two-sample requirement. Full canonical and combined
+gate results remain pending and no existing acceptance condition is removed.

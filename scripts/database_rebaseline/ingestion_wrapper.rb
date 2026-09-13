@@ -87,7 +87,9 @@ module RevaerDatabaseRebaseline
           arguments: wrapper_arguments("sample", minute: 2, size: 500), wrapper: true, samples: 3 },
         { name: "trim-size-samples", fixtures: (0...25).map { |index| wrapper_arguments("sample", minute: index, size: (index + 1) * 100) },
           arguments: wrapper_arguments("sample", minute: 25, size: 2600), wrapper: true, samples: 25 }
-      ] + wrapper_identity_cases + wrapper_hash_fill_cases
+      ] + [{ name: "second-size-sample", fixtures: [wrapper_arguments("sample", size: 100)],
+             arguments: wrapper_arguments("sample", minute: 1, size: 900), wrapper: true, samples: 2 }] +
+        wrapper_identity_cases + wrapper_hash_fill_cases
     end
 
     def wrapper_isolated(test_case, mode, variant, source, role)
@@ -241,11 +243,17 @@ module RevaerDatabaseRebaseline
     end
 
     def wrapper_samples?(test_case, tables, canonical)
-      values = test_case.fetch(:samples) == 3 ? [100, 500, 900] : (2..26).map { |value| value * 100 }
+      values = case test_case.fetch(:samples)
+               when 2 then [100, 900]
+               when 3 then [100, 500, 900]
+               when 25 then (2..26).map { |value| value * 100 }
+               else return false
+               end
       samples = tables.fetch("canonical_size_sample")
       rollups = tables.fetch("canonical_size_rollup")
-      median = values.fetch(values.length / 2)
-      samples.map { |row| row.fetch("size_bytes") }.sort == values && canonical.fetch("size_bytes") == median &&
+      median = values.length == 2 ? 500 : values.fetch(values.length / 2)
+      displayed = values.length == 2 ? 100 : median
+      samples.map { |row| row.fetch("size_bytes") }.sort == values && canonical.fetch("size_bytes") == displayed &&
         rollups.length == 1 && rollups.first.values_at("sample_count", "size_median", "size_min", "size_max") == [values.length, median, values.min, values.max]
     end
   end

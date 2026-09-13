@@ -233,6 +233,9 @@ applyTo:
   before ingestion in the same backend under unchanged caller settings. Retain
   committed and whole-rollback controls, all 18 table images and nontransactional
   sequence consumption; pure helper answers or a new connection are not substitutes.
+- Size-sample proof must distinguish the first stored display size from the
+  statistical median before three samples exist. Retain the two-sample control
+  alongside median promotion and retention-boundary cases in every wrapper mode.
 - The canonical D3 validation matrix must exercise the 32 frozen validation
   guard sites with exact SQLSTATE, detail and native/source coordinates, not
   infer an expected guard from the observed error. Retain all 18 table images,
