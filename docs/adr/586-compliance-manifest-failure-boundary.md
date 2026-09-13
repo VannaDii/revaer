@@ -621,3 +621,40 @@ removes only this record; all original failing evidence remains retained.
   identity and native build evidence. Its owned build directory was removed
   after verification; no database, service, test media or remote operation was
   created for these focused tests. The prior 80-file evidence seal still matches.
+
+### Helper And Shutdown Integration Checkpoint (2026-09-12)
+
+- Source: database proof at clean `60357fbf`; combined CI/UI at clean
+  `c139ab9c`. The intervening shutdown commits do not change database proof
+  sources. The final checkpoint is documentation only.
+- Database: 4,827/4,828 canonical checks pass. Only the explicit incomplete-D3
+  guard fails. The 99 paired wrapper cases pass 2,038 checks, including all
+  three two-sample modes. The 24 metadata variants pass all 37 matrix checks.
+  Focused harness suites pass 13,496 assertions. These are bounded results,
+  not complete helper/native closure or single-init cutover qualification.
+- Combined `just ci` exits zero with the release build and positive coverage,
+  but retains eight config-watcher-abort WARNs. It is not a clean handoff.
+  Rust LCOV contains 318 records, 122,596 covered of 131,783 lines; 311 tracked
+  first-party Rust files account for 122,533 of 131,409 lines. All 53 raw Rust
+  instrumentation inputs and real script/JavaScript coverage are retained.
+- Combined `just ui-e2e` exits one: 57 passed, one failed, 72 did not run.
+  The schedule PATCH still returns `media_profile_filesystem_identity_required`;
+  teardown also rejects missing UI coverage. No expectation or coverage gate
+  was relaxed. The approved coordinated cutover remains required.
+- Canonical Sonar remains unavailable because its token is absent. The
+  previously denied upload was not retried, and no published-coverage or
+  current-source Sonar pass is claimed. Native packages and PR acceptance
+  remain unqualified; no push or merge occurred.
+- Evidence: `artifacts/media-verification/2026-09-12-helper-order/` retains the
+  exact reports, logs, code bundle, worker evidence and coverage. Both workers
+  are closed and their clean worktrees removed. Owned database containers and
+  volumes were removed, exact container absence and the UI listener's release
+  verified, and canonical test-media cleanup passed. User checkout changes
+  remain untouched. The local code boundary is 812/9,999 changed lines;
+  this is not an actual remote PR base/head qualification.
+- Documentation build exits zero but warns that its search index is about
+  15 MB. This warning remains visible; documentation restructuring is not
+  included in this runtime/proof increment.
+- Scope/policy: root, Rust, data and DevOps instructions remain binding.
+  This checkpoint changes no architecture, dependency, runtime behavior,
+  observability or acceptance criterion; rollback removes only this record.
