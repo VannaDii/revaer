@@ -73,7 +73,7 @@ module RevaerDatabaseRebaseline
     def wrapper_arguments(guid, hash: "a", minute: 0, size: 1024, seeders: 5, title: "Wrapper proof")
       { source_guid_input: "#{literal(guid)}::varchar", infohash_v1_input: "repeat(#{literal(hash)},40)::char(40)",
         observed_at_input: "'2026-09-10T00:#{format('%02d', minute)}:00Z'::timestamptz",
-        size_bytes_input: "#{size}::bigint", seeders_input: seeders.to_s, title_raw_input: "#{literal(title)}::varchar" }
+        size_bytes_input: "#{size}::bigint", seeders_input: seeders.nil? ? "NULL::integer" : seeders.to_s, title_raw_input: "#{literal(title)}::varchar" }
     end
 
     def wrapper_cases
@@ -94,7 +94,26 @@ module RevaerDatabaseRebaseline
           arguments: wrapper_arguments("sample", minute: 25, size: 2600), wrapper: true, samples: 25 }
       ] + [{ name: "second-size-sample", fixtures: [wrapper_arguments("sample", size: 100)],
              arguments: wrapper_arguments("sample", minute: 1, size: 900), wrapper: true, samples: 2 }] +
-        wrapper_identity_cases + wrapper_hash_fill_cases + wrapper_size_cases
+        wrapper_identity_cases + wrapper_hash_fill_cases + wrapper_size_cases + wrapper_promotion_cases
+    end
+
+    def wrapper_promotion_cases
+      # Keep the selected high-score source distinct from the incoming low-score
+      # source. Both NULL arms are legal under 0022's nullable seeder constraint.
+      [
+        ["promotion-incoming-null", nil, 40, "high"],
+        ["promotion-best-null", 100, nil, "high"],
+        ["promotion-best-19", 100, 19, "high"],
+        ["promotion-best-20", 100, 20, "low"],
+        ["promotion-best-99", 100, 99, "low"],
+        ["promotion-best-100", 100, 100, "high"]
+      ].map do |name, incoming, best_seeders, best|
+        low = wrapper_arguments("low", minute: 1, title: "Lower ranked title").merge(size_bytes_input: "NULL::bigint")
+        high = wrapper_arguments("high", seeders: best_seeders, title: "Higher ranked title").merge(size_bytes_input: "NULL::bigint")
+        arguments = wrapper_arguments("low", minute: 3, seeders: incoming, title: "Low refreshed").merge(size_bytes_input: "NULL::bigint")
+        { name:, fixtures: [low, high, high.merge(observed_at_input: "'2026-09-10T00:02:00Z'::timestamptz")],
+          arguments:, wrapper: false, scoring: true, best:, promotion: { incoming:, best_seeders: } }
+      end
     end
 
     def wrapper_isolated(test_case, mode, variant, source, role)
@@ -160,7 +179,7 @@ module RevaerDatabaseRebaseline
         ) SELECT c.canonical_torrent_id,s.canonical_torrent_source_id,
           CASE s.source_guid WHEN 'high' THEN 100 ELSE 10 END,0,0,0,0,0,0,'2026-09-10T00:00:00Z'
         FROM public.canonical_torrent c JOIN public.canonical_torrent_source s ON s.infohash_v1=c.infohash_v1
-        WHERE s.source_guid IN ('high','low');
+        WHERE s.source_guid IN ('high','low') ORDER BY s.canonical_torrent_source_id;
       SQL
       File.binwrite("#{prefix}-base-scores.sql", query)
       sql(query, role: "postgres", database:)
@@ -199,6 +218,7 @@ module RevaerDatabaseRebaseline
         evidence.fetch("inputs_before").fetch(table).all? { |row| columns.all? { |column| row.fetch(column) == seed_clock } }
       end)
       check("#{name} exact wrapper/scoring/page/sample result", frames.all? { |frame| wrapper_outcome?(test_case, frame) })
+      check("#{name} independent promotion fixtures full state read inputs and rollback", wrapper_promotion_evidence?(test_case, session, evidence)) if test_case[:promotion]
       hash_fill_verify!(name, test_case, session, evidence) if test_case[:hash_fill]
       check("#{name} independent sampling decisions full state domain inputs and rollback", size_evidence?(test_case.fetch(:size_case), session, evidence)) if test_case[:size_case]
     end
@@ -239,6 +259,105 @@ module RevaerDatabaseRebaseline
       best = tables.fetch("canonical_torrent_best_source_context")
       scores == expected && canonical.fetch("title_display") == "Higher ranked title" && best.length == 1 &&
         best.first.fetch("canonical_torrent_source_id") == sources.fetch(test_case.fetch(:best)).fetch("canonical_torrent_source_id")
+    end
+
+    def wrapper_promotion_evidence?(test_case, session, evidence)
+      fixtures = evidence.fetch("fixtures")
+      return false unless fixtures.length == 3
+
+      identities = fixtures.map { |frame| frame.fetch("result") }
+      canonical = identities.first.fetch("canonical_torrent_public_id")
+      low = identities.first.fetch("canonical_torrent_source_public_id")
+      high = identities.fetch(1).fetch("canonical_torrent_source_public_id")
+      return false unless [canonical, low, high].uniq.length == 3 && [canonical, low, high].all? { |value| IngestionProof::INGESTION_UUID.match?(value) }
+
+      clocks = fixtures.map { |frame| frame.fetch("clock") }
+      snapshots = wrapper_promotion_fixtures(test_case.fetch(:promotion), clocks, identities)
+      previous = IngestionProof::INGESTION_TABLES.to_h { |table| [table, []] }
+      valid = fixtures.each_with_index.all? do |frame, index|
+        result = { "canonical_torrent_public_id" => canonical, "canonical_torrent_source_public_id" => index.zero? ? low : high,
+                   "observation_created" => index < 2, "durable_source_created" => index < 2, "canonical_changed" => index.zero? }
+        expected = snapshots.fetch(index)
+        same = frame.fetch("result") == result && size_tables_equal?(frame.fetch("tables_before"), previous) &&
+          size_tables_equal?(frame.fetch("tables_after"), expected) && size_tables_equal?(frame.fetch("tables_finish"), expected)
+        previous = expected
+        same
+      end
+      baseline = snapshots.last
+      inputs = wrapper_promotion_inputs(evidence.fetch("seed_clock"))
+      return false unless valid && size_tables_equal?(evidence.fetch("before"), baseline) &&
+        size_tables_equal?(evidence.fetch("inputs_before"), inputs) && size_tables_equal?(evidence.fetch("inputs_after"), inputs)
+
+      frames = evidence.fetch("frames")
+      return false unless frames.length == (session[:rollback] ? 2 : 1)
+
+      result = { "canonical_torrent_public_id" => canonical, "canonical_torrent_source_public_id" => low,
+                 "observation_created" => false, "durable_source_created" => false, "canonical_changed" => false }
+      frames.each_with_index.all? do |frame, index|
+        expected = wrapper_promotion_after(test_case, baseline, frame.fetch("clock"))
+        finish = session[:rollback] && index.zero? ? baseline : expected
+        frame.fetch("result") == result && size_tables_equal?(frame.fetch("tables_before"), baseline) &&
+          size_tables_equal?(frame.fetch("tables_after"), expected) && size_tables_equal?(frame.fetch("tables_finish"), finish)
+      end && size_tables_equal?(evidence.fetch("after"), wrapper_promotion_after(test_case, baseline, frames.last.fetch("clock")))
+    end
+
+    def wrapper_promotion_fixtures(spec, clocks, identities)
+      # Reuse the complete-column independent baseline, with no attributes,
+      # magnets or size samples. All three fixture calls use the real wrapper.
+      shape = { title: "Lower ranked title", normalized: "lower ranked title", answers: [], signals: [], release: nil }
+      first = attributes_initial_tables(shape, clocks.fetch(0), identities.fetch(0))
+      %w[canonical_torrent canonical_torrent_source search_request_source_observation].each do |table|
+        first.fetch(table).first["magnet_hash"] = nil
+      end
+      first.fetch("canonical_torrent_source").first.merge!("source_guid" => "low", "last_seen_at" => "2026-09-10T00:01:00+00:00")
+      first.fetch("search_request_source_observation").first.merge!("source_guid" => "low", "observed_at" => "2026-09-10T00:01:00+00:00")
+      first.fetch("canonical_torrent_source_context_score").first.merge!("score_total_context" => 0.0, "score_policy_adjust" => 0.0, "score_tag_adjust" => 0.0)
+      first["canonical_torrent_best_source_context"] = [{ "canonical_torrent_best_source_context_id" => 1,
+        "context_key_type" => "search_request", "context_key_id" => 569001, "canonical_torrent_id" => 1,
+        "canonical_torrent_source_id" => 1, "computed_at" => clocks.fetch(0) }]
+      second = first.transform_values { |rows| rows.map(&:dup) }
+      second.fetch("canonical_torrent").first["updated_at"] = clocks.fetch(1)
+      second.fetch("canonical_torrent_source") << first.fetch("canonical_torrent_source").first.merge(
+        "canonical_torrent_source_id" => 2, "canonical_torrent_source_public_id" => identities.fetch(1).fetch("canonical_torrent_source_public_id"),
+        "source_guid" => "high", "title_normalized" => "higher ranked title", "last_seen_at" => "2026-09-10T00:00:00+00:00",
+        "last_seen_seeders" => spec.fetch(:best_seeders), "created_at" => clocks.fetch(1), "updated_at" => clocks.fetch(1))
+      second.fetch("search_request_source_observation") << first.fetch("search_request_source_observation").first.merge(
+        "observation_id" => 2, "canonical_torrent_source_id" => 2, "source_guid" => "high", "title_raw" => "Higher ranked title",
+        "observed_at" => "2026-09-10T00:00:00+00:00", "seeders" => spec.fetch(:best_seeders))
+      second.fetch("canonical_torrent_source_context_score") << first.fetch("canonical_torrent_source_context_score").first.merge(
+        "canonical_torrent_source_context_score_id" => 2, "canonical_torrent_source_id" => 2, "computed_at" => clocks.fetch(1))
+      second.fetch("canonical_torrent_best_source_context").first.merge!("canonical_torrent_source_id" => 2, "computed_at" => clocks.fetch(1))
+      third = second.transform_values { |rows| rows.map(&:dup) }
+      third.fetch("canonical_torrent").first.merge!("title_display" => "Higher ranked title", "updated_at" => clocks.fetch(2))
+      third.fetch("canonical_torrent_source").last.merge!("last_seen_at" => "2026-09-10T00:02:00+00:00", "updated_at" => clocks.fetch(2))
+      third.fetch("search_request_source_observation").last["observed_at"] = "2026-09-10T00:02:00+00:00"
+      third.fetch("canonical_torrent_source_context_score").last.merge!("score_total_context" => 100.0, "computed_at" => clocks.fetch(2))
+      third.fetch("canonical_torrent_best_source_context").first["computed_at"] = clocks.fetch(2)
+      [first, second, third]
+    end
+
+    def wrapper_promotion_inputs(clock)
+      inputs = hash_fill_read_tables(clock)
+      inputs["canonical_torrent_source_base_score"] = [[1, 10.0], [2, 100.0]].map do |id, total|
+        { "canonical_torrent_source_base_score_id" => id, "canonical_torrent_id" => 1, "canonical_torrent_source_id" => id,
+          "score_total_base" => total, "score_seed" => 0.0, "score_leech" => 0.0, "score_age" => 0.0, "score_trust" => 0.0,
+          "score_health" => 0.0, "score_reputation" => 0.0, "computed_at" => "2026-09-10T00:00:00+00:00" }
+      end
+      inputs
+    end
+
+    def wrapper_promotion_after(test_case, baseline, clock)
+      expected = baseline.transform_values { |rows| rows.map(&:dup) }
+      expected.fetch("canonical_torrent").first["updated_at"] = clock
+      expected.fetch("canonical_torrent_source").first.merge!("last_seen_at" => "2026-09-10T00:03:00+00:00",
+        "last_seen_seeders" => test_case.fetch(:promotion).fetch(:incoming), "updated_at" => clock)
+      expected.fetch("search_request_source_observation").first.merge!("observed_at" => "2026-09-10T00:03:00+00:00",
+        "seeders" => test_case.fetch(:promotion).fetch(:incoming), "title_raw" => "Low refreshed")
+      expected.fetch("canonical_torrent_source_context_score").first.merge!("score_total_context" => 10.0, "computed_at" => clock)
+      if test_case.fetch(:best) == "low"
+        expected.fetch("canonical_torrent_best_source_context").first.merge!("canonical_torrent_source_id" => 1, "computed_at" => clock)
+      end
+      expected
     end
 
     def wrapper_paging?(test_case, frame)

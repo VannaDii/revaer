@@ -6,7 +6,7 @@ module RevaerDatabaseRebaseline
 
     def wrapper_tests!
       cases = wrapper_cases
-      assert(cases.length == 67 && cases.map { |item| item.fetch(:name) }.uniq.length == 67, "retain distinct wrapper/scoring/page/size/identity/hash-fill cases")
+      assert(cases.length == 73 && cases.map { |item| item.fetch(:name) }.uniq.length == 73, "retain distinct wrapper/scoring/page/size/identity/hash-fill/promotion cases")
       assert(IngestionProof::INGESTION_HELPERS.include?("search_result_ingest"), "inventory must include the actual Rust wrapper")
       assert(IngestionWrapper::WRAPPER_MODES == %w[cold helpers-first warm-rollback], "retain independent cold and warm compilation modes")
       guard_path = "scripts/stack_asset_exception.rb"
@@ -27,6 +27,7 @@ module RevaerDatabaseRebaseline
       wrapper_input_tests!
       wrapper_scoring_tests!(cases)
       wrapper_binding_control!(cases)
+      wrapper_promotion_tests!(cases)
       wrapper_paging_tests!(cases)
       wrapper_sample_tests!(cases)
     end
@@ -129,6 +130,116 @@ module RevaerDatabaseRebaseline
       assert(!promotes && wrong_source == low, "incorrect local-variable ordering selects the current low-score source and cannot promote it")
       tables.fetch("canonical_torrent_best_source_context").first["canonical_torrent_source_id"] = 3
       assert(!wrapper_scoring?(test_case, tables, canonical, low), "retained previous best from local-variable ordering must fail actual proof")
+    end
+
+    def wrapper_promotion_tests!(cases)
+      expected = {
+        "promotion-incoming-null" => [nil, 40, "high"], "promotion-best-null" => [100, nil, "high"],
+        "promotion-best-19" => [100, 19, "high"], "promotion-best-20" => [100, 20, "low"],
+        "promotion-best-99" => [100, 99, "low"], "promotion-best-100" => [100, 100, "high"]
+      }
+      boundaries = cases.select { |test_case| test_case[:promotion] }
+      assert(boundaries.map { |test_case| test_case.fetch(:name) } == expected.keys, "six distinct promotion predicate arms and edge controls")
+      schema = File.read(File.join(@contract.root, "crates/revaer-data/migrations/0022_indexer_canonicalization.sql"))
+      assert(schema.include?("last_seen_seeders INTEGER,") && schema.include?("last_seen_seeders IS NULL OR last_seen_seeders >= 0"), "both NULL seeder arms are constraint-reachable without DDL changes")
+      boundaries.each do |test_case|
+        incoming, best_seeders, best = expected.fetch(test_case.fetch(:name))
+        assert(test_case.fetch(:promotion).values_at(:incoming, :best_seeders) + [test_case.fetch(:best)] == [incoming, best_seeders, best], "literal independent promotion expectation")
+        assert(test_case.fetch(:arguments).fetch(:seeders_input) == (incoming.nil? ? "NULL::integer" : incoming.to_s), "real typed incoming NULL or hundred-seeder argument")
+        assert(test_case.fetch(:fixtures).drop(1).all? { |args| args.fetch(:seeders_input) == (best_seeders.nil? ? "NULL::integer" : best_seeders.to_s) }, "distinct best source retains exact boundary seeders through fixture refresh")
+        assert(!test_case.fetch(:wrapper) && test_case.fetch(:fixtures).first.fetch(:source_guid_input) == "'low'::varchar", "direct v1 predicate is not masked by wrapper admission or ID-only ordering")
+        IngestionWrapper::WRAPPER_MODES.each do |mode|
+          session = { rollback: mode == "warm-rollback" }
+          evidence = wrapper_promotion_test_evidence(test_case, session)
+          assert(wrapper_promotion_evidence?(test_case, session, evidence), "complete promotion fixture/call/rollback/read state #{mode}")
+          scores = evidence.fetch("inputs_before").fetch("canonical_torrent_source_base_score") +
+            evidence.fetch("after").fetch("canonical_torrent_source_context_score")
+          assert(scores.all? { |row| row.select { |key, _value| key.start_with?("score_") }.values.all? { |value| value.is_a?(Float) } }, "literal NUMERIC scores retain the actual PostgreSQL JSON number shape")
+          baseline = evidence.fetch("before")
+          assert(baseline.fetch("canonical_torrent_source").map { |row| row.values_at("source_guid", "last_seen_seeders") } == [["low", 5], ["high", best_seeders]], "independent distinct durable seeder inputs")
+          assert(baseline.fetch("canonical_torrent_best_source_context").first.fetch("canonical_torrent_source_id") == 2 &&
+            baseline.fetch("canonical_torrent_source_context_score").map { |row| row.fetch("score_total_context") } == [0, 100], "selected high source and stored score remain distinct before incoming refresh")
+          evidence.fetch("frames").each do |frame|
+            after = frame.fetch("tables_after")
+            assert(after.fetch("canonical_torrent_source_context_score").map { |row| row.fetch("score_total_context") } == [10, 100], "promotion is discriminated by stored scores, not incoming rank")
+            assert(after.fetch("canonical_torrent_best_source_context").first.fetch("canonical_torrent_source_id") == (best == "high" ? 2 : 1), "literal selected-source outcome")
+          end
+          wrapper_promotion_mutations!(test_case, session, evidence)
+        end
+      end
+    end
+
+    def wrapper_promotion_test_evidence(test_case, session)
+      canonical = "56900000-0000-4000-8000-000000000090"
+      low = "56900000-0000-4000-8000-000000000091"
+      high = "56900000-0000-4000-8000-000000000092"
+      identities = [low, high, high].each_with_index.map do |source, index|
+        { "canonical_torrent_public_id" => canonical, "canonical_torrent_source_public_id" => source,
+          "observation_created" => index < 2, "durable_source_created" => index < 2, "canonical_changed" => index.zero? }
+      end
+      clocks = %w[2026-09-10T01:00:00+00:00 2026-09-10T01:01:00+00:00 2026-09-10T01:02:00+00:00]
+      snapshots = wrapper_promotion_fixtures(test_case.fetch(:promotion), clocks, identities)
+      empty = IngestionProof::INGESTION_TABLES.to_h { |table| [table, []] }
+      fixtures = snapshots.each_with_index.map do |tables, index|
+        { "clock" => clocks.fetch(index), "result" => identities.fetch(index), "tables_before" => index.zero? ? empty : snapshots.fetch(index - 1),
+          "tables_after" => tables, "tables_finish" => tables }
+      end
+      baseline = snapshots.last
+      frames = Array.new(session[:rollback] ? 2 : 1) do |index|
+        clock = "2026-09-10T02:0#{index}:00+00:00"
+        after = wrapper_promotion_after(test_case, baseline, clock)
+        { "clock" => clock, "result" => identities.first.merge("observation_created" => false, "durable_source_created" => false, "canonical_changed" => false),
+          "tables_before" => baseline, "tables_after" => after, "tables_finish" => session[:rollback] && index.zero? ? baseline : after }
+      end
+      seed_clock = "2026-09-10T00:00:00+00:00"
+      inputs = wrapper_promotion_inputs(seed_clock)
+      # Separate all images so a single-location mutation cannot silently alter
+      # both sides of a continuity assertion through shared Ruby references.
+      JSON.parse(JSON.generate("seed_clock" => seed_clock, "fixtures" => fixtures, "frames" => frames, "before" => baseline,
+        "after" => frames.last.fetch("tables_after"), "inputs_before" => inputs, "inputs_after" => inputs))
+    end
+
+    def wrapper_promotion_mutations!(test_case, session, evidence)
+      raw = JSON.generate(evidence)
+      %w[fixtures frames].each do |phase|
+        evidence.fetch(phase).each_with_index do |frame, index|
+          frame.fetch("result").each_key do |column|
+            changed = JSON.parse(raw)
+            changed.fetch(phase).fetch(index).fetch("result")[column] = "changed"
+            assert(!wrapper_promotion_evidence?(test_case, session, changed), "reject #{phase} #{index} result #{column}")
+          end
+          %w[tables_before tables_after tables_finish].each do |key|
+            frame.fetch(key).each do |table, rows|
+              changed = JSON.parse(raw)
+              changed.fetch(phase).fetch(index).fetch(key).fetch(table) << { "unexpected" => true }
+              assert(!wrapper_promotion_evidence?(test_case, session, changed), "reject #{phase} #{index} #{key} extra #{table}")
+              rows.each_with_index do |row, row_index|
+                row.each_key do |column|
+                  changed = JSON.parse(raw)
+                  changed.fetch(phase).fetch(index).fetch(key).fetch(table).fetch(row_index)[column] = "changed"
+                  assert(!wrapper_promotion_evidence?(test_case, session, changed), "reject #{phase} #{index} #{key} #{table}.#{column}")
+                end
+              end
+            end
+          end
+        end
+      end
+      evidence.fetch("inputs_before").each do |table, rows|
+        rows.each_with_index do |row, index|
+          row.each_key do |column|
+            changed = JSON.parse(raw)
+            %w[inputs_before inputs_after].each { |key| changed.fetch(key).fetch(table).fetch(index)[column] = "changed" }
+            assert(!wrapper_promotion_evidence?(test_case, session, changed), "reject coherently mutated read input #{table}.#{column}")
+          end
+        end
+      end
+      changed = JSON.parse(raw)
+      changed.fetch("before").fetch("canonical_torrent_best_source_context").first["canonical_torrent_source_id"] = 1
+      assert(!wrapper_promotion_evidence?(test_case, session, changed), "selected source must be distinct before promotion")
+      changed = JSON.parse(raw)
+      changed.fetch("after").fetch("canonical_torrent_best_source_context").first["canonical_torrent_source_id"] = test_case.fetch(:best) == "high" ? 1 : 2
+      assert(!wrapper_promotion_evidence?(test_case, session, changed), "reject opposite persisted selection")
+      assert(JSON.generate(evidence) == raw, "promotion verification retains raw evidence")
     end
 
     def wrapper_paging_tests!(cases)

@@ -70,6 +70,7 @@ module RevaerDatabaseRebaseline
                    warm_proof: "first real ingestion rolled back, same target committed on the same backend",
                    committed_reuse: "separate third call: frozen D4 failure versus final success; never frozen successful committed reuse",
                    fixture_boundary: "controlled persisted snapshots include defensive NULLs and synthetic literal-backslash suffixes; not policy-creation API conformance or ordinary suffix recognition",
+                   score_boundary: "base scores outside [-10000,10000] are constraint-unreachable; non-drop totals cross those bounds through valid policy/tag adjustments",
                    candidate_sha256: @contract.expected_candidate_sha256, final_sha256: @contract.final_sha256,
                    postgres_image: @contract.postgres_image, seed_sha256: Digest::SHA256.file(policy_seed_path).hexdigest,
                    roles: { reference: "postgres", final: @runtime, owner: @owner }, container: @container, source_sha256: source_hashes,
@@ -120,7 +121,7 @@ module RevaerDatabaseRebaseline
       rules = rules.each_with_index.map { |rule, index| rule.merge(id: index + 1, order: (index + 1) * 10) }
       { name:, rules:, decisions: decisions || rules.map { |rule| [rule.fetch(:id), rule.fetch(:action)] }, adjust:, drop:,
         flag: rules.any? { |rule| rule.fetch(:action) == "flag" },
-        downrank: rules.any? { |rule| rule.fetch(:action) == "downrank" }, tag: 0 }.merge(extra)
+        downrank: rules.any? { |rule| rule.fetch(:action) == "downrank" }, tag: 0, base: 37 }.merge(extra)
     end
 
     def policy_require_rules(matched:, scope: 4)
@@ -184,7 +185,22 @@ module RevaerDatabaseRebaseline
       cases << policy_case("release-token-match", [policy_rule("release_group")], token: "GROUP")
       cases << policy_case("release-token-false-persisted-true", [policy_rule("release_group")], token: "OTHER")
       cases << policy_case("release-token-and-persisted-false", [policy_rule("release_group", matched: false)], token: "OTHER", decisions: [], flag: false)
-      cases
+      cases + policy_total_score_cases
+    end
+
+    def policy_total_score_cases
+      # 0024 constrains the base itself. These tags need no tag clamp and none
+      # of these rules drops a source; only the final total can exceed its bounds.
+      [
+        ["total-score-below-minimum", -10000, "downrank", -10, 9, -10000],
+        ["total-score-exact-minimum", -10000, "downrank", -10, 10, -10000],
+        ["total-score-above-maximum", 10000, "prefer", 15, -14, 10000],
+        ["total-score-exact-maximum", 10000, "prefer", 15, -15, 10000]
+      ].map do |name, base, action, adjust, tag, total|
+        rule = action == "downrank" ? policy_rule("title", action:) :
+          policy_rule("indexer_instance_public_id", type: "prefer_indexer_instance", action:)
+        policy_case(name, [rule], decisions: action == "prefer" ? [] : [[1, "downrank"]], base:, adjust:, tag:, total:)
+      end
     end
 
     def policy_arguments(token: nil)
@@ -270,7 +286,7 @@ module RevaerDatabaseRebaseline
           INSERT INTO public.canonical_torrent_source_base_score (
             canonical_torrent_id, canonical_torrent_source_id, score_total_base, score_seed, score_leech,
             score_age, score_trust, score_health, score_reputation, computed_at
-          ) SELECT canonical_torrent_id, canonical_torrent_source_id, 37, 0, 0, 0, 0, 0, 0, '2026-09-11T00:00:00Z'
+          ) SELECT canonical_torrent_id, canonical_torrent_source_id, #{test_case.fetch(:base)}, 0, 0, 0, 0, 0, 0, '2026-09-11T00:00:00Z'
             FROM public.search_request_source_observation WHERE search_request_id = 569001;
         SQL
         seed_clocks["rules"] = policy_setup!(setup, database, "#{prefix}-setup")
@@ -541,8 +557,14 @@ module RevaerDatabaseRebaseline
       tags = inputs.fetch("search_profile_tag_prefer").select { |row| row.fetch("search_profile_id") == 596001 }
       members.map { |row| row.values_at("policy_rule_public_id", "rule_order") }.sort == expected &&
         sets.map { |row| row.values_at("policy_set_id", "scope") }.sort == scope_pairs &&
-        base.length == 1 && base.first.values_at("canonical_torrent_id", "canonical_torrent_source_id", "score_total_base") == [1, 1, 37] &&
+        base == [policy_base_score(test_case)] &&
         tags.length == 1 && tags.first.values_at("tag_id", "weight_override") == [596001, test_case.fetch(:tag)] && policy_value_sets?(inputs)
+    end
+
+    def policy_base_score(test_case)
+      { "canonical_torrent_source_base_score_id" => 1, "canonical_torrent_id" => 1, "canonical_torrent_source_id" => 1,
+        "score_total_base" => test_case.fetch(:base), "score_seed" => 0, "score_leech" => 0, "score_age" => 0,
+        "score_trust" => 0, "score_health" => 0, "score_reputation" => 0, "computed_at" => "2026-09-11T00:00:00+00:00" }
     end
 
     def policy_value_sets?(inputs)
@@ -612,7 +634,11 @@ module RevaerDatabaseRebaseline
     def policy_score?(test_case, tables, canonical, source)
       rows = tables.fetch("canonical_torrent_source_context_score").select { |row| row.fetch("context_key_id") == 596001 }
       tag = test_case.fetch(:tag).clamp(-15, 15)
-      total = test_case.fetch(:drop) ? -10000 : 37 + test_case.fetch(:adjust) + tag
+      total = test_case.fetch(:total) { test_case.fetch(:drop) ? -10000 : test_case.fetch(:base) + test_case.fetch(:adjust) + tag }
+      # The direct v1 call has no wrapper tail to seed a best-source row. With
+      # five seeders, even an admitted boundary score leaves this request unselected.
+      return false if test_case.key?(:total) && !tables.fetch("canonical_torrent_best_source_context").empty?
+
       rows.length == 1 && rows.first.values_at("context_key_type", "canonical_torrent_id", "canonical_torrent_source_id", "score_total_context", "score_policy_adjust", "score_tag_adjust", "is_dropped") ==
         ["search_request", canonical.fetch("canonical_torrent_id"), source.fetch("canonical_torrent_source_id"), total, test_case.fetch(:adjust), test_case.fetch(:drop) ? 0 : tag, test_case.fetch(:drop)]
     end
@@ -632,7 +658,7 @@ module RevaerDatabaseRebaseline
       score = {
         "canonical_torrent_source_context_score_id" => identity, "context_key_type" => "search_request", "context_key_id" => 596001,
         "canonical_torrent_id" => 1, "canonical_torrent_source_id" => 1,
-        "score_total_context" => test_case.fetch(:drop) ? -10000 : 37 + test_case.fetch(:adjust) + tag,
+        "score_total_context" => test_case.fetch(:total) { test_case.fetch(:drop) ? -10000 : test_case.fetch(:base) + test_case.fetch(:adjust) + tag },
         "score_policy_adjust" => test_case.fetch(:adjust), "score_tag_adjust" => tag,
         "is_dropped" => test_case.fetch(:drop), "computed_at" => clock
       }

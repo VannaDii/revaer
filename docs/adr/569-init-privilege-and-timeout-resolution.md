@@ -1554,3 +1554,53 @@ cutover is claimed.
   records the exact URI/v2 evidence requirements; existing approvals and all
   cutover/release gates remain unchanged. Full D3, root workflow, package,
   published Sonar and merge acceptance remain unproven.
+
+### Score And Seeder Boundaries (2026-09-13)
+
+- Motivation: cover the four non-drop total-score clamp/equality controls and
+  six nullable/edge seeder-promotion controls identified in the bounded D3 map.
+- Design: vary a constraint-valid base score together with real policy/tag
+  adjustments. Totals of -10001/-10000 and 10001/10000 distinguish saturation
+  from equality; no drop action supplies the lower bound. For promotion, keep
+  distinct low/high sources with persisted scores 10/100. Exercise incoming
+  NULL, selected-best NULL and selected-best counts 19/20/99/100. Specify all
+  fixture, result, write/read, rollback and retry images independently.
+- Test coverage: the isolated worker reports 1,424 policy assertions and 40,494
+  main ingestion assertions plus included suites passing. Parent review and
+  integration retain only four proof/test files; live database qualification
+  and combined exact-revision CI/UI results remain pending at this checkpoint.
+  Counts change from 49 to 53 policy cases and 67 to 73 wrapper cases.
+- Observability: existing retained database transcripts and complete state
+  images; no production telemetry changes.
+- Risk and rollback: new oracles must be tested against the real frozen/final
+  databases. Reject additional differences; do not change SQL or weaken D3 to
+  satisfy expectations. Remove these cases and inventory changes together if
+  unsuitable. Out-of-range base inputs remain constraint-unreachable.
+- Dependency rationale: existing Ruby proof modules and standard library only.
+- Stale-policy check: reviewed root and DevOps instructions and the exact D3
+  approval conditions. Scoped guidance now requires valid score inputs and a
+  distinct selected source. No approval, candidate, runtime or gate changes.
+
+### Unpublished Helper-Entry Trials (2026-09-13)
+
+The isolated native-observation experiment now records actual PL/pgSQL and SQL
+handler entry on the pinned PostgreSQL 16.14 arm64 image. Exact target headers
+and the arm64 calling convention bind the observed function IDs to live catalog
+identities, languages and source hashes. An initial catalog comparison failed
+because PostgreSQL serializes OIDs as JSON strings; retaining the original type
+and explicitly casting OIDs to bigint fixes this observer comparison only.
+
+The helpers-first control records all nine known-answer helpers at caller
+setting 0 before ingestion. Cold/basic and changed-v2 trials also pass paired
+ordinary/observed application-state checks within each variant. The latter
+records the real conflict logger twice, 18 native INSERT callbacks and one
+UPDATE callback per variant. Ingestion helper entries observe reference setting
+2 and final setting 0; these are retained differences, not normalized equality.
+Target native file hashes remain unchanged. All owned trial containers are
+removed. Raw failed attempts and the unavailable musl source-line warning remain
+evidence, not a clean native qualification.
+
+These are unpublished feasibility results in `target/d3-helper-entry/`, not a
+canonical profiler, new runtime/debugger dependency, complete helper/trigger
+closure, package acceptance or D3 discharge. Existing ordinary application
+oracles remain authoritative; debugger timing is not production timing proof.

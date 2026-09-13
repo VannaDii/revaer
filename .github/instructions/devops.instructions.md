@@ -90,6 +90,10 @@ applyTo:
   Pin and verify read inputs as well as all 18 write-table images. Only named
   input timestamp columns equal to an observed seed-transaction clock may be
   normalized; unrelated fields or unobserved clocks must remain visible.
+  Total-score boundary proof must use constraint-valid non-drop inputs, not
+  out-of-range base scores or drop sentinels. Seeder-promotion proof must keep
+  the incoming source distinct from the selected best source and retain full
+  fixture, read-input, rollback and retry state for nullable and edge inputs.
   Magnet identity evidence must include empty queries, discarded empty keys
   and bare keys through real wrapper creation, reuse and GUID promotion in
   cold, helper-first and warm-after-rollback sessions. Verify independent

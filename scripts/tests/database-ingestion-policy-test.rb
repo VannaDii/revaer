@@ -11,7 +11,7 @@ module RevaerDatabaseRebaseline
     def policy_tests!
       previous_inventory = @ingestion_inventory
       cases = policy_cases
-      assert(cases.length == 49 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 49, "exact populated policy matrix")
+      assert(cases.length == 53 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 53, "exact populated policy matrix")
       assert(cases.first.fetch(:rules).map { |rule| rule.fetch(:field) } == IngestionPolicy::POLICY_FIELDS.keys, "all actual match fields")
       assert(IngestionPolicy::POLICY_REQUIRE.length == 5, "all five require families")
       assert(cases.count { |entry| entry.fetch(:name).start_with?("scope-") } == 8, "every require precedence level passes and fails")
@@ -26,6 +26,7 @@ module RevaerDatabaseRebaseline
       end
       assert(policy_sql_value(nil) == "NULL" && policy_sql_value("a'b") == "'a''b'", "typed NULL and quoted fixture input")
       policy_model_tests!(cases)
+      policy_total_boundary_tests!(cases)
       policy_error_tests!
       policy_input_normalization_tests!
       policy_cleanup_test!
@@ -113,7 +114,7 @@ module RevaerDatabaseRebaseline
     def policy_score_tests!(cases, tables)
       cases.reject { |test_case| test_case[:error] }.each do |test_case|
         tag = test_case.fetch(:tag).clamp(-15, 15)
-        total = test_case.fetch(:drop) ? -10000 : 37 + test_case.fetch(:adjust) + tag
+        total = test_case.fetch(:total) { test_case.fetch(:drop) ? -10000 : 37 + test_case.fetch(:adjust) + tag }
         rows = [{ "context_key_id" => 596001, "context_key_type" => "search_request", "canonical_torrent_id" => 1,
                   "canonical_torrent_source_id" => 1, "score_total_context" => total,
                   "score_policy_adjust" => test_case.fetch(:adjust), "score_tag_adjust" => test_case.fetch(:drop) ? 0 : tag,
@@ -128,6 +129,95 @@ module RevaerDatabaseRebaseline
           assert(!policy_score?(test_case, changed, canonical, source), "reject changed score #{column}")
         end
       end
+    end
+
+    def policy_total_boundary_tests!(cases)
+      expected = {
+        "total-score-below-minimum" => [-10000, -10, 9, -10001, -10000],
+        "total-score-exact-minimum" => [-10000, -10, 10, -10000, -10000],
+        "total-score-above-maximum" => [10000, 15, -14, 10001, 10000],
+        "total-score-exact-maximum" => [10000, 15, -15, 10000, 10000]
+      }
+      boundaries = cases.select { |test_case| test_case.key?(:total) }
+      assert(boundaries.map { |test_case| test_case.fetch(:name) } == expected.keys, "four literal total-score clamp and equality controls")
+      schema = File.read(File.join(@contract.root, "crates/revaer-data/migrations/0024_indexer_scoring.sql"))
+      assert(schema.include?("CHECK (score_total_base BETWEEN -10000 AND 10000)"), "out-of-range base fixtures are constraint-unreachable, not total-clamp proof")
+      boundaries.each do |test_case|
+        base, adjust, tag, raw, total = expected.fetch(test_case.fetch(:name))
+        assert(test_case.values_at(:base, :adjust, :tag, :total, :drop) == [base, adjust, tag, total, false], "independent bounded non-drop inputs")
+        assert((-10000..10000).cover?(base) && (-15..15).cover?(tag) && base + adjust + tag == raw, "valid base and unclamped tag reach literal total")
+        assert(test_case.fetch(:rules).none? { |rule| rule.fetch(:action).start_with?("drop_") }, "drop sentinel never substitutes for a total clamp")
+        row = policy_base_score(test_case)
+        assert(row == { "canonical_torrent_source_base_score_id" => 1, "canonical_torrent_id" => 1, "canonical_torrent_source_id" => 1,
+          "score_total_base" => base, "score_seed" => 0, "score_leech" => 0, "score_age" => 0, "score_trust" => 0,
+          "score_health" => 0, "score_reputation" => 0, "computed_at" => "2026-09-11T00:00:00+00:00" }, "complete persisted base-score input")
+        3.times do |index|
+          frame = policy_total_boundary_frame(test_case, index, total)
+          assert(policy_success?(test_case, frame, index), "literal boundary complete write state including rollback sequence gaps #{index}")
+          image = frame.fetch("tables_after")
+          [-10001, -9999, 9999, 10001, 0].each do |wrong|
+            changed = policy_copy(frame)
+            changed.fetch("tables_after").fetch("canonical_torrent_source_context_score").last["score_total_context"] = wrong
+            assert(!policy_success?(test_case, changed, index), "reject unclamped or off-boundary total #{wrong}")
+          end
+          IngestionProof::INGESTION_TABLES.each do |table|
+            changed = policy_copy(frame)
+            changed.fetch("tables_after").fetch(table) << { "unexpected" => true }
+            assert(!policy_write_images?(test_case, changed, index), "reject unexpected complete boundary image #{table}") unless table == "search_filter_decision"
+            image.fetch(table).each_with_index do |actual, row_index|
+              actual.each_key do |column|
+                next if table == "search_filter_decision"
+
+                changed = policy_copy(frame)
+                changed.fetch("tables_after").fetch(table)[row_index][column] = "changed"
+                assert(!policy_write_images?(test_case, changed, index), "reject boundary #{table}.#{column}")
+              end
+            end
+          end
+          changed = policy_copy(frame)
+          changed.fetch("tables_after").fetch("canonical_torrent_best_source_context") << {
+            "context_key_id" => 596001, "canonical_torrent_id" => 1, "canonical_torrent_source_id" => 1 }
+          assert(!policy_success?(test_case, changed, index), "admitted v1 boundary cannot invent wrapper best-source selection")
+          changed.fetch("tables_after")["canonical_torrent_best_source_context"] = [{ "unexpected" => true }]
+          assert(!policy_success?(test_case, changed, index), "malformed unselected-source evidence fails closed")
+          changed = policy_copy(frame)
+          changed.fetch("tables_after").fetch("canonical_torrent_source_context_score").last["is_dropped"] = true
+          assert(!policy_success?(test_case, changed, index), "negative clamp is not the drop sentinel")
+        end
+      end
+    end
+
+    def policy_total_boundary_frame(test_case, index, total)
+      before = policy_test_tables
+      before["search_request_source_observation"] = [{ "observation_id" => 1, "search_request_id" => 569001,
+        "canonical_torrent_id" => 1, "canonical_torrent_source_id" => 1, "title_raw" => "Policy.1080p-GROUP\\",
+        "was_flagged" => false, "was_downranked" => false }]
+      before = policy_total_boundary_frame(test_case, 1, total).fetch("tables_after") if index == 2
+      after = policy_copy(before)
+      clock = "2026-09-11T01:0#{index}:00+00:00"
+      %w[canonical_torrent canonical_torrent_source].each { |table| after.fetch(table).first["updated_at"] = clock }
+      identity = index.zero? ? 2 : 3
+      after["canonical_torrent_source_context_score"] = [{ "canonical_torrent_source_context_score_id" => identity,
+        "context_key_type" => "search_request", "context_key_id" => 596001, "canonical_torrent_id" => 1, "canonical_torrent_source_id" => 1,
+        "score_total_context" => total, "score_policy_adjust" => test_case.fetch(:adjust), "score_tag_adjust" => test_case.fetch(:tag),
+        "is_dropped" => false, "computed_at" => clock }]
+      if index < 2
+        after.fetch("search_request_source_observation") << { "observation_id" => identity, "search_request_id" => 596001,
+          "canonical_torrent_id" => 1, "canonical_torrent_source_id" => 1, "title_raw" => "Policy.1080p",
+          "was_flagged" => false, "was_downranked" => test_case.fetch(:downrank) }
+        after["search_request_canonical"] = [{ "search_request_canonical_id" => identity, "search_request_id" => 596001, "canonical_torrent_id" => 1, "first_seen_at" => clock }]
+        after["search_page"] = [{ "search_page_id" => identity, "search_request_id" => 596001, "page_number" => 1, "sealed_at" => nil }]
+        after["search_page_item"] = [{ "search_page_item_id" => identity, "search_page_id" => identity, "search_request_canonical_id" => identity, "position" => 1 }]
+      end
+      test_case.fetch(:decisions).each do |id, decision|
+        after.fetch("search_filter_decision") << { "search_filter_decision_id" => index + 1, "search_request_id" => 596001,
+          "policy_rule_public_id" => policy_rule_uuid(id), "policy_snapshot_id" => 596001, "observation_id" => identity,
+          "canonical_torrent_id" => 1, "canonical_torrent_source_id" => 1, "decision" => decision, "decision_detail" => nil, "decided_at" => clock }
+      end
+      { "tables_before" => before, "tables_after" => after, "clock" => clock, "result" => {
+        "canonical_torrent_public_id" => before.fetch("canonical_torrent").first.fetch("canonical_torrent_public_id"),
+        "canonical_torrent_source_public_id" => before.fetch("canonical_torrent_source").first.fetch("canonical_torrent_source_public_id"),
+        "canonical_changed" => false, "durable_source_created" => false, "observation_created" => index < 2 } }
     end
 
     def policy_error_tests!
