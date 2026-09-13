@@ -1413,8 +1413,23 @@ cutover is claimed.
   all-target/all-feature lint pass. The controller oracle has 223 assertions,
   including mutated identities, outcomes, table/input images and an unchanged
   negative control. The first live reference/final pair passes all three new
-  checks and the mandatory D4/D5 matrix. Combined canonical/full gates remain
-  pending; this live run is `818889e2` plus the retained cancellation patch.
+  checks and the mandatory D4/D5 matrix (`818889e2` plus its retained patch).
+  On committed `1ff11a4a`, all three cancellation checks pass in the complete
+  canonical run: 6,665 of 6,666 checks pass; only the incomplete-D3 sentinel
+  fails. All 56 cancellation source hashes match the tested commit.
+- Integration gates on `1ff11a4a`: full CI passes with all 18 package coverage
+  gates and no warning lines. Full E2E fails with 57 passing, one failing and
+  72 unrun tests, retaining the exact scheduling identity error and absent UI
+  coverage. The API still uses legacy path-based profile writes; approved root
+  binding and coordinated init cutover are product prerequisites, not grounds
+  to fabricate identities or change success assertions into accepted failures.
+- Coverage inputs: native compile input and executed release-script coverage
+  were regenerated and preserved through CI. `just js-coverage-merge
+  sonar-verify-inputs` passes. Rust LCOV has 322 source records and 133,758 line
+  records, 124,467 covered; JavaScript/TypeScript has 61 source records and
+  5,402 line records, 4,249 covered. The JavaScript result includes partial API
+  execution, not complete UI coverage. The canonical scanner token is absent;
+  no scanner analysis, source upload or published Sonar metrics are claimed.
 - Observability: retain controller queries, lock wait, checkpoint, full raw
   stdout/stderr, owned-process settlement, source hashes and table images.
   These are qualification artifacts; no production logging changes.
@@ -1430,4 +1445,7 @@ cutover is claimed.
   No approval, analyzer criterion or bootstrap authority was changed.
 - Limits: one server-cancelled source-insert boundary is not client-future
   cancellation, all interruption sites, helper/native closure, complete D3,
-  root workflow, supported-package proof or release completion.
+  root workflow, supported-package proof or release completion. Rollback
+  assertions cover the named tables, not restoration of sequence allocations.
+  Next critical-path work remains client-future cancellation and the finite
+  remaining helper/native closure, followed by the approved init/root cutover.
