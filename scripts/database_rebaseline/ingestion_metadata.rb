@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "date"
+
 module RevaerDatabaseRebaseline
   # Changed observation values and first-wins durable metadata, not full D3.
   module IngestionMetadata
@@ -27,6 +29,7 @@ module RevaerDatabaseRebaseline
       "source_metadata_conflict_audit_log" => "source_metadata_conflict_audit_log_id",
       "indexer_health_event" => "indexer_health_event_id"
     }.freeze
+    METADATA_JSON_RECORDS = %w[attribute_context helpers role clock tables_before tables_after tables_finish].freeze
     METADATA_SOURCE_FILES = (IngestionAttributes::ATTRIBUTE_SOURCE_FILES + %w[
       scripts/database_rebaseline/ingestion_metadata.rb scripts/tests/database-ingestion-metadata-test.rb
       scripts/tests/database-ingestion-proof-test.rb scripts/database_rebaseline/contract.rb scripts/database_rebaseline/support.rb
@@ -105,7 +108,34 @@ module RevaerDatabaseRebaseline
 
     def metadata_execute(session, database, role, name)
       raw = metadata_transport(attributes_query(session), database, role, name)
+      metadata_transport_json!(raw.fetch("stdout"))
       raw.merge(attributes_parse(raw.fetch("stdout"), raw.fetch("stderr"), session, role))
+    end
+
+    def metadata_strict_json!
+      # Older JSON runtimes can silently ignore unknown parser options.
+      JSON.parse('{"outer":{"field":null,"field":true}}', allow_duplicate_key: false)
+      raise Failure, "metadata JSON parser lacks duplicate-field rejection"
+    rescue JSON::ParserError
+      nil
+    end
+
+    def metadata_json_parse(value)
+      metadata_strict_json!
+      JSON.parse(value, allow_duplicate_key: false)
+    rescue JSON::ParserError
+      raise Failure, "invalid or duplicate metadata JSON evidence"
+    end
+
+    def metadata_transport_json!(stdout)
+      stdout.each_line(chomp: true) do |line|
+        if line.start_with?("{")
+          metadata_json_parse(line)
+        else
+          prefix, value = line.split(":", 2)
+          metadata_json_parse(value) if METADATA_JSON_RECORDS.include?(prefix)
+        end
+      end
     end
 
     def metadata_read(database, name)
@@ -123,9 +153,7 @@ module RevaerDatabaseRebaseline
     def metadata_read_parse(record)
       raise Failure, "metadata read diagnostic changed" unless record.fetch("stderr").empty?
 
-      JSON.parse(record.fetch("stdout"))
-    rescue JSON::ParserError
-      raise Failure, "invalid metadata read JSON"
+      metadata_json_parse(record.fetch("stdout"))
     end
 
     def metadata_read_tables(clock)
@@ -217,6 +245,16 @@ module RevaerDatabaseRebaseline
       %w[source_metadata_conflict source_metadata_conflict_audit_log indexer_health_event].each { |table| counters[table] += shape.fetch(:conflicts).length }
     end
 
+    def metadata_clock?(clock)
+      return false unless clock.is_a?(String)
+
+      match = clock.match(/\A(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,6})?\+00:00\z/)
+      return false unless match
+
+      year, month, day, hour, minute, second = match.captures.map { |part| Integer(part, 10) }
+      year.positive? && Date.valid_date?(year, month, day, Date::GREGORIAN) && hour < 24 && minute < 60 && second < 60
+    end
+
     def metadata_validate!(evidence, spec, mode, variant, role)
       fixtures = evidence.fetch("fixtures")
       raise Failure, "metadata fixture count changed" unless fixtures.length == spec.fetch(:fixtures).length
@@ -224,6 +262,7 @@ module RevaerDatabaseRebaseline
       records = fixtures + [evidence]
       sessions = spec.fetch(:fixtures).map { |shape| { calls: [metadata_arguments(shape)] } } + [metadata_session(spec, mode)]
       records.zip(sessions).each do |record, session|
+        metadata_transport_json!(record.fetch("stdout"))
         parsed = attributes_parse(record.fetch("stdout"), record.fetch("stderr"), session, role)
         raise Failure, "metadata serialized transport changed" unless parsed == record.slice("context", "frames")
         expected = { "backend" => record.fetch("frames").first.fetch("backend"), "session" => role, "current" => role, "setting" => "error" }
@@ -232,7 +271,7 @@ module RevaerDatabaseRebaseline
       all = records.flat_map { |record| record.fetch("frames") }
       clocks = [evidence.fetch("seed_clock")] + all.map { |frame| frame.fetch("clock") }
       raise Failure, "metadata cold backend or clocks changed" unless records.map { |record| record.fetch("context").fetch("backend") }.uniq.length == records.length &&
-        clocks.all? { |clock| validation_clock?(clock) } && clocks.uniq.length == clocks.length
+        clocks.all? { |clock| metadata_clock?(clock) } && clocks.uniq.length == clocks.length
       frames = evidence.fetch("frames")
       raise Failure, "metadata required success or exact D4 changed" unless validation_states?(frames, { site: nil }, variant, role) &&
         fixtures.all? { |record| record.fetch("frames").length == 1 && record.fetch("frames").first.fetch("state") == "00000" }

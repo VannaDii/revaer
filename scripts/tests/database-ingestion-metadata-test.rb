@@ -14,6 +14,9 @@ module RevaerDatabaseRebaseline
       metadata_case_tests!
       metadata_mutation_tests!
       metadata_transport_tests!
+      metadata_json_tests!
+      metadata_json_option_tests!
+      metadata_clock_tests!
       metadata_identity_tests!
       metadata_producer_tests!
       metadata_isolated_tests!
@@ -233,6 +236,84 @@ module RevaerDatabaseRebaseline
       rejected("read diagnostic") { metadata_validate!(changed, spec, "helpers-first", "reference", "postgres") }
     end
 
+    def metadata_json_tests!
+      [
+        '{"field":1,"field":2}',
+        '{"outer":[{"inner":{"field":1,"field":2}}]}',
+        '{"outer":[{"inner":{"field":1,"\\u0066ield":2}}]}'
+      ].each { |json| rejected("duplicate metadata JSON") { metadata_json_parse(json) } }
+      valid = JSON.generate("left" => { "field" => 1 }, "right" => { "field" => 2 }, "text" => '{"field":1}', "number" => 2.3456)
+      assert(metadata_json_parse(valid) == JSON.parse(valid), "sibling fields, escaped text and numeric values are unchanged")
+
+      spec = metadata_cases.first
+      evidence = metadata_test_evidence(spec, "helpers-first", "final")
+      (%w[attribute_context helpers role tables_before tables_after tables_finish] + [nil]).each do |prefix|
+        changed = copy(evidence)
+        lines = changed.fetch("stdout").lines(chomp: true)
+        index = lines.index { |line| prefix ? line.start_with?("#{prefix}:") : line.start_with?("{") }
+        json = prefix ? lines.fetch(index).delete_prefix("#{prefix}:") : lines.fetch(index)
+        key = JSON.parse(json).keys.first
+        lines[index] = "#{prefix ? "#{prefix}:" : ''}#{json.sub('{', "{#{JSON.generate(key)}:null,")}"
+        changed["stdout"] = lines.join("\n") + "\n"
+        rejected("duplicate metadata JSON") { metadata_validate!(changed, spec, "helpers-first", "final", @runtime) }
+      end
+      changed = copy(evidence)
+      read = changed.fetch("reads").last
+      read["stdout"] = read.fetch("stdout").sub('"display_name":"Ingestion proof"', '"display_name":"lost","display_name":"Ingestion proof"')
+      rejected("duplicate metadata JSON") { metadata_validate!(changed, spec, "helpers-first", "final", @runtime) }
+      changed = copy(evidence)
+      fixture = changed.fetch("fixtures").first
+      fixture["stdout"] = fixture.fetch("stdout").sub('"value_int":2000', '"value_int":99,"value_int":2000')
+      rejected("duplicate metadata JSON") { metadata_validate!(changed, spec, "helpers-first", "final", @runtime) }
+    end
+
+    def metadata_invalid_clocks!(evidence)
+      clocks = [evidence.fetch("seed_clock")] + (evidence.fetch("fixtures") + [evidence]).flat_map { |record| record.fetch("frames").map { |frame| frame.fetch("clock") } }
+      replacements = clocks.each_with_index.to_h { |clock, index| [clock, "2026-99-99T25:61:0#{index}+00:00"] }
+      metadata_walk(evidence) do |row|
+        row.each { |key, value| row[key] = replacements.fetch(value, value) if value.is_a?(String) }
+      end
+    end
+
+    def metadata_json_option_tests!
+      parser = JSON.method(:parse)
+      JSON.define_singleton_method(:parse) do |value, **options|
+        parser.call(value, **options.reject { |key, _option| key == :allow_duplicate_key })
+      end
+      rejected("lacks duplicate-field rejection") { metadata_json_parse('{}') }
+    ensure
+      JSON.define_singleton_method(:parse, parser) if parser
+    end
+
+    def metadata_clock_tests!
+      valid = %w[0001-01-01T00:00:00+00:00 1500-02-28T00:00:00+00:00 1582-10-10T00:00:00+00:00
+                 1600-02-29T23:59:59+00:00 2000-02-29T12:34:56+00:00 9999-12-31T23:59:59+00:00]
+      (1..6).each { |digits| valid << "2026-09-12T01:02:03.#{'0' * digits}+00:00" }
+      valid.concat(%w[2026-09-12T01:02:03.1+00:00 2026-09-12T01:02:03.01+00:00 2026-09-12T01:02:03.123456+00:00])
+      valid.each do |clock|
+        original = clock.dup
+        assert(metadata_clock?(clock) && clock == original, "exact Gregorian timestamp domain without normalization")
+      end
+      invalid = [nil, 1, {}, "", "2026-09-12T01:02:03Z", "2026-09-12T01:02:03+01:00",
+        "2026-09-12T01:02:03.1234567+00:00", "2026-09-12T01:02:03.+00:00", "2026-09-12 01:02:03+00:00",
+        "2026-09-12T01:02:03+00:00\n", "0000-01-01T00:00:00+00:00", "1500-02-29T00:00:00+00:00",
+        "1900-02-29T00:00:00+00:00", "2026-02-29T00:00:00+00:00", "2024-02-30T00:00:00+00:00",
+        "2026-04-31T00:00:00+00:00", "2026-00-01T00:00:00+00:00", "2026-13-01T00:00:00+00:00",
+        "2026-09-00T00:00:00+00:00", "2026-09-12T24:00:00+00:00", "2026-09-12T25:00:00+00:00",
+        "2026-09-12T01:60:00+00:00", "2026-09-12T01:02:60+00:00"]
+      invalid.each { |clock| assert(!metadata_clock?(clock), "invalid date/time or changed timestamp representation rejected") }
+      metadata_cases.each do |spec|
+        %w[cold helpers-first].each do |mode|
+          %w[reference final].each do |variant|
+            evidence = metadata_test_evidence(spec, mode, variant)
+            metadata_invalid_clocks!(evidence)
+            metadata_refresh!(evidence, mode)
+            rejected("clocks changed") { metadata_validate!(evidence, spec, mode, variant, variant == "reference" ? "postgres" : @runtime) }
+          end
+        end
+      end
+    end
+
     def metadata_producer_tests!
       @contract.validate_output_path!
       FileUtils.mkdir_p(@contract.output_path, mode: 0o700)
@@ -303,12 +384,20 @@ module RevaerDatabaseRebaseline
 
     def metadata_isolated_tests!
       spec = metadata_cases.first
-      %w[valid invalid failed].each do |kind|
+      %w[valid invalid failed duplicate-read duplicate-frame impossible-clock].each do |kind|
         @metadata_evidence = Dir.mktmpdir("metadata-producer-#{kind}-", @contract.output_path)
         @metadata_validated_evidence = {}
         evidence = metadata_test_evidence(spec, "cold", "final")
         if kind == "invalid"
           evidence.fetch("frames").first.fetch("result")["canonical_changed"] = true
+          metadata_refresh!(evidence, "cold")
+        elsif kind == "duplicate-read"
+          read = evidence.fetch("reads").last
+          read["stdout"] = read.fetch("stdout").sub('{', '{"inputs":{},')
+        elsif kind == "duplicate-frame"
+          evidence["stdout"] = evidence.fetch("stdout").sub('"value_int":4000', '"value_int":99,"value_int":4000')
+        elsif kind == "impossible-clock"
+          metadata_invalid_clocks!(evidence)
           metadata_refresh!(evidence, "cold")
         end
         reads = evidence.fetch("reads").dup
@@ -328,7 +417,9 @@ module RevaerDatabaseRebaseline
           assert(metadata_isolated(spec, "cold", "final", @database, @runtime) == evidence, "real producer path validates serialized evidence")
           assert(@metadata_validated_evidence.length == 1, "exact one valid observed result registered")
         else
-          rejected(kind == "invalid" ? "result flags" : "transport failed") { metadata_isolated(spec, "cold", "final", @database, @runtime) }
+          message = { "invalid" => "result flags", "failed" => "transport failed", "duplicate-read" => "duplicate metadata JSON",
+                      "duplicate-frame" => "duplicate metadata JSON", "impossible-clock" => "clocks changed" }.fetch(kind)
+          rejected(message) { metadata_isolated(spec, "cold", "final", @database, @runtime) }
           assert(@metadata_validated_evidence.empty?, "#{kind} producer cannot register evidence")
         end
         assert(commands.last == 'DROP DATABASE "ingestion_metadata_final" WITH (FORCE)', "#{kind} producer drops only its clone")
