@@ -176,6 +176,57 @@ or new approval. The existing architectural approval boundary is unchanged.
 
 ## Observability And Status Docs
 
+### 2026-09-12 Bounded Schedule Boundary Review
+
+Reviewed source `df2921fb55869626da65848b08d7eb0e25a3bd51` in the isolated
+`work/media3-ui-schedule-proof` worktree. The requested narrow UI/API/E2E
+correction is blocked by the existing contract, not another fixture value:
+
+- `tests/specs/api/media.spec.ts:476-485` supplies scheduling enabled and a
+  120-minute interval, then requires HTTP 200 and persisted enablement.
+- `crates/revaer-api/src/http/handlers/media.rs:238-253` forwards both values;
+  `crates/revaer-app/src/media.rs:483-497` forwards them to `update_profile`.
+  `crates/revaer-data/src/media/profiles.rs:8,156-176` calls the frozen
+  `media_profile_update_v1` procedure.
+- Frozen `0182_media_normalized_configuration_identity.sql:1417-1425` rejects
+  every true schedule/watcher flag or non-null interval before mutation. This
+  predicate does not consult persisted root identity. Even an actually resolved
+  and persisted device/inode cannot make that legacy PATCH accept the request.
+- ADR 557's Legacy Cutover (`:1356-1380`) excludes compatibility tables, views,
+  dual writes and fallback procedures; its follow-up (`:1585-1586`) preserves
+  current runtime behavior until the coordinated cutover removes legacy paths.
+  ADR 588's accepted discovery design still binds to ADR 557's immutable
+  associations and attestations. This review does not reopen either approval.
+
+No schedule/API/runtime/E2E patch was made. A pre-cutover compatibility route
+around this rejection would change the accepted filesystem/API boundary, not
+constitute a semantics-preserving internal refinement. The existing approved
+root/profile/discovery integration and coordinated cutover remain the route
+forward; they exceed this bounded UI/API/E2E ownership. No new architecture or
+operator consent was invented. All positive automation assertions, fail-closed
+negative tests, actual-identity requirements and dry-run defaults remain intact.
+
+The original `/private/tmp/revaer-approved-ui-hash-fill.log` still records
+57 passed, 1 failed and 72 not run. The UI project depends on the API-key
+project, which depends on the failing anonymous API project; no UI coverage
+was produced. Teardown correctly rejects the missing coverage. No coverage
+exception, altered dependency or fabricated browser visit was introduced.
+
+Focused command: `just --command ruby --disable-gems
+target/ui-schedule-proof/source-boundary-check.rb`, **15/15 source checks**.
+This is explicitly not a new runtime regression or UI pass. Original source
+bytes/hashes, the parent-log hash and its failure excerpt are retained at
+`/private/tmp/revaer-ui-schedule-proof/target/ui-schedule-proof/source-20260913T012152071639/`.
+No new UI build, Rust build, database or server was started after identifying
+the boundary; no test media, credentials, uploads or remote mutations were
+created or read. The metadata author's worktree was left untouched. Parent
+still owns combined CI/UI verification after an authorized integrated change.
+
+Reviewed root AGENTS and scoped UI/Rust instructions before this record-only
+change, plus the existing task and ADR 419/557/559/588 boundaries. No instruction,
+workflow, index, database-proof, ASSET or Sonar criteria changes were made.
+Rollback is removal of this record subsection; there is no executable delta.
+
 No runtime metric, event, log, API schema or support-claim changes. Assertion
 messages now expose the existing error body. Later automation expectations still
 require their approved workflow integration; this correction is not a completed
