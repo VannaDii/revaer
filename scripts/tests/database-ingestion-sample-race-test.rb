@@ -65,6 +65,8 @@ module RevaerDatabaseRebaseline
       assert(!query.match?(/DISCARD|DROP TABLE|SET ROLE|SET plpgsql|\\connect/), "no warm compiler/temp repair")
       assert(sample_race_seed_sql.include?("generate_series(0, 25)") && sample_race_seed_sql.include?("VALUES (1, 26, 1024, 1024, 1024,"), "26 distinct samples and explicit prior rollup")
       assert(!sample_race_seed_sql.match?(/DISABLE|session_replication_role|SET CONSTRAINTS|INSERT INTO public\.canonical_[^;]*OVERRIDING/m), "no disabled constraints or replaced identities")
+      wait_query = sample_race_wait_sql("numeric-oid-control", { "pid" => 11 }, { "context" => { "pid" => 12 } })
+      assert(wait_query.include?("relation::bigint AS relation"), "lock relation OIDs must use the same numeric JSON representation as tuples")
       rejected("unknown compilation mode") { sample_race_session("warm-fixed") }
     end
 
@@ -318,6 +320,7 @@ module RevaerDatabaseRebaseline
               events << "delete-commit"
             else
               assert(query.include?("ORDER BY observed_at FOR UPDATE") && !query.match?(/DELETE|UPDATE public/), "writer initially locks only")
+              assert(query.include?("s.tableoid::bigint AS relation"), "writer relation OID must be encoded as a JSON number")
               events << "lock-all"
             end
           else

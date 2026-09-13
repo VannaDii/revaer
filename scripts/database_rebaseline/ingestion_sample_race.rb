@@ -202,7 +202,7 @@ module RevaerDatabaseRebaseline
             a.backend_xid::text AS transaction, a.query, pg_blocking_pids(a.pid) AS blockers
             FROM pg_stat_activity a WHERE a.pid = #{Integer(caller.fetch('pid'))} AND a.datname = #{literal(database)}) r),
           'locks', (SELECT COALESCE(json_agg(row_to_json(r) ORDER BY to_jsonb(r)::text), '[]') FROM
-            (SELECT pid, locktype, mode, granted, relation, page, tuple, transactionid::text AS transaction
+            (SELECT pid, locktype, mode, granted, relation::bigint AS relation, page, tuple, transactionid::text AS transaction
              FROM pg_locks WHERE pid IN (#{Integer(caller.fetch('pid'))}, #{Integer(writer.fetch('pid'))}) r))::text;
       SQL
     end
@@ -303,7 +303,7 @@ module RevaerDatabaseRebaseline
           SET statement_timeout = '20s';
           SET idle_in_transaction_session_timeout = '30s';
           BEGIN;
-          WITH locked AS MATERIALIZED (SELECT s.*, s.ctid::text AS tuple, s.tableoid AS relation
+          WITH locked AS MATERIALIZED (SELECT s.*, s.ctid::text AS tuple, s.tableoid::bigint AS relation
             FROM public.canonical_size_sample s WHERE canonical_torrent_id = 1 ORDER BY observed_at FOR UPDATE)
           SELECT 'locked:' || json_build_object('context', #{sample_race_context_sql},
             'rows', (SELECT json_agg(row_to_json(locked) ORDER BY observed_at) FROM locked))::text;

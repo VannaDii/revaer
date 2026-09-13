@@ -153,6 +153,9 @@ applyTo:
   the owning backend and top-level transaction: a savepoint's child xid is not
   its parent's xid. Run these races first within D3 for early diagnostics while
   retaining the preceding D4/D5 matrix and every remaining canonical case.
+  Sample-lock observation queries must cast PostgreSQL relation OIDs to bigint
+  before JSON serialization; retain strict numeric identity checks rather than
+  coercing arbitrary strings in the evidence validator.
   Missing-hash proof must independently specify both fixture states and every
   write-table result, distinguish durable source fill from incoming observation
   identity, and preserve competing-source conflicts and rollback sequence gaps.

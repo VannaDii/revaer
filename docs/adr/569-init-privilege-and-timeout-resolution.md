@@ -1774,6 +1774,12 @@ pass independently of reference/final comparisons. This explains the missing
 reference SQL entry without supplying a new native setting witness or adopting
 a canonical replacement assertion; the prior native trial remains failed.
 
+Revision `37b4048a` completes all 16 K2 plain/observed variant/mode executions
+and four paired cases. K3 then exposes PostgreSQL OID JSON string encoding in
+the writer's tuple metadata. Both source queries now explicitly cast relation
+OIDs to bigint; the numeric validator remains strict. That failed run and its
+passing K2 report are retained separately. No application SQL behavior changed.
+
 Checkpoint documentation validation also encountered the EBU R128 landing
 page's 403 response. Its citation now points to the official recommendation
 PDF carrying the same referenced broadcast target. No audio recommendation,
