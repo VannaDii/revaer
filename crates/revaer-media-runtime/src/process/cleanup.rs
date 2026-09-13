@@ -709,6 +709,61 @@ mod tests {
     }
 
     #[test]
+    fn force_kill_permission_error_survives_successful_reap_and_pipe_eof()
+    -> Result<(), Box<dyn Error>> {
+        let (mut streams, writers) = open_capture_streams()?;
+        let mut writers = Some(writers);
+        let mut observations = 0;
+        let mut operations = FakeCleanupOperations::successful_escalation();
+        let permission_error = rustix::io::Errno::PERM.to_string();
+        operations.group_kill = VecDeque::from([Err(permission_error.clone())]);
+        let deadline = NativeProcessError::deadline_exceeded(Duration::from_millis(20));
+        let outcome = terminate_and_verify_with(
+            &mut FakeChild,
+            test_process_group()?,
+            false,
+            Some(&mut streams),
+            Duration::from_millis(40),
+            &mut operations,
+            |_| {
+                observations += 1;
+                if observations == 5 {
+                    drop(writers.take());
+                }
+                Some(deadline.clone())
+            },
+        );
+
+        assert!(streams.all_closed());
+        assert_eq!(observations, 6);
+        assert_eq!(outcome.boundary, Some(deadline.clone()));
+        let error = super::super::system::combine_messages(deadline.clone(), outcome.evidence);
+        assert_eq!(error.primary(), deadline.primary());
+        assert_eq!(
+            error.secondary_evidence().messages(),
+            [format!(
+                "process-group force kill failed: {permission_error}"
+            )]
+        );
+        assert_eq!(
+            operations.calls,
+            [
+                CleanupCall::ProbeLeaderReaped,
+                CleanupCall::ProbeGroupExists,
+                CleanupCall::GroupTerm,
+                CleanupCall::LeaderTerm,
+                CleanupCall::ProbeLeaderReaped,
+                CleanupCall::ProbeGroupExists,
+                CleanupCall::GroupKill,
+                CleanupCall::LeaderKill,
+                CleanupCall::ProbeLeaderReaped,
+                CleanupCall::ProbeGroupExists,
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
     fn cleanup_operations_preserve_failures_and_surviving_group_evidence() -> Result<(), String> {
         let mut operations = FakeCleanupOperations::failing_survivor();
         let outcome = terminate_and_verify_with(

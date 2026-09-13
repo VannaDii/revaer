@@ -40,6 +40,11 @@ These are the repo-specific guidelines for using the SonarQube MCP server with R
 - Rust input generation follows the inclusive `cov-report` contract in
   `devops.instructions.md`. Authored test files must remain visible in exported
   coverage; a passing package threshold is not proof that Sonar received them.
+  Rust report regeneration must preserve the independently generated coverage
+  streams and analyzer inputs under that same ownership contract; retained
+  partial data never substitutes for the required complete, validated inputs.
+  Retention does not authorize stale-input reuse after relevant source changes;
+  all submitted inputs still require current-source generation and validation.
 - PR and main workflows install exact SonarScanner CLI 8.1.0.6389 through `setup-revaer` only. Installation requires exact per-platform SHA-256 validation plus detached-signature verification against the committed key and pinned fingerprint. `just sonar-scan` is the one and only scanner invocation.
 - Sonar checkout uses complete Git history and the exact event head. The exact event base SHA must be an ancestor of the head; divergent or stale stacked branches fail with a restack requirement before analysis.
 - Reject every scanner log containing the `WARN` token after ANSI normalization. Retain one complete scanner log, one SCM evidence file, one `report-task.txt`, one submitted-report archive, one exact task ID, and the API result JSON used for verification.

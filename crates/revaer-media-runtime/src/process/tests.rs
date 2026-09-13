@@ -257,7 +257,11 @@ fn supervisor_closes_stdin_and_enforces_each_output_bound() -> Result<(), Native
 #[cfg(unix)]
 #[test]
 fn deadline_includes_pipe_setup_time() {
-    let request = shell_request("sleep 30", Duration::from_millis(20), 16);
+    let request = shell_request(
+        "trap '' TERM; printf R; while :; do sleep 1; done",
+        Duration::from_millis(20),
+        16,
+    );
     let started = Instant::now();
     let result = super::system::run_with_setup_delay(
         &request,

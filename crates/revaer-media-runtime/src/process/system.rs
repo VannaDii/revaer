@@ -390,12 +390,84 @@ mod unix {
     ) -> Result<NativeProcessOutput, NativeProcessError> {
         let mut delayed = false;
         run_with(request, control, grace, |descriptor| {
+            configure_nonblocking(descriptor)?;
             if !delayed {
                 delayed = true;
-                thread::sleep(delay);
+                let started = Instant::now();
+                wait_for_setup_ready(descriptor, started, delay)?;
+                thread::sleep(delay.saturating_sub(started.elapsed()));
             }
-            configure_nonblocking(descriptor)
+            Ok(())
         })
+    }
+
+    #[cfg(test)]
+    fn wait_for_setup_ready(
+        descriptor: BorrowedFd<'_>,
+        started: Instant,
+        maximum_wait: Duration,
+    ) -> Result<(), io::Error> {
+        loop {
+            let mut ready = [0];
+            match rustix::io::read(descriptor, &mut ready) {
+                Ok(1) if ready == [b'R'] => return Ok(()),
+                Ok(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "process fixture did not emit its readiness marker",
+                    ));
+                }
+                Err(rustix::io::Errno::AGAIN | rustix::io::Errno::INTR) => {}
+                Err(error) => return Err(error.into()),
+            }
+            let remaining = maximum_wait.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "process fixture was not ready within pipe setup",
+                ));
+            }
+            thread::sleep(PROCESS_POLL_INTERVAL.min(remaining));
+        }
+    }
+
+    #[cfg(test)]
+    mod setup_tests {
+        use std::error::Error;
+        use std::io::Write;
+        use std::os::fd::AsFd;
+
+        use super::*;
+
+        #[test]
+        fn setup_readiness_requires_exact_marker() -> Result<(), Box<dyn Error>> {
+            for (marker, expected) in [(b'R', Ok(())), (b'X', Err(io::ErrorKind::InvalidData))] {
+                let (reader, mut writer) = io::pipe()?;
+                configure_nonblocking(reader.as_fd())?;
+                writer.write_all(&[marker])?;
+                let result = wait_for_setup_ready(reader.as_fd(), Instant::now(), Duration::ZERO);
+                assert_eq!(result.map_err(|error| error.kind()), expected);
+            }
+            Ok(())
+        }
+
+        #[test]
+        fn setup_readiness_rejects_eof_and_missing_marker() -> Result<(), Box<dyn Error>> {
+            let (reader, writer) = io::pipe()?;
+            configure_nonblocking(reader.as_fd())?;
+            let missing = wait_for_setup_ready(reader.as_fd(), Instant::now(), Duration::ZERO);
+            assert_eq!(
+                missing.map_err(|error| error.kind()),
+                Err(io::ErrorKind::TimedOut)
+            );
+            drop(writer);
+            let closed = wait_for_setup_ready(reader.as_fd(), Instant::now(), Duration::ZERO);
+            assert_eq!(
+                closed.map_err(|error| error.kind()),
+                Err(io::ErrorKind::InvalidData)
+            );
+            Ok(())
+        }
     }
 }
 

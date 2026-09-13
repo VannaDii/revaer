@@ -1023,3 +1023,49 @@ qualification remain open. No GitHub mutation, push, merge or release occurred.
 Documentation indexing and instruction-drift checks pass. The documentation
 build exits zero but retains its oversized-search-index WARN (15,228,470 bytes);
 it is not a warning-free documentation result or permission to exclude ADRs.
+
+### Coverage Retention And Deadline Fixture (2026-09-13)
+
+- Motivation: the preceding CI rerun erased the partial E2E JS evidence because
+  `cov-report` cleared the entire coverage directory. Its failed JS archive is
+  retained and remains an evidence gap. The same CI checkpoint first failed
+  because native group force-kill returned EPERM after the deadline.
+- Implementation: Rust report generation now replaces only its LCOV, native
+  text and HTML outputs. It rejects a symlinked coverage root and preserves
+  independent coverage and native analyzer inputs. All generator errors remain
+  fatal; retained partial or stale inputs cannot qualify a later Sonar scan.
+  The actual recipe is exercised with isolated, explicitly synthetic generators
+  for success, repetition, each failed format and filesystem boundaries.
+- Native evidence: a bounded Darwin arm64 syscall experiment observed EPERM
+  for 10/10 unreaped zombie groups, versus successful KILL for 10/10 live groups;
+  163/200 deadline-order cases also returned EPERM. Every child was reaped and
+  its pipes reached EOF. This Ruby syscall model is not an instrumented Rust
+  reproduction or a reason to suppress a native error.
+- Test-only refinement: a TERM-ignoring fixture emits readiness before the
+  existing setup delay completes. The 20ms request, 40ms setup/grace and exact
+  deadline, empty-secondary and elapsed-time assertions remain unchanged.
+  Added safe-pipe/readiness tests reject missing, malformed and EOF markers;
+  an injected cleanup regression preserves exact EPERM secondary evidence after
+  successful reap, group disappearance and pipe EOF. Production code is intact.
+- Focused evidence: the recipe regression passes 9 runs and 94 assertions.
+  The worker reports 44 process tests, 20/20 deadline repetitions and strict
+  all-feature lint/format checks passing. Parent reviewed its bounded patch;
+  integrated full CI/UI and Sonar input validation are still pending here.
+- Authority: these are internal test/evidence-retention refinements, not new
+  architecture or relaxed criteria. The worker report incorrectly describes
+  parent delegation as an operator request; no additional operator approval
+  occurred. Preserve that report with this correction rather than treating the
+  agent's wording as approval evidence. Existing D3/S2 and release obligations
+  remain open; no SQL, GUC, runtime deadline or scanner criteria changed.
+- Observability: preserve first-failure, native experiment, focused and final
+  gate logs separately. No production logging or error disposition changes.
+- Risk and rollback: integration must prove independent inputs survive real
+  regeneration and remain source-current before submission. Revert recipe,
+  tests and matching guidance together if ownership is incorrect; do not erase
+  evidence or waive required inputs. Revert only the test fixture if its native
+  assumptions fail on a supported target; keep the original failure recorded.
+- Dependency rationale: existing Ruby standard library, Just, Rust standard
+  library and rustix only. No new dependency, unsafe code or native adapter.
+- Stale-policy check: root AGENTS and scoped Rust, DevOps and Sonar guidance
+  were reviewed. DevOps and Sonar now document exact report ownership and
+  current-source validation. No contradiction was resolved by weakening policy.

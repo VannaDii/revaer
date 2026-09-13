@@ -45,6 +45,7 @@ advisory-exception-guardrails-test:
 
 sonar-script-tests:
     bash scripts/tests/coverage-toolchain-test.sh
+    bash scripts/tests/coverage-report-test.sh
     bash scripts/tests/install-sonar-scanner-test.sh
     bash scripts/tests/prepare-sonar-scm-test.sh
     bash scripts/tests/sonar-inputs-test.sh
@@ -201,7 +202,9 @@ cov:
     just script-coverage
 
 cov-report:
-    rm -rf coverage
+    if test -L coverage; then printf '%s\n' 'Rust coverage output directory must not be a symlink' >&2; exit 1; fi
+    rm -rf coverage/html
+    rm -f coverage/lcov.info coverage/llvm-cov.txt
     mkdir -p coverage
     cargo llvm-cov report --no-default-ignore-filename-regex --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --lcov --output-path coverage/lcov.info
     cargo llvm-cov report --no-default-ignore-filename-regex --ignore-filename-regex '(^|/)(target|usr|opt|Applications)/|\.(c|cc|cpp|h|hpp|ipp)$' --html --output-dir coverage

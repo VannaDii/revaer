@@ -231,6 +231,13 @@ applyTo:
 - Trivy must emit SARIF with `exit-code: 0` only so the report survives for `if: always()` upload; a separate mandatory verifier must fail on every HIGH or CRITICAL result. Keep deterministic vulnerable-image SARIF regression coverage for this control.
 - Sonar-running jobs must prove the checkout is non-shallow, explicitly fetch the reviewed base ref, remove only an empty checkout shallow marker, and reject any remaining marker before analysis so Sonar's Git implementation cannot silently discard pull-request attribution or SCM blame.
 - `just sonar-compile-db` must clean the isolated native package build before compilation and fail unless it emits a nonempty `coverage/compile_commands.json`; repeated local or CI invocations must never reuse a cached build-script result after deleting the prior database.
+- `just cov-report` owns only `coverage/lcov.info`, `coverage/llvm-cov.txt`
+  and `coverage/html`. Reject a symlinked coverage root, replace those outputs,
+  and preserve all independently produced JS/script coverage, native analyzer
+  inputs and other evidence byte-for-byte. Never clear the whole coverage tree
+  as a Rust report reset. Every generator failure remains fatal and stale Rust
+  output must not survive it. The canonical recipe regression must verify
+  success, repetition, each failed format and symlink/non-directory boundaries.
 - External `docker://` actions require an exact `sha256` digest in addition to the exact-SHA rule for repository actions.
 - Every direct checked-in workflow job requires a positive `timeout-minutes` no greater than 180. Every `setup-revaer` step requires `timeout-minutes: 20`. Required jobs and steps must not use `continue-on-error: true` or expressions that can conceal failure; literal boolean or string `false` is permitted.
 - The root `justfile` is an import-only index using non-login `bash -c` and exactly the seven ADR 482 modules under `just/`. Each recipe has one module owner. Node commands run through `scripts/with-node.sh`, which selects and verifies exact Node 24.19.0 from `.nvmrc` so the NVM-managed version remains active.
