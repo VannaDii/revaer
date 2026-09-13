@@ -1302,3 +1302,30 @@ ADRs 569/588 were reviewed; DevOps records the new exact trace and rollback
 requirements. No stale constraint was removed or relaxed. D3 remains
 incomplete, and UI/root integration, published Sonar coverage, native packages
 and actual PR acceptance remain outstanding.
+
+The complete unit harness also passes, including the 4,746-assertion core
+suite and all nested proof modules. Clean executable revision `ce971164`
+passes 6,618/6,619 canonical checks; only the existing incomplete-D3 guard
+fails. All six GUID comparisons and 43 GUID checks pass, with all 40 source
+hashes matching the committed files. The disposable proof database is gone.
+
+The first full CI run fails `deadline_includes_pipe_setup_time`: its expected
+20ms deadline error also contains a process-group force-kill `EPERM` message.
+The unchanged isolated test passes once and then all 20 bounded repetitions.
+One full CI rerun passes without WARN/compiler-warning lines, including all
+18 package coverage gates and the release build. No code, assertion or timing
+bound changed in response. The initial intermittent failure is unresolved and
+retained; the rerun does not establish its cause or a fix. Rust instructions
+were additionally reviewed for this diagnostic boundary.
+
+Full UI still fails: 57 passed, one failed, 72 not run; scheduling returns
+`media_profile_filesystem_identity_required` and teardown rejects missing UI
+coverage. Sonar input verification rejects absent JS LCOV, and canonical
+authentication is absent. Local Rust coverage has 124,088 positive line
+records; it is not published Sonar coverage. All owned CI/UI databases and
+volumes were removed, the UI endpoint is closed, and test-media cleanup passes.
+Source and current proof, native experiment, failed/passing CI, UI, coverage
+and cleanup evidence are retained in
+`artifacts/media-verification/2026-09-13-guid-trace/`. User checkout changes
+remain untouched. No scan, push, package qualification, complete handoff or
+cutover is claimed.
