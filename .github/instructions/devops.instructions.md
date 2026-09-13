@@ -104,6 +104,13 @@ applyTo:
   identity, and preserve competing-source conflicts and rollback sequence gaps.
   Retain wrapper source hashes before/after execution. These cases do not close
   unobserved metadata conflicts, concurrent reachability or native dependencies.
+  Prevent-merge proof must retain the actual unique-key application failures
+  for all three hash strategies and both rule orientations, with successful
+  no-rule fixtures, cold/helper-first entry and committed same-backend retry.
+  Independently validate complete write/read state, rule identities and clocks,
+  canonical sequence consumption, exact native diagnostics and unchanged caller
+  settings. Privileged rule fixtures do not certify the rule-management API;
+  matching-rule failures do not imply successful splitting or complete D3.
 
 - `just test-database-baseline-read` exercises the ADR 551 read-only stored-procedure boundary against a caller-provided disposable Postgres service with the same workspace-wide all-feature selection as CI, filtering only the test names. Package-only feature resolution is not equivalent evidence for tracing behavior. It must fail when the service is missing, reject unmanaged databases without initializing them, and retain the frozen migration authority until the coordinated cutover. Baseline errors must never retain raw database messages, role names, or credentials.
 

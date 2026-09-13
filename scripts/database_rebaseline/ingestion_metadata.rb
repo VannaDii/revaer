@@ -202,8 +202,8 @@ module RevaerDatabaseRebaseline
 
     def metadata_read_tables(clock)
       tables = IngestionPolicy::POLICY_READ_TABLES.to_h { |table| [table, []] }.merge(hash_fill_read_tables(clock))
-      tables["trust_tier"] = [["public", "Public", 0, 10], ["semi_private", "Semi-Private", 5, 20],
-                              ["private", "Private", 10, 30], ["invite_only", "Invite Only", 15, 40]].each_with_index.map do |(key, name, weight, rank), index|
+      tables["trust_tier"] = [["public", "Public", 0.0, 10], ["semi_private", "Semi-Private", 5.0, 20],
+                              ["private", "Private", 10.0, 30], ["invite_only", "Invite Only", 15.0, 40]].each_with_index.map do |(key, name, weight, rank), index|
         { "trust_tier_id" => index + 1, "trust_tier_key" => key, "display_name" => name, "default_weight" => weight, "rank" => rank, "created_at" => clock }
       end
       tables["media_domain"] = [["movies", "Movies"], ["tv", "TV"], ["audiobooks", "Audiobooks"], ["ebooks", "Ebooks"],

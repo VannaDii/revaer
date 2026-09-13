@@ -169,6 +169,18 @@ module RevaerDatabaseRebaseline
     end
 
     def correction_parse(stdout, stderr, test_case)
+      frames = correction_frames(stdout, test_case)
+      expected = frames.map { |frame| frame.fetch("state") }.reject { |state| state == "00000" }
+      diagnostics = correction_diagnostics(stderr, wrapper: test_case[:wrapper] == true)
+      raise Failure, "ingestion correction unexpected diagnostic" unless diagnostics.map { |entry| entry.fetch("state") } == expected
+
+      frames.reject { |frame| frame.fetch("state") == "00000" }.zip(diagnostics).each do |frame, diagnostic|
+        frame["diagnostic"] = diagnostic
+      end
+      frames
+    end
+
+    def correction_frames(stdout, test_case)
       lines = stdout.lines(chomp: true)
       if test_case[:helpers]
         line = lines.shift
@@ -199,13 +211,6 @@ module RevaerDatabaseRebaseline
       end
       raise Failure, "ingestion correction unexpected stdout" unless lines.empty?
 
-      expected = frames.map { |frame| frame.fetch("state") }.reject { |state| state == "00000" }
-      diagnostics = correction_diagnostics(stderr, wrapper: test_case[:wrapper] == true)
-      raise Failure, "ingestion correction unexpected diagnostic" unless diagnostics.map { |entry| entry.fetch("state") } == expected
-
-      frames.reject { |frame| frame.fetch("state") == "00000" }.zip(diagnostics).each do |frame, diagnostic|
-        frame["diagnostic"] = diagnostic
-      end
       frames
     rescue JSON::ParserError
       raise Failure, "ingestion correction invalid JSON evidence"

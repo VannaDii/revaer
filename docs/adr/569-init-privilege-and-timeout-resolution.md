@@ -1009,3 +1009,34 @@ are retained at `artifacts/media-verification/2026-09-12-size-config/` with the
 source bundle and exact gate driver. Containers and the UI listener were
 confirmed absent; managed test-media cleanup passed. Frozen migration authority,
 init cutover conditions, package qualification and PR acceptance are unchanged.
+
+### Prevent-Merge Reachability Increment (In Progress)
+
+The next bounded D3 family exercises all three hash strategies and both
+orientations of a persisted `prevent_merge` rule through the application wrapper.
+Each case first creates and independently verifies a successful no-rule fixture,
+then executes two failed calls on one backend, in cold and helper-first modes.
+The independently specified outcome is the frozen unique-key error, not a
+successful canonical split. Every affected table, all 19 read tables, rule
+identity and clock, canonical identity sequence, caller settings and exact
+PostgreSQL diagnostic remain checked. PostgreSQL 16.14's independently retrieved
+`nbtinsert.c` pins `_bt_check_unique` to line 666 and SHA-256
+`3babaf9404d5f93dc20a5aea3dfdfffb0be636bf9ab1794c2fbb3b0bc92fe79e`.
+
+This adds proof only. It does not repair the legacy behavior, establish rule API
+reachability, cover concurrent identity races, observe every sequence or close
+native/helper execution scope. The conditional-D3 guard remains incomplete.
+There is no dependency, runtime SQL, observability or acceptance-criteria change;
+rollback removes this proof family without changing the frozen authority.
+Reviewed root instructions, DevOps, ADR 569 and the existing proof owners; the
+DevOps specialization now names this narrow evidence boundary. No completion
+or additional operator approval is asserted.
+
+Focused validation passes 235 assertions. The first real run rejected integer
+trust-weight expectations: `0012` declares `NUMERIC(12,4)`, so the independent
+shared read model now retains decimal weights. The original failed source and
+database evidence were archived before retry; no SQL or comparison was relaxed.
+The subsequent pinned live run passes all 24 variants, each with one successful
+fixture and two exact `23505` failures, plus the mandatory D4/D5 controls.
+Both disposable runs report resource cleanup. Combined canonical, CI and UI
+verification remain pending at this checkpoint.
