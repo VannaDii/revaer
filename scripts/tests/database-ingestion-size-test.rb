@@ -87,6 +87,9 @@ module RevaerDatabaseRebaseline
         changed.fetch("frames").last.fetch("tables_after").fetch("canonical_torrent").first["canonical_torrent_id"] = 2.0
         assert(!size_evidence?(spec, session, changed), "floating-point identity cannot masquerade as integer")
         changed = Marshal.load(raw)
+        changed.fetch("frames").last.fetch("tables_after").fetch("canonical_torrent_source_context_score").first["score_total_context"] = 0
+        assert(!size_evidence?(spec, session, changed), "numeric score must retain its decimal JSON representation")
+        changed = Marshal.load(raw)
         changed.fetch("inputs_after").fetch("search_request").first["effective_media_domain_id"] = 1
         assert(!size_evidence?(spec, session, changed), "read input mutation rejected")
         changed = Marshal.load(raw)

@@ -967,3 +967,11 @@ changes. This follows the existing proof-owner decomposition using Ruby standard
 libraries, with no new dependency. Rollback removes this increment only. Root,
 data, Rust, DevOps and Sonar instructions were reviewed; DevOps now records the
 boundary and evidence-retention requirements. No criteria were relaxed.
+
+The first live run at `5662cc68` rejected the model's integer zero scores:
+the frozen schema declares all three scores `NUMERIC(12,4)`, serialized as
+decimals. Its interrupted original run, shared correction outputs and cleanup
+receipts are retained before retry. The model now expects exactly decimal
+zero while still rejecting float-valued identities. This corrects the model,
+not the database or comparison strictness. The disposable container and named
+volume were removed; this failed run is not passing evidence.

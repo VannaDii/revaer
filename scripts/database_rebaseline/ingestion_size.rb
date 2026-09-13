@@ -97,6 +97,8 @@ module RevaerDatabaseRebaseline
       tables["canonical_torrent_best_source_context"] = [{ "canonical_torrent_best_source_context_id" => 1,
         "context_key_type" => "search_request", "context_key_id" => 569001, "canonical_torrent_id" => 1,
         "canonical_torrent_source_id" => 1, "computed_at" => frame.fetch("clock") }]
+      tables.fetch("canonical_torrent_source_context_score").first.merge!(
+        "score_total_context" => 0.0, "score_policy_adjust" => 0.0, "score_tag_adjust" => 0.0)
       if spec.fetch(:sampled)
         tables["canonical_size_sample"] = [{ "canonical_size_sample_id" => 1, "canonical_torrent_id" => 1,
           "observed_at" => "2026-09-10T00:00:00+00:00", "size_bytes" => spec.fetch(:bytes) }]
