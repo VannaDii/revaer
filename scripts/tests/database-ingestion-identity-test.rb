@@ -6,7 +6,7 @@ module RevaerDatabaseRebaseline
 
     def identity_tests!
       cases = wrapper_identity_cases
-      assert(cases.length == 18 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 18, "six identity strategies exercise new, reuse and GUID promotion")
+      assert(cases.length == 27 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 27, "nine identity inputs exercise new, reuse and GUID promotion")
       cases.each do |test_case|
         assert(test_case.fetch(:fixtures).first.fetch(:title_raw_input) == "'Unrelated identity'::varchar", "a distinct lower-ID source must already exist")
         if test_case.fetch(:name).include?("v2-precedence") && test_case.fetch(:identity).fetch(:operation) != "new"

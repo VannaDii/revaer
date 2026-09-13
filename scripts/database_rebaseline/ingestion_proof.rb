@@ -380,7 +380,8 @@ module RevaerDatabaseRebaseline
     def ingestion_helper_expectations
       {
         "normalize_title_v1" => [nil, "proof"],
-        "normalize_magnet_uri_v1" => [nil, nil, "https://example.invalid/proof", "magnet:?", "magnet:?dn=Proof&xt=opaque"],
+        "normalize_magnet_uri_v1" => [nil, nil, "https://example.invalid/proof", "magnet:?", "magnet:?dn=Proof&xt=opaque",
+                                      "magnet:?", "magnet:?", "magnet:?dn=Proof&xt"],
         "derive_magnet_hash_v1" => [nil, Digest::SHA256.hexdigest(["b" * 64].pack("H*")),
                                     Digest::SHA256.hexdigest(["a" * 40].pack("H*")),
                                     Digest::SHA256.hexdigest("magnet:?dn=Proof&xt=opaque")],

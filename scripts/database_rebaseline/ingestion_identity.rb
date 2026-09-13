@@ -21,6 +21,9 @@ module RevaerDatabaseRebaseline
         ["magnet-btih", { magnet_uri_input: "'magnet:?xt=urn:btih:#{v1.upcase}'::varchar" }, "infohash_v1", 1.0, [v1, nil, v1_hash, nil]],
         ["magnet-btmh", { magnet_uri_input: "'magnet:?xt=urn:btmh:1220#{v2.upcase}'::varchar" }, "infohash_v2", 1.0, [nil, v2, v2_hash, nil]],
         ["explicit-magnet", { magnet_hash_input: "repeat('c',64)::char(64)", magnet_uri_input: "'magnet:?dn=other'::varchar" }, "magnet_hash", 0.85, [nil, nil, magnet, nil]],
+        ["magnet-empty-query", { magnet_uri_input: "'magnet:?'::varchar" }, "magnet_hash", 0.85, [nil, nil, Digest::SHA256.hexdigest("magnet:?"), nil]],
+        ["magnet-empty-keys", { magnet_uri_input: "'magnet:?=ignored&&'::varchar" }, "magnet_hash", 0.85, [nil, nil, Digest::SHA256.hexdigest("magnet:?"), nil]],
+        ["magnet-bare-key", { magnet_uri_input: "'magnet:?DN=Proof&XT'::varchar" }, "magnet_hash", 0.85, [nil, nil, Digest::SHA256.hexdigest("magnet:?dn=Proof&xt"), nil]],
         ["title-size", {}, "title_size_fallback", 0.6, [nil, nil, nil, Digest::SHA256.hexdigest("identity proof|1024")]]
       ]
     end

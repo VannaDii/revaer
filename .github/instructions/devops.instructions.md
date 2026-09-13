@@ -83,6 +83,11 @@ applyTo:
   Pin and verify read inputs as well as all 18 write-table images. Only named
   input timestamp columns equal to an observed seed-transaction clock may be
   normalized; unrelated fields or unobserved clocks must remain visible.
+  Magnet identity evidence must include empty queries, discarded empty keys
+  and bare keys through real wrapper creation, reuse and GUID promotion in
+  cold, helper-first and warm-after-rollback sessions. Verify independent
+  canonical hashes and exact helper outputs; these cases do not establish
+  concurrent metadata or native-trigger closure.
   Candidate/final disposable PostgreSQL cleanup must remove their anonymous
   volumes as well as containers, never prune unrelated Docker resources.
   Settings-path proof must pair uninstrumented runs with rollback-surviving

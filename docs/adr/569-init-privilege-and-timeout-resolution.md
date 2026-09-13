@@ -1138,3 +1138,32 @@ combined shutdown revision `fe0948a4`; its full CI passes without WARN or
 compiler-warning lines. UI still fails schedule enablement and missing UI
 coverage. See the [combined checkpoint](586-compliance-manifest-failure-boundary.md#sampling-and-owned-watcher-integration-2026-09-13).
 Frozen migrations remain runtime authority; final init remains inert.
+
+## Magnet Normalization Branch Evidence (2026-09-13)
+
+In progress under the existing conditional D3 approval. Three actual-wrapper
+identity inputs cover an empty magnet query, discarded empty parameter keys,
+and a bare parameter without a value. Each exercises new identity, reuse and
+GUID promotion in cold, helper-first and same-backend warm-after-rollback
+sessions. Expected normalized URI hashes come from independently specified
+text; all prior result, identity, read-input and 18-table assertions remain.
+Direct helper-first known answers retain all earlier inputs and add these
+three; mutation checks reject every substituted normalization output.
+
+This is proof-only work: no database SQL, runtime, privilege, dependency or
+approval change. Observability consists of retained local SQL, diagnostics,
+source hashes and disposable resource cleanup receipts. Live and integrated
+validation are recorded below. These cases do not close concurrent GUID conflicts,
+native trigger execution or D3 overall. Rollback removes this proof increment
+only, retaining frozen authority and the incomplete-D3 failure. Root, data and
+DevOps instructions and ADRs 569/588 were reviewed; DevOps now records this
+bounded requirement without weakening existing criteria.
+
+At `36abef44` plus this six-file executable proof/test delta, the focused
+ingestion suite passes 4,746 assertions and every other database proof family
+passes. The rebaseline unit harness passes 45 assertions. The pinned live
+run passes 738 checks, including 27 reference/final pairs (54 new variants)
+and the separate mandatory D4/D5 controls. All recorded source hashes still
+match after execution. The uniquely owned container and named volume were
+removed. No first-attempt database failure occurred in this increment.
+Canonical proof, full CI/UI and published Sonar evidence remain pending.

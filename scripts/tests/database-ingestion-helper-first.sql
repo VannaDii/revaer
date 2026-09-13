@@ -10,7 +10,10 @@ SELECT 'helpers:' || json_build_object(
         public.normalize_magnet_uri_v1('  '),
         public.normalize_magnet_uri_v1('https://example.invalid/proof'),
         public.normalize_magnet_uri_v1('magnet:'),
-        public.normalize_magnet_uri_v1('magnet:?xt=opaque&DN=Proof')
+        public.normalize_magnet_uri_v1('magnet:?xt=opaque&DN=Proof'),
+        public.normalize_magnet_uri_v1('magnet:?'),
+        public.normalize_magnet_uri_v1('magnet:?=ignored&&'),
+        public.normalize_magnet_uri_v1('magnet:?DN=Proof&XT')
     ),
     'derive_magnet_hash_v1', json_build_array(
         public.derive_magnet_hash_v1(NULL, NULL, NULL),

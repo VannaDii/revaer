@@ -192,6 +192,12 @@ module RevaerDatabaseRebaseline
         changed_record = "helpers:#{JSON.generate(changed)}\n"
         rejected("known answers") { ingestion_parse(stdout.sub(record, changed_record), sample_stderr, role: @runtime, helpers_first: true) }
       end
+      expected.fetch("normalize_magnet_uri_v1").each_index do |index|
+        changed = Marshal.load(Marshal.dump(expected))
+        changed.fetch("normalize_magnet_uri_v1")[index] = "unexpected"
+        changed_record = "helpers:#{JSON.generate(changed)}\n"
+        rejected("known answers") { ingestion_parse(stdout.sub(record, changed_record), sample_stderr, role: @runtime, helpers_first: true) }
+      end
       rejected("not observed before") { ingestion_parse(sample_stdout + record, sample_stderr, role: @runtime, helpers_first: true) }
       rejected("not observed before") { ingestion_parse(record + sample_stdout, sample_stderr, role: @runtime, helpers_first: true) }
       result = JSON.generate(sample_value.fetch("results").first) + "\n"
