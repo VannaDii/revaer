@@ -21,6 +21,8 @@ module RevaerDatabaseRebaseline
         ["magnet-btih", { magnet_uri_input: "'magnet:?xt=urn:btih:#{v1.upcase}'::varchar" }, "infohash_v1", 1.0, [v1, nil, v1_hash, nil]],
         ["magnet-btmh", { magnet_uri_input: "'magnet:?xt=urn:btmh:1220#{v2.upcase}'::varchar" }, "infohash_v2", 1.0, [nil, v2, v2_hash, nil]],
         ["explicit-magnet", { magnet_hash_input: "repeat('c',64)::char(64)", magnet_uri_input: "'magnet:?dn=other'::varchar" }, "magnet_hash", 0.85, [nil, nil, magnet, nil]],
+        ["non-magnet-uri", { magnet_uri_input: "'  https://example.invalid/Identity.torrent?DN=Proof  '::varchar" }, "magnet_hash", 0.85, [nil, nil, Digest::SHA256.hexdigest("https://example.invalid/Identity.torrent?DN=Proof"), nil]],
+        ["magnet-no-query", { magnet_uri_input: "'  MAGNET:  '::varchar" }, "magnet_hash", 0.85, [nil, nil, Digest::SHA256.hexdigest("magnet:?"), nil]],
         ["magnet-empty-query", { magnet_uri_input: "'magnet:?'::varchar" }, "magnet_hash", 0.85, [nil, nil, Digest::SHA256.hexdigest("magnet:?"), nil]],
         ["magnet-empty-keys", { magnet_uri_input: "'magnet:?=ignored&&'::varchar" }, "magnet_hash", 0.85, [nil, nil, Digest::SHA256.hexdigest("magnet:?"), nil]],
         ["magnet-bare-key", { magnet_uri_input: "'magnet:?DN=Proof&XT'::varchar" }, "magnet_hash", 0.85, [nil, nil, Digest::SHA256.hexdigest("magnet:?dn=Proof&xt"), nil]],
@@ -44,8 +46,9 @@ module RevaerDatabaseRebaseline
             infohash_v1_input: colliding ? "repeat('a',40)::char(40)" : "repeat('d',40)::char(40)")
           fixture = colliding ? arguments.merge(infohash_v1_input: "NULL::char(40)") : arguments
           stored = colliding ? [nil, *hashes.drop(1)] : hashes
+          uri = { "non-magnet-uri" => "https://example.invalid/Identity.torrent?DN=Proof", "magnet-no-query" => "MAGNET:" }[name]
           { name: "identity-#{name}-#{operation}", fixtures: operation == "new" ? [decoy] : [decoy, fixture], arguments: tested,
-            wrapper: true, identity: { strategy:, confidence:, hashes: stored, source_hashes: hashes.first(3), observation_hashes: hashes.first(3), guid:, operation: } }
+            wrapper: true, identity: { strategy:, confidence:, hashes: stored, source_hashes: hashes.first(3), observation_hashes: hashes.first(3), guid:, operation:, uri: } }
         end
       end
     end
@@ -70,6 +73,10 @@ module RevaerDatabaseRebaseline
     end
 
     def wrapper_identity_observation?(expected, source, observation)
+      if expected[:uri]
+        return false unless source.fetch("last_seen_magnet_uri") == expected.fetch(:uri) && observation.fetch("magnet_uri") == expected.fetch(:uri)
+      end
+
       observation.values_at("infohash_v1", "infohash_v2", "magnet_hash") == expected.fetch(:observation_hashes) &&
         observation.values_at("title_raw", "size_bytes", "observed_at", "seeders", "leechers") == ["Identity proof", 1024, IDENTITY_OBSERVED_AT, 17, 2] &&
         source.values_at("last_seen_at", "last_seen_seeders", "last_seen_leechers") == [IDENTITY_OBSERVED_AT, 17, 2]

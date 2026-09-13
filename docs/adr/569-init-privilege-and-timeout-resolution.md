@@ -1447,5 +1447,95 @@ cutover is claimed.
   cancellation, all interruption sites, helper/native closure, complete D3,
   root workflow, supported-package proof or release completion. Rollback
   assertions cover the named tables, not restoration of sequence allocations.
-  Next critical-path work remains client-future cancellation and the finite
-  remaining helper/native closure, followed by the approved init/root cutover.
+  Next critical-path work is the finite remaining actual branch/helper/native
+  closure, followed by the approved init/root cutover. Client-future
+  cancellation remains unqualified, but is not a separately named mechanism
+  in D3 or ADR 588's cancellation condition; any demonstrated reachable path
+  still belongs to the approved ingestion scope.
+
+### Unpublished Native Callback Feasibility (2026-09-13)
+
+- Motivation: stock PostgreSQL function counters cannot establish built-in RI
+  callback execution. Test whether actual entry and the ambient compiler
+  setting can be observed without substituting callbacks or modifying SQL.
+- Design: source `5b6257f8` plus an ignored, unpublished experiment provisions
+  the exact frozen and final candidates in a network-disabled, owned PostgreSQL
+  16.14 arm64 container. A separate network-disabled debugger shares only that
+  container's PID namespace, with `SYS_PTRACE`; no host PID namespace, Docker
+  socket, host mount, inferior function call, target package install, SQL/grant
+  modification or production change is used. Debugger breakpoints instrument
+  timing; they are not production timing or shutdown evidence.
+- Evidence: `target/d3-native-ri/run-20260913-10108-vjev81/` retains ordinary
+  and observed direct-role runs. Each variant executes 14 actual
+  `RI_FKey_check_ins` entries. The observed native compiler-setting integers
+  are 2 in the frozen variant and 0 in the final variant; both report caller
+  setting `error` before/after ingestion and native readiness value 0. These
+  are raw observations, not a claim that the ambient settings are identical.
+  Within each variant, parsed application results and all 18 write-table
+  images match its ordinary invocation after existing identity/clock
+  normalization. All 14 declared read-input tables remain unchanged. The
+  pinned target image and five recorded native-file hashes are unchanged.
+- Test coverage: the paired cold/basic feasibility run passes. The first
+  attempt reached one real callback but failed to capture its setting; a
+  second attempt failed because GDB rejected a nonregular stdin command file.
+  Both failures are retained. Staging the exact script into the separate
+  debugger container produced the successful third attempt. Debugger stderr
+  retains its unavailable musl source-line warning; this is not a clean
+  complete native or package qualification. No new canonical acceptance,
+  full CI/UI result, Sonar analysis or remote pass follows from this trial.
+- Observability: retained GDB commands/stdout/stderr, backend and direct-role
+  identity, raw SQL results/settings, table images, image/native fingerprints,
+  process outcomes and cleanup records. All trial processes were reaped and
+  owned database/debugger containers removed.
+- Dependency rationale: development-only GDB 16.3-r4 in an isolated tool image
+  provides native entry observations unavailable from PostgreSQL counters.
+  Image `sha256:12fbe2ad89fa389c9a801050aa517b747089cc3b453242f1727bb685c3ff39c0`
+  and its package-resolution log identify this experiment. This does not add
+  a runtime dependency or adopt a permanent CI toolchain.
+- Risk and rollback: active-goal authority permits this bounded unpublished
+  experiment, not architectural adoption. Preserve its evidence, remove its
+  owned resources and discard the experimental harness if unsuitable. Never
+  turn an attach, catalog inventory, matching counts or this one basic case
+  into a full callback/branch certificate.
+- Stale-policy check: reviewed root, data and DevOps instructions and the
+  approved D3/ADR 588 conditions. Corrected the previous next-step sentence
+  that promoted a later client-future non-claim into a standalone prerequisite.
+  No approval, criterion, frozen source or bootstrap authority changed.
+- Limits: no update callback, helper-first, warm-cache, cancellation-site,
+  complete native/helper closure, Linux amd64 or installed-service proof is
+  claimed. The incomplete-D3 guard and init cutover boundary remain intact.
+
+### URI Identity And Changed V2 Conflict Cases (2026-09-13)
+
+- Motivation: close the actual-ingestion gaps for non-magnet/queryless-magnet
+  normalization and the changed non-NULL v2 hash logger branch. Known-answer
+  helper calls and missing-hash cases do not establish these application paths.
+- Design: add both URI inputs without explicit hashes to the existing new,
+  reuse and GUID-promotion identity cases in all three wrapper modes. Preserve
+  exact stored URI values and independently derived identity expectations.
+  Add a selected-GUID fixture with an existing non-NULL v2 hash, followed by a
+  different non-NULL v2 hash through the actual wrapper. Require retained
+  durable source identity, exact canonical/observation changes, both v2 and
+  derived-magnet conflict/audit/health records, and unchanged read inputs.
+  A real rolled-back first call and same-backend retry retain sequence gaps;
+  this does not substitute for the separately retained frozen D4 counterexample.
+- Test coverage: one isolated worker added the two bounded groups and reported
+  2,361 focused assertions passing. Parent integration updates the shared
+  wrapper inventory from 61 to 67 cases. The integrated ingestion unit suite
+  passes, including 6,192 main assertions and the dependency, validation,
+  setting-path, attribute, metadata, disambiguation, sampling and GUID suites.
+  Live database/full gate results remain pending at this checkpoint. No SQL,
+  runtime, frozen source,
+  final candidate or incomplete-D3 condition changes.
+- Observability: reuse the existing full SQL stdout/stderr, clocks, direct-role
+  identity, before/after/rollback table images and read-input evidence. No
+  production telemetry changes.
+- Risk and rollback: incorrect expectations must fail against the actual
+  frozen/final databases, not be accepted from synthetic unit frames. Remove
+  these test additions and their inventory/instruction updates together if
+  unsuitable; do not change application behavior to satisfy the oracle.
+- Dependency rationale: existing proof modules and Ruby standard library only.
+- Stale-policy check: reviewed root, data and DevOps instructions. DevOps now
+  records the exact URI/v2 evidence requirements; existing approvals and all
+  cutover/release gates remain unchanged. Full D3, root workflow, package,
+  published Sonar and merge acceptance remain unproven.

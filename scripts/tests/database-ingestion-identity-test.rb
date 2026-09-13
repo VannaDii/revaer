@@ -6,7 +6,7 @@ module RevaerDatabaseRebaseline
 
     def identity_tests!
       cases = wrapper_identity_cases
-      assert(cases.length == 27 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 27, "nine identity inputs exercise new, reuse and GUID promotion")
+      assert(cases.length == 33 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 33, "eleven identity inputs exercise new, reuse and GUID promotion")
       cases.each do |test_case|
         assert(test_case.fetch(:fixtures).first.fetch(:title_raw_input) == "'Unrelated identity'::varchar", "a distinct lower-ID source must already exist")
         if test_case.fetch(:name).include?("v2-precedence") && test_case.fetch(:identity).fetch(:operation) != "new"
@@ -17,12 +17,20 @@ module RevaerDatabaseRebaseline
         assert(wrapper_outcome?(test_case, frame), "exact #{test_case.fetch(:name)} identity and preserved row keys")
         identity_mutations!(test_case, frame)
       end
+      identity_uri_tests!(cases)
     end
 
     def identity_test_frame(test_case)
-      frame = wrapper_test_frame
+      frame = {
+        "result" => { "canonical_torrent_public_id" => "59600000-0000-4000-8000-000000000003",
+          "canonical_torrent_source_public_id" => "59600000-0000-4000-8000-000000000004" },
+        "tables_after" => IngestionProof::INGESTION_TABLES.to_h { |table| [table, []] }
+      }
       expected = test_case.fetch(:identity)
       tables = frame.fetch("tables_after")
+      tables["canonical_torrent"] = [{ "canonical_torrent_public_id" => frame.fetch("result").fetch("canonical_torrent_public_id") }]
+      tables["canonical_torrent_source"] = [{ "canonical_torrent_source_id" => 2,
+        "canonical_torrent_source_public_id" => frame.fetch("result").fetch("canonical_torrent_source_public_id") }]
       canonical = tables.fetch("canonical_torrent").first
       canonical["canonical_torrent_id"] = 2
       canonical.merge!("identity_strategy" => expected.fetch(:strategy), "identity_confidence" => expected.fetch(:confidence))
@@ -35,6 +43,10 @@ module RevaerDatabaseRebaseline
         "source_guid" => expected.fetch(:guid), "title_raw" => "Identity proof", "size_bytes" => 1024,
         "observed_at" => IngestionIdentity::IDENTITY_OBSERVED_AT, "seeders" => 17, "leechers" => 2 }
       %w[infohash_v1 infohash_v2 magnet_hash].zip(expected.fetch(:observation_hashes)).each { |key, value| observation[key] = value }
+      if expected[:uri]
+        source["last_seen_magnet_uri"] = expected.fetch(:uri)
+        observation["magnet_uri"] = expected.fetch(:uri)
+      end
       tables["search_request_source_observation"] = [observation]
       tables["canonical_torrent_best_source_context"] = [{ "canonical_torrent_id" => 2, "canonical_torrent_source_id" => 2 }]
       fresh = expected.fetch(:operation) == "new"
@@ -67,6 +79,10 @@ module RevaerDatabaseRebaseline
         "canonical_torrent_source" => %w[source_guid infohash_v1 infohash_v2 magnet_hash last_seen_at last_seen_seeders last_seen_leechers],
         "search_request_source_observation" => %w[observation_id canonical_torrent_id canonical_torrent_source_id source_guid infohash_v1 infohash_v2 magnet_hash title_raw size_bytes observed_at seeders leechers]
       }
+      if test_case.fetch(:identity)[:uri]
+        columns.fetch("canonical_torrent_source") << "last_seen_magnet_uri"
+        columns.fetch("search_request_source_observation") << "magnet_uri"
+      end
       columns.each do |table, keys|
         keys.each do |key|
           changed = Marshal.load(Marshal.dump(frame))
@@ -90,6 +106,32 @@ module RevaerDatabaseRebaseline
       changed.fetch("tables_after").fetch("search_request_source_observation").last["observation_id"] = 0
       assert(!wrapper_outcome?(test_case, changed), "new observation identities must be positive integers")
       identity_wrong_selection!(test_case, frame) unless test_case.fetch(:identity).fetch(:operation) == "new"
+    end
+
+    def identity_uri_tests!(cases)
+      inputs = {
+        "non-magnet-uri" => ["  https://example.invalid/Identity.torrent?DN=Proof  ", "https://example.invalid/Identity.torrent?DN=Proof"],
+        "magnet-no-query" => ["  MAGNET:  ", "magnet:?"]
+      }
+      inputs.each do |name, (raw, normalized)|
+        selected = cases.select { |entry| entry.fetch(:name).start_with?("identity-#{name}-") }
+        assert(selected.map { |entry| entry.fetch(:identity).fetch(:operation) } == %w[new reuse promote-guid], "#{name} retains all real identity operations")
+        selected.each do |test_case|
+          arguments = test_case.fetch(:arguments)
+          assert(arguments.fetch(:magnet_uri_input) == "'#{raw}'::varchar", "retain exact raw #{name} input")
+          assert(arguments.values_at(:infohash_v1_input, :infohash_v2_input, :magnet_hash_input) == ["NULL::char(40)", "NULL::char(64)", "NULL::char(64)"], "#{name} cannot hide derivation behind explicit hashes")
+          assert(test_case.fetch(:identity).values_at(:strategy, :confidence, :hashes) == ["magnet_hash", 0.85, [nil, nil, Digest::SHA256.hexdigest(normalized), nil]], "#{name} exact independently normalized identity")
+          IngestionWrapper::WRAPPER_MODES.each do |mode|
+            session = { calls: [arguments] * (mode == "warm-rollback" ? 2 : 1), wrapper: true, helpers: mode == "helpers-first", rollback: mode == "warm-rollback" }
+            query = correction_session(session)
+            assert(query.scan("FROM public.search_result_ingest(").length == session.fetch(:calls).length, "#{name} #{mode} must execute actual ingestion")
+            assert(query.scan(/^ROLLBACK;$/).length == (session[:rollback] ? 1 : 0), "#{name} warm first call must really roll back")
+            assert(query.scan(/^COMMIT;$/).length == 1, "#{name} must retain the committed result")
+            assert(query.include?("tables_after:") && query.include?("tables_finish:") && query.include?("state: :SQLSTATE"), "#{name} must retain writes, rollback and error evidence")
+            assert(!query.match?(/DROP TABLE|DISCARD|SET ROLE|SET plpgsql|\\connect/), "#{name} cannot repair the tested backend")
+          end
+        end
+      end
     end
 
     def identity_wrong_selection!(test_case, frame)

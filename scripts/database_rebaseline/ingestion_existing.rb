@@ -69,6 +69,164 @@ module RevaerDatabaseRebaseline
         check("ingestion #{name} parity or exact approved correction", admissible)
         check("ingestion #{name} required outcome", accepted)
       end
+      verify_existing_v2_conflict!
+    end
+
+    def existing_v2_arguments
+      fixture = { infohash_v1_input: "NULL::char(40)", infohash_v2_input: "repeat('b',64)::char(64)" }
+      [fixture, fixture.merge(infohash_v2_input: "repeat('c',64)::char(64)",
+        observed_at_input: "'2026-09-10T00:01:00Z'::timestamptz", seeders_input: "17")]
+    end
+
+    def existing_v2_session(mode)
+      raise Failure, "unknown existing v2 conflict mode" unless IngestionWrapper::WRAPPER_MODES.include?(mode)
+
+      { name: "existing-v2-hash-conflict-#{mode}", calls: [existing_v2_arguments.last] * (mode == "warm-rollback" ? 2 : 1),
+        wrapper: true, helpers: mode == "helpers-first", rollback: mode == "warm-rollback", finish_setting: true }
+    end
+
+    def verify_existing_v2_conflict!
+      IngestionWrapper::WRAPPER_MODES.each do |mode|
+        session = existing_v2_session(mode)
+        name = session.fetch(:name)
+        variants = {}
+        outcomes = {}
+        { "reference" => ["reference_proof", "postgres"], "final" => [@database, @runtime] }.each do |variant, (source, role)|
+          evidence = existing_v2_isolated(mode, variant, source, role)
+          outcomes[variant] = existing_v2_evidence?(evidence, mode, variant, role)
+          variants[variant] = {
+            "application" => compilation_comparable("fixture" => evidence.fetch("fixtures").first, "frames" => evidence.fetch("frames")),
+            "inputs" => wrapper_comparable_inputs(evidence)
+          }
+        end
+        reference, final = variants.values_at("reference", "final")
+        equivalent = reference == final
+        accepted = equivalent && outcomes.values.all?
+        @ingestion_results << { name:, expected: ["00000"] * session.fetch(:calls).length,
+          reference:, final:, equivalent:, accepted:, outcomes:,
+          warm_scope: "first real ingestion rolled back; same-backend retry committed, not frozen committed reuse" }
+        check("ingestion #{name} exact application parity", equivalent)
+        check("ingestion #{name} independent identities and exact conflict/audit/health outcomes", accepted)
+      end
+    end
+
+    def existing_v2_isolated(mode, variant, source, role)
+      session = existing_v2_session(mode)
+      prefix = File.join(@ingestion_evidence, "#{session.fetch(:name)}-#{variant}")
+      database = "ingestion_#{variant}_proof"
+      created = false
+      begin
+        sql("CREATE DATABASE #{identifier(database)} TEMPLATE #{identifier(source)} OWNER #{identifier(@owner)}", role: "postgres", database: "postgres")
+        created = true
+        sql("REVOKE ALL ON DATABASE #{identifier(database)} FROM PUBLIC; GRANT CONNECT ON DATABASE #{identifier(database)} TO #{identifier(@runtime)}", role: "postgres", database:)
+        seed = File.binread(File.join(@contract.root, "scripts/tests/database-ingestion-proof-seed.sql"))
+        query = "BEGIN; SELECT to_json(transaction_timestamp());\n#{seed}\nCOMMIT;"
+        File.binwrite("#{prefix}-seed.sql", query)
+        seed_clock = JSON.parse(sql(query, role: "postgres", database:))
+        correction_observer!(database, variant)
+        fixture = { name: "existing-v2-fixture", calls: [existing_v2_arguments.first], wrapper: true, finish_setting: true }
+        fixtures = wrapper_execute(fixture, database, role, "#{prefix}-fixture")
+        before = ingestion_snapshot(database)
+        inputs_before = wrapper_inputs(database)
+        frames = wrapper_execute(session, database, role, prefix)
+        evidence = { "seed_clock" => seed_clock, "fixtures" => fixtures, "before" => before, "inputs_before" => inputs_before,
+          "frames" => frames, "after" => ingestion_snapshot(database), "inputs_after" => wrapper_inputs(database) }
+        File.binwrite("#{prefix}.json", JSON.pretty_generate(evidence) + "\n")
+        evidence
+      ensure
+        sql("DROP DATABASE #{identifier(database)} WITH (FORCE)", role: "postgres", database: "postgres") if created
+      end
+    end
+
+    def existing_v2_evidence?(evidence, mode, variant, role)
+      session = existing_v2_session(mode)
+      fixtures = evidence.fetch("fixtures")
+      frames = evidence.fetch("frames")
+      return false unless fixtures.one? && frames.length == session.fetch(:calls).length
+
+      all = fixtures + frames
+      capabilities = { "session" => role, "current" => role, "superuser" => role == "postgres",
+        "create_role" => role == "postgres", "bypass_rls" => role == "postgres" }
+      return false unless all.all? do |frame|
+        frame.fetch("state") == "00000" && !frame.key?("diagnostic") && frame.fetch("role") == capabilities &&
+          frame.values_at("before", "after", "finished_setting") == %w[error error error] &&
+          frame.fetch("backend").match?(/\A[1-9][0-9]*\z/)
+      end
+      return false unless frames.map { |frame| frame.fetch("backend") }.uniq.length == 1 && fixtures.first.fetch("backend") != frames.first.fetch("backend")
+
+      clocks = [evidence.fetch("seed_clock")] + all.map { |frame| frame.fetch("clock") }
+      return false unless clocks.uniq.length == clocks.length && clocks.all? { |clock| metadata_clock?(clock) }
+      return false unless fixtures.first.values_at("within", "outside") == ["true", (variant == "reference").to_s]
+      return false unless frames.each_with_index.all? do |frame, index|
+        frame.values_at("within", "outside") == ["true", (variant == "reference" && !(session[:rollback] && index.zero?)).to_s]
+      end
+
+      inputs = hash_fill_read_tables(evidence.fetch("seed_clock"))
+      return false unless evidence.fetch("inputs_before") == inputs && evidence.fetch("inputs_after") == inputs
+      return false unless correction_snapshots?({}, attributes_empty, fixtures, evidence.fetch("before")) &&
+        correction_snapshots?(session, evidence.fetch("before"), frames, evidence.fetch("after"))
+      return false unless existing_v2_fixture?(fixtures.first)
+
+      frames.each_with_index.all? { |frame, index| existing_v2_outcome?(frame, evidence.fetch("before"), index) }
+    end
+
+    def existing_v2_fixture?(frame)
+      tables = frame.fetch("tables_after")
+      identities = attributes_identities(tables)
+      shape = { title: "Ingestion proof title", normalized: "ingestion proof title", answers: [], signals: [], release: nil }
+      expected = attributes_initial_tables(shape, frame.fetch("clock"), identities)
+      IngestionIdentity::IDENTITY_ROW_KEYS.each_key do |table|
+        expected.fetch(table).first.merge!("infohash_v1" => nil, "infohash_v2" => "b" * 64,
+          "magnet_hash" => Digest::SHA256.hexdigest(["b" * 64].pack("H*")), "size_bytes" => 1024)
+      end
+      expected.fetch("canonical_torrent").first["identity_strategy"] = "infohash_v2"
+      attributes_result?(frame, identities, first: true) &&
+        IngestionIdentity::IDENTITY_ROW_KEYS.keys.all? { |table| tables.fetch(table) == expected.fetch(table) } &&
+        %w[source_metadata_conflict source_metadata_conflict_audit_log indexer_health_event].all? { |table| tables.fetch(table).empty? }
+    end
+
+    def existing_v2_outcome?(frame, baseline, ordinal)
+      return false unless frame.fetch("tables_before") == baseline
+
+      tables = frame.fetch("tables_after")
+      canonicals = tables.fetch("canonical_torrent")
+      return false unless canonicals.length == 2 && canonicals.first == baseline.fetch("canonical_torrent").first
+
+      id = ordinal + 2
+      uuid = canonicals.last.fetch("canonical_torrent_public_id")
+      return false unless uuid.is_a?(String) && uuid.match?(IngestionProof::INGESTION_UUID) && uuid != canonicals.first.fetch("canonical_torrent_public_id")
+
+      hash = "c" * 64
+      magnet = Digest::SHA256.hexdigest([hash].pack("H*"))
+      clock = frame.fetch("clock")
+      observed = "2026-09-10T00:01:00+00:00"
+      canonical = canonicals.first.merge("canonical_torrent_id" => id, "canonical_torrent_public_id" => uuid,
+        "infohash_v2" => hash, "magnet_hash" => magnet, "created_at" => clock, "updated_at" => clock)
+      source = baseline.fetch("canonical_torrent_source").first.merge("last_seen_at" => observed, "last_seen_seeders" => 17, "updated_at" => clock)
+      observation = baseline.fetch("search_request_source_observation").first.merge("canonical_torrent_id" => id,
+        "infohash_v2" => hash, "magnet_hash" => magnet, "observed_at" => observed, "seeders" => 17)
+      result = { "canonical_torrent_public_id" => uuid, "canonical_torrent_source_public_id" => source.fetch("canonical_torrent_source_public_id"),
+        "observation_created" => false, "durable_source_created" => false, "canonical_changed" => true }
+      return false unless frame.fetch("result") == result && canonicals.last == canonical &&
+        tables.fetch("canonical_torrent_source") == [source] && tables.fetch("search_request_source_observation") == [observation]
+      return false unless tables.fetch("canonical_torrent_best_source_context").one? do |row|
+        row.values_at("canonical_torrent_id", "canonical_torrent_source_id") == [id, 1]
+      end
+
+      existing_v2_conflict_tables(clock, ordinal).all? { |table, rows| tables.fetch(table) == rows }
+    end
+
+    def existing_v2_conflict_tables(clock, ordinal)
+      old_hash, new_hash = %w[b c].map { |value| value * 64 }
+      pairs = [[old_hash, new_hash], [old_hash, new_hash].map { |hash| Digest::SHA256.hexdigest([hash].pack("H*")) }]
+      tables = %w[source_metadata_conflict source_metadata_conflict_audit_log indexer_health_event].to_h { |table| [table, []] }
+      pairs.each_with_index do |(existing, incoming), index|
+        part = {}
+        hash_fill_conflict_tables!(part, incoming, clock, ordinal * 2 + index + 1)
+        part.fetch("source_metadata_conflict").first["existing_value"] = existing
+        tables.each { |table, rows| rows.concat(part.fetch(table)) }
+      end
+      tables
     end
 
     def ingestion_existing_isolated(name, fixture, tested, source:, role:, variant:)

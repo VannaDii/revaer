@@ -279,6 +279,12 @@ applyTo:
   selected, recorded fixture rows. Returned IDs cannot define the expected target.
   Include a coherent wrong-selection regression, distinct competing identities,
   exact refresh/hash assertions and the wrapper's best-source result.
+  Exercise non-magnet URI and queryless magnet inputs through ingestion without
+  explicit hashes, preserving raw stored URI and independently derived identity.
+  Changed non-NULL v2 hashes on a selected GUID must retain the original durable
+  source, exact canonical/observation changes and both hash conflict/audit/health
+  rows. Cold, helper-first and same-backend rollback/retry cases must retain
+  complete table/input images and real consumed sequence allocations.
 - Mutating-helper-first D3 evidence must execute the real conflict-writing helper
   before ingestion in the same backend under unchanged caller settings. Retain
   committed and whole-rollback controls, all 18 table images and nontransactional
