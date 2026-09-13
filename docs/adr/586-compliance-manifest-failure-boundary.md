@@ -800,3 +800,37 @@ upload occurred, and no gate, deadline or approval condition was weakened.
   created; `.server_root` remains absent. No old/parent checkout was edited, no
   agents were launched, and no full CI/UI, upload, remote mutation or media
   download was performed. Parent-owned D3/scripts, ADR 569 and indexes are untouched.
+
+### Combined Configuration And Disambiguation Gates (2026-09-13)
+
+Parent reviewed `396c87fc` and integrated its unchanged runtime/test changes as
+`749ba0b4`, with the database result and generated index. Full `just ci` on that
+clean executable revision exits 1: `deadline_includes_pipe_setup_time` retains
+the expected 20 ms primary deadline but adds `output pipes remained open after
+process-group cleanup`; 323 other media-runtime tests pass. Four watcher WARNs
+also remain. Source inspection confirms this diagnostic records unproven pipe
+closure at return, not permission to discard secondary evidence. No assertion,
+deadline, cleanup policy or native implementation was changed to hide it. The
+approved S2 settlement work remains necessary. CI stops before minimal-feature
+tests, Rust coverage and release build; prior coverage is not current evidence.
+
+Full `just ui-e2e` on the same revision has 57 passed, one failed and 72 not run.
+The unchanged schedule PATCH requires 200 and receives 400 with
+`media_profile_filesystem_identity_required`; teardown rejects missing UI route
+coverage. Actual partial Playwright LCOV/V8 data is retained, not presented as a
+completed UI run or published Sonar coverage. Canonical Sonar token presence was
+false; no refused upload was retried. Documentation builds with the existing
+15,114,563-byte search-index WARN, not a clean documentation gate.
+
+Database canonical proof at `c9a25f31` passes 6,049/6,050 checks, failing only
+incomplete D3. All 37 recorded disambiguation proof inputs still match the
+integrated revision. Focused Ruby suites pass 14,621 assertions, including 235
+new family assertions; 24 live variants preserve 48 actual unique-key failures
+and 24 successful no-rule fixtures. Neither these errors nor the passing local
+configuration tests constitute native, package or feature completion.
+
+Evidence and source bundle are retained under
+`artifacts/media-verification/2026-09-13-config-disambiguation/`. The worker was
+closed, its clean worktree/cache removed, and all 36 worker evidence checksums
+verified. The user checkout and its existing conflicts were preserved. No new
+architecture, criteria exception, GitHub mutation, upload or merge occurred.

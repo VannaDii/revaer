@@ -1040,4 +1040,10 @@ The subsequent pinned live run passes all 24 variants, each with one successful
 fixture and two exact `23505` failures, plus the mandatory D4/D5 controls.
 Both disposable runs report resource cleanup. Canonical database verification
 at `c9a25f31` passes 6,049/6,050 checks; only the unchanged incomplete-D3 guard
-fails. Combined runtime CI and UI verification remain pending at this checkpoint.
+fails. All 37 recorded proof inputs match integrated `749ba0b4`. Its full CI
+fails the native deadline/pipe-closure assertion and retains four watcher WARNs;
+full UI remains 57 passed, one schedule-PATCH failure and 72 not run, with
+missing UI coverage rejected. Rust coverage was not reached by this CI run.
+See [combined gates](586-compliance-manifest-failure-boundary.md#combined-configuration-and-disambiguation-gates-2026-09-13)
+for exact limits and retained evidence. No native deadline or test criterion was
+changed. Frozen authority and conditional D3 remain in force.
