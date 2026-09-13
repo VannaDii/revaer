@@ -239,11 +239,22 @@ module RevaerDatabaseRebaseline
     def metadata_json_tests!
       [
         '{"field":1,"field":2}',
+        '{"field":null,"field":false}',
+        '{"field":1,"field":1}',
         '{"outer":[{"inner":{"field":1,"field":2}}]}',
         '{"outer":[{"inner":{"field":1,"\\u0066ield":2}}]}'
       ].each { |json| rejected("duplicate metadata JSON") { metadata_json_parse(json) } }
       valid = JSON.generate("left" => { "field" => 1 }, "right" => { "field" => 2 }, "text" => '{"field":1}', "number" => 2.3456)
       assert(metadata_json_parse(valid) == JSON.parse(valid), "sibling fields, escaped text and numeric values are unchanged")
+      assert(metadata_json_parse(valid).fetch("left").is_a?(IngestionMetadata::UniqueObject), "custom object class applies to nested objects")
+      object = IngestionMetadata::UniqueObject.new
+      object["field"] = nil
+      begin
+        object["field"] = false
+        raise Failure, "duplicate setter accepted an existing NULL field"
+      rescue JSON::ParserError => error
+        assert(error.message.include?("duplicate metadata JSON"), "legacy parser setter rejects duplicate decoded keys")
+      end
 
       spec = metadata_cases.first
       evidence = metadata_test_evidence(spec, "helpers-first", "final")
@@ -278,7 +289,7 @@ module RevaerDatabaseRebaseline
     def metadata_json_option_tests!
       parser = JSON.method(:parse)
       JSON.define_singleton_method(:parse) do |value, **options|
-        parser.call(value, **options.reject { |key, _option| key == :allow_duplicate_key })
+        parser.call(value, **options.reject { |key, _option| %i[object_class allow_duplicate_key].include?(key) })
       end
       rejected("lacks duplicate-field rejection") { metadata_json_parse('{}') }
     ensure

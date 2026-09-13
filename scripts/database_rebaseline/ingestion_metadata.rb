@@ -46,6 +46,14 @@ module RevaerDatabaseRebaseline
       "No full D3, native closure, exhaustive metadata or feature-completion claim. Six affected sequences are observed; other sequences are not certified."
     ].freeze
 
+    class UniqueObject < Hash
+      def []=(key, value)
+        raise JSON::ParserError, "duplicate metadata JSON field" if key?(key)
+
+        super
+      end
+    end
+
     private
 
     def metadata_cases
@@ -113,8 +121,8 @@ module RevaerDatabaseRebaseline
     end
 
     def metadata_strict_json!
-      # Older JSON runtimes can silently ignore unknown parser options.
-      JSON.parse('{"outer":{"field":null,"field":true}}', allow_duplicate_key: false)
+      # Older JSON uses the setter; newer JSON can collapse keys before it.
+      JSON.parse('{"outer":{"field":null,"field":true}}', object_class: UniqueObject, allow_duplicate_key: false)
       raise Failure, "metadata JSON parser lacks duplicate-field rejection"
     rescue JSON::ParserError
       nil
@@ -122,7 +130,7 @@ module RevaerDatabaseRebaseline
 
     def metadata_json_parse(value)
       metadata_strict_json!
-      JSON.parse(value, allow_duplicate_key: false)
+      JSON.parse(value, object_class: UniqueObject, allow_duplicate_key: false)
     rescue JSON::ParserError
       raise Failure, "invalid or duplicate metadata JSON evidence"
     end
