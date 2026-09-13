@@ -1679,3 +1679,18 @@ integrated or live-qualified here. Completed worker worktrees were removed after
 preservation. Both integration worktrees ran test-media cleanup, and the exact
 temporary UI port was confirmed closed. No source push, merge, runtime cutover
 or release acceptance follows from this checkpoint.
+
+### Differing External-ID Integration (2026-09-13)
+
+The next conditional-D3 case covers differing IMDb, TMDB and TVDB values in
+cold, helper-first and mutating-helper-first rollback/commit modes. A separately
+observed administrator fixture follows real non-ID ingestion; it is not claimed
+as successful frozen ID ingestion. Complete table/read images, exact D5 errors,
+logger/audit/health payloads and seven sequence counters remain independently
+checked. Frozen errors stay unequal to approved final success. Live validation
+is pending at integration; synthetic assertions alone do not qualify this case.
+No SQL, dependency, runtime, approval or gate change is made. Root and DevOps
+guidance were reviewed; the scoped instruction now records this fixture and
+oracle boundary without relaxing the incomplete-D3 guard. Rollback removes the
+new proof case, its tests and scoped guidance together; existing evidence stays
+retained. Observability changes are limited to disposable proof evidence.

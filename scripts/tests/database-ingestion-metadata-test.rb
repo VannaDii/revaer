@@ -12,6 +12,7 @@ module RevaerDatabaseRebaseline
       body = source.split("CREATE OR REPLACE FUNCTION search_result_ingest_v1(", 2).fetch(1).split("AS $$", 2).fetch(1).split("$$;", 2).first
       @ingestion_inventory = { "reference_proof" => { "routines" => [{ "name" => "search_result_ingest_v1", "signature" => "search_result_ingest_v1(uuid)", "source" => body }] } }
       metadata_case_tests!
+      metadata_external_tests!
       metadata_mutating_helper_tests!
       metadata_mutation_tests!
       metadata_transport_tests!
@@ -86,11 +87,24 @@ module RevaerDatabaseRebaseline
         prior = changed
         attributes_test_transport([frame], "cold")
       end
+      external_fixture = nil
+      extra = spec[:external_ids] ? 1 : 0
+      if spec[:external_ids]
+        changed = metadata_external_fixture_tables(prior)
+        frame = attributes_test_frame("postgres", 2, prior, changed)
+        frame.merge!("backend" => "150", "within" => "false", "outside" => "false",
+          "result" => { "fixture" => "durable-external-ids", "rows" => 3 })
+        stdout = attributes_test_transport([frame], "cold").fetch("stdout").split("\n", 2).last
+        external_fixture = { "frames" => [frame], "stdout" => stdout, "stderr" => "" }
+        counters["canonical_torrent_source_attr"] += 3
+        reads << metadata_test_read(seed_clock, counters)
+        prior = changed
+      end
       before = prior
       helper = nil
       session = metadata_session(spec, mode)
       if session.key?(:helper_finish)
-        helper = attributes_test_frame(role, fixtures.length + 1, prior, prior)
+        helper = attributes_test_frame(role, fixtures.length + extra + 1, prior, prior)
         helper.merge!("backend" => "200", "within" => "false", "outside" => "false",
           "result" => { "helper" => "log_source_metadata_conflict_v1" })
         changed = metadata_helper_tables(prior, helper.fetch("clock"), counters)
@@ -100,10 +114,15 @@ module RevaerDatabaseRebaseline
         prior = helper.fetch("tables_finish")
       end
       frames = (0..2).map do |index|
-        frame = attributes_test_frame(role, fixtures.length + index + (helper ? 2 : 1), prior, prior)
+        frame = attributes_test_frame(role, fixtures.length + extra + index + (helper ? 2 : 1), prior, prior)
         frame["backend"] = "200"
         frame["outside"] = (variant == "reference" && index.positive?).to_s
-        if variant == "reference" && index == 2
+        if variant == "reference" && spec[:external_ids]
+          frame.delete("result")
+          frame.merge!("state" => "42P10", "within" => "false", "outside" => "false",
+            "diagnostic" => ingestion_diagnostics(metadata_test_d5_stderr, role:).first)
+          metadata_advance!(counters, spec.fetch(:incoming), external_success: false)
+        elsif variant == "reference" && index == 2
           frame.delete("result")
           frame.merge!("state" => "42P07", "diagnostic" => ingestion_diagnostics(policy_d4_expected, role:).first)
         else
@@ -120,23 +139,30 @@ module RevaerDatabaseRebaseline
       reads << metadata_test_read(seed_clock, counters)
       evidence = { "frames" => frames, "fixtures" => fixtures, "before" => before, "after" => prior, "reads" => reads, "seed_clock" => seed_clock }
       evidence["mutating_helper"] = helper if helper
+      evidence["external_fixture"] = external_fixture if external_fixture
       metadata_refresh!(evidence, mode)
       evidence
     end
 
     def metadata_refresh!(evidence, mode)
       evidence.merge!(attributes_test_transport(evidence.fetch("frames"), mode))
+      failures = evidence.fetch("frames").count { |frame| frame.fetch("state") == "42P10" }
+      evidence["stderr"] = metadata_test_d5_stderr * failures if failures.positive?
       if evidence.key?("mutating_helper")
         helper = attributes_test_transport([evidence.fetch("mutating_helper")], "cold").fetch("stdout").split("\n", 2).last
         evidence["stdout"] = "#{helper}metadata-helper-finish\n#{evidence.fetch('stdout')}"
       end
       evidence.fetch("fixtures").each { |record| record.merge!(attributes_test_transport(record.fetch("frames"), "cold")) }
+      if evidence.key?("external_fixture")
+        record = evidence.fetch("external_fixture")
+        record["stdout"] = attributes_test_transport(record.fetch("frames"), "cold").fetch("stdout").split("\n", 2).last
+      end
       evidence.fetch("reads").each { |record| record["stdout"] = JSON.generate(record.fetch("data")) + "\n" }
     end
 
     def metadata_case_tests!
       specs = metadata_cases
-      assert(specs.map { |spec| spec.fetch(:name) } == %w[replace-typed extend-typed existing-conflicts-stale-long], "finite missing-path inventory")
+      assert(specs.map { |spec| spec.fetch(:name) } == %w[replace-typed extend-typed existing-conflicts-stale-long differing-external-ids], "finite missing-path inventory")
       base = specs.first.fetch(:fixtures).first.fetch(:answers).to_h { |key, _type, value| [key, value] }
       assert(METADATA_ANSWERS.all? { |key, _type, value| value != base.fetch(key) }, "every typed value really changes")
       assert(METADATA_INPUTS.map { |_key, type, _value| type }.uniq.sort == %i[bigint bool int numeric text], "all legal non-D5 channels")
@@ -151,20 +177,122 @@ module RevaerDatabaseRebaseline
             assert(metadata_validate!(evidence, spec, mode, variant, role), "#{spec.fetch(:name)} #{mode} #{variant}")
             first_retry = evidence.fetch("frames").fetch(1).fetch("tables_after")
             expected = spec.fetch(:fixtures).length == 2 ? [1, 2, 3, 7, 8, 9] : [4, 5, 6]
+            expected = [] if spec[:external_ids] && variant == "reference"
             assert(first_retry.fetch("source_metadata_conflict").map { |row| row.fetch("source_metadata_conflict_id") } == expected, "conflict rollback gaps plus retained previous rows")
             assert(first_retry.fetch("source_metadata_conflict_audit_log").map { |row| row.fetch("conflict_id") } == expected, "audit FK follows nontransactional conflict IDs")
-            assert(first_retry.fetch("canonical_torrent_source_attr").map { |row| row.fetch("canonical_torrent_source_attr_id") } == (1..8).to_a, "durable first-wins retains all identities")
+            assert(first_retry.fetch("canonical_torrent_source_attr").map { |row| row.fetch("canonical_torrent_source_attr_id") } == (1..(spec[:external_ids] ? 11 : 8)).to_a, "durable first-wins retains all identities")
           end
-          assert(metadata_comparable(metadata_test_evidence(spec, mode, "reference")) == metadata_comparable(metadata_test_evidence(spec, mode, "final")), "paired outcomes retain every value outside validated identities clocks and exact D4")
+          assert(metadata_comparable(metadata_test_evidence(spec, mode, "reference"), fixtures_only: spec[:external_ids]) == metadata_comparable(metadata_test_evidence(spec, mode, "final"), fixtures_only: spec[:external_ids]), "paired fixtures and separately validated D4/D5 outcomes")
         end
       end
-      long = metadata_test_evidence(specs.last, "cold", "final")
+      long = metadata_test_evidence(specs.fetch(2), "cold", "final")
       tables = long.fetch("after")
       assert(tables.fetch("canonical_torrent_source").first.fetch("last_seen_seeders") == 9 && tables.fetch("search_request_source_observation").first.fetch("seeders") == 1, "stale observations are not durable source truth")
       assert(tables.fetch("source_metadata_conflict").last(3).first.fetch("incoming_value") == "Z" * 256, "conflict is truncated independently of observation")
       assert(tables.fetch("search_request_source_observation_attr").find { |row| row.fetch("attr_key") == "tracker_name" }.fetch("value_text").length == 512, "observation keeps full validated tracker text")
       assert(metadata_test_evidence(specs.first, "cold", "final").fetch("after").fetch("canonical_torrent_signal").map { |row| row.fetch("canonical_torrent_signal_id") } == (1..6).to_a + (13..24).to_a, "signal gaps and duplicate NULL-distinct keys remain")
       rejected("unknown metadata") { metadata_session(specs.first, "reconnect") }
+    end
+
+    def metadata_test_d5_stderr
+      routine = @ingestion_inventory.fetch("reference_proof").fetch("routines").first
+      statement = routine.fetch("source").match(/INSERT INTO canonical_external_id \(\n.*?;/m)
+      raise Failure, "missing frozen IMDb D5 statement" unless statement
+
+      "ERROR:  42P10: there is no unique or exclusion constraint matching the ON CONFLICT specification\n" \
+        "CONTEXT:  SQL statement \"#{statement[0].delete_suffix(';')}\"\n" \
+        "PL/pgSQL function #{routine.fetch('signature')} line 2107 at SQL statement\n" \
+        "LOCATION:  infer_arbiter_indexes, plancat.c:920\n"
+    end
+
+    def metadata_external_tests!
+      spec = metadata_cases.last
+      query = metadata_external_fixture_query
+      assert(query.scan("INSERT INTO public.canonical_torrent_source_attr").length == 1 && !query.include?("search_result_ingest"), "privileged fixture is not represented as frozen external-ID ingestion")
+      assert(query.include?("(1, 'imdb_id', 'tt1234567', NULL)") && query.include?("(1, 'tmdb_id', NULL, 123456)") && query.include?("(1, 'tvdb_id', NULL, 654321)"), "explicit independently specified valid existing IDs")
+      assert(query.scan("BEGIN;").length == 1 && query.scan("COMMIT;").length == 1 && query.include?("tables_finish:"), "fixture keeps transaction provenance and all table images")
+      METADATA_MODES.each do |mode|
+        %w[reference final].each do |variant|
+          evidence = metadata_test_evidence(spec, mode, variant)
+          role = variant == "reference" ? "postgres" : @runtime
+          assert(metadata_validate!(evidence, spec, mode, variant, role), "three differing external-ID arms retain independent D5 expectations")
+          fixture = evidence.fetch("external_fixture").fetch("frames").first
+          assert(fixture.fetch("tables_before") == evidence.fetch("fixtures").last.fetch("frames").first.fetch("tables_finish"), "existing source provenance is real non-ID ingestion followed by separate admin fixture")
+          frames = evidence.fetch("frames")
+          helper = mode.start_with?("mutating-helper-first-") ? 1 : 0
+          assert(evidence.fetch("reads").last.fetch("data").fetch("sequences") == {
+            "search_request_source_observation_attr" => 73, "canonical_torrent_source_attr" => 11,
+            "canonical_external_id" => variant == "reference" ? nil : 9, "canonical_torrent_signal" => 24,
+            "source_metadata_conflict" => 9 + helper, "source_metadata_conflict_audit_log" => 9 + helper,
+            "indexer_health_event" => 9 + helper
+          }, "independent exact attempted sequence totals include rolled-back logger writes and final conflict-upsert gaps")
+          frames.each do |frame|
+            durable = frame.fetch("tables_after").fetch("canonical_torrent_source_attr").last(3)
+            assert(durable.map { |row| row.values_at("canonical_torrent_source_attr_id", "attr_key", "value_text", "value_int") } == [
+              [9, "imdb_id", "tt1234567", nil], [10, "tmdb_id", nil, 123456], [11, "tvdb_id", nil, 654321]
+            ], "all three durable values and identities remain first-wins")
+          end
+          if variant == "reference"
+            assert(frames.all? { |frame| frame.fetch("state") == "42P10" && !frame.key?("result") && frame.fetch("tables_before") == frame.fetch("tables_after") && frame.fetch("tables_after") == frame.fetch("tables_finish") }, "every frozen attempt including warm retry fails and rolls back all 18 tables")
+            assert(evidence.fetch("after").fetch("canonical_external_id").empty?, "no invented frozen external-ID success")
+          else
+            first, retry_frame, last = frames
+            assert(first.fetch("tables_after") != first.fetch("tables_before") && first.fetch("tables_finish") == first.fetch("tables_before"), "real final first mutation is rolled back before warm commit")
+            assert(retry_frame.fetch("tables_after").fetch("canonical_external_id").map { |row| row.fetch("canonical_external_id_id") } == [4, 5, 6], "final external-ID rollback consumes exactly three IDs")
+            assert(last.fetch("tables_after").fetch("canonical_external_id") == retry_frame.fetch("tables_after").fetch("canonical_external_id"), "third call retains the committed ID rows despite upsert sequence consumption")
+            triples = [["external_id", "tt1234567", "tt7654321"], ["external_id", "123456", "234567"], ["external_id", "654321", "765432"]]
+            frames.each do |frame|
+              tables = frame.fetch("tables_after")
+              assert(tables.fetch("source_metadata_conflict").last(3).map { |row| row.values_at("conflict_type", "existing_value", "incoming_value") } == triples, "logger order and payload distinguish all three arms")
+              conflicts = tables.fetch("source_metadata_conflict").last(3)
+              assert(tables.fetch("source_metadata_conflict_audit_log").last(3) == conflicts.map { |row| {
+                "source_metadata_conflict_audit_log_id" => row.fetch("source_metadata_conflict_id"), "conflict_id" => row.fetch("source_metadata_conflict_id"),
+                "action" => "created", "actor_user_id" => 0, "occurred_at" => frame.fetch("clock"), "note" => nil
+              } }, "exact audit links actor action clock and null note")
+              assert(tables.fetch("indexer_health_event").last(3) == conflicts.map { |row| {
+                "indexer_health_event_id" => row.fetch("source_metadata_conflict_id"), "indexer_instance_id" => 569001,
+                "occurred_at" => "2026-09-11T00:00:00+00:00", "event_type" => "identity_conflict", "latency_ms" => nil,
+                "http_status" => nil, "error_class" => nil, "detail" => "external_id"
+              } }, "exact health payload clock and nullable fields")
+            end
+          end
+          metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.delete("external_fixture") }
+          %w[backend clock before after state within outside result tables_before tables_after tables_finish].each do |key|
+            metadata_reject_mutation(evidence, spec, mode, variant) do |changed|
+              frame = changed.fetch("external_fixture").fetch("frames").first
+              frame[key] = key.start_with?("tables_") ? attributes_empty : key == "result" ? { "fixture" => "changed" } : "changed"
+            end
+          end
+          metadata_reject_mutation(evidence, spec, mode, variant) do |changed|
+            changed.fetch("external_fixture").fetch("frames").first["backend"] = changed.fetch("fixtures").first.fetch("context").fetch("backend")
+          end
+          evidence.fetch("reads").last.fetch("data").fetch("sequences").each_key do |table|
+            metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.fetch("reads").last.fetch("data").fetch("sequences")[table] = 0 }
+          end
+        end
+      end
+      evidence = metadata_test_evidence(spec, "cold", "reference")
+      ["", metadata_test_d5_stderr * 2, metadata_test_d5_stderr.sub("plancat.c:920", "plancat.c:921") * 3,
+       metadata_test_d5_stderr.sub("line 2107", "line 2132") * 3, metadata_test_d5_stderr.sub("lower(imdb_id_value)", "imdb_id_value") * 3,
+       metadata_test_d5_stderr * 3 + "NOTICE: unexpected\n"].each do |stderr|
+        changed = copy(evidence).merge("stderr" => stderr)
+        rejected("") { metadata_validate!(changed, spec, "cold", "reference", "postgres") }
+      end
+      [metadata_test_d5_stderr.sub("plancat.c:920", "plancat.c:921"),
+       metadata_test_d5_stderr.sub("line 2107", "line 2132"),
+       metadata_test_d5_stderr.sub("lower(imdb_id_value)", "imdb_id_value"),
+       metadata_test_d5_stderr.sub("search_result_ingest_v1(uuid)", "search_result_ingest_v1(text)"),
+       metadata_test_d5_stderr.sub("there is no unique", "changed: there is no unique"),
+       metadata_test_d5_stderr.sub("CONTEXT:", "DETAIL:  unexpected\nCONTEXT:")].each do |diagnostic|
+        changed = copy(evidence).merge("stderr" => diagnostic * 3)
+        rejected("") do
+          # SQL/signature drift fails at the frozen-source parser; other fields
+          # reach the D5 oracle with raw and parsed records changed together.
+          changed.merge!(metadata_parse(changed.fetch("stdout"), changed.fetch("stderr"), metadata_session(spec, "cold"), "postgres"))
+          metadata_validate!(changed, spec, "cold", "reference", "postgres")
+        end
+        @mutations += 1
+      end
     end
 
     def metadata_mutating_helper_tests!
@@ -208,7 +336,7 @@ module RevaerDatabaseRebaseline
             changed["stdout"] = "metadata-helper-finish\n" + changed.fetch("stdout")
             rejected("helper boundary") { metadata_validate!(changed, spec, mode, variant, role) }
           end
-          assert(metadata_comparable(metadata_test_evidence(spec, mode, "reference")) == metadata_comparable(metadata_test_evidence(spec, mode, "final")), "mutating-helper parity outside exact D4")
+          assert(metadata_comparable(metadata_test_evidence(spec, mode, "reference"), fixtures_only: spec[:external_ids]) == metadata_comparable(metadata_test_evidence(spec, mode, "final"), fixtures_only: spec[:external_ids]), "mutating-helper and fixture parity outside independently checked D4/D5")
         end
       end
       rejected("helper finish") { metadata_helper_session("reconnect") }
@@ -262,8 +390,13 @@ module RevaerDatabaseRebaseline
               end
             end
             metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.fetch("frames").first["backend"] = "999" }
-            metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.fetch("frames").first.fetch("result")["canonical_changed"] = true }
-            metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.fetch("frames").first["tables_finish"] = changed.fetch("frames").first.fetch("tables_after") }
+            if spec[:external_ids] && variant == "reference"
+              metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.fetch("frames").first["state"] = "00000" }
+              metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.fetch("frames").first["tables_finish"] = attributes_empty }
+            else
+              metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.fetch("frames").first.fetch("result")["canonical_changed"] = true }
+              metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.fetch("frames").first["tables_finish"] = changed.fetch("frames").first.fetch("tables_after") }
+            end
             metadata_reject_mutation(evidence, spec, mode, variant) { |changed| changed.fetch("fixtures").first.fetch("frames").first["clock"] = changed.fetch("seed_clock") }
           end
         end
@@ -347,6 +480,7 @@ module RevaerDatabaseRebaseline
 
     def metadata_invalid_clocks!(evidence)
       clocks = [evidence.fetch("seed_clock")] + (evidence.fetch("fixtures") + [evidence]).flat_map { |record| record.fetch("frames").map { |frame| frame.fetch("clock") } }
+      clocks << evidence.fetch("external_fixture").fetch("frames").first.fetch("clock") if evidence.key?("external_fixture")
       replacements = clocks.each_with_index.to_h { |clock, index| [clock, "2026-99-99T25:61:0#{index}+00:00"] }
       metadata_walk(evidence) do |row|
         row.each { |key, value| row[key] = replacements.fetch(value, value) if value.is_a?(String) }
@@ -461,7 +595,10 @@ module RevaerDatabaseRebaseline
     end
 
     def metadata_isolated_tests!
-      spec = metadata_cases.first
+      [metadata_cases.first, metadata_cases.last].each { |spec| metadata_isolated_case_tests!(spec) }
+    end
+
+    def metadata_isolated_case_tests!(spec)
       %w[valid invalid failed duplicate-read duplicate-frame impossible-clock].each do |kind|
         @metadata_evidence = Dir.mktmpdir("metadata-producer-#{kind}-", @contract.output_path)
         @metadata_validated_evidence = {}
@@ -473,24 +610,26 @@ module RevaerDatabaseRebaseline
           read = evidence.fetch("reads").last
           read["stdout"] = read.fetch("stdout").sub('{', '{"inputs":{},')
         elsif kind == "duplicate-frame"
-          evidence["stdout"] = evidence.fetch("stdout").sub('"value_int":4000', '"value_int":99,"value_int":4000')
+          evidence["stdout"] = evidence.fetch("stdout").sub('"value_int":2000', '"value_int":99,"value_int":2000')
         elsif kind == "impossible-clock"
           metadata_invalid_clocks!(evidence)
           metadata_refresh!(evidence, "cold")
         end
         reads = evidence.fetch("reads").dup
         snapshots = [evidence.fetch("before"), evidence.fetch("after")]
-        outcomes = [evidence.fetch("fixtures").first, evidence].map do |record|
+        records = evidence.fetch("fixtures") + (spec[:external_ids] ? [evidence.fetch("external_fixture")] : []) + [evidence]
+        outcomes = records.map do |record|
           CommandRunner::Result.new(stdout: record.fetch("stdout"), stderr: record.fetch("stderr"), success: true)
         end
         outcomes[-1] = CommandRunner::Result.new(stdout: "partial native stdout\n", stderr: "native producer failure\n", success: false) if kind == "failed"
         commands = []
+        roles = []
         define_singleton_method(:sql) { |query, **_options| commands << query; "" }
         define_singleton_method(:policy_setup!) { |*_args| evidence.fetch("seed_clock") }
         define_singleton_method(:correction_observer!) { |*_args| nil }
         define_singleton_method(:metadata_read) { |*_args| reads.shift }
         define_singleton_method(:ingestion_snapshot) { |*_args| snapshots.shift }
-        define_singleton_method(:result) { |*_args, **_options| outcomes.shift }
+        define_singleton_method(:result) { |*_args, **options| roles << options.fetch(:role); outcomes.shift }
         if kind == "valid"
           assert(metadata_isolated(spec, "cold", "final", @database, @runtime) == evidence, "real producer path validates serialized evidence")
           assert(@metadata_validated_evidence.length == 1, "exact one valid observed result registered")
@@ -501,7 +640,8 @@ module RevaerDatabaseRebaseline
           assert(@metadata_validated_evidence.empty?, "#{kind} producer cannot register evidence")
         end
         assert(commands.last == 'DROP DATABASE "ingestion_metadata_final" WITH (FORCE)', "#{kind} producer drops only its clone")
-        assert(File.exist?(File.join(@metadata_evidence, "replace-typed-cold-final.stdout")), "#{kind} producer raw attempt retained")
+        assert(File.exist?(File.join(@metadata_evidence, "#{spec.fetch(:name)}-cold-final.stdout")), "#{kind} producer raw attempt retained")
+        assert(roles == (spec[:external_ids] ? [@runtime, "postgres", @runtime] : [@runtime, @runtime]), "only the independently validated external-ID fixture uses the administrator connection")
       end
     ensure
       %i[sql policy_setup! correction_observer! metadata_read ingestion_snapshot result].each do |name|
@@ -514,6 +654,10 @@ module RevaerDatabaseRebaseline
       assert(helper.scan(/INSERT INTO (source_metadata_conflict|source_metadata_conflict_audit_log|indexer_health_event)\s/).flatten.sort == %w[indexer_health_event source_metadata_conflict source_metadata_conflict_audit_log], "frozen logger has exactly three creation writes")
       assert(!helper.match?(/\bUPDATE\b|ON CONFLICT/) && !source.match?(/PERFORM source_metadata_conflict_(resolve|reopen)/), "ingestion cannot update or resolve existing conflicts")
       assert(helper.include?("substring(incoming_value FROM 1 FOR 256)"), "frozen truncation branch retained")
+      { 2314 => "imdb", 2341 => "tmdb", 2368 => "tvdb" }.each do |line, id|
+        assert(source.lines.fetch(line - 1).strip == "ELSIF existing_#{id}_id <> #{id}_id_value THEN", "exact frozen #{id} differing-value logger arm remains pinned")
+        assert(source.lines.fetch(line).strip == "PERFORM log_source_metadata_conflict_v1(", "actual logger call follows the pinned differing-ID guard")
+      end
       schema = File.binread(File.join(@contract.root, "crates/revaer-data/migrations/0022_indexer_canonicalization.sql"))
       assert(schema.include?("(attr_key IN ('tracker_name', 'imdb_id') AND value_text IS NOT NULL)") && source.include?("IF existing_tracker_name IS NULL THEN"), "serial coalesce-upsert reachability counterexample remains source-backed")
       proof = File.binread(File.join(@contract.root, "scripts/database_rebaseline/ingestion_proof.rb"))

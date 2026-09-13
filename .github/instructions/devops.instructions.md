@@ -137,6 +137,12 @@ applyTo:
   identity, and preserve competing-source conflicts and rollback sequence gaps.
   Retain wrapper source hashes before/after execution. These cases do not close
   unobserved metadata conflicts, concurrent reachability or native dependencies.
+  Differing external-ID proof must retain separately observed, constraint-valid
+  administrator fixtures after successful non-ID ingestion. Never present them
+  as successful frozen ID ingestion. Keep every exact D5 error and whole-table
+  rollback, independently verify final retries and all three logger payloads,
+  and retain nontransactional sequence gaps. Fixture parity cannot replace the
+  separate complete result/state oracles or establish native callsite coverage.
   Prevent-merge proof must retain the actual unique-key application failures
   for all three hash strategies and both rule orientations, with successful
   no-rule fixtures, cold/helper-first entry and committed same-backend retry.
