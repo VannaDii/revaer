@@ -897,3 +897,17 @@ libraries. Root, data, Rust, DevOps and Sonar instructions and ADR 588 were
 reviewed; no approval, criterion or threshold was weakened. Full clean CI/UI,
 canonical Sonar with positive published coverage, native packages and current
 PR acceptance remain separate requirements.
+
+Fresh integrated verification on executable `5027eba5` and documentation-only
+successor `7ee7df07`: 12,932 focused assertions pass; canonical proof passes
+4,752/4,753 checks and fails only the explicit incomplete-D3 guard. All 19
+metadata checks pass across 12 live variants with 32 source hashes; the wrapper
+retains 33 source hashes. Full CI exits zero with eight watcher WARNs. Full
+UI/API reports 57 passed, one failed and 72 not run at legacy schedule
+enablement; teardown rejects missing UI coverage. Local first-party Rust LCOV
+records 122,231 covered of 131,114 lines in 310 files, not published Sonar
+acceptance. The canonical token remains absent, and the rejected eight-file
+upload was not retried. No native package, PR or release acceptance is claimed.
+The 25-file, eight-archive checkpoint, including 53 raw Rust inputs, is retained
+under `artifacts/media-verification/2026-09-12-d3-metadata/`. Completed worker
+worktrees, disposable gate databases/volumes and managed test media were removed.

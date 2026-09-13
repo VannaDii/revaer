@@ -220,7 +220,10 @@ bytes/hashes, the parent-log hash and its failure excerpt are retained at
 No new UI build, Rust build, database or server was started after identifying
 the boundary; no test media, credentials, uploads or remote mutations were
 created or read. The metadata author's worktree was left untouched. Parent
-still owns combined CI/UI verification after an authorized integrated change.
+subsequently reran full CI/UI on `7ee7df07`: CI exited zero with eight watcher
+WARNs; UI reproduced the same 57/1/72 result and missing coverage. The completed
+worktree was removed after retaining its source review in
+`artifacts/media-verification/2026-09-12-d3-metadata/ui-schedule-416023b5.tar.gz`.
 
 Reviewed root AGENTS and scoped UI/Rust instructions before this record-only
 change, plus the existing task and ADR 419/557/559/588 boundaries. No instruction,

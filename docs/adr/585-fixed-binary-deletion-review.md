@@ -317,3 +317,9 @@ This continuation implements only the ASSET-1 scope actually approved in
 - Stale-policy check: root, DevOps and Sonar rules and ADRs 522/528/588 reviewed.
   DevOps now names the exact approved exception and keeps init assembly strict;
   no unrelated criterion, approval, source visibility or threshold is changed.
+
+The integrated `7ee7df07` checkpoint retains 96 guard and 45 legacy assertions,
+fresh full CI (exit zero, eight watcher WARNs) and failed full UI/API (57 passed,
+one failed, 72 not run). The evidence is under
+`artifacts/media-verification/2026-09-12-d3-metadata/`. This is not canonical
+ASSET-1 PR acceptance; no actual restacked provider head has been qualified.
