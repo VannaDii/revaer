@@ -1524,9 +1524,24 @@ cutover is claimed.
   wrapper inventory from 61 to 67 cases. The integrated ingestion unit suite
   passes, including 6,192 main assertions and the dependency, validation,
   setting-path, attribute, metadata, disambiguation, sampling and GUID suites.
-  Live database/full gate results remain pending at this checkpoint. No SQL,
-  runtime, frozen source,
-  final candidate or incomplete-D3 condition changes.
+  On executable commit `7648a51e`, all 36 new URI identity variants and all
+  six v2-conflict checks pass live. The complete canonical run passes 7,013
+  of 7,014 checks; only the explicit incomplete-D3 guard fails. All 11 retained
+  source registries match the tested files, including the wrapper's 42 hashes.
+  Full CI passes with no warning lines. Full UI fails with 57 passed, one
+  failed and 72 unrun: scheduling still requires verified filesystem identity,
+  and UI coverage is absent. No SQL, runtime, frozen source, final candidate
+  or incomplete-D3 condition changes.
+- Coverage and retention: `just js-coverage-merge sonar-verify-inputs` passes.
+  Rust LCOV retains 322 source records, 133,758 lines and 124,467 covered lines;
+  JavaScript retains 61 source records, 5,402 lines and 4,249 covered lines,
+  including partial API execution rather than full UI coverage. The canonical
+  scanner token is absent: no Sonar analysis or published result is claimed.
+  Local archive `artifacts/media-verification/2026-09-13-native-ri-identity/`
+  retains the executable bundle, 29 current canonical entries, all gate logs,
+  coverage and 56 raw profiles, worker sources, and the separate native trial
+  including its debugger image and failed attempts. The worker was closed
+  after byte-for-byte integration verification and its worktree removed.
 - Observability: reuse the existing full SQL stdout/stderr, clocks, direct-role
   identity, before/after/rollback table images and read-input evidence. No
   production telemetry changes.
