@@ -263,7 +263,9 @@ module WorkflowGuardrails
       rust = "#{report} --ignore-filename-regex '#{RUST_COVERAGE_FILTER}'"
       expected = {
         "body" => [
-          ["rm -rf coverage"], ["mkdir -p coverage"],
+          [%q(if test -L coverage; then printf '%s\n' 'Rust coverage output directory must not be a symlink' >&2; exit 1; fi)],
+          ["rm -rf coverage/html"], ["rm -f coverage/lcov.info coverage/llvm-cov.txt"],
+          ["mkdir -p coverage"],
           ["#{rust} --lcov --output-path coverage/lcov.info"],
           ["#{rust} --html --output-dir coverage"],
           ["#{report} --text --output-path coverage/llvm-cov.txt"]
@@ -274,7 +276,8 @@ module WorkflowGuardrails
       recipe = @inputs.recipe_definitions["cov-report"]
       unless @inputs.recipe_owners["cov-report"] == "just/quality.just" &&
           recipe.is_a?(Hash) && expected.all? { |field, value| recipe[field] == value }
-        error("cov-report must retain ordered fail-closed LCOV, HTML and native exports without default test-file hiding")
+        error("cov-report must preserve independent inputs and retain ordered fail-closed LCOV, HTML " \
+          "and native exports without default test-file hiding")
       end
 
       body = @inputs.recipe_definitions.dig("cov", "body")

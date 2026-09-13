@@ -238,6 +238,8 @@ applyTo:
   as a Rust report reset. Every generator failure remains fatal and stale Rust
   output must not survive it. The canonical recipe regression must verify
   success, repetition, each failed format and symlink/non-directory boundaries.
+  The parsed recipe guardrail must reject destructive root resets, skipped
+  owned-output cleanup, missing symlink rejection and altered report commands.
 - External `docker://` actions require an exact `sha256` digest in addition to the exact-SHA rule for repository actions.
 - Every direct checked-in workflow job requires a positive `timeout-minutes` no greater than 180. Every `setup-revaer` step requires `timeout-minutes: 20`. Required jobs and steps must not use `continue-on-error: true` or expressions that can conceal failure; literal boolean or string `false` is permitted.
 - The root `justfile` is an import-only index using non-login `bash -c` and exactly the seven ADR 482 modules under `just/`. Each recipe has one module owner. Node commands run through `scripts/with-node.sh`, which selects and verifies exact Node 24.19.0 from `.nvmrc` so the NVM-managed version remains active.

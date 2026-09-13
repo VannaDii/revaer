@@ -381,6 +381,22 @@ replace_once "${case_root}/just/quality.just" \
   '--lcov --output-path coverage/lcov.info' '--lcov --output-path coverage/lcov.info || true'
 expect_failure "a suppressed coverage export failure" "${case_root}"
 
+case_root="$(new_case coverage-destructive-reset)"
+replace_once "${case_root}/just/quality.just" 'rm -rf coverage/html' 'rm -rf coverage'
+expect_failure "Rust reports deleting independent coverage inputs" "${case_root}"
+
+case_root="$(new_case coverage-stale-html)"
+replace_once "${case_root}/just/quality.just" 'rm -rf coverage/html' 'true'
+expect_failure "Rust reports retaining stale HTML" "${case_root}"
+
+case_root="$(new_case coverage-stale-text)"
+replace_once "${case_root}/just/quality.just" 'rm -f coverage/lcov.info coverage/llvm-cov.txt' 'true'
+expect_failure "Rust reports retaining stale LCOV or native text" "${case_root}"
+
+case_root="$(new_case coverage-symlink-root-accepted)"
+replace_once "${case_root}/just/quality.just" 'if test -L coverage; then' 'if false; then'
+expect_failure "Rust reports accepting a symlinked coverage root" "${case_root}"
+
 for mode in pass lcov html text; do
   case_root="$(new_case "coverage-export-${mode}")"
   mkdir -p "${case_root}/bin"

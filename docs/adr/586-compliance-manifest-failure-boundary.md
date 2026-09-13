@@ -1069,3 +1069,10 @@ it is not a warning-free documentation result or permission to exclude ADRs.
 - Stale-policy check: root AGENTS and scoped Rust, DevOps and Sonar guidance
   were reviewed. DevOps and Sonar now document exact report ownership and
   current-source validation. No contradiction was resolved by weakening policy.
+
+The first integrated `just ci` on `d08598ea` stopped in policy: its exact parsed
+recipe contract still required the destructive whole-directory reset. The
+guardrail now requires the narrower cleanup and symlink rejection, with four
+additional negative fixtures. Existing report commands, inclusive scope,
+failure propagation and 90% per-package coverage contracts are unchanged.
+Retain this first failure separately from the subsequent integrated run.
