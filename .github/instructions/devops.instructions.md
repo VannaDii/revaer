@@ -89,6 +89,9 @@ applyTo:
   warm-up frames and all prepared/rollback/read images; preserve the exact
   frozen D4 recovery failure separately from final recovery success. A warm
   cancellation case does not supply native in-call settings or full D3 proof.
+  Run cancellation immediately after the two owned races within D3, before
+  the longer branch matrices, retaining the preceding D4/D5 matrix and all
+  later cases. This changes verification order only, not scope or acceptance.
   Include the actual `search_result_ingest` application wrapper in the D3
   inventory and exercise discriminating stored scores, page boundaries and
   size-sample retention. Warm-after-rollback proof must retain the real first

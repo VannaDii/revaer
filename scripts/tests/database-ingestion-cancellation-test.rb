@@ -6,6 +6,7 @@ module RevaerDatabaseRebaseline
   class IngestionCancellationTest < FinalProof
     def run_tests!
       @assertions = 0
+      assert(IngestionCancellation::CANCELLATION_CACHE_STATES == %w[cold warm_committed], "mandatory cold and committed-warm matrix")
       %w[reference final].product(IngestionCancellation::CANCELLATION_CACHE_STATES).each do |variant, cache_state|
         @cache_state = cache_state
         value = fixture(variant)

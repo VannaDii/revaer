@@ -125,7 +125,7 @@ fn read_start_signal(path: &Path) -> anyhow::Result<Option<StartSignal>> {
 }
 
 async fn await_start(path: &Path, expected: &StartSignal) -> anyhow::Result<()> {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(180);
+    let deadline = tokio::time::Instant::now() + Duration::from_mins(3);
     loop {
         if let Some(signal) = read_start_signal(path)? {
             ensure!(&signal == expected, "controller start identity changed");

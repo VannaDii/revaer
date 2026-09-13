@@ -1816,7 +1816,13 @@ bound to that database/backend/cache state. Cancellation retains complete prepar
 rollback and read-input images. Frozen warm recovery must retain D4's exact
 `42P07`; final recovery independently requires success with distinct identities.
 Native in-call settings and full D3 remain unproven. Initial focused checks pass
-seven Rust tests and 513 validator assertions; live qualification is pending.
+seven Rust tests and 513 validator assertions. The canonical run on `bed81a12`
+passes all four actual cancellation cases and 8,039/8,040 checks, failing only
+the unchanged incomplete-D3 guard. All 31 canonical entries and 13 matching
+source registries are archived. Full lint finds one duration-notation issue;
+the follow-up expresses the same three-minute wait in minutes and moves
+cancellation directly after the two races for earlier failure diagnosis. No
+case or gate is removed. Updated-revision full gates remain pending.
 
 The independent diagnostic fix `f328be01` preserves ordered endpoint/admin
 errors instead of replacing the actual endpoint failure with the fallback's

@@ -92,6 +92,7 @@ module RevaerDatabaseRebaseline
       ingestion_inventory!
       verify_ingestion_attribute_race!
       verify_ingestion_sample_race!
+      verify_ingestion_cancellation!
       verify_ingestion_compilation!
       verify_ingestion_wrapper!
       verify_ingestion_policy!
@@ -104,7 +105,6 @@ module RevaerDatabaseRebaseline
       verify_ingestion_sampling!
       verify_ingestion_guid!
       verify_ingestion_pool!
-      verify_ingestion_cancellation!
       verify_ingestion_dependencies!
       verify_ingestion_session_controls!
       verify_existing_ingestion_parity!
