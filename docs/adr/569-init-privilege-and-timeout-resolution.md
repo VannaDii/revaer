@@ -1218,7 +1218,7 @@ repair or newly approve that behavior. Controlled scheduling does not establish
 uninstrumented timing, in-call setting scope or native/helper closure.
 
 The initial local prototype passed 349 checks on clean `94c691fe`, with source
-hashes and resource cleanup verified. Canonical promotion caught two harness
+hashes and resource cleanup verified. Two live promotion attempts caught harness
 errors: OID-valued lock tags are JSON strings, and the initial reader returned
 only six wrapper inputs rather than the required 19-table policy inventory.
 Both failures and cleanup receipts are retained. The corrected reader uses the
@@ -1245,3 +1245,20 @@ An independent, single-task UI investigation confirmed that frozen
 No fixture-only change can preserve the positive assertions. The approved
 root-persistence/API integration after cutover remains required. No code changed
 in that investigation; its agent was closed and clean worktree removed.
+
+On clean executable revision `7e9ab9cf`, the canonical proof passes 6,588/6,589
+checks; only the unchanged incomplete-D3 gate fails. All four GUID comparisons
+pass with exact source hashes. Full `just ci` exits zero with no WARN/compiler
+warning lines and positive local Rust/script coverage. Full `just ui-e2e` exits
+one: 57 passed, one failed, 72 not run, with the same scheduling 400 and missing
+UI coverage. Owned databases and volumes were removed and test-media cleanup
+passed. This is progress, not a completed handoff or cutover.
+
+`just sonar-compile-db` passes and produces the native compilation database and
+both bridge headers without uploading anything. `just sonar-verify-inputs`
+correctly fails on absent `coverage/js-lcov.info`; no partial report is promoted
+to replace it. Canonical authentication is also absent. No scan, published
+coverage, GitHub check, push or package acceptance is claimed. Local source,
+raw/merged coverage, failed and passing proof attempts, native binding readback
+and gate logs are retained at
+`artifacts/media-verification/2026-09-13-guid-conflicts/`.
