@@ -717,3 +717,15 @@ removes only this record; all original failing evidence remains retained.
   remote operation or upload was created; no build output was deleted. Original
   watcher reproduction remains separately sealed at the parent's
   `artifacts/media-verification/2026-09-12-helper-order/watcher-reproduction-2d8e7c2d.tar.gz`.
+
+Parent integration at `ccf6f7ff` reviewed the actual error/health and response
+paths, corrected the delegation-versus-approval wording, and refreshed the
+documentation index. Final executable `be1a2a53` includes only subsequent D3
+proof corrections. Full CI exits zero with eight original watcher warnings;
+full UI/API remains 57 passed, one schedule-PATCH failure and 72 not run, with
+missing UI coverage rejected. Native/PID1 settlement, queued shutdown outcomes
+and app revision publication remain unfinished; ACK is not their substitute.
+The single worker was closed after delivery, all 24 evidence checksums verified,
+and its clean worktree removed. Evidence is retained under
+`artifacts/media-verification/2026-09-12-size-config/`. No GitHub mutation or
+upload occurred, and no gate, deadline or approval condition was weakened.

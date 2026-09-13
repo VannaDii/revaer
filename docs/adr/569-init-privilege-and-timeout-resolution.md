@@ -988,3 +988,24 @@ comparison now requires the same exact table encoding for raw and declared
 read inputs, and explicit regressions retain that original false acceptance.
 Database results and earlier evidence remain unchanged; final-source focused
 and combined verification is pending. No SQL, runtime or criterion changed.
+
+Final executable checkpoint `be1a2a53` passes 812 focused size assertions and
+all 114 retained size variants under the stricter validator. That replay is
+not fresh database execution. Its subsequent canonical run independently
+passes 6,024/6,025 checks and again fails only incomplete D3; all 156 paired
+wrapper cases pass. Full CI exits zero with eight existing watcher WARNs.
+Full UI/API has 57 passed, one schedule-PATCH failure and 72 not run; teardown
+also rejects missing UI coverage. Neither required handoff gate is clean.
+
+Local Rust LCOV has 122,900 covered DA records of 131,765 in 311 tracked
+first-party files. Seven other records are retained, not counted as authored
+Rust. LF/LH summary fields differ from DA totals in 251 records; the original
+export and a separate comparison are retained without rewriting either. These
+are actual DA counts, not a published Sonar metric or scanner acceptance.
+The canonical token remains absent and the rejected upload was not retried.
+
+Original failures, both canonical runs, real coverage and raw instrumentation
+are retained at `artifacts/media-verification/2026-09-12-size-config/` with the
+source bundle and exact gate driver. Containers and the UI listener were
+confirmed absent; managed test-media cleanup passed. Frozen migration authority,
+init cutover conditions, package qualification and PR acceptance are unchanged.
