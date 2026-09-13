@@ -1076,3 +1076,30 @@ guardrail now requires the narrower cleanup and symlink rejection, with four
 additional negative fixtures. Existing report commands, inclusive scope,
 failure propagation and 90% per-package coverage contracts are unchanged.
 Retain this first failure separately from the subsequent integrated run.
+
+On clean executable revision `9b988225`, the corrected workflow regression and
+full `just ci` pass. All 18 package coverage thresholds pass; ANSI-normalized
+CI output has no WARN or compiler-warning lines. The test-only deadline and
+permission-error regressions pass in the integrated suites. Full `just ui-e2e`
+still fails: 57 passed, one failed, 72 not run, plus the missing-UI-coverage
+teardown error. Schedule PATCH still requires 200 and receives the unchanged
+filesystem-identity-required 400. No assertion or route gate was weakened.
+
+Fresh native inputs and executed release JS coverage generation pass. Real
+Rust report regeneration preserves all 494 independent input/evidence entries
+byte-for-byte, including seven required JS/script/native paths. The subsequent
+`just sonar-verify-inputs` passes. Rust LCOV contains 320 sources, 133,355 line
+records and 124,171 positive records; JS LCOV contains 61 sources, 5,402 line
+records and 4,249 positive records. JS includes the failed E2E run and is not
+complete UI route coverage. Input validity and positive local counts are not
+published Sonar metrics, successful analysis or release acceptance.
+
+The canonical Sonar token remains absent; no scanner or external upload ran.
+The earlier refused transfer was not retried. D3/cutover, functional root and
+schedule binding, complete E2E, broader S2, both native packages and remote
+stack/review/check acceptance remain open. No GitHub mutation or source push
+occurred. The completed worker was closed and its worktree removed only after
+its patch matched committed parent files and its archive/manifests verified.
+Each gate removed its owned database and anonymous volumes. Exact-source logs,
+all coverage outputs, 53 raw/merged LLVM profiles and the native experiment are
+retained under `artifacts/media-verification/2026-09-13-coverage-retention/`.
