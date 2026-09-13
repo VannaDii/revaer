@@ -47,12 +47,23 @@ impl LibtorrentEngine {
 
     /// Apply the runtime configuration produced from the active engine profile.
     ///
+    /// Waits for the worker's session application and alternate-speed reconciliation,
+    /// not just command admission. Dropping this future does not cancel an enqueued
+    /// command. An error does not imply that native changes were rolled back.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the configuration could not be enqueued for the background worker.
+    /// Returns the worker's application error, or a channel error if the command
+    /// cannot be enqueued or its completion cannot be observed.
     pub async fn apply_runtime_config(&self, config: EngineRuntimeConfig) -> TorrentResult<()> {
-        self.send_command(EngineCommand::ApplyConfig(Box::new(config)))
-            .await
+        let (respond_to, rx) = oneshot::channel();
+        self.send_command(EngineCommand::ApplyConfig {
+            config: Box::new(config),
+            respond_to,
+        })
+        .await?;
+        rx.await
+            .map_err(|err| op_failed("apply_config", None, err))?
     }
 
     /// Inspect applied native settings for integration tests.
@@ -200,13 +211,16 @@ mod tests {
         ChokingAlgorithm, EncryptionPolicy, EngineRuntimeConfig, Ipv6Mode, SeedChokingAlgorithm,
         StorageMode, TrackerRuntimeConfig,
     };
-    use anyhow::Result;
+    use anyhow::{Result, anyhow};
     use revaer_torrent_core::{
-        AddTorrentOptions, TorrentSource,
+        AddTorrentOptions, TorrentError, TorrentSource,
         model::{TorrentOptionsUpdate, TorrentTrackersUpdate, TorrentWebSeedsUpdate},
     };
     use std::fs;
+    use std::future::Future;
     use std::path::PathBuf;
+    use std::pin::Pin;
+    use std::task::{Context, Waker};
     use tempfile::TempDir;
 
     fn repo_root() -> PathBuf {
@@ -293,6 +307,193 @@ mod tests {
             peer_classes: Vec::new(),
             default_peer_classes: Vec::new(),
         }
+    }
+
+    fn assert_pending<F: Future>(future: Pin<&mut F>) {
+        assert!(
+            future
+                .poll(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_config_waits_for_worker_completion() -> Result<()> {
+        let (commands, mut receiver) = mpsc::channel(COMMAND_BUFFER);
+        let engine = LibtorrentEngine { commands };
+        let mut apply = Box::pin(
+            engine.apply_runtime_config(runtime_config_template("ack-downloads", "ack-resume")),
+        );
+
+        assert_pending(apply.as_mut());
+        let command = receiver.try_recv()?;
+        assert_eq!(command.operation(), "apply_config");
+        assert_eq!(command.torrent_id(), None);
+        let EngineCommand::ApplyConfig { config, respond_to } = command else {
+            return Err(anyhow!("expected config command"));
+        };
+        assert_eq!(config.download_root, "ack-downloads");
+        assert_pending(apply.as_mut());
+        respond_to
+            .send(Ok(()))
+            .map_err(|result| anyhow!("completion receiver lost: {result:?}"))?;
+        apply.await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_preserves_typed_worker_errors() -> Result<()> {
+        let (commands, mut receiver) = mpsc::channel(COMMAND_BUFFER);
+        let engine = LibtorrentEngine { commands };
+        let torrent_id = Uuid::new_v4();
+        let errors = [
+            TorrentError::Unsupported {
+                operation: "apply_config",
+            },
+            op_failed(
+                "update_limits",
+                Some(torrent_id),
+                std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            ),
+        ];
+        for error in errors {
+            let expected_variant = std::mem::discriminant(&error);
+            let mut apply = Box::pin(
+                engine.apply_runtime_config(runtime_config_template("ack-downloads", "ack-resume")),
+            );
+            assert_pending(apply.as_mut());
+            let EngineCommand::ApplyConfig { respond_to, .. } = receiver.try_recv()? else {
+                return Err(anyhow!("expected config command"));
+            };
+            respond_to
+                .send(Err(error))
+                .map_err(|result| anyhow!("completion receiver lost: {result:?}"))?;
+            let Err(actual) = apply.await else {
+                return Err(anyhow!("worker failure returned success"));
+            };
+            assert_eq!(std::mem::discriminant(&actual), expected_variant);
+            match actual {
+                TorrentError::Unsupported { operation } => assert_eq!(operation, "apply_config"),
+                TorrentError::OperationFailed {
+                    operation,
+                    torrent_id: actual_id,
+                    source,
+                } => {
+                    assert_eq!(operation, "update_limits");
+                    assert_eq!(actual_id, Some(torrent_id));
+                    let io_error = source
+                        .downcast_ref::<std::io::Error>()
+                        .ok_or_else(|| anyhow!("original typed source was lost"))?;
+                    assert_eq!(io_error.kind(), std::io::ErrorKind::PermissionDenied);
+                }
+                result @ TorrentError::NotFound { .. } => {
+                    return Err(anyhow!("unexpected config result: {result:?}"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_reports_closed_command_channel() -> Result<()> {
+        let (commands, receiver) = mpsc::channel(COMMAND_BUFFER);
+        drop(receiver);
+        let engine = LibtorrentEngine { commands };
+        let result = engine
+            .apply_runtime_config(runtime_config_template("ack-downloads", "ack-resume"))
+            .await;
+        match result {
+            Err(TorrentError::OperationFailed {
+                operation,
+                torrent_id,
+                source,
+            }) => {
+                assert_eq!(operation, "apply_config");
+                assert_eq!(torrent_id, None);
+                assert!(source.is::<mpsc::error::SendError<EngineCommand>>());
+            }
+            result => return Err(anyhow!("expected command channel failure: {result:?}")),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_reports_lost_queued_reply_as_unobserved_completion() -> Result<()> {
+        let (commands, mut receiver) = mpsc::channel(COMMAND_BUFFER);
+        let engine = LibtorrentEngine { commands };
+        let mut apply = Box::pin(
+            engine.apply_runtime_config(runtime_config_template("ack-downloads", "ack-resume")),
+        );
+        assert_pending(apply.as_mut());
+        drop(receiver.try_recv()?);
+        match apply.await {
+            Err(TorrentError::OperationFailed {
+                operation,
+                torrent_id,
+                source,
+            }) => {
+                assert_eq!(operation, "apply_config");
+                assert_eq!(torrent_id, None);
+                assert!(source.is::<oneshot::error::RecvError>());
+            }
+            result => return Err(anyhow!("expected unobserved completion: {result:?}")),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_cancellation_before_admission_leaves_no_command() -> Result<()> {
+        let (commands, mut receiver) = mpsc::channel(1);
+        commands.try_send(EngineCommand::Recheck { id: Uuid::nil() })?;
+        let engine = LibtorrentEngine { commands };
+        let mut apply = Box::pin(
+            engine.apply_runtime_config(runtime_config_template("ack-downloads", "ack-resume")),
+        );
+        assert_pending(apply.as_mut());
+        drop(apply);
+        assert!(matches!(
+            receiver.try_recv()?,
+            EngineCommand::Recheck { .. }
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_cancellation_after_admission_retains_command() -> Result<()> {
+        let (commands, mut receiver) = mpsc::channel(COMMAND_BUFFER);
+        let engine = LibtorrentEngine { commands };
+        let mut apply = Box::pin(
+            engine.apply_runtime_config(runtime_config_template("ack-downloads", "ack-resume")),
+        );
+        assert_pending(apply.as_mut());
+        drop(apply);
+        let EngineCommand::ApplyConfig { config, respond_to } = receiver.try_recv()? else {
+            return Err(anyhow!("enqueued config disappeared with its caller"));
+        };
+        assert_eq!(config.download_root, "ack-downloads");
+        assert!(respond_to.is_closed());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn apply_config_ack_traverses_worker_dispatch() -> Result<()> {
+        let (commands, receiver) = mpsc::channel(COMMAND_BUFFER);
+        worker::spawn(
+            EventBus::new(),
+            receiver,
+            None,
+            Box::new(crate::session::StubSession::default()),
+        );
+        let engine = LibtorrentEngine { commands };
+        engine
+            .apply_runtime_config(runtime_config_template("ack-downloads", "ack-resume"))
+            .await?;
+        engine.inspect_settings().await?;
+        Ok(())
     }
 
     #[tokio::test]

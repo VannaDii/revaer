@@ -658,3 +658,62 @@ removes only this record; all original failing evidence remains retained.
 - Scope/policy: root, Rust, data and DevOps instructions remain binding.
   This checkpoint changes no architecture, dependency, runtime behavior,
   observability or acceptance criterion; rollback removes only this record.
+
+### Runtime Configuration ACK Prerequisite (2026-09-12)
+
+- Implementation status: production-used ACK prerequisite on base `24723ee7`,
+  within approved ADR 588 S2. The parent delegated command/adapter/worker edits;
+  that delegation is not a separate operator architectural approval.
+  Parent retains app orchestration/publication, D3 and the combined full gates.
+- Motivation: `apply_runtime_config` previously returned enqueue success before
+  `Worker::handle_apply_config` ran, so its caller could not observe application
+  failure or completion.
+- Design: `ApplyConfig` now carries the existing Tokio oneshot reply pattern.
+  The adapter waits for the completed session application and alternate-speed
+  reconciliation result. Original `TorrentError` variants, operation/identity
+  fields and boxed typed sources move unchanged to the caller. Subsequent alert
+  polling is independent of that completed application result.
+- Observability: the worker retains its existing command-failure WARN and
+  degraded-health reporting before moving an error into the reply. The failed
+  application still skips the immediate event flush, preserving its health
+  state. The existing closed-response WARN remains unchanged, including when
+  the abandoned caller can no longer receive an application failure.
+- Cancellation boundary: cancellation before enqueue leaves no command;
+  dropping a caller after enqueue does not cancel admitted work. A command or
+  reply channel failure is typed as transport failure, never enqueue success or
+  proof of rollback/non-execution. This does not implement S2's separate queued
+  `not_started_shutdown` classification or close shutdown admission.
+- Test coverage: 11 new focused tests plus three existing alternate-speed and
+  piece-deadline regressions pass in both all-features and no-default-features
+  configurations: 14 passed each, zero failures/ignored tests. Tests exercise
+  adapter-to-worker dispatch, separate pending application/reconciliation
+  phases, typed early/late errors, closed channels, cancellation before/after
+  enqueue, dropped receivers, retained health and independent poll failure.
+  Four scoped Just Clippy passes (all targets and panic-free production targets
+  in both feature configurations), `just fmt` and `git diff --check` pass.
+  Initial test-only lint failures and the corrected pass remain separate;
+  no assertion or lint criterion was weakened.
+- Limits: all-features builds the local arm64 libtorrent 2.1.1 native backend,
+  but these focused runtime tests inject sessions and channels. They do not
+  qualify native atomic rollback, command admission budgets, owner/PID1 or
+  native settlement, app applied-revision publication, Linux packages, complete
+  S2, or the original watcher WARNs. No timeout, duration, dependency, runtime
+  tuning or ADR 589 REGISTER_HASH behavior changed. Full CI/UI remains with the
+  parent and was not duplicated here.
+- Risk/rollback: callers now observe real failures and wait for completion;
+  this adds no independent deadline. A later reconciliation failure may follow
+  already completed changes. Revert the command/adapter/worker ACK together if
+  necessary; the previous enqueue-only response is not settlement evidence.
+- Dependency rationale: existing Tokio oneshot and standard-library test
+  controls only. No new dependency or infrastructure collaborator.
+- Stale-policy check: root, Rust and FFI instructions reviewed; the matching
+  FFI instruction now records the ACK invariant and its limits. Actual ADR 588
+  approval and its active-apply acknowledgement clause remain the authority;
+  no approval, exception or new architecture was inferred.
+- Evidence/cleanup: `target/config-ack/evidence/` retains exact commands, raw
+  initial/final logs, tested deltas, source/test-binary/native-library hashes and
+  tool/host identity. The worktree and shared focused build cache are retained
+  for parent review and parent cleanup. No DB, service, listener, test media,
+  remote operation or upload was created; no build output was deleted. Original
+  watcher reproduction remains separately sealed at the parent's
+  `artifacts/media-verification/2026-09-12-helper-order/watcher-reproduction-2d8e7c2d.tar.gz`.
