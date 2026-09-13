@@ -95,7 +95,12 @@ applyTo:
   health records and caller settings through commit. Retain raw transport and
   reject altered evidence before any narrow UUID-text normalization. Controlled
   scheduling and legacy observation reuse do not establish uninstrumented
-  timing, in-call settings, native/helper closure or complete D3.
+  timing or complete D3. Pair plain and NOTICE-observed runs, bind every logger
+  write to its exact SQL/caller stack and transaction, and verify all three
+  in-call writes in order. Logger-first coverage must really mutate the helper,
+  roll back all table effects and then reuse that compiled helper on the same
+  backend; preserve the resulting conflict/audit/health sequence gaps. These
+  cases do not certify other helpers or complete native closure.
   Candidate/final disposable PostgreSQL cleanup must remove their anonymous
   volumes as well as containers, never prune unrelated Docker resources.
   Settings-path proof must pair uninstrumented runs with rollback-surviving

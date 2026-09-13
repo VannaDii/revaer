@@ -1,36 +1,42 @@
 # frozen_string_literal: true
 
 require "open3"
+require_relative "ingestion_guid_trace"
 
 module RevaerDatabaseRebaseline
   # Test-only barriers expose two real concurrent GUID-conflict callsites.
   module IngestionGuid
+    include IngestionGuidTrace
     GUID_KINDS = %w[changed-selected-guid competing-guid].freeze
-    GUID_MODES = %w[cold helpers-first].freeze
+    GUID_MODES = %w[cold helpers-first logger-first].freeze
 
     private
 
-    def guid_session(arguments, helpers: false)
-      { calls: [arguments], wrapper: true, helpers:, finish_setting: true }
+    def guid_session(arguments, helpers: false, warm_logger: false)
+      { calls: (warm_logger ? [guid_warm_operation] : []) + [arguments], wrapper: true, helpers:, finish_setting: true, rollback: warm_logger }
     end
 
-    def guid_parse(record, helpers: false)
+    def guid_parse(record, helpers: false, warm_logger: false, trace: nil)
       metadata_transport_json!(record.fetch("stdout"))
-      frames = correction_parse(record.fetch("stdout"), record.fetch("stderr"), guid_session({}, helpers:))
-      unless frames.one? && frames.first.fetch("state") == "00000" && record.fetch("stderr").empty?
+      frames = correction_frames(record.fetch("stdout"), guid_session({}, helpers:, warm_logger:))
+      unless frames.length == (warm_logger ? 2 : 1) && frames.all? { |frame| frame.fetch("state") == "00000" }
         raise Failure, "GUID real wrapper must succeed without diagnostics"
       end
+      guid_trace_validate!(record.fetch("stderr"), frames, trace, warm_logger:)
       if record.key?("frames") && !size_tables_equal?({ "frames" => frames }, { "frames" => record.fetch("frames") })
         raise Failure, "GUID raw and declared frames differ"
       end
 
-      frames.first
+      frames
     end
 
-    def guid_execute(arguments, database, role, name, helpers: false, paused: false)
-      query = "SET application_name = '#{paused ? 'guid-race-paused' : 'guid-race-contender'}';\n" + correction_session(guid_session(arguments, helpers:))
+    def guid_execute(arguments, database, role, name, helpers: false, paused: false, warm_logger: false, trace: nil)
+      session = correction_session(guid_session(arguments, helpers:, warm_logger:)) do |call|
+        call[:operation] == :logger ? compilation_call(call, 1) : ingestion_call(call)
+      end
+      query = "\\set SHOW_CONTEXT always\nSET application_name = '#{paused ? 'guid-race-paused' : 'guid-race-contender'}';\n" + session
       raw = metadata_transport(query, database, role, name)
-      raw.merge("frames" => [guid_parse(raw, helpers:)])
+      raw.merge("frames" => guid_parse(raw, helpers:, warm_logger:, trace:))
     end
 
     def guid_instrument(original, kind)
@@ -85,7 +91,7 @@ module RevaerDatabaseRebaseline
       end
     end
 
-    def guid_interleave(database, role, a, b, mode, name)
+    def guid_interleave(database, role, a, b, mode, name, trace: nil)
       paused = nil
       transcript = +""
       Open3.popen3(*command("postgres", database)) do |input, output, error, waiter|
@@ -94,9 +100,9 @@ module RevaerDatabaseRebaseline
           input.write("SELECT pg_advisory_lock(588,1029); SELECT 'held';\n")
           input.flush
           guid_controller_read(output, "held", transcript)
-          paused = Thread.new { guid_execute(a, database, role, "#{name}-paused", paused: true, helpers: mode == "helpers-first") }
+          paused = Thread.new { guid_execute(a, database, role, "#{name}-paused", paused: true, helpers: mode == "helpers-first", warm_logger: mode == "logger-first", trace: trace&.merge(logger: true)) }
           barrier = guid_barrier(database)
-          contender = guid_execute(b, database, role, "#{name}-contender", helpers: mode == "helpers-first")
+          contender = guid_execute(b, database, role, "#{name}-contender", helpers: mode == "helpers-first", trace: trace&.merge(logger: false))
           intermediate = ingestion_snapshot(database)
           input.write("SELECT pg_advisory_unlock(588,1029); SELECT 'released';\n")
           input.flush
@@ -116,25 +122,26 @@ module RevaerDatabaseRebaseline
       end
     end
 
-    def guid_expected_records(source, existing, clock)
-      observed = "2026-09-10T00:03:00+00:00"
+    def guid_expected_records(source, existing, clock, id: 1, type: "source_guid", incoming: "wanted", observed: "2026-09-10T00:03:00+00:00")
       {
-        "source_metadata_conflict" => [{ "source_metadata_conflict_id" => 1, "canonical_torrent_source_id" => source,
-          "conflict_type" => "source_guid", "existing_value" => existing, "incoming_value" => "wanted", "observed_at" => observed,
+        "source_metadata_conflict" => [{ "source_metadata_conflict_id" => id, "canonical_torrent_source_id" => source,
+          "conflict_type" => type, "existing_value" => existing, "incoming_value" => incoming, "observed_at" => observed,
           "resolved_at" => nil, "resolved_by_user_id" => nil, "resolution" => nil, "resolution_note" => nil }],
-        "source_metadata_conflict_audit_log" => [{ "source_metadata_conflict_audit_log_id" => 1, "conflict_id" => 1, "action" => "created",
+        "source_metadata_conflict_audit_log" => [{ "source_metadata_conflict_audit_log_id" => id, "conflict_id" => id, "action" => "created",
           "actor_user_id" => 0, "occurred_at" => clock, "note" => nil }],
-        "indexer_health_event" => [{ "indexer_health_event_id" => 1, "indexer_instance_id" => 569001, "occurred_at" => observed,
-          "event_type" => "identity_conflict", "latency_ms" => nil, "http_status" => nil, "error_class" => nil, "detail" => "source_guid" }]
+        "indexer_health_event" => [{ "indexer_health_event_id" => id, "indexer_instance_id" => 569001, "occurred_at" => observed,
+          "event_type" => "identity_conflict", "latency_ms" => nil, "http_status" => nil, "error_class" => nil, "detail" => type }]
       }
     end
 
-    def guid_validate!(evidence, kind, mode, variant, role)
+    def guid_validate!(evidence, kind, mode, variant, role, observed: false)
       raise Failure, "GUID unknown scenario" unless GUID_KINDS.include?(kind) && GUID_MODES.include?(mode) && %w[reference final].include?(variant)
 
-      fixtures = evidence.fetch("fixtures").map { |raw| guid_parse(raw) }
-      a = guid_parse(evidence.fetch("paused"), helpers: mode == "helpers-first")
-      b = guid_parse(evidence.fetch("contender"), helpers: mode == "helpers-first")
+      trace = observed ? { kind:, variant:, role: } : nil
+      fixtures = evidence.fetch("fixtures").map { |raw| guid_parse(raw).first }
+      paused = guid_parse(evidence.fetch("paused"), helpers: mode == "helpers-first", warm_logger: mode == "logger-first", trace: trace&.merge(logger: true))
+      a = paused.last
+      b = guid_parse(evidence.fetch("contender"), helpers: mode == "helpers-first", trace: trace&.merge(logger: false)).first
       all = fixtures + [b, a]
       before, intermediate, after = evidence.values_at("before", "intermediate", "after")
       capabilities = { "session" => role, "current" => role, "superuser" => variant == "reference", "create_role" => variant == "reference", "bypass_rls" => variant == "reference" }
@@ -146,7 +153,9 @@ module RevaerDatabaseRebaseline
       unless backends.all? { |pid| pid.match?(/\A[1-9][0-9]*\z/) } && backends.uniq.length == all.length && JSON.generate(evidence.fetch("barrier")) == JSON.generate(barrier)
         raise Failure, "GUID distinct backends or exact barrier changed"
       end
-      clocks = [evidence.fetch("seed_clock"), *all.map { |f| f.fetch("clock") }]
+      warm = mode == "logger-first" ? [paused.first] : []
+      warm.each { |frame| guid_warm_validate!(frame, a, before, capabilities) }
+      clocks = [evidence.fetch("seed_clock"), *(all + warm).map { |f| f.fetch("clock") }]
       unless clocks.all? { |clock| metadata_clock?(clock) } && clocks.uniq.length == clocks.length
         raise Failure, "GUID transaction clock provenance changed"
       end
@@ -168,7 +177,7 @@ module RevaerDatabaseRebaseline
       unless source && other && [source, other].all? { |row| row.fetch("source_guid").nil? && IngestionProof::INGESTION_UUID.match?(row.fetch("canonical_torrent_source_public_id")) }
         raise Failure, "GUID seeded source identities changed"
       end
-      expected = guid_expected_records(source.fetch("canonical_torrent_source_id"), other.fetch("canonical_torrent_source_public_id"), a.fetch("clock"))
+      expected = guid_expected_records(source.fetch("canonical_torrent_source_id"), other.fetch("canonical_torrent_source_public_id"), a.fetch("clock"), id: warm.empty? ? 1 : 2)
       raise Failure, "GUID independent conflict audit or health record changed" unless expected.all? { |table, rows| size_tables_equal?({ table => after.fetch(table) }, { table => rows }) }
 
       durable = after.fetch("canonical_torrent_source").find { |row| row.fetch("canonical_torrent_source_id") == source.fetch("canonical_torrent_source_id") }
@@ -178,7 +187,7 @@ module RevaerDatabaseRebaseline
              a.fetch("result").values_at("observation_created", "durable_source_created") == [kind != "competing-guid", false]
         raise Failure, "GUID conflicting identity or observation binding changed"
       end
-      guid_comparable(all, inputs, evidence.fetch("seed_clock"), expected.fetch("source_metadata_conflict").first)
+      guid_comparable(fixtures + warm + [b, a], inputs, evidence.fetch("seed_clock"), expected.fetch("source_metadata_conflict").first)
     end
 
     def guid_comparable(frames, inputs, seed_clock, conflict)
@@ -186,6 +195,8 @@ module RevaerDatabaseRebaseline
       copied.each do |frame|
         %w[tables_before tables_after tables_finish].each do |key|
           frame.fetch(key).fetch("source_metadata_conflict").each do |row|
+            next unless row.fetch("conflict_type") == "source_guid"
+
             raise Failure, "GUID unexpected conflict text" unless row == conflict
 
             row["existing_value"] = "<validated-guid-conflict-source-public-id>"
@@ -196,9 +207,9 @@ module RevaerDatabaseRebaseline
         inputs: policy_comparable_inputs("inputs_before" => inputs, "seed_clocks" => { "guid" => seed_clock }) }
     end
 
-    def guid_isolated(kind, mode, variant, source, role)
+    def guid_isolated(kind, mode, variant, source, role, observed:)
       database = "ingestion_guid_#{variant}"
-      name = "#{kind}-#{mode}-#{variant}"
+      name = "#{kind}-#{mode}-#{variant}-#{observed ? 'observed' : 'plain'}"
       created = false
       begin
         sql("CREATE DATABASE #{identifier(database)} TEMPLATE #{identifier(source)} OWNER #{identifier(@owner)}", role: "postgres", database: "postgres")
@@ -214,12 +225,14 @@ module RevaerDatabaseRebaseline
         end
         evidence = { "seed_clock" => clock, "fixtures" => fixtures, "before" => ingestion_snapshot(database), "inputs_before" => policy_read_snapshot(database),
           "instrumentation" => guid_instrument!(database, kind, name) }
+        guid_trace_observer!(database, name) if observed
         a = wrapper_arguments("wanted", minute: 3, seeders: 17, title: "GUID target refreshed")
         b = wrapper_arguments(kind == "competing-guid" ? "wanted" : "other", hash: kind == "competing-guid" ? "b" : "a", minute: 2, seeders: 11, title: "GUID contender refreshed")
-        evidence.merge!(guid_interleave(database, role, a, b, mode, name))
+        trace = observed ? { kind:, variant:, role: } : nil
+        evidence.merge!(guid_interleave(database, role, a, b, mode, name, trace:))
         evidence.merge!("after" => ingestion_snapshot(database), "inputs_after" => policy_read_snapshot(database))
         metadata_write("#{name}.json", JSON.pretty_generate(evidence) + "\n")
-        comparable = guid_validate!(evidence, kind, mode, variant, role)
+        comparable = guid_validate!(evidence, kind, mode, variant, role, observed:)
         check("GUID #{name} independent conflict and committed path", true)
         { name:, comparable: }
       ensure
@@ -242,7 +255,13 @@ module RevaerDatabaseRebaseline
       begin
         GUID_KINDS.product(GUID_MODES).each do |kind, mode|
           pair = { "reference" => ["reference_proof", "postgres"], "final" => [@database, @runtime] }.to_h do |variant, (source, role)|
-            [variant, guid_isolated(kind, mode, variant, source, role)]
+            plain = guid_isolated(kind, mode, variant, source, role, observed: false)
+            observed = guid_isolated(kind, mode, variant, source, role, observed: true)
+            same = JSON.generate(plain.fetch(:comparable)) == JSON.generate(observed.fetch(:comparable))
+            check("GUID #{kind}-#{mode}-#{variant} trace preserves complete application evidence", same)
+            raise Failure, "GUID trace changed application evidence" unless same
+
+            [variant, observed]
           end
           equivalent = JSON.generate(pair.fetch("reference").fetch(:comparable)) == JSON.generate(pair.fetch("final").fetch(:comparable))
           check("GUID #{kind}-#{mode} complete result and 18-table path parity", equivalent)
@@ -257,7 +276,7 @@ module RevaerDatabaseRebaseline
           candidate_sha256: @contract.expected_candidate_sha256, final_sha256: @contract.final_sha256,
           postgres_image: @contract.postgres_image, source_sha256: hashes, checks:, cases:,
           limitations: ["Controlled scheduling uses one disposable-only barrier in each variant; no uninstrumented timing guarantee.",
-            "Caller settings are verified; these cases do not establish in-call setting or native/helper closure.",
+            "GUID logger in-call and caller settings are verified; other helper/native closure remains unproven.",
             "Legacy competing-GUID observation reuse is retained, not repaired or newly approved."] }
         metadata_write("report.json", JSON.pretty_generate(report) + "\n")
         @metadata_evidence, @correction_evidence = previous_metadata, previous_correction

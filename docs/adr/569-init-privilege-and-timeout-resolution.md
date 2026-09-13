@@ -1262,3 +1262,43 @@ coverage, GitHub check, push or package acceptance is claimed. Local source,
 raw/merged coverage, failed and passing proof attempts, native binding readback
 and gate logs are retained at
 `artifacts/media-verification/2026-09-13-guid-conflicts/`.
+
+### GUID In-Call And Logger-First Evidence (2026-09-13)
+
+The next bounded increment pairs plain and NOTICE-observed runs for both GUID
+conflict callsites, adding logger-first to cold/helper-first compilation. All
+24 live variants pass, including six reference/final comparisons and mandatory
+D4/D5 controls: 267 focused checks and 1,048 unit assertions. The focused run
+names base `ef3b17ef`, its exact four-file dirty delta and source hashes; it is
+not evidence for a clean committed revision until the integrated gates below.
+
+Every logger write is bound to its exact SQL, native caller stack, direct role,
+backend and transaction clock. All three ordered writes retain the frozen
+in-call `use_column` setting versus final `error`, while caller settings remain
+unchanged. Logger-first really writes conflict/audit/health rows, rolls back
+all table effects, and reuses that helper in the same backend. Its sequence
+gaps remain visible and independently checked. Plain/observed results, complete
+18-table transitions and 19-table read inputs match. Test-only NOTICE observers
+and scheduling barriers remain confined to disposable administrator-owned
+clones; this is neither an uninstrumented timing guarantee nor native closure.
+
+A separate bounded `trim-size-samples` experiment on clean `ef3b17ef` passes
+eight plain/profiled reference/final cold/helper-first variants with 200 real
+fixture wrapper calls. Each tested call updates seven rows, inserts one and
+deletes one; sample 100 disappears and the retained median becomes 1400.
+Both runs pass 600 checks including D4/D5; offline analysis passes 160. The
+retained 284 profiled plans contain four completed RI insert callback records;
+UPDATE/DELETE plans report no callback entries. These are observations, not
+independent callback-count oracles or proof of unobserved paths. No profiler
+is adopted. Initial permission/harness/packaging failures and successful
+cleanup are retained in the hash-verified archive. The completed agent is
+closed and its clean owned worktree is removed after retaining the archive.
+
+Motivation is to close the bounded GUID helper-context gap without changing
+runtime behavior. No dependency, production SQL, grant, deadline, cutover or
+approval changes. Observability is test-only raw SQL/NOTICE/plan evidence.
+Rollback removes only this proof increment. Root/data/DevOps instructions and
+ADRs 569/588 were reviewed; DevOps records the new exact trace and rollback
+requirements. No stale constraint was removed or relaxed. D3 remains
+incomplete, and UI/root integration, published Sonar coverage, native packages
+and actual PR acceptance remain outstanding.
