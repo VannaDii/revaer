@@ -1103,3 +1103,31 @@ its patch matched committed parent files and its archive/manifests verified.
 Each gate removed its owned database and anonymous volumes. Exact-source logs,
 all coverage outputs, 53 raw/merged LLVM profiles and the native experiment are
 retained under `artifacts/media-verification/2026-09-13-coverage-retention/`.
+
+### Deterministic Cleanup Fixtures (2026-09-13)
+
+Motivation: full CI at `e1925839` reproduced
+`exited_group_waits_for_pipe_eof_within_forced_verification` with 334 observations
+instead of eight. An isolated worker reproduced 340/eight during concurrent
+spawns. Test pipe writers can be inherited during macOS's separate pipe/CLOEXEC
+setup. Shutdown-controlled Unix socketpairs now make the fake-operation fixture
+deliver EOF at the specified observation, including when writer copies remain.
+A new regression still requires both independent EOFs and exact stdout/stderr.
+No production operation, verification phase, deadline, error or assertion was
+weakened. Seven cleanup tests passed 100 focused repetitions on macOS.
+
+The worker's concurrent sweep also observed the real-pipe
+`deadline_includes_pipe_setup_time` test retaining an unclosed pipe. The holder
+was not traced; inter-test inheritance is a hypothesis, not an established
+production defect. This exact test now runs in an isolated test subprocess,
+retaining real pipes, its real shell, the 20 ms deadline, setup-time accounting,
+cleanup assertions and inherited coverage environment. Seventeen post-change
+focused repetitions and both strict lint passes succeeded. Full combined gates
+remain pending; these results are not Linux package or broader S2 qualification.
+
+Observability is test output only. The existing standard library supplies the
+socketpairs and child runner; no dependency is added. Rollback removes the
+test-only changes and new regression together, with production behavior intact.
+The root and Rust instructions were reviewed; no criteria or approval drift was
+introduced. Parent validation must retain the initial failure and every remaining
+failure rather than treating repetition counts as release acceptance.

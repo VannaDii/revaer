@@ -256,7 +256,28 @@ fn supervisor_closes_stdin_and_enforces_each_output_bound() -> Result<(), Native
 
 #[cfg(unix)]
 #[test]
-fn deadline_includes_pipe_setup_time() {
+fn deadline_includes_pipe_setup_time() -> Result<(), Box<dyn Error>> {
+    let fixture_args = [
+        "--exact",
+        "process::tests::deadline_includes_pipe_setup_time",
+        "--test-threads=1",
+    ];
+    // Keep these real pipes outside other tests' concurrent spawns: on macOS,
+    // pipe creation and CLOEXEC setup are separate operations.
+    if !std::env::args_os()
+        .skip(1)
+        .eq(fixture_args.map(OsString::from))
+    {
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .args(fixture_args)
+            .status()?;
+        assert!(
+            status.success(),
+            "isolated pipe setup fixture failed: {status}"
+        );
+        return Ok(());
+    }
+
     let request = shell_request(
         "trap '' TERM; printf R; while :; do sleep 1; done",
         Duration::from_millis(20),
@@ -278,6 +299,7 @@ fn deadline_includes_pipe_setup_time() {
     );
     assert!(started.elapsed() >= Duration::from_millis(40));
     assert!(started.elapsed() < Duration::from_secs(2));
+    Ok(())
 }
 
 #[cfg(unix)]

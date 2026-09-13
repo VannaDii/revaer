@@ -420,8 +420,10 @@ fn push_unique(evidence: &mut NativeProcessSecondaryEvidence, message: String) {
 mod tests {
     use std::collections::VecDeque;
     use std::error::Error;
-    use std::io::{PipeWriter, Write};
+    use std::io::Write;
+    use std::net::Shutdown;
     use std::os::fd::OwnedFd;
+    use std::os::unix::net::UnixStream;
 
     use crate::process::{NativeProcessRequest, stream::configure_nonblocking};
 
@@ -560,9 +562,11 @@ mod tests {
         Pid::from_raw(42).ok_or_else(|| "test process-group id must be nonzero".to_string())
     }
 
-    fn open_capture_streams() -> Result<(ProcessStreams, [PipeWriter; 2]), Box<dyn Error>> {
-        let (stdout_reader, mut stdout_writer) = io::pipe()?;
-        let (stderr_reader, mut stderr_writer) = io::pipe()?;
+    fn open_capture_streams() -> Result<(ProcessStreams, [UnixStream; 2]), Box<dyn Error>> {
+        // On macOS, pipe creation and CLOEXEC are separate, so concurrent spawns
+        // can inherit writers. Socket shutdown delivers EOF even with those copies.
+        let (stdout_reader, mut stdout_writer) = UnixStream::pair()?;
+        let (stderr_reader, mut stderr_writer) = UnixStream::pair()?;
         stdout_writer.write_all(b"stdout")?;
         stderr_writer.write_all(b"stderr")?;
         let request = NativeProcessRequest::inspection(
@@ -581,10 +585,38 @@ mod tests {
         Ok((streams, [stdout_writer, stderr_writer]))
     }
 
+    fn finish_capture_writers(writers: &[UnixStream; 2]) -> io::Result<()> {
+        for writer in writers {
+            writer.shutdown(Shutdown::Write)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn capture_fixture_requires_both_eofs_with_retained_writer_copies() -> Result<(), Box<dyn Error>>
+    {
+        let (mut streams, [stdout_writer, stderr_writer]) = open_capture_streams()?;
+        let retained_writers = [stdout_writer.try_clone()?, stderr_writer.try_clone()?];
+        streams.drain();
+        assert!(!streams.all_closed());
+        stdout_writer.shutdown(Shutdown::Write)?;
+        streams.drain();
+        assert!(!streams.all_closed());
+        stderr_writer.shutdown(Shutdown::Write)?;
+        streams.drain();
+        assert!(streams.all_closed());
+        assert!(streams.evidence().is_empty());
+        let output = streams.into_output();
+        assert_eq!(output.stdout(), b"stdout");
+        assert_eq!(output.stderr(), b"stderr");
+        drop(retained_writers);
+        Ok(())
+    }
+
     #[test]
     fn exited_group_waits_for_pipe_eof_within_forced_verification() -> Result<(), Box<dyn Error>> {
         let (mut streams, writers) = open_capture_streams()?;
-        let mut writers = Some(writers);
+        let mut finish_result = Ok(());
         let mut observations = 0;
         let mut operations = FakeCleanupOperations::exited_group(4);
         let deadline = NativeProcessError::deadline_exceeded(Duration::from_millis(20));
@@ -598,12 +630,13 @@ mod tests {
             |_| {
                 observations += 1;
                 if observations == 7 {
-                    drop(writers.take());
+                    finish_result = finish_capture_writers(&writers);
                 }
                 Some(deadline.clone())
             },
         );
 
+        finish_result?;
         assert!(streams.all_closed());
         assert_eq!(observations, 8);
         assert_eq!(outcome.boundary, Some(deadline));
@@ -619,7 +652,7 @@ mod tests {
     fn exited_group_preserves_unclosed_pipe_when_verification_budget_expires()
     -> Result<(), Box<dyn Error>> {
         let (mut streams, [stdout_writer, stderr_writer]) = open_capture_streams()?;
-        drop(stdout_writer);
+        stdout_writer.shutdown(Shutdown::Write)?;
         let mut observations = 0;
         let mut operations = FakeCleanupOperations::exited_group(3);
         let deadline = NativeProcessError::deadline_exceeded(Duration::from_millis(20));
@@ -641,7 +674,7 @@ mod tests {
         assert_eq!(outcome.boundary, Some(deadline));
         assert!(outcome.evidence.is_empty());
         assert_eq!(operations.calls.len(), 4);
-        drop(stderr_writer);
+        stderr_writer.shutdown(Shutdown::Write)?;
         streams.drain();
         assert!(streams.all_closed());
         Ok(())
@@ -650,7 +683,7 @@ mod tests {
     #[test]
     fn exited_group_with_closed_pipes_needs_no_signals_or_waits() -> Result<(), Box<dyn Error>> {
         let (mut streams, writers) = open_capture_streams()?;
-        drop(writers);
+        finish_capture_writers(&writers)?;
         let mut operations = FakeCleanupOperations::exited_group(1);
         let outcome = terminate_and_verify_with(
             &mut FakeChild,
@@ -712,7 +745,7 @@ mod tests {
     fn force_kill_permission_error_survives_successful_reap_and_pipe_eof()
     -> Result<(), Box<dyn Error>> {
         let (mut streams, writers) = open_capture_streams()?;
-        let mut writers = Some(writers);
+        let mut finish_result = Ok(());
         let mut observations = 0;
         let mut operations = FakeCleanupOperations::successful_escalation();
         let permission_error = rustix::io::Errno::PERM.to_string();
@@ -728,12 +761,13 @@ mod tests {
             |_| {
                 observations += 1;
                 if observations == 5 {
-                    drop(writers.take());
+                    finish_result = finish_capture_writers(&writers);
                 }
                 Some(deadline.clone())
             },
         );
 
+        finish_result?;
         assert!(streams.all_closed());
         assert_eq!(observations, 6);
         assert_eq!(outcome.boundary, Some(deadline.clone()));
