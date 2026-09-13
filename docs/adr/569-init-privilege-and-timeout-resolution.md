@@ -1758,6 +1758,22 @@ records the missing-rank evidence boundary. No new dependency is introduced.
 Rollback is removal of these verification additions; frozen/final authority and
 the incomplete-D3 guard remain unchanged.
 
+The first live run on `1b725dd2` passes all eight K1 variant/mode executions,
+but stops at K2's incorrectly expected parent transaction lock. Actual evidence
+binds the blocked child xid `27423` to writer backend `148067`, whose parent xid
+is `27422`. The corrected harness additionally records the inserted rows' xmin;
+3,381 focused assertions reject substituting the parent for that child. Both
+races now run first within D3 without removing or skipping any later case.
+The failed source-bound run is retained in
+`artifacts/media-verification/2026-09-13-reachable-concurrency/`; rerun pending.
+
+A separate unpublished plan experiment on `1b725dd2` observes the cast helper
+inlined into the reference decision INSERT, but 11 actual SQL helper executions
+in final, in both cold/helper-first modes. Ordinary/observed state comparisons
+pass independently of reference/final comparisons. This explains the missing
+reference SQL entry without supplying a new native setting witness or adopting
+a canonical replacement assertion; the prior native trial remains failed.
+
 Checkpoint documentation validation also encountered the EBU R128 landing
 page's 403 response. Its citation now points to the official recommendation
 PDF carrying the same referenced broadcast target. No audio recommendation,

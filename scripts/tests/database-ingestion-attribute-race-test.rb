@@ -158,7 +158,7 @@ module RevaerDatabaseRebaseline
         value[actor] = race_test_raw(raw.fetch("parsed"), mode, actor, raw.fetch("stderr"))
       end
       before, after = value.fetch("b").fetch("stdout").split("outside:", 2)
-      value["controller"] = "#{before}writer_xid:900\nheld\nreleased\noutside:#{after}finished\n"
+      value["controller"] = "#{before}writer_xid:900\nwriter_row_xid:901\nheld\nreleased\noutside:#{after}finished\n"
       value
     end
 
@@ -170,7 +170,7 @@ module RevaerDatabaseRebaseline
 
     def race_test_evidence(kind, mode, variant)
       role = variant == "reference" ? "postgres" : @runtime
-      value = { "database" => "unit_attribute_race", "seed_clock" => "2026-09-12T00:00:00+00:00", "writer_identity" => { "backend" => "102", "xid" => "900" } }
+      value = { "database" => "unit_attribute_race", "seed_clock" => "2026-09-12T00:00:00+00:00", "writer_identity" => { "backend" => "102", "xid" => "900", "row_xid" => "901" } }
       %w[fixture b a].each do |actor|
         parsed = { "context" => { "database" => "unit_attribute_race", "application" => "attribute-race-#{actor}", "isolation" => "read committed" }, "frame" => race_test_frame(actor, variant, kind) }
         stderr = actor == "a" && variant == "reference" && kind == "eleven-all-id" ? metadata_test_d5_stderr.sub("LOCATION:", "#{race_test_wrapper}LOCATION:") : ""
@@ -192,7 +192,7 @@ module RevaerDatabaseRebaseline
       end
       value["after"] = race_test_read(sequence, race_test_finished(kind, variant))
       wait = { "pid" => 103, "usename" => role, "application_name" => "attribute-race-a", "state" => "active", "wait_event_type" => "Lock", "wait_event" => "transactionid",
-        "blockers" => [102], "locktype" => "transactionid", "mode" => "ShareLock", "granted" => false, "xid" => "900", "writer_pid" => 102,
+        "blockers" => [102], "locktype" => "transactionid", "mode" => "ShareLock", "granted" => false, "xid" => "901", "writer_pid" => 102,
         "writer_role" => "postgres", "writer_application" => "attribute-race-b", "writer_state" => "idle in transaction", "writer_xid" => "900", "writer_mode" => "ExclusiveLock", "writer_granted" => true,
         "query_prefix" => "SELECT row_to_json(r) FROM public.search_result_ingest(search_request" }
       value["wait"] = { "stdout" => JSON.generate([wait]) + "\n", "stderr" => "" }
@@ -350,6 +350,13 @@ module RevaerDatabaseRebaseline
         rejected("attribute race") { validate.call(changed) }
       end
       changed = copy(original)
+      changed.fetch("writer_identity")["row_xid"] = "900"
+      changed["controller"] = changed.fetch("controller").sub("writer_row_xid:901", "writer_row_xid:900")
+      wait = JSON.parse(changed.fetch("wait").fetch("stdout"))
+      wait.first["xid"] = "900"
+      changed.fetch("wait")["stdout"] = JSON.generate(wait) + "\n"
+      rejected("writer transaction") { validate.call(changed) }
+      changed = copy(original)
       changed.fetch("a")["stdout"] = changed.fetch("a").fetch("stdout").sub('role:{', 'role:{"session":"duplicate",')
       rejected("duplicate metadata JSON") { validate.call(changed) }
       changed = copy(original)
@@ -410,7 +417,7 @@ module RevaerDatabaseRebaseline
         STDOUT.sync = true
         STDIN.each_line do |line|
           if line.include?("SELECT 'writer_xid:'")
-            STDOUT.write(#{(before + "writer_xid:900\nheld\n").inspect})
+            STDOUT.write(#{(before + "writer_xid:900\nwriter_row_xid:901\nheld\n").inspect})
           elsif line.start_with?('COMMIT;')
             STDOUT.write("released\\n")
           elsif line.include?("SELECT 'finished'")

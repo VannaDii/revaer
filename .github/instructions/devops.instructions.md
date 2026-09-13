@@ -149,6 +149,10 @@ applyTo:
   and raw diagnostics; these schedules do not qualify repeated warm or native
   closure. No frozen migration, production definition or constraint may change;
   the test-only observer splice must retain all unrelated cloned routine bytes.
+  Bind the attribute conflict lock to the writer rows' actual xmin as well as
+  the owning backend and top-level transaction: a savepoint's child xid is not
+  its parent's xid. Run these races first within D3 for early diagnostics while
+  retaining the preceding D4/D5 matrix and every remaining canonical case.
   Missing-hash proof must independently specify both fixture states and every
   write-table result, distinguish durable source fill from incoming observation
   identity, and preserve competing-source conflicts and rollback sequence gaps.

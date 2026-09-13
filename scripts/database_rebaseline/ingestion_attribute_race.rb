@@ -133,7 +133,7 @@ module RevaerDatabaseRebaseline
     def attribute_race_wait_validate!(raw, writer, backend, role)
       expected = { "pid" => Integer(backend), "usename" => role, "application_name" => "attribute-race-a", "state" => "active",
         "wait_event_type" => "Lock", "wait_event" => "transactionid", "blockers" => [Integer(writer.fetch("backend"))],
-        "locktype" => "transactionid", "mode" => "ShareLock", "granted" => false, "xid" => writer.fetch("xid"),
+        "locktype" => "transactionid", "mode" => "ShareLock", "granted" => false, "xid" => writer.fetch("row_xid"),
         "writer_pid" => Integer(writer.fetch("backend")), "writer_role" => "postgres", "writer_application" => "attribute-race-b",
         "writer_state" => "idle in transaction", "writer_xid" => writer.fetch("xid"), "writer_mode" => "ExclusiveLock", "writer_granted" => true,
         "query_prefix" => "SELECT row_to_json(r) FROM public.search_result_ingest(search_request" }
@@ -148,7 +148,10 @@ module RevaerDatabaseRebaseline
       pieces = query.split("COMMIT;", -1)
       raise Failure, "attribute race writer commit boundary changed" unless pieces.length == 2
 
-      held = pieces.first + "SELECT 'writer_xid:' || pg_current_xact_id()::text; SELECT 'held';\n"
+      # The INSERT runs inside correction_session's savepoint, so its tuple xmin
+      # belongs to the child transaction, not pg_stat_activity's top-level xid.
+      held = pieces.first + "SELECT 'writer_xid:' || pg_current_xact_id()::text; " \
+        "SELECT 'writer_row_xid:' || xmin::text FROM public.canonical_torrent_source_attr GROUP BY xmin::text; SELECT 'held';\n"
       release = "COMMIT; SELECT 'released';\n"
       finish = "#{pieces.last}\nSELECT 'finished';\n"
       metadata_write("#{name}-controller.sql", held + release + finish)
@@ -158,11 +161,11 @@ module RevaerDatabaseRebaseline
           input.write(held)
           input.flush
           guid_controller_read(output, "held", transcript)
-          writer = %w[backend writer_xid].to_h do |key|
+          writer = %w[backend writer_xid writer_row_xid].to_h do |key|
             values = transcript.lines.grep(/^#{key}:/).map { |line| line.delete_prefix("#{key}:").strip }
             raise Failure, "attribute race writer identity missing or duplicated" unless values.one? && values.first.match?(/\A[1-9][0-9]*\z/)
 
-            [key == "writer_xid" ? "xid" : key, values.first]
+            [key.delete_prefix("writer_"), values.first]
           end
           evidence["writer_identity"] = writer
           evidence["held"] = attribute_race_read(database, "#{name}-held")
@@ -200,7 +203,7 @@ module RevaerDatabaseRebaseline
       end
       raise Failure, "attribute race controller markers changed" unless %w[held released finished].all? { |marker| transcript.lines.count("#{marker}\n") == 1 }
 
-      raw = { "stdout" => transcript.lines.reject { |line| line.start_with?("writer_xid:") || %w[held released finished].include?(line.strip) }.join, "stderr" => "" }
+      raw = { "stdout" => transcript.lines.reject { |line| line.start_with?("writer_xid:", "writer_row_xid:") || %w[held released finished].include?(line.strip) }.join, "stderr" => "" }
       evidence.merge("b" => raw.merge("parsed" => attribute_race_parse(raw, mode, "b")), "controller" => transcript)
     end
 
@@ -335,12 +338,13 @@ module RevaerDatabaseRebaseline
         attribute_race_read_validate!(evidence.fetch(stage), seed, sequence, tables)
       end
       writer = evidence.fetch("writer_identity")
-      unless writer.keys.sort == %w[backend xid] && writer.fetch("backend") == b.fetch("backend") && writer.fetch("xid").match?(/\A[1-9][0-9]*\z/)
+      unless writer.keys.sort == %w[backend row_xid xid] && writer.fetch("backend") == b.fetch("backend") &&
+          %w[xid row_xid].all? { |key| writer.fetch(key).match?(/\A[1-9][0-9]*\z/) } && writer.fetch("row_xid") != writer.fetch("xid")
         raise Failure, "attribute race writer transaction changed"
       end
       transcript = evidence.fetch("controller")
       expected_controller = evidence.fetch("b").fetch("stdout").split("outside:", 2)
-      unless expected_controller.length == 2 && transcript == "#{expected_controller.first}writer_xid:#{writer.fetch('xid')}\nheld\nreleased\noutside:#{expected_controller.last}finished\n"
+      unless expected_controller.length == 2 && transcript == "#{expected_controller.first}writer_xid:#{writer.fetch('xid')}\nwriter_row_xid:#{writer.fetch('row_xid')}\nheld\nreleased\noutside:#{expected_controller.last}finished\n"
         raise Failure, "attribute race controller commit provenance changed"
       end
       attribute_race_wait_validate!(evidence.fetch("wait"), writer, a.fetch("backend"), role)
