@@ -1604,3 +1604,45 @@ These are unpublished feasibility results in `target/d3-helper-entry/`, not a
 canonical profiler, new runtime/debugger dependency, complete helper/trigger
 closure, package acceptance or D3 discharge. Existing ordinary application
 oracles remain authoritative; debugger timing is not production timing proof.
+
+### Boundary Integration Refinements (2026-09-13)
+
+The `e1925839` canonical run retained 7,457 checks and 36 failures, all in the
+new promotion full-state oracle. All four score boundary cases passed in cold
+and helper-first modes. The promotion oracle incorrectly cleared the magnet
+hash despite a valid v1 input. The real frozen and final databases both derive
+the same SHA-256 value from that input without a URI. Removing that clear and
+adding an independent literal-hash regression makes all 36 retained variants
+validate; a new exact-source live run is still required. No SQL change or new
+application-semantic delta follows from the erroneous expected value.
+
+The next integrated batch adds 16 policy NULL/error cases. It verifies NULL
+v1/v2/uploader candidates, a genuinely hashless title/size fallback for NULL
+magnet, a v1-derived non-NULL control, NULL regex/equality operands and exact
+release-token/persisted-signal regex stacks. Three invalid NULL families remain
+constraint-unreachable rather than being forced through altered constraints.
+Parent focused policy verification passes 4,673 assertions; live fixture and
+diagnostic qualification remain pending at this checkpoint. Scope is the
+existing conditional D3 proof, with no dependency, runtime, approval or gate
+change. Raw diagnostics and complete persisted-state evidence remain required.
+
+Native trigger-entry trials now bind each observed function/trigger ID to its
+live foreign-key constraint and full definitions. The changed-v2 trial has
+19 entries per variant, across 14 constraints and nine tables. URI helper-first
+and title/size cold/helper-first trials pass paired observation checks. Retained
+entry sequences agree on constraint bindings; caller controls are at setting 0,
+and in-ingestion reference/final entries remain 2/0 respectively. These are not
+all native branches or skipped-trigger proof. One concurrent helper-first trial
+failed initialization with Docker disk exhaustion; its diagnostic is retained,
+its containers were removed, and the serial retry passed without capacity or
+criteria changes. Future experimental errors are retained per run rather than
+in inherited shared diagnostic paths.
+
+The earlier failed canonical run, matching source registries, local source
+bundle and CI failure log are retained in
+`artifacts/media-verification/2026-09-13-score-helper-entry/`. Full handoff,
+cutover, package, Sonar and remote acceptance remain unproven. Rollback removes
+the new proof cases and corresponding guidance together, never alters SQL to
+satisfy their expectations. The root and DevOps stale-policy check found no
+approval change; scoped guidance now records the actual NULL derivation and
+nested-error boundaries.

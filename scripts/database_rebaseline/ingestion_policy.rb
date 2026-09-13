@@ -71,6 +71,7 @@ module RevaerDatabaseRebaseline
                    committed_reuse: "separate third call: frozen D4 failure versus final success; never frozen successful committed reuse",
                    fixture_boundary: "controlled persisted snapshots include defensive NULLs and synthetic literal-backslash suffixes; not policy-creation API conformance or ordinary suffix recognition",
                    score_boundary: "base scores outside [-10000,10000] are constraint-unreachable; non-drop totals cross those bounds through valid policy/tag adjustments",
+                   null_boundary: "policy_rule.match_operator and is_case_insensitive NULLs violate NOT NULL; all-NULL signal values violate the single-value constraint; the NULL magnet fixture uses hashless title/size fallback, with a separate non-NULL v1-derived control",
                    candidate_sha256: @contract.expected_candidate_sha256, final_sha256: @contract.final_sha256,
                    postgres_image: @contract.postgres_image, seed_sha256: Digest::SHA256.file(policy_seed_path).hexdigest,
                    roles: { reference: "postgres", final: @runtime, owner: @owner }, container: @container, source_sha256: source_hashes,
@@ -185,7 +186,27 @@ module RevaerDatabaseRebaseline
       cases << policy_case("release-token-match", [policy_rule("release_group")], token: "GROUP")
       cases << policy_case("release-token-false-persisted-true", [policy_rule("release_group")], token: "OTHER")
       cases << policy_case("release-token-and-persisted-false", [policy_rule("release_group", matched: false)], token: "OTHER", decisions: [], flag: false)
-      cases + policy_total_score_cases
+      cases + policy_total_score_cases + policy_null_cases
+    end
+
+    def policy_null_cases
+      cases = %w[infohash_v1 infohash_v2 magnet_hash uploader].flat_map do |field|
+        rule = policy_rule(field, operator: "regex", text: "[")
+        [policy_case("null-candidate-#{field}", [rule], decisions: [], flag: false, null_candidate: field),
+         policy_case("nonnull-candidate-#{field}-regex-error", [rule], decisions: [], flag: false,
+                     error: "2201B", derived_magnet: field == "magnet_hash", regex_failure: { field:, path: "direct" })]
+      end
+      %w[regex eq].each do |operator|
+        [["title", nil, "title"], ["release_group", "GROUP", "release-token"], ["release_group", nil, "release-signal"]].each do |field, token, path|
+          cases << policy_case("null-#{operator}-operand-#{path}", [policy_rule(field, operator:, text: nil)],
+                               decisions: [], flag: false, token:)
+        end
+      end
+      [["token", "GROUP"], ["persisted-signal", nil]].each do |path, token|
+        cases << policy_case("release-regex-error-#{path}", [policy_rule("release_group", operator: "regex", text: "[")],
+                             decisions: [], flag: false, token:, error: "2201B", regex_failure: { field: "release_group", path: })
+      end
+      cases
     end
 
     def policy_total_score_cases
@@ -203,13 +224,30 @@ module RevaerDatabaseRebaseline
       end
     end
 
-    def policy_arguments(token: nil)
+    def policy_arguments(token: nil, null_candidate: nil, derived_magnet: false)
       # The frozen regex requires a literal backslash. Do not silently fix it or
       # pretend an ordinary -GROUP suffix enters its token branch.
       title = token ? "Policy.1080p-#{token}\\" : "Policy.1080p"
-      ingestion_existing_attrs.merge(title_raw_input: "#{literal(title)}::varchar", uploader_input: "'Uploader'::varchar",
-                                     infohash_v2_input: "repeat('b',64)::char(64)", magnet_hash_input: "repeat('c',64)::char(64)",
-                                     size_bytes_input: "NULL::bigint")
+      arguments = ingestion_existing_attrs.merge(title_raw_input: "#{literal(title)}::varchar", uploader_input: "'Uploader'::varchar",
+                                                infohash_v2_input: "repeat('b',64)::char(64)", magnet_hash_input: "repeat('c',64)::char(64)",
+                                                size_bytes_input: "NULL::bigint")
+      overrides = case null_candidate
+                  when nil then {}
+                  when "infohash_v1" then { infohash_v1_input: "NULL::char(40)" }
+                  when "infohash_v2" then { infohash_v2_input: "NULL::char(64)" }
+                  when "uploader" then { uploader_input: "NULL::varchar" }
+                  when "magnet_hash"
+                    { infohash_v1_input: "NULL::char(40)", infohash_v2_input: "NULL::char(64)", magnet_hash_input: "NULL::char(64)",
+                      magnet_uri_input: "NULL::varchar", size_bytes_input: "0::bigint" }
+                  else raise Failure, "unknown policy NULL candidate"
+                  end
+      if derived_magnet
+        raise Failure, "conflicting policy magnet candidate fixtures" if null_candidate
+
+        overrides = { infohash_v1_input: "repeat('a',40)::char(40)", infohash_v2_input: "NULL::char(64)",
+                      magnet_hash_input: "NULL::char(64)", magnet_uri_input: "NULL::varchar" }
+      end
+      arguments.merge(overrides)
     end
 
     def policy_rule_uuid(id)
@@ -277,7 +315,7 @@ module RevaerDatabaseRebaseline
         seed_clocks = { "base" => policy_setup!(File.binread(File.join(@contract.root, "scripts/tests/database-ingestion-proof-seed.sql")), database, "#{prefix}-base-seed") }
         seed_clocks["policy"] = policy_setup!(File.binread(policy_seed_path), database, "#{prefix}-policy-seed")
         correction_observer!(database, variant)
-        fixture_case = { calls: [policy_arguments(token: "GROUP")] }
+        fixture_case = { calls: [policy_arguments(token: "GROUP", null_candidate: test_case[:null_candidate], derived_magnet: test_case[:derived_magnet])] }
         fixture = policy_execute(fixture_case, database, role, "#{prefix}-fixture").fetch("frames").fetch(0)
         check("#{name} actual fixture ingestion and signal", policy_fixture?(fixture))
         raise Failure, "policy fixture ingestion failed; retained exact evidence" unless policy_fixture?(fixture)
@@ -292,7 +330,7 @@ module RevaerDatabaseRebaseline
         seed_clocks["rules"] = policy_setup!(setup, database, "#{prefix}-setup")
         before = ingestion_snapshot(database)
         inputs = policy_read_snapshot(database)
-        args = policy_arguments(token: test_case[:token]).merge(search_request_public_id_input: "#{literal(POLICY_REQUEST)}::uuid")
+        args = policy_arguments(token: test_case[:token], null_candidate: test_case[:null_candidate], derived_magnet: test_case[:derived_magnet]).merge(search_request_public_id_input: "#{literal(POLICY_REQUEST)}::uuid")
         session_case = { calls: [args, args, args], rollback: true }
         evidence = policy_execute(session_case, database, role, prefix, helpers: mode == "helpers-first", test_case:)
         evidence.merge!("fixture" => fixture, "before" => before, "after" => ingestion_snapshot(database),
@@ -383,7 +421,7 @@ module RevaerDatabaseRebaseline
         helper_record = JSON.parse(first.delete_prefix("policy_helpers:"))
       end
       frames = if test_case && test_case[:error]
-                 policy_error_parse(stdout, outcome.stderr, session_case, role)
+                 policy_error_parse(stdout, outcome.stderr, session_case, role, test_case:)
                else
                  parsed = correction_parse(stdout, outcome.stderr, session_case)
                  errors = parsed.reject { |frame| frame.fetch("state") == "00000" }
@@ -416,7 +454,7 @@ module RevaerDatabaseRebaseline
       { "state" => "42P07", "message" => 'relation "tmp_policy_rules" already exists', "detail" => nil, "wrapper" => nil, "raw" => raw }
     end
 
-    def policy_error_parse(stdout, stderr, session_case, role)
+    def policy_error_parse(stdout, stderr, session_case, role, test_case: nil)
       # Nested regex diagnostics are not accepted by the shared D4/D5 parser.
       # Parse their full pinned stack here instead of dropping context or warnings.
       records = stderr.split(/(?=^ERROR:  )/)
@@ -435,14 +473,24 @@ module RevaerDatabaseRebaseline
       frames.zip(records).each do |frame, record|
         raise Failure, "unexpected policy regex SQLSTATE" unless frame.fetch("state") == "2201B"
 
-        frame["diagnostic"] = policy_regex_diagnostic(record, role)
+        frame["diagnostic"] = policy_regex_diagnostic(record, role, test_case:)
       end
       frames
     rescue JSON::ParserError
       raise Failure, "invalid policy error JSON"
     end
 
-    def policy_regex_diagnostic(record, role)
+    def policy_regex_diagnostic(record, role, test_case: nil)
+      if test_case && test_case[:regex_failure]
+        expected = policy_regex_failure_expected(test_case, role)
+        raise Failure, "policy regex diagnostic differs from exact B6 callsite" unless record == expected
+
+        # Retain the original transport separately; only the validated D3 caller
+        # line displacement differs in this otherwise exact diagnostic.
+        return { "state" => "2201B", "message" => "invalid regular expression: brackets [] not balanced",
+                 "field" => test_case.fetch(:regex_failure).fetch(:field), "path" => test_case.fetch(:regex_failure).fetch(:path),
+                 "raw" => policy_regex_failure_expected(test_case, "postgres") }
+      end
       match = record.match(/\AERROR:  2201B: invalid regular expression: brackets \[\] not balanced\nCONTEXT:  PL\/pgSQL function policy_text_match_v1\(text,policy_match_operator,text,bigint,boolean\) line (?<helper_line>[1-9][0-9]*) at RETURN\nPL\/pgSQL function search_result_ingest_v1\((?<signature>[^\n]+)\) line (?<line>[1-9][0-9]*) at assignment\nLOCATION:  (?<location>RE_compile_and_cache, regexp.c:222)\n\z/)
       raise Failure, "unrecognized policy regex diagnostic" unless match
 
@@ -460,6 +508,49 @@ module RevaerDatabaseRebaseline
         "line" => line, "helper_line" => helper_line, "location" => match[:location] }
     end
 
+    def policy_regex_failure_expected(test_case, role)
+      spec = test_case.fetch(:regex_failure)
+      routines = @ingestion_inventory.fetch("reference_proof").fetch("routines")
+      ingest = routines.find { |routine| routine.fetch("name") == "search_result_ingest_v1" }
+      helper = routines.find { |routine| routine.fetch("name") == "policy_text_match_v1" }
+      helper_line = policy_source_line(helper.fetch("source"), "RETURN candidate_input ~* match_value_text_input;")
+      lines = ingest.fetch("source").lines
+      field_line = lines.index { |line| line.include?("policy_rule_record.match_field = '#{spec.fetch(:field)}' THEN") }
+      target = spec.fetch(:path) == "direct" ? "policy_text_match_v1" : "policy_release_group_match_v1"
+      raise Failure, "policy B6 dispatch callsite changed" unless field_line && lines.fetch(field_line + 1).strip == "rule_matched := #{target}("
+
+      stack = "ERROR:  2201B: invalid regular expression: brackets [] not balanced\n" \
+              "CONTEXT:  PL/pgSQL function policy_text_match_v1(text,policy_match_operator,text,bigint,boolean) line #{helper_line} at RETURN\n"
+      unless spec.fetch(:path) == "direct"
+        release = routines.find { |routine| routine.fetch("name") == "policy_release_group_match_v1" }
+        source = release.fetch("source")
+        case spec.fetch(:path)
+        when "token"
+          release_line = policy_source_line(source, "IF policy_text_match_v1(")
+          statement = "IF"
+        when "persisted-signal"
+          expression = source[/RETURN (EXISTS \(\n.*?\n    \));/m, 1]
+          raise Failure, "policy B6 persisted-signal expression changed" unless expression
+
+          stack += "SQL expression \"#{expression}\"\n"
+          release_line = policy_source_line(source, "RETURN EXISTS (")
+          statement = "RETURN"
+        else raise Failure, "unknown policy B6 regex failure path"
+        end
+        stack += "PL/pgSQL function #{release.fetch('signature')} line #{release_line} at #{statement}\n"
+      end
+      line = field_line + 2 + (role == @runtime ? 1 : 0)
+      stack + "PL/pgSQL function #{ingest.fetch('signature')} line #{line} at assignment\nLOCATION:  RE_compile_and_cache, regexp.c:222\n"
+    end
+
+    def policy_source_line(source, statement)
+      lines = source.lines
+      matches = lines.each_index.select { |index| lines.fetch(index).strip == statement }
+      raise Failure, "policy B6 source statement missing or ambiguous" unless matches.length == 1
+
+      matches.first + 1
+    end
+
     def policy_verify!(name, test_case, evidence, variant, role, mode:)
       frames = evidence.fetch("frames")
       check("#{name} exact outcome sequence and D4 diagnostic", policy_states?(test_case, frames, variant))
@@ -468,6 +559,7 @@ module RevaerDatabaseRebaseline
       check("#{name} unchanged pinned read inputs", policy_inputs?(evidence, test_case))
       check("#{name} exact temp lifetime without backend repair", policy_lifetime?(test_case, frames, variant))
       check("#{name} exact policy decisions scores drops and identities", policy_outcomes?(test_case, evidence))
+      check("#{name} real NULL/derived candidate fixture and complete persisted inputs", policy_candidate_images?(test_case, evidence)) if test_case[:null_candidate] || test_case[:derived_magnet]
     end
 
     def policy_states?(test_case, frames, variant)
@@ -482,7 +574,37 @@ module RevaerDatabaseRebaseline
           diagnostic = frame.fetch("diagnostic")
           !frame.key?("result") && diagnostic == policy_d4_diagnostic(policy_d4_expected)
         else
-          !frame.key?("result") && frame.fetch("diagnostic").values_at("state", "message") == ["2201B", "invalid regular expression: brackets [] not balanced"]
+          diagnostic = frame.fetch("diagnostic")
+          valid = !frame.key?("result") && diagnostic.values_at("state", "message") == ["2201B", "invalid regular expression: brackets [] not balanced"]
+          valid && (!test_case[:regex_failure] || diagnostic == policy_regex_diagnostic(policy_regex_failure_expected(test_case, "postgres"), "postgres", test_case:))
+        end
+      end
+    end
+
+    def policy_candidate_images?(test_case, evidence)
+      values = case test_case[:derived_magnet] ? "derived-v1-magnet" : test_case.fetch(:null_candidate)
+               when "infohash_v1" then [nil, "b" * 64, "c" * 64, nil, "infohash_v2", 1.0, "Uploader"]
+               when "infohash_v2" then ["a" * 40, nil, "c" * 64, nil, "infohash_v1", 1.0, "Uploader"]
+               when "magnet_hash" then [nil, nil, nil, 0, "title_size_fallback", 0.6, "Uploader"]
+               when "uploader" then ["a" * 40, "b" * 64, "c" * 64, nil, "infohash_v2", 1.0, nil]
+               when "derived-v1-magnet" then ["a" * 40, nil, "750837cbeaadaf72ab0a852ee3e0517760ca56eb6b8fc3c08b2d9e73348b6bea", nil, "infohash_v1", 1.0, "Uploader"]
+               else raise Failure, "unknown policy NULL candidate"
+               end
+      inputs = values.first(4)
+      hash = test_case[:null_candidate] == "magnet_hash" ? Digest::SHA256.hexdigest("policy|0") : nil
+      columns = %w[infohash_v1 infohash_v2 magnet_hash size_bytes]
+      expected = {
+        "canonical_torrent" => [columns + %w[identity_strategy identity_confidence title_size_hash], inputs + values[4, 2] + [hash]],
+        "canonical_torrent_source" => [columns + ["last_seen_uploader"], inputs + [values.last]],
+        "search_request_source_observation" => [columns + ["uploader"], inputs + [values.last]]
+      }
+      images = [evidence.fetch("fixture").fetch("tables_after"), evidence.fetch("before"), evidence.fetch("after")]
+      images += evidence.fetch("frames").flat_map { |frame| frame.values_at("tables_before", "tables_after", "tables_finish") }
+      images.all? do |tables|
+        expected.all? do |table, (keys, expected_values)|
+          rows = tables.fetch(table)
+          count = table == "search_request_source_observation" ? !rows.empty? : rows.length == 1
+          count && rows.all? { |row| keys.all? { |key| row.key?(key) } && row.values_at(*keys) == expected_values }
         end
       end
     end

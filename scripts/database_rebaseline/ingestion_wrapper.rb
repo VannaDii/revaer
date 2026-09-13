@@ -302,13 +302,10 @@ module RevaerDatabaseRebaseline
     end
 
     def wrapper_promotion_fixtures(spec, clocks, identities)
-      # Reuse the complete-column independent baseline, with no attributes,
-      # magnets or size samples. All three fixture calls use the real wrapper.
+      # Reuse the complete-column baseline, including the hash derived from v1,
+      # with no attributes or size samples. All fixtures use the real wrapper.
       shape = { title: "Lower ranked title", normalized: "lower ranked title", answers: [], signals: [], release: nil }
       first = attributes_initial_tables(shape, clocks.fetch(0), identities.fetch(0))
-      %w[canonical_torrent canonical_torrent_source search_request_source_observation].each do |table|
-        first.fetch(table).first["magnet_hash"] = nil
-      end
       first.fetch("canonical_torrent_source").first.merge!("source_guid" => "low", "last_seen_at" => "2026-09-10T00:01:00+00:00")
       first.fetch("search_request_source_observation").first.merge!("source_guid" => "low", "observed_at" => "2026-09-10T00:01:00+00:00")
       first.fetch("canonical_torrent_source_context_score").first.merge!("score_total_context" => 0.0, "score_policy_adjust" => 0.0, "score_tag_adjust" => 0.0)

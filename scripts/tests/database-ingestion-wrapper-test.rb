@@ -156,6 +156,10 @@ module RevaerDatabaseRebaseline
             evidence.fetch("after").fetch("canonical_torrent_source_context_score")
           assert(scores.all? { |row| row.select { |key, _value| key.start_with?("score_") }.values.all? { |value| value.is_a?(Float) } }, "literal NUMERIC scores retain the actual PostgreSQL JSON number shape")
           baseline = evidence.fetch("before")
+          %w[canonical_torrent canonical_torrent_source search_request_source_observation].each do |table|
+            assert(baseline.fetch(table).all? { |row| row.fetch("magnet_hash") == "750837cbeaadaf72ab0a852ee3e0517760ca56eb6b8fc3c08b2d9e73348b6bea" },
+              "valid v1 still derives a magnet hash without a magnet URI")
+          end
           assert(baseline.fetch("canonical_torrent_source").map { |row| row.values_at("source_guid", "last_seen_seeders") } == [["low", 5], ["high", best_seeders]], "independent distinct durable seeder inputs")
           assert(baseline.fetch("canonical_torrent_best_source_context").first.fetch("canonical_torrent_source_id") == 2 &&
             baseline.fetch("canonical_torrent_source_context_score").map { |row| row.fetch("score_total_context") } == [0, 100], "selected high source and stored score remain distinct before incoming refresh")

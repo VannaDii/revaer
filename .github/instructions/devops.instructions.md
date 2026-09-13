@@ -94,6 +94,10 @@ applyTo:
   out-of-range base scores or drop sentinels. Seeder-promotion proof must keep
   the incoming source distinct from the selected best source and retain full
   fixture, read-input, rollback and retry state for nullable and edge inputs.
+  Policy NULL proof must verify persisted candidates after identity derivation,
+  preserve non-NULL regex-failure controls, and bind nested release-group errors
+  to their exact token or persisted-signal callsite. Constraint-unreachable
+  operands are not exercised helper paths; retain their explicit disposition.
   Magnet identity evidence must include empty queries, discarded empty keys
   and bare keys through real wrapper creation, reuse and GUID promotion in
   cold, helper-first and warm-after-rollback sessions. Verify independent

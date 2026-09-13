@@ -11,7 +11,7 @@ module RevaerDatabaseRebaseline
     def policy_tests!
       previous_inventory = @ingestion_inventory
       cases = policy_cases
-      assert(cases.length == 53 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 53, "exact populated policy matrix")
+      assert(cases.length == 69 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 69, "exact populated policy matrix")
       assert(cases.first.fetch(:rules).map { |rule| rule.fetch(:field) } == IngestionPolicy::POLICY_FIELDS.keys, "all actual match fields")
       assert(IngestionPolicy::POLICY_REQUIRE.length == 5, "all five require families")
       assert(cases.count { |entry| entry.fetch(:name).start_with?("scope-") } == 8, "every require precedence level passes and fails")
@@ -27,7 +27,9 @@ module RevaerDatabaseRebaseline
       assert(policy_sql_value(nil) == "NULL" && policy_sql_value("a'b") == "'a''b'", "typed NULL and quoted fixture input")
       policy_model_tests!(cases)
       policy_total_boundary_tests!(cases)
+      policy_null_tests!(cases)
       policy_error_tests!
+      policy_regex_failure_tests!(cases)
       policy_input_normalization_tests!
       policy_cleanup_test!
     ensure
@@ -220,6 +222,131 @@ module RevaerDatabaseRebaseline
         "canonical_changed" => false, "durable_source_created" => false, "observation_created" => index < 2 } }
     end
 
+    def policy_null_tests!(cases)
+      nulls = cases.select { |test_case| test_case[:null_candidate] }
+      assert(nulls.map { |test_case| test_case.fetch(:null_candidate) } == %w[infohash_v1 infohash_v2 magnet_hash uploader], "four real in-ingestion NULL candidate families")
+      rules = File.read(File.join(@contract.root, "crates/revaer-data/migrations/0019_policy_sets.sql"))
+      canonical = File.read(File.join(@contract.root, "crates/revaer-data/migrations/0022_indexer_canonicalization.sql"))
+      assert(rules.include?("match_value_text VARCHAR(512),"), "NULL regex/equality text operands are constraint-reachable")
+      %w[match_operator is_case_insensitive].zip(["policy_match_operator", "BOOLEAN"]).each do |column, type|
+        assert(rules.include?("#{column} #{type} NOT NULL"), "NULL #{column} is constraint-unreachable, never bypassed")
+      end
+      assert(canonical.include?("(identity_strategy = 'title_size_fallback' AND title_size_hash IS NOT NULL)") &&
+        canonical.include?("title_size_hash IS NULL OR size_bytes IS NOT NULL"), "hashless NULL magnet needs a real title/size identity")
+      assert(canonical.include?("CONSTRAINT canonical_torrent_signal_single_value_chk CHECK"), "all-NULL signal values are not a legal fallback fixture")
+      rejected("unknown policy NULL candidate") { policy_arguments(null_candidate: "title") }
+      rejected("conflicting policy magnet") { policy_arguments(null_candidate: "magnet_hash", derived_magnet: true) }
+      nulls.each do |test_case|
+        field = test_case.fetch(:null_candidate)
+        rule = test_case.fetch(:rules).first
+        assert(rule.values_at(:field, :operator, :text) == [field, "regex", "["] && test_case.values_at(:decisions, :flag, :drop, :adjust) == [[], false, false, 0], "NULL candidate must bypass an otherwise failing regex")
+        %w[GROUP OTHER].each do |token|
+          arguments = policy_arguments(token:, null_candidate: field)
+          assert(arguments.fetch("#{field}_input".to_sym).start_with?("NULL::"), "real fixture and tested arguments retain typed #{field} NULL")
+          if field == "magnet_hash"
+            assert(arguments.values_at(:infohash_v1_input, :infohash_v2_input, :magnet_hash_input, :magnet_uri_input, :size_bytes_input) ==
+              ["NULL::char(40)", "NULL::char(64)", "NULL::char(64)", "NULL::varchar", "0::bigint"], "no supplied infohash or URI can silently derive a non-NULL magnet candidate")
+          end
+        end
+        policy_null_success_tests!(test_case)
+      end
+      operands = cases.select { |test_case| test_case.fetch(:name).start_with?("null-regex-operand-", "null-eq-operand-") }
+      assert(operands.map { |test_case| test_case.fetch(:name) } == %w[null-regex-operand-title null-regex-operand-release-token null-regex-operand-release-signal
+        null-eq-operand-title null-eq-operand-release-token null-eq-operand-release-signal], "NULL right operands cover title, release token and persisted signal")
+      operands.each do |test_case|
+        rule = test_case.fetch(:rules).first
+        assert(rule.fetch(:text).nil? && rule.fetch(:set).nil? && test_case.values_at(:decisions, :flag, :drop, :adjust) == [[], false, false, 0], "NULL right operand produces no decision, flag, drop or score adjustment")
+        assert(policy_rules_sql(test_case).include?("'#{rule.fetch(:operator)}',NULL,NULL,NULL,NULL,'flag'"), "persist the actual NULL operand without constraints or helper substitution")
+        policy_null_success_tests!(test_case)
+      end
+      derived = cases.select { |test_case| test_case[:derived_magnet] }
+      assert(derived.map { |test_case| test_case.fetch(:name) } == ["nonnull-candidate-magnet_hash-regex-error"], "retain the separate real v1-derived non-NULL control")
+      args = policy_arguments(derived_magnet: true)
+      assert(args.values_at(:infohash_v1_input, :infohash_v2_input, :magnet_hash_input, :magnet_uri_input) ==
+        ["repeat('a',40)::char(40)", "NULL::char(64)", "NULL::char(64)", "NULL::varchar"], "NULL magnet argument with valid v1 still derives a non-NULL candidate")
+      assert(Digest::SHA256.hexdigest(["a" * 40].pack("H*")) == "750837cbeaadaf72ab0a852ee3e0517760ca56eb6b8fc3c08b2d9e73348b6bea", "independent decoded-v1 digest control")
+    end
+
+    def policy_null_success_tests!(test_case)
+      frames = 3.times.map { |index| policy_null_success_frame(test_case, index) }
+      frames.each_with_index do |frame, index|
+        assert(policy_success?(test_case, frame, index), "independent NULL success and complete writes #{test_case.fetch(:name)} #{index}")
+        frame.fetch("tables_after").each do |table, rows|
+          next if table == "search_filter_decision"
+
+          rows.each_with_index do |row, row_index|
+            row.each_key do |column|
+              changed = policy_copy(frame)
+              changed.fetch("tables_after").fetch(table)[row_index][column] = "changed"
+              assert(!policy_write_images?(test_case, changed, index), "reject NULL success mutation #{table}.#{column}")
+            end
+          end
+        end
+        %w[was_flagged was_downranked].each do |column|
+          changed = policy_copy(frame)
+          changed.fetch("tables_after").fetch("search_request_source_observation").last[column] = true
+          assert(!policy_success?(test_case, changed, index), "NULL nonmatch cannot flag or downrank")
+        end
+      end
+      return unless test_case[:null_candidate]
+
+      evidence = { "fixture" => { "tables_after" => frames.first.fetch("tables_before") }, "before" => frames.first.fetch("tables_before"),
+                   "after" => frames.last.fetch("tables_after"), "frames" => frames }
+      assert(policy_candidate_images?(test_case, evidence), "persisted canonical/source/observation NULL inputs are independently pinned")
+      policy_null_candidate_mutations!(test_case, evidence)
+    end
+
+    def policy_null_success_frame(test_case, index)
+      frame = policy_total_boundary_frame(test_case, index, 37)
+      hashes, strategy, confidence, size, uploader = case test_case[:derived_magnet] ? "derived-v1-magnet" : test_case[:null_candidate]
+        when "infohash_v1" then [[nil, "b" * 64, "c" * 64], "infohash_v2", 1.0, nil, "Uploader"]
+        when "infohash_v2" then [["a" * 40, nil, "c" * 64], "infohash_v1", 1.0, nil, "Uploader"]
+        when "magnet_hash" then [[nil, nil, nil], "title_size_fallback", 0.6, 0, "Uploader"]
+        when "uploader" then [["a" * 40, "b" * 64, "c" * 64], "infohash_v2", 1.0, nil, nil]
+        when "derived-v1-magnet" then [["a" * 40, nil, "750837cbeaadaf72ab0a852ee3e0517760ca56eb6b8fc3c08b2d9e73348b6bea"], "infohash_v1", 1.0, nil, "Uploader"]
+        else [["a" * 40, "b" * 64, "c" * 64], "infohash_v2", 1.0, nil, "Uploader"]
+      end
+      signal = { "canonical_torrent_signal_id" => 1, "canonical_torrent_id" => 1, "signal_key" => "release_group",
+                 "value_text" => "group", "value_int" => nil, "confidence" => 0.9, "parser_version" => 1 }
+      %w[tables_before tables_after].each do |key|
+        tables = frame.fetch(key)
+        %w[canonical_torrent canonical_torrent_source search_request_source_observation].each do |table|
+          tables.fetch(table).each do |row|
+            row.merge!(%w[infohash_v1 infohash_v2 magnet_hash].zip(hashes).to_h.merge("size_bytes" => size))
+          end
+        end
+        tables.fetch("canonical_torrent").first.merge!("identity_strategy" => strategy, "identity_confidence" => confidence,
+          "title_size_hash" => size == 0 ? Digest::SHA256.hexdigest("policy|0") : nil)
+        tables.fetch("canonical_torrent_source").first["last_seen_uploader"] = uploader
+        tables.fetch("search_request_source_observation").each do |row|
+          row["uploader"] = uploader
+          row["title_raw"] = "Policy.1080p-GROUP\\" if test_case[:token] && row.fetch("search_request_id") == 596001
+        end
+        tables["canonical_torrent_signal"] = [signal.dup]
+        tables.fetch("canonical_torrent_signal") << signal.merge("canonical_torrent_signal_id" => 3) if test_case[:token] && index == 2
+      end
+      frame.fetch("tables_after").fetch("canonical_torrent_signal") << signal.merge("canonical_torrent_signal_id" => index + 2) if test_case[:token]
+      frame.merge("state" => "00000", "tables_finish" => policy_copy(index.zero? ? frame.fetch("tables_before") : frame.fetch("tables_after")))
+    end
+
+    def policy_null_candidate_mutations!(test_case, evidence)
+      { "canonical_torrent" => %w[identity_strategy identity_confidence title_size_hash],
+        "canonical_torrent_source" => ["last_seen_uploader"], "search_request_source_observation" => ["uploader"] }.each do |table, extra|
+        (%w[infohash_v1 infohash_v2 magnet_hash size_bytes] + extra).each do |column|
+          [false, true].each do |missing|
+            changed = policy_copy(evidence)
+            images = [changed.fetch("fixture").fetch("tables_after"), changed.fetch("before"), changed.fetch("after")]
+            images += changed.fetch("frames").flat_map { |frame| frame.values_at("tables_before", "tables_after", "tables_finish") }
+            images.each { |tables| tables.fetch(table).each { |row| missing ? row.delete(column) : row[column] = "changed" } }
+            assert(!policy_candidate_images?(test_case, changed), "reject coherent NULL input substitution/omission #{table}.#{column}")
+          end
+        end
+      end
+      changed = policy_copy(evidence)
+      changed.fetch("fixture").fetch("tables_after").fetch("canonical_torrent_source").first["last_seen_uploader"] = "changed"
+      assert(!policy_candidate_images?(test_case, changed), "fixture uploader is part of the NULL input oracle")
+    end
+
     def policy_error_tests!
       @ingestion_inventory = { "reference_proof" => { "routines" => [
         { "name" => "search_result_ingest_v1", "signature" => "search_result_ingest_v1(uuid)", "source" => "\nrule_matched := policy_text_match_v1(\n" },
@@ -240,6 +367,115 @@ module RevaerDatabaseRebaseline
       rejected("outside exact routines") { policy_regex_diagnostic(diagnostic.sub("line 2 at RETURN", "line 3 at RETURN"), "postgres") }
       rejected("outside exact routines") { policy_regex_diagnostic(diagnostic.sub("(uuid)", "(text)"), "postgres") }
       rejected("read-input inventory") { policy_comparable_inputs("inputs_before" => {}, "seed_clocks" => {}) }
+    end
+
+    def policy_regex_failure_tests!(cases)
+      previous_inventory = @ingestion_inventory
+      sql = File.read(File.join(@contract.root, "crates/revaer-data/migrations/0052_indexer_search_result_ingest_proc.sql"))
+      signatures = { "search_result_ingest_v1" => "search_result_ingest_v1(uuid)",
+        "policy_text_match_v1" => "policy_text_match_v1(text,policy_match_operator,text,bigint,boolean)",
+        "policy_release_group_match_v1" => "policy_release_group_match_v1(bigint,text,policy_match_operator,text,bigint,boolean)" }
+      @ingestion_inventory = { "reference_proof" => { "routines" => signatures.map do |name, signature|
+        source = sql[/CREATE OR REPLACE FUNCTION #{name}\(.*?\nAS \$\$(.*?)\$\$;/m, 1]
+        assert(!source.nil?, "exact frozen #{name} source is available for the diagnostic oracle")
+        { "name" => name, "signature" => signature, "source" => source }
+      end } }
+      failures = cases.select { |test_case| test_case[:regex_failure] }
+      assert(failures.map { |test_case| test_case.fetch(:name) } == %w[nonnull-candidate-infohash_v1-regex-error nonnull-candidate-infohash_v2-regex-error
+        nonnull-candidate-magnet_hash-regex-error nonnull-candidate-uploader-regex-error release-regex-error-token release-regex-error-persisted-signal], "nonnull and both release-group failure controls remain distinct")
+      failures.each do |test_case|
+        diagnostic = policy_test_regex_failure(test_case)
+        expected = policy_regex_diagnostic(diagnostic, "postgres", test_case:)
+        assert(expected.fetch("raw") == diagnostic, "independently pinned exact B6 native error stack")
+        final = diagnostic.sub(/(search_result_ingest_v1\(uuid\) line )(\d+)/) { "#{Regexp.last_match(1)}#{Integer(Regexp.last_match(2)) + 1}" }
+        assert(policy_regex_diagnostic(final, @runtime, test_case:) == expected, "only exact D3 caller displacement is normalized")
+        [diagnostic + "NOTICE: extra\n", diagnostic + "WARNING: extra\n", diagnostic + "DETAIL: hidden\n", diagnostic + diagnostic,
+         diagnostic.sub("2201B", "42501"), diagnostic.sub("line 14 at RETURN", "line 15 at RETURN"),
+         diagnostic.sub("regexp.c:222", "regexp.c:223"), diagnostic.sub(" at assignment", " at RETURN")].each do |changed|
+          rejected("exact B6 callsite") { policy_regex_diagnostic(changed, "postgres", test_case:) }
+        end
+        other = failures.find { |item| item.fetch(:regex_failure) != test_case.fetch(:regex_failure) }
+        rejected("exact B6 callsite") { policy_regex_diagnostic(policy_test_regex_failure(other), "postgres", test_case:) }
+        if test_case.fetch(:regex_failure).fetch(:path) == "persisted-signal"
+          [diagnostic.sub(/SQL expression ".*?"\n/m, ""), diagnostic.sub("value_text,", "release_group_token_input,")].each do |changed|
+            rejected("exact B6 callsite") { policy_regex_diagnostic(changed, "postgres", test_case:) }
+          end
+        end
+        policy_regex_failure_frames!(test_case, diagnostic)
+      end
+      rejected("missing or ambiguous") { policy_source_line("RETURN TRUE;\nRETURN TRUE;\n", "RETURN TRUE;") }
+    ensure
+      @ingestion_inventory = previous_inventory
+    end
+
+    def policy_test_regex_failure(test_case)
+      spec = test_case.fetch(:regex_failure)
+      line = { "infohash_v1" => 1254, "infohash_v2" => 1262, "magnet_hash" => 1270, "uploader" => 1295, "release_group" => 1286 }.fetch(spec.fetch(:field))
+      stack = "ERROR:  2201B: invalid regular expression: brackets [] not balanced\n" \
+              "CONTEXT:  PL/pgSQL function policy_text_match_v1(text,policy_match_operator,text,bigint,boolean) line 14 at RETURN\n"
+      if spec.fetch(:path) == "token"
+        stack += "PL/pgSQL function policy_release_group_match_v1(bigint,text,policy_match_operator,text,bigint,boolean) line 4 at IF\n"
+      elsif spec.fetch(:path) == "persisted-signal"
+        stack += <<~TRACE
+          SQL expression "EXISTS (
+                  SELECT 1
+                  FROM canonical_torrent_signal
+                  WHERE canonical_torrent_id = canonical_torrent_id_input
+                    AND signal_key = 'release_group'
+                    AND policy_text_match_v1(
+                        value_text,
+                        match_operator_input,
+                        match_value_text_input,
+                        value_set_id_input,
+                        is_case_insensitive_input
+                    )
+              )"
+          PL/pgSQL function policy_release_group_match_v1(bigint,text,policy_match_operator,text,bigint,boolean) line 15 at RETURN
+        TRACE
+      end
+      stack + "PL/pgSQL function search_result_ingest_v1(uuid) line #{line} at assignment\nLOCATION:  RE_compile_and_cache, regexp.c:222\n"
+    end
+
+    def policy_regex_failure_frames!(test_case, diagnostic)
+      session = { calls: [{}, {}, {}], rollback: true }
+      before = test_case[:derived_magnet] ? policy_null_success_frame(test_case, 0).fetch("tables_before") : policy_test_tables
+      values = { "backend" => "101", "role" => {}, "clock" => "2026-09-11T01:00:00+00:00", "before" => "error", "after" => "error",
+        "state" => "2201B", "within" => "false", "outside" => "false", "tables_before" => before, "tables_after" => before, "tables_finish" => before }
+      stdout = correction_records(session).map do |key|
+        value = values.fetch(key)
+        value = JSON.generate(value) if %w[role clock tables_before tables_after tables_finish].include?(key)
+        "#{key}:#{value}\n"
+      end.join * 3
+      frames = policy_error_parse(stdout, diagnostic * 3, session, "postgres", test_case:)
+      if test_case[:derived_magnet]
+        evidence = { "fixture" => { "tables_after" => before }, "before" => before, "after" => before, "frames" => frames }
+        assert(policy_candidate_images?(test_case, evidence), "regex failure retains the actual derived magnet on canonical/source/observation")
+        policy_null_candidate_mutations!(test_case, evidence)
+      end
+      %w[reference final].each do |variant|
+        assert(policy_states?(test_case, frames, variant), "three exact B6 errors, never misclassified as D4/D5 #{variant}")
+        frames.each_index do |index|
+          changed = policy_copy(frames)
+          changed[index]["state"] = "42P07"
+          assert(!policy_states?(test_case, changed, variant), "D4 cannot excuse a missing B6 regex failure")
+          frames[index].fetch("diagnostic").each_key do |key|
+            changed = policy_copy(frames)
+            changed[index].fetch("diagnostic")[key] = "changed"
+            assert(!policy_states?(test_case, changed, variant), "reject altered B6 structured diagnostic #{key}")
+          end
+        end
+      end
+      assert(policy_lifetime?(test_case, frames, "reference") && policy_lifetime?(test_case, frames, "final"), "each failed regex removes its uncommitted temporary table")
+      assert(policy_outcomes?(test_case, "frames" => frames) && correction_snapshots?({}, before, frames, before), "exact error savepoint and whole-transaction rollback images")
+      frames.each_index do |index|
+        IngestionProof::INGESTION_TABLES.each do |table|
+          changed = policy_copy(frames)
+          changed[index].fetch("tables_after").fetch(table) << { "unexpected" => true }
+          assert(!policy_outcomes?(test_case, "frames" => changed), "reject failed-regex write #{index} #{table}")
+        end
+      end
+      rejected("unexpected policy error framing") { policy_error_parse(stdout, diagnostic * 2, session, "postgres", test_case:) }
+      rejected("exact B6 callsite") { policy_error_parse(stdout, diagnostic * 3 + "WARNING: extra\n", session, "postgres", test_case:) }
     end
 
     def policy_cleanup_test!
@@ -293,6 +529,10 @@ module RevaerDatabaseRebaseline
       assert(policy_inputs?(evidence, test_case), "replay pinned inputs")
       assert(policy_lifetime?(test_case, evidence.fetch("frames"), variant), "replay temp lifetime")
       assert(policy_outcomes?(test_case, evidence), "replay exact application outcomes")
+      if test_case[:null_candidate] || test_case[:derived_magnet]
+        assert(policy_candidate_images?(test_case, evidence), "replay exact NULL/derived candidate fixture and persisted inputs")
+        policy_null_candidate_mutations!(test_case, evidence)
+      end
       policy_context_mutations!(evidence, role, mode:)
       policy_input_mutations!(test_case, evidence)
       policy_image_mutations!(test_case, evidence)
