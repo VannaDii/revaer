@@ -1739,6 +1739,25 @@ the temporary debugger image were removed; both integration worktrees cleaned
 test media, and UI port 61092 was confirmed closed. ADR 589 remains pending.
 No SQL cutover, source push, merge or release acceptance is claimed.
 
+### Reachable Concurrency Batch (2026-09-13, In Progress)
+
+The [R1/R2 source dispositions](support/569-ingestion-reachability.md) and K1's
+two missing-trust-rank cases are integrated locally on `fe384734` plus the
+recorded working-tree delta. The attribute and shared validation unit harnesses
+pass 623 and 1,430 assertions respectively. K1 retains explicit pending native
+branch evidence; these unit checks do not qualify the live branches.
+The metadata harness also passes 10,614 assertions, including 10,104 rejected
+semantic mutations; this establishes validator sensitivity, not live scheduling.
+
+The K2 durable-attribute conflict and K3 sample-prune race harnesses are now
+integrated into the canonical proof and policy suite. Their worker unit harnesses
+pass 3,373 and 1,135 assertions; live PostgreSQL qualification and full gates
+remain pending for this batch. No schema, runtime, approval or quality criterion changes
+are included. Root, database and DevOps instructions were reviewed; DevOps now
+records the missing-rank evidence boundary. No new dependency is introduced.
+Rollback is removal of these verification additions; frozen/final authority and
+the incomplete-D3 guard remain unchanged.
+
 Checkpoint documentation validation also encountered the EBU R128 landing
 page's 403 response. Its citation now points to the official recommendation
 PDF carrying the same referenced broadcast target. No audio recommendation,

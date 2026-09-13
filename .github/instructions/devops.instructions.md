@@ -132,6 +132,23 @@ applyTo:
   signal rows. Retain the frozen suffix-regex and nullable-uniqueness defects;
   do not claim their intended confidence-upsert branch has executed. UUID has
   no valid observation attribute key, and D5 ID cases keep their separate proof.
+  Missing-trust-rank cases must retain the distinct NULL instance key and absent
+  lookup-row fixtures, including a discriminating nonzero public-rank control.
+  Verify complete read/write images and independent rank/bucket/confidence
+  answers; matching confidence is not evidence of branch execution. Keep native
+  observation pending until the actual branch is independently observed. The
+  source dispositions in ADR 569's ingestion-reachability support must not be
+  represented as live concurrent execution or complete D3 qualification.
+  Both reachable races run unconditionally in the canonical proof and policy
+  suite. Durable-attribute races require the owned tracker-name conflict wait,
+  all eight or eleven exact UPDATE observations, and a committed direct writer
+  whose rows survive the frozen D5 caller rollback. Sample-prune races require
+  all 26 locked rows, the oldest-tuple wait after the duplicate skip, committed
+  deletion, an observed zero count and the unchanged prior rollup. Preserve
+  plain/observed pairs, cold/helper-first modes, full state/read/sequence images
+  and raw diagnostics; these schedules do not qualify repeated warm or native
+  closure. No frozen migration, production definition or constraint may change;
+  the test-only observer splice must retain all unrelated cloned routine bytes.
   Missing-hash proof must independently specify both fixture states and every
   write-table result, distinguish durable source fill from incoming observation
   identity, and preserve competing-source conflicts and rollback sequence gaps.

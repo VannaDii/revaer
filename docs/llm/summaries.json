@@ -5174,6 +5174,20 @@
     "href": "/adr/index/"
   },
   {
+    "id": "adr/support/569-ingestion-reachability",
+    "title": "ADR 569: R1/R2 ingestion reachability support",
+    "summary": "Scope: closure-map R1/R2 only; base fa721b339b7ddf7508df9474032b80401eb491b9. Local source/constraint reasoning, not live validation, native traces, approval or D3 closure. No migration, runtime, sentinel, gate, policy or dependency changes; parent owns live qualification.",
+    "tags": [
+      "citation-key-and-frozen-authority",
+      "evidence-risk-and-retained-limits",
+      "minimal-next-cases-for-the-parent-not-run-here",
+      "r1-dispositions",
+      "r2-durable-attributes",
+      "r2-signals"
+    ],
+    "href": "/adr/support/569-ingestion-reachability/"
+  },
+  {
     "id": "adr/support/588-audio-proposal",
     "title": "AUDIO Decision Approval Package",
     "summary": "Current approval: The operator accepted ADR 588's exact applicable choices on 2026-09-11 at reviewed commit `9575c077`. The [resolution](../588-first-release-decision-package.md#approval-resolution) releases only those named design holds. Earlier pending/candidate wording below retains its historical context; implementation and qualification are not certified, and all other conditions remain binding.",

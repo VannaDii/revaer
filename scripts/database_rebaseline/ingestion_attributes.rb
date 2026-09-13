@@ -34,6 +34,9 @@ module RevaerDatabaseRebaseline
       scripts/database_rebaseline/ingestion_approved_deltas.rb scripts/database_rebaseline/final_proof.rb
       scripts/database_rebaseline/final_sql.rb config/database-rebaseline.env .github/build-inputs.env
       crates/revaer-data/init.sql
+      crates/revaer-data/migrations/0012_indexer_core.sql crates/revaer-data/migrations/0014_indexer_instances.sql
+      crates/revaer-data/migrations/0016_search_profiles_torznab.sql
+      crates/revaer-data/migrations/0052_indexer_search_result_ingest_proc.sql
     ]).uniq.freeze
 
     private
@@ -66,7 +69,34 @@ module RevaerDatabaseRebaseline
       zero_answers = ATTRIBUTE_ANSWERS.map { |key, type, value| [key, type, zero_keys.include?(key) ? 0 : (type == :bool ? false : value)] }
       cases << attributes_case("zero-and-false", inputs: zero_inputs, answers: zero_answers,
                                signals: [["language", "en", nil], ["subtitles", "fr-ca", nil], ["year", nil, 0], ["season", nil, 0], ["episode", nil, 0]])
+      [["null-instance-trust-key", nil, 40, "0052:655 false; retain initialization at 471"],
+       ["missing-public-trust-tier", "public", nil, "0052:655 true; 660 true; assign zero at 661"]].each do |name, key, public_rank, branch|
+        cases << attributes_case(name, title: "Trust rank proof", normalized: "trust rank proof", release: nil,
+          rank: 0, confidence: 0.5, trust_fixture: { key:, public_rank: },
+          inputs: [["language_primary", :text, "en"]], answers: [["language_primary", :text, "en"]], signals: [["language", "en", nil]],
+          trust_rank_expectation: { "source_branch" => branch, "rank" => 0, "bucket" => 0, "confidence" => 0.5,
+                                    "native_branch_evidence" => "pending" })
+      end
       cases
+    end
+
+    def attributes_trust_fixture(test_case)
+      test_case.fetch(:trust_fixture) { { key: "public", public_rank: test_case.fetch(:rank) } }
+    end
+
+    def attributes_fixture_sql(test_case)
+      trust = attributes_trust_fixture(test_case)
+      statements = [validation_fixture_sql(fixture: {})]
+      if test_case.key?(:trust_fixture)
+        statements << "UPDATE public.indexer_instance SET trust_tier_key = #{policy_sql_value(trust.fetch(:key))} WHERE indexer_instance_id = 569001;"
+      end
+      rank = trust.fetch(:public_rank)
+      statements << if rank.nil?
+                      "DELETE FROM public.trust_tier WHERE trust_tier_key = 'public';"
+                    else
+                      "UPDATE public.trust_tier SET rank = #{Integer(rank)} WHERE trust_tier_key = 'public';"
+                    end
+      statements.join("\n")
     end
 
     def attributes_arguments(test_case)
@@ -119,7 +149,7 @@ module RevaerDatabaseRebaseline
             equal = attributes_comparable(pair.fetch("reference")) == attributes_comparable(pair.fetch("final"))
             check("attributes #{test_case.fetch(:name)} #{mode} paired application outside exact D4", equal)
             cases << { name: test_case.fetch(:name), mode:, accepted: equal, equivalent: false,
-                       approved_delta: "ADR 588 D4: frozen third-call 42P07 versus independently checked final success" }
+                       approved_delta: "ADR 588 D4: frozen third-call 42P07 versus independently checked final success" }.merge(test_case.slice(:trust_rank_expectation))
           end
         end
         check("attributes source bytes unchanged during matrix", hashes == attributes_source_hashes)
@@ -130,6 +160,7 @@ module RevaerDatabaseRebaseline
                    scope: "family 7; real fixture first signals, distinct cold/helper-first backend, rollback then two commits",
                    limits: "No frozen successful committed reuse, signal upsert branch, native callback closure or full D3 claim. UUID has no valid observation key. D5 ID cases remain in the required correction matrix.",
                    preserved_defects: ["ordinary suffix regex requires a literal backslash", "NULL-distinct signal key inserts repeated rows without increasing confidence"],
+                   pending_evidence: "K1 source-branch entry and local rank/bucket require parent native observation; matching language confidence is not branch execution evidence.",
                    candidate_sha256: @contract.expected_candidate_sha256, final_sha256: @contract.final_sha256,
                    postgres_image: @contract.postgres_image, container: @container, source_sha256: hashes, checks:, cases: }
         bytes = JSON.pretty_generate(report) + "\n"
@@ -150,7 +181,7 @@ module RevaerDatabaseRebaseline
         created = true
         sql("REVOKE ALL ON DATABASE #{identifier(database)} FROM PUBLIC; GRANT CONNECT ON DATABASE #{identifier(database)} TO #{identifier(@runtime)}", role: "postgres", database:)
         seed = File.binread(File.join(@contract.root, "scripts/tests/database-ingestion-proof-seed.sql"))
-        seed += "\n#{validation_fixture_sql(fixture: {})}\nUPDATE public.trust_tier SET rank = #{Integer(test_case.fetch(:rank))} WHERE trust_tier_key = 'public';"
+        seed += "\n#{attributes_fixture_sql(test_case)}"
         seed_clock = policy_setup!(seed, database, "#{prefix}-seed")
         correction_observer!(database, variant)
         inputs = policy_read_snapshot(database)
@@ -162,6 +193,7 @@ module RevaerDatabaseRebaseline
         evidence = tested.merge("fixture_transport" => fixture, "fixture" => fixture.fetch("frames").first,
                                 "before" => before, "after" => ingestion_snapshot(database), "seed_clock" => seed_clock,
                                 "inputs_before" => inputs, "inputs_fixture" => inputs_fixture, "inputs_after" => policy_read_snapshot(database))
+        evidence.merge!(test_case.slice(:trust_rank_expectation).transform_keys(&:to_s))
         bytes = JSON.pretty_generate(evidence) + "\n"
         path = attributes_write("#{name}.json", bytes)
         attributes_validate!(evidence, test_case, mode, variant, role)
@@ -211,6 +243,8 @@ module RevaerDatabaseRebaseline
     end
 
     def attributes_validate!(evidence, test_case, mode, variant, role)
+      raise Failure, "attribute trust-rank expectation or pending native evidence changed" unless evidence["trust_rank_expectation"] == test_case[:trust_rank_expectation]
+
       fixture = evidence.fetch("fixture")
       transport = evidence.fetch("fixture_transport")
       [[transport, { calls: [attributes_arguments(test_case)] }], [evidence, attributes_session(test_case, mode)]].each do |record, session|
@@ -246,13 +280,15 @@ module RevaerDatabaseRebaseline
     end
 
     def attributes_inputs?(evidence, test_case)
-      return false unless evidence.fetch("inputs_fixture") == evidence.fetch("inputs_before") && validation_inputs?(evidence, { fixture: {} })
+      trust = attributes_trust_fixture(test_case)
+      return false unless evidence.fetch("inputs_fixture") == evidence.fetch("inputs_before") && validation_inputs?(evidence, { fixture: { trust_key: trust.fetch(:key) } })
       return false if evidence.fetch("fixture").fetch("clock") == evidence.fetch("seed_clock")
 
       ranks = evidence.fetch("inputs_before").fetch("trust_tier").map { |row| row.values_at("trust_tier_key", "rank") }.sort
-      expected = [["public", test_case.fetch(:rank)], ["semi_private", 20], ["private", 30], ["invite_only", 40]].sort
+      expected = [["semi_private", 20], ["private", 30], ["invite_only", 40]]
+      expected << ["public", trust.fetch(:public_rank)] unless trust.fetch(:public_rank).nil?
       empty = IngestionPolicy::POLICY_READ_TABLES - %w[indexer_definition indexer_instance policy_snapshot search_request search_request_indexer_run trust_tier media_domain]
-      ranks == expected && empty.all? { |table| evidence.fetch("inputs_before").fetch(table).empty? }
+      ranks == expected.sort && empty.all? { |table| evidence.fetch("inputs_before").fetch(table).empty? }
     end
 
     def attributes_empty
@@ -355,7 +391,7 @@ module RevaerDatabaseRebaseline
     def attributes_comparable(evidence)
       application = compilation_comparable("fixture" => evidence.fetch("fixture"), "frames" => evidence.fetch("frames").first(2))
       inputs = validation_comparable(evidence, { site: nil }).fetch("inputs")
-      { "application" => application, "inputs" => inputs }
+      { "application" => application, "inputs" => inputs }.merge(evidence.slice("trust_rank_expectation"))
     end
   end
 end

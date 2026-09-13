@@ -15,6 +15,8 @@ module RevaerDatabaseRebaseline
       body = source.split("CREATE OR REPLACE FUNCTION search_result_ingest_v1(", 2).fetch(1).split("AS $$", 2).fetch(1).split("$$;", 2).first
       @ingestion_inventory = { "reference_proof" => { "routines" => [{ "name" => "search_result_ingest_v1", "signature" => "search_result_ingest_v1(uuid)", "source" => body }] } }
       attributes_case_tests!
+      attributes_trust_tests!(source)
+      attributes_trust_producer_tests!
       attributes_mutation_tests!
       attributes_transport_tests!
       attributes_bytes_tests!
@@ -111,17 +113,19 @@ module RevaerDatabaseRebaseline
       Marshal.load(Marshal.dump(value))
     end
 
-    def attributes_test_inputs(clock, rank)
+    def attributes_test_inputs(clock, rank, trust_key: "public")
       inputs = IngestionPolicy::POLICY_READ_TABLES.to_h { |table| [table, []] }
       inputs["indexer_definition"] = [{ "indexer_definition_id" => 569001, "created_at" => clock, "updated_at" => clock, "upstream_slug" => "ingestion-proof", "definition_hash" => "a" * 64 }]
       inputs["indexer_instance"] = [{ "indexer_instance_id" => 569001, "created_at" => clock, "updated_at" => clock,
         "indexer_instance_public_id" => "56900000-0000-4000-8000-000000000001", "indexer_definition_id" => 569001,
-        "is_enabled" => true, "deleted_at" => nil, "migration_state" => "ready", "trust_tier_key" => "public" }]
+        "is_enabled" => true, "deleted_at" => nil, "migration_state" => "ready", "trust_tier_key" => trust_key }]
       inputs["policy_snapshot"] = [{ "policy_snapshot_id" => 569001, "created_at" => clock, "snapshot_hash" => "b" * 64 }]
       inputs["search_request"] = [{ "search_request_id" => 569001, "created_at" => clock,
         "search_request_public_id" => "56900000-0000-4000-8000-000000000002", "policy_snapshot_id" => 569001,
         "status" => "running", "page_size" => 10, "query_text" => "Ingestion proof", "finished_at" => nil, "canceled_at" => nil, "failure_class" => nil }]
-      inputs["trust_tier"] = [["public", rank], ["semi_private", 20], ["private", 30], ["invite_only", 40]].map do |key, value|
+      ranks = [["semi_private", 20], ["private", 30], ["invite_only", 40]]
+      ranks.unshift(["public", rank]) unless rank.nil?
+      inputs["trust_tier"] = ranks.map do |key, value|
         { "trust_tier_key" => key, "created_at" => clock, "rank" => value }
       end
       inputs["media_domain"] = [{ "media_domain_key" => "movies", "created_at" => clock }]
@@ -176,10 +180,11 @@ module RevaerDatabaseRebaseline
         frame
       end
       seed_clock = "2026-09-12T00:00:00+00:00"
-      inputs = attributes_test_inputs(seed_clock, test_case.fetch(:rank))
+      trust = attributes_trust_fixture(test_case)
+      inputs = attributes_test_inputs(seed_clock, trust.fetch(:public_rank), trust_key: trust.fetch(:key))
       attributes_test_transport(frames, mode).merge("fixture" => fixture, "fixture_transport" => attributes_test_transport([fixture], "cold"),
         "before" => initial, "after" => prior, "seed_clock" => seed_clock, "inputs_before" => inputs,
-        "inputs_fixture" => inputs, "inputs_after" => inputs)
+        "inputs_fixture" => inputs, "inputs_after" => inputs).merge(test_case.slice(:trust_rank_expectation).transform_keys(&:to_s))
     end
 
     def attributes_refresh_transport!(evidence, mode)
@@ -189,7 +194,7 @@ module RevaerDatabaseRebaseline
 
     def attributes_case_tests!
       cases = attributes_cases
-      assert(cases.length == 12 && cases.map { |item| item.fetch(:name) }.uniq.length == 12, "bounded unique attribute cases")
+      assert(cases.length == 14 && cases.map { |item| item.fetch(:name) }.uniq.length == 14, "twelve existing cases plus exactly two K1 branches")
       assert(cases.first(4).map { |item| item.values_at(:rank, :confidence) } == [[19, 0.5], [20, 0.6], [30, 0.7], [40, 0.8]], "independent trust bucket boundary answers")
       assert(ATTRIBUTE_INPUTS.map { |_key, type, _value| type }.uniq.sort == %i[bigint bool int numeric text], "all valid channels, no fabricated UUID key")
       assert(ATTRIBUTE_INPUTS.map(&:first).sort == (IngestionValidation::VALIDATION_TYPES.values.flatten - %w[imdb_id tmdb_id tvdb_id]).sort, "all non-D5 typed keys")
@@ -224,6 +229,114 @@ module RevaerDatabaseRebaseline
       rows[0]["observation_attr_id"] = 2
       rows[0]["value_text"] = "wrong"
       assert(!attributes_first_tables?(reordered, tables), "unordered matching cannot hide changed values")
+    end
+
+    def attributes_trust_tests!(source)
+      cases = attributes_cases.last(2)
+      assert(cases.map { |item| item.fetch(:name) } == %w[null-instance-trust-key missing-public-trust-tier], "two distinct K1 fixtures")
+      assert(cases.map { |item| item.fetch(:trust_fixture) } == [{ key: nil, public_rank: 40 }, { key: "public", public_rank: nil }], "NULL key retains a discriminating rank-40 row; non-null key has no row")
+      assert(cases.map { |item| item.fetch(:trust_rank_expectation).fetch("source_branch") } == ["0052:655 false; retain initialization at 471", "0052:655 true; 660 true; assign zero at 661"], "expectations distinguish skipped lookup from missing-row fallback")
+      { 471 => "instance_trust_rank SMALLINT := 0;", 655 => "IF instance_trust_tier_key IS NOT NULL THEN",
+        660 => "IF instance_trust_rank IS NULL THEN", 661 => "instance_trust_rank := 0;" }.each do |line, statement|
+        assert(source.lines.fetch(line - 1).strip == statement, "source coordinate #{line} is a premise, not an executed observation")
+      end
+      cases.each do |test_case|
+        expectation = test_case.fetch(:trust_rank_expectation)
+        assert(expectation.values_at("rank", "bucket", "confidence", "native_branch_evidence") == [0, 0, 0.5, "pending"], "independent local-value expectations never claim native observation")
+        assert(test_case.values_at(:rank, :confidence) == [0, 0.5] && test_case.fetch(:inputs) == [["language_primary", :text, "en"]], "literal K1 input and confidence answer")
+        query = attributes_fixture_sql(test_case)
+        if test_case.fetch(:name) == "null-instance-trust-key"
+          assert(query.include?("SET trust_tier_key = NULL WHERE indexer_instance_id = 569001;") && query.include?("SET rank = 40 WHERE trust_tier_key = 'public';") && !query.include?("DELETE"), "nullable-key fixture keeps its public tier")
+        else
+          assert(query.include?("SET trust_tier_key = 'public' WHERE indexer_instance_id = 569001;") && query.include?("DELETE FROM public.trust_tier WHERE trust_tier_key = 'public';") && !query.include?("SET rank"), "missing-tier fixture keeps the public instance key and deletes only its tier")
+        end
+        assert(!query.match?(/DISABLE|TRIGGER|CONSTRAINT|ALTER|DROP|session_replication_role/), "ordinary constrained fixture DML only")
+        %w[cold helpers-first].each do |mode|
+          %w[reference final].each do |variant|
+            role = variant == "reference" ? "postgres" : @runtime
+            evidence = attributes_test_evidence(test_case, mode, variant)
+            frames = [evidence.fetch("fixture")] + evidence.fetch("frames")
+            assert(frames.all? { |frame| %w[tables_before tables_after tables_finish].all? { |key| frame.fetch(key).keys.sort == IngestionProof::INGESTION_TABLES.sort } }, "all 18 table images retained at every phase")
+            assert(evidence.fetch("after").fetch("canonical_torrent_signal").all? { |row| row.values_at("signal_key", "value_text", "value_int", "confidence") == ["language", "en", nil, 0.5] }, "every retained language answer is independently fixed at en/0.5")
+            assert(evidence.fetch("frames").first.fetch("tables_finish") == evidence.fetch("before") && evidence.fetch("frames").map { |frame| frame.fetch("state") } == (variant == "reference" ? %w[00000 00000 42P07] : %w[00000 00000 00000]), "whole rollback and frozen D4 versus final committed reuse retained")
+            changed = copy(evidence)
+            changed.fetch("trust_rank_expectation")["native_branch_evidence"] = "observed"
+            rejected("pending native evidence") { attributes_validate!(changed, test_case, mode, variant, role) }
+            changed = copy(evidence)
+            changed.delete("trust_rank_expectation")
+            rejected("trust-rank expectation") { attributes_validate!(changed, test_case, mode, variant, role) }
+            inputs = copy(evidence.fetch("inputs_before"))
+            if test_case.fetch(:name) == "null-instance-trust-key"
+              inputs.fetch("indexer_instance").first["trust_tier_key"] = "public"
+            else
+              inputs.fetch("trust_tier") << { "trust_tier_key" => "public", "rank" => 0, "created_at" => evidence.fetch("seed_clock") }
+            end
+            changed = copy(evidence)
+            %w[inputs_before inputs_fixture inputs_after].each { |key| changed[key] = copy(inputs) }
+            rejected("read inputs") { attributes_validate!(changed, test_case, mode, variant, role) }
+            attributes_trust_state_mutations!(evidence, test_case, mode, variant, role)
+          end
+        end
+      end
+      pair = cases.map { |test_case| attributes_comparable(attributes_test_evidence(test_case, "cold", "final")) }
+      assert(pair.first.fetch("application") == pair.last.fetch("application") && pair.first.fetch("inputs") != pair.last.fetch("inputs"), "common application output cannot substitute for distinct read-input provenance")
+      assert(pair.first.fetch("trust_rank_expectation") != pair.last.fetch("trust_rank_expectation"), "comparison retains distinct pending branch expectations")
+    end
+
+    def attributes_trust_state_mutations!(evidence, test_case, mode, variant, role)
+      IngestionProof::INGESTION_TABLES.each do |table|
+        changed = copy(evidence)
+        changed.fetch("frames").fetch(1).fetch("tables_after").fetch(table) << { "unintended" => true }
+        attributes_refresh_transport!(changed, mode)
+        rejected("") { attributes_validate!(changed, test_case, mode, variant, role) }
+      end
+      IngestionPolicy::POLICY_READ_TABLES.each do |table|
+        changed = copy(evidence)
+        %w[inputs_before inputs_fixture inputs_after].each do |key|
+          rows = changed.fetch(key).fetch(table)
+          changed.fetch(key)[table] = rows.empty? ? [{ "unintended" => true }] : []
+        end
+        rejected("read inputs") { attributes_validate!(changed, test_case, mode, variant, role) }
+      end
+      ["fixture", 0, 1].each do |phase|
+        changed = copy(evidence)
+        frame = phase == "fixture" ? changed.fetch("fixture") : changed.fetch("frames").fetch(phase)
+        frame.fetch("tables_after").fetch("canonical_torrent_signal").last["confidence"] = 0.8
+        attributes_refresh_transport!(changed, mode)
+        rejected("") { attributes_validate!(changed, test_case, mode, variant, role) }
+      end
+    end
+
+    def attributes_trust_producer_tests!
+      @contract.validate_output_path!
+      FileUtils.mkdir_p(@contract.output_path, mode: 0o700)
+      attributes_cases.last(2).each do |test_case|
+        Dir.mktmpdir("attributes-trust-unit-", @contract.output_path) do |directory|
+          @attributes_evidence = directory
+          @attributes_validated_evidence = {}
+          evidence = attributes_test_evidence(test_case, "cold", "final")
+          outcomes = [evidence.fetch("fixture_transport"), evidence].map do |record|
+            CommandRunner::Result.new(stdout: record.fetch("stdout"), stderr: record.fetch("stderr"), success: true)
+          end
+          commands = []
+          seed = nil
+          snapshots = [evidence.fetch("before"), evidence.fetch("after")]
+          define_singleton_method(:sql) { |query, **_options| commands << query; "" }
+          define_singleton_method(:policy_setup!) { |query, *_args| seed = query; evidence.fetch("seed_clock") }
+          define_singleton_method(:correction_observer!) { |*_args| nil }
+          define_singleton_method(:policy_read_snapshot) { |*_args| evidence.fetch("inputs_before") }
+          define_singleton_method(:ingestion_snapshot) { |*_args| snapshots.shift }
+          define_singleton_method(:result) { |*_args, **_options| outcomes.shift }
+          assert(attributes_isolated(test_case, "cold", "final", @database, @runtime) == evidence, "real attribute producer retains serialized fixture/input provenance and pending expectation")
+          assert(seed.end_with?(attributes_fixture_sql(test_case)) && seed.include?("INSERT INTO public.indexer_instance"), "K1 uses the existing seed plus its exact constrained delta")
+          assert(@attributes_validated_evidence.length == 1 && outcomes.empty? && snapshots.empty?, "real producer validates both fixture and tested session before registration")
+          assert(commands.last == 'DROP DATABASE "ingestion_attributes_final" WITH (FORCE)', "producer cleanup remains scoped to its owned clone")
+        end
+      end
+    ensure
+      %i[sql policy_setup! correction_observer! policy_read_snapshot ingestion_snapshot result].each do |name|
+        singleton_class.remove_method(name) if singleton_methods.include?(name)
+      end
     end
 
     def attributes_mutation_tests!

@@ -356,7 +356,7 @@ module RevaerDatabaseRebaseline
       request.values_at("search_request_public_id", "policy_snapshot_id", "status", "page_size", "query_text") ==
         ["56900000-0000-4000-8000-000000000002", 569001, fixture.fetch(:status, "running"), 10, "Ingestion proof"] &&
         instance.values_at("indexer_instance_public_id", "indexer_definition_id", "is_enabled", "deleted_at", "migration_state", "trust_tier_key") ==
-        ["56900000-0000-4000-8000-000000000001", 569001, fixture.fetch(:enabled, true), fixture[:deleted] ? "2026-09-10T00:00:00+00:00" : nil, fixture.fetch(:migration, "ready"), "public"] &&
+        ["56900000-0000-4000-8000-000000000001", 569001, fixture.fetch(:enabled, true), fixture[:deleted] ? "2026-09-10T00:00:00+00:00" : nil, fixture.fetch(:migration, "ready"), fixture.fetch(:trust_key, "public")] &&
         runs.map { |row| row.values_at("search_request_id", "indexer_instance_id", "status") } == expected_runs &&
         inputs.fetch("policy_snapshot").first.fetch("snapshot_hash") == "b" * 64 &&
         inputs.fetch("indexer_definition").first.values_at("upstream_slug", "definition_hash") == ["ingestion-proof", "a" * 64]

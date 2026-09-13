@@ -660,8 +660,51 @@ module RevaerDatabaseRebaseline
       end
       schema = File.binread(File.join(@contract.root, "crates/revaer-data/migrations/0022_indexer_canonicalization.sql"))
       assert(schema.include?("(attr_key IN ('tracker_name', 'imdb_id') AND value_text IS NOT NULL)") && source.include?("IF existing_tracker_name IS NULL THEN"), "serial coalesce-upsert reachability counterexample remains source-backed")
+      metadata_schema_facts_tests!(source, schema)
       proof = File.binread(File.join(@contract.root, "scripts/database_rebaseline/ingestion_proof.rb"))
       assert(proof.include?("verify_ingestion_metadata!") && proof.include?("complete ingestion branch and helper execution matrix"), "canonical matrix wired without removing incomplete D3")
+    end
+
+    # Pin the premises of the support note, not simulated PostgreSQL lock outcomes.
+    def metadata_schema_facts_tests!(source, schema)
+      tables = %w[canonical_torrent_source_attr canonical_torrent_signal canonical_size_sample].to_h do |name|
+        [name, schema.split("CREATE TABLE IF NOT EXISTS #{name} (", 2).fetch(1).split("\n);", 2).first.gsub(/\s+/, " ")]
+      end
+      durable = tables.fetch("canonical_torrent_source_attr")
+      assert(durable.include?("canonical_torrent_source_id BIGINT NOT NULL REFERENCES canonical_torrent_source (canonical_torrent_source_id) ON DELETE CASCADE"), "durable parent reference remains an immediate ordinary FK")
+      assert(durable.include?("canonical_torrent_source_attr_uq UNIQUE ( canonical_torrent_source_id, attr_key )"), "durable conflict arbiter remains the non-null source/key pair")
+      assert(durable.include?("attr_key durable_source_attr_key NOT NULL"), "durable key cannot bypass its type check with NULL")
+      assert(durable.include?("CHECK ( ( (value_text IS NOT NULL)::INT + (value_int IS NOT NULL)::INT + (value_bigint IS NOT NULL)::INT + (value_numeric IS NOT NULL)::INT + (value_bool IS NOT NULL)::INT ) = 1 )"), "durable values retain exactly one populated channel")
+      assert(durable.include?("(attr_key IN ('tracker_name', 'imdb_id') AND value_text IS NOT NULL) OR (attr_key = 'size_bytes_reported' AND value_bigint IS NOT NULL) OR ( attr_key IN ( 'tracker_category', 'tracker_subcategory', 'files_count', 'season', 'episode', 'year', 'tmdb_id', 'tvdb_id' ) AND value_int IS NOT NULL )"), "all eleven durable keys require their corresponding non-null channel")
+
+      signal = tables.fetch("canonical_torrent_signal")
+      assert(signal.include?("value_text VARCHAR(128), value_int INTEGER,"), "omitted signal channels have no non-null default")
+      assert(signal.include?("canonical_torrent_signal_uq UNIQUE ( canonical_torrent_id, signal_key, value_text, value_int )"), "signal arbiter keeps ordinary NULL-distinct uniqueness")
+      assert(signal.include?("CHECK ( ( (value_text IS NOT NULL)::INT + (value_int IS NOT NULL)::INT ) = 1 )"), "every legal signal retains exactly one NULL arbiter channel")
+      signal_writes = source.scan(/INSERT INTO canonical_torrent_signal \(\s*canonical_torrent_id,\s*signal_key,\s*(value_text|value_int),\s*confidence\s*\)\s*VALUES \(\s*canonical_id,\s*'([^']+)'/)
+      assert(signal_writes == [["value_text", "release_group"], ["value_text", "language"], ["value_text", "subtitles"], ["value_int", "year"], ["value_int", "season"], ["value_int", "episode"]], "all six actual signal inserts omit the other arbiter channel")
+
+      refresh = source.match(/UPDATE canonical_torrent_source\s+SET last_seen_at = CASE.*?WHERE canonical_torrent_source_id = source_id;/m)
+      assert(!refresh.nil?, "existing-source refresh retains its unconditional key predicate")
+      assignments = refresh[0].scan(/^\s*(?:SET )?(\w+) =/).flatten
+      assert(assignments == %w[last_seen_at last_seen_seeders last_seen_leechers last_seen_published_at last_seen_download_url last_seen_magnet_uri last_seen_details_url last_seen_uploader updated_at], "refresh changes no source identity or referenced unique-key column")
+      assert(refresh.end(0) < source.index("INTO existing_tracker_name"), "source write precedes every durable-value lookup")
+      lookups = source.split("        SELECT value_text\n        INTO existing_tracker_name", 2).fetch(1).split("        IF tracker_name_value IS NOT NULL THEN", 2).first
+      assert(lookups.scan(/INTO existing_/).length == 10 && !lookups.match?(/\bFOR\b|\bLOCK\b/), "all eleven durable reads precede inserts and carry no explicit lock clause")
+      assert(source.scan(/ON CONFLICT \(canonical_torrent_source_id, attr_key\)\s*DO UPDATE SET\s*value_(text|int|bigint) = COALESCE\(canonical_torrent_source_attr\.value_\1, EXCLUDED\.value_\1\);/).length == 11, "all eleven durable conflict updates preserve the stored typed value")
+
+      sample = tables.fetch("canonical_size_sample")
+      assert(sample.include?("canonical_size_sample_uq UNIQUE ( canonical_torrent_id, observed_at, size_bytes )"), "sample duplicate key is the complete incoming tuple")
+      sampling = source.split("        IF size_sample_allowed THEN", 2).fetch(1).split("            IF sample_count IS NOT NULL", 2).first
+      assert(sampling.match?(/INSERT INTO canonical_size_sample.*?ON CONFLICT DO NOTHING;.*?DELETE FROM canonical_size_sample.*?OFFSET 25.*?SELECT COUNT\(\*\)/m), "sample duplicate skip precedes pruning and a separate count query")
+
+      migrations = File.join(@contract.root, "crates/revaer-data/migrations")
+      instance = File.binread(File.join(migrations, "0014_indexer_instances.sql")).split("CREATE TABLE IF NOT EXISTS indexer_instance (", 2).fetch(1).split("\n);", 2).first
+      assert(instance.include?("trust_tier_key trust_tier_key,") && !instance.match?(/REFERENCES trust_tier\b|FOREIGN KEY/), "instance trust key is nullable and has no trust-tier FK")
+      trust = File.binread(File.join(migrations, "0012_indexer_core.sql")).split("CREATE TABLE IF NOT EXISTS trust_tier (", 2).fetch(1).split("\n);", 2).first
+      assert(trust.include?("rank SMALLINT NOT NULL") && trust.include?("UNIQUE (trust_tier_key)"), "a present trust tier supplies one non-null rank")
+      request = File.binread(File.join(migrations, "0023_indexer_search_requests.sql")).split("CREATE TABLE IF NOT EXISTS search_request (", 2).fetch(1).split("\n);", 2).first.gsub(/\s+/, " ")
+      assert(request.include?("policy_snapshot_id BIGINT NOT NULL REFERENCES policy_snapshot (policy_snapshot_id)"), "request snapshot is mandatory, unlike the instance trust key")
     end
   end
 end

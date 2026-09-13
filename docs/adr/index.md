@@ -501,6 +501,7 @@
 -   [567](567-postgres-pristine-catalog-evidence.md) - PostgreSQL pristine catalog evidence
 -   [568](568-root-attestation-identity-encoding.md) - Root attestation identity encoding
 -   [569](569-init-privilege-and-timeout-resolution.md) - Init privilege and timeout resolution (Accepted; D3 conditional)
+    -   [Ingestion reachability evidence](support/569-ingestion-reachability.md)
 -   [570](570-single-file-directory-authoring-regression.md) - Single-file directory authoring regression
 -   [571](571-rvb1-bounded-wire-codec.md) - RVB1 bounded wire codec
 -   [572](572-broker-env-local-image-evidence.md) - Broker environment local image evidence (Recorded; E1 held)
