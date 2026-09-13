@@ -155,3 +155,7 @@ pub async fn search_result_ingest(
 #[cfg(test)]
 #[path = "search_results/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "search_results/pool_proof_tests.rs"]
+mod pool_proof_tests;

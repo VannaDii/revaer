@@ -1329,3 +1329,63 @@ and cleanup evidence are retained in
 `artifacts/media-verification/2026-09-13-guid-trace/`. User checkout changes
 remain untouched. No scan, push, package qualification, complete handoff or
 cutover is claimed.
+
+### Rust Pool And Runtime Rank Qualification (2026-09-13)
+
+- Motivation: choice 1's remaining acceptance requires actual Rust `PgPool`
+  execution and changes to trust rank during ingestion-backend reuse. Earlier
+  psql-only execution and initial fixture ranks did not prove those cases.
+- Design: a transition-only, explicit-input Rust test calls the existing
+  production `search_result_ingest` wrapper through a one-connection pool.
+  It records direct role/backend/version identity, cold and restored compiler
+  settings, typed outputs and exact SQLSTATE/message/detail across a first
+  commit, committed reuse, a rejected request and the following valid call.
+  The operational proof owns separate reference/final database clones and
+  captures all 18 application table images before/after. It verifies returned
+  identities and the last-seen timestamp implied by successful calls only.
+  Ordinary Rust tests exercise the explicit-launch guard; they do not bootstrap
+  init. The canonical proof requires the actual dedicated test and a fresh
+  report, so the ordinary guard-only pass cannot qualify the pool case.
+- Runtime rank: a separate committing writer changes the `public` tier while
+  the ingestion backend remains open. Six sequences traverse both directions
+  across 19/20, 29/30 and 39/40, with cold/helper-first modes and both database
+  variants. Independent expected confidence values, transaction/backend
+  identities and full read/write images distinguish runtime changes from
+  fixture setup. First-call rollback retains compiled plans; the following
+  two calls commit. Frozen third-call D4 failures remain exact counterevidence.
+- Test coverage: the pool oracle currently has 59 assertions, including
+  altered/missing table evidence, identity, privilege, compiler-setting,
+  result/error fields and a negative control for the mutation harness itself.
+  Its live pair passes the 19 pool checks plus the mandatory D4/D5 matrix.
+  The rank worker's 24 live variants passed; review then tightened both writer
+  JSON parsers, added duplicate-field mutations and removed a redundant tracked
+  live launcher. Its final focused suite passes 78 assertions. Combined current-
+  source canonical proof and full CI/UI remain pending at this record boundary.
+- Retained failures: the first pool oracle confused the generic error message
+  with `DETAIL`; frozen source independently confirms both fields, and the
+  refined probe preserves and checks them separately. Review also corrected a
+  mutation helper that could catch its own failed assertion; the unchanged-
+  evidence negative control now rejects that behavior. Initial unit output is
+  not independent proof of rejection. A test-struct naming lint failed and was
+  fixed without suppression. Rank evidence retains its missing-candidate
+  preflight, missing parsed-frame handoff and tied-rank ordering failures.
+- Observability: new records are proof artifacts only. No production logging,
+  SQL, schema, privilege, GUC or error-disposition change. Retain raw Rust/psql
+  output, exact source and candidate hashes, failed attempts and cleanup.
+- Risk and rollback: the proof uses the existing disposable PostgreSQL role
+  model with one dynamically allocated literal-loopback transport for the
+  actual host pool. It rejects non-loopback or mismatched database/role inputs,
+  an existing/missing report, warnings and unsuccessful execution. Each clone
+  and its container/volumes must be removed. Remove the probe, proof inclusion,
+  recipe and matching instructions together if this test arrangement is wrong;
+  never reinterpret missing evidence as D3 approval or activate init early.
+- Dependency rationale: existing SQLx, Tokio, Serde, UUID, Chrono, anyhow and
+  Ruby standard library only. No manifest or production dependency change.
+- Stale-policy check: root AGENTS and scoped Rust, data and DevOps guidance were
+  reviewed. Data/DevOps now describe the explicit proof entry, runtime-rank
+  requirements and unchanged bootstrap authority. These are internal tests of
+  approved D3/D4/D5 scope, not a new operator approval or criteria exception.
+- Limits: one controlled pool size and bounded v1 rank cases do not qualify
+  cancellation during ingestion, all cached/helper/native/dynamic paths,
+  complete D3, the installed service, S2, either Linux package or release. The
+  incomplete-D3 guard, frozen authority and all other acceptance gates remain.

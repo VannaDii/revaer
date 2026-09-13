@@ -37,6 +37,14 @@ db-init-finalize:
 db-init-final-proof: db-rebaseline-candidate
     ruby --disable-gems scripts/database_rebaseline/final_proof.rb
 
+# Transition-only probe; its caller provisions and owns both compared databases.
+db-init-pool-probe:
+    test -n "${REVAER_INGESTION_POOL_PROOF:?Set the explicit disposable pool-proof input file}"
+    cargo --config 'build.rustflags=["-Dwarnings"]' test \
+        -p revaer-data --all-features --lib \
+        indexers::search_results::pool_proof_tests::application_pool_qualification \
+        -- --exact --show-output
+
 stack-changed-lines base_ref head_ref:
     ruby --disable-gems scripts/database-rebaseline.rb changed-lines stack "{{base_ref}}" "{{head_ref}}"
 

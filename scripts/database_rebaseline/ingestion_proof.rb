@@ -14,6 +14,8 @@ require_relative "ingestion_metadata"
 require_relative "ingestion_disambiguation"
 require_relative "ingestion_sampling"
 require_relative "ingestion_guid"
+require_relative "ingestion_pool"
+require_relative "ingestion_runtime_rank"
 
 module RevaerDatabaseRebaseline
   # Uses FinalProof's private transport and evidence owner, never runtime SQL.
@@ -31,6 +33,8 @@ module RevaerDatabaseRebaseline
     include IngestionDisambiguation
     include IngestionSampling
     include IngestionGuid
+    include IngestionPool
+    include IngestionRankProof
     INGESTION_TABLES = %w[
       canonical_torrent canonical_torrent_source canonical_torrent_source_attr
       canonical_torrent_source_context_score canonical_torrent_best_source_context
@@ -86,10 +90,12 @@ module RevaerDatabaseRebaseline
       verify_ingestion_validation!
       verify_ingestion_setting_paths!
       verify_ingestion_attributes!
+      verify_ingestion_runtime_rank!
       verify_ingestion_metadata!
       verify_ingestion_disambiguation!
       verify_ingestion_sampling!
       verify_ingestion_guid!
+      verify_ingestion_pool!
       verify_ingestion_dependencies!
       verify_ingestion_session_controls!
       verify_existing_ingestion_parity!

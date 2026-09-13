@@ -20,6 +20,7 @@ module RevaerDatabaseRebaseline
       begin
         @runner.run!([
           "docker", "run", "-d", "--name", @container, "--shm-size", "1g",
+          "--publish", "127.0.0.1::5432",
           "-e", "POSTGRES_HOST_AUTH_METHOD=trust",
           "-e", "POSTGRES_INITDB_ARGS=--locale=C --encoding=UTF8 --data-checksums",
           "-e", "TZ=UTC", @contract.postgres_image

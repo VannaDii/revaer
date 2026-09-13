@@ -62,6 +62,20 @@ applyTo:
 
 # Testing
 
+- ADR 569/588 transition qualification must exercise the actual Rust ingestion
+  wrapper through an explicitly provisioned disposable `PgPool`, retaining
+  backend/role identity, cold and restored compiler settings, typed SQLSTATE,
+  message/detail, committed reuse, error recovery and persisted identities.
+  The dedicated pool-probe recipe requires an explicit input file and a new
+  report; ordinary Rust runs exercise its launch guard and must never select
+  the final candidate as application or ordinary-test bootstrap authority.
+  Preserve the frozen D4 failure separately from the approved final success.
+  Passing this bounded pool case does not close D3, cancellation or native scope.
+- Runtime trust-rank qualification must reuse the ingestion backend while a
+  separate direct writer commits the rank changes. Cover both directions across
+  the existing confidence thresholds, preserve all unrelated read/write images,
+  reject duplicate writer JSON fields and retain the exact frozen D4 failure.
+  Setup-only rank variation is not runtime-change evidence.
 - Exercise database behavior through the same stored procedure entry points that production uses.
 - Keep migration and procedure tests representative of runtime call patterns.
 - If a migration or procedure change affects API or CLI behavior, update the relevant docs and task record in the same change.
