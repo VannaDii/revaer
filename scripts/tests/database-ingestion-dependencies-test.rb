@@ -412,6 +412,8 @@ module RevaerDatabaseRebaseline
       %w[compilation wrapper].each do |family|
         path = File.join(directory, "ingestion-#{family}")
         FileUtils.mkdir_p(path)
+        path = Dir.mktmpdir("run-", path) if family == "wrapper"
+        proof.instance_variable_set("@#{family}_evidence", path)
         entries = proof.send(:dependency_observation_cases, "ingestion-#{family}").to_h do |name, role, count|
           frames = count.times.map do |index|
             before = IngestionProof::INGESTION_TABLES.to_h { |table| [table, []] }
@@ -482,6 +484,12 @@ module RevaerDatabaseRebaseline
         proof.instance_variable_set(:@compilation_validated_evidence, proof.instance_variable_get(:@wrapper_validated_evidence))
         rejected("lacks current-process validated bytes") { proof.send(:dependency_observations, fixture) }
         proof.instance_variable_set(:@compilation_validated_evidence, original)
+        current = proof.instance_variable_get(:@wrapper_evidence)
+        proof.instance_variable_set(:@wrapper_evidence, nil)
+        rejected("lacks current-process directory") { proof.send(:dependency_observations, fixture) }
+        proof.instance_variable_set(:@wrapper_evidence, File.dirname(current))
+        rejected("lacks current-process validated bytes") { proof.send(:dependency_observations, fixture) }
+        proof.instance_variable_set(:@wrapper_evidence, current)
         assert(proof.send(:dependency_observations, fixture).fetch(:files) == evidence.fetch(:files), "rejected mutations do not change the producers' registries")
         dependency_evidence_reader_tests!(directory)
       end

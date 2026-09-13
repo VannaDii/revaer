@@ -236,6 +236,13 @@ applyTo:
 - Size-sample proof must distinguish the first stored display size from the
   statistical median before three samples exist. Retain the two-sample control
   alongside median promotion and retention-boundary cases in every wrapper mode.
+  Exercise the exact 10 TiB cutoff, effective versus requested domain, zero/NULL
+  input, single/multiple/no instance domains, all three domain exceptions and
+  title fallback without sampling. Independently model complete write images
+  and unchanged domain inputs across cold, helper-first and whole rollback/retry.
+  Each wrapper run must retain a unique evidence directory; dependency consumers
+  must use that current-process directory and its successfully validated hashes,
+  never infer registration from historical files or overwrite a prior run.
 - The canonical D3 validation matrix must exercise the 32 frozen validation
   guard sites with exact SQLSTATE, detail and native/source coordinates, not
   infer an expected guard from the observed error. Retain all 18 table images,

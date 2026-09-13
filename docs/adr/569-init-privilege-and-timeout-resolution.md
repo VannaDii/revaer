@@ -943,3 +943,27 @@ checks reject wrong rollup counts, extrema, median and premature promotion.
 This is the same proof-only implementation boundary with no new dependency;
 DevOps now records the two-sample requirement. Full canonical and combined
 gate results remain pending and no existing acceptance condition is removed.
+
+## Size And Domain Boundaries (2026-09-12)
+
+This proof-only increment adds 19 independent sampling decisions: below, at and
+above the exact 10 TiB cutoff; requested versus effective domain; no, single and
+multiple instance domains; each ebooks/audiobooks/software exception; zero/NULL;
+and normal/large title fallback without sampling. Each runs through the real
+application wrapper cold, helper-first and with whole rollback/retry. Expected
+values cover all 18 write tables and eight unchanged read tables, including
+seed clocks, public identities and sequence gaps. Direct fixture seeding proves
+these ingestion states, not their reachability through request-creation APIs.
+
+Focused suites pass 14,378 assertions before the current-run consumer update.
+Mutation controls reject altered full-column images, partial rollback, wrong
+domains, duplicate JSON, impossible clocks and float-valued identities. Wrapper
+evidence now uses unique directories; the native-dependency consumer follows
+the producing run and still requires its validated byte registry. PostgreSQL
+and combined gates for this increment remain pending; D3 stays incomplete.
+
+No stored procedure, init authority, runtime policy, telemetry or approval
+changes. This follows the existing proof-owner decomposition using Ruby standard
+libraries, with no new dependency. Rollback removes this increment only. Root,
+data, Rust, DevOps and Sonar instructions were reviewed; DevOps now records the
+boundary and evidence-retention requirements. No criteria were relaxed.

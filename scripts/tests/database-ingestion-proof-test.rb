@@ -10,6 +10,7 @@ require_relative "database-ingestion-compilation-test"
 require_relative "database-ingestion-wrapper-test"
 require_relative "database-ingestion-identity-test"
 require_relative "database-ingestion-hash-fill-test"
+require_relative "database-ingestion-size-test"
 require_relative "database-ingestion-policy-test"
 require_relative "database-ingestion-dependencies-test"
 require_relative "database-ingestion-validation-test"
@@ -27,6 +28,7 @@ module RevaerDatabaseRebaseline
     include IngestionWrapperTest
     include IngestionIdentityTest
     include IngestionHashFillTest
+    include IngestionSizeTest
     include IngestionPolicyTest
 
     def run_tests!
@@ -51,6 +53,7 @@ module RevaerDatabaseRebaseline
       wrapper_tests!
       identity_tests!
       hash_fill_tests!
+      size_tests!
       policy_tests!
       cleanup_tests!
       puts "database-ingestion-proof-test: #{@assertions} assertions passed"

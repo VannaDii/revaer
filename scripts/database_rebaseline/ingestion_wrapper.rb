@@ -1,13 +1,16 @@
 # frozen_string_literal: true
 
+require "tmpdir"
 require_relative "ingestion_identity"
 require_relative "ingestion_hash_fill"
+require_relative "ingestion_size"
 
 module RevaerDatabaseRebaseline
   # Frozen warm evidence uses a real rollback, never a repaired temporary namespace.
   module IngestionWrapper
     include IngestionIdentity
     include IngestionHashFill
+    include IngestionSize
     WRAPPER_MODES = %w[cold helpers-first warm-rollback].freeze
     WRAPPER_INPUTS = %w[indexer_definition indexer_instance policy_snapshot search_request search_request_indexer_run canonical_torrent_source_base_score].freeze
     WRAPPER_INPUT_CLOCKS = {
@@ -19,10 +22,11 @@ module RevaerDatabaseRebaseline
 
     def verify_ingestion_wrapper!
       @wrapper_validated_evidence = {}
-      @wrapper_evidence = File.join(@contract.output_path, "ingestion-wrapper")
-      raise Failure, "wrapper evidence must not be a symlink" if File.symlink?(@wrapper_evidence)
+      directory = File.join(@contract.output_path, "ingestion-wrapper")
+      raise Failure, "wrapper evidence must not be a symlink" if File.symlink?(directory)
 
-      FileUtils.mkdir_p(@wrapper_evidence, mode: 0o700)
+      FileUtils.mkdir_p(directory, mode: 0o700)
+      @wrapper_evidence = Dir.mktmpdir("run-", directory)
       first = @checks.length
       source_hashes = wrapper_source_hashes
       cases = []
@@ -59,6 +63,7 @@ module RevaerDatabaseRebaseline
         scripts/database-rebaseline.rb scripts/stack_asset_exception.rb scripts/tests/database-ingestion-proof-test.rb
         scripts/tests/database-ingestion-wrapper-test.rb scripts/tests/database-ingestion-identity-test.rb
         scripts/tests/database-ingestion-hash-fill-test.rb scripts/tests/database-ingestion-proof-seed.sql
+        scripts/tests/database-ingestion-size-test.rb
         scripts/tests/database-ingestion-helper-first.sql config/database-rebaseline.env
         .github/build-inputs.env crates/revaer-data/init.sql
       ]
@@ -89,7 +94,7 @@ module RevaerDatabaseRebaseline
           arguments: wrapper_arguments("sample", minute: 25, size: 2600), wrapper: true, samples: 25 }
       ] + [{ name: "second-size-sample", fixtures: [wrapper_arguments("sample", size: 100)],
              arguments: wrapper_arguments("sample", minute: 1, size: 900), wrapper: true, samples: 2 }] +
-        wrapper_identity_cases + wrapper_hash_fill_cases
+        wrapper_identity_cases + wrapper_hash_fill_cases + wrapper_size_cases
     end
 
     def wrapper_isolated(test_case, mode, variant, source, role)
@@ -102,6 +107,7 @@ module RevaerDatabaseRebaseline
         created = true
         sql("REVOKE ALL ON DATABASE #{identifier(database)} FROM PUBLIC; GRANT CONNECT ON DATABASE #{identifier(database)} TO #{identifier(@runtime)}", role: "postgres", database:)
         seed = File.binread(File.join(@contract.root, "scripts/tests/database-ingestion-proof-seed.sql"))
+        seed += "\n#{size_seed_sql(test_case.fetch(:size_case))}" if test_case[:size_case]
         seed_query = "BEGIN; SELECT to_json(transaction_timestamp());\n#{seed}\nCOMMIT;"
         File.binwrite("#{prefix}-seed.sql", seed_query)
         seed_clock = JSON.parse(sql(seed_query, role: "postgres", database:))
@@ -114,11 +120,13 @@ module RevaerDatabaseRebaseline
         end
         before = ingestion_snapshot(database)
         inputs_before = wrapper_inputs(database)
+        size_before = size_input_snapshot(database, "#{prefix}-size-before") if test_case[:size_case]
         calls = [test_case.fetch(:arguments)] * (mode == "warm-rollback" ? 2 : 1)
-        session = { name:, calls:, wrapper: test_case.fetch(:wrapper), helpers: mode == "helpers-first", rollback: mode == "warm-rollback" }
+        session = { name:, calls:, wrapper: test_case.fetch(:wrapper), helpers: mode == "helpers-first", rollback: mode == "warm-rollback", size_case: test_case[:size_case] }
         frames = wrapper_execute(session, database, role, prefix)
         evidence = { "seed_clock" => seed_clock, "fixtures" => fixtures, "before" => before, "inputs_before" => inputs_before,
                      "frames" => frames, "after" => ingestion_snapshot(database), "inputs_after" => wrapper_inputs(database) }
+        evidence.merge!("size_inputs_before" => size_before, "size_inputs_after" => size_input_snapshot(database, "#{prefix}-size-after")) if test_case[:size_case]
         bytes = JSON.pretty_generate(evidence) + "\n"
         File.binwrite("#{prefix}.json", bytes)
         first = @checks.length
@@ -140,6 +148,7 @@ module RevaerDatabaseRebaseline
       File.binwrite("#{prefix}.stderr", outcome.stderr)
       raise Failure, "wrapper transport failed" unless outcome.success
 
+      metadata_transport_json!(outcome.stdout) if test_case[:size_case]
       correction_parse(outcome.stdout, outcome.stderr, test_case)
     end
 
@@ -191,6 +200,7 @@ module RevaerDatabaseRebaseline
       end)
       check("#{name} exact wrapper/scoring/page/sample result", frames.all? { |frame| wrapper_outcome?(test_case, frame) })
       hash_fill_verify!(name, test_case, session, evidence) if test_case[:hash_fill]
+      check("#{name} independent sampling decisions full state domain inputs and rollback", size_evidence?(test_case.fetch(:size_case), session, evidence)) if test_case[:size_case]
     end
 
     def wrapper_comparable_inputs(evidence)

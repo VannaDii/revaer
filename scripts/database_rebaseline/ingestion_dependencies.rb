@@ -601,8 +601,12 @@ module RevaerDatabaseRebaseline
       frames = []
       settings = []
       registries = { "ingestion-compilation" => @compilation_validated_evidence, "ingestion-wrapper" => @wrapper_validated_evidence }
+      directories = { "ingestion-compilation" => @compilation_evidence, "ingestion-wrapper" => @wrapper_evidence }
       registries.each do |directory, registry|
-        report_path = File.join(@contract.output_path, directory, "report.json")
+        current = directories.fetch(directory)
+        raise Failure, "dependency evidence lacks current-process directory" unless current.is_a?(String)
+
+        report_path = File.join(current, "report.json")
         report, evidence = dependency_read_observation(report_path, registry)
         expected = report.fetch("checks").map { |entry| entry.transform_keys(&:to_sym) }
         first = @checks.index(expected.first)
@@ -611,7 +615,7 @@ module RevaerDatabaseRebaseline
 
         files << evidence
         dependency_observation_cases(directory).each do |name, role, count|
-          path = File.join(@contract.output_path, directory, "#{name}.json")
+          path = File.join(current, "#{name}.json")
           record, evidence = dependency_read_observation(path, registry)
           calls = dependency_observation_frames(record, role, count)
 

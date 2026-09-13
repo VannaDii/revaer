@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-13T03:30:19.200237+00:00",
+  "generated": "2026-09-13T03:55:48.128765+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4883,6 +4883,7 @@
         "observed-conflicts",
         "policy-identity-and-native-proof-checkpoint-2026-09-11",
         "settings-path-proof-2026-09-12",
+        "size-and-domain-boundaries-2026-09-12",
         "task-record",
         "validation-guard-checkpoint-2026-09-11",
         "wrapper-and-warm-cache-proof-checkpoint-2026-09-11"
