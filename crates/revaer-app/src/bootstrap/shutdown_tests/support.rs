@@ -23,6 +23,30 @@ pub(super) struct CapturedEvent {
 }
 
 impl CapturedEvent {
+    pub(super) fn matches_message(&self, level: Level, message: &str) -> bool {
+        self.level == level
+            && self
+                .fields
+                .get("message")
+                .is_some_and(|value| value == message)
+    }
+
+    pub(super) fn watcher_warning(message: &str) -> Self {
+        Self {
+            level: Level::WARN,
+            fields: BTreeMap::from([("message".to_owned(), message.to_owned())]),
+        }
+    }
+
+    pub(super) fn watcher_deadline() -> Self {
+        let mut event =
+            Self::watcher_warning("config watcher task aborted during bootstrap shutdown");
+        event
+            .fields
+            .insert("reason".to_owned(), "shared_shutdown_deadline".to_owned());
+        event
+    }
+
     pub(super) fn join(level: Level, task: &str, id: Id, panicked: bool) -> Self {
         let message = if level == Level::INFO {
             "runtime task cancelled after shutdown abort request"
@@ -159,7 +183,7 @@ pub(super) async fn wait_finished<T>(task: &JoinHandle<T>) -> anyhow::Result<()>
     Ok(())
 }
 
-pub(super) async fn poll_pending(future: impl Future<Output = ()>) {
+pub(super) async fn poll_pending(future: impl Future) {
     tokio::pin!(future);
     std::future::poll_fn(|context| {
         assert!(

@@ -361,9 +361,10 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
     } = dependencies;
 
     let addr = bootstrap_listener_addr(&snapshot.app_profile, &telemetry, &events)?;
+    let (shutdown, receiver) = runtime_shutdown::channel();
 
     #[cfg(feature = "libtorrent")]
-    let (fsops_worker, config_task, torrent_handles) = {
+    let (fsops_worker, mut config_task, torrent_handles) = {
         let libtorrent = libtorrent.ok_or(AppError::MissingDependency { name: "libtorrent" })?;
         let (_engine, orchestrator, worker) = spawn_libtorrent_orchestrator(
             &events,
@@ -382,6 +383,7 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
             Arc::clone(&orchestrator),
             events.clone(),
             telemetry.clone(),
+            receiver.clone(),
         );
         (worker, config_task, Some(handles))
     };
@@ -419,29 +421,21 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
         &telemetry,
         media_workspace_root,
         native_process_supervisor,
+        receiver,
     );
     info!(addr = %addr, "Launching API listener");
 
     let serve_result = api.serve(addr).await;
 
-    request_media_runtime_shutdown(&media_runtime_tasks);
+    request_runtime_shutdown(&shutdown);
+    #[cfg(feature = "libtorrent")]
+    stop_config_watch_task(&mut config_task, &shutdown).await;
     stop_runtime_task(indexer_runtime_task, "indexer").await;
     stop_runtime_task(import_job_runtime_task, "import_job").await;
-    stop_media_runtime_tasks(media_runtime_tasks).await;
+    stop_media_runtime_tasks(media_runtime_tasks, &shutdown).await;
 
     #[cfg(feature = "libtorrent")]
-    {
-        stop_runtime_task(fsops_worker, "fsops").await;
-
-        if config_task.is_finished() {
-            if let Err(err) = config_task.await {
-                log_runtime_task_join_error(&err, "config_watcher", false);
-            }
-        } else {
-            config_task.abort();
-            warn!("config watcher task aborted during bootstrap shutdown");
-        }
-    }
+    stop_runtime_task(fsops_worker, "fsops").await;
 
     serve_result.map_err(|err| AppError::api_server("api_server.serve", err))?;
     info!("API server shutdown complete");
@@ -449,7 +443,6 @@ async fn run_bootstrap_services(dependencies: BootstrapDependencies) -> AppResul
 }
 
 struct MediaRuntimeTasks {
-    shutdown: runtime_shutdown::RuntimeShutdownSender,
     discovery: tokio::task::JoinHandle<()>,
     job: tokio::task::JoinHandle<()>,
     retention: tokio::task::JoinHandle<()>,
@@ -461,8 +454,8 @@ fn spawn_media_runtime_tasks(
     telemetry: &Metrics,
     media_workspace_root: PathBuf,
     native_process_supervisor: Arc<dyn NativeProcessSupervisor>,
+    receiver: runtime_shutdown::RuntimeShutdownReceiver,
 ) -> MediaRuntimeTasks {
-    let (shutdown, receiver) = runtime_shutdown::channel();
     let media_store = MediaStore::new(config.pool().clone());
     let discovery =
         MediaDiscoveryRuntime::new(media_store.clone(), telemetry.clone()).spawn(receiver.clone());
@@ -483,25 +476,72 @@ fn spawn_media_runtime_tasks(
         MediaRetentionRuntime::new(media_store, media_workspace_retention, telemetry.clone())
             .spawn(receiver);
     MediaRuntimeTasks {
-        shutdown,
         discovery,
         job,
         retention,
     }
 }
 
-fn request_media_runtime_shutdown(tasks: &MediaRuntimeTasks) {
-    if runtime_shutdown::request(&tasks.shutdown) {
+fn request_runtime_shutdown(shutdown: &runtime_shutdown::RuntimeShutdownSender) {
+    if runtime_shutdown::request(shutdown) {
         info!("media runtime shutdown requested");
     } else {
         warn!("media runtime shutdown requested after receivers closed");
     }
 }
 
-async fn stop_media_runtime_tasks(tasks: MediaRuntimeTasks) {
-    stop_runtime_task_gracefully(tasks.discovery, "media_discovery", &tasks.shutdown).await;
-    stop_runtime_task_gracefully(tasks.job, "media_job", &tasks.shutdown).await;
-    stop_runtime_task_gracefully(tasks.retention, "media_retention", &tasks.shutdown).await;
+async fn stop_media_runtime_tasks(
+    tasks: MediaRuntimeTasks,
+    shutdown: &runtime_shutdown::RuntimeShutdownSender,
+) {
+    stop_runtime_task_gracefully(tasks.discovery, "media_discovery", shutdown).await;
+    stop_runtime_task_gracefully(tasks.job, "media_job", shutdown).await;
+    stop_runtime_task_gracefully(tasks.retention, "media_retention", shutdown).await;
+}
+
+#[cfg(any(feature = "libtorrent", test))]
+async fn stop_config_watch_task(
+    task: &mut tokio::task::JoinHandle<()>,
+    shutdown: &runtime_shutdown::RuntimeShutdownSender,
+) {
+    tokio::select! {
+        biased;
+        result = &mut *task => {
+            if let Err(error) = result {
+                log_runtime_task_join_error(&error, "config_watcher", false);
+            }
+        }
+        elapsed = runtime_shutdown::deadline_elapsed(shutdown) => {
+            task.abort();
+            match elapsed {
+                Ok(()) => warn!(
+                    reason = "shared_shutdown_deadline",
+                    "config watcher task aborted during bootstrap shutdown"
+                ),
+                Err(error) => warn!(
+                    error = %error,
+                    task = "config_watcher",
+                    "runtime shutdown authority closed before deadline observation"
+                ),
+            }
+            // No time remains for another grace or an unbounded post-abort join.
+            // Keep the handle with bootstrap and report only an observed outcome.
+            let joined = std::future::poll_fn(|context| {
+                std::task::Poll::Ready(std::future::Future::poll(
+                    std::pin::Pin::new(&mut *task), context,
+                ))
+            }).await;
+            match joined {
+                std::task::Poll::Ready(Ok(())) => {}
+                std::task::Poll::Ready(Err(error)) => {
+                    log_runtime_task_join_error(&error, "config_watcher", true);
+                }
+                std::task::Poll::Pending => {
+                    warn!("config watcher task settlement unconfirmed after shutdown abort request");
+                }
+            }
+        }
+    }
 }
 
 async fn stop_runtime_task<T>(task: tokio::task::JoinHandle<T>, task_name: &'static str) {
@@ -732,6 +772,7 @@ fn spawn_config_watch_task<E>(
     orchestrator: Arc<crate::orchestrator::TorrentOrchestrator<E>>,
     events: EventBus,
     telemetry: Metrics,
+    mut shutdown: runtime_shutdown::RuntimeShutdownReceiver,
 ) -> tokio::task::JoinHandle<()>
 where
     E: TorrentEngine + EngineConfigurator + 'static,
@@ -741,8 +782,9 @@ where
         let mut config_degraded = false;
         loop {
             let wait_started = Instant::now();
-            match watcher.next().await {
-                Ok(snapshot) => {
+            let result = Box::pin(config_watch_step(
+                watcher.next(),
+                |snapshot| async {
                     telemetry.observe_config_watch_latency(wait_started.elapsed());
                     apply_config_snapshot(
                         snapshot,
@@ -753,7 +795,13 @@ where
                         APPLY_SLA,
                     )
                     .await;
-                }
+                },
+                &mut shutdown,
+            ))
+            .await;
+            match result {
+                Ok(std::ops::ControlFlow::Continue(())) => {}
+                Ok(std::ops::ControlFlow::Break(())) => break,
                 Err(err) => {
                     telemetry.inc_config_update_failure();
                     warn!(error = %err, "configuration watcher terminated");
@@ -763,6 +811,26 @@ where
             }
         }
     })
+}
+
+#[cfg(any(feature = "libtorrent", test))]
+async fn config_watch_step<T, E, A: std::future::Future<Output = ()>>(
+    next: impl std::future::Future<Output = Result<T, E>>,
+    apply: impl FnOnce(T) -> A,
+    shutdown: &mut runtime_shutdown::RuntimeShutdownReceiver,
+) -> Result<std::ops::ControlFlow<()>, E> {
+    let update = tokio::select! {
+        biased;
+        () = runtime_shutdown::changed(shutdown) => return Ok(std::ops::ControlFlow::Break(())),
+        update = next => update?,
+    };
+    // Drain can latch while next is polled. This check admits the snapshot;
+    // once admitted, its serial apply (including limits ACK) must finish.
+    if runtime_shutdown::requested(shutdown) {
+        return Ok(std::ops::ControlFlow::Break(()));
+    }
+    apply(update).await;
+    Ok(std::ops::ControlFlow::Continue(()))
 }
 
 #[cfg(feature = "libtorrent")]

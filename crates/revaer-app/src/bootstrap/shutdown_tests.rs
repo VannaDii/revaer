@@ -81,12 +81,11 @@ async fn sequential_media_stops_do_not_replenish_expired_authority() -> anyhow::
     .collect();
     let shutdown = shutdown_after(Duration::ZERO);
     let tasks = MediaRuntimeTasks {
-        shutdown,
         discovery,
         job,
         retention,
     };
-    let events = capture(stop_media_runtime_tasks(tasks)).await?;
+    let events = capture(stop_media_runtime_tasks(tasks, &shutdown)).await?;
     assert_eq!(events, expected);
     for drops in [discovery_drops, job_drops, retention_drops] {
         assert_eq!(drops.load(Ordering::SeqCst), 1);
@@ -102,13 +101,14 @@ fn bootstrap_requests_shared_shutdown_before_waiting_for_any_runtime() -> anyhow
         .ok_or_else(|| anyhow::anyhow!("bootstrap serve boundary missing"))?
         .1;
     let request = scope
-        .find("request_media_runtime_shutdown(&media_runtime_tasks);")
+        .find("request_runtime_shutdown(&shutdown);")
         .ok_or_else(|| anyhow::anyhow!("bootstrap shutdown request missing"))?;
     for stop in [
         "stop_runtime_task(indexer_runtime_task",
         "stop_runtime_task(import_job_runtime_task",
-        "stop_media_runtime_tasks(media_runtime_tasks)",
+        "stop_media_runtime_tasks(media_runtime_tasks, &shutdown)",
         "stop_runtime_task(fsops_worker",
+        "stop_config_watch_task(&mut config_task, &shutdown)",
     ] {
         assert!(
             request
@@ -385,11 +385,11 @@ async fn finished_config_join_retains_real_error_and_warning() -> anyhow::Result
 }
 
 #[test]
-fn held_config_abort_drop_path_is_unchanged() {
+fn bootstrap_watcher_uses_the_shared_authority_and_owned_join() {
     let source = include_str!("../bootstrap.rs");
-    assert!(source.contains(
-        "} else {\n            config_task.abort();\n            warn!(\"config watcher task aborted during bootstrap shutdown\");\n        }"
-    ));
-    assert!(!source.contains("stop_runtime_task(config_task"));
-    assert!(!source.contains("stop_runtime_task_gracefully(config_task"));
+    assert!(source.contains("stop_config_watch_task(&mut config_task, &shutdown).await;"));
+    assert!(!source.contains("config_task.abort();"));
 }
+
+#[path = "shutdown_tests/config_watcher.rs"]
+mod config_watcher;

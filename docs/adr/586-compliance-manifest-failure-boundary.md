@@ -902,3 +902,92 @@ Both exact parent database names and the UI listener were confirmed absent,
 managed test-media cleanup passed, and the completed clean worker worktree was
 removed. The user checkout and conflicts remain untouched. No new architectural
 approval, criteria relaxation, GitHub mutation, upload or merge occurred.
+
+### Owned Configuration-Watcher Shutdown (2026-09-13)
+
+- Status: bounded implementation and focused verification; parent integration
+  and full gates remain pending. Assigned clean base `0ef147c0`, isolated branch
+  `work/media3-config-owned-shutdown`. This is parent delegation under actual
+  ADR 588 S2/LIFE-1 approval at reviewed `9575c077`, not new operator approval.
+  ADR 559 G1 and the exact approved appendices remain binding; ADR 589 remains
+  Proposed with no REGISTER_HASH field/deadline change.
+- Motivation: replace bootstrap's unconditional idle-watcher abort/drop path
+  after the shared-authority, completed ApplyConfig/UpdateLimits ACK and old
+  engine-profile publication prerequisites. The eight actual watcher WARNs in
+  the retained `132a7fbc` full-CI evidence are historical counterevidence, not
+  erased or represented as retested by this database-free assignment.
+- Design: bootstrap constructs its existing shared shutdown channel before
+  spawning the watcher and passes the same receiver authority to media tasks.
+  It requests drain after serving returns, before any background wait. The
+  watcher prioritizes drain over its next-update future and rechecks the latch
+  after that future resolves. This final check is snapshot admission; an already
+  admitted snapshot retains its serial, awaited application and limits result.
+  No second refresh or queue is introduced. Existing apply/health reporting and
+  the old-profile publication boundary remain unchanged.
+- Owned join: bootstrap retains the watcher handle and waits cooperatively
+  against the same dynamically shortening absolute deadline. Expiry requests
+  abort and polls the join once without waiting again; a pending join remains
+  explicitly unconfirmed. The handle stays with bootstrap until scope teardown.
+  Neither abort nor that later handle drop is reported as completed settlement.
+  Actual successful, cancelled and panicked joins retain their real outcomes.
+  `runtime_shutdown.rs`, its first origin and the 30-second budget are unchanged;
+  there is no new per-task grace or unbounded watcher join.
+- Observability: retain the original watcher-abort WARN, now with
+  `reason=shared_shutdown_deadline`; add WARN for settlement still unconfirmed
+  after the abort request. Genuine external cancellation/panic remains WARN;
+  only an observed locally requested cancellation uses the existing INFO
+  classification. Authority-observation failure remains WARN. No failure message
+  or application acknowledgement is weakened to remove the original warning.
+- Test coverage: `just test-runtime-shutdown` exercises idle owned join,
+  prelatched drain, a ready-update/drain race, drain during the next future's
+  poll, no subsequent admission, completed in-flight success/failure, live
+  deadline shortening and expiry without replenishment, abort without a second
+  wait, and genuine join success/cancellation/panic. Four libtorrent-feature
+  cases run the real `apply_config_snapshot` and orchestrator against injected
+  engine application/limits replies, checking pending acknowledgements, retained
+  failure/health events and no false success before cooperative exit. The
+  all-feature and no-default-feature suites pass 29 and 25 tests respectively,
+  with zero failures/ignored tests. All four `just lint-runtime-shutdown`
+  invocations pass; final formatting, instruction drift and whitespace checks
+  are retained with the focused evidence.
+- First-failure history: retain the two original bootstrap-wiring failures;
+  the initial lending-closure Send compilation failure; test failures caused by
+  an intentionally dropped observer and by assuming the existing generic
+  AppError Display exposed its typed source; and the first strict lint failure.
+  The final helper accepts one next/apply future at a time. The 18,920-byte
+  composed future uses the existing `Box::pin` pattern, and test helpers are
+  smaller and Send-compatible. The corrected event assertion is exact for the
+  existing generic text; controlled apply/limits failures still require WARN,
+  degraded health and absence of a successful acknowledgement. No timer was
+  increased, assertion disabled, warning suppressed or criterion relaxed.
+- Limitations: these are injected-future/collaborator tests, not a live database
+  listener or full bootstrap reproduction. Local arm64 libtorrent 2.1.1 compiles,
+  but no native operation, Linux package, coverage or PID1 qualification follows.
+  Listener/pool closure, native worker/session/destructor settlement, queued
+  command shutdown outcomes, blocking work, startup-error teardown, revision-wide
+  atomicity, independent PID1 enforcement and recovery remain explicit S2 work.
+  A forced watcher abort can abandon observation of admitted native work; that
+  is unconfirmed settlement, never cancellation/rollback/success of that work.
+  Other runtime post-abort joins retain their prior behavior. Parent owns D3 and
+  the final integrated `just ci`/`just ui-e2e`; neither ran here.
+- Risk and rollback: this closes watcher admission and allows genuine
+  cooperative exit, without bounding a blocked executor, logger or destructor.
+  Revert the watcher/channel-wiring/test change together if necessary; preserve
+  the failure evidence and do not relabel the prior abort/drop path as clean.
+- Dependency rationale: existing standard-library futures/ControlFlow, Tokio
+  watch/time/task handles and test oneshots only. No manifest, dependency,
+  architecture, numerical limit, queue, parallel refresh or gate change.
+- Stale-policy check: root AGENTS, scoped Rust/FFI instructions, ADR 559 G1,
+  ADR 588 approval resolution and exact S2/LIFE-1 appendices were reviewed before
+  code. Their dated approval banners do not reopen historical design holds.
+  Matching Rust guidance now states this watcher invariant and remaining S2
+  obligations; no policy contradiction was removed by relaxing a rule. Parent
+  checkout, database evidence/scripts, ADR 569, ledgers and indexes are untouched.
+- Evidence and cleanup: bounded archive outside the worktree at
+  `/private/tmp/revaer-config-owned-shutdown-evidence.tar.gz` retains source
+  snapshots/deltas, exact commands, first-failure/corrected logs, tool/native
+  identities and cleanup receipts. No database, container, listener, media,
+  credential/private-environment read, Node, browser, remote operation, upload
+  or new agent was needed. Test-owned temporary directories and task handles
+  are closed; owned build output is removed after evidence sealing, leaving the
+  committed worktree clean for parent integration/removal.

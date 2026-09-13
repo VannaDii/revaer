@@ -422,7 +422,7 @@ async fn run_bootstrap_services_surfaces_bind_failures_for_valid_snapshot() -> A
 }
 
 #[cfg(feature = "libtorrent")]
-mod libtorrent_tests {
+pub(super) mod libtorrent_tests {
     use super::*;
     use crate::engine_config::EngineRuntimePlan;
     use async_trait::async_trait;
@@ -581,7 +581,7 @@ mod libtorrent_tests {
         }
     }
 
-    fn sample_snapshot() -> ConfigSnapshot {
+    pub(in crate::bootstrap) fn sample_snapshot() -> ConfigSnapshot {
         let engine_profile = sample_engine_profile();
         ConfigSnapshot {
             revision: 3,

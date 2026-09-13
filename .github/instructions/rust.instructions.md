@@ -65,6 +65,13 @@ If any Rust-path rule in this file conflicts with `AGENTS.md`, the root contract
   must not allocate fresh per-task grace. Preserve warnings and real join
   classification. This local timer authority does not qualify independent
   PID1 enforcement, post-abort/native/configuration settlement or recovery.
+- Bootstrap's configuration watcher shares that same authority with the media
+  tasks. Stop polling and recheck drain before admitting a snapshot; once
+  admitted, await its existing serial apply and completed limits result. Join
+  cooperatively before the same shrinking cutoff, with no unbounded post-abort
+  wait or fresh grace. Preserve WARN for deadline/abort, unconfirmed settlement
+  and genuine join failure. A watcher join does not prove listener/pool, native
+  worker/destructor, revision-wide or PID1 quiescence; those S2 obligations remain.
 - ADR 586/588's E2E serving entry and its launch selection belong only in
   `cfg(test)` app bootstrap code. It must invoke the shared typed compliance
   preflight with an explicit test loader, then run the real application without
