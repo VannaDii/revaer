@@ -194,6 +194,7 @@ module RevaerDatabaseRebaseline
     def sample_race_wait_sql(database, caller, locked)
       writer = locked.fetch("context")
       <<~SQL
+        \\set VERBOSITY verbose
         DO $$ BEGIN NULL; END $$;
         SET statement_timeout = '5s';
         SELECT json_build_object('reader', #{sample_race_context_sql}, 'query_bytes', pg_size_bytes(current_setting('track_activity_query_size')),
@@ -203,7 +204,7 @@ module RevaerDatabaseRebaseline
             FROM pg_stat_activity a WHERE a.pid = #{Integer(caller.fetch('pid'))} AND a.datname = #{literal(database)}) r),
           'locks', (SELECT COALESCE(json_agg(row_to_json(r) ORDER BY to_jsonb(r)::text), '[]') FROM
             (SELECT pid, locktype, mode, granted, relation::bigint AS relation, page, tuple, transactionid::text AS transaction
-             FROM pg_locks WHERE pid IN (#{Integer(caller.fetch('pid'))}, #{Integer(writer.fetch('pid'))}) r))::text;
+             FROM pg_locks WHERE pid IN (#{Integer(caller.fetch('pid'))}, #{Integer(writer.fetch('pid'))})) r))::text;
       SQL
     end
 

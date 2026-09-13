@@ -67,6 +67,8 @@ module RevaerDatabaseRebaseline
       assert(!sample_race_seed_sql.match?(/DISABLE|session_replication_role|SET CONSTRAINTS|INSERT INTO public\.canonical_[^;]*OVERRIDING/m), "no disabled constraints or replaced identities")
       wait_query = sample_race_wait_sql("numeric-oid-control", { "pid" => 11 }, { "context" => { "pid" => 12 } })
       assert(wait_query.include?("relation::bigint AS relation"), "lock relation OIDs must use the same numeric JSON representation as tuples")
+      assert(wait_query.include?("FROM pg_locks WHERE pid IN (11, 12)) r))::text;"), "lock list and derived relation must both close before the alias")
+      assert(wait_query.start_with?("\\set VERBOSITY verbose\n"), "retain full native observer SQL diagnostics")
       rejected("unknown compilation mode") { sample_race_session("warm-fixed") }
     end
 

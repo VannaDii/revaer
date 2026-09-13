@@ -1779,6 +1779,10 @@ and four paired cases. K3 then exposes PostgreSQL OID JSON string encoding in
 the writer's tuple metadata. Both source queries now explicitly cast relation
 OIDs to bigint; the numeric validator remains strict. That failed run and its
 passing K2 report are retained separately. No application SQL behavior changed.
+The next run on `817277eb` also completes K2 and catches a missing derived-table
+delimiter in K3's generated lock query (`42601`). The query and original error
+are retained; the delimiter and full observer diagnostics are covered by focused
+regressions. These are harness corrections, not changes to accepted outcomes.
 
 Checkpoint documentation validation also encountered the EBU R128 landing
 page's 403 response. Its citation now points to the official recommendation
