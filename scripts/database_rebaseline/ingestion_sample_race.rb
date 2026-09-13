@@ -139,13 +139,13 @@ module RevaerDatabaseRebaseline
       source = sample_race_routine(variant).fetch("source")
       sample_race_require!(original.fetch("source") == source && original.fetch("definition").scan(source).one?, "exact installed source changed")
       changed = sample_race_instrument(source)
+      definition = original.fetch("definition").sub(source) { changed }
       if observed
-        definition = original.fetch("definition").sub(source, changed)
         install = metadata_transport(definition, database, "postgres", "#{name}-observer")
         sample_race_require!(install.values.all?(&:empty?), "observer install diagnostic")
       end
       after = metadata_read_parse(metadata_transport(query, database, "postgres", "#{name}-definition-check"))
-      expected = observed ? { "source" => changed, "definition" => original.fetch("definition").sub(source, changed) } : original
+      expected = observed ? { "source" => changed, "definition" => definition } : original
       sample_race_require!(after == expected, "observer altered unrelated definition bytes")
       { "original_sha256" => Digest::SHA256.hexdigest(source),
         "tested_sha256" => Digest::SHA256.hexdigest(observed ? changed : source) }

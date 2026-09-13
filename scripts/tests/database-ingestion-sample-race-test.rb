@@ -53,6 +53,7 @@ module RevaerDatabaseRebaseline
         assert(source.lines.length == changed.lines.length, "observer preserves original native line coordinates")
         assert(changed.lines.zip(source.lines).count { |left, right| left != right } == 1, "exact single-line disposable NOTICE insertion")
         assert(changed.sub(/RAISE NOTICE 'ingestion-sample-race:.*?; /, "") == source, "observer restores exact source bytes")
+        sample_test_definition_roundtrip!(variant, source, changed)
         %w[OFFSET\ 25 sample_count\ >\ 0 percentile_cont(0.5) ON\ CONFLICT\ DO\ NOTHING].each do |token|
           rejected("source site changed") { sample_race_instrument(source.sub(token, "altered")) }
         end
@@ -70,6 +71,27 @@ module RevaerDatabaseRebaseline
       assert(wait_query.include?("FROM pg_locks WHERE pid IN (11, 12)) r))::text;"), "lock list and derived relation must both close before the alias")
       assert(wait_query.start_with?("\\set VERBOSITY verbose\n"), "retain full native observer SQL diagnostics")
       rejected("unknown compilation mode") { sample_race_session("warm-fixed") }
+    end
+
+    def sample_test_definition_roundtrip!(variant, source, changed)
+      assert(source.include?("\\\\"), "frozen SQL must discriminate literal replacement from backslash interpretation")
+      prefix = "CREATE FUNCTION public.observer_control() RETURNS void LANGUAGE plpgsql AS $probe$"
+      suffix = "$probe$;"
+      installed = nil
+      probe = dup
+      probe.define_singleton_method(:metadata_transport) do |query, *_args|
+        if query.start_with?("SELECT json_build_object('source'")
+          definition = installed || prefix + source + suffix
+          body = definition.delete_prefix(prefix).delete_suffix(suffix)
+          { "stdout" => JSON.generate({ "source" => body, "definition" => definition }) + "\n", "stderr" => "" }
+        else
+          installed = query
+          { "stdout" => "", "stderr" => "" }
+        end
+      end
+      result = probe.send(:sample_race_definition!, "unit", variant, "literal-control", observed: true)
+      assert(installed == prefix + changed + suffix, "observer installation preserves every original SQL escape literally")
+      assert(result.fetch("tested_sha256") == Digest::SHA256.hexdigest(changed), "installed observer bytes match retained source hash")
     end
 
     def sample_test_context(pid, transaction, second, role, application)
