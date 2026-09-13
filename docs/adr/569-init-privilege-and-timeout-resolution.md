@@ -848,3 +848,47 @@ proof, independent recheck and gate evidence are archived under
 `artifacts/media-verification/2026-09-12-d3-hash-fill/`; the earlier pending-run
 statements above remain dated history, not the current result. No remote or
 release acceptance is established, and remaining D3 work continues separately.
+
+## Changed Metadata Proof (2026-09-12)
+
+This continued D3 task covers three finite serial cases: replacing all 16
+non-D5 typed observation values, adding eight previously absent attributes,
+and appending conflicts beside existing conflicts with a stale observation
+and a 512-character tracker. Independent models specify all 18 write tables,
+19 read tables and defaults, and six affected sequence counters. Each case
+runs cold and helper-first against reference and final schemas, with a real
+fixture backend, whole rollback, same-backend retry and committed reuse.
+
+The author commit `a6fb4bcc` passed 12,851 assertions and 12 live variants
+with 243 checks, including 19 metadata checks. Independent review then found
+two false acceptances: duplicate JSON fields discarded before validation and
+coherently impossible clocks accepted through evidence registration. These
+findings invalidate any claim that the original validator closed those cases.
+The two-file correction `0caaf40c` rejects all 36 original actionable witnesses;
+12,927 assertions and 37 producer controls pass using retained transports.
+That replay is not fresh PostgreSQL execution or independent approval of the
+correction. Parent review also requires compatibility with older JSON runtimes,
+without relaxing duplicate-key rejection; that correction and the integrated
+gates remain in progress.
+
+The metadata owner retains unique raw SQL/stdout/stderr directories and only
+registers successfully validated bytes. The original findings and later
+authored corrections remain separate evidence. The author's first failed
+live run lost its shared correction-output bytes to a retry; surviving shared
+bytes prove only that later run. This provenance gap cannot be reconstructed
+or relabeled. Parent source fingerprints now also include the loaded ASSET-1
+guard; historical counts and hashes remain historical.
+
+Frozen ingestion only appends conflict, audit and health rows; conflict
+resolution/reopen updates are not in this call path. A valid serial non-NULL
+durable attribute cannot enter the guarded conflict-update branch. Neither
+observation proves concurrent behavior or complete helper/native closure.
+The exact frozen third-call D4 failure remains visible, as do the literal
+backslash suffix and NULL-distinct duplicate signals. D3 stays incomplete.
+
+No SQL, init authority, runtime behavior or telemetry changed. Rollback removes
+only this proof increment. Dependencies remain existing tools and Ruby standard
+libraries. Root, data, Rust, DevOps and Sonar instructions and ADR 588 were
+reviewed; no approval, criterion or threshold was weakened. Full clean CI/UI,
+canonical Sonar with positive published coverage, native packages and current
+PR acceptance remain separate requirements.

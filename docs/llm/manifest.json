@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-13T01:15:10.675992+00:00",
+  "generated": "2026-09-13T01:24:41.996114+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4872,6 +4872,7 @@
         "approved-correction-comparison-checkpoint-2026-09-11",
         "approved-d1-d2-implementation-checkpoint",
         "attribute-and-signal-proof-2026-09-12",
+        "changed-metadata-proof-2026-09-12",
         "d1-clarify-the-extension-privilege-boundary",
         "d2-function-scoped-reset-lock-bound",
         "d3-function-local-variable-resolution",

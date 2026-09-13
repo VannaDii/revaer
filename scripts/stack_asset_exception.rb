@@ -26,10 +26,23 @@ module RevaerDatabaseRebaseline
 
     class UniqueObject < Hash
       def []=(key, value)
-        raise Failure, "ASSET-1 provider JSON contains a duplicate field" if key?(key)
+        raise JSON::ParserError, "ASSET-1 JSON contains a duplicate field" if key?(key)
 
         super
       end
+    end
+
+    def self.parse_json(source)
+      verify_json_decoder!
+      JSON.parse(source, object_class: UniqueObject, allow_duplicate_key: false)
+    end
+
+    def self.verify_json_decoder!
+      # Old JSON uses the setter; newer JSON can collapse fields before it.
+      JSON.parse('{"outer":{"field":null,"\\u0066ield":true}}', object_class: UniqueObject, allow_duplicate_key: false)
+      raise Failure, "ASSET-1 JSON parser lacks duplicate-field rejection"
+    rescue JSON::ParserError
+      nil
     end
 
     def initialize(root:, runner:)
@@ -85,7 +98,7 @@ module RevaerDatabaseRebaseline
       command = ["gh", "api", "--hostname", "github.com", "graphql", "-f", "query=#{QUERY}"]
       command.concat(["-f", "cursor=#{cursor}"]) if cursor
       raw = @runner.run!(command, chdir: @root)
-      page = object(JSON.parse(raw, object_class: UniqueObject))
+      page = object(self.class.parse_json(raw))
       ensure!(!page.key?("errors"), "provider returned GraphQL errors")
       page
     end
@@ -168,7 +181,7 @@ module RevaerDatabaseRebaseline
 
     def inventory!
       source = File.read(File.join(@contract.root, INVENTORY_PATH))
-      document = JSON.parse(source, object_class: AssetPullRequest::UniqueObject)
+      document = AssetPullRequest.parse_json(source)
       raise Failure, "ASSET-1 inventory document is malformed" unless document.is_a?(Hash)
 
       inventory = document.fetch("binaryDeletions")

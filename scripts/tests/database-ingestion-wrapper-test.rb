@@ -9,6 +9,9 @@ module RevaerDatabaseRebaseline
       assert(cases.length == 32 && cases.map { |item| item.fetch(:name) }.uniq.length == 32, "retain distinct wrapper/scoring/page/size/identity/hash-fill cases")
       assert(IngestionProof::INGESTION_HELPERS.include?("search_result_ingest"), "inventory must include the actual Rust wrapper")
       assert(IngestionWrapper::WRAPPER_MODES == %w[cold helpers-first warm-rollback], "retain independent cold and warm compilation modes")
+      guard_path = "scripts/stack_asset_exception.rb"
+      assert(wrapper_source_hashes.fetch(guard_path) == Digest::SHA256.file(File.join(@contract.root, guard_path)).hexdigest,
+        "retain the loaded changed-line guard in proof source provenance")
       cases.each do |test_case|
         calls = [test_case.fetch(:arguments)] * 2
         query = correction_session(name: "wrapper-test", calls:, wrapper: test_case.fetch(:wrapper), rollback: true)

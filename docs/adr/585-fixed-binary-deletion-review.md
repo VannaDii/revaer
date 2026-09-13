@@ -286,6 +286,14 @@ This continuation implements only the ASSET-1 scope actually approved in
   corrections against an explicitly synthetic provider. Its files are removed
   on exit. `just policy` passed before that final real-Git case was added; the
   updated focused test passed afterward. Combined CI/UI results remain pending.
+  A subsequent cross-runtime probe found that newer JSON can collapse duplicate
+  fields before invoking a custom object setter. The guard now combines native
+  rejection with that setter and behaviorally rejects a runtime that honors
+  neither. Contradictory provider/inventory fields and silently ignored decoder
+  controls have explicit regressions. The updated guard passes 96 assertions;
+  the actual decoder preserves valid controls and rejects plain/nested escaped
+  duplicates on Ruby 2.6.10 / JSON 2.1.0 and Ruby 4.0.6 / JSON 2.18.0. These
+  primitive compatibility checks do not qualify the full suite on older Ruby.
 - Live evidence: PR 130 remains open at `6471074e..a3797174`. The new reader
   successfully reads all 26 unfiltered timeline entries with no expiry event.
   The filtered API returned an unfiltered total of 26 with zero selected nodes;

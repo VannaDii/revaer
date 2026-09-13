@@ -56,7 +56,7 @@ module RevaerDatabaseRebaseline
 
     def wrapper_source_hashes
       paths = Dir.glob("scripts/database_rebaseline/*.rb", base: @contract.root) + %w[
-        scripts/database-rebaseline.rb scripts/tests/database-ingestion-proof-test.rb
+        scripts/database-rebaseline.rb scripts/stack_asset_exception.rb scripts/tests/database-ingestion-proof-test.rb
         scripts/tests/database-ingestion-wrapper-test.rb scripts/tests/database-ingestion-identity-test.rb
         scripts/tests/database-ingestion-hash-fill-test.rb scripts/tests/database-ingestion-proof-seed.sql
         scripts/tests/database-ingestion-helper-first.sql config/database-rebaseline.env

@@ -203,6 +203,22 @@ module StackAssetExceptionTest
     assertions.failure(/unavailable/, "failed later page is not complete history") do
       provider(Runner.new(pages: [first], blobs: {})).verify!(BASE, HEAD)
     end
+    raw = JSON.generate(page).sub('"closed":false', '"closed":true,"\\u0063losed":false')
+    assertions.failure(/ASSET-1/, "contradictory escaped provider field cannot be discarded") do
+      provider(Runner.new(pages: [raw], blobs: {})).verify!(BASE, HEAD)
+    end
+  end
+
+  def test_json_decoder(assertions)
+    parser = JSON.method(:parse)
+    JSON.define_singleton_method(:parse) do |source, **options|
+      parser.call(source, **options.reject { |key, _value| %i[object_class allow_duplicate_key].include?(key) })
+    end
+    assertions.failure(/lacks duplicate-field rejection/, "silently ignored decoder controls fail closed") do
+      RevaerDatabaseRebaseline::AssetPullRequest.parse_json('{}')
+    end
+  ensure
+    JSON.define_singleton_method(:parse, parser) if parser
   end
 
   def test_guard(assertions)
@@ -290,6 +306,9 @@ module StackAssetExceptionTest
       end
       File.write(path, JSON.generate({ "binaryDeletions" => INVENTORY.reverse }))
       assertions.failure(/approved identity/, "canonical inventory order drift") { validator.verify!(BASE, HEAD, paths, paths) }
+      duplicate = JSON.generate({ "binaryDeletions" => INVENTORY }).sub('"priorBytes":', '"priorBytes":0,"priorBytes":')
+      File.write(path, duplicate)
+      assertions.failure(/ASSET-1/, "contradictory inventory field cannot be discarded") { validator.verify!(BASE, HEAD, paths, paths) }
       assertions.equal([], runner.commands, "invalid inventory never queries GitHub or Git")
     end
   end
@@ -355,6 +374,7 @@ module StackAssetExceptionTest
   def run
     assertions = Assertions.new
     test_provider(assertions)
+    test_json_decoder(assertions)
     test_guard(assertions)
     test_inventory_integrity(assertions)
     test_real_git_boundary(assertions)
