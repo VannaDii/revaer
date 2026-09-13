@@ -71,6 +71,12 @@ applyTo:
   the final candidate as application or ordinary-test bootstrap authority.
   Preserve the frozen D4 failure separately from the approved final success.
   Passing this bounded pool case does not close D3, cancellation or native scope.
+- Server-cancellation qualification must use the actual Rust wrapper and an
+  observed owned lock wait, not an idle-backend cancellation. Require exact
+  SQLSTATE/message/detail, all 18 unchanged rollback images, restored caller
+  settings, and successful same-pool recovery. Publish the checkpoint atomically
+  before releasing the lock. This does not prove client-future cancellation,
+  every interruption site or complete conditional D3.
 - Runtime trust-rank qualification must reuse the ingestion backend while a
   separate direct writer commits the rank changes. Cover both directions across
   the existing confidence thresholds, preserve all unrelated read/write images,

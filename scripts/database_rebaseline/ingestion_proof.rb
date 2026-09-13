@@ -15,6 +15,7 @@ require_relative "ingestion_disambiguation"
 require_relative "ingestion_sampling"
 require_relative "ingestion_guid"
 require_relative "ingestion_pool"
+require_relative "ingestion_cancellation"
 require_relative "ingestion_runtime_rank"
 
 module RevaerDatabaseRebaseline
@@ -34,6 +35,7 @@ module RevaerDatabaseRebaseline
     include IngestionSampling
     include IngestionGuid
     include IngestionPool
+    include IngestionCancellation
     include IngestionRankProof
     INGESTION_TABLES = %w[
       canonical_torrent canonical_torrent_source canonical_torrent_source_attr
@@ -96,6 +98,7 @@ module RevaerDatabaseRebaseline
       verify_ingestion_sampling!
       verify_ingestion_guid!
       verify_ingestion_pool!
+      verify_ingestion_cancellation!
       verify_ingestion_dependencies!
       verify_ingestion_session_controls!
       verify_existing_ingestion_parity!

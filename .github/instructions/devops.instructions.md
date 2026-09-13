@@ -75,6 +75,13 @@ applyTo:
   table lifetime before normalizing that metadata; never normalize arbitrary
   text, result fields, settings or unobserved timestamps. Successful committed
   observer events do not establish error-path or full helper/trigger closure.
+  Cancellation qualification must use the explicit-input Rust cancellation
+  recipe, an owned disposable loopback database, and its exact observed
+  source-insert lock wait. Retain controller/target identity, the atomic error
+  checkpoint, complete rollback/read-input images and same-pool recovery.
+  Cancel only the observed owned backend; release the lock after the checkpoint.
+  Bound and reap the owned probe process, retain failures, and never classify
+  idle-backend signalling or a guard-only Rust pass as cancellation evidence.
   Include the actual `search_result_ingest` application wrapper in the D3
   inventory and exercise discriminating stored scores, page boundaries and
   size-sample retention. Warm-after-rollback proof must retain the real first

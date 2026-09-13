@@ -11,15 +11,15 @@ const PROOF_INPUT: &str = "REVAER_INGESTION_POOL_PROOF";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Request {
+pub(super) struct Request {
     database_url: String,
-    database: String,
+    pub(super) database: String,
     role: String,
-    report_path: std::path::PathBuf,
+    pub(super) report_path: std::path::PathBuf,
 }
 
 impl Request {
-    fn options(&self) -> anyhow::Result<PgConnectOptions> {
+    pub(super) fn options(&self) -> anyhow::Result<PgConnectOptions> {
         let options = PgConnectOptions::from_str(&self.database_url)?;
         ensure!(
             options.get_host() == "127.0.0.1",
@@ -51,7 +51,7 @@ impl Request {
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
-struct Backend {
+pub(super) struct Backend {
     pid: i32,
     database: String,
     session_role: String,
@@ -63,7 +63,7 @@ struct Backend {
     conflict_setting: Option<String>,
 }
 
-async fn session(pool: &PgPool) -> anyhow::Result<Backend> {
+pub(super) async fn session(pool: &PgPool) -> anyhow::Result<Backend> {
     Ok(sqlx::query_as(
         "SELECT pg_backend_pid() AS pid, current_database() AS database,
          session_user::text AS session_role, current_user::text AS current_role,
@@ -78,7 +78,7 @@ async fn session(pool: &PgPool) -> anyhow::Result<Backend> {
 }
 
 #[derive(Serialize)]
-struct Row {
+pub(super) struct Row {
     canonical: Uuid,
     source: Uuid,
     observation_created: bool,
@@ -88,7 +88,7 @@ struct Row {
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-enum Outcome {
+pub(super) enum Outcome {
     Success {
         row: Row,
     },
@@ -100,7 +100,7 @@ enum Outcome {
     },
 }
 
-fn outcome(result: crate::DataResult<SearchResultIngestRow>) -> anyhow::Result<Outcome> {
+pub(super) fn outcome(result: crate::DataResult<SearchResultIngestRow>) -> anyhow::Result<Outcome> {
     match result {
         Ok(row) => Ok(Outcome::Success {
             row: Row {
@@ -130,7 +130,10 @@ fn outcome(result: crate::DataResult<SearchResultIngestRow>) -> anyhow::Result<O
     }
 }
 
-fn input(request: Uuid, minute: u32) -> anyhow::Result<SearchResultIngestInput<'static>> {
+pub(super) fn input(
+    request: Uuid,
+    minute: u32,
+) -> anyhow::Result<SearchResultIngestInput<'static>> {
     Ok(SearchResultIngestInput {
         search_request_public_id: request,
         indexer_instance_public_id: Uuid::parse_str("56900000-0000-4000-8000-000000000001")?,
@@ -161,11 +164,11 @@ fn input(request: Uuid, minute: u32) -> anyhow::Result<SearchResultIngestInput<'
 }
 
 #[derive(Serialize)]
-struct Frame {
-    name: &'static str,
-    before: Backend,
-    outcome: Outcome,
-    after: Backend,
+pub(super) struct Frame {
+    pub(super) name: &'static str,
+    pub(super) before: Backend,
+    pub(super) outcome: Outcome,
+    pub(super) after: Backend,
 }
 
 async fn observe(pool: &PgPool) -> anyhow::Result<Vec<Frame>> {
@@ -208,7 +211,7 @@ async fn run(request: Request) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn read_request(path: Option<&Path>) -> anyhow::Result<Option<Request>> {
+pub(super) fn read_request(path: Option<&Path>) -> anyhow::Result<Option<Request>> {
     path.map(|path| {
         let file = std::fs::File::open(path)?;
         Ok(serde_json::from_reader(file)?)

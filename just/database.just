@@ -45,6 +45,14 @@ db-init-pool-probe:
         indexers::search_results::pool_proof_tests::application_pool_qualification \
         -- --exact --show-output
 
+# Transition-only cancellation proof, controlled by its disposable database owner.
+db-init-cancellation-probe:
+    test -n "${REVAER_INGESTION_CANCELLATION_PROOF:?Set the explicit disposable cancellation-proof input file}"
+    cargo --config 'build.rustflags=["-Dwarnings"]' test \
+        -p revaer-data --all-features --lib \
+        indexers::search_results::cancellation_proof_tests::application_cancellation_qualification \
+        -- --exact --show-output
+
 stack-changed-lines base_ref head_ref:
     ruby --disable-gems scripts/database-rebaseline.rb changed-lines stack "{{base_ref}}" "{{head_ref}}"
 

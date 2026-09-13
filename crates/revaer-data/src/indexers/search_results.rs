@@ -159,3 +159,7 @@ mod tests;
 #[cfg(test)]
 #[path = "search_results/pool_proof_tests.rs"]
 mod pool_proof_tests;
+
+#[cfg(test)]
+#[path = "search_results/cancellation_proof_tests.rs"]
+mod cancellation_proof_tests;

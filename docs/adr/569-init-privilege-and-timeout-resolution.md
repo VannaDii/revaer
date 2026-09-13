@@ -1359,8 +1359,15 @@ cutover is claimed.
   Its live pair passes the 19 pool checks plus the mandatory D4/D5 matrix.
   The rank worker's 24 live variants passed; review then tightened both writer
   JSON parsers, added duplicate-field mutations and removed a redundant tracked
-  live launcher. Its final focused suite passes 78 assertions. Combined current-
-  source canonical proof and full CI/UI remain pending at this record boundary.
+  live launcher. Its final focused suite passes 78 assertions. At committed
+  `818889e2`, the combined canonical run passes 6,662 of 6,663 checks; the only
+  failure is the retained incomplete-D3 sentinel. Full CI passes with all 18
+  package coverage gates and no warning lines. Full E2E fails with 57 passing,
+  one failing and 72 unrun tests: legacy profile scheduling lacks verified
+  filesystem identity; dependent UI tests do not produce coverage. This is not
+  a fixture bypass opportunity: the approved deployment-owned root contract
+  and coordinated init cutover remain prerequisites. No published Sonar or
+  package pass follows.
 - Retained failures: the first pool oracle confused the generic error message
   with `DETAIL`; frozen source independently confirms both fields, and the
   refined probe preserves and checks them separately. Review also corrected a
@@ -1389,3 +1396,38 @@ cutover is claimed.
   cancellation during ingestion, all cached/helper/native/dynamic paths,
   complete D3, the installed service, S2, either Linux package or release. The
   incomplete-D3 guard, frozen authority and all other acceptance gates remain.
+
+### Rust Ingestion Cancellation Qualification (2026-09-13)
+
+- Motivation: conditional D3 includes cancellation during actual application
+  ingestion, not merely failed requests or idle-backend signalling.
+- Design: in each owned reference/final clone, a separate controller holds a
+  source-table lock. It observes the real Rust wrapper waiting to insert while
+  holding its canonical-write lock, then cancels only that exact backend.
+  An atomic no-clobber checkpoint must retain SQLSTATE `57014`, its exact
+  message/detail, direct role and restored compiler settings before unlocking.
+  All 18 rollback table images and 19 read-input images are retained; the same
+  one-connection pool must subsequently create and persist a valid result.
+  No function, trigger, grant, frozen migration or final-init bytes change.
+- Test coverage: five Rust launch/input/publication tests and strict data-crate
+  all-target/all-feature lint pass. The controller oracle has 223 assertions,
+  including mutated identities, outcomes, table/input images and an unchanged
+  negative control. The first live reference/final pair passes all three new
+  checks and the mandatory D4/D5 matrix. Combined canonical/full gates remain
+  pending; this live run is `818889e2` plus the retained cancellation patch.
+- Observability: retain controller queries, lock wait, checkpoint, full raw
+  stdout/stderr, owned-process settlement, source hashes and table images.
+  These are qualification artifacts; no production logging changes.
+- Risk and rollback: cancel only the observed backend in an explicitly owned
+  disposable database. Bound and reap the owned test process, release its lock
+  on failure, and remove the clone/container. Remove the probe, canonical hook,
+  recipe and matching instructions together if incorrect; never weaken D3.
+- Dependency rationale: existing Rust dependencies and Ruby standard library
+  only. One worker owned the Rust probe; the integration owner implemented the
+  disjoint controller and reviewed the combined result.
+- Stale-policy check: reviewed root, Rust, data, UI and DevOps instructions.
+  Updated data/DevOps for the explicit cancellation entry and evidence boundary.
+  No approval, analyzer criterion or bootstrap authority was changed.
+- Limits: one server-cancelled source-insert boundary is not client-future
+  cancellation, all interruption sites, helper/native closure, complete D3,
+  root workflow, supported-package proof or release completion.
