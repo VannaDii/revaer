@@ -838,3 +838,13 @@ guidance permitting credential defaults was replaced with a reference to the
 already enforced explicit disposable-database input contract. Remaining metadata
 conflict/interleaving and helper/native conditions keep D3 incomplete. Accepted
 architecture still does not authorize premature init cutover or weakened gates.
+
+The reviewed proof and instruction correction are committed as `9c861f2b`.
+The [hash-fill gate checkpoint](586-compliance-manifest-failure-boundary.md#hash-fill-gate-checkpoint-2026-09-12)
+records the fresh full CI/UI results on that clean source: CI exits zero with
+eight watcher WARNs; UI fails at schedule enablement and rejects missing UI
+coverage. Canonical Sonar cannot run without its token. The complete corrected
+proof, independent recheck and gate evidence are archived under
+`artifacts/media-verification/2026-09-12-d3-hash-fill/`; the earlier pending-run
+statements above remain dated history, not the current result. No remote or
+release acceptance is established, and remaining D3 work continues separately.

@@ -486,3 +486,41 @@ under `artifacts/media-verification/2026-09-12-d3-setting-paths/`. Canonical
 The reviewed per-file Ruby/secrets scans are auxiliary evidence only. D3,
 root/scheduling workflow, warning-free shutdown, both native packages and exact
 PR checks/reviews remain required; no criteria or production behavior changed.
+
+### Hash-Fill Gate Checkpoint (2026-09-12)
+
+Full `just ci` on clean `9c861f2b` exits zero, including all 18 unchanged package
+gates, script coverage and the release build. It still emits eight config-watcher
+shutdown WARNs. The prepared-media fixture test remains explicitly ignored in
+the ordinary test and coverage runs; these runs do not replace the required
+unfiltered conversion gate. Full `just ui-e2e` on the same source exits one:
+57 passed, one failed and 72 did not run. Schedule enablement receives 400
+`media_profile_filesystem_identity_required` instead of 200; teardown also
+rejects missing UI coverage. Neither result establishes a clean handoff.
+
+Unmodified Rust LCOV contains 317 source records: 310 first-party Rust files
+and seven external native/macro records. Across all records, 122,294 of 131,488
+line records have hits; first-party counts are 122,231 of 131,114. Real script
+coverage reports 97/97 lines for the new hash-fill proof and 88/88 for its tests.
+The wrapper retains its uncovered lines at 64/158. All raw coverage inputs and
+exports remain evidence, not positive published Sonar metrics.
+
+Canonical `just sonar-scan` again stops before analysis for missing
+`SONAR_TOKEN`. Full-file Ruby MAIN and exact-file secrets scans are auxiliary
+only. The completed gates, raw coverage, UI results and source identities are
+retained under `artifacts/media-verification/2026-09-12-d3-hash-fill/`. The first
+CI attempt, interrupted after independent review findings with exit 130, remains
+separate from this corrected run. Later documentation-only recording does not
+extend the tested executable scope or claim a new full-gate pass.
+
+Both owned databases, `revaer-approved-ci-86d6c176dfb7` and
+`revaer-approved-ui-e2e-f779fd76c9b2`, were removed with their volumes; exact-name
+absence and UI-listener closure were verified. Canonical fixture cleanup passes.
+The user's conflicted checkout is preserved. No PR was pushed or merged, no
+native Linux package is qualified, and D3 remains incomplete. ADR 589 is a
+separate proposed clarification, not an extension of ADR 588's approval.
+
+This is continued validation only: no runtime, dependency, observability or
+criteria changes. Root, DevOps and Sonar instructions were reviewed; this
+checkpoint removes no rule and resolves no failure by documentation. Rollback
+removes only this record; all original failing evidence remains retained.
