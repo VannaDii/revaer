@@ -271,6 +271,16 @@ applyTo:
   installed callbacks, eligible DML and `pg_depend` reachability are not callback
   execution or complete PL/pgSQL late-binding proof. Preserve the explicit
   incomplete-D3 failure until all remaining conditions are independently proved.
+  PostgreSQL 16.14 deliberately disables function statistics for internal RI
+  callbacks even with `track_functions=all`. The exact low-level
+  `pg_stat_get_xact_function_calls(oid)` API does not bypass that decision:
+  NULL means no statistics entry, never zero invocations. Retain pinned-source
+  and real-callback counterexamples separately from tracked C/PL controls;
+  neither those controls nor a test-authored trigger can qualify RI counts.
+  Reject substitutions of the catalog's internal RI symbols, language or
+  signature. Keep paired uninstrumented/profiled application bytes, direct
+  roles/settings and validated producer hashes; this mechanism supplies only
+  a bounded negative result, not a callback trace or D3 closure certificate.
 - Existing-data ingestion proof must create application state through real recorded fixture ingestion, then use a distinct cold tested backend. Retain both stages' results, roles, settings, transaction-clock provenance and all 18 before/after table images; verify fixture continuity and stable identity relationships. Shared reference/final failures remain failed required outcomes, not successful parity. Neither cold reconnects nor timestamp/identity normalization may conceal warm-session defects or unrelated data changes; D4 and D5 need their own exact approvals.
 - The release lock's `cosmiconfig` YAML loader must resolve `js-yaml` outside the vulnerable `4.0.0` through `4.3.1` range in `GHSA-2883-xcg3-v3hh`; `4.3.2` is the minimal patched release. Keep its existing compatible dependency range and audit every committed npm graph at `info` severity after transitive security updates, without exceptions.
 - Prerelease Helm assets must be produced during the semantic-release prepare phase so the packaged chart version matches the dev release version exactly. OCI publication must consume those already-packaged assets after the GitHub release assets exist.

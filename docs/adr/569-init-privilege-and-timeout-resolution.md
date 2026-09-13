@@ -1047,3 +1047,60 @@ missing UI coverage rejected. Rust coverage was not reached by this CI run.
 See [combined gates](586-compliance-manifest-failure-boundary.md#combined-configuration-and-disambiguation-gates-2026-09-13)
 for exact limits and retained evidence. No native deadline or test criterion was
 changed. Frozen authority and conditional D3 remain in force.
+
+## Native Callback Counter Limitation (2026-09-12)
+
+Parent delegated one bounded function-counter investigation on `ac094da9`
+under the existing isolated-investigation goal. This allocation was not a new
+decision-specific human approval and did not authorize another profiler or
+runtime design. PostgreSQL 16.14's
+[function manager](https://raw.githubusercontent.com/postgres/postgres/REL_16_14/src/backend/utils/fmgr/fmgr.c)
+sets built-in/internal functions to the never-track threshold before callback
+dispatch. The pinned
+[statistics implementation](https://raw.githubusercontent.com/postgres/postgres/REL_16_14/src/backend/utils/activity/pgstat_function.c)
+therefore creates no counter for them, even with `track_functions=all`.
+The exact low-level
+[transaction counter API](https://raw.githubusercontent.com/postgres/postgres/REL_16_14/src/backend/utils/adt/pgstatfuncs.c)
+returns NULL for a missing entry. Bypassing the user-function view cannot
+make built-in RI callbacks observable, and NULL must not become zero calls.
+The [trigger caller](https://raw.githubusercontent.com/postgres/postgres/REL_16_14/src/backend/commands/trigger.c)
+also updates usage after normal return, not as an error-surviving entry trace.
+
+The dependency owner now rejects shared reference/final substitutions of RI
+language, native symbol, arguments, result type, library, settings and security
+mode. Its installed/eligible callback records still explicitly deny execution
+proof. Focused unit coverage adds eight substitution rejections and an absent-
+counter limitation check; the 208-assertion suite passes. No new dependency,
+observer trigger, runtime telemetry, production/frozen/init SQL, normalization,
+timer, permanent privilege or approval change is introduced. Rollback removes
+this guard and limitation record only; the incomplete-D3 sentinel remains.
+
+The retained reproduction is under
+`artifacts/media-verification/2026-09-12-d3-callback-counter/`, including pinned
+upstream source bytes, source deltas and individually numbered attempts. It
+uses the existing uniquely owned network-none bootstrap, required D4/D5 matrix
+and the wrapper producer's independently validated bytes and source hashes.
+The exact frozen candidate is recovered from `7fd5df30` and verified against
+the unchanged candidate pin before use. Original import, sandbox and probe-
+framing failures are retained separately, including shared correction outputs
+before retry; none is relabeled as native evidence.
+
+Attempt 04 passes 306 bounded checks. The first-visible application wrapper
+runs cold/helper-first, reference/final and counters disabled/enabled: eight
+validated runs with complete 18-table images, actual results and unchanged
+caller compilation settings. Every profiled C `digest(bytea,text)` control
+increments by exactly one; all three sampled internal RI counters remain
+NULL before and after ingestion. Four separate privileged, isolated inserts
+into the real `canonical_size_sample` table retain SQLSTATE `23503`, the named
+FK and native `ri_ReportViolation` diagnostic, unchanged table images and NULL
+RI counters. These actual native failures are counterexamples to observability,
+not numeric callback counts or evidence for other ingestion branches. No
+test-authored trigger substitutes for RI. Both created containers and named
+volumes were removed; successful removal and exact-name absence receipts are
+retained. This is a precise negative result for this mechanism only.
+
+Stale-policy check: root AGENTS, data and DevOps guidance, ADR 569 and the
+operator's ADR 588 approval boundary were reviewed. DevOps now records this
+counter limitation; no contradictory authority was removed or relaxed. Parent
+owns integration, ledgers/indexes and full CI/UI. No canonical full proof,
+full gates, alternative profiler, native closure or complete D3 is claimed.

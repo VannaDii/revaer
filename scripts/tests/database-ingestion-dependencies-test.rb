@@ -15,6 +15,7 @@ module RevaerDatabaseRebaseline
       assert(true, "synthetic paired graph is accepted")
       dependency_graph_tests!(fixture)
       dependency_drift_tests!(fixture)
+      dependency_callback_counter_tests!(fixture)
       dependency_omission_tests!(fixture)
       dependency_routine_tests!
       dependency_observation_tests!
@@ -152,6 +153,10 @@ module RevaerDatabaseRebaseline
         defaults.merge!(DEPENDENCY_ARRAY_REFERENCES.fetch(catalog, {}).transform_values { nil })
         defaults["relam"] = nil if catalog == "pg_class"
         defaults.merge!("pronamespace" => "pg_catalog", "proname" => "synthetic_callback", "proargtypes" => [], "prosrc" => "synthetic") if catalog == "pg_proc"
+        if catalog == "pg_proc" && (callback = identity.match(/\Apg_catalog\."(RI_FKey_[a-z_]+)"\(\)\z/))
+          defaults.merge!("proname" => callback[1], "prosrc" => callback[1], "prolang" => "internal",
+                          "prorettype" => "pg_catalog.trigger", "probin" => nil, "proconfig" => nil, "prosecdef" => false)
+        end
         value = defaults.merge(value)
         node = { "catalog" => catalog, "oid" => nodes.length + 1, "identity" => identity, "value" => value }
         nodes << node
@@ -630,6 +635,21 @@ module RevaerDatabaseRebaseline
         assert(dependency_native_answers!.keys == %w[reference final], "native transport uses the strict answer validator for both variants")
       end
       @runner = previous
+    end
+
+    def dependency_callback_counter_tests!(fixture)
+      fields = { "pronamespace" => "public", "prolang" => "c", "prosrc" => "test_callback",
+                 "proargtypes" => ["pg_catalog.int8"], "prorettype" => "pg_catalog.void",
+                 "probin" => "$libdir/test", "proconfig" => ["track_functions=all"], "prosecdef" => true }
+      fields.each do |field, replacement|
+        changed = copy(fixture)
+        node = changed.fetch("graph").fetch("nodes").find { |entry| entry.fetch("identity") == 'pg_catalog."RI_FKey_check_ins"()' }
+        node.fetch("value")[field] = replacement
+        # Shared substitutions must fail even when reference and final agree.
+        rejected("FK callback is not the pinned internal entry point") { dependency_validate_dispatch!(dependency_canonical(changed, "final")) }
+      end
+      limit = DEPENDENCY_LIMITS.find { |entry| entry.include?("pg_stat_get_xact_function_calls(oid)") }
+      assert(limit && limit.include?("not zero invocations"), "absent native counters cannot be represented as zero calls")
     end
 
     def dependency_cleanup_tests!

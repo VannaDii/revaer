@@ -57,6 +57,7 @@ module RevaerDatabaseRebaseline
       "Catalog definitions exclude physical statistics and ownership/ACL fields; existing FinalProof privilege and D1 gates remain mandatory.",
       "Native C/internal bodies, RI SPI plans, type I/O and access-method callbacks are anchored to the image and retained native file identities, not PL/pgSQL variable substitution.",
       "Observed row changes establish eligible FK dispatch and known skip inputs, not a direct trace of internal callback entry or every callback branch.",
+      "PostgreSQL 16.14 track_functions=all cannot count built-in/internal RI callbacks: fmgr disables their statistics before dispatch. pg_stat_get_xact_function_calls(oid) returns NULL for an absent entry, not zero invocations; a tracked C/PL function control cannot qualify RI counts.",
       "Parent-side FK slots are installed metadata. Unchanged referenced keys do not establish parent update callback execution; size-sample deletion has no incoming FK in this inventory.",
       "Fixture search_request_indexer_run trigger dispatch is separate from ingestion, which only reads that relation.",
       "Triggers attached to read-only inputs are catalog inventory, not ingestion DML reachability.",
@@ -527,6 +528,7 @@ module RevaerDatabaseRebaseline
       incoming_samples = fks.any? { |node| node.fetch("value").fetch("confrelid") == "public.canonical_size_sample" }
       raise Failure, "size-sample deletion gained parent FK reachability" if incoming_samples
       triggers = nodes.select { |node| node.fetch("identity").first == "pg_trigger" }
+      functions = nodes.select { |node| node.fetch("identity").first == "pg_proc" }.to_h { |node| [node.fetch("identity").last, node.fetch("value")] }
       write_triggers = triggers.select { |node| DEPENDENCY_DML.key?(node.fetch("value").fetch("tgrelid").delete_prefix("public.")) }
       raise Failure, "ingestion write trigger inventory changed" unless write_triggers.length == 118 && write_triggers.all? { |node| node.fetch("value").fetch("tgisinternal") }
       triggers.each do |node|
@@ -546,6 +548,13 @@ module RevaerDatabaseRebaseline
                      "\"RI_FKey_#{name}_#{event}\"()"
                    end
         raise Failure, "unexpected FK trigger function dispatch" unless trigger.fetch("tgfoid") == "pg_catalog.#{function}" && trigger.fetch("tgenabled") == "O"
+
+        callback = functions.fetch(trigger.fetch("tgfoid"))
+        symbol = function.delete_prefix('"').delete_suffix('"()')
+        unless callback.values_at("pronamespace", "prolang", "prosrc", "proargtypes", "prorettype", "probin", "proconfig", "prosecdef") ==
+               ["pg_catalog", "internal", symbol, [], "pg_catalog.trigger", nil, nil, false]
+          raise Failure, "FK callback is not the pinned internal entry point"
+        end
       end
     end
 
