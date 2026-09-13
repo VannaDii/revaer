@@ -12,6 +12,7 @@ module RevaerDatabaseRebaseline
       body = source.split("CREATE OR REPLACE FUNCTION search_result_ingest_v1(", 2).fetch(1).split("AS $$", 2).fetch(1).split("$$;", 2).first
       @ingestion_inventory = { "reference_proof" => { "routines" => [{ "name" => "search_result_ingest_v1", "signature" => "search_result_ingest_v1(uuid)", "source" => body }] } }
       metadata_case_tests!
+      metadata_mutating_helper_tests!
       metadata_mutation_tests!
       metadata_transport_tests!
       metadata_json_tests!
@@ -86,8 +87,20 @@ module RevaerDatabaseRebaseline
         attributes_test_transport([frame], "cold")
       end
       before = prior
+      helper = nil
+      session = metadata_session(spec, mode)
+      if session.key?(:helper_finish)
+        helper = attributes_test_frame(role, fixtures.length + 1, prior, prior)
+        helper.merge!("backend" => "200", "within" => "false", "outside" => "false",
+          "result" => { "helper" => "log_source_metadata_conflict_v1" })
+        changed = metadata_helper_tables(prior, helper.fetch("clock"), counters)
+        helper["tables_after"] = changed
+        helper["tables_finish"] = session.fetch(:helper_finish) == "commit" ? changed : prior
+        %w[source_metadata_conflict source_metadata_conflict_audit_log indexer_health_event].each { |table| counters[table] += 1 }
+        prior = helper.fetch("tables_finish")
+      end
       frames = (0..2).map do |index|
-        frame = attributes_test_frame(role, fixtures.length + index + 1, prior, prior)
+        frame = attributes_test_frame(role, fixtures.length + index + (helper ? 2 : 1), prior, prior)
         frame["backend"] = "200"
         frame["outside"] = (variant == "reference" && index.positive?).to_s
         if variant == "reference" && index == 2
@@ -105,11 +118,18 @@ module RevaerDatabaseRebaseline
         frame
       end
       reads << metadata_test_read(seed_clock, counters)
-      attributes_test_transport(frames, mode).merge("fixtures" => fixtures, "before" => before, "after" => prior, "reads" => reads, "seed_clock" => seed_clock)
+      evidence = { "frames" => frames, "fixtures" => fixtures, "before" => before, "after" => prior, "reads" => reads, "seed_clock" => seed_clock }
+      evidence["mutating_helper"] = helper if helper
+      metadata_refresh!(evidence, mode)
+      evidence
     end
 
     def metadata_refresh!(evidence, mode)
       evidence.merge!(attributes_test_transport(evidence.fetch("frames"), mode))
+      if evidence.key?("mutating_helper")
+        helper = attributes_test_transport([evidence.fetch("mutating_helper")], "cold").fetch("stdout").split("\n", 2).last
+        evidence["stdout"] = "#{helper}metadata-helper-finish\n#{evidence.fetch('stdout')}"
+      end
       evidence.fetch("fixtures").each { |record| record.merge!(attributes_test_transport(record.fetch("frames"), "cold")) }
       evidence.fetch("reads").each { |record| record["stdout"] = JSON.generate(record.fetch("data")) + "\n" }
     end
@@ -145,6 +165,53 @@ module RevaerDatabaseRebaseline
       assert(tables.fetch("search_request_source_observation_attr").find { |row| row.fetch("attr_key") == "tracker_name" }.fetch("value_text").length == 512, "observation keeps full validated tracker text")
       assert(metadata_test_evidence(specs.first, "cold", "final").fetch("after").fetch("canonical_torrent_signal").map { |row| row.fetch("canonical_torrent_signal_id") } == (1..6).to_a + (13..24).to_a, "signal gaps and duplicate NULL-distinct keys remain")
       rejected("unknown metadata") { metadata_session(specs.first, "reconnect") }
+    end
+
+    def metadata_mutating_helper_tests!
+      assert(METADATA_MODES == %w[cold helpers-first mutating-helper-first-rollback mutating-helper-first-commit], "retain pure and mutating compilation orders")
+      metadata_cases.each do |spec|
+        METADATA_MODES.last(2).each do |mode|
+          query = metadata_query(metadata_session(spec, mode))
+          assert(query.scan("public.log_source_metadata_conflict_v1(").length == 1 && query.scan("FROM public.search_result_ingest_v1(").length == 3,
+            "one actual mutating helper precedes three ingestion calls")
+          assert(query.index("public.log_source_metadata_conflict_v1(") < query.index("FROM public.search_result_ingest_v1("), "mutating helper executes first in the same connection")
+          assert(!query.match?(/DISCARD|DROP TABLE|SET ROLE|SET plpgsql|\\connect/), "no compilation reset or role/settings workaround")
+          %w[reference final].each do |variant|
+            evidence = metadata_test_evidence(spec, mode, variant)
+            role = variant == "reference" ? "postgres" : @runtime
+            assert(metadata_validate!(evidence, spec, mode, variant, role), "#{mode} independent state and sequence oracle")
+            helper = evidence.fetch("mutating_helper")
+            conflict = helper.fetch("tables_after").fetch("source_metadata_conflict").last
+            assert(conflict.values_at("existing_value", "incoming_value", "observed_at") == ["O" * 256, "N" * 256, helper.fetch("clock")], "both truncation branches and default observed clock")
+            retained = helper.fetch("tables_finish").fetch("source_metadata_conflict").include?(conflict)
+            assert(retained == mode.end_with?("commit"), "helper rows commit or roll back without resetting compilation")
+            %w[backend clock before after state within outside result tables_before tables_after tables_finish].each do |key|
+              metadata_reject_mutation(evidence, spec, mode, variant) do |changed|
+                row = changed.fetch("mutating_helper")
+                row[key] = key == "result" ? { "helper" => "different" } : key.start_with?("tables_") ? attributes_empty : "changed"
+              end
+            end
+            %w[source_metadata_conflict source_metadata_conflict_audit_log indexer_health_event].each do |table|
+              helper.fetch("tables_after").fetch(table).last.each_key do |column|
+                metadata_reject_mutation(evidence, spec, mode, variant) do |changed|
+                  changed.fetch("mutating_helper").fetch("tables_after").fetch(table).last[column] = "changed"
+                end
+              end
+              metadata_reject_mutation(evidence, spec, mode, variant) do |changed|
+                changed.fetch("reads").last.fetch("data").fetch("sequences")[table] -= 1
+              end
+            end
+            changed = copy(evidence)
+            changed["stdout"] = changed.fetch("stdout").sub("metadata-helper-finish\n", "")
+            rejected("helper boundary") { metadata_validate!(changed, spec, mode, variant, role) }
+            changed = copy(evidence)
+            changed["stdout"] = "metadata-helper-finish\n" + changed.fetch("stdout")
+            rejected("helper boundary") { metadata_validate!(changed, spec, mode, variant, role) }
+          end
+          assert(metadata_comparable(metadata_test_evidence(spec, mode, "reference")) == metadata_comparable(metadata_test_evidence(spec, mode, "final")), "mutating-helper parity outside exact D4")
+        end
+      end
+      rejected("helper finish") { metadata_helper_session("reconnect") }
     end
 
     def metadata_walk(value, &block)

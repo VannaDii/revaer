@@ -911,3 +911,17 @@ upload was not retried. No native package, PR or release acceptance is claimed.
 The 25-file, eight-archive checkpoint, including 53 raw Rust inputs, is retained
 under `artifacts/media-verification/2026-09-12-d3-metadata/`. Completed worker
 worktrees, disposable gate databases/volumes and managed test media were removed.
+
+## Mutating Helper Order (2026-09-12)
+
+The next D3 increment runs the real conflict-writing helper before ingestion
+in the same cold backend, with separate committed and whole-rollback cases.
+It covers both 256-character truncations and the default observation clock;
+independent models retain all 18 table images and the three consumed conflict,
+audit and health sequences. Existing pure-helper orders and D4 failures remain.
+Initial focused suites pass 13,474 assertions, including 456 additional
+mutations rejected. Fresh database and combined gates are pending. This is
+proof-only work with existing dependencies and no SQL/runtime/init delta;
+rollback removes this increment. Root, data, Rust, DevOps and Sonar instructions
+were reviewed; DevOps now requires the actual same-backend mutating controls.
+No broader D3, helper/native closure, cutover or new approval is claimed.

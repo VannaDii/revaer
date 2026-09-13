@@ -229,6 +229,10 @@ applyTo:
   selected, recorded fixture rows. Returned IDs cannot define the expected target.
   Include a coherent wrong-selection regression, distinct competing identities,
   exact refresh/hash assertions and the wrapper's best-source result.
+- Mutating-helper-first D3 evidence must execute the real conflict-writing helper
+  before ingestion in the same backend under unchanged caller settings. Retain
+  committed and whole-rollback controls, all 18 table images and nontransactional
+  sequence consumption; pure helper answers or a new connection are not substitutes.
 - The canonical D3 validation matrix must exercise the 32 frozen validation
   guard sites with exact SQLSTATE, detail and native/source coordinates, not
   infer an expected guard from the observed error. Retain all 18 table images,

@@ -5,6 +5,7 @@ require "date"
 module RevaerDatabaseRebaseline
   # Changed observation values and first-wins durable metadata, not full D3.
   module IngestionMetadata
+    METADATA_MODES = %w[cold helpers-first mutating-helper-first-rollback mutating-helper-first-commit].freeze
     METADATA_INPUTS = [
       ["tracker_name", :text, "Changed Tracker"], ["tracker_category", :int, 4000],
       ["tracker_subcategory", :int, 4040], ["size_bytes_reported", :bigint, 8_589_934_592],
@@ -86,9 +87,44 @@ module RevaerDatabaseRebaseline
     end
 
     def metadata_session(spec, mode)
-      raise Failure, "unknown metadata mode" unless %w[cold helpers-first].include?(mode)
+      raise Failure, "unknown metadata mode" unless METADATA_MODES.include?(mode)
 
-      { calls: Array.new(3) { metadata_arguments(spec.fetch(:incoming)) }, rollback: true, helpers: mode == "helpers-first" }
+      session = { calls: Array.new(3) { metadata_arguments(spec.fetch(:incoming)) }, rollback: true, helpers: mode == "helpers-first" }
+      session[:helper_finish] = mode.delete_prefix("mutating-helper-first-") if mode.start_with?("mutating-helper-first-")
+      session
+    end
+
+    def metadata_helper_session(finish)
+      raise Failure, "unknown metadata helper finish" unless %w[rollback commit].include?(finish)
+
+      { calls: [{}], rollback: finish == "rollback" }
+    end
+
+    def metadata_query(session)
+      query = attributes_query(session)
+      return query unless session.key?(:helper_finish)
+
+      prelude = correction_session(metadata_helper_session(session.fetch(:helper_finish))) do |_arguments|
+        <<~SQL
+          WITH invoked AS MATERIALIZED (
+            SELECT public.log_source_metadata_conflict_v1(
+              1, 569001, 'tracker_name', repeat('O', 257), repeat('N', 258), NULL::timestamptz)
+          )
+          SELECT json_build_object('helper', 'log_source_metadata_conflict_v1') FROM invoked;
+        SQL
+      end
+      "#{prelude}\nSELECT 'metadata-helper-finish';\n#{query}"
+    end
+
+    def metadata_parse(stdout, stderr, session, role)
+      metadata_transport_json!(stdout)
+      return attributes_parse(stdout, stderr, session, role) unless session.key?(:helper_finish)
+
+      pieces = stdout.split("metadata-helper-finish\n", -1)
+      raise Failure, "metadata helper boundary missing or duplicated" unless pieces.length == 2
+
+      helper = correction_parse(pieces.first, "", metadata_helper_session(session.fetch(:helper_finish)))
+      attributes_parse(pieces.last, stderr, session, role).merge("mutating_helper" => helper.fetch(0))
     end
 
     def metadata_source_hashes
@@ -116,9 +152,8 @@ module RevaerDatabaseRebaseline
     end
 
     def metadata_execute(session, database, role, name)
-      raw = metadata_transport(attributes_query(session), database, role, name)
-      metadata_transport_json!(raw.fetch("stdout"))
-      raw.merge(attributes_parse(raw.fetch("stdout"), raw.fetch("stderr"), session, role))
+      raw = metadata_transport(metadata_query(session), database, role, name)
+      raw.merge(metadata_parse(raw.fetch("stdout"), raw.fetch("stderr"), session, role))
     end
 
     def metadata_strict_json!
@@ -264,6 +299,30 @@ module RevaerDatabaseRebaseline
       year.positive? && Date.valid_date?(year, month, day, Date::GREGORIAN) && hour < 24 && minute < 60 && second < 60
     end
 
+    def metadata_helper_tables(previous, clock, counters)
+      tables = Marshal.load(Marshal.dump(previous))
+      shape = { observed: clock, conflicts: [["tracker_name", "O" * 256, "N" * 256]] }
+      metadata_conflicts!(tables, shape, clock, counters.fetch("source_metadata_conflict"))
+      tables
+    end
+
+    def metadata_validate_helper!(frame, expected, counters, backend, role, finish)
+      raise Failure, "metadata helper context or result changed" unless frame.fetch("backend") == backend &&
+        validation_context?([frame], role) && frame.fetch("state") == "00000" &&
+        frame.fetch("result") == { "helper" => "log_source_metadata_conflict_v1" } &&
+        frame.values_at("within", "outside") == %w[false false]
+      raise Failure, "metadata helper before state changed" unless metadata_tables_equal?(frame.fetch("tables_before"), expected)
+
+      changed = metadata_helper_tables(expected, frame.fetch("clock"), counters)
+      raise Failure, "metadata helper mutation changed" unless metadata_tables_equal?(frame.fetch("tables_after"), changed)
+
+      finished = finish == "commit" ? changed : expected
+      raise Failure, "metadata helper transaction finish changed" unless metadata_tables_equal?(frame.fetch("tables_finish"), finished)
+
+      %w[source_metadata_conflict source_metadata_conflict_audit_log indexer_health_event].each { |table| counters[table] += 1 }
+      finished
+    end
+
     def metadata_validate!(evidence, spec, mode, variant, role)
       fixtures = evidence.fetch("fixtures")
       raise Failure, "metadata fixture count changed" unless fixtures.length == spec.fetch(:fixtures).length
@@ -271,14 +330,14 @@ module RevaerDatabaseRebaseline
       records = fixtures + [evidence]
       sessions = spec.fetch(:fixtures).map { |shape| { calls: [metadata_arguments(shape)] } } + [metadata_session(spec, mode)]
       records.zip(sessions).each do |record, session|
-        metadata_transport_json!(record.fetch("stdout"))
-        parsed = attributes_parse(record.fetch("stdout"), record.fetch("stderr"), session, role)
-        raise Failure, "metadata serialized transport changed" unless parsed == record.slice("context", "frames")
+        parsed = metadata_parse(record.fetch("stdout"), record.fetch("stderr"), session, role)
+        raise Failure, "metadata serialized transport changed" unless parsed == record.slice("context", "frames", "mutating_helper")
         expected = { "backend" => record.fetch("frames").first.fetch("backend"), "session" => role, "current" => role, "setting" => "error" }
         raise Failure, "metadata entry context changed" unless record.fetch("context") == expected && validation_context?(record.fetch("frames"), role)
       end
       all = records.flat_map { |record| record.fetch("frames") }
       clocks = [evidence.fetch("seed_clock")] + all.map { |frame| frame.fetch("clock") }
+      clocks << evidence.fetch("mutating_helper").fetch("clock") if sessions.last.key?(:helper_finish)
       raise Failure, "metadata cold backend or clocks changed" unless records.map { |record| record.fetch("context").fetch("backend") }.uniq.length == records.length &&
         clocks.all? { |clock| metadata_clock?(clock) } && clocks.uniq.length == clocks.length
       frames = evidence.fetch("frames")
@@ -293,6 +352,10 @@ module RevaerDatabaseRebaseline
       identities = attributes_identities(fixtures.first.fetch("frames").first.fetch("tables_after"))
       all.each_with_index do |frame, index|
         fixture = index < fixtures.length
+        if index == fixtures.length && sessions.last.key?(:helper_finish)
+          expected = metadata_validate_helper!(evidence.fetch("mutating_helper"), expected, counters, frame.fetch("backend"), role,
+            sessions.last.fetch(:helper_finish))
+        end
         shape = fixture ? spec.fetch(:fixtures).fetch(index) : spec.fetch(:incoming)
         raise Failure, "metadata independent before state changed" unless metadata_tables_equal?(frame.fetch("tables_before"), expected)
         changed = if frame.fetch("state") != "00000"
@@ -381,7 +444,7 @@ module RevaerDatabaseRebaseline
       begin
         metadata_write("routine-inventory.json", JSON.pretty_generate(@ingestion_inventory) + "\n")
         metadata_cases.each do |spec|
-          %w[cold helpers-first].each do |mode|
+          METADATA_MODES.each do |mode|
             pair = { "reference" => ["reference_proof", "postgres"], "final" => [@database, @runtime] }.to_h do |variant, (source, role)|
               [variant, metadata_isolated(spec, mode, variant, source, role)]
             end
@@ -397,7 +460,7 @@ module RevaerDatabaseRebaseline
         begin
           checks = @checks.drop(first)
           report = { completed:, passed: completed && checks.all? { |entry| entry.fetch(:passed) }, d3_complete: false,
-                     scope: "changed typed attributes, durable first-wins, repeated conflicts, stale observation, long conflict truncation; cold/helpers-first, whole rollback/retry",
+                     scope: "changed typed attributes, durable first-wins, repeated conflicts, stale observation, long conflict truncation; cold/pure-helper-first/mutating-helper-first, commit and whole rollback/retry",
                      limits: METADATA_LIMITS, source_sha256: hashes, candidate_sha256: @contract.expected_candidate_sha256,
                      final_sha256: @contract.final_sha256, postgres_image: @contract.postgres_image, container: @container, checks:, cases: }
           bytes = JSON.pretty_generate(report) + "\n"
@@ -411,7 +474,9 @@ module RevaerDatabaseRebaseline
     end
 
     def metadata_comparable(evidence)
-      frames = evidence.fetch("fixtures").flat_map { |record| record.fetch("frames") } + evidence.fetch("frames").first(2)
+      frames = evidence.fetch("fixtures").flat_map { |record| record.fetch("frames") }
+      frames << evidence.fetch("mutating_helper") if evidence.key?("mutating_helper")
+      frames += evidence.fetch("frames").first(2)
       compilation_comparable("fixture" => nil, "frames" => frames).map do |frame|
         %w[tables_before tables_after tables_finish].each do |key|
           # Unordered INSERT SELECT assigns these IDs. Their ranges, reuse and

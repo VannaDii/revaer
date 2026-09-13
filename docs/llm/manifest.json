@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-13T02:04:05.132205+00:00",
+  "generated": "2026-09-13T02:19:17.459665+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -4879,6 +4879,7 @@
         "in-call-setting-proof-checkpoint-2026-09-11",
         "independent-d3-counterexample",
         "missing-hash-proof-2026-09-12",
+        "mutating-helper-order-2026-09-12",
         "observed-conflicts",
         "policy-identity-and-native-proof-checkpoint-2026-09-11",
         "settings-path-proof-2026-09-12",
