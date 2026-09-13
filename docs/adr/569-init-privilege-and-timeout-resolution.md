@@ -1808,8 +1808,8 @@ coverage, package acceptance, push, merge or cutover follows from local CI.
 
 ### Committed-Warm Cancellation (2026-09-13, In Progress)
 
-The next change adds an explicit cold/committed-warm selection to the controlled
-Rust cancellation probe. A real first ingestion commits a distinct source/hash
+The controlled Rust probe now supports explicit cold/committed-warm selection.
+A real first ingestion commits a distinct source/hash
 on the same single-connection pool. The controller validates the atomic prepared
 checkpoint before acquiring the source-insert lock, then publishes a start signal
 bound to that database/backend/cache state. Cancellation retains complete prepared,
@@ -1822,14 +1822,62 @@ the unchanged incomplete-D3 guard. All 31 canonical entries and 13 matching
 source registries are archived. Full lint finds one duration-notation issue;
 the follow-up expresses the same three-minute wait in minutes and moves
 cancellation directly after the two races for earlier failure diagnosis. No
-case or gate is removed. Updated-revision full gates remain pending.
+case or gate is removed. The follow-up strict all-target Clippy run passes.
+
+At `82e2d3d6`, the repeated canonical run again passes all four cancellation
+cases and 8,039/8,040 checks; only the unchanged incomplete-D3 guard fails.
+All 31 canonical entries and 13 matching source registries are retained before
+later experiments. `just ci` passes on this revision, including all 18 package
+coverage gates and the all-target/all-feature release build. This is local
+verification, not native-package, published-Sonar or merge acceptance.
+
+The preceding CI attempt has a confirmed infrastructure failure: PostgreSQL
+could not write `pg_wal/xlogtemp.880` because Docker's disk was full, aborted the
+backend and restarted. Only an exact three-entry, unused Revaer runtime cache
+chain was removed, recovering 702.3 MB; unrelated builder data, containers and
+volumes were untouched. The passing CI rerun used the existing host-bind test
+database pattern. A subsequent host-backed UI setup failed PostgreSQL's directory
+ownership check and was retained, not counted as a test run. The Docker-volume UI
+rerun reaches the tests: 57 pass, one returns the unchanged
+`media_profile_filesystem_identity_required` instead of 200, and 72 dependent
+tests do not run; UI coverage remains absent. Stock Alpine locale and local-auth
+initialization warnings are retained in the private server logs. No ownership,
+durability, warning, deadline or acceptance check was bypassed. These observations
+do not establish the cause of the older `09c24398` initial setup failure.
+
+Two separately archived, unpublished native trials observe title/size and magnet
+normalization/hash helpers during actual cold and committed-warm ingestion on
+the same backend. All four helpers retain observed compiler-setting values 2
+in the frozen reference and 0 in the final variant. Plain/traced application
+results and full persisted/read images match within each variant using the
+existing validated identity/observed-clock normalization; the exact frozen D4
+failure remains distinct from final success. Target native
+hashes are unchanged. This does not qualify all native branches, skipped
+callbacks, cancellation-site settings or complete D3; no experiment was adopted
+as a canonical criterion or uploaded.
+
+`just sonar-compile-db`, `just js-release-coverage`, `just js-coverage-merge`
+and `just sonar-verify-inputs` pass with current executed inputs. This is not
+published coverage. `SONAR_TOKEN` is absent in both working checkouts; the prior
+file-level Rust analysis retains its organization-entitlement 403. No scanner,
+server criteria or issue disposition changed. A bounded metadata pass reports
+104 open stack PRs with conforming titles and VannaDii assigned. PR 72's CLI and
+connected-GitHub Copilot requests have no confirmed pending/current-head review
+readback; no bulk request or review-resolution success is claimed.
+
+The private `2026-09-13-reachable-concurrency` archive retains canonical reports,
+failed and passing gates, runner/server diagnostics, raw coverage and the two
+native trials. Every owned test container/volume, both host data directories,
+the restored debugger image and the completed agent worktree were removed;
+the UI port was verified closed. The tested implementation remains unpublished.
 
 The independent diagnostic fix `f328be01` preserves ordered endpoint/admin
 errors instead of replacing the actual endpoint failure with the fallback's
 error. Credential-safe rendering, candidate order, successful fallback, probe
 failure and redaction have focused coverage. Its worker reports 13 library and
-two integration tests plus strict Clippy passing; parent full gates remain
-pending. This improves evidence capture, not the unexplained original CI cause.
+two integration tests plus strict Clippy passing; the parent full CI now passes
+at `82e2d3d6`. This improves evidence capture without explaining an earlier
+failure whose server log was not retained.
 
 Motivation and design: complete the existing warm-cache cancellation obligation
 without changing application behavior or hiding frozen defects. Observability
