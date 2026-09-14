@@ -1916,3 +1916,44 @@ is not a proven fix; locale/auth initialization warnings remain unresolved.
 Fixture collation/checksum differences were investigated but not adopted.
 The worker's evidence is retained in
 `target/bootstrap-validation-20260913-01a09d29.tar.gz`; its worktree is removed.
+
+### Paired Cancellation Observation (2026-09-13, Experimental)
+
+At clean source `002942561c7fbcad885456ff382c40808aceecfb`, eight actual
+Rust-wrapper executions establish four plain/observed comparisons: reference
+and final, each cold and committed-warm. Both arms retain identical owned
+lock scaffolding. A read-only statement records the seed transaction clock;
+owned source-insert waits expose each applicable warm-up, cancellation and
+recovery transaction's `pg_stat_activity.xact_start`. Repeated reads and exact
+wait/backend identity checks precede lock release. Only the observed arm
+attaches the read-only debugger during the cancelled call, then revalidates
+the same backend and wait after detachment. No Rust, frozen SQL, final SQL,
+privilege, timeout or canonical acceptance criterion changes.
+
+All eight unchanged cancellation oracles pass again on retained readback.
+The separate comparator matches all 18 write-table images, all 19 read-input
+images, prepared/checkpoint/final frames, literal errors and caller settings.
+Normalization is restricted to validated session/locker identities, independently
+bound source/canonical public IDs, and exact columns equal to their independently
+observed transaction clocks. Numeric relationships, input timestamps and arbitrary
+text remain literal. Its 3,684 unit assertions include mutation of every scalar
+in the four retained evidence shapes; their synthetic clocks are not live proof.
+The four real comparisons pass, retaining exact `57014`, literal rollback,
+frozen warm recovery `42P07`, and the approved final recovery success separately.
+
+Evidence remains unpublished under
+`artifacts/media-verification/2026-09-13-paired-cancellation/`. The original
+capture report says comparison pending; the separately hashed comparison report
+records the later four passes without rewriting that capture. All 75 producer
+source hashes and target native hashes remain unchanged. The four native setting
+witnesses remain 2 for reference and 0 for final. GDB's missing musl source-line
+warning is retained, not suppressed or counted as a warning-free gate.
+
+This closes only the paired-observer gap at the owned cancellation site. It
+does not certify every reachable helper/trigger, canonical D3, cutover, UI,
+packages, Sonar or release. Full CI/UI are not rerun for this experiment-only
+increment; the last executable checkpoint still has passing CI and failing UI.
+Root, data and DevOps instructions and the existing ADR 569/588 approval scopes
+were reviewed; no policy, dependency or production observability changes.
+Rollback discards the experiment only. Cleanup and archive verification are
+recorded with this batch; the goal and conditional D3 remain in progress.
