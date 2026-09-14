@@ -279,6 +279,73 @@ No role privilege, extension ACL, timeout value, frozen migration, workflow, or
 remote setting was changed to conceal the two failures. Independently passing
 pristine-catalog and baseline-reader tests resolve none of these approval gaps.
 
+### Shared Native Observer Tooling (2026-09-14, In Progress)
+
+- Motivation/design: move process transport and observer preparation out of
+  one-off capture setup into reusable, policy-tested components. `NativeProcesses`
+  retains exclusive private stdout/stderr, drains both streams, bounds readiness
+  and completion, and propagates stream failures while reaping later clients.
+  Its caller still owns container termination; timeout alone is not termination.
+- Dependencies: `NativeTooling` uses Ruby's existing standard libraries and
+  RubyGems archive reader, not a new application dependency. The test-only GDB,
+  debug-symbol and transitive package pins, full package-metadata digest, binary
+  hashes and matching musl source are explicit in `.github/build-inputs.env`.
+  Cached or locally built observers must extend the exact PostgreSQL base and
+  pass every identity check. No registry publication or runtime package change.
+- Verification: the registered component suites pass 76 process assertions and
+  66 tooling tests with 331 assertions. Current local covered/executable lines
+  are 120/122 and 229/237 for the components, and 148/151 and 310/313 for their
+  authored tests. These are focused local metrics, not published project coverage.
+  The combined ingestion suite and policy gate pass. Full `just ci` passes,
+  including all 18 Rust package thresholds and the release build. Its canonical
+  script-coverage XML includes all four new files with positive coverage:
+  120/122, 229/237, 146/151 and 310/313 covered/executable lines respectively.
+  `just ui-e2e` records 57 passes, one scheduling failure and 72 unrun tests;
+  missing UI coverage files also fail teardown. The unchanged scheduling failure
+  is `media_profile_filesystem_identity_required`, not a test waiver.
+- Live setup: cached qualification and a real fresh build pass. The latter
+  returns immutable image `sha256:618f6d3357404d809f999baf6f8615bc36ad848771be2b50b8b90b0f5157ba35`;
+  its complete package inventory and all binary/source hashes match. Every
+  recorded probe container, owned build tag and temporary source workspace is
+  removed. The test-loader fix explicitly loads RubyGems under `--disable-gems`.
+  Original worker source, the cleanup-diagnostic case mismatch and failed
+  APK-fetch builds remain retained, not acceptance evidence. The corrected
+  build uses APK's install solver with the complete explicit pins.
+- Evidence/observability: the staged delta from `50d7a8ac`, component coverage,
+  file-analysis results, setup receipts and failed attempts are retained under
+  `target/d3-reconcile/`. Final transport run
+  `fk-compilation-run-20260914-41430-zr1e0a` passes all eight paired K1 application
+  comparisons, retaining empty debugger stderr, unchanged source/native hashes
+  and confirmed client/container/host-data cleanup. Cleanup exceptions now mark
+  its report failed. This does not adopt the complete
+  native observer/readback into `FinalProof` or discharge its completeness guard.
+- Sonar: the five changed Ruby files receive MAIN-scope file analysis with zero
+  findings. The exact CLI command
+  `just --command sonar verify --file scripts/database_rebaseline/native_processes.rb --project VannaDii_Revaer`
+  still returns the organization-entitlement HTTP 403; no full analysis or
+  positive published coverage is claimed. The later ADR 588 transfer approval,
+  verified against reviewed commit `9575c077`, permits this implementation scan;
+  it does not authorize ignored experimental harness uploads or criteria changes.
+- Full-gate logs: `target/revaer-host-backed-ci-d53dd846c7b0/` and
+  `target/revaer-host-backed-ui-e2e-e0838ab232cf/`. Both owned databases and the
+  private UI media root are removed; managed fixture cleanup passes. All 1,411
+  documentation links and the changed-file secrets scan pass. The documentation
+  build exits successfully but warns about its 15,848,668-byte search index;
+  this remains open and is not a clean-build claim. The restored legacy debugger
+  image is removed after the last transport run.
+- Risk/rollback: remove both helpers, their test registration and observer-only
+  pins together. No SQL, bootstrap selection, production observability or approval
+  boundary changes. The observer remains arm64-only qualification, not evidence
+  for both supported release architectures. The agent's completed worktree and
+  branch are removed after its files are integrated and separately archived.
+- Stale-policy check: root, data, DevOps and Sonar instructions reviewed. DevOps
+  now records strict stream ownership, preparation identity and cleanup duties.
+  No criteria or source-scope restriction is relaxed. The scheduling test remains
+  intact: the legacy profile procedure rejects automation until the approved
+  root/profile/discovery binding path exists. Next integrate the already-qualified
+  native observation and readback into `FinalProof`; do not repeat settled cases
+  merely to recount them. Full D3, cutover, operator workflow and release stay open.
+
 ## D1: Clarify The Extension Privilege Boundary
 
 **Recommendation, not authorization:** retain the pinned, stock `pgcrypto` and

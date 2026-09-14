@@ -212,6 +212,20 @@ applyTo:
   all 18 sequence counters, including failed frozen-call allocations; fixture
   backends cannot stand in for the tested backend's committed reuse. These
   serial witnesses do not qualify native dispatch or complete D3.
+  Native observer clients must retain private, non-overwriting raw stdout and
+  stderr, drain both streams without blocking the tested backend, and enforce
+  bounded readiness and completion. A timeout does not prove termination.
+  The proof owner must remove its exact containers before closing and reaping
+  their attached clients; cleanup failures must prevent acceptance. Exercise
+  the transport's real-process backpressure and failure cases in the existing
+  database-ingestion policy suite and retain their coverage.
+  Observer preparation must qualify the exact PostgreSQL base, full pinned APK
+  inventory, debugger/runtime/debug-symbol hashes and matching read-only musl
+  source from `.github/build-inputs.env`. A missing cache permits a locally
+  owned build with those same checked inputs, never an unqualified replacement
+  or registry publication. Retain the immutable image ID and setup receipt;
+  remove owned setup containers and failed-build tags without pruning unrelated
+  resources. This arm64 observer qualification is not amd64 package evidence.
   Committed score/title proof must retain distinct stored base/context scores,
   the exact 99/100-seeder promotion boundary, higher-ranked title refresh and
   repeated low-source observations on the same tested backend. The current

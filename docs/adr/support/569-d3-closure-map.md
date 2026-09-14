@@ -64,6 +64,10 @@ It is an execution map, not a new architectural decision or D3 acceptance.
    including all three actual calls and the separate nonzero calibration.
    Reuse the already qualified methods; rerun captures only where required by
    changed target definitions, compilation contexts or exact provenance.
+   [Shared process/tool preparation](../569-init-privilege-and-timeout-resolution.md#shared-native-observer-tooling-2026-09-14-in-progress)
+   now has registered policy tests and verified cached/fresh-build inputs.
+   The next change must integrate the native sessions and qualified readback
+   into `FinalProof`; these preparation checks do not close that obligation.
 4. Run the complete current-source D3 proof. Remove no completeness guard until
    every approved obligation has adequate evidence and all comparisons pass.
 

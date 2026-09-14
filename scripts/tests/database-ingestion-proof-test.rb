@@ -26,6 +26,8 @@ require_relative "database-ingestion-committed-scoring-test"
 require_relative "database-ingestion-guid-test"
 require_relative "database-ingestion-attribute-race-test"
 require_relative "database-ingestion-sample-race-test"
+require_relative "database-native-processes-test"
+require_relative "database-native-tooling-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
@@ -305,3 +307,4 @@ RevaerDatabaseRebaseline::IngestionCommittedScoringTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionGuidTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionAttributeRaceTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionSampleRaceTest.new.run_tests!
+RevaerDatabaseRebaseline::NativeProcessesTest.new.run!
