@@ -170,18 +170,18 @@ module RevaerDatabaseRebaseline
           { "name" => source.fetch("name"), "schema" => "public", "signature" => source.fetch("signature"), "language" => "plpgsql", "source_sha256" => Digest::SHA256.hexdigest(source.fetch("source")), "config" => nil },
           { "name" => "snapshot", "schema" => "ingestion_observation", "signature" => "ingestion_observation.snapshot()", "language" => "sql", "source_sha256" => Digest::SHA256.hexdigest(body), "config" => ["search_path=pg_catalog"] }
         ]
-        assert(proof.send(:native_policy_bind_sources!, catalog, "reference", directory) == catalog, "canonical helper and snapshot sources bind")
+        assert(proof.send(:native_bind_catalog_sources!, catalog, "reference", directory) == catalog, "canonical helper and snapshot sources bind")
         altered = JSON.parse(JSON.generate(catalog))
         altered.first["source_sha256"] = "b" * 64
-        rejected("changed helper body") { proof.send(:native_policy_bind_sources!, altered, "reference", directory) }
+        rejected("changed helper body") { proof.send(:native_bind_catalog_sources!, altered, "reference", directory) }
         altered = JSON.parse(JSON.generate(catalog))
         altered.last["config"] = nil
-        rejected("changed snapshot settings") { proof.send(:native_policy_bind_sources!, altered, "reference", directory) }
+        rejected("changed snapshot settings") { proof.send(:native_bind_catalog_sources!, altered, "reference", directory) }
         changed_body = body.sub("json_build_object", "jsonb_build_object")
         File.binwrite(path, sql.sub(body, changed_body))
         altered.last["source_sha256"] = Digest::SHA256.hexdigest(changed_body)
         altered.last["config"] = catalog.last.fetch("config")
-        rejected("self-consistent altered snapshot source") { proof.send(:native_policy_bind_sources!, altered, "reference", directory) }
+        rejected("self-consistent altered snapshot source") { proof.send(:native_bind_catalog_sources!, altered, "reference", directory) }
       end
     end
   end

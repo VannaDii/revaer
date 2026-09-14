@@ -32,6 +32,9 @@ require_relative "database-native-sessions-test"
 require_relative "database-native-trust-rank-readback-test"
 require_relative "database-native-policy-test"
 require_relative "database-native-policy-capture-test"
+require_relative "database-native-fk-test"
+require_relative "database-native-fk-expectations-test"
+require_relative "database-native-fk-capture-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
@@ -316,3 +319,6 @@ RevaerDatabaseRebaseline::NativeSessionsTest.new.run!
 RevaerDatabaseRebaseline::NativeTrustRankReadbackTest.new.run!
 RevaerDatabaseRebaseline::NativePolicyTest.new.run!
 RevaerDatabaseRebaseline::NativePolicyCaptureTest.new.run!
+RevaerDatabaseRebaseline::NativeFkTest.new.run!
+RevaerDatabaseRebaseline::NativeFkExpectationsTest.new.run
+RevaerDatabaseRebaseline::NativeFkCaptureTest.new.run!

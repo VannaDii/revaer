@@ -7,7 +7,7 @@ module RevaerDatabaseRebaseline
   # Bind read-only native observations to the catalog of the same live clone.
   class NativeTrace
     def initialize(query:, directory:, observations: :trust_rank, trigger_expectation: :present)
-      raise Failure, "unknown native observation protocol" unless %i[trust_rank policy].include?(observations)
+      raise Failure, "unknown native observation protocol" unless %i[trust_rank policy fk].include?(observations)
       unless %i[present absent].include?(trigger_expectation) && (observations == :policy || trigger_expectation == :present)
         raise Failure, "invalid native trigger expectation"
       end
@@ -23,7 +23,11 @@ module RevaerDatabaseRebaseline
       lines = File.binread(stdout_path).lines
       stderr = File.binread(debugger.fetch(:stderr_path))
       raise Failure, "native debugger diagnostic retained" unless stderr.empty?
-      forbidden = @observations == :trust_rank ? %w[PARENT_RI: REGEX: CAST_EXECUTOR:] : %w[PARENT_RI: K1:]
+      forbidden = case @observations
+                  when :trust_rank then %w[PARENT_RI: REGEX: CAST_EXECUTOR:]
+                  when :policy then %w[PARENT_RI: K1:]
+                  else %w[PARENT_RI: K1: REGEX: CAST_EXECUTOR:]
+                  end
       if lines.any? { |line| line.match?(/K1_ERROR|CAST_EXECUTOR_ERROR|Python Exception|Traceback|Error in sourced|Cannot access memory|No symbol|exited with code|received signal/) || line.start_with?(*forbidden) }
         raise Failure, "native debugger failure or unexpected callback retained"
       end
@@ -58,8 +62,11 @@ module RevaerDatabaseRebaseline
       write("#{stdout_path}.triggers.json", triggers.map { |trigger| trigger.reject { |key, _value| %w[kind native_line].include?(key) } })
       native = (mapped + triggers).sort_by { |event| event.fetch("native_line") }
       write(File.join(@directory, "native-events.json"), native)
-      events = @observations == :trust_rank ? trust_rank_events(lines) : policy_events(lines, mapped)
-      filename = @observations == :trust_rank ? "trust-rank-events.json" : "policy-events.json"
+      events, filename = case @observations
+                         when :trust_rank then [trust_rank_events(lines), "trust-rank-events.json"]
+                         when :policy then [policy_events(lines, mapped), "policy-events.json"]
+                         else [native, "fk-events.json"]
+                         end
       write(File.join(@directory, filename), events)
       { events:, native:, catalog:, triggers:, debugger_stderr: stderr }
     rescue KeyError, TypeError, NoMethodError => error
@@ -132,6 +139,9 @@ module RevaerDatabaseRebaseline
 
         match = line.match(/\ATRIGGER:(RI_FKey_check_ins|RI_FKey_check_upd):([1-9][0-9]*):([1-9][0-9]*):([012])\n\z/)
         raise Failure, "unrecognized native trigger observation" unless match
+        unless index.positive? && lines.fetch(index - 1) == "RI:#{match[1]}:#{match[4]}\n"
+          raise Failure, "native trigger is not adjacent to its callback entry"
+        end
 
         { "kind" => "trigger", "function" => match[1], "function_oid" => Integer(match[2]),
           "trigger_oid" => Integer(match[3]), "compiler_setting" => Integer(match[4]), "native_line" => index + 1 }

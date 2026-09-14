@@ -16,7 +16,7 @@ It is an execution map, not a new architectural decision or D3 acceptance.
   additional behavior, change acceptance criteria or demand every Cartesian
   combination of unrelated inputs. A missing combination needs a new test when
   it exercises an otherwise unproven branch, callsite or compilation context.
-- The 2026-09-14 canonical aggregate has 9,607 passing checks and a failing D3 completeness
+- The 2026-09-14 canonical aggregate has 9,722 passing checks and a failing D3 completeness
   check. That count is not a completion percentage. Compact source-matching
   reports are prior execution evidence, not a new run or native trace.
 - The bounded reconciliation records are retained as `items-1-4-df24ea2d.json`
@@ -37,7 +37,7 @@ It is an execution map, not a new architectural decision or D3 acceptance.
 | 8. Warm observation/scoring/wrapper | Separate source/score/title fixtures, GUID promotion, dropped results and temporal source freshness are qualified. Eight committed scoring variants now preserve distinct stored scores, the 99/100-seeder boundary, ranked title refresh, wrapper-selected identity and nine sequence values across four tested commits. | Retain current-source qualification and map these witnesses to the remaining native/callsite obligations. Fresh dropped-result cases do not independently prove every existing-source transition. |
 | 9. Size/paging | Domain/cutoff controls, 1/2/3/26 sample cases, page boundaries and committed sampling are implemented. Twenty sampling variants include 26 commits on one tested backend. Eight committed paging variants now qualify the tenth/eleventh-item boundary and new/original-item reuse with all 18 sequence values and exact frozen D4 outcomes. | No further serial page-boundary witness identified here. Retain current-source qualification; these cases do not establish concurrent paging or native dispatch. |
 | 10. Reachability | Controlled GUID interleavings and K2/K3 races execute the reachable cases. [R1/R2 support](569-ingestion-reachability.md) explains own-row score and signal-uniqueness exclusions. Prevent-merge cases retain actual unique-key errors; K1 readback is canonically integrated in row 7. | Keep source dispositions distinct from live observations and incorporate their exact statement constraints into final closure. Do not invent successful split or signal-upsert paths. |
-| 11. Catalog/native dependencies | Recursive catalogs pin defaults, constraints, indexes, read inputs, casts, dictionaries and native identities. Scoped native captures cover policy, logger, FK, wrapper and cancellation contexts. | Canonically integrate qualified observation/validation code, map remaining reachable callsites and skip conditions, and reject unexpected dispatch/definition drift. Installed callbacks and row-change eligibility are not execution traces. |
+| 11. Catalog/native dependencies | Recursive catalogs pin defaults, constraints, indexes, read inputs, casts, dictionaries and native identities. K1, policy and [eight FK contexts](../569-init-privilege-and-timeout-resolution.md#canonical-native-fk-integration-2026-09-14-in-progress) now pass in the canonical proof. FK counts, ownership and settings are bound to independent source predictions, and all three native groups retain successful cleanup. Scoped settings/cancellation captures remain separate. | Integrate remaining settings/cancellation observations, map remaining reachable callsites and skip conditions, and reject unexpected dispatch/definition drift. Installed callbacks and row-change eligibility are not execution traces. Do not repeat the integrated native matrices without relevant source/context drift. |
 
 ## Execution order
 
@@ -70,8 +70,11 @@ It is an execution map, not a new architectural decision or D3 acceptance.
    current-source success in the complete run and separate cleanup evidence.
    The qualified policy observer is also canonically integrated: all twenty
    paired contexts pass in the full run with independent source binding and
-   cleanup. Next integrate the qualified FK and settings/logger contexts and
-   their remaining callsite/source bindings; K1 and policy do not discharge them.
+   cleanup. The four FK scenarios now also pass all eight paired contexts and
+   115 producer checks in the complete run, with exact source predictions and
+   separate cleanup. Next integrate the remaining settings/cancellation
+   contexts and finish their callsite/source bindings; the completed native
+   groups do not discharge those obligations.
 4. Run the complete current-source D3 proof. Remove no completeness guard until
    every approved obligation has adequate evidence and all comparisons pass.
 

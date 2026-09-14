@@ -244,6 +244,15 @@ applyTo:
   observer identity. Enable plan logging only on owned observed disposable
   clones and reset those settings afterward. These policy contexts do not
   certify remaining logger/settings callsites, full D3 or bootstrap cutover.
+  Canonical FK proof must retain the four qualified compilation, external-ID
+  and wrapper scenarios in reference/final plain/observed pairs. Bind callback
+  counts, ownership and compiler scope to independent source predictions, not
+  captured counts. Keep fixture execution outside the native trace, validate
+  the exact helper/snapshot definitions and raw callback adjacency, reject
+  parent or foreign-protocol entries, and preserve complete application/read
+  images and frozen D5 failures. Retain exact source fingerprints before and
+  after capture. These eight contexts do not discharge
+  other settings/cancellation callsites, full D3 or bootstrap cutover.
   Committed score/title proof must retain distinct stored base/context scores,
   the exact 99/100-seeder promotion boundary, higher-ranked title refresh and
   repeated low-source observations on the same tested backend. The current

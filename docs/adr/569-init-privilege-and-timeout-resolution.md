@@ -279,6 +279,66 @@ No role privilege, extension ACL, timeout value, frozen migration, workflow, or
 remote setting was changed to conceal the two failures. Independently passing
 pristine-catalog and baseline-reader tests resolve none of these approval gaps.
 
+### Canonical Native FK Integration (2026-09-14, In Progress)
+
+- Motivation/design: adopt the qualified cold/logger-first, external-ID and
+  existing-v2 wrapper FK observations in the canonical proof. Reuse the four
+  unchanged application scenarios, independent full-state oracles and owned
+  native transport. Fixture setup stays outside capture. Source-derived counts
+  retain exact caller ownership, compiler settings and frozen D5 failures.
+- Test coverage: the reviewed phase port passes 120 synthetic assertions;
+  the independent expectation provider passes 151, including target-body,
+  signature, setting, missing/duplicate inventory and source-drift rejection.
+  The first focused live run passes all eight plain/observed contexts and five
+  targeted constraints. Follow-up capture hardening requires each raw trigger
+  record immediately after its matching callback entry, as in the qualified
+  readback. Capture tests now pass 35 assertions, including that mutation.
+  The unchanged eight-context repeat at `run-20260914-3032-fg4m8k` passes all
+  115 producer checks and its separate cleanup receipt. The current-source
+  full proof repeats that result at `run-20260914-6479-kb6pl1`, alongside
+  passing current-source K1 and policy groups; all three cleanup receipts pass.
+  Its 9,722 passing checks and one failing incomplete-D3 guard are not complete
+  D3 acceptance. Tested source is `04c3990ed9e89c5a0089e22dc68c32b9ca3d97f9`
+  plus this integration delta.
+- Combined gates: `just ci` passes at `revaer-volume-ci-4bbf4ff195b3`, including
+  the final 35-assertion capture suite and positive executed line coverage for
+  all fourteen changed Ruby files. Full Rust/JavaScript/generic coverage and
+  native compiler input are retained before UI execution. This is local
+  coverage, not published Sonar evidence; no new Sonar analysis was submitted.
+  Scanner authentication and upload enforcement remain unresolved, and fresh
+  confirmation of the configured project upload scope was requested.
+  `just ui-e2e` still fails at `revaer-host-backed-ui-e2e-a92a5f6a12cc`: 57 pass,
+  one fails and 72 are unrun. Scheduled-profile setup returns 400 with
+  `media_profile_filesystem_identity_required`; UI coverage is absent.
+  Documentation links pass 1,413/1,413; the build retains its large-search-index
+  warning. Instruction drift and whitespace checks pass. No warning is waived.
+- Test infrastructure: the initial host-mounted CI database failed startup
+  because PostgreSQL rejected its data-directory ownership. That terminal
+  failure and cleanup are retained. The unchanged volume-mode retry passes.
+  An isolated child-PGDATA probe then succeeds with the same pinned image;
+  the UI harness adds only that owned child-directory setting. Readiness,
+  credentials, loopback confinement and test gates are unchanged. Owned
+  databases, volumes, host directories and UI media were removed, and port
+  63804 is free. `just clean-test-fixtures` passes. This does not alter
+  production storage, package support or an architectural choice.
+- Integration provenance: the expectation provider's `ingestion_proof.rb` pin
+  advances only for the reviewed two-line FK registration/result-pointer delta.
+  Frozen SQL, final SQL, application fixtures, target-body pins and all other
+  source pins remain unchanged. Original worker bytes and qualified oracle
+  projections are retained; no count was inferred from the new native run.
+- Observability: retain paired full application/read images, raw ordered native
+  records, exact live catalogs and routine sources, target ABI/native identity,
+  source fingerprints and independent owned-resource cleanup receipts.
+- Risk/rollback: remove the FK registration, capture and consumers together if
+  integration fails. The shared strict collector still rejects cross-protocol
+  observations; K1 and policy require current-source regression checks. Keep
+  the incomplete-D3 guard and frozen bootstrap authority unchanged.
+- Dependencies: standard Ruby JSON and digest support, plus the already pinned
+  PostgreSQL/debugger tooling. No new package dependency or architecture.
+- Stale-policy check: root, data and DevOps instructions reviewed. DevOps now
+  records the bounded FK capture/source-binding duties. D3, cutover, operator
+  workflow, UI, published Sonar, package and PR acceptance remain incomplete.
+
 ### Canonical Native Policy Integration (2026-09-14, In Progress)
 
 - Motivation/design: adopt the already qualified twenty-context native policy

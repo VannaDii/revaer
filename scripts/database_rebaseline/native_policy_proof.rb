@@ -156,7 +156,7 @@ module RevaerDatabaseRebaseline
     def native_policy_qualify!(evidence, name, mode, variant)
       context = @native_policy_context
       trace = context.fetch(:trace)
-      native_policy_bind_sources!(trace.fetch(:catalog), variant, context.fetch(:directory))
+      native_bind_catalog_sources!(trace.fetch(:catalog), variant, context.fetch(:directory))
       if context.fetch(:inlined)
         routine = @ingestion_inventory.fetch("reference_proof").fetch("routines").find { |row| row.fetch("name") == "search_result_ingest_v1" }
         cast = File.binread(File.join(@contract.root, POLICY_NATIVE_CAST_SOURCE)).scan(/AS \$\$(.*?)\$\$;/m)
@@ -170,7 +170,7 @@ module RevaerDatabaseRebaseline
       end
     end
 
-    def native_policy_bind_sources!(catalog, variant, directory)
+    def native_bind_catalog_sources!(catalog, variant, directory)
       routines = @ingestion_inventory.fetch("#{variant}_proof").fetch("routines")
       catalog.each do |row|
         if row.fetch("name") == "snapshot"

@@ -8,6 +8,7 @@ require_relative "ingestion_proof"
 require_relative "ingestion_corrections"
 require_relative "native_trust_rank_proof"
 require_relative "native_policy_proof"
+require_relative "native_fk_proof"
 
 module RevaerDatabaseRebaseline
   # Disposable transition proof only, not an operator or application initializer.
@@ -18,6 +19,7 @@ module RevaerDatabaseRebaseline
     include IngestionCorrections
     include NativeTrustRankProof
     include NativePolicyProof
+    include NativeFkProof
     def initialize(contract = Contract.new, runner: CommandRunner.new)
       @contract = contract
       @runner = runner
@@ -101,6 +103,7 @@ module RevaerDatabaseRebaseline
     end
 
     def result(query, role: @owner, database: @database)
+      return native_fk_result(query, role:, database:) if @native_fk_context && !@native_fk_fixture && query.include?("SAVEPOINT operation;")
       return native_policy_result(query, role:, database:) if @native_policy_target && query.include?("SAVEPOINT operation;")
       return native_result(query, role:, database:) if @native_target && query.include?("SAVEPOINT operation;")
 
