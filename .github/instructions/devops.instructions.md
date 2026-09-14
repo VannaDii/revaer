@@ -203,6 +203,22 @@ applyTo:
   values for older/equal inputs. Preserve GUID promotion, same-backend commit
   boundaries, complete read/write images and exact frozen D4 failures. Neither
   matrix establishes untested hash-fill, scoring, paging or native callsites.
+  Committed hash-fill qualification must warm the unchanged target, fill and
+  reuse each explicit hash kind on one backend, preserve competing-source
+  conflicts and unrelated identities, and assert complete read/write images
+  plus the five observed sample/score/conflict sequences. Paging qualification
+  must fill the tenth position, create the next page only after a commit, and
+  reuse both new and original page items without another page/item. Preserve
+  all 18 sequence counters, including failed frozen-call allocations; fixture
+  backends cannot stand in for the tested backend's committed reuse. These
+  serial witnesses do not qualify native dispatch or complete D3.
+  Committed score/title proof must retain distinct stored base/context scores,
+  the exact 99/100-seeder promotion boundary, higher-ranked title refresh and
+  repeated low-source observations on the same tested backend. The current
+  public wrapper's final best-context write must remain distinct from the
+  v1 promotion decision; assert the resulting extra sequence allocations,
+  complete state/read inputs and exact frozen D4 failures. Do not reinterpret
+  wrapper-selected identity as score-ranked title selection or native execution.
 
 - `just test-database-baseline-read` exercises the ADR 551 read-only stored-procedure boundary against a caller-provided disposable Postgres service with the same workspace-wide all-feature selection as CI, filtering only the test names. Package-only feature resolution is not equivalent evidence for tracing behavior. It must fail when the service is missing, reject unmanaged databases without initializing them, and retain the frozen migration authority until the coordinated cutover. Baseline errors must never retain raw database messages, role names, or credentials.
 

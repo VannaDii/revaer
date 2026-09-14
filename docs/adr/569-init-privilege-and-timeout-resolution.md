@@ -112,6 +112,80 @@ evidence limitations. Detailed historical execution records below remain intact.
   DevOps now records these exact proof obligations without relaxing criteria.
   Post-commit hash-fill/scoring/paging and canonical native evidence remain.
 
+### Committed Hash Fill And Paging (2026-09-14, In Progress)
+
+- Motivation/design: close the specific post-commit identity and page-boundary
+  gaps using the existing public-wrapper transport and independent table models.
+  Source is `45ffb436` plus retained integration deltas; runtime SQL, frozen
+  migration authority, the final-init digest and the incomplete-D3 guard are
+  unchanged. No architectural decision or new dependency is introduced.
+- Hash fill: six explicit v1/v2/magnet and competing/uncontested cases each run
+  cold/helper-first against frozen and final databases: 24 variants, 249 live
+  checks including prerequisites, and 1,154 unit assertions. Warm, fill and
+  reuse share one tested backend across three commits. Complete 18-table and
+  19-input images, stable identities, conflict history and five sequence values
+  are independently checked. The initial expected model omitted conflict IDs
+  consumed before frozen D4 failures; the corrected model retains those
+  allocations while requiring rolled-back rows to remain absent. The initial
+  failed run and its successful cleanup are retained.
+- Paging: two new/original-item reuse cases each run cold/helper-first on both
+  databases: eight integrated variants and 233 live checks including
+  prerequisites; 289 unit assertions pass. The tenth item fills page one; a
+  committed eleventh item seals it and starts page two. Reuse changes neither
+  page nor item membership. All 18 sequences, full state, policy inputs and
+  fixture/tested backend separation are checked. Failed frozen calls remain
+  exact D4 errors, including their nontransactional identity allocations.
+- Scoring/title: eight integrated cold/helper-first and frozen/final variants
+  pass, with 233 live checks including prerequisites and 1,032 focused unit
+  assertions. Four tested commits cover warm-up, lower-score observation,
+  higher-ranked title refresh and reuse. Distinct 10/100 scores, the 99/100
+  seeder boundary, selected identities, full state/read inputs and nine
+  sequences are independently checked. The public wrapper's final best-source
+  write remains distinct from v1's promotion and score-ranked title choice.
+- Evidence: integrated hash run `run-20260914-95940-3w781` and paging run
+  `run-20260914-98326-5f1rul`, with live logs under `target/d3-reconcile/`.
+  Both drivers report successful owned container/volume cleanup and
+  `d3_complete=false`. The paging agent's sources and earlier evidence are
+  archived; its completed worktree and temporary branch have been removed.
+- Scoring evidence is `attributes-live-6332-c51028c7.json` and its referenced
+  private matrix directory. Its agent source/evidence archive and failed
+  sandbox launch are retained; the completed worktree/branch are removed.
+  All three integrated drivers retain exact source hashes and successful
+  cleanup. Their shared prerequisite check counts are not additive.
+- Sonar: MAIN-scope file guidance reports zero issues for all eight changed Ruby
+  files. CLI verification of `ingestion_committed_hash_fill.rb` still returns
+  the organization-entitlement HTTP 403; no canonical scan or positive
+  published coverage is established. Changed-file secrets checks pass. The
+  documentation link gate passes all 1,407 links after a retained sandbox
+  network failure. Canonical scanner credentials remain absent.
+- Full gates: `just ci` passes with no WARN/compiler-warning lines, all 18
+  package coverage gates and the release build. Its log executes all three
+  new unit suites both ordinarily and with coverage. Each of the eight changed
+  Ruby files has positive executed-line coverage. `just ui-e2e` retains the
+  scheduling identity-required 400: 57 passed, one failed, 72 unrun, plus absent
+  UI-route coverage. Both owned services, volumes, host data directories and
+  the empty private E2E media root are removed; managed test-media cleanup
+  passes. Local Sonar input validation passes, not a published Sonar gate.
+  Gate directories are `revaer-host-backed-ci-ab8545c2955e` and
+  `revaer-host-backed-ui-e2e-c6996f0004e7` under `target/`.
+- Supplemental coverage: the unchanged three live matrices also pass under
+  the existing Ruby coverage collector, with successful cleanup. Regenerating
+  the standard generic report raises coverage across the eight changed Ruby
+  files from 1,090 to 1,292 of 1,392 lines; the three new proof modules cover
+  443 of 448 lines. Original CI coverage, raw collector records and the final
+  merged report are retained. The first merge command incorrectly disabled
+  Ruby's existing gem loader; the canonical loader succeeds. A read taken
+  before that merge completed is retained separately, not used as final proof.
+  Current-source post-merge input validation passes; no published metric follows.
+  Evidence is sealed in
+  `artifacts/media-verification/2026-09-14-committed-boundaries/`.
+- Observability/risk/rollback: only disposable verification output changes.
+  Remove these modules and their shared proof/unit registrations together to
+  roll back; no live data changes. Root, data, DevOps and Sonar instructions
+  were reviewed. DevOps now names these bounded obligations; no acceptance
+  condition is relaxed. K1 and canonical native qualification remain on the
+  existing closure map; this is not full D3 or cutover acceptance.
+
 ## Observed Conflicts
 
 The source for this review is the inert finalization in commit `b74d6b1a`
