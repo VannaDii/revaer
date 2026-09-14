@@ -2026,3 +2026,34 @@ adoption or D3 completion. Next reconcile the remaining native/trigger
 obligations with these results; do not repeat this completed policy matrix.
 Frozen bootstrap, approval boundaries and all CI/UI/Sonar/package gates remain
 unchanged. Only documentation checks were rerun for this increment.
+
+#### Qualified FK Compilation Contexts (2026-09-13)
+
+At `c2484dba`, the existing cold-logger and logger-first cases pass in both
+frozen/final and plain/native arms: eight executions, 16 application operations
+and 66 original checks. An independent, trace-blind oracle derived from the
+authored SQL, fixture/catalog and pinned PostgreSQL `REL_16_14` dispatch source
+predicts 18 INSERT plus one changed-key UPDATE callback per ingestion, and five
+INSERT callbacks per direct logger. Strict offline readback qualifies all four
+native contexts and their 96 entries against those per-operation multisets.
+Raw trace/catalog bindings, helper-source identity, transaction phases, all 19
+read-only inputs and canonical application comparisons remain checked. Ten
+parent-side callback probes record no entries for these unchanged-key cases.
+
+The phase validator initially accepted a callback moved before its nested
+logger. Its ownership/order check is corrected; all four valid contexts and
+124 negative cases pass, alongside three JSON/parser checks (131 total). The
+superseded readback and failed duplicate-fixture setup remain retained in
+`artifacts/media-verification/2026-09-13-fk-compilation-scope/`; the accepted
+readback is `fk-readback-20260913-70500-c1fasy`. Debugger missing-source warnings
+remain explicit. Owned containers, host database data, the restored debugger
+image and the completed agent worktree are removed; no test media remains.
+
+This closes only these two cases' callback-count and phase questions, not all
+FK paths, native/helper closure, D3, the single-init cutover or release gates.
+The remaining external-ID, attribute and best-context bindings need targeted
+qualification; this successful matrix must not be rerun merely to recount it.
+No production code, dependency, observability, architecture, bootstrap authority
+or acceptance criterion changed. Root policy was reviewed without new drift;
+rollback discards the local experiment. Documentation gates alone were rerun;
+full CI/UI, published Sonar, package and PR acceptance remain outstanding.
