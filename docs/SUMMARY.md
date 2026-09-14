@@ -11,6 +11,7 @@
     -   [Task Template](tasks/template.md)
     -   [Root Catalog Mode Portability](tasks/2026-09-11-root-catalog-mode-portability.md)
     -   [Root Readiness Response Contract](tasks/2026-09-11-root-readiness-contract.md)
+    -   [Logical Discovery Association Request](tasks/2026-09-13-discovery-association-request.md)
     -   [Media Profile Create Rejection](tasks/2026-09-11-media-profile-create-rejection.md)
     -   [C1-D Compliance Chart Binding](tasks/2026-09-11-compliance-chart-binding.md)
 

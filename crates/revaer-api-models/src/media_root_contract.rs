@@ -1,4 +1,4 @@
-//! Input grammar and path-free readiness for ADR 557's root HTTP contract.
+//! Logical discovery inputs and path-free readiness for ADR 557's HTTP contract.
 //!
 //! Validation preserves exact bytes: it never trims, normalizes, resolves, or
 //! grants filesystem authority. A well-formed cursor still needs active-catalog
@@ -30,7 +30,11 @@ use std::{error::Error, fmt};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use uuid::Uuid;
 
+mod association;
+mod object;
 mod readiness;
+
+pub use association::{DiscoveryAssociationRequest, DiscoveryModes};
 
 pub use readiness::{
     RootAttestationFailure, RootCatalogReadinessResponse, RootCatalogReadinessState, RootKind,

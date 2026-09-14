@@ -1887,3 +1887,32 @@ these proof additions and restores the earlier diagnostic rendering; retained
 evidence and the incomplete-D3 guard remain. Stale-policy review covers root,
 Rust, database and DevOps instructions; the scoped cancellation rules now identify
 the handshake and exact frozen/final recovery distinction. ADR 589 stays pending.
+
+### In-Call Cancellation Setting (2026-09-13, Experimental)
+
+A bounded unpublished experiment on `2865b1b9` observes the actual Rust
+ingestion backend while its source INSERT is blocked by the owned lock. The
+read-only debugger captures matching backend PID, database OID and compiler
+setting, detaches, then verifies the same backend identity and exact owned wait
+before the unchanged cancellation controller delivers cancellation. All four
+cold/committed-warm cases report setting 2 in the frozen reference and 0 in the
+final variant. The existing oracle retains exact `57014`, full rollback across
+18 write and 19 read images, frozen warm `42P07`, and distinct successful final
+recovery. Source/native identities remain unchanged.
+
+This is an in-call witness, not canonical D3 acceptance. No plain/observed
+pairing or normalization was performed: the unchanged controller does not
+record the independent seed transaction clocks. Raw timestamps, errors and
+GDB missing-source warnings remain in the evidence. The focused driver does
+not invoke or override the full proof driver, keeps `d3_complete=false`, and
+does not alter any canonical criterion. Owned containers, anonymous volumes
+and processes were removed; the integration owner retains the experiment and
+checksummed evidence before removing its clean worker worktree. No experiment
+is uploaded or adopted as production behavior.
+
+The separate bounded bootstrap investigation completed four cold starts but
+did not reproduce the host-bind ownership failure. A child-directory candidate
+is not a proven fix; locale/auth initialization warnings remain unresolved.
+Fixture collation/checksum differences were investigated but not adopted.
+The worker's evidence is retained in
+`target/bootstrap-validation-20260913-01a09d29.tar.gz`; its worktree is removed.

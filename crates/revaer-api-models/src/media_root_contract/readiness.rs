@@ -4,7 +4,8 @@ use std::{error::Error, fmt};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser::SerializeStruct};
 
-mod object;
+use super::object;
+
 mod state;
 
 pub use state::{RootAttestationFailure, RootCatalogReadinessState, RootSourceFailure};

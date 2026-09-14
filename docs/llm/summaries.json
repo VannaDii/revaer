@@ -5604,9 +5604,22 @@
     "href": "/tasks/2026-09-11-root-readiness-contract/"
   },
   {
+    "id": "tasks/2026-09-13-discovery-association-request",
+    "title": "Logical Discovery Association Request",
+    "summary": "Status: In progress Date: 2026-09-13 Operator approval: Not applicable: nonarchitectural task record Scope / owner / PR: Shared association create/replace request and focused wire tests; integration owner, local and unpublished. Approved authority: [ADR 557](../adr/557-root-persistence-contract.md#profiles-and-discovery-associations), [ADR 559 G1](../adr/559-media-approval-delta.md#g1-architecture-versus-implementation-detail), and [ADR 588](../adr/588-first-release-decision-package.md) retain their exact scopes. Requirement ledger: L2/L4/L9 in the [completion ledger](../adr/564-media-completion-ledger.md#outside-in-ledger).",
+    "tags": [
+      "motivation-and-design-notes",
+      "observability-and-status-docs",
+      "risk-rollback-and-dependencies",
+      "stale-policy-check-and-cleanup",
+      "test-coverage-summary"
+    ],
+    "href": "/tasks/2026-09-13-discovery-association-request/"
+  },
+  {
     "id": "tasks/index",
     "title": "Execution Records",
-    "summary": "Routine execution records retain scope, verification and remaining work without creating architectural approval events. [Root policy](../../AGENTS.md#5-task-record-and-adr-rules) defines their requirements; decisions remain in the [ADR catalogue](../adr/index.md). Continue the same record for iterations on one deliverable. Historical task ADRs retain their paths and are not bulk-migrated here. [Task template](template.md) [Root catalog mode portability](2026-09-11-root-catalog-mode-portability.md) [Root readiness response contract](2026-09-11-root-readiness-contract.md) [Media profile create rejection](2026-09-11-media-profile-create-rejection.md) [C1-D compliance chart binding](2026-09-11-compliance-chart-binding.md) Current governance implementation and its validation are recorded once in [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record). Media priorities and evidence remain in the [completion ledger](../adr/564-media-completion-ledger.md).",
+    "summary": "Routine execution records retain scope, verification and remaining work without creating architectural approval events. [Root policy](../../AGENTS.md#5-task-record-and-adr-rules) defines their requirements; decisions remain in the [ADR catalogue](../adr/index.md). Continue the same record for iterations on one deliverable. Historical task ADRs retain their paths and are not bulk-migrated here. [Task template](template.md) [Root catalog mode portability](2026-09-11-root-catalog-mode-portability.md) [Root readiness response contract](2026-09-11-root-readiness-contract.md) [Logical discovery association request](2026-09-13-discovery-association-request.md) [Media profile create rejection](2026-09-11-media-profile-create-rejection.md) [C1-D compliance chart binding](2026-09-11-compliance-chart-binding.md) Current governance implementation and its validation are recorded once in [ADR 587](../adr/587-evidence-led-delivery-governance.md#task-record). Media priorities and evidence remain in the [completion ledger](../adr/564-media-completion-ledger.md).",
     "tags": [],
     "href": "/tasks/index/"
   },
