@@ -186,6 +186,64 @@ evidence limitations. Detailed historical execution records below remain intact.
   condition is relaxed. K1 and canonical native qualification remain on the
   existing closure map; this is not full D3 or cutover acceptance.
 
+### Native Trust Rank Observation (2026-09-14, In Progress)
+
+- Motivation/design: close K1's missing local-rank and branch evidence without
+  changing SQL or substituting equal confidence for actual branch observation.
+  Source remains `7c345bd5`; the ignored observer reuses the pinned images and
+  canonical attribute fixtures. It reads native Boolean and assignment
+  entry/return state, function/source coordinates and local datum identities.
+- Capture: NULL-instance-key and missing-public-tier cases pass in cold and
+  helper-first modes against reference/final databases: eight observed contexts,
+  each paired with a plain run. All complete application oracles pass, including
+  the exact third-call frozen D4 error. There are 42 events per NULL-key context
+  and 54 per missing-row context. Independent source-derived readback qualifies
+  all 24 calls and 384 events, including lookup skip versus NULL-rank fallback,
+  exact local rank/bucket values, source coordinates and compilation settings.
+  Raw/application bytes, complete-state oracles, helper-first and snapshot
+  intervals, catalog identities and retained producer hashes are checked.
+- Readback tests: 156 assertions pass, rejecting 129 mutations. Parent review
+  found that unrecorded parent-FK/regex markers could be ignored; a coherent
+  raw-line mutation reproduced acceptance before the explicit rejection was
+  added. The failed regression and successful integrated suite are retained.
+  All three successful captures also pass source/native/header binding checks.
+- Calibration: the existing rank-40 fixture executes three operations per
+  variant. Native reads retain rank 40, bucket 3, true non-NULL-key and
+  rank-at-least-40 answers, and a false missing-rank answer. Both complete
+  plain/observed application comparisons pass.
+- Diagnostics: the first capture stopped at the strict JSON container's
+  comparison conversion; its failure is retained. The successful K1 capture
+  retains the missing musl source warning. Providing only the matching
+  [musl 1.2.6 source](https://musl.libc.org/releases.html), mounted read-only
+  in the debugger, removes that warning in the repeated small calibration pair.
+  No target binary, warning switch or logging criterion changed. Earlier
+  warned captures are not relabeled warning-free.
+- Evidence/observability: captures `fk-compilation-run-20260914-70282-pnmifo`
+  and warning-free calibration `fk-compilation-run-20260914-76159-urff4t` under
+  ignored `target/d3-native-ri/` pin source/native identities and retain full
+  application/debugger records. The calibration readback is
+  `target/d3-reconcile/trust-rank-calibration-readback-20260914.json`; qualified
+  K1 readback is `trust-rank-readback-qualified-20260914.json` in that directory.
+  Every owned trial container and host data directory is independently absent;
+  managed test-media cleanup passes. The completed validator worktree/branch
+  and restored debugger image are removed after preserving their inputs.
+  The source and evidence archive is
+  `artifacts/media-verification/2026-09-14-native-trust-rank/`.
+- Risk/rollback/dependencies: disposable observation only, with no new runtime
+  dependency or canonical debugger adoption. Removing the ignored observer
+  changes no application behavior. The existing debugger image and added
+  source-listing input remain isolated from target binaries.
+- Stale-policy check: root, data, DevOps and Sonar instructions reviewed. No
+  application-source, criteria, approval, frozen-authority or bootstrap changes.
+  Full CI/UI
+  results remain those of `7c345bd5` above; no fresh full gate or published Sonar
+  result is claimed for these experiments. Changed-document secrets scanning
+  passes; per-file Sonar analysis returns the organization-entitlement 403 and
+  the canonical token remains absent. The final documentation link gate passes
+  all 1,410 links after two retained runs with existing GitHub FFmpeg source-link
+  503s, without accepting error statuses or changing links. K1's readback is qualified;
+  canonical adoption and remaining D3 obligations stay open.
+
 ## Observed Conflicts
 
 The source for this review is the inert finalization in commit `b74d6b1a`
