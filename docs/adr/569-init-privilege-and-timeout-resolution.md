@@ -1957,3 +1957,43 @@ Root, data and DevOps instructions and the existing ADR 569/588 approval scopes
 were reviewed; no policy, dependency or production observability changes.
 Rollback discards the experiment only. Cleanup and archive verification are
 recorded with this batch; the goal and conditional D3 remain in progress.
+
+### Cached Policy Helper Observation (2026-09-13, Experimental)
+
+At `8e0fff40`, the existing canonical policy fixture, three-call protocol and
+full oracles run unchanged for five cases: populated fields, token match,
+persisted-signal fallback, and both nested regex failures. Cold/helper-first,
+reference/final and plain/native-observed arms produce 40 executions and 20
+matching application comparisons. All 282 canonical checks pass, including
+18-table rollback/commit continuity, 19 read inputs, exact outcomes and frozen
+D4. The native phase gate remains failed; no canonical criterion is replaced.
+
+Independent unit tests found 13 interval-escape holes in the new experimental
+phase validator. Tightening it and separating upstream regex work from the
+actual failing policy operator yields 20 valid fixtures and 164 rejected
+mutations. The first upstream-aware test revision selected the wrong regex
+events; its failed output is retained, and mutations now identify the operator
+immediately after the policy text helper. Named upstream operators and their
+settings remain checked; complete upstream counts/callsites are not certified.
+Separate hashed readback qualifies 12 native cases across rollback, commit and
+cached reuse/error. Eight remain failed on reference SQL-cast execution or
+helper-first calibration, consistent with the previously observed inlining
+distinction. The original capture's 6-qualified/14-failed report is unchanged.
+
+The first run stopped on the cast assertion. A second run failed with ENOSPC
+during frozen-reference initialization. The complete matrix used the existing
+owned host-bind test storage pattern, preserving database SQL, roles and bounds;
+it does not qualify installed Linux storage. All 69 producer source hashes and
+native hashes remain unchanged. Twenty-one owned containers and the temporary
+database directory are removed. The agent is closed and its completed worktree
+removed; debugger source warnings and every failed attempt remain retained in
+`artifacts/media-verification/2026-09-13-cached-policy-helpers/`.
+
+Next evidence work must address actual inlined-cast execution and compiler scope,
+including cached/helper-first contexts, using these retained cases and the prior
+plan experiment. Repeating the application matrix alone cannot close that gap.
+Full D3, init/root cutover, CI/UI handoff, published Sonar, package and release
+acceptance remain open. CI/UI are not rerun for this isolated experiment.
+Reviewed root/data/DevOps instructions and ADR 569/588 scope; no dependency,
+production observability, architecture, policy or approval changes. Rollback
+discards the experiment only; all original acceptance requirements remain.
