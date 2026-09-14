@@ -1997,3 +1997,32 @@ acceptance remain open. CI/UI are not rerun for this isolated experiment.
 Reviewed root/data/DevOps instructions and ADR 569/588 scope; no dependency,
 production observability, architecture, policy or approval changes. Rollback
 discards the experiment only; all original acceptance requirements remain.
+
+#### Qualified Cached Cast Readback (2026-09-13)
+
+At `e7e7f4f6`, eight focused reference contexts now pair actual inlined CASE
+plans with native executor-entry compiler settings: five helper-first controls
+at `error` and twelve ingestion executions at `use_column`. Completed plan
+rows, exact frozen SQL/callsite, same-backend phase order, cast definition and
+all existing application oracles qualify each observation. Corrected captures
+match the independently revalidated retained plain results. Strict offline
+readback also revalidates the other twelve contexts: this bounded policy matrix
+now has 20 qualified contexts, with no additional application-semantic delta.
+
+The experimental reader omitted the canonical duplicate-key option, and older
+aggregate reports contain duplicate cleanup keys. Those summaries are rejected
+as acceptance inputs; their original bytes remain retained. Corrected reports
+and strictly revalidated individual evidence replace them. A failed mutable-
+oracle reconstruction and three initially accepted validator mutations are
+also retained. The corrected suite passes 69 checks; mutation-construction
+errors cannot masquerade as validator rejection. Canonical readers are unchanged.
+
+Evidence is retained in
+`artifacts/media-verification/2026-09-13-cached-cast-scope/`. Owned containers,
+host database directories, restored debugger image and the completed agent
+worktree are removed; no test media was generated. Debugger source warnings
+remain explicit. This is experimental qualification, not canonical profiler
+adoption or D3 completion. Next reconcile the remaining native/trigger
+obligations with these results; do not repeat this completed policy matrix.
+Frozen bootstrap, approval boundaries and all CI/UI/Sonar/package gates remain
+unchanged. Only documentation checks were rerun for this increment.
