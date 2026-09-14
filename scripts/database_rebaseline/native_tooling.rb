@@ -336,6 +336,7 @@ module RevaerDatabaseRebaseline
       raise Failure, "musl archive parent is missing" unless File.directory?(parent)
 
       entry.directory? ? Dir.mkdir(path, 0o700) : File.binwrite(path, entry.read, mode: "wx", perm: 0o600)
+      File.utime(entry.header.mtime, entry.header.mtime, path) if entry.file?
       paths << path
     end
 

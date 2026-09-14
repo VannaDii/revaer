@@ -221,11 +221,20 @@ applyTo:
   database-ingestion policy suite and retain their coverage.
   Observer preparation must qualify the exact PostgreSQL base, full pinned APK
   inventory, debugger/runtime/debug-symbol hashes and matching read-only musl
-  source from `.github/build-inputs.env`. A missing cache permits a locally
-  owned build with those same checked inputs, never an unqualified replacement
+  source from `.github/build-inputs.env`, preserving the verified archive's file
+  timestamps so debugger warnings cannot be manufactured by extraction. A missing
+  cache permits a locally owned build with those same checked inputs, never an unqualified replacement
   or registry publication. Retain the immutable image ID and setup receipt;
   remove owned setup containers and failed-build tags without pruning unrelated
   resources. This arm64 observer qualification is not amd64 package evidence.
+  The canonical K1 integration must compare complete plain/observed application
+  evidence in both cold and helper-first reference/final sessions, bind raw
+  debugger records to reviewed source and the same backend's live catalogs,
+  reject every debugger diagnostic, and retain nonzero rank/bucket calibration.
+  Keep source and target identity checks before and after capture, retain
+  separate cleanup evidence, and fail if any owned resource or client remains.
+  This bounded K1 acceptance cannot discharge the incomplete-D3 guard or select
+  final init as bootstrap authority.
   Committed score/title proof must retain distinct stored base/context scores,
   the exact 99/100-seeder promotion boundary, higher-ranked title refresh and
   repeated low-source observations on the same tested backend. The current

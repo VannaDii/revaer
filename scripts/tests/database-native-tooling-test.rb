@@ -13,6 +13,7 @@ module DatabaseNativeToolingTest
   BUILT = "sha256:#{'d' * 64}"
   MUSL = "musl-1.2.6"
   SOURCE = "test-only syscall source\n"
+  SOURCE_MTIME = 1_600_000_000
 
   def self.metadata(packages)
     packages.map { |name, version| "P:#{name}\nV:#{version}\nA:aarch64\nC:Q1#{'A' * 27}=\n" }.join("\n") + "\n"
@@ -36,7 +37,9 @@ module DatabaseNativeToolingTest
     end
     Gem::Package::TarWriter.new(buffer) do |tar|
       [MUSL, "#{MUSL}/src", "#{MUSL}/src/thread", "#{MUSL}/src/thread/aarch64"].each { |path| tar.mkdir(path, 0o755) }
-      tar.add_file_simple("#{MUSL}/#{Tooling::SYSCALL_SOURCE}", 0o644, source.bytesize) { |file| file.write(source) }
+      buffer.write(Gem::Package::TarHeader.new(name: "#{MUSL}/#{Tooling::SYSCALL_SOURCE}", mode: 0o644,
+        size: source.bytesize, mtime: SOURCE_MTIME, typeflag: "0", prefix: "").to_s)
+      buffer.write(source + "\0" * ((512 - source.bytesize % 512) % 512))
       extra.call(tar) if extra
     end
     gzip = StringIO.new("".b)
@@ -250,6 +253,8 @@ module DatabaseNativeToolingTest
         assert(receipt.fetch("cached") && receipt.fetch("owned_image_tag").nil?, "cache ownership is wrong")
         assert(!File.read(prepared.receipt_path).include?("must-not-enter-receipt"), "unrelated input entered receipt")
         assert((File.stat(prepared.receipt_path).mode & 0o777) == 0o400, "receipt is writable")
+        source_time = File.mtime(File.join(prepared.musl_source_directory, Tooling::SYSCALL_SOURCE))
+        assert(source_time.to_i == SOURCE_MTIME && source_time.nsec.zero?, "verified archive source timestamp was not preserved")
         ([prepared.musl_source_directory] + Dir.glob("#{prepared.musl_source_directory}/**/*")).each do |path|
           assert((File.stat(path).mode & 0o222).zero?, "source is writable: #{path}")
         end

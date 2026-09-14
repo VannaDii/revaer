@@ -19,6 +19,7 @@ module RevaerDatabaseRebaseline
       validation_result_tests!
       validation_mutation_tests!
       validation_control_tests!
+      validation_registered_control_test!
       validation_bytes_tests!
       validation_cleanup_tests!
       puts "database-ingestion-validation-test: #{@assertions} assertions passed"
@@ -354,6 +355,26 @@ module RevaerDatabaseRebaseline
       second = { "state" => "00000", "tables_before" => copy(tables), "tables_after" => after, "clock" => "new",
                  "result" => result.merge("observation_created" => false, "durable_source_created" => false, "canonical_changed" => false) }
       [first, second]
+    end
+
+    def validation_registered_control_test!
+      frames = validation_control_fixture.each_with_index.map do |frame, index|
+        frame.merge("backend" => "123", "role" => "runtime", "clock" => index.zero? ? "old" : "new",
+                    "outside" => "false", "tables_finish" => frame.fetch("tables_after"))
+      end
+      evidence = { "frames" => frames, "inputs_before" => {}, "seed_clock" => "seed" }
+      spec = { site: nil }
+      expected = validation_comparable(evidence, spec)
+      Dir.mktmpdir("revaer-validation-registered-control-") do |directory|
+        path = File.join(directory, "control.json")
+        bytes = JSON.generate(evidence)
+        File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(bytes) }
+        registered = dependency_read_observation(path, { path => Digest::SHA256.hexdigest(bytes) }).first
+        assert(registered.fetch("frames").first.is_a?(IngestionMetadata::UniqueObject), "registered control retains strict parse guard")
+        assert(validation_comparable(registered, spec) == expected, "registered successful controls normalize without duplicate-key false positives")
+        assert(JSON.generate(registered) == bytes, "normalization does not mutate validated input")
+      end
+      rejected("duplicate metadata JSON") { metadata_json_parse('{"clock":"old","clock":"new"}') }
     end
 
     def validation_bytes_tests!

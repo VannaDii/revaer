@@ -6,6 +6,7 @@ require_relative "extension_proof"
 require_relative "reset_timeout_proof"
 require_relative "ingestion_proof"
 require_relative "ingestion_corrections"
+require_relative "native_trust_rank_proof"
 
 module RevaerDatabaseRebaseline
   # Disposable transition proof only, not an operator or application initializer.
@@ -14,6 +15,7 @@ module RevaerDatabaseRebaseline
     include ResetTimeoutProof
     include IngestionProof
     include IngestionCorrections
+    include NativeTrustRankProof
     def initialize(contract = Contract.new, runner: CommandRunner.new)
       @contract = contract
       @runner = runner
@@ -71,10 +73,7 @@ module RevaerDatabaseRebaseline
         @completed = true
       ensure
         begin
-          @runner.run!(["docker", "rm", "-fv", @container]) if started
-        rescue Failure
-          @failures << "disposable container cleanup failed"
-          raise
+          cleanup_native_resources! { @runner.run!(["docker", "rm", "-fv", @container]) if started }
         ensure
           write_evidence!
         end
@@ -100,6 +99,8 @@ module RevaerDatabaseRebaseline
     end
 
     def result(query, role: @owner, database: @database)
+      return native_result(query, role:, database:) if @native_target && query.include?("SAVEPOINT operation;")
+
       @runner.capture(command(role, database), stdin_data: query)
     end
 

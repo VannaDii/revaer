@@ -279,6 +279,56 @@ No role privilege, extension ACL, timeout value, frozen migration, workflow, or
 remote setting was changed to conceal the two failures. Independently passing
 pristine-catalog and baseline-reader tests resolve none of these approval gaps.
 
+### Canonical Native K1 Integration (2026-09-14, In Progress)
+
+- Motivation/design: integrate the qualified K1 observer and independent readback
+  into the canonical final proof instead of relying on archived experiments.
+  One owned session layer attaches the pinned debugger to the actual disposable
+  backend; the existing attribute fixtures and full application/input oracles
+  remain unchanged. Two zero-rank cases retain cold/helper-first reference/final
+  pairs, with separate nonzero rank-40 calibration.
+- Test coverage: session/dispatch/catalog tests pass 46 assertions; independent
+  readback tests pass 305 assertions including 271 rejected mutations. The live
+  integration at `run-20260914-35549-8v7nu4` passes eight paired contexts, 24 calls,
+  384 source-bound events, both nonzero calibrations and cleanup. The corrected
+  full canonical run repeats that result at `run-20260914-46391-ezct1r`, with
+  unchanged source/target identities and successful cleanup. Its 9,303 passing
+  checks and one failing incomplete-D3 guard are not complete D3 acceptance.
+  Tested source is `7ebe6a6302dfb2cb5a1ee8304eee0098e36dc49f` plus this checkpoint's
+  recorded delta and per-file producer hashes, on the pinned arm64 PostgreSQL
+  observer environment; these are not amd64 or release-package results.
+- Integration fixes: the first live run rejected GDB's source-newer-than-binary
+  warning. Extraction now preserves the verified archive's file timestamps;
+  tooling tests pass 332 assertions, including a historical-timestamp regression.
+  The initial full proof stopped after 8,800 passing checks when registered
+  `UniqueObject` evidence reached the successful-control normalizer. The retained
+  records reproduce the duplicate-field exception. Copying the validated frame
+  to an ordinary hash fixes normalization without mutating original evidence or
+  changing the strict parser. Validation tests pass 1,434 assertions; the exact
+  registered reference/final records now compare unchanged. A superseded rerun
+  was interrupted and cleaned up before restarting with the correction.
+- Handoff gates: full `just ci` passed, including executed coverage for all 14
+  changed Ruby files and both corrected regressions. `just ui-e2e` remains failed
+  (57 passed, one failed, 72 unrun): scheduled profiles require the unfinished
+  filesystem-identity association, and UI coverage is incomplete. All 1,411
+  documentation links pass; the HTML build retains its large-search-index
+  warning. Fourteen full-file Ruby MAIN-scope analyses report no issues, but
+  canonical `just sonar-scan` cannot start without `SONAR_TOKEN`; positive
+  published coverage and the complete project gate remain unverified. No check
+  was waived. Test media and owned database resources were removed.
+- Observability: retain private raw process streams, debugger script and command,
+  current producer hashes, catalog bindings, source-derived local reads, setup
+  receipt, before/after source and target identity, and separate cleanup results.
+- Risk/rollback: remove the K1 registration, session/readback integration and
+  matching policy tests together if qualification fails. The frozen migration
+  authority, final SQL bytes, incomplete-D3 guard and release criteria remain
+  unchanged. K1 cannot certify other native callsites or either Linux package.
+- Dependencies: reuse the already qualified debugger/image inputs, standard Ruby
+  libraries and existing proof helpers; no application dependency is added.
+- Stale-policy check: root, data and DevOps instructions reviewed. DevOps now
+  records canonical K1 pairing, calibration, provenance and cleanup requirements.
+  No operator approval is inferred and no criterion is relaxed.
+
 ### Shared Native Observer Tooling (2026-09-14, In Progress)
 
 - Motivation/design: move process transport and observer preparation out of

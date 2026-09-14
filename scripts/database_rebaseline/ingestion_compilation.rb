@@ -293,7 +293,8 @@ module RevaerDatabaseRebaseline
       identities = ingestion_existing_identities(images)
       clocks = frames.each_with_index.to_h { |frame, index| [frame.fetch("clock"), "<transaction:#{index}>"] }
       frames.map do |frame|
-        normalized = frame.merge("backend" => "<validated-backend>", "role" => "<validated-direct-role>", "outside" => "<validated-ADR-588-D4-lifetime>")
+        # Duplicate-key guards protect parsing, not updates to this validated copy.
+        normalized = frame.to_h.merge("backend" => "<validated-backend>", "role" => "<validated-direct-role>", "outside" => "<validated-ADR-588-D4-lifetime>")
         normalized["clock"] = clocks.fetch(frame.fetch("clock"))
         if frame.key?("result")
           normalized["result"] = frame.fetch("result").to_h do |key, value|
