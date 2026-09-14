@@ -2057,3 +2057,37 @@ No production code, dependency, observability, architecture, bootstrap authority
 or acceptance criterion changed. Root policy was reviewed without new drift;
 rollback discards the local experiment. Documentation gates alone were rerun;
 full CI/UI, published Sonar, package and PR acceptance remain outstanding.
+
+#### External-ID And Wrapper FK Qualification (2026-09-13)
+
+At `b6d64901`, canonical `imdb-upsert` and existing-v2 warm-rollback cases
+complete eight plain/native executions and 16 tested operations with 38 checks.
+Independent source-derived counts qualify all four native contexts: IMDb's
+frozen failures enter nine callbacks each; final insertion/reuse enter 18 and
+one. Each v2 operation enters 19 callbacks within v1 and two after its return
+in wrapper 0120, at the restored caller setting. The 121 observed entries cover
+the five targeted external-ID, durable-attribute and best-context bindings.
+The wrapper's superseding frozen definition, not its original 0052 body, is
+part of the independent source identity. No further semantic delta was found.
+
+Strict readback binds raw traces/catalogs, exact routine bodies and SQL, full
+application oracles, all 19 unchanged read-only inputs and transaction phases.
+It retains the approved D5 reference failures and D4 lifetime differences.
+The checker initially accepted seven invalid helper, lifetime and ownership
+mutations; these are repaired. The final suite accepts four valid contexts,
+rejects 98 mutations and passes three harness checks (105 total). One test-
+cloning setup failure is retained and is not counted as validator rejection.
+The final readback is `fk-remaining-readback-20260913-90176-t4oe99` (36 canonical
+checks); its earlier readback is superseded, not acceptance evidence.
+
+Evidence is retained in
+`artifacts/media-verification/2026-09-13-fk-remaining-scope/`, including initial
+failed validator output, the partial setup-failure log and debugger source
+warnings. Owned containers, host database data, restored debugger image and
+completed agent worktree are removed; fixture cleanup passes. Root, data and
+DevOps policy were reviewed; no production, dependency, observability, approval,
+bootstrap or criterion change occurred. Rollback discards this local experiment.
+Only documentation gates were rerun. Next reconcile the original eleven-family
+closure audit with the accumulated qualified evidence; do not repeat this
+successful capture matrix. These binding observations do not establish every
+FK path, full D3, cutover, CI/UI/Sonar/package or PR acceptance.
