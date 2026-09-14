@@ -8,13 +8,21 @@ module RevaerDatabaseRebaseline
     private
 
     def sampling_cases
+      retained = (1..25).map { |number| [number * 100, number] }
+      growing_ids = (1..25).map { |count| (1..count).to_a }
+      growing_medians = (1..25).map { |count| (count + 1) * 50 }
+      growing_sizes = [100, 100, *growing_medians.drop(2)]
       [
         { name: "three-samples", values: [[100, 0], [900, 1], [500, 2]],
           sample_ids: [[1], [1, 2], [1, 2, 3]], medians: [100, 500, 500], canonical_sizes: [100, 100, 500] },
         { name: "duplicate-then-new", values: [[100, 0], [100, 0], [900, 1]],
           sample_ids: [[1], [1], [1, 3]], medians: [100, 100, 500], canonical_sizes: [100, 100, 100] },
         { name: "out-of-order", values: [[100, 2], [900, 0], [500, 1]],
-          sample_ids: [[1], [1, 2], [1, 2, 3]], medians: [100, 500, 500], canonical_sizes: [100, 900, 500] }
+          sample_ids: [[1], [1, 2], [1, 2, 3]], medians: [100, 500, 500], canonical_sizes: [100, 900, 500] },
+        { name: "retain-newest-25", values: retained + [[2600, 26]],
+          sample_ids: growing_ids + [(2..26).to_a], medians: growing_medians + [1400], canonical_sizes: growing_sizes + [1400] },
+        { name: "discard-older-26th", values: retained + [[2600, 0]],
+          sample_ids: growing_ids + [(1..25).to_a], medians: growing_medians + [1300], canonical_sizes: growing_sizes + [1300] }
       ]
     end
 
@@ -70,8 +78,9 @@ module RevaerDatabaseRebaseline
     def sampling_parse(record, session, variant)
       metadata_transport_json!(record.fetch("stdout"))
       frames = correction_frames(record.fetch("stdout"), session)
-      states = variant == "reference" ? %w[00000 42P07 42P07] : %w[00000 00000 00000]
-      expected = variant == "reference" ? sampling_diagnostic * 2 : ""
+      count = session.fetch(:calls).length
+      states = ["00000"] + Array.new(count - 1, variant == "reference" ? "42P07" : "00000")
+      expected = variant == "reference" ? sampling_diagnostic * (count - 1) : ""
       unless frames.map { |frame| frame.fetch("state") } == states && record.fetch("stderr") == expected
         raise Failure, "sampling required outcomes or exact D4 diagnostic changed"
       end
@@ -128,7 +137,7 @@ module RevaerDatabaseRebaseline
       end
       inputs = metadata_read_tables(evidence.fetch("seed_clock"))
       unless sampling_read?(evidence.fetch("initial"), attributes_empty, inputs, nil) &&
-             sampling_read?(evidence.fetch("after"), before, inputs, variant == "final" ? 3 : 1)
+             sampling_read?(evidence.fetch("after"), before, inputs, variant == "final" ? spec.fetch(:values).length : 1)
         raise Failure, "sampling independent inputs final state or sequence changed"
       end
       true
@@ -186,7 +195,7 @@ module RevaerDatabaseRebaseline
           candidate_sha256: @contract.expected_candidate_sha256, final_sha256: @contract.final_sha256,
           postgres_image: @contract.postgres_image, source_sha256: hashes, checks:, cases:,
           limitations: ["Reference committed reuse retains exact D4 failure, never successful parity.",
-                       "Three-call sampling cases do not prove all warm wrapper branches or native callback counts.",
+                       "Committed sampling and retention cases do not prove all warm wrapper branches or native callback counts.",
                        "Only the size-sample identity sequence is directly observed; other sequence allocation is not certified."] }
         metadata_write("report.json", JSON.pretty_generate(report) + "\n")
         @metadata_evidence, @correction_evidence = previous_metadata, previous_correction

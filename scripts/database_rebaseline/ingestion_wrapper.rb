@@ -66,6 +66,8 @@ module RevaerDatabaseRebaseline
         scripts/tests/database-ingestion-size-test.rb
         scripts/tests/database-ingestion-helper-first.sql config/database-rebaseline.env
         .github/build-inputs.env crates/revaer-data/init.sql
+        crates/revaer-data/migrations/0019_policy_sets.sql
+        crates/revaer-data/migrations/0120_search_result_ingest_seed_best_source_context.sql
       ]
       paths.sort.to_h { |path| [path, Digest::SHA256.file(File.join(@contract.root, path)).hexdigest] }
     end
@@ -94,7 +96,115 @@ module RevaerDatabaseRebaseline
           arguments: wrapper_arguments("sample", minute: 25, size: 2600), wrapper: true, samples: 25 }
       ] + [{ name: "second-size-sample", fixtures: [wrapper_arguments("sample", size: 100)],
              arguments: wrapper_arguments("sample", minute: 1, size: 900), wrapper: true, samples: 2 }] +
-        wrapper_identity_cases + wrapper_hash_fill_cases + wrapper_size_cases + wrapper_promotion_cases
+        wrapper_identity_cases + wrapper_hash_fill_cases + wrapper_size_cases + wrapper_promotion_cases + wrapper_drop_cases
+    end
+
+    def wrapper_drop_cases
+      %w[drop_source drop_canonical].map do |action|
+        rule = policy_rule("title", operator: "eq", text: "dropped wrapper", action:)
+        policy = policy_case("wrapper-#{action}", [rule], drop: true, base: 0)
+        { name: policy.fetch(:name), wrapper: true, drop_policy: policy,
+          fixtures: [wrapper_arguments("visible", title: "Visible wrapper").merge(size_bytes_input: "NULL::bigint")],
+          arguments: wrapper_arguments("dropped", hash: "b", title: "Dropped wrapper").merge(size_bytes_input: "NULL::bigint") }
+      end
+    end
+
+    def wrapper_drop_seed(test_case)
+      <<~SQL
+        #{validation_fixture_sql(fixture: {})}
+        INSERT INTO public.policy_set (policy_set_id, policy_set_public_id, display_name, scope,
+          is_enabled, created_by_user_id, updated_by_user_id, created_at, updated_at)
+        OVERRIDING SYSTEM VALUE VALUES (596004, '59600000-0000-4000-8000-000000000004',
+          'D3 wrapper drop', 'global', true, 0, 0, '2026-09-11T00:00:00Z', '2026-09-11T00:00:00Z');
+        INSERT INTO public.policy_snapshot (policy_snapshot_id, snapshot_hash)
+          OVERRIDING SYSTEM VALUE VALUES (596001, repeat('d',64));
+        UPDATE public.search_request SET policy_snapshot_id = 596001 WHERE search_request_id = 569001;
+        #{policy_rules_sql(test_case.fetch(:drop_policy))}
+      SQL
+    end
+
+    def wrapper_drop_inputs(test_case, clock)
+      inputs = metadata_read_tables(clock)
+      inputs.fetch("search_request").first["policy_snapshot_id"] = 596001
+      inputs.fetch("policy_snapshot") << inputs.fetch("policy_snapshot").first.merge("policy_snapshot_id" => 596001, "snapshot_hash" => "d" * 64)
+      timestamp = "2026-09-11T00:00:00+00:00"
+      inputs["policy_set"] = [{ "policy_set_id" => 596004, "policy_set_public_id" => "59600000-0000-4000-8000-000000000004",
+        "user_id" => nil, "display_name" => "D3 wrapper drop", "scope" => "global", "is_enabled" => true,
+        "sort_order" => 1000, "is_auto_created" => false, "created_for_search_request_id" => nil,
+        "created_by_user_id" => 0, "updated_by_user_id" => 0, "created_at" => timestamp, "updated_at" => timestamp, "deleted_at" => nil }]
+      inputs["policy_rule"] = [{ "policy_rule_id" => 1, "policy_set_id" => 596004, "policy_rule_public_id" => policy_rule_uuid(1),
+        "rule_type" => "block_title_regex", "match_field" => "title", "match_operator" => "eq", "sort_order" => 1000,
+        "match_value_text" => "dropped wrapper", "match_value_int" => nil, "match_value_uuid" => nil, "value_set_id" => nil,
+        "action" => test_case.fetch(:drop_policy).fetch(:rules).first.fetch(:action), "severity" => "soft",
+        "is_case_insensitive" => true, "is_disabled" => false, "rationale" => nil, "expires_at" => nil,
+        "immutable_flag" => false, "created_by_user_id" => 0, "updated_by_user_id" => 0, "created_at" => timestamp, "updated_at" => timestamp }]
+      inputs["policy_snapshot_rule"] = [{ "policy_snapshot_rule_id" => 1, "policy_snapshot_id" => 596001,
+        "policy_rule_public_id" => policy_rule_uuid(1), "rule_order" => 10 }]
+      inputs
+    end
+
+    def wrapper_drop_tables(clock, identities, ordinal: 0, action: nil)
+      title = action ? "Dropped wrapper" : "Visible wrapper"
+      shape = { title:, normalized: title.downcase, answers: [], signals: [], release: nil }
+      tables = attributes_initial_tables(shape, clock, identities)
+      guid, hash = action ? ["dropped", "b" * 40] : ["visible", "a" * 40]
+      magnet = Digest::SHA256.hexdigest([hash].pack("H*"))
+      %w[canonical_torrent canonical_torrent_source search_request_source_observation].each do |table|
+        tables.fetch(table).first.merge!("infohash_v1" => hash, "magnet_hash" => magnet)
+      end
+      %w[canonical_torrent_source search_request_source_observation].each { |table| tables.fetch(table).first["source_guid"] = guid }
+      tables.fetch("canonical_torrent_source_context_score").first.merge!(
+        "score_total_context" => action ? -10000.0 : 0.0, "score_policy_adjust" => 0.0, "score_tag_adjust" => 0.0, "is_dropped" => !action.nil?)
+      if action
+        %w[search_request_canonical search_page search_page_item].each { |table| tables[table] = [] }
+        tables["search_filter_decision"] = [{ "search_filter_decision_id" => ordinal,
+          "search_request_id" => 569001, "policy_rule_public_id" => policy_rule_uuid(1), "policy_snapshot_id" => 596001,
+          "observation_id" => 1, "canonical_torrent_id" => 1, "canonical_torrent_source_id" => 1,
+          "decision" => action, "decision_detail" => nil, "decided_at" => clock }]
+      else
+        tables["canonical_torrent_best_source_context"] = [{ "canonical_torrent_best_source_context_id" => 1,
+          "context_key_type" => "search_request", "context_key_id" => 569001, "canonical_torrent_id" => 1,
+          "canonical_torrent_source_id" => 1, "computed_at" => clock }]
+      end
+      # The visible fixture consumes identity 1; rollback consumes, not restores,
+      # the dropped canonical/source/observation/score and decision sequences.
+      tables.each_value do |rows|
+        rows.each do |row|
+          row.each_key { |key| row[key] += ordinal if key.end_with?("_id") && row[key] == 1 && key != "search_filter_decision_id" }
+        end
+      end
+      tables
+    end
+
+    def wrapper_drop_evidence?(test_case, session, evidence)
+      fixtures, frames = evidence.values_at("fixtures", "frames")
+      return false unless fixtures.length == 1 && frames.length == (session[:rollback] ? 2 : 1)
+
+      all = fixtures + frames
+      uuids = all.flat_map { |frame| frame.fetch("result").values_at("canonical_torrent_public_id", "canonical_torrent_source_public_id") }
+      return false unless uuids.uniq.length == all.length * 2 && uuids.all? { |id| id.is_a?(String) && IngestionProof::INGESTION_UUID.match?(id) }
+      return false unless all.all? do |frame|
+        frame.fetch("result") == frame.fetch("result").slice("canonical_torrent_public_id", "canonical_torrent_source_public_id").merge(
+          "observation_created" => true, "durable_source_created" => true, "canonical_changed" => true)
+      end
+
+      fixture = fixtures.first
+      baseline = wrapper_drop_tables(fixture.fetch("clock"), fixture.fetch("result"))
+      inputs = wrapper_drop_inputs(test_case, evidence.fetch("seed_clock"))
+      return false unless size_tables_equal?(fixture.fetch("tables_before"), attributes_empty) &&
+        %w[tables_after tables_finish].all? { |key| size_tables_equal?(fixture.fetch(key), baseline) } &&
+        size_tables_equal?(evidence.fetch("before"), baseline) &&
+        %w[inputs_before inputs_after].all? { |key| size_tables_equal?(evidence.fetch(key), inputs) }
+
+      action = test_case.fetch(:drop_policy).fetch(:rules).first.fetch(:action)
+      frames.each_with_index.all? do |frame, index|
+        added = wrapper_drop_tables(frame.fetch("clock"), frame.fetch("result"), ordinal: index + 1, action:)
+        expected = baseline.to_h { |table, rows| [table, rows + added.fetch(table)] }
+        finish = session[:rollback] && index.zero? ? baseline : expected
+        size_tables_equal?(frame.fetch("tables_before"), baseline) && size_tables_equal?(frame.fetch("tables_after"), expected) &&
+          size_tables_equal?(frame.fetch("tables_finish"), finish) &&
+          (index < frames.length - 1 || size_tables_equal?(evidence.fetch("after"), finish))
+      end
     end
 
     def wrapper_promotion_cases
@@ -127,6 +237,7 @@ module RevaerDatabaseRebaseline
         sql("REVOKE ALL ON DATABASE #{identifier(database)} FROM PUBLIC; GRANT CONNECT ON DATABASE #{identifier(database)} TO #{identifier(@runtime)}", role: "postgres", database:)
         seed = File.binread(File.join(@contract.root, "scripts/tests/database-ingestion-proof-seed.sql"))
         seed += "\n#{size_seed_sql(test_case.fetch(:size_case))}" if test_case[:size_case]
+        seed += "\n#{wrapper_drop_seed(test_case)}" if test_case[:drop_policy]
         seed_query = "BEGIN; SELECT to_json(transaction_timestamp());\n#{seed}\nCOMMIT;"
         File.binwrite("#{prefix}-seed.sql", seed_query)
         seed_clock = JSON.parse(sql(seed_query, role: "postgres", database:))
@@ -138,13 +249,14 @@ module RevaerDatabaseRebaseline
           fixtures.concat(wrapper_execute(fixture_case, database, role, "#{prefix}-fixture-#{index}"))
         end
         before = ingestion_snapshot(database)
-        inputs_before = wrapper_inputs(database)
+        inputs_before = wrapper_inputs(database, drop: test_case.key?(:drop_policy))
         size_before = size_input_snapshot(database, "#{prefix}-size-before") if test_case[:size_case]
         calls = [test_case.fetch(:arguments)] * (mode == "warm-rollback" ? 2 : 1)
-        session = { name:, calls:, wrapper: test_case.fetch(:wrapper), helpers: mode == "helpers-first", rollback: mode == "warm-rollback", size_case: test_case[:size_case] }
+        session = { name:, calls:, wrapper: test_case.fetch(:wrapper), helpers: mode == "helpers-first", rollback: mode == "warm-rollback",
+                    size_case: test_case[:size_case], drop_policy: test_case[:drop_policy] }
         frames = wrapper_execute(session, database, role, prefix)
         evidence = { "seed_clock" => seed_clock, "fixtures" => fixtures, "before" => before, "inputs_before" => inputs_before,
-                     "frames" => frames, "after" => ingestion_snapshot(database), "inputs_after" => wrapper_inputs(database) }
+                     "frames" => frames, "after" => ingestion_snapshot(database), "inputs_after" => wrapper_inputs(database, drop: test_case.key?(:drop_policy)) }
         evidence.merge!("size_inputs_before" => size_before, "size_inputs_after" => size_input_snapshot(database, "#{prefix}-size-after")) if test_case[:size_case]
         bytes = JSON.pretty_generate(evidence) + "\n"
         File.binwrite("#{prefix}.json", bytes)
@@ -167,7 +279,7 @@ module RevaerDatabaseRebaseline
       File.binwrite("#{prefix}.stderr", outcome.stderr)
       raise Failure, "wrapper transport failed" unless outcome.success
 
-      metadata_transport_json!(outcome.stdout) if test_case[:size_case]
+      metadata_transport_json!(outcome.stdout) if test_case[:size_case] || test_case[:drop_policy]
       correction_parse(outcome.stdout, outcome.stderr, test_case)
     end
 
@@ -185,10 +297,10 @@ module RevaerDatabaseRebaseline
       sql(query, role: "postgres", database:)
     end
 
-    def wrapper_inputs(database)
-      WRAPPER_INPUTS.to_h do |table|
+    def wrapper_inputs(database, drop: false)
+      (drop ? IngestionPolicy::POLICY_READ_TABLES : WRAPPER_INPUTS).to_h do |table|
         value = sql("SELECT COALESCE(json_agg(row_to_json(r) ORDER BY to_jsonb(r)), '[]') FROM public.#{identifier(table)} r", role: "postgres", database:)
-        [table, JSON.parse(value)]
+        [table, drop ? metadata_json_parse(value) : JSON.parse(value)]
       end
     end
 
@@ -217,7 +329,11 @@ module RevaerDatabaseRebaseline
       check("#{name} input clock provenance", seed_clock.match?(/\A\d{4}-\d\d-\d\dT.*\+00:00\z/) && WRAPPER_INPUT_CLOCKS.all? do |table, columns|
         evidence.fetch("inputs_before").fetch(table).all? { |row| columns.all? { |column| row.fetch(column) == seed_clock } }
       end)
-      check("#{name} exact wrapper/scoring/page/sample result", frames.all? { |frame| wrapper_outcome?(test_case, frame) })
+      if test_case[:drop_policy]
+        check("#{name} independent dropped wrapper full state inputs flags and rollback", wrapper_drop_evidence?(test_case, session, evidence))
+      else
+        check("#{name} exact wrapper/scoring/page/sample result", frames.all? { |frame| wrapper_outcome?(test_case, frame) })
+      end
       check("#{name} independent promotion fixtures full state read inputs and rollback", wrapper_promotion_evidence?(test_case, session, evidence)) if test_case[:promotion]
       hash_fill_verify!(name, test_case, session, evidence) if test_case[:hash_fill]
       check("#{name} independent sampling decisions full state domain inputs and rollback", size_evidence?(test_case.fetch(:size_case), session, evidence)) if test_case[:size_case]
@@ -225,8 +341,9 @@ module RevaerDatabaseRebaseline
 
     def wrapper_comparable_inputs(evidence)
       evidence.fetch("inputs_before").to_h do |table, rows|
+        columns = WRAPPER_INPUT_CLOCKS.fetch(table, %w[trust_tier media_domain].include?(table) ? ["created_at"] : [])
         [table, rows.map do |row|
-          row.to_h { |column, value| [column, WRAPPER_INPUT_CLOCKS.fetch(table, []).include?(column) && value == evidence.fetch("seed_clock") ? "<validated-seed-transaction>" : value] }
+          row.to_h { |column, value| [column, columns.include?(column) && value == evidence.fetch("seed_clock") ? "<validated-seed-transaction>" : value] }
         end]
       end
     end

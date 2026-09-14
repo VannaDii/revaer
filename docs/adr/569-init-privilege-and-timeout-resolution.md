@@ -26,6 +26,92 @@ hold history; it does not leave these decisions awaiting approval. Approval
 does not establish behavioral equivalence, certify a final digest, activate
 the single-init cutover, or release any unrelated hold.
 
+The current [D3 closure map](support/569-d3-closure-map.md) reconciles the original
+eleven audit families into existing witnesses and concrete remaining work.
+It supersedes generic next-step descriptions, not approval conditions or prior
+evidence limitations. Detailed historical execution records below remain intact.
+
+### Closure-map implementation checkpoint (2026-09-13, In Progress)
+
+- Motivation/design: the bounded eleven-family reconciliation identified actual
+  normalization/wrapper gaps and an older compilation producer without per-run
+  source evidence. New private run directories preserve historical reports;
+  source drift, missing/changed source/image pins and duplicate JSON fail closed.
+  Dependency consumers still require the producing process's validated bytes.
+- Implementation: six empty/space-only explicit-hash inputs exercise new, reused
+  and GUID-promoted identities. The exact whitespace-only derivation runs before
+  and after commit. Both fresh drop actions traverse the current public wrapper,
+  retaining observations/decisions, complete 18-table and policy-input images,
+  rollback sequence gaps and an unrelated visible result without new page or
+  best-context records. No frozen or final SQL, runtime behavior or D3 guard changes.
+- Verification: checkpoint `df24ea2d` plus the archived source deltas passes
+  4,836 provenance-path live checks, then 1,509 focused normalization/drop checks
+  under the pinned PostgreSQL image. Combined unit suites pass, including 50,837
+  ingestion assertions and 228 dependency assertions. The earlier ad hoc unit
+  attempt exposed the expected inventory-count mismatch while the worker's
+  companion change was not yet integrated; that failed log is retained.
+- Sonar: the available MAIN-scope Ruby snippet analyzer reports zero issues
+  for the eight changed Ruby files. Exact per-file hashes/results are retained.
+  `just --command sonar verify --file scripts/database_rebaseline/ingestion_compilation.rb --project VannaDii_Revaer`
+  returns the existing organization-entitlement HTTP 403. This is not a full scan
+  or positive published coverage; full CI/UI results are recorded below.
+- Full gates on that source delta: CI passed, including all 18 package coverage
+  gates and release build. UI passed 49 tests, failed media scheduling and
+  torrent authoring, left 79 unrun and failed API coverage. The new private
+  fixture root exposed missing test-only allowlist wiring; the subsequent
+  repair is recorded in ADR 586. Scheduling still requires real root binding.
+- Observability/risk/rollback: only disposable proof evidence changes. No new
+  dependency or architectural decision. Revert the proof cases and companion
+  source/JSON guards together; no database state or bootstrap changes to undo.
+  Scoped passes cannot replace the remaining temporal/warm/native D3 evidence.
+- Stale-policy check: root, data, DevOps and Sonar instructions reviewed.
+  DevOps now specifies the producer/consumer boundary and new fixture obligations.
+  No approval condition, D4/D5 outcome, frozen authority or quality criterion is
+  relaxed. Completed agent worktree removed after its changes/evidence were retained.
+
+### Committed Observation Qualification (2026-09-14, In Progress)
+
+- Motivation/design: close the finite temporal and retention obligations in
+  the closure map using existing wrapper transport and complete-state models.
+  No production SQL, bootstrap authority, dependency or approval changes.
+- Retention: both 26th-sample cases pass cold/helper-first qualification, with
+  26 commits on each tested backend. Newest retention removes the oldest
+  observation; a late older sample is itself removed. All 18 tables, rollup
+  values, exact identity sequence and immutable policy inputs are checked.
+  Five sampling cases produce 20 variants; the live driver passes 245 checks
+  including its prerequisite D4/D5 matrix. Unit coverage passes 246 assertions.
+- Temporal: six GUID-less/GUID-promotion and older/equal/newer cases pass in
+  cold, helper-first and committed-warm modes: 36 variants and 261 live checks
+  including prerequisites. The independent oracle checks all last-seen fields,
+  incoming observation fields, identities, samples, full write/read images and
+  transaction provenance. Unit coverage passes 464 assertions; coherent state
+  mutations, reconnects, duplicate JSON and changed D4 diagnostics are rejected.
+- Frozen committed reuse remains the exact approved D4 failure, not successful
+  equivalence. Both live drivers report `d3_complete=false` and successful owned
+  container/volume cleanup. Source hashes are retained per run. The combined
+  ingestion unit driver passes. Full combined CI passes without WARN/compiler
+  warning lines, including all 18 package coverage gates and the release build.
+  Full UI retries after a retained port collision: torrent authoring now passes;
+  57 tests pass, scheduling fails with `media_profile_filesystem_identity_required`,
+  72 dependent tests remain unrun and UI route coverage is missing.
+- Evidence: `target/d3-reconcile/committed-retention-live-20260914.log`,
+  `temporal-live-20260914.log` and `committed-temporal-unit-20260914.log`, with
+  private sampling run `run-20260913-10411-gif31r` and temporal run
+  `run-20260913-19983-dh0y4v`. The retained source deltas remain unpublished.
+- Sonar: all six newly touched Ruby files and three TypeScript files receive
+  MAIN-scope file analysis. Three setup-file style findings are fixed and its
+  exact recheck reports zero; other files report zero. Earlier eight Ruby-file
+  receipts remain content-matching. The full changed-file secrets scan and
+  final local input verification pass. CLI agentic verification still returns
+  organization-entitlement HTTP 403; `SONAR_TOKEN` is absent. No canonical
+  repository analysis or positive published coverage is established. Evidence
+  is retained in `artifacts/media-verification/2026-09-14-committed-ingestion-and-fixture-roots/`.
+- Observability/risk/rollback: only disposable proof records change. Remove the
+  added cases and their canonical/unit registration together to roll back; no
+  live application data changes. Root, data, DevOps and Sonar policy reviewed;
+  DevOps now records these exact proof obligations without relaxing criteria.
+  Post-commit hash-fill/scoring/paging and canonical native evidence remain.
+
 ## Observed Conflicts
 
 The source for this review is the inert finalization in commit `b74d6b1a`

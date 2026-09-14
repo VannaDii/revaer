@@ -54,6 +54,10 @@ applyTo:
   exercise the exact serving entry and production preflight regressions against
   an explicitly supplied disposable database without changing auth/setup state.
 - Keep selectors and test affordances stable. Update E2E fixtures deliberately when UI structure changes.
+- E2E setup must allowlist exactly the resolved private fixture root in the
+  existing filesystem policy, preserving its other fields and the fetched
+  snapshot. Cover absolute/relative roots under both authentication modes;
+  never bypass production path validation to make torrent authoring succeed.
 - API E2E media tests must create real source files beneath private per-test temporary profile roots and remove the complete temporary tree in `afterEach`, including when an assertion fails. Synthetic paths may be used only for routes whose contract explicitly rejects or never reads the filesystem.
 - Legacy path-taking profile fixtures must follow ADR 419: create in dry-run with automation disabled and no cadence; metadata-only updates must not supply scheduling intervals. Retain positive persistence checks and explicit rejection tests for unverified automation or interval changes, including unchanged persisted state. Missing included automation capabilities remain failures, not permission to fabricate root identity, remove workflow assertions, or count injected-host checks as package/full E2E proof.
 - API E2E route coverage must reject `405` for every supported media operation and must separately require exact `405` responses for worker-owned `POST /v1/media/jobs` and `POST /v1/media/jobs/{media_job_public_id}/phases`; do not restore those retired writes or remove them from end-to-end coverage.

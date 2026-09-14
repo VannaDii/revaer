@@ -184,6 +184,25 @@ applyTo:
   canonical sequence consumption, exact native diagnostics and unchanged caller
   settings. Privileged rule fixtures do not certify the rule-management API;
   matching-rule failures do not imply successful splitting or complete D3.
+  Compilation evidence must use a new private run directory, preserve prior
+  reports, retain the exact producer/input source hashes and reject source
+  changes during execution. Dependency consumers must require the producing
+  process's validated byte registry, matching current source and PostgreSQL
+  identities, and duplicate-free JSON. Historical or merely source-compatible
+  experiments do not become current-process native execution evidence.
+  Blank-hash fixtures must reach PostgreSQL without client normalization.
+  Dropped public-wrapper cases must retain both drop actions, complete write
+  and policy-input images, an unrelated visible result, rollback sequence gaps,
+  and the exact frozen/final D4 lifetime. Do not count those rollback retries
+  as post-commit identity, scoring or paging coverage.
+  Committed sample-retention proof must keep all 26 transactions on the tested
+  backend, distinguish newest retention from a late-arriving older sample,
+  and verify full table images, rollups and consumed sequence values. Temporal
+  identity proof must independently assert every last-seen metadata field
+  against strictly newer observations while retaining incoming observation
+  values for older/equal inputs. Preserve GUID promotion, same-backend commit
+  boundaries, complete read/write images and exact frozen D4 failures. Neither
+  matrix establishes untested hash-fill, scoring, paging or native callsites.
 
 - `just test-database-baseline-read` exercises the ADR 551 read-only stored-procedure boundary against a caller-provided disposable Postgres service with the same workspace-wide all-feature selection as CI, filtering only the test names. Package-only feature resolution is not equivalent evidence for tracing behavior. It must fail when the service is missing, reject unmanaged databases without initializing them, and retain the frozen migration authority until the coordinated cutover. Baseline errors must never retain raw database messages, role names, or credentials.
 

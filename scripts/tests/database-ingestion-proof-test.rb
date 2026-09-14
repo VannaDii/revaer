@@ -19,6 +19,7 @@ require_relative "database-ingestion-attributes-test"
 require_relative "database-ingestion-metadata-test"
 require_relative "database-ingestion-disambiguation-test"
 require_relative "database-ingestion-sampling-test"
+require_relative "database-ingestion-temporal-test"
 require_relative "database-ingestion-guid-test"
 require_relative "database-ingestion-attribute-race-test"
 require_relative "database-ingestion-sample-race-test"
@@ -294,6 +295,7 @@ RevaerDatabaseRebaseline::IngestionAttributesTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionMetadataTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionDisambiguationTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionSamplingTest.new.run_tests!
+RevaerDatabaseRebaseline::IngestionTemporalTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionGuidTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionAttributeRaceTest.new.run_tests!
 RevaerDatabaseRebaseline::IngestionSampleRaceTest.new.run_tests!

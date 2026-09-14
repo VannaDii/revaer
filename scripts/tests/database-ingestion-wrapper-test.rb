@@ -6,7 +6,10 @@ module RevaerDatabaseRebaseline
 
     def wrapper_tests!
       cases = wrapper_cases
-      assert(cases.length == 73 && cases.map { |item| item.fetch(:name) }.uniq.length == 73, "retain distinct wrapper/scoring/page/size/identity/hash-fill/promotion cases")
+      expected_count = 9 + wrapper_identity_cases.length + wrapper_hash_fill_cases.length + wrapper_size_cases.length +
+        wrapper_promotion_cases.length + wrapper_drop_cases.length
+      assert(cases.length == expected_count && cases.map { |item| item.fetch(:name) }.uniq.length == expected_count,
+        "retain distinct wrapper/scoring/page/size/identity/hash-fill/promotion/drop cases")
       assert(IngestionProof::INGESTION_HELPERS.include?("search_result_ingest"), "inventory must include the actual Rust wrapper")
       assert(IngestionWrapper::WRAPPER_MODES == %w[cold helpers-first warm-rollback], "retain independent cold and warm compilation modes")
       guard_path = "scripts/stack_asset_exception.rb"
@@ -30,6 +33,119 @@ module RevaerDatabaseRebaseline
       wrapper_promotion_tests!(cases)
       wrapper_paging_tests!(cases)
       wrapper_sample_tests!(cases)
+      wrapper_drop_tests!(cases)
+    end
+
+    def wrapper_drop_tests!(cases)
+      dropped = cases.select { |item| item[:drop_policy] }
+      assert(dropped.map { |item| item.fetch(:name) } == %w[wrapper-drop_source wrapper-drop_canonical], "both public wrapper drop actions are exercised")
+      latest = "crates/revaer-data/migrations/0120_search_result_ingest_seed_best_source_context.sql"
+      assert(wrapper_source_hashes.fetch(latest) == Digest::SHA256.file(File.join(@contract.root, latest)).hexdigest, "pin the latest frozen wrapper, not a superseded definition")
+      dropped.each do |test_case|
+        seed = wrapper_drop_seed(test_case)
+        action = test_case.fetch(:drop_policy).fetch(:rules).first.fetch(:action)
+        assert(seed.include?("'dropped wrapper'") && seed.include?("'#{action}'") && seed.include?("(596001,"), "existing policy serializer binds the exact drop rule to the request snapshot")
+        IngestionWrapper::WRAPPER_MODES.each do |mode|
+          session = { rollback: mode == "warm-rollback" }
+          evidence = wrapper_drop_test_evidence(test_case, session)
+          assert(wrapper_drop_evidence?(test_case, session, evidence), "complete dropped wrapper oracle #{action} #{mode}")
+          evidence.fetch("frames").each_with_index do |frame, index|
+            tables = frame.fetch("tables_after")
+            assert(frame.fetch("result").values_at("canonical_changed", "durable_source_created", "observation_created") == [true, true, true], "drop retains exact insertion flags")
+            assert(tables.fetch("search_request_source_observation").last.values_at("observation_id", "source_guid") == [index + 2, "dropped"], "observation persists with consumed rollback identity")
+            assert(tables.fetch("search_filter_decision").last.values_at("decision", "search_filter_decision_id") == [action, index + 1], "exact action cast decision and consumed identity")
+            %w[search_page search_page_item search_request_canonical canonical_torrent_best_source_context].each do |table|
+              assert(tables.fetch(table) == evidence.fetch("before").fetch(table) && !tables.fetch(table).empty?, "no dropped tail writes and preserve unrelated visible #{table}")
+            end
+          end
+          wrapper_drop_mutations!(test_case, session, evidence)
+          %w[reference final].each do |variant|
+            checked = JSON.parse(JSON.generate(evidence))
+            role = variant == "reference" ? "postgres" : @runtime
+            (checked.fetch("fixtures") + checked.fetch("frames")).each do |frame|
+              frame["role"] = { "session" => role, "current" => role, "superuser" => variant == "reference",
+                "create_role" => variant == "reference", "bypass_rls" => variant == "reference" }
+              frame["outside"] = (variant == "reference").to_s
+            end
+            checked.fetch("frames").first["outside"] = "false" if session[:rollback]
+            first = @checks.length
+            wrapper_verify!("drop-unit", test_case, session, checked, variant, role)
+            assert(@checks.drop(first).all? { |check| check.fetch(:passed) }, "retain exact #{variant} D4 scratch lifetime in #{mode}")
+            checked.fetch("frames").last["outside"] = (variant != "reference").to_s
+            first = @checks.length
+            wrapper_verify!("drop-unit-mutated", test_case, session, checked, variant, role)
+            assert(@checks.drop(first).any? { |check| !check.fetch(:passed) && check.fetch(:check).include?("D4 lifetime") }, "opposite reference/final lifetime fails")
+          end
+        end
+      end
+    end
+
+    def wrapper_drop_test_evidence(test_case, session)
+      frames = Array.new(session[:rollback] ? 3 : 2) do |index|
+        frame = correction_test_frames.first
+        identities = { "canonical_torrent_public_id" => format("56900000-0000-4000-8000-%012d", 90 + index * 2),
+          "canonical_torrent_source_public_id" => format("56900000-0000-4000-8000-%012d", 91 + index * 2),
+          "observation_created" => true, "durable_source_created" => true, "canonical_changed" => true }
+        frame.merge("clock" => "2026-09-10T01:0#{index}:00+00:00", "backend" => index.zero? ? "101" : "102", "result" => identities)
+      end
+      fixture = frames.shift
+      baseline = wrapper_drop_tables(fixture.fetch("clock"), fixture.fetch("result"))
+      fixture.merge!("tables_before" => attributes_empty, "tables_after" => baseline, "tables_finish" => baseline)
+      frames.each_with_index do |frame, index|
+        added = wrapper_drop_tables(frame.fetch("clock"), frame.fetch("result"), ordinal: index + 1,
+          action: test_case.fetch(:drop_policy).fetch(:rules).first.fetch(:action))
+        after = baseline.to_h { |table, rows| [table, rows + added.fetch(table)] }
+        frame.merge!("tables_before" => baseline, "tables_after" => after, "tables_finish" => session[:rollback] && index.zero? ? baseline : after)
+      end
+      clock = "2026-09-10T00:00:00+00:00"
+      inputs = wrapper_drop_inputs(test_case, clock)
+      JSON.parse(JSON.generate("seed_clock" => clock, "fixtures" => [fixture], "frames" => frames, "before" => baseline,
+        "after" => frames.last.fetch("tables_finish"), "inputs_before" => inputs, "inputs_after" => inputs))
+    end
+
+    def wrapper_drop_mutations!(test_case, session, evidence)
+      raw = JSON.generate(evidence)
+      %w[fixtures frames].each do |phase|
+        evidence.fetch(phase).each_with_index do |frame, index|
+          frame.fetch("result").each_key do |column|
+            changed = JSON.parse(raw)
+            changed.fetch(phase).fetch(index).fetch("result")[column] = "changed"
+            assert(!wrapper_drop_evidence?(test_case, session, changed), "reject drop #{phase} result #{column}")
+          end
+          %w[tables_before tables_after tables_finish].each do |key|
+            frame.fetch(key).each do |table, rows|
+              changed = JSON.parse(raw)
+              changed.fetch(phase).fetch(index).fetch(key).fetch(table) << { "unexpected" => true }
+              assert(!wrapper_drop_evidence?(test_case, session, changed), "reject drop #{phase} #{key} extra #{table}")
+              rows.each_with_index do |row, offset|
+                row.each_key do |column|
+                  changed = JSON.parse(raw)
+                  changed.fetch(phase).fetch(index).fetch(key).fetch(table).fetch(offset)[column] = "changed"
+                  assert(!wrapper_drop_evidence?(test_case, session, changed), "reject drop #{phase} #{key} #{table}.#{column}")
+                end
+              end
+            end
+          end
+        end
+      end
+      evidence.fetch("inputs_before").each do |table, rows|
+        changed = JSON.parse(raw)
+        %w[inputs_before inputs_after].each { |key| changed.fetch(key).fetch(table) << { "unexpected" => true } }
+        assert(!wrapper_drop_evidence?(test_case, session, changed), "reject coherently added drop input #{table}")
+        rows.each_with_index do |row, offset|
+          row.each_key do |column|
+            changed = JSON.parse(raw)
+            %w[inputs_before inputs_after].each { |key| changed.fetch(key).fetch(table).fetch(offset)[column] = "changed" }
+            assert(!wrapper_drop_evidence?(test_case, session, changed), "reject coherently mutated drop input #{table}.#{column}")
+          end
+        end
+      end
+      %w[before after].each do |key|
+        changed = JSON.parse(raw)
+        changed.fetch(key).fetch("canonical_torrent_best_source_context").clear
+        assert(!wrapper_drop_evidence?(test_case, session, changed), "reject removed unrelated best context #{key}")
+      end
+      assert(JSON.generate(evidence) == raw, "drop validator does not rewrite evidence")
     end
 
     def wrapper_test_frame

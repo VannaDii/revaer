@@ -6,7 +6,7 @@ module RevaerDatabaseRebaseline
 
     def identity_tests!
       cases = wrapper_identity_cases
-      assert(cases.length == 33 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 33, "eleven identity inputs exercise new, reuse and GUID promotion")
+      assert(cases.length == 51 && cases.map { |entry| entry.fetch(:name) }.uniq.length == 51, "seventeen identity inputs exercise new, reuse and GUID promotion")
       cases.each do |test_case|
         assert(test_case.fetch(:fixtures).first.fetch(:title_raw_input) == "'Unrelated identity'::varchar", "a distinct lower-ID source must already exist")
         if test_case.fetch(:name).include?("v2-precedence") && test_case.fetch(:identity).fetch(:operation) != "new"
@@ -18,6 +18,24 @@ module RevaerDatabaseRebaseline
         identity_mutations!(test_case, frame)
       end
       identity_uri_tests!(cases)
+      identity_blank_hash_tests!(cases)
+    end
+
+    def identity_blank_hash_tests!(cases)
+      { "v1" => [:infohash_v1_input, 40], "v2" => [:infohash_v2_input, 64], "magnet" => [:magnet_hash_input, 64] }.each do |field, (key, width)|
+        { "empty" => "", "blank" => "   " }.each do |kind, raw|
+          selected = cases.select { |entry| entry.fetch(:name).start_with?("identity-#{kind}-#{field}-") }
+          assert(selected.map { |entry| entry.fetch(:identity).fetch(:operation) } == %w[new reuse promote-guid], "#{kind} #{field} covers each identity operation")
+          selected.each do |test_case|
+            assert(test_case.fetch(:arguments).fetch(key) == "'#{raw}'::char(#{width})", "blank hash must reach PostgreSQL without client normalization")
+            usable = field == "v1" ? "b" * 64 : "a" * 40
+            hashes = field == "v1" ? [nil, usable] : [usable, nil]
+            hashes += [Digest::SHA256.hexdigest([usable].pack("H*")), nil]
+            strategy = field == "v1" ? "infohash_v2" : "infohash_v1"
+            assert(test_case.fetch(:identity).values_at(:strategy, :confidence, :hashes) == [strategy, 1.0, hashes], "blank #{field} preserves independently known usable identity")
+          end
+        end
+      end
     end
 
     def identity_test_frame(test_case)

@@ -568,8 +568,8 @@ module RevaerDatabaseRebaseline
       bytes = File.open(path, File::RDONLY | File::NOFOLLOW, &:read)
       raise Failure, "dependency validated evidence bytes changed: #{path}" unless Digest::SHA256.hexdigest(bytes) == hash
 
-      [JSON.parse(bytes), { path:, sha256: hash }]
-    rescue SystemCallError, IOError, JSON::ParserError => error
+      [metadata_json_parse(bytes), { path:, sha256: hash }]
+    rescue SystemCallError, IOError, Failure => error
       raise Failure, "cannot read dependency validated evidence: #{path}: #{error.message}"
     end
 
@@ -620,7 +620,11 @@ module RevaerDatabaseRebaseline
         expected = report.fetch("checks").map { |entry| entry.transform_keys(&:to_sym) }
         first = @checks.index(expected.first)
         raise Failure, "dependency observations require successful current-process #{directory}" unless report.fetch("completed") && report.fetch("passed") && !expected.empty? && expected.all? { |entry| entry.fetch(:passed) } && first && @checks.slice(first, expected.length) == expected
-        raise Failure, "dependency observed source identity changed" unless report.fetch("candidate_sha256") == @contract.expected_candidate_sha256 && report.fetch("final_sha256") == @contract.final_sha256
+        sources = directory == "ingestion-compilation" ? compilation_source_hashes : wrapper_source_hashes
+        unless report.fetch("candidate_sha256") == @contract.expected_candidate_sha256 && report.fetch("final_sha256") == @contract.final_sha256 &&
+               report["postgres_image"] == @contract.postgres_image && report["source_sha256"] == sources
+          raise Failure, "dependency observed source identity changed"
+        end
 
         files << evidence
         dependency_observation_cases(directory).each do |name, role, count|
@@ -682,6 +686,7 @@ module RevaerDatabaseRebaseline
           SELECT json_build_object('title',public.normalize_title_v1(U&'H\\00F4tel.1080p'),'unaccent',public.unaccent(U&'caf\\00e9'),
             'digest_text',encode(public.digest('abc'::text,'sha256'),'hex'),'digest_bytes',encode(public.digest(decode('616263','hex'),'sha256'),'hex'),
             'cast',('flag'::public.policy_action)::public.decision_type,
+            'blank_magnet_hash',public.derive_magnet_hash_v1(NULL::char(40),NULL::char(64),'   '::text),
             'uuid_binding',(pg_identify_object('pg_proc'::regclass,'gen_random_uuid()'::regprocedure,0)).identity);
           SELECT json_build_object('after',current_setting('plpgsql.variable_conflict'));
           COMMIT;
@@ -690,6 +695,7 @@ module RevaerDatabaseRebaseline
           SELECT json_build_object('title',public.normalize_title_v1(U&'H\\00F4tel.1080p'),'unaccent',public.unaccent(U&'caf\\00e9'),
             'digest_text',encode(public.digest('abc'::text,'sha256'),'hex'),'digest_bytes',encode(public.digest(decode('616263','hex'),'sha256'),'hex'),
             'cast',('flag'::public.policy_action)::public.decision_type,
+            'blank_magnet_hash',public.derive_magnet_hash_v1(NULL::char(40),NULL::char(64),'   '::text),
             'uuid_binding',(pg_identify_object('pg_proc'::regclass,'gen_random_uuid()'::regprocedure,0)).identity);
           SELECT json_build_object('after',current_setting('plpgsql.variable_conflict'));
           COMMIT;
@@ -700,7 +706,7 @@ module RevaerDatabaseRebaseline
         dependency_write!("#{variant}-native-answers.stderr", outcome.stderr)
         raise Failure, "native answer transport/diagnostic failure" unless outcome.success && outcome.stderr.empty?
 
-        records = outcome.stdout.lines.map { |line| JSON.parse(line) }
+        records = outcome.stdout.lines.map { |line| metadata_json_parse(line) }
         dependency_validate_native_answers!(records, role)
 
         values[variant] = records
@@ -711,7 +717,8 @@ module RevaerDatabaseRebaseline
 
     def dependency_validate_native_answers!(records, role)
       digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-      expected = { "title" => "hotel", "unaccent" => "cafe", "digest_text" => digest, "digest_bytes" => digest, "cast" => "flag", "uuid_binding" => "pg_catalog.gen_random_uuid()" }
+      expected = { "title" => "hotel", "unaccent" => "cafe", "digest_text" => digest, "digest_bytes" => digest,
+                   "cast" => "flag", "blank_magnet_hash" => nil, "uuid_binding" => "pg_catalog.gen_random_uuid()" }
       valid = records.is_a?(Array) && records.length == 6 && records.all? { |record| record.is_a?(Hash) }
       valid &&= records.values_at(1, 4) == [expected, expected] && records.values_at(2, 5) == [{ "after" => "error" }] * 2
       valid &&= records.values_at(0, 3).all? { |record| record.values_at("role", "current", "before") == [role, role, "error"] }

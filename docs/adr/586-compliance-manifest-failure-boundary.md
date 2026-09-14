@@ -25,6 +25,43 @@
     Earlier pending wording below is retained proposal history; the exact
     ADR 588 resolution governs current implementation authority.
 
+## Private E2E Fixture Root (2026-09-14, In Progress)
+
+The full UI run on `df24ea2d` plus the D3 closure delta used a new private
+`E2E_FS_ROOT`. Torrent authoring returned HTTP 400 because setup retained the
+default filesystem allowlist instead of the resolved fixture root. Test-only
+setup now copies the fetched filesystem policy and replaces only its allowlist
+with that exact root. Production path validation, torrent assertions and all
+gates remain unchanged; this does not supply media profile root identity.
+
+The integrated bootstrap recipe passes all 24 tests, including absolute and
+relative roots under both auth modes, unchanged snapshots, missing-field
+rejection and cleanup. Its first sandboxed run failed on npm registry DNS;
+the network-authorized retry passed audit and strict typechecking. Logs are in
+`target/d3-reconcile/integrated-bootstrap{,-retry}-20260914.log`. Full UI
+verification now confirms live authoring and its dependent torrent operations.
+The suite passes 57 tests, fails the unchanged media scheduling requirement,
+leaves 72 dependent tests unrun and lacks UI coverage. Its first launch failed
+before tests with `Address already in use`; raw logs are retained. The owned
+launcher then checked non-ephemeral loopback port 18173 before retrying, without
+altering the suite or terminating unrelated processes. Both disposable databases
+were removed. Full combined CI and all 18 coverage gates pass without warnings.
+The completed agent's three
+files were reviewed, byte-compared, integrated and archived before its worktree
+and branch were removed.
+
+MAIN-scope Sonar found three setup-file style issues (Node built-in import
+prefixes and consecutive array appends); they are fixed and the exact recheck
+reports zero. No scanner criteria changed. The complete checkpoint evidence is
+in `artifacts/media-verification/2026-09-14-committed-ingestion-and-fixture-roots/`;
+positive published Sonar coverage and full service acceptance remain absent.
+
+Root/UI policy was reviewed and the fixture obligation added to UI guidance.
+No architecture, dependency or production observability change. Rollback is
+the test setup helper and regressions together; missing root authorization
+must remain a failure, not a bypass. The existing scheduling failure and all
+service/package/coverage acceptance requirements remain open.
+
 ## Verified Conflict
 
 At donor `d540f67c` and retained integration `65dbefb7`,

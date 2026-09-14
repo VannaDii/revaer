@@ -13,6 +13,7 @@ require_relative "ingestion_attributes"
 require_relative "ingestion_metadata"
 require_relative "ingestion_disambiguation"
 require_relative "ingestion_sampling"
+require_relative "ingestion_temporal"
 require_relative "ingestion_guid"
 require_relative "ingestion_attribute_race"
 require_relative "ingestion_sample_race"
@@ -35,6 +36,7 @@ module RevaerDatabaseRebaseline
     include IngestionMetadata
     include IngestionDisambiguation
     include IngestionSampling
+    include IngestionTemporal
     include IngestionGuid
     include IngestionAttributeRace
     include IngestionSampleRace
@@ -103,6 +105,7 @@ module RevaerDatabaseRebaseline
       verify_ingestion_metadata!
       verify_ingestion_disambiguation!
       verify_ingestion_sampling!
+      verify_ingestion_temporal!
       verify_ingestion_guid!
       verify_ingestion_pool!
       verify_ingestion_dependencies!

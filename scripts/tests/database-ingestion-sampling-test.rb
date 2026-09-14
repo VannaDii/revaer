@@ -5,6 +5,31 @@ require_relative "database-ingestion-attributes-test"
 module RevaerDatabaseRebaseline
   class IngestionSamplingTest < IngestionAttributesTest
     def run_tests!
+      sampling_test_setup!
+      assert(sampling_cases.map { |spec| spec.fetch(:name) } == %w[three-samples duplicate-then-new out-of-order retain-newest-25 discard-older-26th], "five distinct committed sampling paths")
+      sampling_cases.each do |spec|
+        SAMPLING_MODES.each do |mode|
+          %w[reference final].each do |variant|
+            role = variant == "reference" ? "postgres" : @runtime
+            evidence = sampling_test_evidence(spec, mode, variant, role)
+            assert(sampling_validate!(evidence, spec, mode, variant, role), "synthetic #{spec.fetch(:name)} #{mode} #{variant}")
+            query = correction_session(sampling_session(spec, mode))
+            count = spec.fetch(:values).length
+            assert(query.scan("FROM public.search_result_ingest(").length == count && query.scan("COMMIT;").length == count, "every real wrapper call crosses a commit")
+            assert(!query.match?(/DISCARD|DROP TABLE|SET ROLE|SET plpgsql|\\connect/), "no compiler or temporary namespace repair")
+            assert(evidence.fetch("tested").fetch("stderr").scan("ERROR:  42P07:").length == (variant == "reference" ? count - 1 : 0), "D4 errors retained only on frozen reference")
+          end
+        end
+      end
+      rejected("unknown sampling mode") { sampling_session(sampling_cases.first, "repair") }
+      sampling_mutations!
+      sampling_retention_mutations!
+      puts "database-ingestion-sampling-test: #{@assertions} assertions passed"
+    end
+
+    private
+
+    def sampling_test_setup!
       @assertions = 0
       @runtime = "sampling_unit_runtime"
       routines = { "search_result_ingest_v1" => "0052_indexer_search_result_ingest_proc.sql",
@@ -14,26 +39,7 @@ module RevaerDatabaseRebaseline
         { "name" => name, "signature" => "#{name}(uuid)", "source" => body }
       end
       @ingestion_inventory = { "reference_proof" => { "routines" => routines } }
-      assert(sampling_cases.map { |spec| spec.fetch(:name) } == %w[three-samples duplicate-then-new out-of-order], "three distinct committed sampling paths")
-      sampling_cases.each do |spec|
-        SAMPLING_MODES.each do |mode|
-          %w[reference final].each do |variant|
-            role = variant == "reference" ? "postgres" : @runtime
-            evidence = sampling_test_evidence(spec, mode, variant, role)
-            assert(sampling_validate!(evidence, spec, mode, variant, role), "synthetic #{spec.fetch(:name)} #{mode} #{variant}")
-            query = correction_session(sampling_session(spec, mode))
-            assert(query.scan("FROM public.search_result_ingest(").length == 3 && query.scan("COMMIT;").length == 3, "three real wrapper calls across commits")
-            assert(!query.match?(/DISCARD|DROP TABLE|SET ROLE|SET plpgsql|\\connect/), "no compiler or temporary namespace repair")
-            assert(evidence.fetch("tested").fetch("stderr").scan("ERROR:  42P07:").length == (variant == "reference" ? 2 : 0), "D4 errors retained only on frozen reference")
-          end
-        end
-      end
-      rejected("unknown sampling mode") { sampling_session(sampling_cases.first, "repair") }
-      sampling_mutations!
-      puts "database-ingestion-sampling-test: #{@assertions} assertions passed"
     end
-
-    private
 
     def attributes_source_hashes
       sampling_source_hashes
@@ -55,7 +61,7 @@ module RevaerDatabaseRebaseline
           lines << "#{key}:#{%w[role clock tables_before tables_after tables_finish].include?(key) ? JSON.generate(value) : value}"
         end
       end
-      { "stdout" => lines.join("\n") + "\n", "stderr" => variant == "reference" ? sampling_diagnostic * 2 : "", "frames" => frames }
+      { "stdout" => lines.join("\n") + "\n", "stderr" => variant == "reference" ? sampling_diagnostic * (frames.length - 1) : "", "frames" => frames }
     end
 
     def sampling_test_read(tables, inputs, sequence)
@@ -66,12 +72,14 @@ module RevaerDatabaseRebaseline
     def sampling_test_evidence(spec, mode, variant, role)
       identities = { "canonical_torrent_public_id" => "56900000-0000-4000-8000-000000000090",
         "canonical_torrent_source_public_id" => "56900000-0000-4000-8000-000000000091" }
-      frames = (1..3).map { |number| { "clock" => "2026-09-12T00:00:0#{number}+00:00", "result" => identities } }
+      count = spec.fetch(:values).length
+      frames = (1..count).map { |number| { "clock" => format("2026-09-12T00:00:%02d+00:00", number), "result" => identities } }
       before = attributes_empty
       frames.each_index do |index|
         success = variant == "final" || index.zero?
         after = success ? sampling_tables(spec, frames, index) : before
         frame = attributes_test_frame(role, index + 1, before, after, first: index.zero?).merge("backend" => "100", "finished_setting" => "error")
+        frame["clock"] = frames.fetch(index).fetch("clock")
         unless success
           frame["state"] = "42P07"
           frame.delete("result")
@@ -83,7 +91,35 @@ module RevaerDatabaseRebaseline
       inputs = metadata_read_tables(seed)
       { "seed_clock" => seed, "tested" => sampling_test_transport(frames, mode, variant),
         "initial" => sampling_test_read(attributes_empty, inputs, nil),
-        "after" => sampling_test_read(before, inputs, variant == "reference" ? 1 : 3) }
+        "after" => sampling_test_read(before, inputs, variant == "reference" ? 1 : count) }
+    end
+
+    def sampling_retention_mutations!
+      sampling_cases.last(2).each do |spec|
+        original = sampling_test_evidence(spec, "cold", "final", @runtime)
+        frames = original.fetch("tested").fetch("frames")
+        retained = frames.last.fetch("tables_finish").fetch("canonical_size_sample")
+        expected_ids = spec.fetch(:name) == "retain-newest-25" ? (2..26).to_a : (1..25).to_a
+        assert(retained.map { |row| row.fetch("canonical_size_sample_id") } == expected_ids, "retention is by observation time, not insertion order")
+        assert(frames.length == 26 && frames.map { |frame| frame.fetch("backend") }.uniq == ["100"], "retention crosses 26 commits on one backend")
+        mutations = [
+          ->(tables) { tables.fetch("canonical_size_sample").shift },
+          ->(tables) { tables.fetch("canonical_size_sample").first["canonical_size_sample_id"] = 99 },
+          ->(tables) { tables.fetch("canonical_size_rollup").first["size_median"] = 2600 },
+          ->(tables) { tables.fetch("canonical_torrent").first["size_bytes"] = 2600 },
+          ->(tables) { tables.fetch("canonical_torrent_source").first["last_seen_at"] = sampling_observed(0) }
+        ]
+        mutations.each do |mutate|
+          changed = copy(original)
+          last = changed.fetch("tested").fetch("frames").last
+          tables = copy(last.fetch("tables_after"))
+          mutate.call(tables)
+          last.merge!("tables_after" => tables, "tables_finish" => tables)
+          changed["tested"] = sampling_test_transport(changed.fetch("tested").fetch("frames"), "cold", "final")
+          changed["after"] = sampling_test_read(tables, changed.fetch("after").fetch("data").fetch("inputs"), 26)
+          rejected("full committed transition") { sampling_validate!(changed, spec, "cold", "final", @runtime) }
+        end
+      end
     end
 
     def sampling_mutations!

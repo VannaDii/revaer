@@ -417,7 +417,7 @@ module RevaerDatabaseRebaseline
       %w[compilation wrapper].each do |family|
         path = File.join(directory, "ingestion-#{family}")
         FileUtils.mkdir_p(path)
-        path = Dir.mktmpdir("run-", path) if family == "wrapper"
+        path = Dir.mktmpdir("run-", path)
         proof.instance_variable_set("@#{family}_evidence", path)
         entries = proof.send(:dependency_observation_cases, "ingestion-#{family}").to_h do |name, role, count|
           frames = count.times.map do |index|
@@ -432,7 +432,8 @@ module RevaerDatabaseRebaseline
         check = { check: "synthetic #{family} validation", passed: true }
         checks << check
         entries[File.join(path, "report.json")] = { completed: true, passed: true, checks: [check],
-          candidate_sha256: contract.expected_candidate_sha256, final_sha256: contract.final_sha256 }
+          candidate_sha256: contract.expected_candidate_sha256, final_sha256: contract.final_sha256,
+          postgres_image: contract.postgres_image, source_sha256: proof.send("#{family}_source_hashes") }
         # Only synthetic unit fixtures register hashes here, from original serialized bytes.
         registry = entries.to_h do |file, record|
           bytes = JSON.pretty_generate(record) + "\n"
@@ -484,6 +485,7 @@ module RevaerDatabaseRebaseline
           File.binwrite(frame_file, originals.fetch(substitute))
           rejected("validated evidence bytes changed") { proof.send(:dependency_observations, fixture) }
           File.binwrite(frame_file, originals.fetch(frame_file))
+          dependency_source_identity_tests!(proof, fixture, report, registry, originals.fetch(report))
         end
         original = proof.instance_variable_get(:@compilation_validated_evidence)
         proof.instance_variable_set(:@compilation_validated_evidence, proof.instance_variable_get(:@wrapper_validated_evidence))
@@ -500,11 +502,37 @@ module RevaerDatabaseRebaseline
       end
     end
 
+    def dependency_source_identity_tests!(proof, fixture, path, registry, original)
+      record = JSON.parse(original)
+      missing = record.reject { |key, _value| key == "source_sha256" }
+      changed = copy(record.fetch("source_sha256"))
+      changed[changed.keys.first] = "0" * 64
+      mutations = [missing, record.merge("source_sha256" => {}), record.merge("source_sha256" => changed),
+                   record.merge("source_sha256" => record.fetch("source_sha256").merge("unexpected.rb" => "0" * 64)),
+                   record.merge("postgres_image" => "unreviewed-image"), record.reject { |key, _value| key == "postgres_image" }]
+      mutations.each do |mutation|
+        # Deliberately re-register synthetic bytes to exercise the source check,
+        # not the separate retained-byte digest rejection.
+        bytes = JSON.generate(mutation)
+        File.binwrite(path, bytes)
+        registry[path] = Digest::SHA256.hexdigest(bytes)
+        rejected("observed source identity changed") { proof.send(:dependency_observations, fixture) }
+      end
+    ensure
+      File.binwrite(path, original)
+      registry[path] = Digest::SHA256.hexdigest(original)
+    end
+
     def dependency_evidence_reader_tests!(directory)
       path = File.join(directory, "synthetic-invalid.json")
       File.binwrite(path, "{")
       registry = { path => Digest::SHA256.hexdigest("{") }
       rejected("cannot read dependency validated evidence") { dependency_read_observation(path, registry) }
+      ['{"passed":false,"passed":true}', '{"source_sha256":{"file":"old","file":"new"}}'].each do |bytes|
+        File.binwrite(path, bytes)
+        registry[path] = Digest::SHA256.hexdigest(bytes)
+        rejected("invalid or duplicate metadata JSON evidence") { dependency_read_observation(path, registry) }
+      end
       rejected("lacks current-process validated bytes") { dependency_read_observation(path, { path => "invalid" }) }
       rejected("lacks current-process validated bytes") { dependency_read_observation("./relative.json", { "./relative.json" => "a" * 64 }) }
       File.symlink(path, File.join(directory, "linked.json"))
@@ -602,10 +630,17 @@ module RevaerDatabaseRebaseline
     def dependency_native_answer_tests!
       digest = Digest::SHA256.hexdigest("abc")
       answer = { "title" => "hotel", "unaccent" => "cafe", "digest_text" => digest, "digest_bytes" => digest,
-                 "cast" => "flag", "uuid_binding" => "pg_catalog.gen_random_uuid()" }
+                 "cast" => "flag", "blank_magnet_hash" => nil, "uuid_binding" => "pg_catalog.gen_random_uuid()" }
       records = [{ "backend" => 123, "role" => "postgres", "current" => "postgres", "before" => "error" }, answer, { "after" => "error" }] * 2
       dependency_validate_native_answers!(records, "postgres")
       assert(true, "positive integer same-backend native answers pass")
+      [1, 4].each do |index|
+        changed = copy(records)
+        changed.fetch(index).delete("blank_magnet_hash")
+        rejected("known answer or caller provenance changed") { dependency_validate_native_answers!(changed, "postgres") }
+        changed.fetch(index)["blank_magnet_hash"] = Digest::SHA256.hexdigest("   ")
+        rejected("known answer or caller provenance changed") { dependency_validate_native_answers!(changed, "postgres") }
+      end
       [nil, 0, -1, "123", 123.0].each do |backend|
         [[0], [3], [0, 3]].each do |indexes|
           changed = copy(records)
@@ -633,6 +668,11 @@ module RevaerDatabaseRebaseline
         @runner = fake
         @dependency_evidence = directory
         assert(dependency_native_answers!.keys == %w[reference final], "native transport uses the strict answer validator for both variants")
+        %w[reference final].each do |variant|
+          query = File.binread(File.join(directory, "#{variant}-native-answers.sql"))
+          assert(query.scan("public.derive_magnet_hash_v1(NULL::char(40),NULL::char(64),'   '::text)").length == 2,
+            "whitespace-only derivation executes before and after a same-backend commit")
+        end
       end
       @runner = previous
     end

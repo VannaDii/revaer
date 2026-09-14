@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "tmpdir"
+
 module RevaerDatabaseRebaseline
   # Disposable observers never replace an application routine or its compiler setting.
   module IngestionCompilation
@@ -12,11 +14,13 @@ module RevaerDatabaseRebaseline
 
     def verify_ingestion_compilation!
       @compilation_validated_evidence = {}
-      @compilation_evidence = File.join(@contract.output_path, "ingestion-compilation")
-      raise Failure, "ingestion compilation evidence must not be a symlink" if File.symlink?(@compilation_evidence)
+      directory = File.join(@contract.output_path, "ingestion-compilation")
+      raise Failure, "ingestion compilation evidence must not be a symlink" if File.symlink?(directory)
 
-      FileUtils.mkdir_p(@compilation_evidence, mode: 0o700)
+      FileUtils.mkdir_p(directory, mode: 0o700)
+      @compilation_evidence = Dir.mktmpdir("run-", directory)
       checks_start = @checks.length
+      source_hashes = compilation_source_hashes
       cases = []
       completed = false
       begin
@@ -32,6 +36,7 @@ module RevaerDatabaseRebaseline
           check("#{test_case.fetch(:name)} exact frozen/final application parity", equivalent)
           cases << { name: test_case.fetch(:name), equivalent:, variants: }
         end
+        check("compilation source bytes unchanged during matrix", source_hashes == compilation_source_hashes)
         completed = true
       ensure
         checks = @checks.drop(checks_start)
@@ -39,12 +44,20 @@ module RevaerDatabaseRebaseline
                    d3_complete: false, observations: "committed successful writes only",
                    approved_metadata_delta: "ADR 588 D4 temporary-table lifetime", postgres_image: @contract.postgres_image,
                    candidate_sha256: @contract.expected_candidate_sha256, final_sha256: @contract.final_sha256,
-                   checks:, cases: }
+                   source_sha256: source_hashes, checks:, cases: }
         path = File.join(@compilation_evidence, "report.json")
         bytes = JSON.pretty_generate(report) + "\n"
         File.binwrite(path, bytes)
         @compilation_validated_evidence[path] = Digest::SHA256.hexdigest(bytes) if report.fetch(:passed)
       end
+    end
+
+    def compilation_source_hashes
+      paths = %w[scripts/tests/database-ingestion-compilation-test.rb
+                 scripts/tests/database-ingestion-corrections-test.rb
+                 scripts/tests/database-ingestion-corrections-seed.sql
+                 scripts/tests/database-ingestion-dependencies-test.rb]
+      wrapper_source_hashes.merge(paths.to_h { |path| [path, Digest::SHA256.file(File.join(@contract.root, path)).hexdigest] })
     end
 
     def compilation_cases

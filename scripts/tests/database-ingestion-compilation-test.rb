@@ -19,6 +19,50 @@ module RevaerDatabaseRebaseline
       compilation_normalization_tests!
       compilation_logger_tests!
       compilation_decision_tests!
+      compilation_provenance_tests!
+    end
+
+    def compilation_provenance_tests!
+      sources = compilation_source_hashes
+      %w[scripts/database_rebaseline/ingestion_compilation.rb scripts/database_rebaseline/ingestion_dependencies.rb
+         scripts/tests/database-ingestion-compilation-test.rb scripts/tests/database-ingestion-corrections-seed.sql
+         scripts/tests/database-ingestion-proof-seed.sql scripts/tests/database-ingestion-dependencies-test.rb].each do |path|
+        assert(sources.fetch(path) == Digest::SHA256.file(File.join(@contract.root, path)).hexdigest, "compilation source pins include #{path}")
+      end
+      Dir.mktmpdir("revaer-compilation-provenance.") do |directory|
+        contract = Contract.new(root: @contract.root)
+        contract.define_singleton_method(:output_path) { directory }
+        proof = FinalProof.new(contract)
+        proof.define_singleton_method(:compilation_isolated) { |*_arguments, **_options| "synthetic equal outcome" }
+        historical = File.join(directory, "ingestion-compilation", "report.json")
+        FileUtils.mkdir_p(File.dirname(historical))
+        File.binwrite(historical, "historical report\n")
+        runs = []
+        2.times do
+          proof.send(:verify_ingestion_compilation!)
+          path = File.join(proof.instance_variable_get(:@compilation_evidence), "report.json")
+          report = metadata_json_parse(File.binread(path))
+          assert(report.fetch("passed") && report.fetch("completed") && !report.fetch("d3_complete"), "synthetic compilation producer succeeds without claiming D3")
+          assert(report.fetch("source_sha256") == sources, "producer retains the exact pre-execution source hashes")
+          assert(proof.instance_variable_get(:@compilation_validated_evidence) == { path => Digest::SHA256.file(path).hexdigest }, "only current successful synthetic report is registered")
+          runs << path
+        end
+        assert(runs.uniq.length == 2 && runs.all? { |path| File.file?(path) }, "separate runs preserve both reports")
+        assert(File.binread(historical) == "historical report\n", "new compilation runs never overwrite historical evidence")
+        changed = sources.merge(sources.keys.first => "0" * 64)
+        reads = 0
+        proof.define_singleton_method(:compilation_source_hashes) { reads += 1; reads == 1 ? sources : changed }
+        proof.send(:verify_ingestion_compilation!)
+        report = metadata_json_parse(File.binread(File.join(proof.instance_variable_get(:@compilation_evidence), "report.json")))
+        assert(!report.fetch("passed") && report.fetch("completed"), "source drift cannot produce a passing report")
+        assert(report.fetch("source_sha256") == sources, "failed report retains original source identity")
+        assert(proof.instance_variable_get(:@compilation_validated_evidence).empty?, "source drift never registers successful evidence")
+        proof.define_singleton_method(:compilation_isolated) { |*_arguments, **_options| raise Failure, "synthetic interrupted compilation" }
+        rejected("synthetic interrupted compilation") { proof.send(:verify_ingestion_compilation!) }
+        report = metadata_json_parse(File.binread(File.join(proof.instance_variable_get(:@compilation_evidence), "report.json")))
+        assert(!report.fetch("passed") && !report.fetch("completed"), "interruption retains failed incomplete evidence")
+        assert(proof.instance_variable_get(:@compilation_validated_evidence).empty?, "interruption cannot reuse an earlier registry")
+      end
     end
 
     def compilation_event_tests!(cases)

@@ -18,6 +18,12 @@ module RevaerDatabaseRebaseline
       [
         ["v2-only", { infohash_v2_input: "repeat('b',64)::char(64)" }, "infohash_v2", 1.0, [nil, v2, v2_hash, nil]],
         ["v2-precedence", { infohash_v1_input: "repeat('a',40)::char(40)", infohash_v2_input: "repeat('b',64)::char(64)" }, "infohash_v2", 1.0, [v1, v2, v2_hash, nil]],
+        ["empty-v1", { infohash_v1_input: "''::char(40)", infohash_v2_input: "repeat('b',64)::char(64)" }, "infohash_v2", 1.0, [nil, v2, v2_hash, nil]],
+        ["blank-v1", { infohash_v1_input: "'   '::char(40)", infohash_v2_input: "repeat('b',64)::char(64)" }, "infohash_v2", 1.0, [nil, v2, v2_hash, nil]],
+        ["empty-v2", { infohash_v1_input: "repeat('a',40)::char(40)", infohash_v2_input: "''::char(64)" }, "infohash_v1", 1.0, [v1, nil, v1_hash, nil]],
+        ["blank-v2", { infohash_v1_input: "repeat('a',40)::char(40)", infohash_v2_input: "'   '::char(64)" }, "infohash_v1", 1.0, [v1, nil, v1_hash, nil]],
+        ["empty-magnet", { infohash_v1_input: "repeat('a',40)::char(40)", magnet_hash_input: "''::char(64)" }, "infohash_v1", 1.0, [v1, nil, v1_hash, nil]],
+        ["blank-magnet", { infohash_v1_input: "repeat('a',40)::char(40)", magnet_hash_input: "'   '::char(64)" }, "infohash_v1", 1.0, [v1, nil, v1_hash, nil]],
         ["magnet-btih", { magnet_uri_input: "'magnet:?xt=urn:btih:#{v1.upcase}'::varchar" }, "infohash_v1", 1.0, [v1, nil, v1_hash, nil]],
         ["magnet-btmh", { magnet_uri_input: "'magnet:?xt=urn:btmh:1220#{v2.upcase}'::varchar" }, "infohash_v2", 1.0, [nil, v2, v2_hash, nil]],
         ["explicit-magnet", { magnet_hash_input: "repeat('c',64)::char(64)", magnet_uri_input: "'magnet:?dn=other'::varchar" }, "magnet_hash", 0.85, [nil, nil, magnet, nil]],

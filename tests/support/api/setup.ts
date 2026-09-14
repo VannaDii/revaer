@@ -1,10 +1,11 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { readState } from '../e2e-state';
 import { authHeaders, setupHeaders } from '../headers';
-import { repoRoot } from '../paths';
+import { repoRoot, resolveFsRoot } from '../paths';
 import type { ApiSession, AuthMode } from '../session';
 import { createApiClient, type ApiClient } from './client';
+import { setupChangeset, type SetupSnapshot } from './setup-changeset';
 
 type SetupOptions = {
   baseUrl: string;
@@ -18,10 +19,6 @@ type ResetOptions = {
 
 type HealthResponse = {
   mode?: string;
-};
-
-type WellKnownSnapshot = {
-  app_profile?: Record<string, unknown>;
 };
 
 type ApiLogTail = {
@@ -81,13 +78,11 @@ export async function configureAuthMode(options: SetupOptions): Promise<ApiSessi
   if (!snapshot.response.ok) {
     throw new Error(`Snapshot fetch failed with ${snapshot.response.status}.`);
   }
-  const appProfile = (snapshot.data as WellKnownSnapshot | undefined)?.app_profile;
-  if (!appProfile) {
-    throw new Error('Snapshot missing app_profile for setup changeset.');
-  }
-  const changeset: Record<string, unknown> = {
-    app_profile: { ...appProfile, auth_mode: options.authMode },
-  };
+  const changeset = setupChangeset(
+    snapshot.data as SetupSnapshot | undefined,
+    options.authMode,
+    resolveFsRoot(),
+  );
 
   const setupComplete = await publicClient.POST('/admin/setup/complete', {
     body: changeset,
@@ -158,8 +153,7 @@ function apiFailureMessage(context: string, error: unknown): string {
   const lines = [context, detail, apiDiagnostics()];
   const tail = apiLogTail(60);
   if (tail) {
-    lines.push(`Last 60 lines from ${tail.logPath}:`);
-    lines.push(tail.tail);
+    lines.push(`Last 60 lines from ${tail.logPath}:`, tail.tail);
   }
   return lines.filter(Boolean).join('\n');
 }

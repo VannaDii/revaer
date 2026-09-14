@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "generated": "2026-09-14T04:23:27.830341+00:00",
+  "generated": "2026-09-14T06:58:35.236440+00:00",
   "entries": [
     {
       "id": "adr/001-configuration-revisioning",
@@ -5119,6 +5119,7 @@
         "c1-implementation-checkpoint-2026-09-11",
         "c1-recommended-startup-failure-policy",
         "child-coverage-and-export-checkpoint-2026-09-11",
+        "private-e2e-fixture-root-2026-09-14-in-progress",
         "task-record",
         "validation-required-after-approval",
         "verified-conflict"
@@ -5175,6 +5176,17 @@
         "suggested-use-workflow"
       ],
       "href": "/adr/index/"
+    },
+    {
+      "id": "adr/support/569-d3-closure-map",
+      "title": "D3 closure map",
+      "summary": "Status: In progress. This reconciles the eleven families in the retained 2026-09-11 closure audit against checkpoint df24ea2d and the follow-up changes recorded in [ADR 569](../569-init-privilege-and-timeout-resolution.md). It is an execution map, not a new architectural decision or D3 acceptance.",
+      "tags": [
+        "authority-and-evidence",
+        "eleven-family-reconciliation",
+        "execution-order"
+      ],
+      "href": "/adr/support/569-d3-closure-map/"
     },
     {
       "id": "adr/support/569-ingestion-reachability",

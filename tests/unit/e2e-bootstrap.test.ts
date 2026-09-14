@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import test from 'node:test';
 
 import { E2E_SERVING_ENTRY, e2eServingCommand, requirePortFree } from '../global-setup';
+import { setupChangeset } from '../support/api/setup-changeset';
+import { repoRoot, resolveFsRoot } from '../support/paths';
 
 const root = path.resolve('/fixture/current-worktree');
 const executable = path.resolve('/fixture/target with spaces/debug/deps/revaer_app-012345');
@@ -76,3 +79,61 @@ test('occupied ports are refused without terminating their owner', async () => {
   }
   await requirePortFree(address.port);
 });
+
+for (const authMode of ['none', 'api_key'] as const) {
+  for (const rootKind of ['absolute', 'relative'] as const) {
+    test(`setup allowlists the ${rootKind} torrent fixture root for ${authMode} auth`, () => {
+      const scratch = fs.mkdtempSync(path.join(repoRoot(), 'target', 'e2e-authoring-'));
+      const previousFsRoot = process.env.E2E_FS_ROOT;
+      const fsPolicy = {
+        id: 'filesystem-policy',
+        library_root: '.server_root/library',
+        allow_paths: ['.server_root/downloads', '.server_root/library'],
+        move_mode: 'copy',
+        cleanup_keep: ['*.txt'],
+      };
+      const appProfile = { id: 'app-profile', auth_mode: 'none', instance_name: 'E2E' };
+      try {
+        process.env.E2E_FS_ROOT = rootKind === 'absolute'
+          ? scratch
+          : path.relative(repoRoot(), scratch);
+        assert.deepEqual(fs.readdirSync(scratch), []);
+        const authorRoot = fs.mkdtempSync(path.join(resolveFsRoot(), 'e2e-author-'));
+        fs.writeFileSync(path.join(authorRoot, 'seed.txt'), 'revaer e2e');
+
+        const snapshot = { app_profile: appProfile, fs_policy: fsPolicy };
+        const originalSnapshot = structuredClone(snapshot);
+        const setupBody = setupChangeset(snapshot, authMode, resolveFsRoot());
+
+        assert.deepEqual(setupBody, {
+          app_profile: { ...appProfile, auth_mode: authMode },
+          fs_policy: { ...fsPolicy, allow_paths: [scratch] },
+        });
+        assert.equal(path.dirname(authorRoot), scratch);
+        assert.equal(fs.readFileSync(path.join(authorRoot, 'seed.txt'), 'utf-8'), 'revaer e2e');
+        assert.deepEqual(snapshot, originalSnapshot);
+      } finally {
+        if (previousFsRoot === undefined) {
+          delete process.env.E2E_FS_ROOT;
+        } else {
+          process.env.E2E_FS_ROOT = previousFsRoot;
+        }
+        fs.rmSync(scratch, { recursive: true, force: true });
+      }
+      assert.equal(fs.existsSync(scratch), false);
+    });
+  }
+}
+
+for (const [label, snapshot, missingField] of [
+  ['missing snapshot', undefined, 'app_profile'],
+  ['missing app profile', { fs_policy: {} }, 'app_profile'],
+  ['missing filesystem policy', { app_profile: {} }, 'fs_policy'],
+] as const) {
+  test(`setup rejects ${label} instead of inventing fixture configuration`, () => {
+    assert.throws(
+      () => setupChangeset(snapshot, 'none', root),
+      new Error(`Snapshot missing ${missingField} for setup changeset.`),
+    );
+  });
+}
