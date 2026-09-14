@@ -7,6 +7,7 @@ require_relative "reset_timeout_proof"
 require_relative "ingestion_proof"
 require_relative "ingestion_corrections"
 require_relative "native_trust_rank_proof"
+require_relative "native_policy_proof"
 
 module RevaerDatabaseRebaseline
   # Disposable transition proof only, not an operator or application initializer.
@@ -16,6 +17,7 @@ module RevaerDatabaseRebaseline
     include IngestionProof
     include IngestionCorrections
     include NativeTrustRankProof
+    include NativePolicyProof
     def initialize(contract = Contract.new, runner: CommandRunner.new)
       @contract = contract
       @runner = runner
@@ -42,7 +44,7 @@ module RevaerDatabaseRebaseline
           "--publish", "127.0.0.1::5432",
           "-e", "POSTGRES_HOST_AUTH_METHOD=trust",
           "-e", "POSTGRES_INITDB_ARGS=--locale=C --encoding=UTF8 --data-checksums",
-          "-e", "TZ=UTC", @contract.postgres_image
+          "-e", "TZ=UTC", @contract.postgres_image, *POLICY_NATIVE_SERVER_OPTIONS
         ])
         started = true
         wait_ready!
@@ -99,6 +101,7 @@ module RevaerDatabaseRebaseline
     end
 
     def result(query, role: @owner, database: @database)
+      return native_policy_result(query, role:, database:) if @native_policy_target && query.include?("SAVEPOINT operation;")
       return native_result(query, role:, database:) if @native_target && query.include?("SAVEPOINT operation;")
 
       @runner.capture(command(role, database), stdin_data: query)

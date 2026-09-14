@@ -279,6 +279,74 @@ No role privilege, extension ACL, timeout value, frozen migration, workflow, or
 remote setting was changed to conceal the two failures. Independently passing
 pristine-catalog and baseline-reader tests resolve none of these approval gaps.
 
+### Canonical Native Policy Integration (2026-09-14, In Progress)
+
+- Motivation/design: adopt the already qualified twenty-context native policy
+  matrix in the canonical proof. Retain the unchanged five policy fixtures and
+  full plain/observed application oracles in cold/helper-first reference/final
+  sessions. Eight frozen inlined-cast contexts pair actual completed query
+  plans with native executor-entry compiler settings; the other twelve retain
+  the qualified helper/regex phase validator. No application SQL is changed.
+- Test coverage: the ported validators pass 766 synthetic assertions, including
+  514 rejected mutations across all twenty contexts. Capture tests pass 33
+  assertions; shared session tests pass 48. The focused live integration at
+  `run-20260914-15239-sansxf` passes all twenty contexts and 304 checks, with
+  unchanged source/target identities and successful owned-resource cleanup.
+  The complete canonical run repeats the policy result at
+  `run-20260914-35155-5dvrm7`, alongside successful K1 readback at
+  `run-20260914-35155-agsxxg`. Both cleanup receipts pass. The aggregate records
+  9,607 passing checks and one failing incomplete-D3 guard; it is not complete
+  D3 acceptance. Tested source is `7f344b82402b99d5da3b846b62265b82eb3c2198`
+  plus this native-policy integration delta. Synthetic contexts are not live
+  evidence, and the supplemental run does not replace the canonical run.
+- Combined gates: `just ci` passes in the owned host-backed environment
+  `revaer-host-backed-ci-7d4fd12e95f8`. Its later script-coverage execution
+  includes the final 33-assertion capture suite; all thirteen changed Ruby
+  files have positive executed line coverage. This is retained local coverage,
+  not published Sonar evidence. `just ui-e2e` remains red at
+  `revaer-host-backed-ui-e2e-d0c9b7998301`: 57 passed, one failed and 72 unrun.
+  Scheduled-profile setup returns `media_profile_filesystem_identity_required`
+  (400 rather than 200); UI coverage is absent. The unfinished operator
+  association/root workflow remains required. Owned databases, volumes and the
+  private media root were removed, and `just clean-test-fixtures` passes.
+  Documentation links pass 1,412/1,412 after the restricted-network attempt
+  failed to reach external links; the unchanged network-enabled retry passes.
+  The documentation build exits zero but retains its large-search-index
+  warning. No gate or warning is waived.
+- Integration corrections: the first capture enabled regex probes outside the
+  qualified method's error cases and was rejected. The original per-case probe
+  selection is restored; the broader failed trace remains retained, not filtered
+  into a pass. A second capture passed twelve contexts before rejecting the
+  legitimate absence of FK callbacks in early regex-error paths. Those paths
+  now explicitly require absence; success paths and K1 still require callbacks.
+  Tests reject both missing required callbacks and unexpected error-path
+  callbacks. Snapshot source binding independently checks the canonical body
+  rather than trusting self-consistent altered captured SQL and catalog hashes.
+- Sonar: all thirteen changed Ruby files have non-skipped full-file MAIN
+  analyses with zero reported issues; a transient profile-retrieval HTTP 500
+  passed on the same-file retry. The canonical scan still cannot start without
+  `SONAR_TOKEN`. CLI secrets analysis could not access its credential store in
+  the sandbox, and execution policy rejected the escalated upload even after
+  the existing ADR 588 transfer approval was cited. Fresh confirmation of the
+  exact changed-file/project scope was requested; no upload workaround or
+  criteria change is authorized by that failure. Secrets checks, positive
+  published coverage and the full project gate remain unverified.
+- Observability: retain private raw debugger and server streams, exact catalog
+  and routine-source bindings, producer/target hashes, ABI headers, observer
+  identity, complete application records and separate cleanup receipts. Plan
+  logging is enabled only on the selected owned observed clones and reset
+  afterward. Source warnings and missing evidence remain failures.
+- Risk/rollback: remove the native policy registration and matching capture,
+  validators and tests together if qualification fails. Shared transport keeps
+  K1's strict protocol; policy records cannot be accepted as trust-rank records.
+  Frozen migration authority, final SQL and the incomplete-D3 gate are unchanged.
+- Dependencies: standard Ruby libraries, the pinned PostgreSQL auto_explain
+  module and the already qualified debugger/tooling; no new package dependency.
+- Stale-policy check: root, data, DevOps and Sonar instructions reviewed. DevOps
+  now states canonical policy pairing, inlined execution and evidence duties.
+  Existing approval applies to proof refinement, not a new architectural choice
+  or completion claim. Remaining logger/settings/callsite obligations stay open.
+
 ### Canonical Native K1 Integration (2026-09-14, In Progress)
 
 - Motivation/design: integrate the qualified K1 observer and independent readback
@@ -294,8 +362,9 @@ pristine-catalog and baseline-reader tests resolve none of these approval gaps.
   full canonical run repeats that result at `run-20260914-46391-ezct1r`, with
   unchanged source/target identities and successful cleanup. Its 9,303 passing
   checks and one failing incomplete-D3 guard are not complete D3 acceptance.
-  Tested source is `7ebe6a6302dfb2cb5a1ee8304eee0098e36dc49f` plus this checkpoint's
-  recorded delta and per-file producer hashes, on the pinned arm64 PostgreSQL
+  Tested source was `7ebe6a6302dfb2cb5a1ee8304eee0098e36dc49f` plus the recorded
+  delta committed as `7f344b82402b99d5da3b846b62265b82eb3c2198`, with per-file
+  producer hashes, on the pinned arm64 PostgreSQL
   observer environment; these are not amd64 or release-package results.
 - Integration fixes: the first live run rejected GDB's source-newer-than-binary
   warning. Extraction now preserves the verified archive's file timestamps;

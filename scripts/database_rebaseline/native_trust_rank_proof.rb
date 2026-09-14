@@ -72,22 +72,28 @@ module RevaerDatabaseRebaseline
       paths.uniq.sort.to_h { |path| [path, Digest::SHA256.file(File.join(@contract.root, path)).hexdigest] }
     end
 
-    def native_write(name, bytes)
+    def native_write(name, bytes, directory: @native_evidence)
       raise Failure, "invalid native evidence name" unless name.match?(/\A[a-zA-Z0-9_.-]+\z/)
 
-      path = File.join(@native_evidence, name)
+      path = File.join(directory, name)
       File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(bytes) }
       path
     end
 
     def native_prepare!(parent)
-      @native_tooling_parent = Dir.mktmpdir("tooling-", parent)
-      @native_tooling = NativeTooling.new(runner: @runner, inputs: EnvFile.load(@contract.build_inputs_path),
-                                         directory: @native_tooling_parent, postgres_image: @contract.postgres_image).prepare!
+      native_prepare_tooling!(parent)
       native_write("tooling-receipt.json", File.binread(@native_tooling.receipt_path))
       @native_sessions = NativeSessions.new(runner: @runner, processes: NativeProcesses.new(directory: @native_evidence),
         directory: @native_evidence, container: @container, tooling: @native_tooling,
         probe: File.binread(File.join(@contract.root, "scripts/database_rebaseline/native-trust-rank.gdb")))
+    end
+
+    def native_prepare_tooling!(parent)
+      return if @native_tooling
+
+      @native_tooling_parent = Dir.mktmpdir("tooling-", parent)
+      @native_tooling = NativeTooling.new(runner: @runner, inputs: EnvFile.load(@contract.build_inputs_path),
+                                         directory: @native_tooling_parent, postgres_image: @contract.postgres_image).prepare!
     end
 
     def native_trust_pair(case_name, mode, variant)
@@ -163,15 +169,16 @@ module RevaerDatabaseRebaseline
 
     def cleanup_native_resources!
       failures = []
-      operations = [-> { @native_sessions&.remove_containers! }, -> { yield },
-                    -> { @native_sessions&.close_after_owner_cleanup! }, -> { cleanup_native_tooling! }]
+      operations = [-> { @native_sessions&.remove_containers! }, -> { @native_policy_sessions&.remove_containers! }, -> { yield },
+                    -> { @native_sessions&.close_after_owner_cleanup! }, -> { @native_policy_sessions&.close_after_owner_cleanup! },
+                    -> { cleanup_native_tooling! }]
       operations.each do |operation|
         operation.call
       rescue StandardError => error
         failures << "#{error.class}: #{error.message}"
       end
-      if @native_primary_evidence
-        @native_evidence = @native_primary_evidence
+      [@native_primary_evidence, @native_policy_evidence].compact.each do |directory|
+        @native_evidence = directory
         native_write("cleanup.json", JSON.pretty_generate({ passed: failures.empty?, failures: }) + "\n")
       end
       return if failures.empty?

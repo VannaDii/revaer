@@ -27,12 +27,14 @@ module RevaerDatabaseRebaseline
       @containers = []
     end
 
-    def execute(command:, query:, name:, observed:)
+    def execute(command:, query:, name:, observed:, probe: @probe)
+      raise Failure, "native observer probe is empty" unless probe.is_a?(String) && !probe.empty?
+
       psql = @processes.launch(command, name)
       header = @processes.handshake(psql, "DO $$ BEGIN NULL; END $$;\nSELECT 'native_backend:' || pg_backend_pid();\n",
                                     /\Anative_backend:[1-9][0-9]*\n\z/)
       backend = Integer(header.delete_prefix("native_backend:"), 10)
-      debugger = attach(name, backend) if observed
+      debugger = attach(name, backend, probe) if observed
       application = @processes.finish(psql, stdin_data: "#{query}\n\\q\n")
       @processes.finish(debugger) if debugger
       stdout = application.fetch(:stdout)
@@ -66,9 +68,9 @@ module RevaerDatabaseRebaseline
       path
     end
 
-    def attach(name, backend)
+    def attach(name, backend, probe)
       debug_name = "#{@container}-observer-#{SecureRandom.hex(4)}"
-      script_path = write("#{name}-debugger.gdb", script(backend))
+      script_path = write("#{name}-debugger.gdb", script(backend, probe))
       command = ["docker", "create", "--name", debug_name, "--network", "none", "--pid", "container:#{@container}",
                  "--cap-add", "SYS_PTRACE", "--mount", "type=bind,source=#{@tooling.musl_source_directory},target=/observer-source,readonly",
                  @tooling.debugger_image, "--batch", "--nx", "--nh", "-x", "/tmp/observe.gdb"]
@@ -85,7 +87,7 @@ module RevaerDatabaseRebaseline
       ["break *#{symbol}", "commands", "silent", *lines, "continue", "end"].join("\n")
     end
 
-    def script(backend)
+    def script(backend, probe)
       root = "/proc/#{backend}/root"
       commands = ["set pagination off", "set confirm off", "set auto-load off", "set debuginfod enabled off",
                   "set may-call-functions off", "set print thread-events off", "set sysroot #{root}",
@@ -103,7 +105,7 @@ module RevaerDatabaseRebaseline
       PARENT_CALLBACKS.each do |symbol|
         commands << breakpoint(symbol, ["printf \"PARENT_RI:#{symbol}:%d\\n\", (int)plpgsql_variable_conflict"])
       end
-      commands.concat([@probe, 'printf "READY:%d\n", (int)plpgsql_variable_conflict', "continue"]).join("\n") + "\n"
+      commands.concat([probe, 'printf "READY:%d\n", (int)plpgsql_variable_conflict', "continue"]).join("\n") + "\n"
     end
   end
 end

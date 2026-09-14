@@ -6,9 +6,16 @@ require_relative "ingestion_metadata"
 module RevaerDatabaseRebaseline
   # Bind read-only native observations to the catalog of the same live clone.
   class NativeTrace
-    def initialize(query:, directory:)
+    def initialize(query:, directory:, observations: :trust_rank, trigger_expectation: :present)
+      raise Failure, "unknown native observation protocol" unless %i[trust_rank policy].include?(observations)
+      unless %i[present absent].include?(trigger_expectation) && (observations == :policy || trigger_expectation == :present)
+        raise Failure, "invalid native trigger expectation"
+      end
+
       @query = query
       @directory = directory
+      @observations = observations
+      @trigger_expectation = trigger_expectation
     end
 
     def collect!(debugger)
@@ -16,7 +23,8 @@ module RevaerDatabaseRebaseline
       lines = File.binread(stdout_path).lines
       stderr = File.binread(debugger.fetch(:stderr_path))
       raise Failure, "native debugger diagnostic retained" unless stderr.empty?
-      if lines.any? { |line| line.match?(/K1_ERROR|Python Exception|Traceback|Error in sourced|Cannot access memory|No symbol|exited with code|received signal/) || line.start_with?("PARENT_RI:", "REGEX:") }
+      forbidden = @observations == :trust_rank ? %w[PARENT_RI: REGEX: CAST_EXECUTOR:] : %w[PARENT_RI: K1:]
+      if lines.any? { |line| line.match?(/K1_ERROR|CAST_EXECUTOR_ERROR|Python Exception|Traceback|Error in sourced|Cannot access memory|No symbol|exited with code|received signal/) || line.start_with?(*forbidden) }
         raise Failure, "native debugger failure or unexpected callback retained"
       end
 
@@ -30,6 +38,9 @@ module RevaerDatabaseRebaseline
         call.merge(routine)
       end
       triggers = parse_triggers(lines)
+      if @trigger_expectation == :absent ? !triggers.empty? : triggers.empty?
+        raise Failure, "native trigger presence differs from expected execution path"
+      end
       bindings = trigger_catalog(triggers)
       write("#{stdout_path}.trigger-catalog.json", bindings)
       triggers = triggers.map do |trigger|
@@ -47,6 +58,19 @@ module RevaerDatabaseRebaseline
       write("#{stdout_path}.triggers.json", triggers.map { |trigger| trigger.reject { |key, _value| %w[kind native_line].include?(key) } })
       native = (mapped + triggers).sort_by { |event| event.fetch("native_line") }
       write(File.join(@directory, "native-events.json"), native)
+      events = @observations == :trust_rank ? trust_rank_events(lines) : policy_events(lines, mapped)
+      filename = @observations == :trust_rank ? "trust-rank-events.json" : "policy-events.json"
+      write(File.join(@directory, filename), events)
+      { events:, native:, catalog:, triggers:, debugger_stderr: stderr }
+    rescue KeyError, TypeError, NoMethodError => error
+      raise Failure, "malformed native trace: #{error.message}"
+    rescue SystemCallError, IOError => error
+      raise Failure, "native trace evidence unavailable: #{error.message}"
+    end
+
+    private
+
+    def trust_rank_events(lines)
       events = lines.each_with_index.filter_map do |line, index|
         next unless line.start_with?("K1:")
 
@@ -57,15 +81,27 @@ module RevaerDatabaseRebaseline
       end
       raise Failure, "native trust-rank observations absent" if events.empty?
 
-      write(File.join(@directory, "trust-rank-events.json"), events)
-      { events:, native:, catalog:, triggers:, debugger_stderr: stderr }
-    rescue KeyError, TypeError, NoMethodError => error
-      raise Failure, "malformed native trace: #{error.message}"
-    rescue SystemCallError, IOError => error
-      raise Failure, "native trace evidence unavailable: #{error.message}"
+      events
     end
 
-    private
+    def policy_events(lines, calls)
+      extra = lines.each_with_index.filter_map do |line, index|
+        if line.start_with?("REGEX:")
+          match = line.match(/\AREGEX:(textregexeq|texticregexeq):([012])\n\z/)
+          raise Failure, "unrecognized native regex observation" unless match
+
+          { "kind" => "regex", "name" => match[1], "compiler_setting" => Integer(match[2]), "native_line" => index + 1 }
+        elsif line.start_with?("CAST_EXECUTOR:")
+          event = json(line.delete_prefix("CAST_EXECUTOR:"))
+          unless event.is_a?(Hash) && event.fetch("kind") == "executor_end" && !event.key?("native_line")
+            raise Failure, "native executor event identity changed"
+          end
+
+          event.merge("native_line" => index + 1)
+        end
+      end
+      (calls + extra).sort_by { |event| event.fetch("native_line") }
+    end
 
     def json(bytes)
       JSON.parse(bytes, object_class: IngestionMetadata::UniqueObject, allow_duplicate_key: false)
@@ -121,7 +157,7 @@ module RevaerDatabaseRebaseline
 
     def trigger_catalog(triggers)
       oids = triggers.map { |trigger| trigger.fetch("trigger_oid") }.uniq
-      raise Failure, "native trigger calls missing" if oids.empty?
+      return [] if oids.empty?
 
       query = <<~SQL
         SELECT json_agg(json_build_object('trigger_oid', t.oid::bigint, 'function_oid', t.tgfoid::bigint,

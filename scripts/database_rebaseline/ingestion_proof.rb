@@ -108,6 +108,7 @@ module RevaerDatabaseRebaseline
       verify_ingestion_setting_paths!
       verify_ingestion_attributes!
       verify_ingestion_native_trust_rank!
+      verify_ingestion_native_policy!
       verify_ingestion_runtime_rank!
       verify_ingestion_metadata!
       verify_ingestion_disambiguation!
@@ -463,7 +464,7 @@ module RevaerDatabaseRebaseline
                  candidate_sha256: @contract.expected_candidate_sha256,
                  final_sha256: @contract.final_sha256,
                  required_scope_unproven: INGESTION_PENDING, cases: @ingestion_results,
-                 native_trust_rank: @native_trust_rank_result }
+                 native_trust_rank: @native_trust_rank_result, native_policy: @native_policy_result }
       File.write(File.join(@ingestion_evidence, "report.json"), JSON.pretty_generate(report) + "\n")
     end
   end

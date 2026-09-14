@@ -235,6 +235,15 @@ applyTo:
   separate cleanup evidence, and fail if any owned resource or client remains.
   This bounded K1 acceptance cannot discharge the incomplete-D3 guard or select
   final init as bootstrap authority.
+  Canonical native policy proof must retain the five qualified policy cases in
+  cold/helper-first reference/final plain/observed pairs. Inlined frozen casts
+  require exact completed actual-row plans plus executor-entry compiler scope;
+  separate function-dispatch records cannot substitute for inlined execution.
+  Keep the original full application oracles, raw debugger/server records,
+  same-backend and exact routine/catalog/source bindings, and unchanged native
+  observer identity. Enable plan logging only on owned observed disposable
+  clones and reset those settings afterward. These policy contexts do not
+  certify remaining logger/settings callsites, full D3 or bootstrap cutover.
   Committed score/title proof must retain distinct stored base/context scores,
   the exact 99/100-seeder promotion boundary, higher-ranked title refresh and
   repeated low-source observations on the same tested backend. The current

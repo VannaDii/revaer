@@ -16,7 +16,7 @@ It is an execution map, not a new architectural decision or D3 acceptance.
   additional behavior, change acceptance criteria or demand every Cartesian
   combination of unrelated inputs. A missing combination needs a new test when
   it exercises an otherwise unproven branch, callsite or compilation context.
-- The 2026-09-14 canonical aggregate has 9,303 passing checks and a failing D3 completeness
+- The 2026-09-14 canonical aggregate has 9,607 passing checks and a failing D3 completeness
   check. That count is not a completion percentage. Compact source-matching
   reports are prior execution evidence, not a new run or native trace.
 - The bounded reconciliation records are retained as `items-1-4-df24ea2d.json`
@@ -28,7 +28,7 @@ It is an execution map, not a new architectural decision or D3 acceptance.
 | Audit family | Existing witnesses | Concrete remaining work |
 | --- | --- | --- |
 | 1. Mutating helper first | Compilation/logger fixtures use persisted source IDs, separate commits, NULL/length/clock controls. Metadata and GUID suites cover mutating-helper rollback/reuse. Producer provenance is repaired and live-qualified below. | Map logger-first compilation with the identity witnesses in row 5; add combinations only for an uncovered callsite/context. |
-| 2. Populated policy helpers/cast | Policy matrix covers populated matches, actions, severities and preference branches. Twenty scoped native policy contexts are independently qualified. | Adopt the qualified native observation method in the canonical proof with exact source/context binding; archived qualification alone is not that adoption. |
+| 2. Populated policy helpers/cast | Policy matrix covers populated matches, actions, severities and preference branches. [Canonical native policy integration](../569-init-privilege-and-timeout-resolution.md#canonical-native-policy-integration-2026-09-14-in-progress) now passes all twenty source-bound plain/observed contexts and 304 checks in the full proof, with unchanged source/target identities and successful cleanup. | Retain the canonical observer and independent helper/regex/inlined-cast validators. Do not repeat this matrix without relevant source/context drift; it does not close other native callsites or complete D3. |
 | 3. Require rules/precedence | Require families, four scopes, rule order, trust boundaries, drop decisions, page omission and score/tag bounds are covered by the policy matrix. | No additional behavioral witness identified by this reconciliation. Retain its existing checks; native closure still follows row 2. |
 | 4. In-call settings | Plain/observed compilation, settings-error and cancellation paths retain caller roles, backend identity and rollback-surviving setting observations. | Canonically bind the scoped native witnesses and preserve their exact success/error/rollback intervals. Three write observers are not every helper context. |
 | 5. Discriminating identities | Wrapper identity and hash-fill cases cover creation, reuse, GUID promotion, explicit hash precedence and competing sources. Six empty/space-only input variants have live new/reuse/promotion evidence. The 24 committed hash-fill variants now qualify warm/fill/reuse on one backend, preserving conflicts, complete state and five sequence values, including frozen failed-call allocations. | Bind existing-wrapper reports and the logger-first callsite mapping before treating aggregate names as complete source-qualified evidence. Do not repeat the qualified committed hash-fill matrix without relevant source drift. |
@@ -68,8 +68,10 @@ It is an execution map, not a new architectural decision or D3 acceptance.
    now has registered policy tests and verified cached/fresh-build inputs.
    Native sessions and K1 readback are now integrated into `FinalProof`, with
    current-source success in the complete run and separate cleanup evidence.
-   Next integrate the qualified policy observer, then settings/logger contexts
-   and their remaining callsite/source bindings; K1 does not discharge them.
+   The qualified policy observer is also canonically integrated: all twenty
+   paired contexts pass in the full run with independent source binding and
+   cleanup. Next integrate the qualified FK and settings/logger contexts and
+   their remaining callsite/source bindings; K1 and policy do not discharge them.
 4. Run the complete current-source D3 proof. Remove no completeness guard until
    every approved obligation has adequate evidence and all comparisons pass.
 

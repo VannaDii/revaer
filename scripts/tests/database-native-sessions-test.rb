@@ -116,9 +116,13 @@ module RevaerDatabaseRebaseline
     end
 
     def framing_test!
-      with_sessions do |sessions, runner, processes, _directory|
+      with_sessions do |sessions, runner, processes, directory|
         result = sessions.execute(command: ["psql"], query: "SELECT 1;", name: "plain", observed: false)
         assert(result.debugger.nil? && runner.commands.empty?, "plain arm never creates debugger")
+        sessions.execute(command: ["psql"], query: "", name: "selected", observed: true, probe: "selected-probe\n")
+        script = File.binread(File.join(directory, "selected-debugger.gdb"))
+        assert(script.include?("selected-probe") && !script.include?("qualified-probe"), "explicit observer selection")
+        rejected("probe is empty") { sessions.execute(command: ["psql"], query: "", name: "empty", observed: true, probe: "") }
         processes.bad_header = true
         rejected("handshake framing") { sessions.execute(command: ["psql"], query: "", name: "changed", observed: false) }
       end
