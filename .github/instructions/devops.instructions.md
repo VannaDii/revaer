@@ -222,6 +222,10 @@ applyTo:
 - Workflows that install Rust toolchains must use the repository's configured toolchain source of truth rather than hard-coded ad hoc channels unless a documented exception is required.
 - Workflow build, lint, test, coverage, security, image, signing, manifest, and release gates must call canonical `just` recipes. Workflows may install tools, authenticate, or upload artifacts, but must not execute raw Cargo gates, Docker builds or manifest publication, Trivy scans, Cosign signing, or Helm packaging/publication directly.
 - Justfile recipes must run under non-login Bash so caller-selected Rust and NVM tool paths remain active inside every recipe.
+- Gates that replace the same `tests/node_modules` or `coverage/js` directories
+  must run sequentially in a worktree. In particular, do not overlap `ui-e2e`
+  with `js-release-coverage`; both reinstall the test dependency graph. Separate
+  databases do not isolate shared dependency or coverage output directories.
 - Database-backed quality recipes require a nonempty caller-supplied
   `REVAER_TEST_DATABASE_URL` or `DATABASE_URL` for a disposable test database.
   Preserve explicitly supplied distinct values and propagate the resolved pair

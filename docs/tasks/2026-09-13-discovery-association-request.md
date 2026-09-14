@@ -52,9 +52,49 @@ instruction drift and documentation indexing pass. The private disposable gate
 runner now checks final TCP readiness instead of the temporary initialization
 socket, with the same 60 attempts and database settings; no child-PGDATA or
 unproven ownership workaround is adopted.
-Full CI, UI, current-source published Sonar, package and remote-check results
-are not established by this focused run. Source-pinned full results and durable
-evidence are recorded here as they complete; the record is not a handoff pass.
+### Source-Pinned Full Verification
+
+The implementation is committed at `fa43f2612ffb2387134e6be3f366ad9fc542b77b`.
+The host is macOS arm64; the disposable database uses the pinned PostgreSQL
+16.14 image recorded with each gate. This is not Linux service-package proof.
+The canonical no-rename size check from `2865b1b9` is 679 additions and 36
+deletions, 715/9,999. That is a local pair, not a check of every GitHub PR.
+
+- `just ci` exits 0, including all 18 package coverage gates and the complete
+  release build. New association production code has 75/75 covered LCOV lines;
+  its tests have 253/254. The gate log contains no compiler-warning or runtime
+  WARN line. The disposable PostgreSQL server still emits its locale and
+  local-auth initialization warnings, which remain unresolved and retained.
+- The first UI attempt fails before tests because overlapping UI and release
+  coverage preparation both reinstall `tests/node_modules`, leaving TypeScript
+  libraries unavailable. This is an integration-owner coordination failure,
+  not a product test result. It is retained; subsequent gates run sequentially.
+- The sequential `just ui-e2e` rerun reaches the full configured suite: 57 pass,
+  one fails with `media_profile_filesystem_identity_required` at scheduling
+  activation, and 72 dependent tests do not run. UI coverage remains missing.
+  No assertion, dependency, suite, route coverage or readiness gate is removed.
+- `just sonar-compile-db` succeeds. JavaScript release coverage initially fails
+  at npm audit because sandboxed DNS access is unavailable; the unchanged gate
+  succeeds with network access. After UI completes, the final
+  `just js-coverage-merge sonar-verify-inputs` succeeds on settled inputs.
+- `just --command sonar verify --file
+  crates/revaer-api-models/src/media_root_contract/association.rs --project
+  VannaDii_Revaer` fails with organization-entitlement HTTP 403; it is not a
+  Rust-analysis pass. The transfer was authorized under the operator-approved
+  ADR 588 scope after verifying the reviewed permission text. No scope or
+  account setting changes. `SONAR_TOKEN` remains absent, so no canonical scan
+  or positive published coverage is claimed.
+- Sonar's separate `analyze secrets` command completes successfully on all 12
+  files in the implementation diff, with no findings reported, using installed
+  engine `2.41.0.10709`. This does not replace Rust analysis or the full scanner.
+
+The private `artifacts/media-verification/2026-09-13-association-and-cancellation/`
+batch retains failed and passing runs, server/runner diagnostics, raw and
+rendered coverage, Sonar-input evidence, the independent native cancellation
+experiment and the bootstrap investigation. The incremental source bundle
+requires `2865b1b9`, whose full source is retained in the preceding sealed batch.
+No implementation is pushed, package qualified, PR accepted or feature merged
+by this checkpoint. Full root binding and operator-workflow gates remain open.
 
 ## Observability And Status Docs
 
@@ -71,8 +111,14 @@ ADR 589 remains pending and is unrelated to this request representation.
 
 ## Stale-Policy Check And Cleanup
 
-Reviewed root, Rust and UI instructions and ADR 557's HTTP and coordinated-cutover
-sections. No rule, runtime compatibility contract or quality criterion changes.
+Reviewed root, Rust, UI, DevOps and Sonar instructions and ADR 557's HTTP and coordinated-cutover
+sections. Runtime compatibility and quality criteria are unchanged.
 Root readiness is unchanged. New routine records follow the current task-record
 policy rather than creating an architectural approval event. The conflicted
-operator checkout remains untouched. Focused model tests create no media.
+operator checkout remains untouched. DevOps instructions now require sequential
+execution for gates sharing test dependency/coverage directories; no gate is
+weakened. Focused model tests create no media. Every owned CI/UI container,
+anonymous volume and host database directory is removed, both UI ports are
+verified closed, and `just clean-test-fixtures` removes downloaded/generated
+fixture media. Both completed investigation worktrees and the temporary
+debugger image are removed after evidence retention.
