@@ -44628,6 +44628,294 @@ SET search_path = public, revaer_config, revaer_runtime;
 SELECT revaer_config.factory_reset();
 RESET search_path;
 
+-- ADR 557 root catalog: immutable evidence, with a fail-closed current pointer.
+CREATE FUNCTION public.media_root_logical_key_valid_v1(value_input text)
+RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE
+SET search_path TO pg_catalog
+AS $$
+    SELECT value_input IS NOT NULL
+        AND octet_length(convert_to(value_input, 'UTF8')) BETWEEN 1 AND 64
+        AND value_input COLLATE "C" ~ '^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$';
+$$;
+
+CREATE TABLE public.media_root_kind (
+    media_root_kind_id smallint NOT NULL,
+    root_kind text NOT NULL,
+    CONSTRAINT media_root_kind_pkey PRIMARY KEY (media_root_kind_id),
+    CONSTRAINT media_root_kind_root_kind_key UNIQUE (root_kind),
+    CONSTRAINT media_root_kind_closed_v1 CHECK (
+        (media_root_kind_id, root_kind) IN (
+            (1, 'source'), (2, 'output'), (3, 'workspace'), (4, 'backup'), (5, 'quarantine')
+        )
+    )
+);
+INSERT INTO public.media_root_kind (media_root_kind_id, root_kind)
+VALUES (1, 'source'), (2, 'output'), (3, 'workspace'), (4, 'backup'), (5, 'quarantine');
+
+CREATE FUNCTION public.media_root_kind_immutable_v1()
+RETURNS trigger LANGUAGE plpgsql
+SET search_path TO pg_catalog
+AS $$
+BEGIN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'media_root_kind_immutable';
+END;
+$$;
+CREATE TRIGGER media_root_kind_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_kind
+FOR EACH ROW EXECUTE FUNCTION public.media_root_kind_immutable_v1();
+
+CREATE TABLE public.media_root_catalog_generation (
+    media_root_catalog_generation_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_root_catalog_generation_public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+    contract_version smallint NOT NULL,
+    source_format_version smallint NOT NULL,
+    source_sha256 bytea NOT NULL,
+    attestation_sha256 bytea NOT NULL,
+    generation_sha256 bytea NOT NULL,
+    slot_count smallint NOT NULL,
+    activated_at timestamptz NOT NULL,
+    CONSTRAINT media_root_catalog_generation_pkey PRIMARY KEY (media_root_catalog_generation_id),
+    CONSTRAINT media_root_catalog_generation_public_id_key UNIQUE (media_root_catalog_generation_public_id),
+    CONSTRAINT media_root_catalog_generation_contract_v1 CHECK (contract_version = 1),
+    CONSTRAINT media_root_catalog_generation_source_format_v1 CHECK (source_format_version = 1),
+    CONSTRAINT media_root_catalog_generation_source_sha256_length CHECK (octet_length(source_sha256) = 32),
+    CONSTRAINT media_root_catalog_generation_attestation_sha256_length CHECK (octet_length(attestation_sha256) = 32),
+    CONSTRAINT media_root_catalog_generation_generation_sha256_length CHECK (octet_length(generation_sha256) = 32),
+    CONSTRAINT media_root_catalog_generation_slot_count_bounds CHECK (slot_count BETWEEN 0 AND 256)
+);
+CREATE INDEX ix_media_root_catalog_generation_generation_sha256
+ON public.media_root_catalog_generation (generation_sha256, media_root_catalog_generation_id DESC);
+
+CREATE TABLE public.media_root_catalog_slot (
+    media_root_catalog_slot_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_root_catalog_slot_public_id uuid NOT NULL DEFAULT gen_random_uuid(),
+    logical_key text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    CONSTRAINT media_root_catalog_slot_pkey PRIMARY KEY (media_root_catalog_slot_id),
+    CONSTRAINT media_root_catalog_slot_public_id_key UNIQUE (media_root_catalog_slot_public_id),
+    CONSTRAINT media_root_catalog_slot_logical_key_key UNIQUE (logical_key),
+    CONSTRAINT media_root_catalog_slot_logical_key_contract CHECK (public.media_root_logical_key_valid_v1(logical_key))
+);
+
+CREATE TABLE public.media_root_catalog_slot_attestation (
+    media_root_catalog_slot_attestation_id bigint GENERATED ALWAYS AS IDENTITY,
+    media_root_catalog_generation_id bigint NOT NULL,
+    media_root_catalog_slot_id bigint NOT NULL,
+    requested_path text NOT NULL,
+    canonical_path text NOT NULL,
+    filesystem_device bytea NOT NULL,
+    filesystem_inode bytea NOT NULL,
+    mount_id bigint NOT NULL,
+    filesystem_type text NOT NULL,
+    read_capable boolean NOT NULL,
+    write_capable boolean NOT NULL,
+    create_new_capable boolean NOT NULL,
+    fsync_capable boolean NOT NULL,
+    rename_capable boolean NOT NULL,
+    delete_capable boolean NOT NULL,
+    capacity_probe_capable boolean NOT NULL,
+    durability_class text NOT NULL,
+    durability_evidence text NOT NULL,
+    sole_writer_class text NOT NULL,
+    sole_writer_evidence text NOT NULL,
+    owner_uid bigint NOT NULL,
+    owner_gid bigint NOT NULL,
+    mode_bits integer NOT NULL,
+    validated_at timestamptz NOT NULL,
+    root_identity_sha256 bytea NOT NULL,
+    CONSTRAINT media_root_catalog_slot_attestation_pkey PRIMARY KEY (media_root_catalog_slot_attestation_id),
+    CONSTRAINT media_root_catalog_slot_attestation_generation_fkey FOREIGN KEY (media_root_catalog_generation_id)
+        REFERENCES public.media_root_catalog_generation ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT media_root_catalog_slot_attestation_slot_fkey FOREIGN KEY (media_root_catalog_slot_id)
+        REFERENCES public.media_root_catalog_slot ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT media_root_catalog_slot_attestation_generation_slot_key
+        UNIQUE (media_root_catalog_generation_id, media_root_catalog_slot_id),
+    CONSTRAINT media_root_catalog_slot_attestation_generation_path_key
+        UNIQUE (media_root_catalog_generation_id, canonical_path),
+    CONSTRAINT media_root_catalog_slot_attestation_generation_identity_key
+        UNIQUE (media_root_catalog_generation_id, filesystem_device, filesystem_inode),
+    CONSTRAINT media_root_catalog_slot_attestation_generation_digest_key
+        UNIQUE (media_root_catalog_generation_id, root_identity_sha256),
+    -- PostgreSQL text rejects NUL before these path checks run.
+    CONSTRAINT media_root_catalog_slot_attestation_paths CHECK (
+        octet_length(convert_to(requested_path, 'UTF8')) BETWEEN 1 AND 4096
+        AND left(requested_path, 1) = '/' AND requested_path <> '/'
+        AND octet_length(convert_to(canonical_path, 'UTF8')) BETWEEN 1 AND 4096
+        AND left(canonical_path, 1) = '/' AND canonical_path <> '/'
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_filesystem_identity CHECK (
+        octet_length(filesystem_device) = 8 AND octet_length(filesystem_inode) = 8
+        AND mount_id >= 0 AND octet_length(convert_to(filesystem_type, 'UTF8')) BETWEEN 1 AND 64
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_owner_mode_bounds CHECK (
+        owner_uid BETWEEN 0 AND 4294967295 AND owner_gid BETWEEN 0 AND 4294967295
+        AND mode_bits BETWEEN 0 AND 4095
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_durability_pair CHECK (
+        (durability_class, durability_evidence) IN (
+            ('disposable', 'none'), ('restart_persistent', 'linux_dedicated_mount'),
+            ('restart_persistent', 'kubernetes_persistent_volume_claim')
+        )
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_writer_pair CHECK (
+        (sole_writer_class, sole_writer_evidence) IN (
+            ('uncontrolled', 'none'), ('revaer_exclusive', 'linux_dedicated_service'),
+            ('revaer_exclusive', 'kubernetes_read_write_once_pod')
+        )
+    ),
+    CONSTRAINT media_root_catalog_slot_attestation_digest_length CHECK (octet_length(root_identity_sha256) = 32)
+);
+CREATE INDEX ix_media_root_catalog_slot_attestation_slot_generation
+ON public.media_root_catalog_slot_attestation (media_root_catalog_slot_id, media_root_catalog_generation_id DESC);
+CREATE INDEX ix_media_root_catalog_slot_attestation_generation_path
+ON public.media_root_catalog_slot_attestation
+    (media_root_catalog_generation_id, canonical_path, media_root_catalog_slot_attestation_id);
+
+CREATE TABLE public.media_root_catalog_slot_kind (
+    media_root_catalog_slot_attestation_id bigint NOT NULL,
+    media_root_kind_id smallint NOT NULL,
+    CONSTRAINT media_root_catalog_slot_kind_pkey PRIMARY KEY (media_root_catalog_slot_attestation_id, media_root_kind_id),
+    CONSTRAINT media_root_catalog_slot_kind_attestation_fkey FOREIGN KEY (media_root_catalog_slot_attestation_id)
+        REFERENCES public.media_root_catalog_slot_attestation ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT media_root_catalog_slot_kind_kind_fkey FOREIGN KEY (media_root_kind_id)
+        REFERENCES public.media_root_kind ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+CREATE INDEX ix_media_root_catalog_slot_kind_kind
+ON public.media_root_catalog_slot_kind (media_root_kind_id, media_root_catalog_slot_attestation_id);
+
+CREATE TABLE public.media_root_catalog_state (
+    media_root_catalog_state_id smallint NOT NULL,
+    active_media_root_catalog_generation_id bigint,
+    source_state text NOT NULL,
+    source_reason_code text,
+    attestation_state text NOT NULL,
+    attestation_reason_code text,
+    reconciled_at timestamptz NOT NULL,
+    CONSTRAINT media_root_catalog_state_pkey PRIMARY KEY (media_root_catalog_state_id),
+    CONSTRAINT media_root_catalog_state_active_generation_fkey FOREIGN KEY (active_media_root_catalog_generation_id)
+        REFERENCES public.media_root_catalog_generation ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT media_root_catalog_state_singleton CHECK (media_root_catalog_state_id = 1),
+    CONSTRAINT media_root_catalog_state_source_known CHECK (
+        source_state IN ('ready', 'missing', 'untrusted', 'invalid', 'bound_exceeded', 'unsupported')
+    ),
+    CONSTRAINT media_root_catalog_state_attestation_known CHECK (attestation_state IN ('ready', 'not_evaluated', 'invalid')),
+    CONSTRAINT media_root_catalog_state_coherent CHECK ((
+        (source_state <> 'ready' AND active_media_root_catalog_generation_id IS NULL
+            AND attestation_state = 'not_evaluated' AND attestation_reason_code IS NULL
+            AND source_reason_code = CASE source_state
+                WHEN 'missing' THEN 'media_root_catalog_source_missing'
+                WHEN 'untrusted' THEN 'media_root_catalog_source_untrusted'
+                WHEN 'invalid' THEN 'media_root_catalog_format_invalid'
+                WHEN 'bound_exceeded' THEN 'media_root_catalog_bound_exceeded'
+                WHEN 'unsupported' THEN 'media_root_platform_unsupported'
+            END)
+        OR (source_state = 'ready' AND source_reason_code IS NULL AND (
+            (attestation_state = 'ready' AND active_media_root_catalog_generation_id IS NOT NULL
+                AND attestation_reason_code IS NULL)
+            OR (attestation_state = 'invalid' AND active_media_root_catalog_generation_id IS NULL
+                AND attestation_reason_code IN (
+                    'media_root_attestation_invalid', 'media_root_overlap', 'media_root_unsafe_ancestry',
+                    'media_root_durability_unproven', 'media_root_writer_control_unproven',
+                    'media_root_identity_mismatch'
+                ))
+        ))
+    ) IS TRUE)
+);
+INSERT INTO public.media_root_catalog_state
+    (media_root_catalog_state_id, active_media_root_catalog_generation_id, source_state,
+     source_reason_code, attestation_state, attestation_reason_code, reconciled_at)
+VALUES (1, NULL, 'missing', 'media_root_catalog_source_missing', 'not_evaluated', NULL, transaction_timestamp());
+
+CREATE FUNCTION public.media_root_catalog_immutable_v1()
+RETURNS trigger LANGUAGE plpgsql
+SET search_path TO pg_catalog
+AS $$
+BEGIN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'media_root_catalog_immutable';
+END;
+$$;
+CREATE TRIGGER media_root_catalog_generation_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_catalog_generation
+FOR EACH ROW EXECUTE FUNCTION public.media_root_catalog_immutable_v1();
+CREATE TRIGGER media_root_catalog_slot_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_catalog_slot
+FOR EACH ROW EXECUTE FUNCTION public.media_root_catalog_immutable_v1();
+CREATE TRIGGER media_root_catalog_slot_attestation_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_catalog_slot_attestation
+FOR EACH ROW EXECUTE FUNCTION public.media_root_catalog_immutable_v1();
+CREATE TRIGGER media_root_catalog_slot_kind_immutable_trigger
+BEFORE UPDATE OR DELETE ON public.media_root_catalog_slot_kind
+FOR EACH ROW EXECUTE FUNCTION public.media_root_catalog_immutable_v1();
+
+CREATE FUNCTION public.media_root_catalog_state_get_v1()
+RETURNS TABLE (
+    source_state text, source_reason_code text, attestation_state text, attestation_reason_code text,
+    media_root_catalog_generation_public_id uuid, attestation_generation bigint,
+    source_format_version smallint, source_sha256 bytea, generation_sha256 bytea,
+    slot_count smallint, activated_at timestamptz, reconciled_at timestamptz
+)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+    SELECT s.source_state, s.source_reason_code, s.attestation_state, s.attestation_reason_code,
+        g.media_root_catalog_generation_public_id, g.media_root_catalog_generation_id,
+        g.source_format_version, g.source_sha256, g.generation_sha256, g.slot_count,
+        g.activated_at, s.reconciled_at
+    FROM public.media_root_catalog_state AS s
+    LEFT JOIN public.media_root_catalog_generation AS g
+        ON g.media_root_catalog_generation_id = s.active_media_root_catalog_generation_id
+    WHERE s.media_root_catalog_state_id = 1;
+$$;
+
+CREATE FUNCTION public.media_root_catalog_readiness_get_v1()
+RETURNS TABLE (
+    source_state text, source_reason_code text, attestation_state text, attestation_reason_code text,
+    attestation_generation bigint, root_kind text, attested_slot_count integer,
+    binding_ready_slot_count integer, destructive_ready_slot_count integer
+)
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path TO pg_catalog, public
+AS $$
+    WITH current_state AS (
+        SELECT s.* FROM public.media_root_catalog_state_get_v1() AS s
+    ), capabilities AS (
+        SELECT a.*, a.write_capable AND a.create_new_capable AND a.fsync_capable
+            AND a.rename_capable AND a.delete_capable AND a.capacity_probe_capable
+            AND a.sole_writer_class = 'revaer_exclusive' AS writing_ready,
+            EXISTS (
+                SELECT 1 FROM public.media_root_catalog_slot_kind AS output_kind
+                WHERE output_kind.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+                    AND output_kind.media_root_kind_id = 2
+            ) AS has_output
+        FROM public.media_root_catalog_slot_attestation AS a
+        JOIN current_state AS s ON s.attestation_generation = a.media_root_catalog_generation_id
+    ), kind_readiness AS (
+        SELECT sk.media_root_kind_id,
+            CASE WHEN sk.media_root_kind_id = 1 THEN a.read_capable ELSE a.writing_ready END AS binding_ready,
+            a.durability_class = 'restart_persistent' AND a.writing_ready
+                AND (sk.media_root_kind_id <> 1 OR (a.read_capable AND a.has_output)) AS destructive_ready
+        FROM capabilities AS a
+        JOIN public.media_root_catalog_slot_kind AS sk
+            ON sk.media_root_catalog_slot_attestation_id = a.media_root_catalog_slot_attestation_id
+    )
+    SELECT s.source_state, s.source_reason_code, s.attestation_state, s.attestation_reason_code,
+        s.attestation_generation, k.root_kind,
+        count(r.media_root_kind_id)::integer,
+        count(*) FILTER (WHERE r.binding_ready)::integer,
+        count(*) FILTER (WHERE r.destructive_ready)::integer
+    FROM current_state AS s CROSS JOIN public.media_root_kind AS k
+    LEFT JOIN kind_readiness AS r ON r.media_root_kind_id = k.media_root_kind_id
+    GROUP BY s.source_state, s.source_reason_code, s.attestation_state, s.attestation_reason_code,
+        s.attestation_generation, k.media_root_kind_id, k.root_kind
+    ORDER BY k.media_root_kind_id;
+$$;
+
+REVOKE ALL ON FUNCTION public.media_root_logical_key_valid_v1(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_kind_immutable_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_immutable_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_state_get_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.media_root_catalog_readiness_get_v1() FROM PUBLIC;
+
 -- ADR 551 finalization: lifecycle and explicit authored routine privileges.
 CREATE SCHEMA revaer_system;
 ALTER SCHEMA public OWNER TO CURRENT_USER;
@@ -45331,6 +45619,8 @@ BEGIN
     ALTER DEFAULT PRIVILEGES REVOKE ALL ON SCHEMAS FROM PUBLIC;
 
     FOREACH routine_identity IN ARRAY ARRAY[
+            'public.media_root_catalog_state_get_v1()',
+            'public.media_root_catalog_readiness_get_v1()',
         -- Generated authored routine grants begin.
             'public.policy_action_to_decision_type(public.policy_action)',
             'public.app_user_create(character varying, character varying)',
