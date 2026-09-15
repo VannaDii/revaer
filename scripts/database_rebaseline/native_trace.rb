@@ -7,7 +7,7 @@ module RevaerDatabaseRebaseline
   # Bind read-only native observations to the catalog of the same live clone.
   class NativeTrace
     def initialize(query:, directory:, observations: :trust_rank, trigger_expectation: :present)
-      raise Failure, "unknown native observation protocol" unless %i[trust_rank policy fk].include?(observations)
+      raise Failure, "unknown native observation protocol" unless %i[trust_rank policy fk settings].include?(observations)
       unless %i[present absent].include?(trigger_expectation) && (observations == :policy || trigger_expectation == :present)
         raise Failure, "invalid native trigger expectation"
       end
@@ -65,6 +65,7 @@ module RevaerDatabaseRebaseline
       events, filename = case @observations
                          when :trust_rank then [trust_rank_events(lines), "trust-rank-events.json"]
                          when :policy then [policy_events(lines, mapped), "policy-events.json"]
+                         when :settings then [native, "settings-events.json"]
                          else [native, "fk-events.json"]
                          end
       write(File.join(@directory, filename), events)

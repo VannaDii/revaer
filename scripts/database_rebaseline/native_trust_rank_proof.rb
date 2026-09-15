@@ -170,17 +170,19 @@ module RevaerDatabaseRebaseline
     def cleanup_native_resources!
       failures = []
       operations = [-> { @native_sessions&.remove_containers! }, -> { @native_policy_sessions&.remove_containers! },
-                    -> { @native_fk_sessions&.remove_containers! }, -> { @native_cancellation_sessions&.remove_containers! }, -> { yield },
+                    -> { @native_fk_sessions&.remove_containers! }, -> { @native_cancellation_sessions&.remove_containers! },
+                    -> { @native_setting_sessions&.remove_containers! }, -> { yield },
                     -> { @native_sessions&.close_after_owner_cleanup! }, -> { @native_policy_sessions&.close_after_owner_cleanup! },
                     -> { @native_fk_sessions&.close_after_owner_cleanup! },
                     -> { @native_cancellation_sessions&.close_after_owner_cleanup! },
+                    -> { @native_setting_sessions&.close_after_owner_cleanup! },
                     -> { cleanup_native_tooling! }]
       operations.each do |operation|
         operation.call
       rescue StandardError => error
         failures << "#{error.class}: #{error.message}"
       end
-      [@native_primary_evidence, @native_policy_evidence, @native_fk_evidence, @native_cancellation_evidence].compact.each do |directory|
+      [@native_primary_evidence, @native_policy_evidence, @native_fk_evidence, @native_cancellation_evidence, @native_setting_evidence].compact.each do |directory|
         @native_evidence = directory
         native_write("cleanup.json", JSON.pretty_generate({ passed: failures.empty?, failures: }) + "\n")
       end

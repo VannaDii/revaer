@@ -279,6 +279,64 @@ No role privilege, extension ACL, timeout value, frozen migration, workflow, or
 remote setting was changed to conceal the two failures. Independently passing
 pristine-catalog and baseline-reader tests resolve none of these approval gaps.
 
+### Native Settings Integration (2026-09-14, In Progress)
+
+- Motivation/design: bind native compiler-scope observations to the existing
+  success/rollback, late year-validation and regex-error cases. Keep the
+  independent NOTICE matrix and exact application/read-image oracles; compare
+  plain and native-observed clones in all twelve cold/helper-first variant
+  contexts. No production SQL, frozen migration or bootstrap change.
+- Tests: focused phase mutations pass 1,248 assertions; capture routing,
+  protocol rejection and cleanup pass 21. Focused live qualification passes
+  all twelve native pairs and 45 producer checks, alongside the unchanged
+  NOTICE matrix, on the dirty delta over `d09daa34`. `just ci` passes for this
+  delta; the complete final-proof replay has not yet qualified it.
+- Retained evidence: `ingestion-native-settings/run-20260914-63676-bdt9wu`
+  under the ignored final-proof output contains the successful run. The earlier
+  `run-20260914-60030-24z121` failed because the new harness wrongly expected no
+  callbacks before the year guard. Frozen source inserts the source row at
+  line 512 before the year guard at line 946 and policy call at line 1278;
+  correcting that expectation preserves, rather than suppresses, the observed
+  callbacks. Both runs have successful independent cleanup receipts.
+- CI follow-up: `target/revaer-host-backed-ci-1d436ce7bb1e/gate.log`
+  stopped on the newly published `RUSTSEC-2026-0285`, not on this proof's
+  assertions. The audit-loaded RustSec advisory requires Rustls >=0.23.45 for
+  TLS 1.3 handshake encryption-level separation. Updated only Rustls
+  0.23.35 -> 0.23.45 and required WebPKI 0.103.13 -> 0.103.15 in `Cargo.lock`;
+  retained the existing TLS features, provider and unrelated resolved edges.
+  Both patched crates require Rust 1.71, below workspace Rust 1.96. `just audit`
+  and `just --command cargo check --locked -p revaer-app --all-features` pass.
+  The full CI rerun passes; its log and owned-database diagnostics are retained
+  in `target/revaer-host-backed-ci-09650752812b`. This dependency qualification is not an independent
+  malicious-handshake reproduction or a claim of completed release validation.
+- Coverage/UI: preserved the CI coverage reports and source hashes in
+  `target/d3-reconcile/native-settings-coverage-09650752812b.json` before UI
+  execution. All eight changed Ruby files have positive executed line coverage;
+  the new phase validator covers 64/67 executable lines, but the integration
+  driver covers only 17/87 in this coverage run. The separate focused live run
+  is not merged into these coverage counts. Retained input mtimes distinguish
+  fresh Rust/script reports from older JS/native compile-database inputs; this
+  is not proof of a complete fresh Sonar submission or published coverage.
+  The current `just ui-e2e` run in
+  `target/revaer-host-backed-ui-e2e-ecae35e52e3d` has 57 passed, one failed and
+  72 unrun: `tests/specs/api/media.spec.ts:484` receives HTTP 400 with
+  `media_profile_filesystem_identity_required` instead of 200. Teardown also
+  rejects missing UI coverage because UI tests did not execute. The initial
+  sandbox-denied launch started no database; the authorized rerun removed its
+  owned database, anonymous volumes, host data and private media root. No gate
+  or API expectation was relaxed. UI, Sonar and release acceptance remain open.
+- Observability: private raw native records, same-clone catalog/source binding,
+  before/after source and target fingerprints, complete application evidence
+  and a separate owned-resource cleanup receipt. No production telemetry.
+- Risk/rollback: observer effects and incomplete scope remain explicit risks.
+  Revert only this proof integration if necessary; retain failed evidence and
+  the D3 guard. These observations do not prove every callsite or FK count.
+- Dependencies/policy: existing Ruby standard library and pinned disposable
+  observer only. Reviewed root, Rust, data and DevOps instructions; updated
+  DevOps for this scope without relaxing any gate. The legacy scheduled-profile
+  failure still requires ADR 557's coordinated root/profile replacement, not
+  weakening the frozen filesystem-identity rejection.
+
 ### Canonical Native Cancellation Integration (2026-09-14, In Progress)
 
 - Motivation/design: integrate the qualified cancellation snapshot and exact

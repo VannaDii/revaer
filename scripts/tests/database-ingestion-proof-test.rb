@@ -38,6 +38,8 @@ require_relative "database-native-fk-capture-test"
 require_relative "database-native-cancellation-snapshot-test"
 require_relative "database-native-cancellation-comparison-test"
 require_relative "database-native-cancellation-capture-test"
+require_relative "database-native-setting-phases-test"
+require_relative "database-native-setting-capture-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
@@ -328,3 +330,5 @@ RevaerDatabaseRebaseline::NativeFkCaptureTest.new.run!
 RevaerDatabaseRebaseline::NativeCancellationSnapshotTest.new.run!
 NativeCancellationComparisonTest.new.run
 RevaerDatabaseRebaseline::NativeCancellationCaptureTest.new.run!
+RevaerDatabaseRebaseline::NativeSettingPhasesTest.new.run!
+RevaerDatabaseRebaseline::NativeSettingCaptureTest.new.run!

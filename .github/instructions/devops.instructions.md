@@ -264,6 +264,17 @@ applyTo:
   source/target identities and separate cleanup evidence. This one interruption
   point does not certify client-future cancellation, other settings callsites,
   complete D3 or bootstrap cutover.
+  Native settings qualification must reuse the three canonical settings cases
+  in cold/helper-first reference/final pairs, retaining the independent NOTICE
+  matrix and all existing application, input, rollback and diagnostic oracles.
+  Native capture uses uninstrumented clones, same-clone source/catalog binding,
+  exact caller/in-call compiler scope and ordered snapshot intervals. Reject
+  foreign protocols and escaped events; require the pre-guard FK callbacks
+  before rollback in both success and error paths. Preserve frozen D4's
+  third-call failure separately from final success and pair all three calls
+  within each variant. These settings observations are not callback-count or
+  complete reachable-callsite closure. Keep independent cleanup evidence and
+  the incomplete-D3 guard; no bootstrap or runtime change follows from a pass.
   Committed score/title proof must retain distinct stored base/context scores,
   the exact 99/100-seeder promotion boundary, higher-ranked title refresh and
   repeated low-source observations on the same tested backend. The current
