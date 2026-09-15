@@ -8,13 +8,16 @@ module RevaerDatabaseRebaseline
   # Bounded readback only: catalog/source binding and application oracles remain
   # the producer's responsibility. Observed warm counts do not certify whole D3.
   class NativeWarmHelperPhases
-    REQUIRED = {
-      "magnet-uri" => %w[normalize_magnet_uri_v1 derive_magnet_hash_v1].freeze,
-      "title-size" => %w[normalize_title_v1 compute_title_size_hash_v1].freeze
+    # Both fixtures have no explicit hashes, policy rules or metadata conflicts.
+    # The v1 identity block calls derive before title normalization; only the
+    # URI path enters normalize_magnet, and only fallback computes title-size.
+    HELPER_PATHS = {
+      "magnet-uri" => %w[search_result_ingest_v1 derive_magnet_hash_v1 normalize_magnet_uri_v1 normalize_title_v1].freeze,
+      "title-size" => %w[search_result_ingest_v1 derive_magnet_hash_v1 normalize_title_v1 compute_title_size_hash_v1].freeze
     }.freeze
 
     def validate!(events:, frames:, scenario:, variant:)
-      unless REQUIRED.key?(scenario) && %w[reference final].include?(variant)
+      unless HELPER_PATHS.key?(scenario) && %w[reference final].include?(variant)
         raise Failure, "unknown native warm helper context"
       end
       unless events.is_a?(Array) && events.all? { |event| event.is_a?(Hash) } &&
@@ -43,14 +46,11 @@ module RevaerDatabaseRebaseline
             helpers.count("search_result_ingest_v1") == 1 && phase.all? { |event| event.fetch("compiler_setting") == setting }
           raise Failure, "native warm helper operation root or compiler scope changed"
         end
-        unless (REQUIRED.fetch(scenario) - helpers).empty?
-          raise Failure, "native warm required identity helper missing"
+        unless helpers == HELPER_PATHS.fetch(scenario)
+          raise Failure, "native warm exact identity helper path changed"
         end
         callbacks = phase.select { |event| event.fetch("kind") == "trigger" }
         raise Failure, "native warm cold callbacks missing" if index.zero? && callbacks.empty?
-        if frame.fetch("state") == "42P07" && helpers.any? { |helper| helper.start_with?("policy_") }
-          raise Failure, "frozen warm scratch failure reached policy helpers"
-        end
         { ordinal: index + 1, scenario:, variant:, scope: "bounded-readback-not-whole-D3",
           state: frame.fetch("state"), compiler_setting: setting,
           before:, after:, finish:, helpers:, callback_count: callbacks.length,

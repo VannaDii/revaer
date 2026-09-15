@@ -82,6 +82,53 @@ identified for rows 1 and 5 by the bounded mapping above.
 
 ## Execution order
 
+### Current caller and dispatch bindings
+
+Source inspection at `1694ffb6` plus the warm-path validator delta separates
+these caller sites from the [ten helper-local dispositions](569-d3-helper-dispositions.md).
+The source below is `0052_indexer_search_result_ingest_proc.sql` (S), except
+the current wrapper in `0120_search_result_ingest_seed_best_source_context.sql` (W).
+These are source-to-validator bindings, not new live observations or a completeness certificate.
+
+| Caller sites | Existing witness or explicit skip disposition |
+| --- | --- |
+| S:584-649, 679-710, 785-808, 1208-1450: rejection gates | `ingestion_validation.rb` enumerates validation shapes; `ingestion_setting_paths.rb` retains late-error rollback and retry. Pure-helper NULL inputs are not claims that the caller passes its earlier guards. |
+| S:655-675: absent trust lookup and bucket branches | `ingestion_runtime_rank.rb` and `native_trust_rank_proof.rb` keep NULL-key, missing-row and nonzero calibration distinct. |
+| S:733, 783, 804: identity helper calls | `wrapper_identity_specs`, committed identity/fill cases and `NativeWarmHelperProof` supply the named contexts. The tightened warm validator requires the exact four-helper sequence in both calls, not merely membership. Explicit magnet hash skips derivation through COALESCE; title-size hashing occurs only after all hash strategies fail. |
+| S:850-876: prevent-merge rules | `ingestion_disambiguation.rb` retains the actual unique-key failures. Matching rules do not imply a successful split. |
+| S:1029, 1046: GUID conflict logger sites | `IngestionGuid::GUID_KINDS` names `competing-guid` and `changed-selected-guid`; cold/helper-first/logger-first modes retain both controlled interleavings and logger writes. |
+| S:1067, 1105, 1144: competing hash fills | `wrapper_hash_fill_cases` covers all three hash kinds with competing/uncontested sources; `ingestion_committed_hash_fill.rb` covers their committed reuse. |
+| S:1083, 1121, 1160: differing existing hashes | `verify_existing_v2_conflict!` and `existing-hash-conflict` retain v2 and v1/derived-magnet conflicts. These are separate from filling a missing hash. |
+| S:1561, 1590, 1620, 1655: require-rule helpers | `policy_require_rules`, `require-all-pass/fail`, `require-fail-*` and scope-order cases preserve each helper context and skip/match behavior. |
+| S:1708-1802: policy field dispatch | `POLICY_FIELDS`, populated match/nonmatch and operator cases enumerate the eleven selected fields; release-token/signal and invalid-regex cases distinguish nested paths. A required non-NULL request snapshot makes the outer S:1480 false arm unreachable, as recorded in R1. |
+| S:1913-2085: score selection, observation and title reuse | Wrapper score/promotion cases and `ingestion_committed_scoring.rb` retain the seeder boundary and wrapper-tail difference. R1 proves the own-row score exclusions; no successful promotion on an impossible comparison is claimed. |
+| S:2198, 2225, 2252, 2315, 2342, 2369: metadata logger sites | `metadata_cases` names typed replacement, stale-long conflicts and differing external IDs; the latter preserves frozen D5 rollback. `ingestion_attribute_race.rb` separately qualifies concurrent attribute upsert, not arbitrary concurrent ingestion. |
+| S:2435-2696: signal and external-ID paths | Attribute/metadata matrices retain typed values and exact D5 differences. R2 proves the six signal conflict-update arms unreachable with the frozen NULL-distinct unique key; no constraint is disabled to create a witness. |
+| S:2699-2863: size retention and paging | Sampling, committed paging and `ingestion_sample_race.rb` bind the 26th sample, page boundary/reuse and concurrent zero-sample case. Size-sample deletion has no incoming FK. |
+| S:2882: policy assignment cast | Native policy proof retains dispatched and inlined casts separately; regex failure before this statement skips it. Empty policy matches produce no result-row cast. |
+| W:52, 82-134: wrapper delegation and best-context tail | `first-visible-wrapper`, `wrapper-visible-source-tail`, dropped-wrapper and paging cases cover visible/missing-page behavior. The wrapper has no EXECUTE or dynamic routine name; ordinary dropped results retain identities but omit page membership. |
+
+`dependency_validate_dispatch!` checks the installed graph's exact 31 outbound
+write FKs, 118 internal write-table triggers, policy cast, dictionary/template,
+ordinary relation kinds and absence of RLS/rules. Its sole noninternal trigger
+is attached to `search_request_indexer_run`, which ingestion reads but does not
+write. This does not establish trigger execution. Native FK phases separately
+bind actual insert/update callbacks and independent zero-count predictions for
+unchanged referenced keys. Parent delete/cascade slots are not ingestion delete
+paths: the only authored DELETE targets size samples, and the graph validator
+rejects an incoming sample FK. The entry routines contain no PL/pgSQL EXECUTE;
+regex construction, enum-selected branches and catalog-bound casts are not
+dynamic SQL text. Internal/native provider code remains pinned, not certified
+for arbitrary inputs or other PostgreSQL builds.
+
+The next closure implementation must consume the exact successful producer
+results and their current-source identities together with these skip
+dispositions. No new helper matrix is indicated by this source audit. The
+unconditional D3 failure remains until that evidence binding is implemented and
+the complete proof passes; observed warm FK counts are still not expected counts.
+
+### Qualification sequence
+
 1. Completed: compilation report provenance and its dependency consumer passed
    4,836 targeted live checks. The later normalization/drop batch passed 1,509
    checks, including source-bound compilation/consumer checks again. Both
@@ -116,8 +163,8 @@ identified for rows 1 and 5 by the bounded mapping above.
    separate cleanup. Cancellation now uses the canonical controller in four
    plain/observed pairs in the full-method replay, with exact setting,
    rollback/recovery, independent clocks and successful cleanup. Complete the
-   settings and warm-helper integrations in the complete proof, and bind the
-   remaining callsites/skip conditions; the completed native groups do not
+   callsite/skip-condition evidence binding; settings and warm helpers already
+   passed in the complete-method replay. The completed native groups do not
    discharge those obligations. The initial full-run server disconnect
    and successful serial replay remain separately recorded, not conflated.
 4. Bind the remaining callsite/skip dispositions to the current source and the

@@ -281,6 +281,10 @@ applyTo:
   Bind both real calls to one backend across commits, source-qualified native
   events and restored caller settings. Helper membership alone does not prove
   operation boundaries, callback counts, all reachable callsites or D3 closure.
+  Require the exact source-predicted helper order and multiplicity in both
+  calls; reject missing, repeated, reordered or additional known helpers even
+  when native line ordering remains valid. Keep callback counts observed-only
+  until an independent source prediction qualifies those counts.
   Committed score/title proof must retain distinct stored base/context scores,
   the exact 99/100-seeder promotion boundary, higher-ranked title refresh and
   repeated low-source observations on the same tested backend. The current

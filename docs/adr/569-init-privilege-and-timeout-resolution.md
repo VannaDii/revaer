@@ -281,6 +281,36 @@ pristine-catalog and baseline-reader tests resolve none of these approval gaps.
 
 ### Native Warm Helper Integration (2026-09-14, In Progress)
 
+- Follow-up call-path closure: source inspection found that the original phase
+  validator admitted additional known helpers and required only partial helper
+  membership. It now requires exact order and multiplicity for each existing
+  URI/title-size fixture in both calls. The frozen v1 identity block calls
+  derive, optional URI normalization, title normalization and optional
+  title-size hashing before either variant reaches its scratch-table boundary.
+  The fixture has no policy rules, explicit hashes or metadata conflicts.
+  Mutations now reject missing, duplicate, reordered and extra known helpers
+  after native lines are renumbered, so rejection cannot rely on broken line
+  metadata alone. The focused validator passes 2,130 assertions; shared capture
+  tests pass 66. Live requalification at
+  `ingestion-native-warm-helpers/run-20260914-59388-zoish7` passes all four pairs
+  and 73 checks, with unchanged source/target identities and separate cleanup.
+  `just ci` passes at `target/revaer-host-backed-ci-a5d7b13dd77d`, with no
+  compiler-warning, WARN or error-prefixed diagnostics. Preserved coverage at
+  `target/d3-reconcile/warm-path-coverage-a5d7b13dd77d` records validator 88/89
+  and test 186/187 executed lines. Rust/script/native reports postdate this CI
+  start; JS and compile-database inputs retain older mtimes, not fresh claims.
+  This is local coverage, not published Sonar. `just ui-e2e` at
+  `target/revaer-host-backed-ui-e2e-1868b0ce9b63` still fails the scheduled
+  profile identity guard (400 instead of 200) and missing UI coverage: 57
+  passed, one failed, 72 unrun. Owned databases/data/media roots were removed
+  and `just clean-test-fixtures` passed. Documentation links pass 1,457/1,457.
+  These runs tested `1694ffb6` plus the two Ruby-file delta; the full-method
+  replay was not repeated. Prior full-method results below remain historical.
+  The bounded helper audit and caller/dispatch map identify no additional
+  helper-local binding context; integrating the complete source-to-producer
+  acceptance check remains required. Its sole audit worktree was removed
+  after byte-for-byte integration of the support note.
+  No source pin, SQL behavior, callback-count claim or D3 guard changed.
 - Motivation/design: complete the remaining magnet-URI and title-size native
   warm-cache observations using the existing identity inputs and correction
   transaction harness. Each variant pairs plain/native-observed execution,

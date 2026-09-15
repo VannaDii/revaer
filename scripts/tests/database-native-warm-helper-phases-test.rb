@@ -22,6 +22,7 @@ module RevaerDatabaseRebaseline
         test_events(request)
         test_frames(request)
         test_intervals(request)
+        test_helper_paths(request)
         %i[scenario variant].each { |key| rejected(request, "unknown #{key}") { |copy| copy[key] = "unknown" } }
         [nil, {}, "bad"].each do |bad|
           %i[events frames].each { |key| rejected(request, "malformed #{key}") { |copy| copy[key] = bad } }
@@ -34,13 +35,6 @@ module RevaerDatabaseRebaseline
         update = deep_copy(request)
         update.fetch(:events).find { |event| event.fetch("kind") == "trigger" }["function"] = "RI_FKey_check_upd"
         assert(validate(update).first.fetch(:callback_count) == 1, "bound update callback supported")
-        known = deep_copy(request)
-        position = snapshot_indices(known).fetch(1)
-        (IngestionProof::INGESTION_HELPERS - ["search_result_ingest_v1"]).each do |helper|
-          known.fetch(:events).insert(position, call(helper, variant == "reference" ? 2 : 0))
-        end
-        renumber(known)
-        assert((IngestionProof::INGESTION_HELPERS - validate(known).first.fetch(:helpers)).empty?, "known public helpers supported")
         if variant == "reference"
           rejected(request, "frozen error entering policy") do |copy|
             copy.fetch(:events).insert(snapshot_indices(copy).fetch(4), call("policy_text_match_v1", 2))
@@ -206,6 +200,36 @@ module RevaerDatabaseRebaseline
       request.fetch(:events).each_index.select { |index| request.fetch(:events).fetch(index)["schema"] == "ingestion_observation" }
     end
 
+    def test_helper_paths(request)
+      boundaries = snapshot_indices(request)
+      boundaries.each_slice(3) do |before, after, _finish|
+        indices = ((before + 1)...after).select { |index| request.fetch(:events).fetch(index).fetch("kind") == "call" }
+        indices.each do |index|
+          rejected(request, "duplicate identity helper") do |copy|
+            copy.fetch(:events).insert(index, deep_copy(copy.fetch(:events).fetch(index)))
+            renumber(copy)
+          end
+          rejected(request, "missing identity helper with valid native lines") do |copy|
+            copy.fetch(:events).delete_at(index)
+            renumber(copy)
+          end
+        end
+        indices.drop(1).each_cons(2) do |left, right|
+          rejected(request, "reordered nested helpers with valid native lines") do |copy|
+            events = copy.fetch(:events)
+            events[left], events[right] = events[right], events[left]
+            renumber(copy)
+          end
+        end
+        IngestionProof::INGESTION_HELPERS.each do |helper|
+          rejected(request, "extra known helper #{helper}") do |copy|
+            copy.fetch(:events).insert(after, call(helper, request.fetch(:variant) == "reference" ? 2 : 0))
+            renumber(copy)
+          end
+        end
+      end
+    end
+
     def renumber(request)
       request.fetch(:events).each_with_index { |event, index| event["native_line"] = index * 2 + 1 }
     end
@@ -231,8 +255,12 @@ module RevaerDatabaseRebaseline
       events = []
       frames = states.each_with_index.map do |state, index|
         events << call("snapshot", 0, "ingestion_observation")
-        helpers = scenario == "magnet-uri" ? %w[normalize_magnet_uri_v1 derive_magnet_hash_v1] : %w[normalize_title_v1 compute_title_size_hash_v1]
-        (["search_result_ingest_v1"] + helpers).each { |helper| events << call(helper, setting) }
+        helpers = if scenario == "magnet-uri"
+                    %w[search_result_ingest_v1 derive_magnet_hash_v1 normalize_magnet_uri_v1 normalize_title_v1]
+                  else
+                    %w[search_result_ingest_v1 derive_magnet_hash_v1 normalize_title_v1 compute_title_size_hash_v1]
+                  end
+        helpers.each { |helper| events << call(helper, setting) }
         events << callback(setting) if index.zero?
         2.times { events << call("snapshot", 0, "ingestion_observation") }
         after = state == "00000" ? index + 1 : index
