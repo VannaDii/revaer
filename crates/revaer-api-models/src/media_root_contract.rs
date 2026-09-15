@@ -39,6 +39,7 @@ mod catalog_scalar;
 mod catalog_slot;
 mod catalog_state;
 mod object;
+mod profile;
 mod readiness;
 
 pub use association::{DiscoveryAssociationRequest, DiscoveryModes};
@@ -47,6 +48,7 @@ pub use catalog_capability::RootCatalogCapability;
 pub use catalog_generation::{RootCatalogGeneration, RootCatalogGenerationFields};
 pub use catalog_kind::RootCatalogAllowedKind;
 pub use catalog_slot::{RootCatalogSlot, RootCatalogSlotFields};
+pub use profile::{ProfileVersionRequest, ProfileVersionRequestFields};
 
 pub use readiness::{
     RootAttestationFailure, RootCatalogReadinessResponse, RootCatalogReadinessState, RootKind,
