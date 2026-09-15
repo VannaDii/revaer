@@ -279,6 +279,83 @@ No role privilege, extension ACL, timeout value, frozen migration, workflow, or
 remote setting was changed to conceal the two failures. Independently passing
 pristine-catalog and baseline-reader tests resolve none of these approval gaps.
 
+### Native Warm Helper Integration (2026-09-14, In Progress)
+
+- Motivation/design: complete the remaining magnet-URI and title-size native
+  warm-cache observations using the existing identity inputs and correction
+  transaction harness. Each variant pairs plain/native-observed execution,
+  preserves complete application frames and immutable read inputs, validates
+  exact identity/hash answers and retains frozen D4 diagnostics separately.
+  Source/catalog binding and readback boundaries cover both real calls on one
+  backend across commits; no production SQL or bootstrap change.
+- Tests: the bounded worker's phase validator passes 1,790 mutation assertions;
+  the integrated shared settings/warm capture suite passes 66, including exact
+  plain-arm setting/lifetime checks and predecessor registration. Frozen-source
+  live qualification passes all four pairs and 73 producer checks in
+  `ingestion-native-warm-helpers/run-20260914-50037-s82vx2`, under the ignored
+  database proof output. Source/target identities and independent cleanup pass;
+  the report's source hashes match the current delta over `19d59c7e`. Full
+  `just ci` passes (`target/revaer-host-backed-ci-c446d29e98cf`). The complete
+  method replay has 9,851 passing checks and only the failing conditional-D3
+  completeness guard; it is not a passing final proof. Aggregate tests
+  rejected an entrypoint-only edit to
+  the source-pinned ingestion module; registration now uses the existing native
+  module override pattern, preserving the independently qualified source pin.
+- Observability: retain private raw debugger/application output, source and
+  target fingerprints, ABI headers and independent owned-resource cleanup.
+  The first disposable run failed during provisioning with PostgreSQL disk-full
+  SQLSTATE `53100`, before the proof ran. Its diagnostic is retained in
+  `target/d3-reconcile/native-warm-first-startup-error-20260914.txt`. The retry
+  uses the existing gate harness's private host-backed PostgreSQL storage
+  pattern, retains startup logs and removes only owned resources; no Docker
+  pruning or production storage change is authorized. Retain both the earlier
+  passing `run-20260914-47013-x8l3qd` and rejected
+  `run-20260914-48507-dp5ixe`: the latter correctly failed source identity after
+  the integration owner edited its capture test during execution. All three
+  completed observation runs have passing separate cleanup receipts. Only the
+  final frozen-source run qualifies the current delta.
+- Coverage/UI: retained current CI Rust/script coverage and source hashes in
+  `target/d3-reconcile/native-warm-coverage-c446d29e98cf.json` before UI. All
+  eight changed Ruby files have positive executed coverage; the new validator
+  covers 90/91 executable lines, while the proof driver covers only 31/109.
+  Uninstrumented live observations are not merged into those counts. Retained
+  JS/native compile-database inputs keep their older mtimes; this is not a
+  complete fresh Sonar submission or published coverage. `just ui-e2e` in
+  `target/revaer-host-backed-ui-e2e-e1846e826672` has 57 passed, one failed and
+  72 unrun: the scheduled-profile request at `media.spec.ts:484` still returns
+  `media_profile_filesystem_identity_required` (400 instead of 200). Teardown
+  also rejects absent UI coverage. Owned databases, host data and UI media root
+  were removed, followed by `just clean-test-fixtures`. Documentation links
+  pass 1,430/1,430. Neither test expectations nor criteria were relaxed.
+- Full replay environment: the first unchanged-method attempt at
+  `target/d3-reconcile/native-warm-full-20260914-70930-3hv3z7` failed before
+  readiness because PostgreSQL could not open `/tmp/native-policy/observation`;
+  retained diagnostics and storage cleanup confirm no proof acceptance. The
+  retry keeps that exact log path/configuration on a disposable 64 MiB tmpfs,
+  preserves its contents before cleanup and uses private host-backed PGDATA.
+  This is test-only storage, not an adopted production resource bound. The
+  full method and incomplete-D3 guard remain unchanged. Its terminal evidence
+  is `target/d3-reconcile/native-warm-full-20260914-75494-rm0eb0`; the final
+  report has 9,852 checks, `completed=false`, `passed=false`, and exactly one
+  failure: `ingestion complete conditional D3 proof`. Within this run,
+  `ingestion-native-settings/run-20260914-75494-rw9feh` passes twelve pairs and
+  45 checks, and `ingestion-native-warm-helpers/run-20260914-75494-npk6u1`
+  passes four pairs and 73 checks. Both have passing independent cleanup;
+  the full replay also removed its container and host data. The scoped
+  [callsite map](support/569-d3-closure-map.md#rows-1-and-5-source-bindings)
+  identifies existing source-to-report bindings, not D3 acceptance. Finish the
+  bounded callsite/skip-condition closure against these witnesses before
+  replacing the completeness guard; add a witness only for a concrete gap.
+- Risk/rollback: observer effects, insufficient coverage and incomplete
+  reachable-callsite bindings remain explicit. Remove this observer integration
+  if its evidence fails; retain failed runs and the incomplete-D3 guard.
+  Warm callback counts are observations, not an invented completeness oracle.
+- Dependencies/policy: existing standard-library Ruby, shared pinned observer
+  and database only. Reviewed root and scoped DevOps native-observation rules;
+  tightened the latter without relaxing criteria. One worker owned exactly the
+  validator/tests, its integrated files were compared byte-for-byte, and its
+  completed worktree was removed. No architecture decision or upload occurred.
+
 ### Native Settings Integration (2026-09-14, In Progress)
 
 - Motivation/design: bind native compiler-scope observations to the existing

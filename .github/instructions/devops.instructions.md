@@ -275,6 +275,12 @@ applyTo:
   within each variant. These settings observations are not callback-count or
   complete reachable-callsite closure. Keep independent cleanup evidence and
   the incomplete-D3 guard; no bootstrap or runtime change follows from a pass.
+  Committed-warm native identity qualification must retain the existing magnet
+  URI and title-size inputs, complete plain/observed application comparisons,
+  exact identity answers, unchanged read inputs and frozen D4 diagnostics.
+  Bind both real calls to one backend across commits, source-qualified native
+  events and restored caller settings. Helper membership alone does not prove
+  operation boundaries, callback counts, all reachable callsites or D3 closure.
   Committed score/title proof must retain distinct stored base/context scores,
   the exact 99/100-seeder promotion boundary, higher-ranked title refresh and
   repeated low-source observations on the same tested backend. The current

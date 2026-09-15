@@ -40,6 +40,7 @@ require_relative "database-native-cancellation-comparison-test"
 require_relative "database-native-cancellation-capture-test"
 require_relative "database-native-setting-phases-test"
 require_relative "database-native-setting-capture-test"
+require_relative "database-native-warm-helper-phases-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
@@ -332,3 +333,4 @@ NativeCancellationComparisonTest.new.run
 RevaerDatabaseRebaseline::NativeCancellationCaptureTest.new.run!
 RevaerDatabaseRebaseline::NativeSettingPhasesTest.new.run!
 RevaerDatabaseRebaseline::NativeSettingCaptureTest.new.run!
+RevaerDatabaseRebaseline::NativeWarmHelperPhasesTest.new.run!
