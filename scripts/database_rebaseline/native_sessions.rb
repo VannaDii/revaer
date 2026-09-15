@@ -56,6 +56,13 @@ module RevaerDatabaseRebaseline
       raise Failure, "native debugger cleanup failed: #{failures.join(', ')}" unless failures.empty?
     end
 
+    def snapshot(name:, observer:)
+      process = create_debugger(name, observer.script(musl_source_directory: "/observer-source"))
+      @processes.ready(process, /\ADETACHED\n\z/)
+      raw = @processes.finish(process)
+      observer.validate!(**raw)
+    end
+
     def close_after_owner_cleanup!
       @processes.close_after_owner_cleanup!
     end
@@ -69,8 +76,14 @@ module RevaerDatabaseRebaseline
     end
 
     def attach(name, backend, probe)
+      process = create_debugger(name, script(backend, probe))
+      @processes.ready(process, /\AREADY:0\n\z/)
+      process
+    end
+
+    def create_debugger(name, script)
       debug_name = "#{@container}-observer-#{SecureRandom.hex(4)}"
-      script_path = write("#{name}-debugger.gdb", script(backend, probe))
+      script_path = write("#{name}-debugger.gdb", script)
       command = ["docker", "create", "--name", debug_name, "--network", "none", "--pid", "container:#{@container}",
                  "--cap-add", "SYS_PTRACE", "--mount", "type=bind,source=#{@tooling.musl_source_directory},target=/observer-source,readonly",
                  @tooling.debugger_image, "--batch", "--nx", "--nh", "-x", "/tmp/observe.gdb"]
@@ -78,9 +91,7 @@ module RevaerDatabaseRebaseline
       @containers << debug_name
       @runner.run!(command)
       @runner.run!(["docker", "cp", script_path, "#{debug_name}:/tmp/observe.gdb"])
-      process = @processes.launch(["docker", "start", "--attach", debug_name], "#{name}-debugger")
-      @processes.ready(process, /\AREADY:0\n\z/)
-      process
+      @processes.launch(["docker", "start", "--attach", debug_name], "#{name}-debugger")
     end
 
     def breakpoint(symbol, lines)

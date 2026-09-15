@@ -279,6 +279,70 @@ No role privilege, extension ACL, timeout value, frozen migration, workflow, or
 remote setting was changed to conceal the two failures. Independently passing
 pristine-catalog and baseline-reader tests resolve none of these approval gaps.
 
+### Canonical Native Cancellation Integration (2026-09-14, In Progress)
+
+- Motivation/design: integrate the qualified cancellation snapshot and exact
+  plain/observed comparison into the existing canonical Rust cancellation
+  cases. The cold and committed-warm reference/final cases now each run as a
+  pair; this is not an additional competing application matrix. Both arms
+  retain owned warm-up/recovery locks and directly witnessed transaction
+  clocks. Only the observed arm attaches the read-only debugger during the
+  actual source-INSERT wait. Calls and memory/register writes are disabled;
+  exact setting/backend/database readback, empty diagnostics, detach and the
+  unchanged owned wait are mandatory before the original cancellation signal.
+- Test coverage: the focused live integration passes all four pairs, including
+  unchanged rollback/read inputs, same-pool recovery and the exact frozen D4
+  warm-recovery failure. The comparison port passes 2,324 synthetic assertions
+  across all four cases; snapshot tests retain 122 rejection cases. The capture
+  suite passes 73 assertions covering transport, clock provenance, target
+  identity, detach/wait drift and cleanup. The final-source focused repeat at
+  `run-20260914-96248-jt6lga` passes all 16 producer checks and cleanup.
+- Combined gates: `just ci` passes at `revaer-host-backed-ci-1f76550129ff`,
+  including executed positive coverage for all fourteen changed Ruby files.
+  Rust, JavaScript, generic and native coverage/compiler inputs were retained
+  before UI execution. No new Sonar analysis was uploaded; scoped upload
+  enforcement and scanner authentication remain unresolved. `just ui-e2e`
+  remains red at `revaer-host-backed-ui-e2e-88a2d71b7aa8`: 57 pass, one fails,
+  72 are unrun, and UI coverage is absent. Scheduled-profile setup retains the
+  real `media_profile_filesystem_identity_required` rejection. Owned databases,
+  host directories and UI media were removed; port 62241 was independently
+  verified free, and `just clean-test-fixtures` passes.
+- Complete-proof status: the first run passed 9,561 checks, including the four
+  native cancellation pairs, before PostgreSQL closed its connection with
+  `57P02` during temporal qualification. Cleanup succeeded. Its failed report,
+  query diagnostic, full log and database-evidence archive are retained. The
+  server log was not captured and the bounded Docker event query returned no
+  events, so the cause is unproven. A serial replay of unchanged
+  `FinalProof#run!`, through the Just command surface and injected runner,
+  finishes with 9,733 passing checks and only the unchanged incomplete-D3
+  guard failing. Its native cancellation group (`run-20260914-1132-l1cbl8`)
+  passes all four pairs and 16 checks; cancellation, K1, policy and FK each
+  retain successful cleanup. Server logs/inspection are retained before
+  cleanup and show this replay's server running without a recorded OOM kill.
+  This does not establish the first failure's cause. No gate, source
+  comparison, role, timeout or server argument changed. The failing D3
+  completeness guard remains enabled; no complete D3 acceptance follows.
+- Documentation: all 1,415 links pass. The docs build exits zero with its
+  retained large-search-index warning; it is not warning-free evidence.
+- Provenance: tested source is `0a56763c` plus this integration delta. The
+  comparison's semantics are unchanged; its tests no longer need an ignored
+  live evidence archive. The FK expectation pin advances only for the reviewed
+  `ingestion_proof.rb` report-pointer addition. No fixture, routine body,
+  frozen/final SQL, predicted FK count or criterion changes with that pin.
+- Observability: retain the original application reports, independently bound
+  clock witnesses and complete pair comparisons; raw debugger stdout/stderr,
+  exact commands, before/after backend identities, post-detach waits, source
+  fingerprints, native target identity and separate owned-resource cleanup.
+- Risk/rollback: remove cancellation observation and its comparison together,
+  retaining the original Rust cancellation controller/oracles. The shared
+  debugger creation extraction keeps existing trace transport unchanged and
+  requires its regression suites. Incomplete D3 remains a required failure.
+- Dependency rationale: Ruby standard library and existing pinned PostgreSQL/
+  debugger tooling only; no added dependency or architectural decision.
+- Stale-policy check: root, data and DevOps instructions reviewed. DevOps now
+  records this exact paired observation boundary. Existing cancellation,
+  scanner, bootstrap-authority and release requirements are not relaxed.
+
 ### Canonical Native FK Integration (2026-09-14, In Progress)
 
 - Motivation/design: adopt the qualified cold/logger-first, external-ID and

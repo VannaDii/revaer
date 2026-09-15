@@ -19,7 +19,7 @@ module RevaerDatabaseRebaseline
       "scripts/database_rebaseline/ingestion_corrections.rb" => "a15e54cabaf54c054a178cac9318ef0eb50fdde1c571c559fcee65f52ff43df3",
       "scripts/database_rebaseline/ingestion_existing.rb" => "3688b4f198f816554f6227e2d36aab660f4a9230710ef0f43296c2fd72e5abcd",
       "scripts/database_rebaseline/ingestion_wrapper.rb" => "fe79a8bad14747cb892c363befab09c0ad82e6116643b8fc0bd2e996efd926cb",
-      "scripts/database_rebaseline/ingestion_proof.rb" => "e937216ce038ba6e0ba156c49502b4ea4794c399d8229c1bd811576a5fc49c29",
+      "scripts/database_rebaseline/ingestion_proof.rb" => "b80a09d02367eced3daf6f4a87ade75457a2eccd2b8c4c23d0a9147931ab9361",
       "scripts/tests/database-ingestion-proof-seed.sql" => "6ec60a196da7dbedc8ec08f27af2550f3cd11c77ca416a5451c45992a0b72fa8",
       "scripts/tests/database-ingestion-corrections-seed.sql" => "da7d068dbe4644dd83b80d0d863a8810458f3216b41c66265cf62d071049e9cc"
     }.freeze

@@ -35,6 +35,9 @@ require_relative "database-native-policy-capture-test"
 require_relative "database-native-fk-test"
 require_relative "database-native-fk-expectations-test"
 require_relative "database-native-fk-capture-test"
+require_relative "database-native-cancellation-snapshot-test"
+require_relative "database-native-cancellation-comparison-test"
+require_relative "database-native-cancellation-capture-test"
 
 module RevaerDatabaseRebaseline
   class IngestionProofTest < FinalProof
@@ -322,3 +325,6 @@ RevaerDatabaseRebaseline::NativePolicyCaptureTest.new.run!
 RevaerDatabaseRebaseline::NativeFkTest.new.run!
 RevaerDatabaseRebaseline::NativeFkExpectationsTest.new.run
 RevaerDatabaseRebaseline::NativeFkCaptureTest.new.run!
+RevaerDatabaseRebaseline::NativeCancellationSnapshotTest.new.run!
+NativeCancellationComparisonTest.new.run
+RevaerDatabaseRebaseline::NativeCancellationCaptureTest.new.run!

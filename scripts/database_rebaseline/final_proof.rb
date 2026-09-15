@@ -9,6 +9,7 @@ require_relative "ingestion_corrections"
 require_relative "native_trust_rank_proof"
 require_relative "native_policy_proof"
 require_relative "native_fk_proof"
+require_relative "native_cancellation_proof"
 
 module RevaerDatabaseRebaseline
   # Disposable transition proof only, not an operator or application initializer.
@@ -20,6 +21,7 @@ module RevaerDatabaseRebaseline
     include NativeTrustRankProof
     include NativePolicyProof
     include NativeFkProof
+    include NativeCancellationProof
     def initialize(contract = Contract.new, runner: CommandRunner.new)
       @contract = contract
       @runner = runner

@@ -67,7 +67,7 @@ module RevaerDatabaseRebaseline
         created = true
         sql("REVOKE ALL ON DATABASE #{identifier(database)} FROM PUBLIC; GRANT CONNECT ON DATABASE #{identifier(database)} TO #{identifier(@runtime)}", role: "postgres", database:)
         seed = File.binread(File.join(@contract.root, "scripts/tests/database-ingestion-proof-seed.sql"))
-        sql("BEGIN;\n#{seed}\nCOMMIT;", role: "postgres", database:)
+        cancellation_seed!(database, seed)
         evidence = { "cache_state" => cache_state, "before" => ingestion_snapshot(database), "inputs_before" => policy_read_snapshot(database) }
         request = { database_url: "postgresql://#{role}@127.0.0.1:#{port}/#{database}", database:, role:, report_path: "#{prefix}-frames.json" }
         input_path = "#{prefix}-input.json"
@@ -138,6 +138,10 @@ module RevaerDatabaseRebaseline
       ensure
         File.unlink(temporary) if File.exist?(temporary)
       end
+    end
+
+    def cancellation_seed!(database, seed)
+      sql("BEGIN;\n#{seed}\nCOMMIT;", role: "postgres", database:)
     end
 
     def cancellation_wait(label, waiter)

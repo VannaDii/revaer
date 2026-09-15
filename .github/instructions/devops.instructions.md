@@ -253,6 +253,17 @@ applyTo:
   images and frozen D5 failures. Retain exact source fingerprints before and
   after capture. These eight contexts do not discharge
   other settings/cancellation callsites, full D3 or bootstrap cutover.
+  Native cancellation must pair the existing cold/committed-warm Rust cases,
+  preserving the canonical source-INSERT wait, complete rollback/read images
+  and exact frozen D4 recovery failure. Observe transaction clocks under the
+  same owned locks in both arms; normalize only independently bound columns
+  and UUID identities. Only the observed arm may attach the read-only snapshot,
+  with target calls and memory/register writes disabled. Require exact backend,
+  database and compiler-setting readback, empty diagnostics, completed detach
+  and revalidation of the unchanged owned wait before cancellation. Retain
+  source/target identities and separate cleanup evidence. This one interruption
+  point does not certify client-future cancellation, other settings callsites,
+  complete D3 or bootstrap cutover.
   Committed score/title proof must retain distinct stored base/context scores,
   the exact 99/100-seeder promotion boundary, higher-ranked title refresh and
   repeated low-source observations on the same tested backend. The current
