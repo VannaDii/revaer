@@ -1,4 +1,4 @@
-//! Logical discovery inputs and path-free readiness for ADR 557's HTTP contract.
+//! Logical discovery inputs, catalog administration, and path-free readiness.
 //!
 //! Validation preserves exact bytes: it never trims, normalizes, resolves, or
 //! grants filesystem authority. A well-formed cursor still needs active-catalog
@@ -31,10 +31,22 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use uuid::Uuid;
 
 mod association;
+mod catalog;
+mod catalog_capability;
+mod catalog_generation;
+mod catalog_kind;
+mod catalog_scalar;
+mod catalog_slot;
+mod catalog_state;
 mod object;
 mod readiness;
 
 pub use association::{DiscoveryAssociationRequest, DiscoveryModes};
+pub use catalog::{RootCatalogError, RootCatalogPageResponse};
+pub use catalog_capability::RootCatalogCapability;
+pub use catalog_generation::{RootCatalogGeneration, RootCatalogGenerationFields};
+pub use catalog_kind::RootCatalogAllowedKind;
+pub use catalog_slot::{RootCatalogSlot, RootCatalogSlotFields};
 
 pub use readiness::{
     RootAttestationFailure, RootCatalogReadinessResponse, RootCatalogReadinessState, RootKind,
