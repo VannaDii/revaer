@@ -86,3 +86,8 @@ Root policy takes precedence; these scoped rules may only tighten or specialize 
 - The migrated `rv test-runtime-shutdown` and `rv lint-runtime-shutdown` retain
   both all-feature and no-default-feature configurations. Each test selection
   must execute positive passing tests; preserve both existing Clippy passes.
+
+- The reusable database initializer has its own success-path integration test in
+  the foundation. It verifies exact initializer digest sealing, restricted
+  runtime identity, owner login disablement, repeated-init rejection and owned
+  database/role cleanup; do not rely on downstream media consumers for coverage.

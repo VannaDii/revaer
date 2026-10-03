@@ -1951,3 +1951,19 @@ then passed unchanged. Added ORAS to Helm setup and all native tooling-test
 prerequisites to scanner jobs, which execute the complete Python suite.
 This updates the declared package inventory; it is not final-image compliance
 evidence. No scan, signature check, or gate was bypassed.
+
+The completed local coverage run passed every crate except test-support
+(156/198 lines, 78.79%). Its new initialization success path had only been
+exercised by the media integration. Added a real, minimal PostgreSQL initializer
+and a foundation test asserting exact digest binding, runtime identity and
+privileges, disabled owner login, repeated-init rejection and role/database
+cleanup. This tests the reusable lifecycle, not the production media baseline.
+The initial foundation E2E run passed both API modes and Chromium with browser
+coverage collection. Firefox and WebKit require explicit selection; the complete
+five-phase run is now in progress.
+Also corrected the media report step to use the CLI's positional report argument.
+
+The explicit five-phase E2E run completed successfully: 35 anonymous API cases,
+35 authenticated API cases and 13 UI cases on each of Chromium, Firefox and
+WebKit (109 executions). The successful summary and phase logs are retained in
+`artifacts/rebase-20261002/`; Chromium produced real browser coverage captures.

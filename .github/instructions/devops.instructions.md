@@ -359,3 +359,8 @@ summaries; aggregation verifies those summaries before combined route coverage.
 Chart regression gates need both Helm and ORAS. Coverage jobs run the complete
 Python integration suite and therefore select all pinned Cargo tools plus Helm,
 ORAS, Trivy and the three browsers; a Python-only environment is insufficient.
+
+The native integration job supplies its own disposable PostgreSQL service to the
+explicit test-database contract. Workflow report paths are positional CLI
+arguments. Scanner E2E selects Chromium, Firefox and WebKit explicitly; installed
+browsers alone do not select execution phases.

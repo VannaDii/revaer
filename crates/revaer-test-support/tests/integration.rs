@@ -226,3 +226,48 @@ fn initialized_fixture_empty_input_preserves_raw_database() -> Result<(), Box<dy
     fixture.close()?;
     Ok(())
 }
+
+#[test]
+fn initialized_fixture_seals_runtime_identity_and_cleans_owned_roles()
+-> Result<(), Box<dyn std::error::Error>> {
+    const INITIALIZER: &str =
+        include_str!("../../../scripts/tests/database-runtime-fixture-success.sql");
+    let mut fixture = start_postgres()?;
+    let database = current_database_name(fixture.connection_string())?;
+    let admin_url = admin_database_url(fixture.connection_string())?;
+    test_runtime()?.block_on(async {
+        fixture.initialize_runtime(INITIALIZER).await?;
+        let mut runtime = PgConnection::connect(fixture.connection_string()).await?;
+        let identity: String = sqlx::query_scalar("SELECT current_user")
+            .fetch_one(&mut runtime)
+            .await?;
+        assert_eq!(identity, format!("{database}_runtime"));
+        let sealed: bool = sqlx::query_scalar(
+            "SELECT digest = sha256(convert_to($1, 'UTF8')) FROM revaer_system.fixture_seal",
+        )
+        .bind(INITIALIZER)
+        .fetch_one(&mut runtime)
+        .await?;
+        assert!(sealed);
+        let privileges: (bool, bool, bool) = sqlx::query_as(
+            "SELECT rolsuper, rolcreaterole, has_schema_privilege(current_user, 'revaer_system', 'CREATE') FROM pg_roles WHERE rolname = current_user",
+        )
+        .fetch_one(&mut runtime)
+        .await?;
+        assert_eq!(privileges, (false, false, false));
+        let owner_login: bool = sqlx::query_scalar(
+            "SELECT rolcanlogin FROM pg_roles WHERE rolname = $1",
+        )
+        .bind(format!("{database}_owner"))
+        .fetch_one(&mut runtime)
+        .await?;
+        assert!(!owner_login);
+        runtime.close().await?;
+        assert!(fixture.initialize_runtime(INITIALIZER).await.is_err());
+        Ok::<(), anyhow::Error>(())
+    })?;
+    fixture.close()?;
+    assert!(!database_exists(&admin_url, &database)?);
+    assert!(!fixture_roles_exist(&admin_url, &database)?);
+    Ok(())
+}

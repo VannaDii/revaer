@@ -69,6 +69,7 @@ jobs:
             }}@localhost:5432/postgres
           E2E_SKIP_DB_START: '1'
           E2E_BROWSER_COVERAGE: '1'
+          E2E_BROWSERS: chromium,firefox,webkit
         run: uv run --locked -- rv ui-e2e
       - name: Merge Python coverage inputs
         run: uv run --locked -- rv python-coverage-merge

@@ -9,10 +9,12 @@ these checks.
 
 import copy
 import json
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from revaer_tooling.cli import parser
 from revaer_tooling.json_data import JsonObject, array_value, decode, object_value, string_value
 from revaer_tooling.policy.contracts import runs
 from revaer_tooling.policy.formats import Document, Value, yaml_document
@@ -82,8 +84,12 @@ def test_committed_media_job_preserves_required_conversion_contract(fixture: Fix
     )
     assert runs(named_steps(job)["Media tool cache key"], "fixture-cache-key")
     assert named_steps(job)["Publish media conversion report"]["run"] == (
-        "uv run --locked -- rv workflow-report --report target/media-conversion-report.md"
+        "uv run --locked -- rv workflow-report target/media-conversion-report.md"
     )
+    # Validate the real CLI shape as well as the workflow's expected command.
+    command = str(named_steps(job)["Publish media conversion report"]["run"])
+    arguments = parser().parse_args(shlex.split(command)[5:])
+    assert arguments.report == Path("target/media-conversion-report.md")
 
 
 @pytest.mark.parametrize(
