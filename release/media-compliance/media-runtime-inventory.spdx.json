@@ -279,21 +279,21 @@
       "name": "openssl",
       "SPDXID": "SPDXRef-Package-openssl",
       "downloadLocation": "https://pkgs.alpinelinux.org/packages?name=openssl&branch=v3.23",
-      "versionInfo": "3.5.8-r0",
+      "versionInfo": "3.5.9-r0",
       "licenseConcluded": "Apache-2.0",
       "licenseDeclared": "Apache-2.0",
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "2a7f36e5fd2f6daa6da3223f41c76d2142d9f3e1461e8bea01f33bac1b767a8d"
+          "checksumValue": "80332be2dcd7a9a0408a1eeca8efd4b66adf8f79d1e99d7022d3be4a34433c4a"
         },
         {
           "algorithm": "SHA256",
-          "checksumValue": "efb15361a9536ce5ed389ee61f3bfac6947ffb9013de79c7db4a7c86d527f8fd"
+          "checksumValue": "b7e30bda67ab5eeadf45ebb1e745f3ca685a84b89477ae8b487bc7c5275fd27e"
         }
       ],
       "copyrightText": "See Alpine package source metadata.",
-      "comment": "SHA-256 checksums correspond, in order, to these official Alpine APK archives: https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/openssl-3.5.8-r0.apk; https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/openssl-3.5.8-r0.apk"
+      "comment": "SHA-256 checksums correspond, in order, to these official Alpine APK archives: https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/openssl-3.5.9-r0.apk; https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/openssl-3.5.9-r0.apk"
     },
     {
       "name": "opus",

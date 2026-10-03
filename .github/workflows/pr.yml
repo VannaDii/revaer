@@ -91,6 +91,7 @@ jobs:
           profile: python
           cargo-cache: 'false'
           helm: 'true'
+          oras: 'true'
 
       - name: Helm lint
         run: uv run --locked -- rv helm-lint
@@ -139,7 +140,10 @@ jobs:
         with:
           apt-profile: coverage
           sonar-scanner: 'true'
-          cargo-tools: cargo-llvm-cov,sqlx-cli,trunk
+          cargo-tools: cargo-audit,cargo-deny,cargo-llvm-cov,cargo-udeps,sqlx-cli,trunk,mdbook,mdbook-mermaid,lychee
+          helm: 'true'
+          oras: 'true'
+          trivy: 'true'
           browsers: chromium,firefox,webkit
       - name: Run migrations
         env:

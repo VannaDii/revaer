@@ -1941,3 +1941,13 @@ fixture because Alpine replaced the pinned OpenSSL 3.5.8-r0 packages. Verified
 the repository package indexes inside both pinned base images and updated only
 the builder/runtime OpenSSL pins to 3.5.9-r0. The fixture is being rerun unchanged;
 no package requirement, checksum or image boundary was relaxed.
+
+Hosted validation of PR 211 caught two checkout differences: the declared SPDX
+inventory still named the old OpenSSL pin, and Helm's registry regressions lacked
+ORAS. Downloaded both official 3.5.9-r0 APK archives and verified their signatures
+with native `apk verify` in each architecture's pinned Alpine image before
+recording the real SHA-256 values in the declaration. The local container fixture
+then passed unchanged. Added ORAS to Helm setup and all native tooling-test
+prerequisites to scanner jobs, which execute the complete Python suite.
+This updates the declared package inventory; it is not final-image compliance
+evidence. No scan, signature check, or gate was bypassed.

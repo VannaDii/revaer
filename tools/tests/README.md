@@ -17,16 +17,10 @@ requests are recorded. Running tests must not change global native installations
 
 ## Local test configuration
 
-Local `.env` files may contain arbitrary testing passwords. The operator-approved
-pre-read scan exception is documented in [AGENTS.md](../../AGENTS.md#pre-read-secret-scans).
-When scanning files before inspection, enumerate paths and omit files named
-`.env`; do not pass their containing directory to a recursive scan.
-
-Test configuration also contains dummy PostgreSQL URLs for local E2E databases
-and Helm rendering. These source files remain scanned. The Helm rendering value
-does not connect to a server. Keep test values distinguishable from credentials
-used by release, registry, or other external integrations. The local `.env`
-exception does not change CI's Sonar scope or quality gates.
+Local `.env` files contain arbitrary testing passwords and are excluded from
+local pre-read scans at the operator's request. This does not change CI's Sonar
+scope. Other test fixtures also use dummy values for isolated databases and Helm
+rendering; those values are not credentials for external integrations.
 
 ## What the tests establish
 

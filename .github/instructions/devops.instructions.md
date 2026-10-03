@@ -355,3 +355,7 @@ scanner job owns coverage collection and analysis in one checkout, including
 measured root bootstrap coverage. Database URLs must match the isolated service.
 UI shards retain raw browser records, selection manifests and completion
 summaries; aggregation verifies those summaries before combined route coverage.
+
+Chart regression gates need both Helm and ORAS. Coverage jobs run the complete
+Python integration suite and therefore select all pinned Cargo tools plus Helm,
+ORAS, Trivy and the three browsers; a Python-only environment is insufficient.
