@@ -4780,6 +4780,7 @@ mod tests {
     use sqlx::postgres::PgPoolOptions;
     use std::collections::BTreeSet;
     use std::fs;
+    use std::os::unix::fs::DirBuilderExt;
     use std::path::Path;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -6110,7 +6111,7 @@ mod tests {
         let workspace_root = temp.path().join("workspace");
         fs::create_dir_all(&input_root)?;
         let source_path = input_root.join("movie.mkv");
-        fs::create_dir_all(&workspace_root)?;
+        fs::DirBuilder::new().mode(0o700).create(&workspace_root)?;
         fs::write(&source_path, b"source")?;
         let email = format!("media-worker-{}@example.invalid", Uuid::new_v4());
         let actor = app_user_create(store.pool(), &email, "Media Worker").await?;
