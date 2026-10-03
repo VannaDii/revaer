@@ -142,6 +142,8 @@ struct PreflightReadyContext<'a> {
     shutdown: Option<&'a RuntimeShutdownReceiver>,
 }
 
+#[cfg(test)]
+mod fixtures;
 mod policy;
 
 struct RuntimePreflightBuildInput {
@@ -4733,10 +4735,8 @@ mod tests {
     use revaer_data::media::configuration::{
         AppendMediaDesiredTargetStreamInput, CreateMediaDesiredTargetInput,
         append_media_desired_target_stream, create_media_desired_target,
-        set_media_profile_desired_target,
     };
-    use revaer_data::media::jobs::{ClaimedMediaJobRow, EnqueueDiscoveredMediaJobInput};
-    use revaer_data::media::profiles::{UpdateMediaProfileInput, UpsertMediaProfileInput};
+    use revaer_data::media::jobs::ClaimedMediaJobRow;
     use revaer_events::{Event as CoreEvent, EventBus};
     use revaer_media_core::classify::SemanticRole;
     use revaer_media_core::compliance::{Status, report_for_status};
@@ -5892,7 +5892,7 @@ mod tests {
     }
 
     struct RuntimeFixture {
-        _postgres: TestDatabase,
+        postgres: TestDatabase,
         temp: TempDir,
         runtime: MediaJobRuntime,
         store: MediaStore,
@@ -5913,9 +5913,9 @@ mod tests {
         store: &MediaStore,
         actor: Uuid,
         job_target: RuntimeJobTarget,
-    ) -> anyhow::Result<Option<(&'static str, i32)>> {
+    ) -> anyhow::Result<(&'static str, i32)> {
         match job_target {
-            RuntimeJobTarget::SourceGraph => Ok(None),
+            RuntimeJobTarget::SourceGraph => create_noop_runtime_target(store, actor).await,
             RuntimeJobTarget::Hevc | RuntimeJobTarget::HevcAudio => {
                 let target_id = create_media_desired_target(
                     store.pool(),
@@ -5994,28 +5994,59 @@ mod tests {
                     )
                     .await?;
                 }
-                Ok(Some(("runtime-hevc", 1)))
+                Ok(("runtime-hevc", 1))
             }
         }
     }
 
-    async fn pin_runtime_target(
+    async fn create_noop_runtime_target(
         store: &MediaStore,
         actor: Uuid,
-        profile_id: Uuid,
-        desired_target: Option<(&str, i32)>,
-    ) -> anyhow::Result<()> {
-        if let Some((target_key, version)) = desired_target {
-            set_media_profile_desired_target(
-                store.pool(),
-                actor,
-                profile_id,
-                Some(target_key),
-                Some(version),
-            )
-            .await?;
-        }
-        Ok(())
+    ) -> anyhow::Result<(&'static str, i32)> {
+        let id = create_media_desired_target(
+            store.pool(),
+            CreateMediaDesiredTargetInput {
+                actor_public_id: actor,
+                target_key: "runtime-source",
+                version: 1,
+                display_name: "Unchanged source graph",
+                container_format: "matroska",
+            },
+        )
+        .await?;
+        append_media_desired_target_stream(
+            store.pool(),
+            AppendMediaDesiredTargetStreamInput {
+                media_desired_target_profile_public_id: id,
+                stream_key: "video-0",
+                stream_kind: "video",
+                semantic_role: None,
+                language_code: None,
+                optional: false,
+                sort_order: 0,
+                codec: "h264",
+                channel_count: None,
+                channel_layout: None,
+                audio_bitrate_bps: None,
+                audio_sample_rate_hz: None,
+                audio_loudness_profile: None,
+                audio_dynamic_range: None,
+                video_profile: None,
+                video_level: None,
+                video_bitrate_bps: None,
+                color_primaries: None,
+                color_transfer: None,
+                color_space: None,
+                hdr_format: None,
+                title: None,
+                default_disposition: false,
+                forced_disposition: false,
+                subtitle_placement: None,
+                image_subtitle_action: None,
+            },
+        )
+        .await?;
+        Ok(("runtime-source", 1))
     }
 
     fn video_graph(source_path: &str, codec: &str) -> MediaGraph {
@@ -6076,69 +6107,35 @@ mod tests {
 
         let temp = tempfile::tempdir()?;
         let input_root = temp.path().join("input");
-        let output_root = temp.path().join("output");
         let workspace_root = temp.path().join("workspace");
         fs::create_dir_all(&input_root)?;
-        fs::create_dir_all(&output_root)?;
         let source_path = input_root.join("movie.mkv");
-        let output_path = output_root.join("movie.mkv");
-        let input_root_text = input_root.to_string_lossy().to_string();
-        let output_root_text = output_root.to_string_lossy().to_string();
-        let output_path_text = output_path.to_string_lossy().to_string();
+        fs::create_dir_all(&workspace_root)?;
         fs::write(&source_path, b"source")?;
-
         let email = format!("media-worker-{}@example.invalid", Uuid::new_v4());
         let actor = app_user_create(store.pool(), &email, "Media Worker").await?;
         app_user_verify_email(store.pool(), actor).await?;
-        let desired_target = create_runtime_target(&store, actor, job_target).await?;
-        let profile_id = store
-            .upsert_profile(&UpsertMediaProfileInput {
-                actor_public_id: actor,
-                profile_key: "worker",
-                source_root: &input_root_text,
-                output_root: &output_root_text,
-                dry_run_only: dry_run,
-                retention_days: 30,
-                compatibility_target_key: None,
-                policy_key: "safe_dry_run",
-                watcher_enabled: false,
-                schedule_enabled: false,
-                schedule_interval_minutes: None,
-            })
-            .await?;
-        pin_runtime_target(&store, actor, profile_id, desired_target).await?;
-        if !dry_run {
-            store
-                .update_profile(&UpdateMediaProfileInput {
-                    actor_public_id: actor,
-                    media_profile_public_id: profile_id,
-                    source_root: None,
-                    output_root: None,
-                    dry_run_only: Some(false),
-                    retention_days: None,
-                    compatibility_target_key: None,
-                    policy_key: None,
-                    watcher_enabled: None,
-                    schedule_enabled: None,
-                    schedule_interval_minutes: None,
-                })
-                .await?;
-        }
-        let job_id = enqueue_runtime_test_job(
+        let (target_key, target_version) = create_runtime_target(&store, actor, job_target).await?;
+        let job_id = super::fixtures::enqueue(
+            &postgres,
             &store,
-            actor,
-            profile_id,
-            &source_path,
-            &input_root,
-            &output_path_text,
-            dry_run,
+            &super::fixtures::NativeJobInput {
+                actor,
+                source_path: &source_path,
+                source_root: &input_root,
+                workspace_root: &workspace_root,
+                target_key,
+                target_version,
+                dry_run,
+            },
         )
         .await?;
         if !include_costs {
             postgres
-                .apply_fixture_script(include_str!(
-                    "../../../scripts/tests/media-runtime-missing-costs.sql"
-                ))
+                .apply_fixture_script(
+                    include_str!("../../../scripts/tests/media-runtime-missing-costs.sql"),
+                    &[],
+                )
                 .await?;
         }
         if record_capability {
@@ -6156,7 +6153,7 @@ mod tests {
             workspace_root,
         );
         Ok(RuntimeFixture {
-            _postgres: postgres,
+            postgres,
             temp,
             runtime,
             store,
@@ -6165,38 +6162,6 @@ mod tests {
             telemetry,
             command_runner,
         })
-    }
-
-    async fn enqueue_runtime_test_job(
-        store: &MediaStore,
-        actor: Uuid,
-        profile_id: Uuid,
-        source_path: &Path,
-        source_root: &Path,
-        output_path: &str,
-        dry_run: bool,
-    ) -> anyhow::Result<Uuid> {
-        let fingerprint = crate::media_discovery_fingerprint::fingerprint_media_aggregate(
-            source_path,
-            source_root,
-        )?
-        .ok_or_else(|| anyhow::anyhow!("media runtime test source fingerprint was unstable"))?;
-        store
-            .enqueue_discovered_job(&EnqueueDiscoveredMediaJobInput {
-                actor_public_id: actor,
-                media_profile_public_id: profile_id,
-                source_path: &source_path.to_string_lossy(),
-                output_path: Some(output_path),
-                dry_run,
-                source_identity: &fingerprint.identity,
-                source_size_bytes: fingerprint.size_bytes,
-                source_modified_ns: fingerprint.modified_ns,
-                source_changed_ns: fingerprint.changed_ns,
-                source_sha256: &fingerprint.sha256,
-            })
-            .await?
-            .map(|job| job.media_job_public_id)
-            .ok_or_else(|| anyhow::anyhow!("media runtime test job should be queued"))
     }
 
     fn test_runtime(
@@ -6481,7 +6446,8 @@ mod tests {
             &[("check", "dry_run_preflight"), ("status", "passed")]
         ));
         assert!(!rendered.contains("media_workspace_cleanup_total"));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     fn rendered_has_metric_labels(
@@ -6535,7 +6501,8 @@ mod tests {
                 .map_err(|error| anyhow::anyhow!("command lock poisoned: {error}"))?
                 .is_empty()
         );
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     async fn assert_runtime_cancelled(
@@ -6658,7 +6625,8 @@ mod tests {
             fixture.command_runner.as_ref(),
             &fixture.runtime.workspace_root,
         )?;
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -6704,7 +6672,8 @@ mod tests {
         assert!(!checks.iter().any(|check| {
             check.check_kind == "output_replacement" && check.check_status == "passed"
         }));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -6749,7 +6718,8 @@ mod tests {
         assert!(!checks.iter().any(|check| {
             check.check_kind == "output_replacement" && check.check_status == "passed"
         }));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -6816,7 +6786,8 @@ mod tests {
             .any(|pair| pair == ["-ar:0", "48000"]);
         assert!(has_bitrate_arg);
         assert!(has_sample_rate_arg);
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -6883,7 +6854,8 @@ mod tests {
         assert!(!checks.iter().any(|check| {
             check.check_kind == "output_replacement" && check.check_status == "passed"
         }));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[test]
@@ -7081,7 +7053,8 @@ Integrated loudness:
             .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
         assert_eq!(job.status_text, "queued");
         assert_eq!(job.last_error, None);
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7120,7 +7093,8 @@ Integrated loudness:
         )
         .await?;
         assert!(!workspace_output.parent().is_some_and(Path::exists));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7159,7 +7133,8 @@ Integrated loudness:
 
         assert!(runner.cancellation_observed.load(Ordering::Acquire));
         assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7197,7 +7172,8 @@ Integrated loudness:
 
         assert!(runner.cancellation_observed.load(Ordering::Acquire));
         assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7237,7 +7213,8 @@ Integrated loudness:
 
         assert!(verifier.cancellation_observed.load(Ordering::Acquire));
         assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7276,7 +7253,8 @@ Integrated loudness:
 
         assert!(verifier.cancellation_observed.load(Ordering::Acquire));
         assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7318,7 +7296,8 @@ Integrated loudness:
         assert!(committer.discarded.load(Ordering::Acquire));
         assert!(!committer.committed.load(Ordering::Acquire));
         assert_runtime_cancelled(&store, job_id, &source_path, &workspace_output).await?;
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7363,7 +7342,8 @@ Integrated loudness:
                     check.check_kind == "output_replacement" && check.check_status == "passed"
                 })
         );
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7416,7 +7396,8 @@ Integrated loudness:
                 break;
             }
         }
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7454,7 +7435,8 @@ Integrated loudness:
             commands.len()
         };
         assert_eq!(command_count, 0);
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7501,7 +7483,8 @@ Integrated loudness:
                 "media_job_completed",
             ]
         );
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7532,7 +7515,8 @@ Integrated loudness:
             commands.len()
         };
         assert_eq!(command_count, 0);
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7564,7 +7548,8 @@ Integrated loudness:
             )
         );
         assert!(checks.iter().all(|check| check.check_kind != "final_graph"));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7595,7 +7580,8 @@ Integrated loudness:
             check.check_kind == "candidate_chapters" && check.check_status == "failed"
         }));
         assert!(checks.iter().all(|check| check.check_kind != "final_graph"));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7626,7 +7612,8 @@ Integrated loudness:
             check.check_kind == "candidate_container_metadata" && check.check_status == "failed"
         }));
         assert!(checks.iter().all(|check| check.check_kind != "final_graph"));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7658,7 +7645,8 @@ Integrated loudness:
             check.check_kind == "decode_corruption" && check.check_status == "failed"
         }));
         assert!(checks.iter().all(|check| check.check_kind != "final_graph"));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7693,7 +7681,8 @@ Integrated loudness:
                 .iter()
                 .any(|check| check.check_kind == "final_graph" && check.check_status == "failed")
         );
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7726,7 +7715,8 @@ Integrated loudness:
         assert!(checks.iter().any(
             |check| check.check_kind == "final_chapters" && check.check_status == "failed"
         ));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7759,7 +7749,8 @@ Integrated loudness:
         assert!(checks.iter().any(|check| {
             check.check_kind == "final_container_metadata" && check.check_status == "failed"
         }));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7803,7 +7794,8 @@ Integrated loudness:
             .ok_or_else(|| anyhow::anyhow!("media job missing"))?;
         assert_eq!(job.status_text, "completed");
         assert_eq!(job.last_error, None);
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7840,7 +7832,8 @@ Integrated loudness:
             job.last_error.as_deref(),
             Some("media_job_worker_heartbeat_stale")
         );
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7867,7 +7860,8 @@ Integrated loudness:
         assert_eq!(job.last_error, None);
         let event = tokio::time::timeout(Duration::from_millis(100), stream.next()).await;
         assert!(event.is_err());
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     #[tokio::test]
@@ -7897,7 +7891,8 @@ Integrated loudness:
                 .any(|check| check.check_kind == "runtime_failure"
                     && check.actual_value.as_deref() == Some("media_capability_snapshot_missing"))
         );
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     fn recursive_tree_snapshot(root: &Path) -> anyhow::Result<Vec<String>> {
@@ -8832,7 +8827,8 @@ Integrated loudness:
                 && reason.reason_code == "rejected_operation"
                 && reason.reason_text == "remux:none:none"
         }));
-        Ok(())
+        fixture.store.pool().close().await;
+        fixture.postgres.close()
     }
 
     fn claimed_job_with_paths(

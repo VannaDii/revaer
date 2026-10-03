@@ -701,16 +701,14 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_watcher_profile_requires_verified_root_identity() -> anyhow::Result<()> {
-        let Ok(postgres) = start_postgres() else {
-            return Ok(());
-        };
+        let mut postgres = start_postgres()?;
+        postgres
+            .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+            .await?;
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
-        migrator.run(&pool).await?;
         let store = MediaStore::new(pool);
         let temp = tempfile::tempdir()?;
         let source_root = temp.path().join("source");
@@ -749,21 +747,20 @@ mod tests {
             error.database_detail(),
             Some("media_profile_filesystem_identity_required")
         );
-        Ok(())
+        store.pool().close().await;
+        postgres.close()
     }
 
     #[tokio::test]
     async fn non_dry_run_profile_is_not_ready_for_unsupported_target() -> anyhow::Result<()> {
-        let Ok(postgres) = start_postgres() else {
-            return Ok(());
-        };
+        let mut postgres = start_postgres()?;
+        postgres
+            .initialize_runtime(include_str!("../../revaer-data/init.sql"))
+            .await?;
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(5)
             .connect(postgres.connection_string())
             .await?;
-        let mut migrator = sqlx::migrate!("../revaer-data/migrations");
-        migrator.set_ignore_missing(true);
-        migrator.run(&pool).await?;
         let store = MediaStore::new(pool);
         record_unsupported_hevc_aac_capability(store.pool()).await?;
         upsert_media_compatibility_target(
@@ -794,7 +791,8 @@ mod tests {
                 .profile_ready_for_execution(&profile, "watcher")
                 .await?
         );
-        Ok(())
+        runtime.store.pool().close().await;
+        postgres.close()
     }
 
     async fn record_unsupported_hevc_aac_capability(pool: &sqlx::PgPool) -> anyhow::Result<()> {

@@ -28,15 +28,19 @@ impl std::fmt::Debug for TestDatabase {
 }
 
 impl TestDatabase {
-    /// Apply a fault-injection script to this initialized owned test database.
+    /// Apply an evidence or fault-injection script to this initialized owned test database.
     ///
     /// The runtime login stays restricted. Only the fixture's retained
-    /// administrative connection performs the deliberate corruption.
+    /// administrative connection prepares synthetic evidence or deliberate corruption.
     ///
     /// # Errors
     /// Rejects closed or uninitialized fixtures and mismatched database identity;
     /// propagates script, transaction and connection failures.
-    pub async fn apply_fixture_script(&self, script: &'static str) -> Result<()> {
+    pub async fn apply_fixture_script(
+        &self,
+        script: &'static str,
+        parameters: &[(&str, &str)],
+    ) -> Result<()> {
         anyhow::ensure!(
             !self.closed && self.runtime_roles,
             "fixture is not initialized"
@@ -52,6 +56,17 @@ impl TestDatabase {
             "fixture reached another database"
         );
         let mut transaction = connection.begin().await?;
+        for (name, value) in parameters {
+            anyhow::ensure!(
+                name.starts_with("revaer_test."),
+                "invalid fixture parameter"
+            );
+            sqlx::query("SELECT set_config($1, $2, true)")
+                .bind(name)
+                .bind(value)
+                .execute(&mut *transaction)
+                .await?;
+        }
         sqlx::raw_sql(script).execute(&mut *transaction).await?;
         transaction.commit().await?;
         connection.close().await?;

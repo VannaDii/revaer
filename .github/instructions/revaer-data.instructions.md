@@ -191,3 +191,9 @@ applyTo:
   Never grant runtime snapshot mutation or weaken production triggers for a test.
   Canonical policy factories already seed operation costs; fixtures must not
   append duplicates to those immutable versions (ADR 595).
+
+- Native worker regressions must enter through immutable profile/association
+  versions and the guarded association writer. Keep legacy enqueue procedures
+  private. Injected unit fixtures may prepare explicitly synthetic catalog rows
+  in their owned database, with values bound as `revaer_test.*` transaction-local
+  settings; those rows never establish filesystem or package qualification.
