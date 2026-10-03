@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-03",
+  "source_commit": "b9fb1d1fb363a85b639197bfe726b5eb0042458f",
+  "generated_schema_commit": "e89b16a97568ad8f88aa98ad97862a106f7e87e5",
+  "qualification_complete": false,
+  "results": {
+    "tooling-check": {
+      "passed": true,
+      "tests": 1749
+    },
+    "lint": {
+      "passed": true
+    },
+    "policy": {
+      "passed": true
+    },
+    "instruction-drift": {
+      "passed": true,
+      "base": "71596802",
+      "head": "e89b16a9"
+    },
+    "ci": {
+      "passed": false,
+      "exit_code": 101,
+      "application_tests_passed": 354,
+      "application_tests_failed": 37
+    },
+    "ui-e2e": {
+      "passed": false,
+      "first_api_phase_passed": 28,
+      "first_api_phase_failed": 25,
+      "fixture_errors": 4,
+      "later_phases_reached": false
+    }
+  },
+  "logs": {
+    "tooling-check": {
+      "local_path": "/tmp/revaer-continuation-tooling-final.log",
+      "sha256": "6e44d037dec871e6c03f913a47f9fd457a3e0383b47575a3276755d25ebfba83"
+    },
+    "lint": {
+      "local_path": "/tmp/revaer-continuation-lint.log",
+      "sha256": "0b2093c9c6f6e9abbaee4f22f13389672a09a91ffb09852c82b150f2f4c006fa"
+    },
+    "policy": {
+      "local_path": "/tmp/revaer-continuation-policy.log",
+      "sha256": "76b6dce24b3147a703a1d8079b66a3b81afc8c01ea61723cec657c1ffd94bf4b"
+    },
+    "ci": {
+      "local_path": "/tmp/revaer-continuation-ci.log",
+      "sha256": "093df828656fdecb067ad546c7310cb7545cf66c37788f168044b9e0976813f4"
+    },
+    "ui-e2e": {
+      "local_path": "/tmp/revaer-continuation-ui-e2e.log",
+      "sha256": "e82fe485a9a3b74a3dbe561f86c6c54011a077d36a7ccfc72bf2db69c7ce84d7"
+    }
+  },
+  "owned_qualification_server_removed": true,
+  "recovery_refs_preserved": 108
+}

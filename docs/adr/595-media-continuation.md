@@ -15,7 +15,7 @@
   - One committed continuation supplies a shared source base and an explicit disposition for every open media/validation PR and unfinished checkout.
   - Later container policy/technical-constraint work and discovery/recovery implementation still require adaptation to the current contracts. Legacy comparison material remains until its safeguards and tests have a validated replacement.
 - Follow-up:
-  - Port the Python profile fixtures to complete immutable requests and logical root bindings; preserve their negative admission assertions. Run both authentication phases through `just ui-e2e` before proceeding to browser coverage.
+  - Reconcile the failing Rust media fixture setup and operation-cost rows with the single-init baseline, then port Python profile fixtures to complete immutable requests and logical root bindings. Preserve negative admission and source/replacement assertions; rerun both required gates.
   - Finish the required CI gates and the remaining unique behavior/test transplants recorded in the accounting. Do not delete recovery refs or abandon dirty checkouts before that work is complete.
 
 ## Task Record
@@ -47,4 +47,14 @@
 
 - [Human-readable accounting](support/595-continuation-accounting.md)
 - [Exact PR heads, changed paths, checkout deltas and preserved references](support/595-continuation-inventory.json)
-- Qualification remains incomplete; this record must be updated with the final stable-source gate results before handoff can be called complete.
+- Qualification remains incomplete. The source integration was committed as `b9fb1d1f`; CI regenerated the current API schema, retained as `e89b16a9`. The following evidence update changes documentation only.
+
+## Gate evidence (2026-10-03)
+
+- `just tooling-check`: passed, 1,749 Python tests, formatting, Ruff and strict typing.
+- `just lint`: passed both workspace/all-feature and production-target Clippy checks. `just policy`: passed. `just instruction-drift --base 71596802 --head e89b16a9`: passed across the complete continuation.
+- `just ci`: exit 101. Baseline verification, formatting, lint, Helm checks (6 annotation, 102 compliance and 47 package tests), instruction drift, asset checks, unused-dependency checks, audit, deny and UI build passed. The Rust application suite reported 354 passed and 37 failed. Thirty-one runtime failures report the duplicate `media_policy_operation_cost_media_policy_profile_id_sort_or_key` constraint; six media service tests return service errors requiring diagnosis. Later minimal-feature, coverage, tooling coverage and release-build steps were not reached.
+- `just ui-e2e`: failed in the first anonymous API phase, 28 passed, 25 failed and four fixture errors. Profile/lifecycle fixtures still submit retired path fields and partial writes; other request/response assumptions also require reconciliation. Authenticated API and browser phases were not reached.
+- Qualification ran on macOS arm64 against an explicitly owned disposable server using the pinned PostgreSQL image. Restricted runtime baseline verification succeeded. The owned databases/roles and server were removed after both runs; existing operator databases were not reset. Native root catalog reported the unsupported host platform, so these runs provide no positive Linux root-attestation evidence.
+- CI generated `crates/revaer-app/docs/api/openapi.json` from the current typed contracts; the schema update is retained rather than leaving stale public documentation.
+- No tests, advisory policy, coverage criteria or scanner settings were weakened. [Gate manifest](support/595-continuation-gates.json) records result summaries and local log checksums. Failed qualification is not a design-change decision or release approval.
