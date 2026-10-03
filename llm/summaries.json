@@ -197,7 +197,7 @@
   {
     "id": "adr/019-advisory-rustsec-2024-0370",
     "title": "Advisory RUSTSEC-2024-0370 Temporary Ignore",
-    "summary": "Status: Accepted Date: 2025-02-21 Context: The workspace depends on yew for the UI crate, which transitively pulls proc-macro-error, currently flagged by advisory RUSTSEC-2024-0370 (unmaintained). The affected package is used only via the Yew compile-time macro stack; there is no direct runtime exposure, and no maintained alternative in the current Yew release line. cargo-deny and .secignore both require an explicit justification and remediation plan for any ignore. Decision: Keep the advisory ignored in .secignore and deny.toml while remaining on the current Yew release. Monitor Yew’s releases and remove the ignore as soon as Yew drops the proc-macro-error dependency or provides a",
+    "summary": "Status: Superseded by ADR 357 Date: 2025-02-21 Context: The workspace depends on yew for the UI crate, which transitively pulls proc-macro-error, currently flagged by advisory RUSTSEC-2024-0370 (unmaintained). The affected package is used only via the Yew compile-time macro stack; there is no direct runtime exposure, and no maintained alternative in the current Yew release line. cargo-deny and .secignore both require an explicit justification and remediation plan for any ignore. Decision: Keep the advisory ignored in .secignore and deny.toml while remaining on the current Yew release. Monitor Yew’s releases and remove the ignore as soon as Yew drops the proc-macro-error dependency",
     "tags": [],
     "href": "/adr/019-advisory-rustsec-2024-0370/"
   },
@@ -286,7 +286,7 @@
   {
     "id": "adr/031-ui-asset-sync",
     "title": "UI Nexus Asset Sync Tooling",
-    "summary": "Status: Accepted Date: 2025-12-23 Context: The UI consumes Nexus HTML/CSS/JS as vendored, compiled assets with no JS toolchain in dev/CI. We need deterministic sync of vendor CSS, images, and JS into crates/revaer-ui/static/ so Trunk can serve them. Output consistency must be verifiable in CI without relying on external asset pipelines. Decision: Add a Rust CLI tool (asset_sync) that copies Nexus assets into static/nexus, validates the CSS, and writes a lock file. Wire the tool into just so dev, build, and CI checks always run the sync first. Update the UI entry HTML to copy the full static directory and load",
+    "summary": "Status: Accepted Date: 2025-12-23 Context: The UI consumes Nexus HTML/CSS/JS as vendored, compiled assets with no JS toolchain in dev/CI. Nexus CSS and JS are synchronized while the scanner-readable SVG runtime images remain committed under crates/revaer-ui/static/ so Trunk can serve them. Output consistency must be verifiable in CI without relying on external asset pipelines. Decision: Add a Rust CLI tool (asset_sync) that copies Nexus CSS and JS into static/nexus, rewrites DataTables avatar references to /static/nexus/images/avatars/*.svg, validates the CSS and committed runtime assets, and writes a lock file. Fail closed when required SVGs are missing, runtime text is not UTF-8, a",
     "tags": [],
     "href": "/adr/031-ui-asset-sync/"
   },
@@ -820,7 +820,7 @@
   {
     "id": "adr/079-advisory-rustsec-2025-0141",
     "title": "Advisory RUSTSEC-2025-0141 Temporary Ignore",
-    "summary": "Status: In Progress Date: 2026-01-11 Context: bincode 1.3.3 is flagged as unmaintained (RUSTSEC-2025-0141). The dependency is pulled via gloo-worker in gloo, which is required by the Yew UI stack. No drop-in upgrade path is available without upstream releases. Decision: Add RUSTSEC-2025-0141 to .secignore while the UI depends on gloo/yew that transitively require bincode 1.3.3. Revisit once upstream releases remove or replace the dependency. Consequences: just audit passes while the advisory remains documented. The unmaintained dependency stays in the tree until upstream updates land. Follow-up: Track gloo and yew release notes for bincode replacement/removal. Remove the ignore once the dependency graph",
+    "summary": "Status: Superseded by ADR 357 Date: 2026-01-11 Context: bincode 1.3.3 is flagged as unmaintained (RUSTSEC-2025-0141). The dependency is pulled via gloo-worker in gloo, which is required by the Yew UI stack. No drop-in upgrade path is available without upstream releases. Decision: Add RUSTSEC-2025-0141 to .secignore while the UI depends on gloo/yew that transitively require bincode 1.3.3. Revisit once upstream releases remove or replace the dependency. Consequences: just audit passes while the advisory remains documented. The unmaintained dependency stays in the tree until upstream updates land. Follow-up: Track gloo and yew release notes for bincode replacement/removal. Remove the ignore once the",
     "tags": [
       "dependency-rationale",
       "design-notes",
@@ -2801,7 +2801,7 @@
   {
     "id": "adr/301-security-dependency-refresh-for-pr-25",
     "title": "Security Dependency Refresh For PR 25",
-    "summary": "Status: Accepted Date: 2026-04-16 Context: PR 25 was failing Run Audit on new rustls-webpki advisories and Check Deny on stale exception state. The repository also carried an older RUSTSEC-2026-0097 exception that needed to be re-evaluated against the live dependency graph rather than left untouched. Decision: Update rustls-webpki to 0.103.12 and refresh the rand 0.9 line to 0.9.4 in Cargo.lock. Keep the cargo audit ignore for RUSTSEC-2026-0097 only in .secignore, because rand 0.8.5 still arrives transitively through sqlx-postgres. Remove the stale cargo-deny advisory ignore for RUSTSEC-2026-0097 and update the duplicate-version skip entry from rand@0.9.2 to rand@0.9.4. Consequences: The PR's audit failures",
+    "summary": "Status: Superseded by ADR 357 Date: 2026-04-16 Context: PR 25 was failing Run Audit on new rustls-webpki advisories and Check Deny on stale exception state. The repository also carried an older RUSTSEC-2026-0097 exception that needed to be re-evaluated against the live dependency graph rather than left untouched. Decision: Update rustls-webpki to 0.103.12 and refresh the rand 0.9 line to 0.9.4 in Cargo.lock. Keep the cargo audit ignore for RUSTSEC-2026-0097 only in .secignore, because rand 0.8.5 still arrives transitively through sqlx-postgres. Remove the stale cargo-deny advisory ignore for RUSTSEC-2026-0097 and update the duplicate-version skip entry from rand@0.9.2 to rand@0.9.4. Consequences: The",
     "tags": [
       "task-record"
     ],
@@ -2943,6 +2943,167 @@
     "href": "/adr/316-import-runtime-gap-closure-followup/"
   },
   {
+    "id": "adr/317-supply-chain-advisory-baseline",
+    "title": "Supply Chain Advisory Baseline",
+    "summary": "Status: Accepted Date: 2026-07-27 Context: PR chain validation must fail closed on RustSec and cargo-deny findings before media runtime work is layered on top. The previous dependency graph carried stale advisory ignores for proc-macro-error, bincode, and rand 0.8.5. Decision: Vendor patched gloo and yew-macro sources to remove gloo-worker and bincode. Replace proc-macro-error usage in vendored Yew/Yewdux macros with local syn::Error handling. Remove the direct postgres test-support dependency and reuse SQLx bootstrap calls with explicitly safe raw SQL. Keep native libtorrent optional unless REVAER_NATIVE_IT is set, reject unsupported 2.1+ headers, and preserve Sonar compile-command header staging. Consequences: cargo audit and cargo",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/317-supply-chain-advisory-baseline/"
+  },
+  {
+    "id": "adr/322-supply-chain-ci-tool-cache",
+    "title": "Supply Chain CI And Advisory Remediation",
+    "summary": "Status: Accepted Date: 2026-07-18",
+    "tags": [
+      "consequences",
+      "context",
+      "decisions",
+      "task-record"
+    ],
+    "href": "/adr/322-supply-chain-ci-tool-cache/"
+  },
+  {
+    "id": "adr/404-doc-indexer-fixture-isolation",
+    "title": "Doc Indexer Fixture Isolation",
+    "summary": "Status: Accepted Date: 2026-08-04",
+    "tags": [
+      "dependency-rationale",
+      "design-notes",
+      "motivation",
+      "observability-updates",
+      "risk-and-rollback-plan",
+      "stale-policy-check",
+      "test-coverage-summary"
+    ],
+    "href": "/adr/404-doc-indexer-fixture-isolation/"
+  },
+  {
+    "id": "adr/406-pr-71-deterministic-cargo-tools",
+    "title": "PR 71 Deterministic Cargo Tools",
+    "summary": "Status: Accepted Date: 2026-08-04 Context: Required supply-chain and coverage recipes accepted newer locally installed Cargo tools, so the same revision could execute different analyzer behavior. The cargo-udeps gate used the moving nightly channel even though cargo-udeps depends on nightly-only compiler behavior. Decision: Add one exact-version Cargo tool installer for cargo-audit, cargo-deny, cargo-llvm-cov, cargo-udeps, SQLx CLI, and Trunk. Replace any missing, older, or newer tool and retain only the exact reviewed version. Pin cargo-udeps 0.1.57 to nightly-2026-06-13 and preserve the pair in the PR cache key and uploaded execution evidence. Keep the mandatory cargo-udeps command at --workspace --all-targets. Run Justfile recipes",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/406-pr-71-deterministic-cargo-tools/"
+  },
+  {
+    "id": "adr/407-database-backed-coverage-execution",
+    "title": "Database-Backed Coverage Execution",
+    "summary": "Status: Accepted Date: 2026-08-04 Context: just cov resolved and exported the test database URL in the shell that invoked just db-start, then launched cargo llvm-cov from a separate recipe shell. Database-backed tests therefore observed no configured endpoint during local coverage runs and returned through their unavailable-database paths, leaving seven crates below the mandatory 90% line floor. The later quality-baseline implementation at 104c54f0 demonstrated that preserving the endpoint through coverage execution activates the existing test corpus without exclusions or threshold changes. Decision: Resolve the maintenance database URL once and pass it explicitly to both just db-start and cargo llvm-cov in one",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/407-database-backed-coverage-execution/"
+  },
+  {
+    "id": "adr/409-portable-helm-annotation-rendering",
+    "title": "Portable Helm Annotation Rendering",
+    "summary": "Status: Accepted Date: 2026-08-04 Context: Helm packaging injects multiline Artifact Hub image and signing annotations into a copied Chart.yaml before linting and packaging. Passing the complete multiline annotation body through awk -v fails with the macOS system awk because the value is parsed as awk program data containing literal newlines. Signed and unsigned package output must retain the same annotations, metadata handling, package options, and verification behavior without adding a release dependency. Decision: Write generated release annotations to a temporary file outside the copied chart directory and pass only that file path to a POSIX awk renderer. Quote generated YAML",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/409-portable-helm-annotation-rendering/"
+  },
+  {
+    "id": "adr/410-libtorrent-21-compatibility",
+    "title": "Libtorrent 2.1 Compatibility Foundation",
+    "summary": "Status: Accepted Date: 2026-08-04 Context: The native torrent adapter supported libtorrent 2.0.x APIs, while current ARM Homebrew supplies libtorrent 2.1.0. The existing build script could mix default Homebrew paths with pkg-config metadata and did not prove that selected macOS libraries matched the Cargo target architecture. Upstream stack commits contained the needed repairs alongside unrelated media features, so this foundation extracts only native build and runtime compatibility. Decision: Select one coherent native source in this precedence order: bundle, paired explicit include/library override, pkg-config, then one complete fallback prefix. Propagate every pkg-config preprocessor define and re-run discovery when relevant pkg-config environment changes.",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/410-libtorrent-21-compatibility/"
+  },
+  {
+    "id": "adr/411-untracked-generated-api-schema",
+    "title": "Untracked Generated API Schema",
+    "summary": "Status: Accepted Date: 2026-08-04 Context: tests/support/api/schema.ts was an 8,532-line generated TypeScript artifact tracked as authored source even though the E2E workflow already regenerated it from docs/api/openapi.json. Keeping the generated output in Git inflated review and analysis scope and allowed the committed artifact to drift from the OpenAPI document or generator lockfile. Decision: Ignore and stop tracking only tests/support/api/schema.ts. Add just api-test-client as the canonical test-time generation entrypoint. It uses npm ci against tests/package-lock.json, invokes the existing gen:api-client script, and rejects empty output. Run an index-and-ignore guardrail plus fixture tests from just policy so the generated file cannot silently return as",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/411-untracked-generated-api-schema/"
+  },
+  {
+    "id": "adr/461-adr-task-record-status-semantics",
+    "title": "ADR and task-record status semantics",
+    "summary": "Status: Accepted Date: 2026-08-13 Operator approval: Option B approved wholesale by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: AGENTS.md requires every task to persist a task record as an ADR. Architectural decisions require explicit operator approval, while routine corrective tasks still need durable records without manufacturing an architectural approval event. Several completed nonarchitectural records used Accepted with Operator approval: Not required, making the status vocabulary ambiguous. Decision: Select Option B: introduce the nonarchitectural Recorded status. Reserve Accepted for architectural decisions with explicit, decision-specific operator approval and dated evidence. Permit",
+    "tags": [
+      "implementation-boundary",
+      "task-record"
+    ],
+    "href": "/adr/461-adr-task-record-status-semantics/"
+  },
+  {
+    "id": "adr/462-pr88-shell-return",
+    "title": "ADR 462: PR 88 Shell Return Correction",
+    "summary": "Status: Recorded Operator approval: Not applicable: nonarchitectural task record under ADR 461 Date: 2026-08-13 Context: Sonar reported that fixture_size ended with an implicit shell-function return around scripts/test-fixtures/lib.sh:12. The fixture helper must retain the byte-count pipeline output and its exact exit status while satisfying the repository's fail-closed Sonar posture. Decision: Return the immediately preceding byte-count pipeline status explicitly with return \"$?\". Extend the existing fixture-integrity shell test to prove the successful byte count and preservation of a nonzero pipeline status. Treat this as a nonarchitectural corrective task record under the status semantics approved in ADR 461; no architectural decision is introduced.",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/462-pr88-shell-return/"
+  },
+  {
+    "id": "adr/477-stacked-pr-check-emission",
+    "title": "Uniform Stacked-PR Check Emission",
+    "summary": "Status: Accepted Date: 2026-08-15 Operator approval: Option A approved wholesale by the operator on 2026-08-15: \"I approve the ADRs as they are now and I'm resuming your goal.\" Context: The active Stacks ruleset targets refs/heads/stack/**/*, requires 21 status contexts, and intentionally omits CodeQL, code_scanning, and code_quality requirements that remain on Default Branch. A ruleset can require a status context, but it cannot cause a workflow to create that context. All 99 current leaf-ancestor branches define real Run Audit, Check Deny, and Check Unused Deps jobs, but none emits the required Supply Chain Checks context. Media Conversion Fixtures is defined on",
+    "tags": [
+      "implementation-boundary",
+      "task-record"
+    ],
+    "href": "/adr/477-stacked-pr-check-emission/"
+  },
+  {
+    "id": "adr/478-validation-foundation-advisory-refresh",
+    "title": "Validation Foundation Advisory Refresh",
+    "summary": "Status: Recorded Date: 2026-08-15 Operator approval: Not applicable: nonarchitectural task record Context: The approved validation foundation must pass its own supply-chain gates when it targets main. The dependency graph still resolved event-listener 5.4.1, which is affected by RUSTSEC-2026-0221. The UI test lock resolved vulnerable brace-expansion 2.0.2, fast-uri 3.1.0, and js-yaml 4.1.1, while the canonical gate did not run npm audit. .secignore retained three legacy exceptions even though the accepted supply-chain baseline removed the affected dependency paths. Combining the accepted ADR 317 baseline with the full fixture catalogue exceeded the 10,000-change pull-request limit. Decision: Refresh event-listener to 5.4.2 and retain the",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/478-validation-foundation-advisory-refresh/"
+  },
+  {
+    "id": "adr/479-platform-safe-test-dependencies",
+    "title": "Platform-Safe Test Dependencies",
+    "summary": "Status: Recorded Date: 2026-08-15 Operator approval: Not applicable: nonarchitectural task record Context: The first full macOS gate reached systemstat::System::mount_at from dashboard tests and aborted on an invalid raw-slice precondition inside the dependency before Rust could unwind. The same workspace run exposed a CLI tail test that cancelled after a fixed delay without first observing the asynchronous resume-file write. Both corrections already existed in later approved stack work but were required at the bottom boundary for independent validation. Decision: Route dashboard disk usage through the existing ApiState test dependency seam, retaining the production systemstat implementation as the default and using a",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/479-platform-safe-test-dependencies/"
+  },
+  {
+    "id": "adr/480-postgres-test-shared-memory",
+    "title": "PostgreSQL Test Shared Memory",
+    "summary": "Status: Recorded Date: 2026-08-15 Operator approval: Not applicable: nonarchitectural task record Context: The complete validation gate runs database-backed workspace tests concurrently against disposable PostgreSQL databases. Docker's 64 MiB shared-memory default allowed two migration workers to exhaust the service allocation, producing PostgreSQL 53100 failures before test assertions ran. The same default applied to local validation and GitHub-hosted pull-request and Sonar service containers. Decision: Reserve 1 GiB of shared memory for every PostgreSQL 16 validation service container. Recreate the named managed local container when its configured allocation is below that floor while preserving its host-backed data directory. Fail workflow policy when a",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/480-postgres-test-shared-memory/"
+  },
+  {
+    "id": "adr/481-warning-free-validation-tools",
+    "title": "Warning-Free Validation Tools",
+    "summary": "Status: Recorded Date: 2026-08-15 Operator approval: Not applicable: nonarchitectural task record Context: Documentation generation used floating mdBook 0.5.4 with mdbook-mermaid 0.17.0, whose preprocessor protocol is built against mdBook 0.5.0. Playwright enables colored reporting internally while the local host exports NO_COLOR, causing Node to warn about conflicting color settings for each project process. Both gates succeeded functionally but violated the repository's warning-free completion rule. Decision: Pin mdBook 0.5.0 alongside mdbook-mermaid 0.17.0 and replace any mismatched installed mdBook before documentation generation. Invoke both managed Cargo binaries explicitly so a host package manager cannot shadow the validated versions through PATH order. Remove inherited",
+    "tags": [
+      "task-record"
+    ],
+    "href": "/adr/481-warning-free-validation-tools/"
+  },
+  {
+    "id": "adr/592-python-tooling",
+    "title": "Python development and automation tooling",
+    "summary": "Status: Accepted; implementation in progress Date: 2026-09-14",
+    "tags": [
+      "dependency-rationale",
+      "design-notes",
+      "motivation",
+      "observability-updates",
+      "risk-and-rollback-plan",
+      "stale-policy-check",
+      "test-coverage-summary"
+    ],
+    "href": "/adr/592-python-tooling/"
+  },
+  {
     "id": "adr/index",
     "title": "ADRs",
     "summary": "Create a new ADR using the template in docs/adr/template.md. Give it a sequential identifier (e.g., 001, 002) and a concise title. Capture context, decision, consequences, and follow-up actions. Append the new ADR entry to the end of the Catalogue list above. Append the same entry under ADRs in docs/SUMMARY.md, keeping it nested so the sidebar stays collapsed. Reference ADRs from code comments or docs where the decision applies.",
@@ -2955,11 +3116,21 @@
   {
     "id": "adr/template",
     "title": "{ADR Title}",
-    "summary": "Status: {Proposed|Accepted|Superseded} Date: {YYYY-MM-DD} Context: What problem are we solving? What constraints or forces shape the decision? Decision: Summary of the choice made. Alternatives considered. Consequences: Positive outcomes. Risks or trade-offs. Follow-up: Implementation tasks. Review checkpoints.",
+    "summary": "Status: {Proposed|Accepted|Recorded|Superseded} Date: {YYYY-MM-DD} Operator approval: {Pending|approval evidence and date|Not applicable: nonarchitectural task record} Context: What problem are we solving? What constraints or forces shape the decision? Decision: Summary of the choice made. Alternatives considered. Consequences: Positive outcomes. Risks or trade-offs. Follow-up: Implementation tasks. Review checkpoints.",
     "tags": [
       "task-record"
     ],
     "href": "/adr/template/"
+  },
+  {
+    "id": "api/contract",
+    "title": "HTTP API contract",
+    "summary": "[openapi.json](openapi.json) describes the HTTP contract. The API embeds this document and serves it at /docs/openapi.json. The existing Rust export command serializes the embedded document; it does not infer schemas from Rust structs.",
+    "tags": [
+      "corrections-found-during-the-python-migration",
+      "maintaining-the-document"
+    ],
+    "href": "/api/contract/"
   },
   {
     "id": "api/guides/bootstrap",

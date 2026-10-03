@@ -15,8 +15,8 @@
         <link rel="icon" href="../favicon-de23e50b.svg">
         <link rel="shortcut icon" href="../favicon-8114d1fc.png">
         <link rel="stylesheet" href="../css/variables-8adf115d.css">
-        <link rel="stylesheet" href="../css/general-0392ca55.css">
-        <link rel="stylesheet" href="../css/chrome-fc474251.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-9dfbd86b.css">
         <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
 
         <!-- Fonts -->
@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "rust";
             const default_dark_theme = "coal";
-            window.path_to_searchindex_js = "../searchindex-91894d1b.js";
+            window.path_to_searchindex_js = "../searchindex-9ee63611.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-1e490410.js"></script>
+        <script src="../toc-cef10c91.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -184,15 +184,16 @@
 <li>Context:
 <ul>
 <li>The UI consumes Nexus HTML/CSS/JS as vendored, compiled assets with no JS toolchain in dev/CI.</li>
-<li>We need deterministic sync of vendor CSS, images, and JS into <code>crates/revaer-ui/static/</code> so Trunk can serve them.</li>
+<li>Nexus CSS and JS are synchronized while the scanner-readable SVG runtime images remain committed under <code>crates/revaer-ui/static/</code> so Trunk can serve them.</li>
 <li>Output consistency must be verifiable in CI without relying on external asset pipelines.</li>
 </ul>
 </li>
 <li>Decision:
 <ul>
-<li>Add a Rust CLI tool (<code>asset_sync</code>) that copies Nexus assets into <code>static/nexus</code>, validates the CSS, and writes a lock file.</li>
+<li>Add a Rust CLI tool (<code>asset_sync</code>) that copies Nexus CSS and JS into <code>static/nexus</code>, rewrites DataTables avatar references to <code>/static/nexus/images/avatars/*.svg</code>, validates the CSS and committed runtime assets, and writes a lock file.</li>
+<li>Fail closed when required SVGs are missing, runtime text is not UTF-8, a raster extension is present under <code>static</code>, an SVG lacks a valid root envelope and namespace, either Revaer brand SVG lacks the approved <code>revaer-purple-gradient</code> or <code>revaer-r-silhouette</code> identifier, or an icon, logo, or DataTables URL does not use its emitted <code>/static/...</code> path.</li>
 <li>Wire the tool into <code>just</code> so <code>dev</code>, <code>build</code>, and CI checks always run the sync first.</li>
-<li>Update the UI entry HTML to copy the full static directory and load Nexus <code>app.css</code> directly.</li>
+<li>Update the UI entry HTML to copy the full static directory and load Nexus <code>app.css</code> directly. <code>just check-assets</code> compares the generated <code>crates/revaer-ui/static/nexus</code> tree from the repository root.</li>
 </ul>
 </li>
 <li>Dependency rationale:
@@ -200,12 +201,13 @@
 <li><code>anyhow</code>: simplify CLI error propagation in the binary entrypoint; alternative was manual error mapping.</li>
 <li><code>fs_extra</code>: reliable directory copy with overwrite semantics; alternative was a bespoke recursive copy.</li>
 <li><code>sha2</code>: compute SHA-256 for <code>ASSET_LOCK.txt</code>; no standard library equivalent exists.</li>
-<li><code>walkdir</code>: collect deterministic file counts/bytes for lock metadata; alternative was manual recursion.</li>
+<li><code>walkdir</code>: collect deterministic file counts/bytes and validate the runtime asset tree; alternative was manual recursion.</li>
+<li>No dependency was added for SVG validation. The required check is deliberately limited to UTF-8, a complete <code>&lt;svg ...&gt;...&lt;/svg&gt;</code> root envelope, and the SVG namespace; a general XML parser would add dependency surface without being used to transform or interpret SVG content.</li>
 </ul>
 </li>
 <li>Test coverage summary:
 <ul>
-<li>Added unit tests for successful sync + lock creation and CSS validation failures in <code>crates/revaer-ui/tools/asset_sync/src/lib.rs</code>.</li>
+<li>Unit tests cover successful sync and lock creation, CSS validation, canonical DataTables URLs, and failures for missing, malformed, non-UTF-8, raster-extension, missing Revaer brand identifiers, and wrong-root runtime assets.</li>
 </ul>
 </li>
 <li>Observability updates:
@@ -215,7 +217,7 @@
 </li>
 <li>Risk &amp; rollback plan:
 <ul>
-<li>Risk: incorrect vendor paths or corrupted outputs. Mitigation: sanity-check the CSS and lock file.</li>
+<li>Risk: incorrect vendor paths, URL drift, or corrupted outputs. Mitigation: validate source references and the complete committed runtime tree before writing the lock file, then verify the Trunk release output.</li>
 <li>Rollback: rerun <code>just sync-assets</code> or revert <code>static/nexus</code> changes in version control.</li>
 </ul>
 </li>
@@ -271,11 +273,11 @@
 
         <script src="../elasticlunr-ef4e11c1.min.js"></script>
         <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-09f2665d.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
 
         <script src="../clipboard-1626706a.min.js"></script>
         <script src="../highlight-abc7f01d.js"></script>
-        <script src="../book-c22b7243.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
 
         <!-- Custom JS scripts -->
         <script src="../mermaid-eefea253.min.js"></script>

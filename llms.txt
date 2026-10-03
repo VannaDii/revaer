@@ -31,7 +31,7 @@ Quick start with Docker
      app:
        image: ghcr.io/vannadii/revaer:latest
        environment:
-         DATABASE_URL: postgres://revaer:revaer@db:5432/revaer
+         DATABASE_URL: postgres://${REVAER_DB_USER:-revaer}:${REVAER_DB_PASSWORD:?set REVAER_DB_PASSWORD}@db:5432/revaer
          RUST_LOG: info
        depends_on: [db]
        ports:
