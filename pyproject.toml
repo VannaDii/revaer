@@ -1,0 +1,87 @@
+[build-system]
+requires = ["uv_build==0.12.13"]
+build-backend = "uv_build"
+
+[project]
+name = "revaer-tooling"
+version = "0.1.0"
+description = "Development and automation commands for Revaer"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "PyYAML==6.0.3",
+  "jsonschema==4.26.0",
+]
+
+[project.scripts]
+rv = "revaer_tooling.cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy==2.3.1",
+  "pglast==6.16",
+  "pip-audit==2.10.1",
+  "psutil==7.2.2",
+  "ruff==0.16.7",
+  "types-PyYAML==6.0.12.20260906",
+  "types-jsonschema==4.26.0.20260518",
+  "types-psutil==7.2.2.20260906",
+  "watchfiles==1.2.0",
+]
+release = [
+    "python-semantic-release==10.6.1",
+]
+testing = [
+    "playwright==1.58.0",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pytest-html==4.2.0",
+    "pytest-playwright==0.9.0",
+    "pytest-rerunfailures==16.6.1",
+    "pytest-timeout==2.4.0",
+    "pytest-xdist==3.8.0",
+    "tree-sitter==0.26.0",
+    "tree-sitter-javascript==0.25.0",
+]
+
+[tool.uv]
+required-version = "==0.12.13"
+# Normal local/CI setup includes every tool. Container build stages can use
+# --no-default-groups to install the core CLI without browser/test binaries.
+default-groups = ["dev", "testing", "release"]
+# The exact upstream archive below fixes PSR's published Click constraint.
+# Keep both security floors explicit; uv resolves the complete supported graph.
+constraint-dependencies = ["click>=8.3.3", "gitpython>=3.1.60"]
+
+[tool.uv.build-backend]
+module-root = "tools/src"
+
+[tool.uv.sources]
+python-semantic-release = { url = "https://github.com/python-semantic-release/python-semantic-release/archive/fa87c95ffbdaae3b7516dcc355e57bd5f4632c1f.tar.gz" }
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["tools/src", "tools/launcher/src", "tools/tests", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tools/tests"]
+pythonpath = ["tools/launcher/src"]
+addopts = "--strict-config --strict-markers"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["tools/src/revaer_tooling", "tools/launcher/src/revaer_launcher", "tools/tests"]
+branch = true
+parallel = true
+relative_files = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true

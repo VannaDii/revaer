@@ -1,0 +1,686 @@
+{
+  "signature": "search_result_ingest_v1(uuid,uuid)",
+  "cases": {
+    "D4": {
+      "reference": {
+        "states": [
+          "00000",
+          "42P07"
+        ],
+        "results": [
+          {
+            "canonical_torrent_public_id": "<canonical_torrent:1>",
+            "canonical_torrent_source_public_id": "<canonical_torrent_source:1>",
+            "observation_created": true,
+            "durable_source_created": true,
+            "canonical_changed": true
+          }
+        ],
+        "errors": [
+          "42P07: relation \"tmp_policy_rules\" already exists"
+        ],
+        "details": [],
+        "hints": [],
+        "diagnostics": [
+          {
+            "error": "42P07: relation \"tmp_policy_rules\" already exists",
+            "line": 1026,
+            "location": "CreateTableAsRelExists, createas.c:406",
+            "detail": null,
+            "hint": null,
+            "statement": "SQL statement \"CREATE TEMP TABLE tmp_policy_rules AS\n        SELECT psr.rule_order,\n               pr.policy_rule_public_id,\n               pr.rule_type,\n               pr.action,\n               pr.severity,\n               pr.match_field,\n               pr.match_operator,\n               pr.match_value_text,\n               pr.match_value_int,\n               pr.match_value_uuid,\n               pr.value_set_id,\n               pr.is_case_insensitive,\n               ps.scope,\n               CASE ps.scope\n                   WHEN 'request' THEN 1\n                   WHEN 'profile' THEN 2\n                   WHEN 'user' THEN 3\n                   ELSE 4\n               END AS scope_rank\n        FROM policy_snapshot_rule psr\n        JOIN policy_rule pr\n            ON pr.policy_rule_public_id = psr.policy_rule_public_id\n        JOIN policy_set ps\n            ON ps.policy_set_id = pr.policy_set_id\n        WHERE psr.policy_snapshot_id = request_snapshot_id\"",
+            "routine": "PL/pgSQL function search_result_ingest_v1(uuid,uuid)",
+            "operation": "SQL statement"
+          }
+        ],
+        "before": {
+          "canonical_torrent": [],
+          "canonical_torrent_source": [],
+          "canonical_torrent_source_attr": [],
+          "canonical_torrent_source_context_score": [],
+          "canonical_torrent_best_source_context": [],
+          "search_request_source_observation": [],
+          "search_request_source_observation_attr": [],
+          "canonical_torrent_signal": [],
+          "canonical_external_id": [],
+          "canonical_size_sample": [],
+          "canonical_size_rollup": [],
+          "search_request_canonical": [],
+          "search_page": [],
+          "search_page_item": [],
+          "search_filter_decision": [],
+          "source_metadata_conflict": [],
+          "source_metadata_conflict_audit_log": [],
+          "indexer_health_event": []
+        },
+        "after": {
+          "canonical_torrent": [
+            {
+              "updated_at": "<transaction-time:0>",
+              "imdb_id": null
+            }
+          ],
+          "canonical_torrent_source": [
+            {
+              "updated_at": "<transaction-time:0>",
+              "infohash_v1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "last_seen_seeders": 5
+            }
+          ],
+          "canonical_torrent_source_attr": [],
+          "canonical_torrent_source_context_score": [
+            {
+              "computed_at": "<transaction-time:0>"
+            }
+          ],
+          "canonical_torrent_best_source_context": [],
+          "search_request_source_observation": [
+            {
+              "observed_at": "2026-09-10T00:00:00+00:00",
+              "seeders": 5
+            }
+          ],
+          "search_request_source_observation_attr": [],
+          "canonical_torrent_signal": [],
+          "canonical_external_id": [],
+          "canonical_size_sample": [],
+          "canonical_size_rollup": [
+            {
+              "updated_at": "<transaction-time:0>",
+              "sample_count": 1
+            }
+          ],
+          "search_request_canonical": [],
+          "search_page": [],
+          "search_page_item": [],
+          "search_filter_decision": [],
+          "source_metadata_conflict": [],
+          "source_metadata_conflict_audit_log": [],
+          "indexer_health_event": []
+        },
+        "caller_settings": {
+          "before": [
+            "error"
+          ],
+          "after": [
+            "error"
+          ]
+        },
+        "helpers": []
+      },
+      "final": {
+        "states": [
+          "00000",
+          "00000"
+        ],
+        "results": [
+          {
+            "canonical_torrent_public_id": "<canonical_torrent:1>",
+            "canonical_torrent_source_public_id": "<canonical_torrent_source:1>",
+            "observation_created": true,
+            "durable_source_created": true,
+            "canonical_changed": true
+          },
+          {
+            "canonical_torrent_public_id": "<canonical_torrent:1>",
+            "canonical_torrent_source_public_id": "<canonical_torrent_source:1>",
+            "observation_created": false,
+            "durable_source_created": false,
+            "canonical_changed": false
+          }
+        ],
+        "errors": [],
+        "details": [],
+        "hints": [],
+        "diagnostics": [],
+        "before": {
+          "canonical_torrent": [],
+          "canonical_torrent_source": [],
+          "canonical_torrent_source_attr": [],
+          "canonical_torrent_source_context_score": [],
+          "canonical_torrent_best_source_context": [],
+          "search_request_source_observation": [],
+          "search_request_source_observation_attr": [],
+          "canonical_torrent_signal": [],
+          "canonical_external_id": [],
+          "canonical_size_sample": [],
+          "canonical_size_rollup": [],
+          "search_request_canonical": [],
+          "search_page": [],
+          "search_page_item": [],
+          "search_filter_decision": [],
+          "source_metadata_conflict": [],
+          "source_metadata_conflict_audit_log": [],
+          "indexer_health_event": []
+        },
+        "after": {
+          "canonical_torrent": [
+            {
+              "updated_at": "<transaction-time:1>",
+              "imdb_id": null
+            }
+          ],
+          "canonical_torrent_source": [
+            {
+              "updated_at": "<transaction-time:1>",
+              "infohash_v1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "last_seen_seeders": 5
+            }
+          ],
+          "canonical_torrent_source_attr": [],
+          "canonical_torrent_source_context_score": [
+            {
+              "computed_at": "<transaction-time:1>"
+            }
+          ],
+          "canonical_torrent_best_source_context": [],
+          "search_request_source_observation": [
+            {
+              "observed_at": "2026-09-10T00:00:00+00:00",
+              "seeders": 5
+            }
+          ],
+          "search_request_source_observation_attr": [],
+          "canonical_torrent_signal": [],
+          "canonical_external_id": [],
+          "canonical_size_sample": [],
+          "canonical_size_rollup": [
+            {
+              "updated_at": "<transaction-time:1>",
+              "sample_count": 1
+            }
+          ],
+          "search_request_canonical": [],
+          "search_page": [],
+          "search_page_item": [],
+          "search_filter_decision": [],
+          "source_metadata_conflict": [],
+          "source_metadata_conflict_audit_log": [],
+          "indexer_health_event": []
+        },
+        "caller_settings": {
+          "before": [
+            "error"
+          ],
+          "after": [
+            "error"
+          ]
+        },
+        "helpers": []
+      }
+    },
+    "D5": {
+      "reference": {
+        "fixture": {
+          "states": [
+            "00000"
+          ],
+          "results": [
+            {
+              "canonical_torrent_public_id": "<canonical_torrent:1>",
+              "canonical_torrent_source_public_id": "<canonical_torrent_source:1>",
+              "observation_created": true,
+              "durable_source_created": true,
+              "canonical_changed": true
+            }
+          ],
+          "errors": [],
+          "details": [],
+          "hints": [],
+          "diagnostics": [],
+          "before": {
+            "canonical_torrent": [],
+            "canonical_torrent_source": [],
+            "canonical_torrent_source_attr": [],
+            "canonical_torrent_source_context_score": [],
+            "canonical_torrent_best_source_context": [],
+            "search_request_source_observation": [],
+            "search_request_source_observation_attr": [],
+            "canonical_torrent_signal": [],
+            "canonical_external_id": [],
+            "canonical_size_sample": [],
+            "canonical_size_rollup": [],
+            "search_request_canonical": [],
+            "search_page": [],
+            "search_page_item": [],
+            "search_filter_decision": [],
+            "source_metadata_conflict": [],
+            "source_metadata_conflict_audit_log": [],
+            "indexer_health_event": []
+          },
+          "after": {
+            "canonical_torrent": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "imdb_id": null
+              }
+            ],
+            "canonical_torrent_source": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "infohash_v1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "last_seen_seeders": 5
+              }
+            ],
+            "canonical_torrent_source_attr": [],
+            "canonical_torrent_source_context_score": [
+              {
+                "computed_at": "<transaction-time:0>"
+              }
+            ],
+            "canonical_torrent_best_source_context": [],
+            "search_request_source_observation": [
+              {
+                "observed_at": "2026-09-10T00:00:00+00:00",
+                "seeders": 5
+              }
+            ],
+            "search_request_source_observation_attr": [],
+            "canonical_torrent_signal": [],
+            "canonical_external_id": [],
+            "canonical_size_sample": [],
+            "canonical_size_rollup": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "sample_count": 1
+              }
+            ],
+            "search_request_canonical": [],
+            "search_page": [],
+            "search_page_item": [],
+            "search_filter_decision": [],
+            "source_metadata_conflict": [],
+            "source_metadata_conflict_audit_log": [],
+            "indexer_health_event": []
+          },
+          "caller_settings": {
+            "before": [
+              "error"
+            ],
+            "after": [
+              "error"
+            ]
+          },
+          "helpers": []
+        },
+        "tested": {
+          "states": [
+            "42P10"
+          ],
+          "results": [],
+          "errors": [
+            "42P10: there is no unique or exclusion constraint matching the ON CONFLICT specification"
+          ],
+          "details": [],
+          "hints": [],
+          "diagnostics": [
+            {
+              "error": "42P10: there is no unique or exclusion constraint matching the ON CONFLICT specification",
+              "line": 2107,
+              "location": "infer_arbiter_indexes, plancat.c:920",
+              "detail": null,
+              "hint": null,
+              "statement": "SQL statement \"INSERT INTO canonical_external_id (\n            canonical_torrent_id,\n            id_type,\n            id_value_text,\n            trust_tier_rank,\n            first_seen_at,\n            last_seen_at,\n            source_canonical_torrent_source_id\n        )\n        VALUES (\n            canonical_id,\n            'imdb',\n            lower(imdb_id_value),\n            instance_trust_rank,\n            observed_at_value,\n            observed_at_value,\n            source_id\n        )\n        ON CONFLICT (canonical_torrent_id, id_type, id_value_text)\n        DO UPDATE SET\n            last_seen_at = EXCLUDED.last_seen_at,\n            trust_tier_rank = GREATEST(canonical_external_id.trust_tier_rank, EXCLUDED.trust_tier_rank)\"",
+              "routine": "PL/pgSQL function search_result_ingest_v1(uuid,uuid)",
+              "operation": "SQL statement"
+            }
+          ],
+          "before": {
+            "canonical_torrent": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "imdb_id": null
+              }
+            ],
+            "canonical_torrent_source": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "infohash_v1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "last_seen_seeders": 5
+              }
+            ],
+            "canonical_torrent_source_attr": [],
+            "canonical_torrent_source_context_score": [
+              {
+                "computed_at": "<transaction-time:0>"
+              }
+            ],
+            "canonical_torrent_best_source_context": [],
+            "search_request_source_observation": [
+              {
+                "observed_at": "2026-09-10T00:00:00+00:00",
+                "seeders": 5
+              }
+            ],
+            "search_request_source_observation_attr": [],
+            "canonical_torrent_signal": [],
+            "canonical_external_id": [],
+            "canonical_size_sample": [],
+            "canonical_size_rollup": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "sample_count": 1
+              }
+            ],
+            "search_request_canonical": [],
+            "search_page": [],
+            "search_page_item": [],
+            "search_filter_decision": [],
+            "source_metadata_conflict": [],
+            "source_metadata_conflict_audit_log": [],
+            "indexer_health_event": []
+          },
+          "after": {
+            "canonical_torrent": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "imdb_id": null
+              }
+            ],
+            "canonical_torrent_source": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "infohash_v1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "last_seen_seeders": 5
+              }
+            ],
+            "canonical_torrent_source_attr": [],
+            "canonical_torrent_source_context_score": [
+              {
+                "computed_at": "<transaction-time:0>"
+              }
+            ],
+            "canonical_torrent_best_source_context": [],
+            "search_request_source_observation": [
+              {
+                "observed_at": "2026-09-10T00:00:00+00:00",
+                "seeders": 5
+              }
+            ],
+            "search_request_source_observation_attr": [],
+            "canonical_torrent_signal": [],
+            "canonical_external_id": [],
+            "canonical_size_sample": [],
+            "canonical_size_rollup": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "sample_count": 1
+              }
+            ],
+            "search_request_canonical": [],
+            "search_page": [],
+            "search_page_item": [],
+            "search_filter_decision": [],
+            "source_metadata_conflict": [],
+            "source_metadata_conflict_audit_log": [],
+            "indexer_health_event": []
+          },
+          "caller_settings": {
+            "before": [
+              "error"
+            ],
+            "after": [
+              "error"
+            ]
+          },
+          "helpers": []
+        }
+      },
+      "final": {
+        "fixture": {
+          "states": [
+            "00000"
+          ],
+          "results": [
+            {
+              "canonical_torrent_public_id": "<canonical_torrent:1>",
+              "canonical_torrent_source_public_id": "<canonical_torrent_source:1>",
+              "observation_created": true,
+              "durable_source_created": true,
+              "canonical_changed": true
+            }
+          ],
+          "errors": [],
+          "details": [],
+          "hints": [],
+          "diagnostics": [],
+          "before": {
+            "canonical_torrent": [],
+            "canonical_torrent_source": [],
+            "canonical_torrent_source_attr": [],
+            "canonical_torrent_source_context_score": [],
+            "canonical_torrent_best_source_context": [],
+            "search_request_source_observation": [],
+            "search_request_source_observation_attr": [],
+            "canonical_torrent_signal": [],
+            "canonical_external_id": [],
+            "canonical_size_sample": [],
+            "canonical_size_rollup": [],
+            "search_request_canonical": [],
+            "search_page": [],
+            "search_page_item": [],
+            "search_filter_decision": [],
+            "source_metadata_conflict": [],
+            "source_metadata_conflict_audit_log": [],
+            "indexer_health_event": []
+          },
+          "after": {
+            "canonical_torrent": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "imdb_id": null
+              }
+            ],
+            "canonical_torrent_source": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "infohash_v1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "last_seen_seeders": 5
+              }
+            ],
+            "canonical_torrent_source_attr": [],
+            "canonical_torrent_source_context_score": [
+              {
+                "computed_at": "<transaction-time:0>"
+              }
+            ],
+            "canonical_torrent_best_source_context": [],
+            "search_request_source_observation": [
+              {
+                "observed_at": "2026-09-10T00:00:00+00:00",
+                "seeders": 5
+              }
+            ],
+            "search_request_source_observation_attr": [],
+            "canonical_torrent_signal": [],
+            "canonical_external_id": [],
+            "canonical_size_sample": [],
+            "canonical_size_rollup": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "sample_count": 1
+              }
+            ],
+            "search_request_canonical": [],
+            "search_page": [],
+            "search_page_item": [],
+            "search_filter_decision": [],
+            "source_metadata_conflict": [],
+            "source_metadata_conflict_audit_log": [],
+            "indexer_health_event": []
+          },
+          "caller_settings": {
+            "before": [
+              "error"
+            ],
+            "after": [
+              "error"
+            ]
+          },
+          "helpers": []
+        },
+        "tested": {
+          "states": [
+            "00000"
+          ],
+          "results": [
+            {
+              "canonical_torrent_public_id": "<canonical_torrent:1>",
+              "canonical_torrent_source_public_id": "<canonical_torrent_source:1>",
+              "observation_created": false,
+              "durable_source_created": false,
+              "canonical_changed": false
+            }
+          ],
+          "errors": [],
+          "details": [],
+          "hints": [],
+          "diagnostics": [],
+          "before": {
+            "canonical_torrent": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "imdb_id": null
+              }
+            ],
+            "canonical_torrent_source": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "infohash_v1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "last_seen_seeders": 5
+              }
+            ],
+            "canonical_torrent_source_attr": [],
+            "canonical_torrent_source_context_score": [
+              {
+                "computed_at": "<transaction-time:0>"
+              }
+            ],
+            "canonical_torrent_best_source_context": [],
+            "search_request_source_observation": [
+              {
+                "observed_at": "2026-09-10T00:00:00+00:00",
+                "seeders": 5
+              }
+            ],
+            "search_request_source_observation_attr": [],
+            "canonical_torrent_signal": [],
+            "canonical_external_id": [],
+            "canonical_size_sample": [],
+            "canonical_size_rollup": [
+              {
+                "updated_at": "<transaction-time:0>",
+                "sample_count": 1
+              }
+            ],
+            "search_request_canonical": [],
+            "search_page": [],
+            "search_page_item": [],
+            "search_filter_decision": [],
+            "source_metadata_conflict": [],
+            "source_metadata_conflict_audit_log": [],
+            "indexer_health_event": []
+          },
+          "after": {
+            "canonical_torrent": [
+              {
+                "updated_at": "<tested-transaction-time>",
+                "imdb_id": "tt1234567"
+              }
+            ],
+            "canonical_torrent_source": [
+              {
+                "updated_at": "<tested-transaction-time>",
+                "infohash_v1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "last_seen_seeders": 17,
+                "last_seen_at": "2026-09-10T00:01:00+00:00"
+              }
+            ],
+            "canonical_torrent_source_attr": [
+              {
+                "canonical_torrent_source_attr_id": 3,
+                "canonical_torrent_source_id": 1,
+                "attr_key": "imdb_id",
+                "value_text": "tt1234567",
+                "value_int": null,
+                "value_bigint": null,
+                "value_numeric": null,
+                "value_bool": null
+              }
+            ],
+            "canonical_torrent_source_context_score": [
+              {
+                "computed_at": "<tested-transaction-time>"
+              }
+            ],
+            "canonical_torrent_best_source_context": [],
+            "search_request_source_observation": [
+              {
+                "observed_at": "2026-09-10T00:01:00+00:00",
+                "seeders": 17
+              }
+            ],
+            "search_request_source_observation_attr": [
+              {
+                "observation_attr_id": 4,
+                "observation_id": 1,
+                "attr_key": "imdb_id",
+                "value_text": "tt1234567",
+                "value_int": null,
+                "value_bigint": null,
+                "value_numeric": null,
+                "value_bool": null,
+                "value_uuid": null,
+                "created_at": "<tested-transaction-time>"
+              }
+            ],
+            "canonical_torrent_signal": [],
+            "canonical_external_id": [
+              {
+                "canonical_external_id_id": 1,
+                "canonical_torrent_id": 1,
+                "id_type": "imdb",
+                "id_value_text": "tt1234567",
+                "id_value_int": null,
+                "source_canonical_torrent_source_id": 1,
+                "trust_tier_rank": 10,
+                "first_seen_at": "2026-09-10T00:01:00+00:00",
+                "last_seen_at": "2026-09-10T00:01:00+00:00"
+              }
+            ],
+            "canonical_size_sample": [
+              {
+                "canonical_size_sample_id": 2,
+                "canonical_torrent_id": 1,
+                "observed_at": "2026-09-10T00:01:00+00:00",
+                "size_bytes": 1024
+              }
+            ],
+            "canonical_size_rollup": [
+              {
+                "updated_at": "<tested-transaction-time>",
+                "sample_count": 2
+              }
+            ],
+            "search_request_canonical": [],
+            "search_page": [],
+            "search_page_item": [],
+            "search_filter_decision": [],
+            "source_metadata_conflict": [],
+            "source_metadata_conflict_audit_log": [],
+            "indexer_health_event": []
+          },
+          "caller_settings": {
+            "before": [
+              "error"
+            ],
+            "after": [
+              "error"
+            ]
+          },
+          "helpers": []
+        }
+      }
+    }
+  }
+}

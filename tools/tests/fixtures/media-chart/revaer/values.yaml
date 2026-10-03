@@ -1,0 +1,88 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/vannadii/revaer
+  pullPolicy: IfNotPresent
+  # Required verified platform-image digest and matching architecture.
+  digest: ""
+  architecture: ""
+  # Tags cannot be combined with the required digest; leave empty.
+  tag: ""
+
+compliance:
+  # Existing PVC prepared separately under the approved C1-D contract.
+  existingClaim: ""
+  # Required sha256: digest of final-image-compliance-bundle.json.
+  manifestDigest: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+database:
+  url: ""
+  existingSecret: ""
+  secretKey: DATABASE_URL
+  secretAnnotations: {}
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+service:
+  type: ClusterIP
+  annotations: {}
+  apiPort: 7070
+  uiPort: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: revaer.local
+      paths:
+        - path: /
+          pathType: Prefix
+          servicePort: ui
+  tls: []
+
+resources: {}
+
+configPersistence:
+  enabled: false
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+  storageClassName: ""
+  existingClaim: ""
+  annotations: {}
+
+dataPersistence:
+  enabled: false
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+  storageClassName: ""
+  existingClaim: ""
+  annotations: {}
+
+extraEnv: []
+extraEnvFrom: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

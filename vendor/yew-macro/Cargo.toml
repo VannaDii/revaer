@@ -54,9 +54,6 @@ version = "1"
 [dependencies.prettyplease]
 version = "0.2"
 
-[dependencies.proc-macro-error3]
-version = "3.0.2"
-
 [dependencies.proc-macro2]
 version = "1"
 

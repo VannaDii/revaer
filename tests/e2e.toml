@@ -1,0 +1,8 @@
+# The single-init media phase uses its existing Rust test-serving entry.
+# E2E_API_RUNNER explicitly overrides either phase default.
+[api]
+runner = "binary"
+media_runner = "lib-test"
+
+[ui]
+required_routes = ["/", "/torrents", "/torrents/:id", "/settings", "/logs", "/health", "/not-found"]
