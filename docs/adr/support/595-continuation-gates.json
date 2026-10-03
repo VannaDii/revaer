@@ -1,6 +1,6 @@
 {
   "date": "2026-10-03",
-  "source_commit": "b9fb1d1fb363a85b639197bfe726b5eb0042458f",
+  "source_commit": "d5f00def4f48d58134ff957d93f9484b0b5074a7",
   "generated_schema_commit": "e89b16a97568ad8f88aa98ad97862a106f7e87e5",
   "qualification_complete": false,
   "results": {
@@ -17,19 +17,26 @@
     "instruction-drift": {
       "passed": true,
       "base": "71596802",
-      "head": "e89b16a9"
+      "head": "d5f00def"
     },
     "ci": {
       "passed": false,
       "exit_code": 101,
-      "application_tests_passed": 354,
-      "application_tests_failed": 37
+      "tested_rust_source_commit": "a6898202",
+      "during_run_document_delta": "a3a27fa2 generated crate API copy only; embedded base unchanged in this run",
+      "application_tests_passed": 356,
+      "application_tests_failed": 35,
+      "runtime_fixture_legacy_enqueue_denials": 31,
+      "service_and_portable_import_failures": 4,
+      "later_gates_reached": false
     },
     "ui-e2e": {
       "passed": false,
-      "first_api_phase_passed": 28,
-      "first_api_phase_failed": 25,
+      "tested_commit": "d5f00def4f48d58134ff957d93f9484b0b5074a7",
+      "first_api_phase_passed": 41,
+      "first_api_phase_failed": 12,
       "fixture_errors": 4,
+      "foundation_api_failures": 0,
       "later_phases_reached": false
     }
   },
@@ -47,14 +54,51 @@
       "sha256": "76b6dce24b3147a703a1d8079b66a3b81afc8c01ea61723cec657c1ffd94bf4b"
     },
     "ci": {
-      "local_path": "/tmp/revaer-continuation-ci.log",
-      "sha256": "093df828656fdecb067ad546c7310cb7545cf66c37788f168044b9e0976813f4"
+      "local_path": "/tmp/revaer-continuation-ci-a6898202.log",
+      "sha256": "445874f71c544631ccffe66fb78ccda1cbf1f73b298d00ef0589da6bf7121a19"
     },
     "ui-e2e": {
-      "local_path": "/tmp/revaer-continuation-ui-e2e.log",
-      "sha256": "e82fe485a9a3b74a3dbe561f86c6c54011a077d36a7ccfc72bf2db69c7ce84d7"
+      "local_path": "/tmp/revaer-continuation-ui-e2e-d5f00def.log",
+      "sha256": "b50b74e2facc6c6af60924d836482bdcbccc2518c5d848edf04a3fbaa6662064"
     }
   },
   "owned_qualification_server_removed": true,
-  "recovery_refs_preserved": 108
+  "recovery_refs_preserved": 108,
+  "previous_results": {
+    "tooling-check": {
+      "passed": true,
+      "tests": 1749
+    },
+    "lint": {
+      "passed": true
+    },
+    "policy": {
+      "passed": true
+    },
+    "instruction-drift": {
+      "passed": true,
+      "base": "71596802",
+      "head": "d5f00def"
+    },
+    "ci": {
+      "passed": false,
+      "exit_code": 101,
+      "tested_rust_source_commit": "a6898202",
+      "during_run_document_delta": "a3a27fa2 generated crate API copy only; embedded base unchanged in this run",
+      "application_tests_passed": 356,
+      "application_tests_failed": 35,
+      "runtime_fixture_legacy_enqueue_denials": 31,
+      "service_and_portable_import_failures": 4,
+      "later_gates_reached": false
+    },
+    "ui-e2e": {
+      "passed": false,
+      "tested_commit": "d5f00def4f48d58134ff957d93f9484b0b5074a7",
+      "first_api_phase_passed": 41,
+      "first_api_phase_failed": 12,
+      "fixture_errors": 4,
+      "foundation_api_failures": 0,
+      "later_phases_reached": false
+    }
+  }
 }
