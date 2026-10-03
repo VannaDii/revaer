@@ -6064,9 +6064,9 @@ mod tests {
         job_target: RuntimeJobTarget,
         include_costs: bool,
     ) -> anyhow::Result<RuntimeFixture> {
-        let postgres = start_postgres()?;
+        let mut postgres = start_postgres()?;
         postgres
-            .apply_init(include_str!("../../revaer-data/init.sql"))
+            .initialize_runtime(include_str!("../../revaer-data/init.sql"))
             .await?;
         let pool = PgPoolOptions::new()
             .max_connections(5)
@@ -6090,9 +6090,6 @@ mod tests {
         let email = format!("media-worker-{}@example.invalid", Uuid::new_v4());
         let actor = app_user_create(store.pool(), &email, "Media Worker").await?;
         app_user_verify_email(store.pool(), actor).await?;
-        if include_costs {
-            seed_explicit_runtime_costs(&store, actor).await?;
-        }
         let desired_target = create_runtime_target(&store, actor, job_target).await?;
         let profile_id = store
             .upsert_profile(&UpsertMediaProfileInput {
@@ -6137,6 +6134,13 @@ mod tests {
             dry_run,
         )
         .await?;
+        if !include_costs {
+            postgres
+                .apply_fixture_script(include_str!(
+                    "../../../scripts/tests/media-runtime-missing-costs.sql"
+                ))
+                .await?;
+        }
         if record_capability {
             record_runtime_capability(&store, actor).await?;
         }
@@ -6161,42 +6165,6 @@ mod tests {
             telemetry,
             command_runner,
         })
-    }
-
-    async fn seed_explicit_runtime_costs(store: &MediaStore, actor: Uuid) -> anyhow::Result<()> {
-        for (order, kind) in [
-            "no_op",
-            "remux",
-            "metadata_rewrite",
-            "disposition_rewrite",
-            "label_rewrite",
-            "stream_reorder",
-            "embed_subtitle",
-            "extract_subtitle",
-            "copy_sidecar_subtitle",
-            "remove_sidecar_subtitle",
-            "subtitle_transcode",
-            "audio_transcode",
-            "video_transcode",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            revaer_data::media::configuration::append_media_policy_operation_cost(
-                store.pool(),
-                actor,
-                "safe_dry_run",
-                1,
-                &revaer_data::media::policy_snapshot::OperationCostSnapshotRow {
-                    operation_kind: kind.to_string(),
-                    cost_weight: 7,
-                    sort_order: i32::try_from(order)?,
-                    enabled: true,
-                },
-            )
-            .await?;
-        }
-        Ok(())
     }
 
     async fn enqueue_runtime_test_job(
@@ -6383,6 +6351,38 @@ mod tests {
         );
     }
 
+    fn assert_canonical_cost_snapshot(
+        captured: &[revaer_data::media::policy_snapshot::OperationCostSnapshotRow],
+    ) {
+        assert_eq!(captured.len(), 13);
+        assert_eq!(
+            captured
+                .iter()
+                .map(|row| (
+                    row.operation_kind.as_str(),
+                    row.cost_weight,
+                    row.sort_order,
+                    row.enabled
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("no_op", 0, 0, true),
+                ("remux", 5, 1, true),
+                ("metadata_rewrite", 1, 2, true),
+                ("disposition_rewrite", 1, 3, true),
+                ("label_rewrite", 1, 4, true),
+                ("stream_reorder", 2, 5, true),
+                ("embed_subtitle", 4, 6, true),
+                ("extract_subtitle", 3, 7, true),
+                ("copy_sidecar_subtitle", 2, 8, true),
+                ("remove_sidecar_subtitle", 2, 9, true),
+                ("subtitle_transcode", 80, 10, true),
+                ("audio_transcode", 20, 11, true),
+                ("video_transcode", 1000, 12, true),
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn media_job_runtime_completes_dry_run_without_command_execution() -> anyhow::Result<()> {
         let fixture = setup_runtime(true, true, RuntimeJobTarget::SourceGraph).await?;
@@ -6391,12 +6391,7 @@ mod tests {
             .store
             .list_job_operation_costs(fixture.job_id)
             .await?;
-        assert_eq!(captured.len(), 13);
-        assert!(
-            captured
-                .iter()
-                .all(|row| row.cost_weight == 7 && row.enabled)
-        );
+        assert_canonical_cost_snapshot(&captured);
         assert!(
             fixture
                 .store

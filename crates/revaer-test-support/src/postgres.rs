@@ -28,13 +28,29 @@ impl std::fmt::Debug for TestDatabase {
 }
 
 impl TestDatabase {
-    /// Apply an initialization script atomically to this owned disposable database.
+    /// Apply a fault-injection script to this initialized owned test database.
+    ///
+    /// The runtime login stays restricted. Only the fixture's retained
+    /// administrative connection performs the deliberate corruption.
     ///
     /// # Errors
-    /// Propagates connection, script and commit failures; no external database
-    /// can be selected independently of this fixture handle.
-    pub async fn apply_init(&self, script: &'static str) -> Result<()> {
-        let mut connection = PgConnection::connect(&self.connection_string).await?;
+    /// Rejects closed or uninitialized fixtures and mismatched database identity;
+    /// propagates script, transaction and connection failures.
+    pub async fn apply_fixture_script(&self, script: &'static str) -> Result<()> {
+        anyhow::ensure!(
+            !self.closed && self.runtime_roles,
+            "fixture is not initialized"
+        );
+        let mut url = Url::parse(&self.admin_url)?;
+        url.set_path(&self.database);
+        let mut connection = PgConnection::connect(url.as_str()).await?;
+        let database: String = sqlx::query_scalar("SELECT current_database()")
+            .fetch_one(&mut connection)
+            .await?;
+        anyhow::ensure!(
+            database == self.database,
+            "fixture reached another database"
+        );
         let mut transaction = connection.begin().await?;
         sqlx::raw_sql(script).execute(&mut *transaction).await?;
         transaction.commit().await?;

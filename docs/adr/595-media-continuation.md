@@ -1,6 +1,8 @@
 # Media continuation on the merged rv foundation
 
-- Status: Accepted
+- Status: Recorded
+- Operator approval: Not applicable: nonarchitectural task record
+- Implementation status: In progress; required qualification gates remain failing
 - Date: 2026-10-03
 - Context:
   - The operator requested an isolated continuation from pushed checkpoint `71596802`, integrated with current main and the merged rv foundation.
@@ -29,6 +31,7 @@
 - Test coverage summary:
   - Preserve initialized-runtime and cleanup regressions from the unfinished integration, missing-executable behavior, native discovery assertions, isolated document-indexer roots and transient-reset retry tests.
   - Add native Cargo baseline endpoint/failure verification and composition tests for both database phases; mutation tests reject missing single-init fixture gates and migration replay.
+  - Reconcile media service and worker fixtures with explicit sealed runtime initialization. Assert factory-seeded cost snapshots rather than appending duplicate defaults. Preserve the missing-cost/source-preservation regression with a privileged corruption script restricted to the fixture-owned database; production snapshot procedures and triggers remain unchanged. These corrections require fresh gate evidence below.
   - Required gate attempts and final results are recorded below. Fixture passes do not establish full application or release acceptance.
 - Observability updates:
   - Canonical baseline verification names success/failure without exposing endpoints or raw database errors. Retain existing bounded factory-reset retry diagnostics. No new product telemetry surface.

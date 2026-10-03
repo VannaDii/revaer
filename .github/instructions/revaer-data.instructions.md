@@ -183,3 +183,11 @@ applyTo:
 - Call `close` after collecting a fixture's test result so cleanup failure fails
   the test. Drop must attempt and report cleanup after early returns. Remove only
   owned databases and confirmed fixture roles; do not log credential-bearing URLs.
+
+- Runtime fault-injection fixtures may retain their owned administrative endpoint
+  to corrupt persisted test evidence deliberately. Keep injection SQL in reviewed
+  `scripts/tests` files, verify the selected owned database before executing it,
+  and leave the application's pool on the sealed restricted runtime identity.
+  Never grant runtime snapshot mutation or weaken production triggers for a test.
+  Canonical policy factories already seed operation costs; fixtures must not
+  append duplicates to those immutable versions (ADR 595).
