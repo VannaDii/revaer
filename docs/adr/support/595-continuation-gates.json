@@ -1,6 +1,6 @@
 {
   "date": "2026-10-03",
-  "source_commit": "d5f00def4f48d58134ff957d93f9484b0b5074a7",
+  "source_commit": "21e89f1b6337bb894586be14822efb7723cba4e6",
   "generated_schema_commit": "e89b16a97568ad8f88aa98ad97862a106f7e87e5",
   "qualification_complete": false,
   "results": {
@@ -22,11 +22,10 @@
     "ci": {
       "passed": false,
       "exit_code": 101,
-      "tested_rust_source_commit": "a6898202",
-      "during_run_document_delta": "a3a27fa2 generated crate API copy only; embedded base unchanged in this run",
-      "application_tests_passed": 356,
-      "application_tests_failed": 35,
-      "runtime_fixture_legacy_enqueue_denials": 31,
+      "tested_rust_source_commit": "21e89f1b6337bb894586be14822efb7723cba4e6",
+      "application_tests_passed": 387,
+      "application_tests_failed": 4,
+      "native_worker_tests_passed": 31,
       "service_and_portable_import_failures": 4,
       "later_gates_reached": false
     },
@@ -37,7 +36,8 @@
       "first_api_phase_failed": 12,
       "fixture_errors": 4,
       "foundation_api_failures": 0,
-      "later_phases_reached": false
+      "later_phases_reached": false,
+      "rerun_after_test_fixture_changes": false
     }
   },
   "logs": {
@@ -54,8 +54,8 @@
       "sha256": "76b6dce24b3147a703a1d8079b66a3b81afc8c01ea61723cec657c1ffd94bf4b"
     },
     "ci": {
-      "local_path": "/tmp/revaer-continuation-ci-a6898202.log",
-      "sha256": "445874f71c544631ccffe66fb78ccda1cbf1f73b298d00ef0589da6bf7121a19"
+      "local_path": "/tmp/revaer-continuation-ci-21e89f1b.log",
+      "sha256": "04c4cf4b5e79cc0083fe8c5a3ba562f5831627445a58577cc231d04ec8cdb44b"
     },
     "ui-e2e": {
       "local_path": "/tmp/revaer-continuation-ui-e2e-d5f00def.log",
@@ -100,5 +100,15 @@
       "foundation_api_failures": 0,
       "later_phases_reached": false
     }
+  },
+  "checkpoint_task_complete": true,
+  "handoff_exception": {
+    "operator_reply": "Approve unqualified checkpoint handoff",
+    "date": "2026-10-03",
+    "evidence": "Direct operator reply to the task-scoped handoff exception question in this chat",
+    "scope": "ADR 595 continuation checkpoint handoff only",
+    "expiry": "This handoff",
+    "gate_criteria_changed": false,
+    "product_or_release_qualification": false
   }
 }

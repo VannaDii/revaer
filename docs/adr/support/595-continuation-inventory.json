@@ -2530,7 +2530,7 @@
       "head": "ec8adc14b8b931113ddcfe1c6b4aef88357507de"
     }
   ],
-  "qualification": "integration checkpoint; required gates not passing; do not retire recovery refs",
+  "qualification": "operator-approved unqualified continuation checkpoint handoff (ADR 595); required gates not passing; preserve recovery refs until reconciliation finishes",
   "unfinished_local_work_refs": [
     {
       "ref": "work/audio-verification-rebuild",

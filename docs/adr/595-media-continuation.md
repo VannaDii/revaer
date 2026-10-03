@@ -1,8 +1,8 @@
 # Media continuation on the merged rv foundation
 
 - Status: Recorded
-- Operator approval: Not applicable: nonarchitectural task record
-- Implementation status: In progress; required qualification gates remain failing
+- Operator approval: Nonarchitectural task record; explicit task-scoped unqualified handoff approval recorded below
+- Implementation status: Committed continuation checkpoint; unqualified handoff approved for this task only
 - Date: 2026-10-03
 - Context:
   - The operator requested an isolated continuation from pushed checkpoint `71596802`, integrated with current main and the merged rv foundation.
@@ -17,7 +17,7 @@
   - One committed continuation supplies a shared source base and an explicit disposition for every open media/validation PR and unfinished checkout.
   - Later container policy/technical-constraint work and discovery/recovery implementation still require adaptation to the current contracts. Legacy comparison material remains until its safeguards and tests have a validated replacement.
 - Follow-up:
-  - Port remaining worker/discovery fixtures to guarded native association admission, then port Python profile fixtures to complete immutable requests and logical root bindings. Preserve negative admission and source/replacement assertions; rerun both required gates.
+  - Adapt the four remaining service/portable-import fixtures, then port Python profile fixtures to complete immutable requests and logical root bindings. Preserve negative admission and source/replacement assertions; rerun both required gates.
   - Finish the required CI gates and the remaining unique behavior/test transplants recorded in the accounting. Do not delete recovery refs or abandon dirty checkouts before that work is complete.
 
 ## Task Record
@@ -68,8 +68,18 @@
 - Both the embedded `docs/api/openapi.json` and the crate's generated copy need main's foundation inventory. The first schema correction updated only the latter; the next E2E run therefore retained the same 25 failures/four fixture errors. Correct the embedded source and export through the existing canonical task before revalidation.
 
 - After correcting the embedded inventory and running `just api-export`, `just ui-e2e` on `d5f00def` reported 41 passed, 12 failed and four fixture errors in the anonymous API phase. All 13 foundation API failures are resolved. Remaining failures use retired media path-profile/PATCH contracts or depend on those fixtures. Later authenticated/browser phases were not reached. The owned database/roles and server were removed. `just policy` and full checkpoint-to-branch instruction drift passed on this revision. Updated local log copies and checksums are in the gate manifest.
-- Required completion remains unproven. The precise next work is native association admission in the Rust worker/discovery fixtures, remaining portable import/service contract adaptation, then complete immutable profile requests and preconditions in Python media scenarios. Preserve the source/change/cancellation/replacement assertions and keep private legacy writer grants closed.
+- At that revision, required qualification remained unproven. Native worker admission was subsequently reconciled below; remaining work is portable import/service contract adaptation, then complete immutable profile requests and preconditions in Python media scenarios. Preserve the source/change/cancellation/replacement assertions and keep private legacy writer grants closed.
 
 - Native worker-fixture adaptation creates exact profile/association versions through runtime procedures and admits real descriptor-observed source fingerprints through the serializable guarded writer. Policy versions explicitly select dry-run or atomic replacement, and no-op tests use a source-matching desired target. Owned fixture SQL supplies synthetic catalog state only; it is not Linux attestation, persistent-storage or package evidence. Worker success cleanup is asserted; negative legacy automation fixtures use sealed init instead of replayed migrations. Required gates are pending on this correction.
 
 - First native-fixture CI run (`db00179b`) reported 365 passed and 26 failed application tests. Legacy enqueue denials are gone and nine additional cases pass. Non-dry-run cases now reach the workspace boundary and reject its default directory permissions. Prepare the fixture workspace as owner-only, preserving the existing production safeguard. Four media service/portable-import cases remain unadapted.
+
+## Approved checkpoint handoff
+
+On 2026-10-03, after reviewing the committed continuation and accounting, the operator directly answered **“Approve unqualified checkpoint handoff”** to the explicit choice between continuing suite adaptation and a task-scoped exception to the `AGENTS.md` requirement that `just ci` and `just ui-e2e` pass before handoff. This approval permits completion of this continuation-checkpoint task only and expires at this handoff. It does not approve a release, establish product qualification, change architecture, relax either gate, or authorize any scanner, advisory, coverage, runtime-grant or remote-setting exception. Future implementation handoffs remain subject to both required gates.
+
+The final source CI attempt on `21e89f1b` exited 101: 387 application tests passed and four failed. All 31 native worker cases passed, including source identity, cancellation, missing costs, replacement recovery, workspace permissions and media verification safeguards. Remaining failures are `media_discovery_creation_rejects_concurrent_target_append`, `media_discovery_run_queues_accepted_profile_paths_and_skips_rejected_sources`, `media_service_round_trips_profile_job_yaml_and_capability_paths`, and `portable_yaml_moves_complete_configuration_between_isolated_instances`. Later CI steps were not reached. The owned qualification server was removed.
+
+The latest E2E evidence remains `d5f00def`: 41 passed, 12 failed and four fixture errors in the anonymous API phase; authenticated/browser phases were not reached. Subsequent changes affect Rust test fixtures and their owned test support; E2E was not rerun for this documentation-only handoff. The gate manifest identifies exact tested revisions and retained log checksums. Neither gate is represented as passing.
+
+The continuation task is complete under this explicit exception: a committed, conflict-free branch integrates the pushed checkpoint and current main, with retained/superseded/required-unported work accounted. Product reconciliation remains unfinished. The next implementation action is to adapt the four named service/portable-import tests to current guarded association admission and logical-root import contracts, retaining concurrency and portable-import rejection assertions, and rerun `just ci`. Then update the Python media fixtures and run both phases of `just ui-e2e`. All recovery references and existing unfinished checkouts remain preserved until reconciliation finishes.
